@@ -42,6 +42,7 @@ mod live_construction_tests;
 mod live_request_tests;
 mod live_signing_tests;
 mod live_support;
+mod refusal_census_tests;
 mod taproot_tests;
 
 use std::num::{NonZeroU8, NonZeroU32, NonZeroU64};

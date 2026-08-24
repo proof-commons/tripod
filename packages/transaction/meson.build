@@ -38,6 +38,7 @@ transaction_source_files = files(
   'src/tests/live_signing_tests.rs',
   'src/tests/live_support.rs',
   'src/tests/mod.rs',
+  'src/tests/refusal_census_tests.rs',
   'src/tests/taproot_tests.rs',
   'src/view.rs',
 )

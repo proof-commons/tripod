@@ -343,6 +343,115 @@ fn issuance_and_pegin_markers_are_refused_rather_than_ignored() {
     }
 }
 
+/// One input witness with each of its four fields written out.
+///
+/// [`hand_witness`] fixes three of them empty, because that is what
+/// every witness this crate builds carries. The refusals below are
+/// reached only by bytes that fill one of those three, so they need a
+/// builder that can write a non-empty one.
+fn hand_witness_fields(
+    issuance_amount: &[u8],
+    issuance_inflation: &[u8],
+    items: &[&[u8]],
+    pegin: &[u8],
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for field in [issuance_amount, issuance_inflation] {
+        bytes.push(u8::try_from(field.len()).expect("the fixture fields are short"));
+        bytes.extend_from_slice(field);
+    }
+    bytes.push(u8::try_from(items.len()).expect("the fixture stacks are short"));
+    for item in items {
+        bytes.push(u8::try_from(item.len()).expect("the fixture items are short"));
+        bytes.extend_from_slice(item);
+    }
+    bytes.push(u8::try_from(pegin.len()).expect("the fixture fields are short"));
+    bytes.extend_from_slice(pegin);
+    bytes
+}
+
+/// The sponsorless encoding with its first input witness replaced.
+///
+/// The witness section is the tail of the encoding: two input witnesses
+/// and one output witness, in that order. Its length is recomputed from
+/// the builder rather than written as an offset, so a change to either
+/// fixture item moves the splice with it instead of silently corrupting
+/// a different field.
+fn sponsorless_with_first_input_witness(first: &[u8]) -> Vec<u8> {
+    let base = sponsorless().encode();
+    let ordinary = hand_witness(&[&LEAF_ITEM, &CONTROL_ITEM]);
+    let tail = 2 * ordinary.len() + 2;
+
+    let mut bytes = base[..base.len() - tail].to_vec();
+    bytes.extend_from_slice(first);
+    bytes.extend_from_slice(&ordinary);
+    bytes.extend_from_slice(&[0x00, 0x00]);
+    bytes
+}
+
+#[test]
+fn the_witness_splice_leaves_an_unmodified_candidate_decodable() {
+    // The control for the three tests below, and they are worth nothing
+    // without it. Each of them asserts that a spliced byte string is
+    // refused; a splice that produced garbage would also be refused, for
+    // a reason that had nothing to do with the field under test. So the
+    // splice is first shown to reproduce the original bytes exactly when
+    // the replacement is the witness it replaces.
+    let ordinary = hand_witness(&[&LEAF_ITEM, &CONTROL_ITEM]);
+    let spliced = sponsorless_with_first_input_witness(&ordinary);
+
+    assert_eq!(spliced, sponsorless().encode());
+    assert_eq!(TargetTransaction::decode(&spliced), Ok(sponsorless()));
+}
+
+#[test]
+fn an_issuance_proof_in_either_witness_field_is_refused() {
+    // The witness half of the issuance exclusion, and it was reached by
+    // no test anywhere in the repository until now — a gap the
+    // consensus-exclusion register recorded rather than left to be
+    // discovered, since a revision assuming coverage would have been
+    // revising an unexercised row.
+    //
+    // Both fields are driven, not one. The decoder refuses the amount
+    // rangeproof and the inflation-keys rangeproof at two separate
+    // sites, and a test filling only the first would leave the second
+    // exactly as unexercised as both were before.
+    let proof = [0xab_u8, 0xcd];
+
+    for (amount, inflation) in [
+        (&proof[..], &[][..]),
+        (&[][..], &proof[..]),
+        (&proof[..], &proof[..]),
+    ] {
+        let witness = hand_witness_fields(amount, inflation, &[&LEAF_ITEM, &CONTROL_ITEM], &[]);
+        let bytes = sponsorless_with_first_input_witness(&witness);
+
+        assert_eq!(
+            TargetTransaction::decode(&bytes),
+            Err(TransactionRefusal::IssuanceProofRefused),
+        );
+    }
+}
+
+#[test]
+fn a_pegin_witness_field_is_refused_as_the_outpoint_marker_is() {
+    // The peg-in exclusion's second raise site. The outpoint-marker site
+    // is covered by the marker test above; this is the input witness's
+    // peg-in field, which the register named as uncovered so that a
+    // revision would not mistake one test for two.
+    //
+    // The refusal is the same variant from both sites, which is the
+    // reason the gap was invisible: a test reaching either one made the
+    // variant look exercised.
+    let witness = hand_witness_fields(&[], &[], &[&LEAF_ITEM, &CONTROL_ITEM], &[0x01, 0x02, 0x03]);
+    let bytes = sponsorless_with_first_input_witness(&witness);
+
+    assert_eq!(
+        TargetTransaction::decode(&bytes),
+        Err(TransactionRefusal::PeginInputRefused),
+    );
+}
+
 #[test]
 fn trailing_bytes_are_refused() {
     let mut bytes = sponsorless().encode();
