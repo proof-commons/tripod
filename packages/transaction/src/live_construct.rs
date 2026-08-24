@@ -550,11 +550,21 @@ fn select_shape<'abi>(
         })
 }
 
-/// One recognized receipt: its owner and the value the view stated.
+/// One recognized receipt: its owner and the three spent-output fields
+/// the view stated.
+///
+/// The asset and the program are carried rather than checked and
+/// dropped. Both are read here already — the asset to refuse a foreign
+/// one, the program to recognize the owner — and both are terms of the
+/// target's owner message, so the form that comes out of this
+/// construction can carry what the message needs instead of leaving a
+/// later caller to fetch it from somewhere else.
 struct RecognizedReceipt {
     outpoint: Outpoint,
     owner: OwnerParameter,
+    asset: AssetField,
     value: ValueField,
+    program: Vec<u8>,
 }
 
 /// Recognize every selected outpoint as some owner's live receipt.
@@ -602,7 +612,9 @@ fn recognize_receipts(
             Ok(RecognizedReceipt {
                 outpoint: *outpoint,
                 owner: owner.clone(),
+                asset: stated.asset(),
                 value: stated.value(),
+                program: stated.program().to_vec(),
             })
         })
         .collect()
@@ -768,7 +780,9 @@ fn receipt_records(
                 leaf,
                 script,
                 control,
+                receipt.asset,
                 receipt.value,
+                receipt.program.clone(),
             ))
         })
         .collect()

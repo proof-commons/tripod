@@ -3565,6 +3565,36 @@ class OperationExecutor:
             "raw_transaction": list(bytes.fromhex(reported["hex"])),
         }
 
+    def read_back_confirmed(self, mined, txid: str) -> dict:
+        """Reads one confirmed transaction back out of the node.
+
+        The sibling of `mine_and_read_back` for the submission path,
+        which differs in one way that matters: this adapter never held
+        the transaction as an object. It was handed bytes, and every
+        field below is read back from the node afterwards rather than
+        projected from what arrived -- the block the node says it made,
+        the transactions that block holds, the height, and the bytes the
+        node reports for the identity it computed.
+
+        That is the whole reason the member exists. A caller that had to
+        re-derive the accepted witness from the bytes it submitted would
+        be checking its own value against itself; what it needs is the
+        target's own copy, and only the target has one.
+        """
+        node = self.executor.node
+        block_hash = mined["hash"] if isinstance(mined, dict) else mined
+        block = node.call("getblock", block_hash)
+        if txid not in block.get("tx", []):
+            raise AdapterError("the block the node made does not hold the submitted transaction")
+        reported = node.call("getrawtransaction", txid, json.dumps(True), block_hash)
+        return {
+            "transaction_id": reported["txid"],
+            "witness_transaction_id": reported["hash"],
+            "block_hash": block_hash,
+            "block_height": int(block["height"]),
+            "raw_transaction": list(bytes.fromhex(reported["hex"])),
+        }
+
     def fund_confidential(self, subject: dict) -> dict:
         """Materializes, submits, mines, and reads back one confidential
         predecessor.
@@ -3936,15 +3966,17 @@ class OperationExecutor:
             # acceptance is an acceptance by block validation too and the
             # coins it creates are visible to any later step.
             try:
-                self.executor.node.call(
+                mined = self.executor.node.call(
                     "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
                 )
             except AdapterError as error:
                 return self.refused_at_consensus(error, raw=raw)
+            txid = result.get("txid")
             return {
                 "observed_layer": "accepted",
                 "observed_detail": None,
-                "accepted_txid": result.get("txid"),
+                "accepted_txid": txid,
+                "mined_readback": self.read_back_confirmed(mined, txid),
                 "transaction_weight": self.executor.weight_of(raw),
             }
 

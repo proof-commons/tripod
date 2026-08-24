@@ -49,7 +49,7 @@ use linker::live_backend::{
 };
 use target_elements::SighashDimension;
 
-use crate::bytes::{Outpoint, TargetOutput, TargetTransaction, ValueField};
+use crate::bytes::{AssetField, Outpoint, TargetOutput, TargetTransaction, ValueField};
 use crate::error::TransactionRefusal;
 use crate::live_abi::LiveTransactionForm;
 
@@ -113,11 +113,23 @@ pub struct ReceiptInputRecord {
     leaf: LiveTransferLeafRole,
     leaf_script: Vec<u8>,
     control_block: Vec<u8>,
+    asset: AssetField,
     value: ValueField,
+    program: Vec<u8>,
 }
 
 impl ReceiptInputRecord {
     /// One fixed receipt input.
+    ///
+    /// The three spent-output fields are the ones the public view
+    /// already stated for this outpoint, retained rather than read and
+    /// dropped. The record used to keep the value alone, which was
+    /// enough while the only question asked of it was conservation; the
+    /// target's owner message is taken over the spent asset field, the
+    /// spent value field and the spent program together, so a form that
+    /// kept one of the three would leave a caller to fetch the other two
+    /// from beside it — and a census assembled beside the form is
+    /// exactly the route the finalized form exists to prevent.
     pub(crate) const fn new(
         position: u16,
         outpoint: Outpoint,
@@ -125,7 +137,9 @@ impl ReceiptInputRecord {
         leaf: LiveTransferLeafRole,
         leaf_script: Vec<u8>,
         control_block: Vec<u8>,
+        asset: AssetField,
         value: ValueField,
+        program: Vec<u8>,
     ) -> Self {
         Self {
             position,
@@ -134,7 +148,9 @@ impl ReceiptInputRecord {
             leaf,
             leaf_script,
             control_block,
+            asset,
             value,
+            program,
         }
     }
 
@@ -174,10 +190,28 @@ impl ReceiptInputRecord {
         &self.control_block
     }
 
+    /// The spent output's asset field, as the public view stated it.
+    #[must_use]
+    pub const fn asset(&self) -> AssetField {
+        self.asset
+    }
+
     /// The spent output's value field, as the public view stated it.
     #[must_use]
     pub const fn value(&self) -> ValueField {
         self.value
+    }
+
+    /// The spent output's program, as the public view stated it.
+    ///
+    /// The taproot witness program the receipt sits behind, and not the
+    /// leaf: the message's spent-scripts term is taken over each spent
+    /// output's `scriptPubKey`, which carries the tweaked output key.
+    /// [`Self::leaf_script`] is the program the spend executes and is a
+    /// different string entirely.
+    #[must_use]
+    pub fn program(&self) -> &[u8] {
+        &self.program
     }
 }
 
