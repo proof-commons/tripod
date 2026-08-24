@@ -82,7 +82,11 @@ fn nonce(byte: u8) -> Vec<u8> {
 
 /// Lowercase hexadecimal, which is how the target renders a script.
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    use std::fmt::Write as _;
+    bytes.iter().fold(String::new(), |mut text, byte| {
+        let _ = write!(text, "{byte:02x}");
+        text
+    })
 }
 
 /// A registry that resolves exactly the registered case.

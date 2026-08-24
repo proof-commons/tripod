@@ -306,6 +306,14 @@ pub enum ConfidentialFundingRefusal {
 }
 
 impl std::fmt::Display for ConfidentialFundingRefusal {
+    /// One arm per variant, and the match is exhaustive.
+    ///
+    /// Long for that reason rather than by accident: a variant added to
+    /// the vocabulary has no rendering until one is written here, and
+    /// the compiler is what says so. Splitting the match into shorter
+    /// halves would need a catch-all arm in each, which is exactly the
+    /// fallback a closed refusal vocabulary exists to avoid.
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ProtocolSchemaUnsupported { required, offered } => write!(
@@ -952,7 +960,7 @@ pub enum ConfidentialFundingObservation {
 }
 
 /// Whether a response carries any funded observation at all.
-fn carries_funded_observation(response: &NativeOperationResponse) -> bool {
+const fn carries_funded_observation(response: &NativeOperationResponse) -> bool {
     !response.confidential_funded_outputs.is_empty()
         || response.mined_readback.is_some()
         || !response.funded_outputs.is_empty()
@@ -1165,7 +1173,11 @@ fn admitted_nonce(nonce: &[u8]) -> bool {
 /// Lowercase hexadecimal, which is the rendering the target reports
 /// scripts in.
 fn render_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    use std::fmt::Write as _;
+    bytes.iter().fold(String::new(), |mut text, byte| {
+        let _ = write!(text, "{byte:02x}");
+        text
+    })
 }
 
 /// Binds one confidential funding answer to the chain and to the
