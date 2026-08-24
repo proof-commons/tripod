@@ -681,7 +681,7 @@ fn the_submit_ready_candidate_has_one_reproducible_identity() {
 
     assert_eq!(
         candidate_identity(ready.protected_bytes()),
-        "0000000000000000000000000000000000000000000000000000000000000000",
+        "9c01627050f0dab58709de741bc56e2e152b11c7b00c4f56dc42849a2ef60584",
     );
 
     // And the same label from the state before it, so the identity is a
