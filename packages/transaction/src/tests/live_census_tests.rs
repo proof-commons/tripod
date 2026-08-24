@@ -79,7 +79,7 @@ pub(super) const GENESIS: Digest32 = [0x21; 32];
 const OTHER_GENESIS: Digest32 = [0x22; 32];
 
 /// A curve capability that performs no curve arithmetic.
-struct CensusCurve;
+pub(super) struct CensusCurve;
 
 impl LiveCurveCapability for CensusCurve {
     fn owner_key_is_a_curve_point(&self, owner: &[u8]) -> bool {
@@ -126,7 +126,7 @@ fn control_block() -> Vec<u8> {
 ///
 /// Recomputed here the way the census recomputes it, so the fixture and
 /// the check agree by derivation rather than by a copied constant.
-fn committed_program(target: &ReviewedElementsTapscriptDefinition) -> Vec<u8> {
+pub(super) fn committed_program(target: &ReviewedElementsTapscriptDefinition) -> Vec<u8> {
     let curve = CensusCurve;
     let output_key = curve
         .output_key(&INTERNAL_KEY, &LEAF_HASH)
@@ -137,8 +137,18 @@ fn committed_program(target: &ReviewedElementsTapscriptDefinition) -> Vec<u8> {
 
 /// The signing request the positive cases use.
 fn request() -> OwnerSigningInputRequest {
+    signing_request(0)
+}
+
+/// The same request, for one chosen input position.
+///
+/// Shared with the handoff tests, whose two-owner candidate needs a
+/// request per input. Every field but the index is identical, because
+/// both inputs execute the same leaf under the same control block —
+/// which is what makes the two answers answers about one candidate.
+pub(super) fn signing_request(input_index: u32) -> OwnerSigningInputRequest {
     OwnerSigningInputRequest::new(
-        0,
+        input_index,
         LEAF_HASH,
         LeafVersion::TAPSCRIPT,
         OWNER_CODESEPARATOR_POSITION,

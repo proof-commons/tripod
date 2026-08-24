@@ -495,6 +495,149 @@ pub(super) fn valid_with_spent_program(
     .expect("the valid intent materializes under a chosen spent program")
 }
 
+/// The second consumed input's semantic amount, for the two-owner case.
+const SECOND_CONSUMED: u64 = 500;
+
+/// The second consumed input's published value blinder.
+const SECOND_INPUT_BLINDER: [u8; SCALAR_BYTES] = [0x13; SCALAR_BYTES];
+
+/// The two-owner primary destination's semantic amount.
+const TWO_OWNER_PRIMARY_AMOUNT: u64 = 700;
+
+/// The two-owner balancing destination's semantic amount.
+const TWO_OWNER_BALANCING_AMOUNT: u64 = 800;
+
+/// The valid case with TWO consumed inputs and the spent program chosen.
+///
+/// Shared with the handoff tests, which need a candidate that genuinely
+/// has more than one required owner: "every required owner signs the same
+/// protected candidate" is not a claim a one-input candidate can fail, so
+/// checking it against one would be checking nothing.
+///
+/// Both inputs carry the same spent program, because the census
+/// recomputes the taproot commitment against each spent output and both
+/// signing requests execute the same leaf. The two openings differ in
+/// amount and blinder, which is what makes them two openings rather than
+/// one written twice, and the successor's declared input-blinder sum is
+/// the stand-in group's sum of the two.
+pub(super) fn valid_two_owner_with_spent_program(
+    program: Vec<u8>,
+) -> crate::live_materialize::MaterializedConfidentialCandidate {
+    let predecessor = ConfidentialFixtureView::new(
+        PREDECESSOR_DIGEST,
+        asset(),
+        [0_u8; SCALAR_BYTES],
+        ParityOutcome::Settled { counter: 0 },
+        vec![
+            ConfidentialFixtureOutputView::new(
+                ConfidentialOutputRole::Primary,
+                CONSUMED,
+                program.clone(),
+                INPUT_BLINDER,
+                [0x31; SCALAR_BYTES],
+                [0x41; SCALAR_BYTES],
+            ),
+            ConfidentialFixtureOutputView::new(
+                ConfidentialOutputRole::Primary,
+                SECOND_CONSUMED,
+                program.clone(),
+                SECOND_INPUT_BLINDER,
+                [0x34; SCALAR_BYTES],
+                [0x44; SCALAR_BYTES],
+            ),
+        ],
+    );
+
+    let input_blinder_sum = stub_solve(&INPUT_BLINDER, &[SECOND_INPUT_BLINDER]);
+    let balancing = stub_solve(&input_blinder_sum, &[PRIMARY_BLINDER]);
+
+    let successor = ConfidentialFixtureView::new(
+        SUCCESSOR_DIGEST,
+        asset(),
+        input_blinder_sum,
+        ParityOutcome::Settled { counter: 0 },
+        vec![
+            ConfidentialFixtureOutputView::new(
+                ConfidentialOutputRole::Primary,
+                TWO_OWNER_PRIMARY_AMOUNT,
+                vec![0x51, 0x20, 0xaa],
+                PRIMARY_BLINDER,
+                [0x32; SCALAR_BYTES],
+                [0x42; SCALAR_BYTES],
+            ),
+            ConfidentialFixtureOutputView::new(
+                ConfidentialOutputRole::Balancing,
+                TWO_OWNER_BALANCING_AMOUNT,
+                vec![0x51, 0x20, 0xbb],
+                balancing,
+                [0x33; SCALAR_BYTES],
+                [0x43; SCALAR_BYTES],
+            ),
+        ],
+    );
+
+    let mut entries = BTreeMap::new();
+    entries.insert(PREDECESSOR.to_owned(), predecessor);
+    entries.insert(SUCCESSOR.to_owned(), successor);
+
+    let first = ConfidentialInputIntent::new(
+        consumed(),
+        AssetField::Explicit(asset()),
+        ValueField::Commitment(stub_commitment(asset(), CONSUMED, &INPUT_BLINDER)),
+        program.clone(),
+        0xffff_ffff,
+        FixtureOpeningReference::new(PREDECESSOR.to_owned(), PREDECESSOR_DIGEST, 0),
+        CONSUMED,
+        [0_u8; SCALAR_BYTES],
+    );
+    let second = ConfidentialInputIntent::new(
+        outpoint(0xc2, 0),
+        AssetField::Explicit(asset()),
+        ValueField::Commitment(stub_commitment(
+            asset(),
+            SECOND_CONSUMED,
+            &SECOND_INPUT_BLINDER,
+        )),
+        program,
+        0xffff_ffff,
+        FixtureOpeningReference::new(PREDECESSOR.to_owned(), PREDECESSOR_DIGEST, 1),
+        SECOND_CONSUMED,
+        [0_u8; SCALAR_BYTES],
+    );
+
+    let intent = ConfidentialConstructionIntent::new(
+        vec![first, second],
+        vec![
+            ConfidentialDestinationIntent::new(
+                TWO_OWNER_PRIMARY_AMOUNT,
+                asset(),
+                vec![0x51, 0x20, 0xaa],
+                FixtureOpeningReference::new(SUCCESSOR.to_owned(), SUCCESSOR_DIGEST, 0),
+                ConfidentialOutputRole::Primary,
+            ),
+            ConfidentialDestinationIntent::new(
+                TWO_OWNER_BALANCING_AMOUNT,
+                asset(),
+                vec![0x51, 0x20, 0xbb],
+                FixtureOpeningReference::new(SUCCESSOR.to_owned(), SUCCESSOR_DIGEST, 1),
+                ConfidentialOutputRole::Balancing,
+            ),
+        ],
+        NonProtocolFundingRegion::default(),
+        profiles(),
+        3,
+        0,
+    );
+
+    materialize(
+        &intent,
+        &FrozenConfidentialFixtureView::new(entries),
+        &StubMaterializer::default(),
+        &StubChecker::default(),
+    )
+    .expect("the two-owner intent materializes under a chosen spent program")
+}
+
 /// The refusal `intent` draws against the valid view and stubs.
 fn refusal_of(intent: &ConfidentialConstructionIntent) -> MaterializationRefusal {
     materialize(
