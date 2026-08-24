@@ -188,6 +188,22 @@ pub enum OwnerObservationCase {
     /// differs and the message differs while everything else is held
     /// fixed.
     AnotherCandidate,
+    /// The signature taken over a message seeded with the deployment's
+    /// genesis hash in the order the target *prints* it.
+    ///
+    /// A target prints a block identity in the reverse of the order it
+    /// hashes it in, and the deployment seed is the one place in this
+    /// message where that distinction has no other witness: every other
+    /// byte-order question in the stream is settled by a term whose
+    /// encoding this crate already evidences, and this one arrives from
+    /// a run's own environment as a printed string.
+    ///
+    /// So it is a control rather than a comment. The two orders produce
+    /// two distinct messages over the same candidate on the same chain,
+    /// both are offered to the same node, and which one the node accepts
+    /// is a measured fact about the target's seed rather than a reading
+    /// of its source.
+    DeploymentSeedInPrintedOrder,
     /// The candidate authorized under the selected profile.
     ///
     /// The only case the ceremony expects a target to accept, and the
@@ -203,6 +219,7 @@ impl OwnerObservationCase {
         Self::NonSelectedTypeByte,
         Self::AnotherOwnersKey,
         Self::AnotherCandidate,
+        Self::DeploymentSeedInPrintedOrder,
         Self::SelectedProfile,
     ];
 
@@ -215,6 +232,7 @@ impl OwnerObservationCase {
             Self::NonSelectedTypeByte => "control-non-selected-type-byte",
             Self::AnotherOwnersKey => "control-another-owners-key",
             Self::AnotherCandidate => "control-another-candidate",
+            Self::DeploymentSeedInPrintedOrder => "control-deployment-seed-in-printed-order",
             Self::SelectedProfile => "selected-profile-authorization",
         }
     }
@@ -608,18 +626,35 @@ impl OwnerObservationPlanner {
     /// and two identical candidates on two chains have different
     /// messages. It arrives from the run's own deployment binding.
     ///
+    /// # The argument is the printed identity, and the seed is not
+    ///
+    /// A deployment binding carries the identity in the spelling the
+    /// target prints, because that is the spelling a run's environment
+    /// reports and the spelling the binding is compared against. A
+    /// target prints a block identity in the reverse of the order it
+    /// hashes it in, so what the message is seeded with is the reverse
+    /// of what arrives here — the same relation
+    /// [`crate::live_native`]'s outpoint and asset readers already
+    /// apply, applied at the one term of this message that carries a
+    /// value a run printed.
+    ///
+    /// The reversal is not asserted. `DeploymentSeedInPrintedOrder`
+    /// offers the other order to the same node on the same chain, so
+    /// which order the target seeds with is something this ceremony
+    /// observes.
+    ///
     /// # Errors
     ///
     /// [`VectorError::LiveSubstrateUnavailable`] when the candidate ABI
     /// or the explicit destination constructor is unavailable.
-    pub fn new(genesis_block_hash: Digest32) -> Result<Self, VectorError> {
+    pub fn new(printed_genesis_identity: Digest32) -> Result<Self, VectorError> {
         let abi = demonstration_live_abi()?;
         let explicit_program = explicit_destination_program(&abi)?;
         Ok(Self {
             stage: Stage::Issue,
             abi,
             explicit_program,
-            genesis_block_hash,
+            genesis_block_hash: printed_order(printed_genesis_identity),
             pending: None,
             record: OwnerObservationRecord::default(),
         })
@@ -844,6 +879,9 @@ impl OwnerObservationPlanner {
         // reason the node will give.
         let genesis = match case {
             OwnerObservationCase::AnotherDeployment => another_deployment(self.genesis_block_hash),
+            OwnerObservationCase::DeploymentSeedInPrintedOrder => {
+                printed_order(self.genesis_block_hash)
+            }
             _ => self.genesis_block_hash,
         };
         let census = Self::census(&finalized, genesis)?;
@@ -1114,6 +1152,17 @@ fn explicit_destination_program(abi: &CandidateLiveTransferAbi) -> Result<Vec<u8
 /// constant: what the control needs is a different chain, and a hash
 /// spelled out here would be a value a reader has to check against
 /// nothing.
+/// One block identity in the other of its two byte orders.
+///
+/// Its own inverse, which is why one function serves both directions:
+/// the constructor uses it to turn the printed identity into the seed,
+/// and the printed-order control uses it to turn the seed back.
+fn printed_order(identity: Digest32) -> Digest32 {
+    let mut other = identity;
+    other.reverse();
+    other
+}
+
 const fn another_deployment(genesis: Digest32) -> Digest32 {
     let mut other = genesis;
     other[0] ^= 0xff;
@@ -1252,6 +1301,17 @@ pub fn render_owner_observation(record: &OwnerObservationRecord) -> String {
     } else {
         lines.push("reverification none".to_owned());
     }
+
+    // Whether any case was accepted at all, stated as its own line. The
+    // observations above carry it, and a reader looking for the one fact
+    // this ceremony exists to produce should not have to scan them.
+    lines.push(format!(
+        "observed_acceptance {}",
+        record
+            .observations()
+            .iter()
+            .any(|observation| matches!(observation.layer(), ObservedOutcomeLayer::Accepted))
+    ));
 
     if let Some(refusal) = record.refusal() {
         lines.push(format!("ceremony_refused {refusal:?}"));
