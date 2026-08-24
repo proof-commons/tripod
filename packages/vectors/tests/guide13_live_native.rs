@@ -190,6 +190,57 @@ fn the_live_transfer_candidate_runs_against_a_real_target() {
     assert!(rendered.contains("discharges_no_matrix_row true"));
 }
 
+/// Every line one validated record contributes to the transcript.
+///
+/// Split out because the census is eight members over two outputs and a
+/// function that both ran a ceremony and rendered it would be two
+/// functions sharing a name.
+fn census_lines(
+    record: &target_elements_conformance::confidential_record::ConfidentialFundingRecord,
+    attempt: u8,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    lines.push(format!("run {attempt} handle {}", record.fixture_handle()));
+    lines.push(format!(
+        "run {attempt} contract {}",
+        record.summary().contract().code()
+    ));
+    lines.push(format!(
+        "run {attempt} parities {:?}",
+        record.summary().observed_parities()
+    ));
+    lines.push(format!(
+        "run {attempt} protocol_outputs {} non_protocol_members {}",
+        record.summary().protocol_outputs(),
+        record.summary().non_protocol_members()
+    ));
+    for census in record.agreement() {
+        for entry in census.fields() {
+            lines.push(format!(
+                "run {attempt} output {} field {} {} {} vs {}",
+                census.output(),
+                entry.field(),
+                if entry.agrees() { "agree" } else { "disagree" },
+                entry.expectation(),
+                entry.observation(),
+            ));
+        }
+    }
+    for (index, check) in record.independent_commitments().iter().enumerate() {
+        lines.push(format!(
+            "run {attempt} output {index} independent_commitment {} checker {}",
+            if check.agrees() { "agree" } else { "disagree" },
+            check.checker(),
+        ));
+    }
+    lines.push(format!(
+        "run {attempt} witness_transaction_id {}",
+        record.readback().witness_transaction_id
+    ));
+
+    lines
+}
+
 /// What one confidential ceremony produced: its report lines and the
 /// mined bytes a second run is compared against.
 struct ConfidentialAttempt {
@@ -288,43 +339,7 @@ fn fund_one_confidential_predecessor(
         .expect("the confidential funding record validates");
     let record = validated.record();
 
-    lines.push(format!("run {attempt} handle {}", record.fixture_handle()));
-    lines.push(format!(
-        "run {attempt} contract {}",
-        record.summary().contract().code()
-    ));
-    lines.push(format!(
-        "run {attempt} parities {:?}",
-        record.summary().observed_parities()
-    ));
-    lines.push(format!(
-        "run {attempt} protocol_outputs {} non_protocol_members {}",
-        record.summary().protocol_outputs(),
-        record.summary().non_protocol_members()
-    ));
-    for census in record.agreement() {
-        for entry in census.fields() {
-            lines.push(format!(
-                "run {attempt} output {} field {} {} {} vs {}",
-                census.output(),
-                entry.field(),
-                if entry.agrees() { "agree" } else { "disagree" },
-                entry.expectation(),
-                entry.observation(),
-            ));
-        }
-    }
-    for (index, check) in record.independent_commitments().iter().enumerate() {
-        lines.push(format!(
-            "run {attempt} output {index} independent_commitment {} checker {}",
-            if check.agrees() { "agree" } else { "disagree" },
-            check.checker(),
-        ));
-    }
-    lines.push(format!(
-        "run {attempt} witness_transaction_id {}",
-        record.readback().witness_transaction_id
-    ));
+    lines.extend(census_lines(record, attempt));
 
     assert_eq!(record.agreement().len(), 2);
     for census in record.agreement() {
