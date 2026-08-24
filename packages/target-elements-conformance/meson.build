@@ -70,6 +70,7 @@ target_elements_conformance_source_files = files(
   'src/tests/canonical_tests.rs',
   'src/tests/census_tests.rs',
   'src/tests/commitment_oracle_tests.rs',
+  'src/tests/confidential_fixture_tests.rs',
   'src/tests/confidential_funding_tests.rs',
   'src/tests/conservation_three_way_tests.rs',
   'src/tests/constructor_matrix_tests.rs',
