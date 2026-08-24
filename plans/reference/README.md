@@ -10,6 +10,7 @@ deployment evidence.
 
 | Reference | Status |
 |---|---|
+| [consensus-exclusions.md](consensus-exclusions.md) | Active review reference |
 | [draft-gap-census.md](draft-gap-census.md) | Active review reference |
 | [elements-tapscript.md](elements-tapscript.md) | Active review reference |
 | [owner-sighash-review.md](owner-sighash-review.md) | Active review reference |
