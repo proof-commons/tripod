@@ -621,6 +621,10 @@ fn a_refusal_that_reached_a_target_verdict_is_not_a_shape_defect() {
     // the workload is to record it.
     let mut answer = submitted("vector", "bb11");
     answer.accepted_txid = None;
+    // And it reports no readback either. There is nothing confirmed to
+    // read back, and a refusal carrying one would be naming a block
+    // that does not hold the transaction.
+    answer.mined_readback = None;
     answer.observed_layer = ObservedOutcomeLayer::ConsensusRejectionBeforeScript;
     answer.observed_detail = Some("the target refused it".to_owned());
 
