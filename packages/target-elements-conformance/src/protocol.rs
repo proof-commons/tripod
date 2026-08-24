@@ -2672,7 +2672,7 @@ impl NativeOperationResponse {
     ///
     /// ```text
     /// fund               issued_asset, funded_outputs
-    /// submit             accepted_txid
+    /// submit             accepted_txid, mined_readback
     /// fund_sponsor       funded_outputs
     /// sign_sponsor       sponsor_witness, signature_bound_to
     /// fund_confidential  issued_asset, confidential_funded_outputs,
@@ -2714,8 +2714,8 @@ impl NativeOperationResponse {
         let creates_coins = !self.funded_outputs.is_empty();
         let submits = self.accepted_txid.is_some();
         let authorizes = !self.sponsor_witness.is_empty() || self.signature_bound_to.is_some();
-        let creates_confidential_coins =
-            !self.confidential_funded_outputs.is_empty() || self.mined_readback.is_some();
+        let creates_confidential_coins = !self.confidential_funded_outputs.is_empty();
+        let reads_back = self.mined_readback.is_some();
 
         if !self.observed_layer.is_target_verdict() {
             return if issues
@@ -2723,6 +2723,7 @@ impl NativeOperationResponse {
                 || submits
                 || authorizes
                 || creates_confidential_coins
+                || reads_back
                 || self.resources.observes_interpreter()
             {
                 Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation)
@@ -2746,6 +2747,22 @@ impl NativeOperationResponse {
             return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
         }
 
+        // A mined readback belongs to the two kinds that put bytes on a
+        // chain: the confidential funding step, which mines the
+        // predecessor it materialized, and the submission step, which
+        // mines the candidate it was handed. The member is shared rather
+        // than duplicated because it is one observation — what the node
+        // reports for a transaction it has confirmed — and a second
+        // member of the same shape would let two kinds drift into two
+        // spellings of one fact.
+        if !matches!(
+            self.case.operation,
+            OperationStepKind::FundConfidential | OperationStepKind::Submit
+        ) && reads_back
+        {
+            return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
+        }
+
         let accepted = matches!(self.observed_layer, ObservedOutcomeLayer::Accepted);
         match self.case.operation {
             OperationStepKind::Fund => {
@@ -2760,15 +2777,22 @@ impl NativeOperationResponse {
                     return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
                 }
             }
+            // A submission owes two halves on acceptance, for the same
+            // reason the confidential arm does: the identity the target
+            // computed over the bytes it took, and the bytes it reports
+            // for that identity once the transaction is confirmed. An
+            // identity alone cannot be read back, and a consumer that
+            // has to re-derive the accepted witness from what it
+            // submitted is checking its own value against itself.
             OperationStepKind::Submit => {
                 if issues || creates_coins {
                     return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
                 }
                 if accepted {
-                    if !submits {
+                    if !submits || !reads_back {
                         return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
                     }
-                } else if submits {
+                } else if submits || reads_back {
                     return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
                 }
             }
@@ -2817,11 +2841,10 @@ impl NativeOperationResponse {
                     return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
                 }
                 if accepted {
-                    if self.confidential_funded_outputs.is_empty() || self.mined_readback.is_none()
-                    {
+                    if self.confidential_funded_outputs.is_empty() || !reads_back {
                         return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
                     }
-                } else if issues || creates_confidential_coins {
+                } else if issues || creates_confidential_coins || reads_back {
                     return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
                 }
             }

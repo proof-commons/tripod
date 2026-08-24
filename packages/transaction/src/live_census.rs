@@ -66,9 +66,11 @@
 
 use std::collections::BTreeSet;
 
+use linker::live_backend::LiveTransferRepresentationPlan;
 use target_elements::{LeafVersion, ReviewedElementsTapscriptDefinition};
 
 use crate::bytes::{AssetField, OutputWitness, TargetTransaction, ValueField};
+use crate::live_finalize::FinalizedLiveTransfer;
 use crate::live_materialize::MaterializedConfidentialCandidate;
 use crate::live_taproot::LiveCurveCapability;
 use crate::taproot::{
@@ -583,6 +585,26 @@ pub enum OwnerCensusRefusal {
     /// already sets: an answer is checked by comparing bytes, not by
     /// trusting that the signer looked.
     ProtectedBytesAreNotTheCandidates,
+    /// The explicit-lane route was handed a form of the other lane.
+    ///
+    /// The sixteenth refusal, and it exists because the census now has
+    /// two routes rather than one. Both lanes finalize into the same
+    /// type, so the lane is a field on the value rather than a
+    /// difference the compiler can see; what separates them is what the
+    /// message must be taken over. The proof-bearing lane's
+    /// output-witness vector carries range proofs that only the
+    /// materializer puts there, so a `PrivateCommitted` form arriving
+    /// here would be a candidate whose proofs are not final yet, and the
+    /// census would be assembled over an output-witness vector the
+    /// target will never hash.
+    ///
+    /// So the private lane keeps its own route through
+    /// [`OwnerSigningCensus::from_proof_finalized`], and this refusal is
+    /// what stops the explicit route from becoming a way around it.
+    RepresentationIsNotTheExplicitLane {
+        /// The lane the form was finalized under.
+        representation: LiveTransferRepresentationPlan,
+    },
 }
 
 // --- The census --------------------------------------------------------
@@ -590,8 +612,12 @@ pub enum OwnerCensusRefusal {
 /// Everything the target reads to form one candidate's owner messages,
 /// and nothing else.
 ///
-/// Private fields, immutable accessors, and no public constructor. The
-/// one public route is [`Self::from_proof_finalized`].
+/// Private fields, immutable accessors, and no public constructor. Two
+/// public routes, one per lane, and each takes the value its own lane's
+/// finalization produces: [`Self::from_proof_finalized`] for the
+/// proof-bearing lane and [`Self::from_explicit_finalized`] for the
+/// explicit one. Neither takes parts, so neither is a route that skips
+/// finalization, and both run the same clause list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OwnerSigningCensus {
     candidate: TargetTransaction,
@@ -639,6 +665,88 @@ impl OwnerSigningCensus {
             target,
             candidate,
             frozen.protected_bytes().to_vec(),
+            output_witnesses,
+            spent_outputs,
+            deployment,
+            requests,
+            curve,
+        )
+    }
+
+    /// The census of one finalized explicit candidate.
+    ///
+    /// The explicit lane's own route, and the second public one. It
+    /// takes the value that lane's finalization produces and reads every
+    /// member out of it: the candidate and its protected bytes from the
+    /// finalized form, the output-witness vector from the candidate the
+    /// form froze, and the spent-output census from the receipt records
+    /// the form carries. Nothing is passed alongside, so there is no
+    /// route that skips finalization here either — a caller holding a
+    /// [`FinalizedLiveTransfer`] holds one that
+    /// [`crate::live_construct::finalize_live_transfer`] built, and
+    /// nothing else can build one.
+    ///
+    /// # Why the spent outputs come from the receipt records
+    ///
+    /// Because that is where the public view's statement about each
+    /// consumed outpoint was retained. The alternative would be for a
+    /// caller to hand the three fields in beside the form, and that
+    /// caller would then be deciding what the message commits to — the
+    /// exact hazard the private lane's route avoids by taking the
+    /// materialized value rather than the frozen candidate inside it.
+    ///
+    /// # The one shape this route cannot serve
+    ///
+    /// A candidate with sponsor inputs. The finalized form carries a
+    /// sponsor input as an outpoint and nothing more, because
+    /// construction never reads a public view for it: the sponsor's
+    /// coins arrive through the sponsor capability and are erased by the
+    /// protocol projection. Terms 6 and 7 are taken over *every* spent
+    /// output, so a sponsor-bearing candidate has inputs whose spent
+    /// asset, value and program this form does not know, and the clause
+    /// list refuses it as a cardinality mismatch with the true counts
+    /// rather than inventing entries for them. That is a gap in the
+    /// finalized form and it is recorded as one; it is not repaired
+    /// here, because repairing it by letting a caller supply the missing
+    /// entries is the skipping route.
+    ///
+    /// # Errors
+    ///
+    /// [`OwnerCensusRefusal::RepresentationIsNotTheExplicitLane`] when
+    /// the form was finalized under the proof-bearing lane, and
+    /// otherwise [`OwnerCensusRefusal`] at the first clause the request
+    /// fails. Every one is a construction refusal and none is a target
+    /// verdict.
+    pub fn from_explicit_finalized(
+        target: &ReviewedElementsTapscriptDefinition,
+        finalized: &FinalizedLiveTransfer,
+        deployment: LiveDeployment,
+        requests: &[OwnerSigningInputRequest],
+        curve: &dyn LiveCurveCapability,
+    ) -> Result<Self, OwnerCensusRefusal> {
+        let representation = finalized.representation();
+        if representation != LiveTransferRepresentationPlan::Explicit {
+            return Err(OwnerCensusRefusal::RepresentationIsNotTheExplicitLane { representation });
+        }
+
+        let candidate = finalized.protected().clone();
+        let output_witnesses = candidate.output_witnesses().to_vec();
+        let spent_outputs = finalized
+            .receipts()
+            .iter()
+            .map(|record| {
+                SpentOutputCensusEntry::new(
+                    record.asset(),
+                    record.value(),
+                    record.program().to_vec(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        Self::assemble(
+            target,
+            candidate,
+            finalized.protected_bytes().to_vec(),
             output_witnesses,
             spent_outputs,
             deployment,

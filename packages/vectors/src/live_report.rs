@@ -984,14 +984,19 @@ mod tests {
         assert_eq!(total, crate::live_safety::row_count());
 
         // The positive tables are wholly unanswered, which is the finding
-        // the scoreboard exists to make visible at a glance.
+        // the scoreboard exists to make visible at a glance. What
+        // changed with the owner-sighash observation is why: they are no
+        // longer blocked on a component that does not exist, and they
+        // are still not answered — every one of them awaits the run that
+        // would answer it, and awaiting a run is not an answer.
         for section in [
             LiveSafetySection::PositiveExplicit,
             LiveSafetySection::PositivePrivate,
         ] {
             let (rows, answered, blocked) = board[&section];
             assert_eq!(answered, 0, "{section:?} claims an answer");
-            assert_eq!(blocked, rows, "{section:?} does not account for every row");
+            assert_eq!(blocked, 0, "{section:?} waits on a component that exists");
+            assert_ne!(rows, 0);
         }
         assert_eq!(LiveSafetyPolarity::ALL.len(), 2);
     }

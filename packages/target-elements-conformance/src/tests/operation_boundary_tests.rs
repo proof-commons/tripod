@@ -129,7 +129,17 @@ fn submitted(step: &str, txid: &str) -> NativeOperationResponse {
         issued_asset: None,
         funded_outputs: Vec::new(),
         confidential_funded_outputs: Vec::new(),
-        mined_readback: None,
+        // An accepted submission owes its readback as well as its
+        // identity, so the fixture carries one: a shape rule the
+        // fixture did not satisfy would make every test built on it a
+        // test of the rule rather than of the boundary.
+        mined_readback: Some(MinedFundingReadback {
+            transaction_id: txid.to_owned(),
+            witness_transaction_id: "bb".repeat(32),
+            block_hash: "cc".repeat(32),
+            block_height: 9,
+            raw_transaction: vec![0x02, 0x00, 0x00, 0x00],
+        }),
         accepted_txid: Some(txid.to_owned()),
         sponsor_witness: Vec::new(),
         signature_bound_to: None,
@@ -611,6 +621,10 @@ fn a_refusal_that_reached_a_target_verdict_is_not_a_shape_defect() {
     // the workload is to record it.
     let mut answer = submitted("vector", "bb11");
     answer.accepted_txid = None;
+    // And it reports no readback either. There is nothing confirmed to
+    // read back, and a refusal carrying one would be naming a block
+    // that does not hold the transaction.
+    answer.mined_readback = None;
     answer.observed_layer = ObservedOutcomeLayer::ConsensusRejectionBeforeScript;
     answer.observed_detail = Some("the target refused it".to_owned());
 
