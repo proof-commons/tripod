@@ -237,7 +237,12 @@ fn preimage_with_one_proof_byte_moved(materialized: &MaterializedConfidentialCan
 
 /// One byte string as lower-case hexadecimal.
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    use std::fmt::Write as _;
+
+    bytes.iter().fold(String::new(), |mut text, byte| {
+        write!(text, "{byte:02x}").expect("writing to a string does not fail");
+        text
+    })
 }
 
 /// A candidate-only identity label over one candidate's protected bytes.
@@ -643,8 +648,8 @@ fn one_sponsorless_private_candidate_becomes_submit_ready() {
     // cover.
     assert_eq!(frozen.protected().outputs().len(), 2);
     for witness in frozen.protected().output_witnesses() {
-        assert!(!witness.range_proof().is_empty());
-        assert!(witness.surjection_proof().is_empty());
+        assert_ne!(witness.range_proof(), [0_u8; 0]);
+        assert_eq!(witness.surjection_proof(), [0_u8; 0]);
     }
 
     // Census, sign, bind.
@@ -745,6 +750,6 @@ fn the_request_carries_no_opening_and_no_key() {
     // result names and nothing that could be an opening.
     assert_eq!(started.request().spent_outputs().len(), 1);
     assert_eq!(started.request().genesis_block_hash(), &GENESIS);
-    assert!(!started.request().protected_bytes().is_empty());
+    assert_ne!(started.request().protected_bytes(), [0_u8; 0]);
     assert_eq!(started.request().signing_inputs().len(), 1);
 }
