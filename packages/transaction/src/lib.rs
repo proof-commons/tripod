@@ -6,9 +6,11 @@ pub mod bytes;
 pub mod construct;
 pub mod error;
 pub mod live_abi;
+pub mod live_census;
 pub mod live_construct;
 pub mod live_finalize;
 pub mod live_materialize;
+pub mod live_message;
 pub mod live_private;
 pub mod live_request;
 pub mod live_signing;
@@ -39,6 +41,12 @@ pub use live_abi::{
     LiveCoordinatorRule, LiveDeploymentSymbols, LiveDestinationConstructor, LiveShapeAbi,
     LiveTransactionForm, LiveWitnessItem, OutstandingLiveAbiObligations, derive_live_transfer_abi,
 };
+pub use live_census::{
+    AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
+    OWNER_KEY_VERSION_BYTE, OWNER_SIGHASH_TYPE_BYTE, OWNER_SIGNATURE_BYTES, OWNER_SPEND_TYPE_BYTE,
+    OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputCensus, OwnerSigningInputRequest,
+    SpentOutputCensusEntry, check_signature_width, check_type_byte, spend_type_byte,
+};
 pub use live_construct::{
     CandidateLiveTransferTransaction, LIVE_TRANSFER_SEQUENCE, LiveConstructionReport,
     LiveFinalization, LiveOwnerCensus, complete_live_transfer, finalize_live_transfer,
@@ -46,6 +54,10 @@ pub use live_construct::{
 pub use live_finalize::{
     FinalizedFact, FinalizedLiveTransfer, FinalizedOutputCensus, LiveSigningRequest,
     ReceiptInputRecord,
+};
+pub use live_message::{
+    CandidateMessagePair, TAP_SIGHASH_TAG, WitnessVectorTreatment, candidate_message_pair,
+    candidate_owner_message,
 };
 pub use live_private::{
     ConfidentialConstructionModel, PrivateConstructionDemonstration, PrivateConstructionNonClaim,
