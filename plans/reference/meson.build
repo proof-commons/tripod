@@ -5,5 +5,6 @@ plans_reference_files = files(
   'README.md',
   'draft-gap-census.md',
   'elements-tapscript.md',
+  'owner-sighash-review.md',
   'upstream-frictions.md',
 )

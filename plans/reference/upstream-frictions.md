@@ -72,16 +72,17 @@ their record.
 | Distribution-packaged meson can sit far below this repository's declared floor. | meson is pinned in a virtual environment wherever the distribution package is too old. |
 | An Elements regtest daemon defaults to validating pegins against a mainchain daemon that does not exist in a test environment. | Every harness invocation disables pegin validation explicitly. |
 
+## Frictions awaiting an entry at their owning register · `ref:upstream:unfiled-frictions`
+
+An Elements friction is filed at the observation register on the `notes` branch of the ADR-018 workspace first and indexed above in the same change. A friction found by a lane that cannot write that workspace is the one case the rule does not cover, and it is carried here rather than dropped or filed twice. Each row names what the owning entry must say; the row moves up into the Elements table, and its label is renamed to that entry's identifier, in the change that files it.
+
+| Friction | Established by | What the owning entry owes |
+|---|---|---|
+| Signing a taproot input with the single-output hash type ends the node's process. The branch bounds-checks the signing position against the output list and then indexes the output-witness vector at that position, and on a signing path those two lengths differ, because the wallet grows the input-witness vector and nothing grows the output-witness vector until serialization. | The owner-sighash Wave-1 source review and its runnable probe, at reviewed tip `b7fc5d080a`: the node's process ended on signal 11 while serving an ordinary wallet signing request, and wrote no shutdown record. | Disposition report-upstream, with the note that the read is not reachable from any wire form — no consensus path arrives with mismatched lengths — so what it is, is a wallet-reachable crash rather than a consensus defect. |
+
 ## Friction labels and adaptation sites · `ref:upstream:friction-labels`
 
-Every friction above carries a label, minted in the table below and
-cited at each place in this repository that adapts to it. The label is
-the friction's name in the corpus: a reader who meets one of those
-adaptations follows the citation to the entry, and a reader who wants
-to know what an upstream correction would cost here reads the citation
-list instead of a campaign's history. The Elements labels take the
-owning register's own identifier as their name, so that a mint and the
-entry it indexes cannot drift apart.
+Every friction above carries a label, minted in the table below and cited at each place in this repository that adapts to it. The label is the friction's name in the corpus: a reader who meets one of those adaptations follows the citation to the entry, and a reader who wants to know what an upstream correction would cost here reads the citation list instead of a campaign's history. The Elements labels take the owning register's own identifier as their name, so that a mint and the entry it indexes cannot drift apart; the one exception is a friction still awaiting its entry, which takes a descriptive name and is renamed when the entry is filed.
 
 A citation is the mechanism; the third column is only its index. Where
 that column says the register alone, this repository holds no citation
@@ -118,6 +119,7 @@ removed.
 | The texmf font tree unindexed | `obs:upstream:texmf-font-lookup` | The register alone: the symlink and cache refresh are carried in the shared-instance bootstrap. |
 | Distribution meson below the floor | `obs:upstream:meson-version-floor` | The register alone: the pinned environment is provisioned outside this repository. |
 | Regtest pegin validation on by default | `obs:upstream:regtest-pegin-validation` | `scripts/elements-native-executor.py`, which boots its node with the validation disabled. |
+| The single-output branch indexes an unmeasured vector | `obs:upstream:taproot-single-output-witness-index` | `plans/reference/owner-sighash-review.md`, where the selected profile's refusal of that dimension gains a second ground and the probe that reached the read is recorded. The name is descriptive rather than a register identifier because the entry is not filed yet; it is renamed when it is. |
 
 ## Discipline · `ref:upstream:frictions-discipline`
 
