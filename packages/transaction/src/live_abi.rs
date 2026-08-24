@@ -408,8 +408,14 @@ pub enum LiveAbiObligation {
     /// builds bears an issuance. A post-verdict re-typing then
     /// moved that dimension from required to refused, so the required
     /// set is six, every member of it is established, and the inherited
-    /// disposition is now
-    /// [`tapscript::OwnerProfileDisposition::Established`].
+    /// disposition is now `OwnerProfileDisposition::Established`.
+    ///
+    /// The type is named in code font rather than linked, and that is
+    /// the package contract rather than a formatting choice: `tapscript`
+    /// is a development dependency of this crate and not a dependency,
+    /// so that every backend type reaches this crate through the linked
+    /// bundle's own public surface. A documentation link would claim an
+    /// edge the manifest deliberately does not have.
     ///
     /// The accepted result in [`crate::live_accepted`] was well formed
     /// and exact-byte bound while this stood; what it was not was
