@@ -1899,8 +1899,9 @@ mod tests {
     };
     use target_elements_conformance::executor::TargetOperationPlanner;
     use target_elements_conformance::protocol::{
-        FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, NativeResourceObservation,
-        ObservedOutcomeLayer, OperationCaseId, OperationStepKind, OperationSubject, WireOutpoint,
+        FundedOutput, MinedFundingReadback, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse,
+        NativeResourceObservation, ObservedOutcomeLayer, OperationCaseId, OperationStepKind,
+        OperationSubject, WireOutpoint,
     };
 
     /// A disposable asset identity, in the target's own spelling.
@@ -2057,6 +2058,18 @@ mod tests {
                         return response;
                     }
                     response.accepted_txid = Some(ISSUED.to_owned());
+                    // And the readback an acceptance owes. This fake
+                    // target confirms what it accepts, so it reports
+                    // the bytes it was handed back at an identity of
+                    // its own choosing — which is the shape a real
+                    // adapter produces and not a claim about a chain.
+                    response.mined_readback = Some(MinedFundingReadback {
+                        transaction_id: ISSUED.to_owned(),
+                        witness_transaction_id: ISSUED.to_owned(),
+                        block_hash: ISSUED.to_owned(),
+                        block_height: 1,
+                        raw_transaction: submission.transaction_bytes.clone(),
+                    });
                     // The weight this fake target reports for the bytes
                     // it was handed, which a test chooses so that
                     // agreement and disagreement can both be staged.
