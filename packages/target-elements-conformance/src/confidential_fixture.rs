@@ -1128,8 +1128,7 @@ fn required_prefixes() -> (u8, u8) {
 /// Whether one set of openings carries the required prefixes in fixed
 /// order.
 fn prefixes_match(openings: &[DerivedOpening]) -> bool {
-    let (even, odd) = required_prefixes();
-    let required = [even, odd];
+    let required: [u8; 2] = required_prefixes().into();
     if openings.len() != required.len() {
         return false;
     }

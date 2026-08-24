@@ -404,10 +404,8 @@ pub fn classify_funding_members(
             regions.push(FundingRegion::Protocol { position: index });
             continue;
         }
-        if let DecodedAssetField::Explicit(asset) = &output.asset {
-            if asset == protocol_asset {
-                return Err(RegionClassificationRefusal::ProtocolAssetOutsideRegion { index });
-            }
+        if matches!(&output.asset, DecodedAssetField::Explicit(asset) if asset == protocol_asset) {
+            return Err(RegionClassificationRefusal::ProtocolAssetOutsideRegion { index });
         }
         if !matches!(output.value, DecodedValueField::Explicit(_)) {
             return Err(RegionClassificationRefusal::NonProtocolMemberNotExplicit { index });
@@ -1192,8 +1190,8 @@ fn encode_field_point(
         // The convention that carries no prefix at all, and any
         // convention a later target contract adds. Neither can be
         // encoded from the pair this function was handed, so both
-        // refuse rather than guess a prefix.
-        target_elements::PointParityConvention::ImpliedEvenY => return None,
+        // refuse rather than guess a prefix — one arm, because two arms
+        // returning the same answer is one arm written twice.
         _ => return None,
     };
     let mut encoded = [0_u8; PREFIXED_POINT_BYTES];
@@ -1231,7 +1229,7 @@ const fn agreement(
 }
 
 /// Which recomputation step a wire refusal belongs to.
-fn step_of(refusal: ConfidentialFundingRefusal) -> FundingRecordRefusal {
+const fn step_of(refusal: ConfidentialFundingRefusal) -> FundingRecordRefusal {
     match refusal {
         ConfidentialFundingRefusal::ResponseArmMismatch { .. } => {
             FundingRecordRefusal::Arm { refusal }
@@ -1368,8 +1366,7 @@ pub fn validate_confidential_funding_record(
         })?;
 
     let value_encoding = target_elements::reviewed_confidential_review_facts().value();
-    let (low_prefix, high_prefix) = value_encoding.committed_prefixes();
-    let required_prefixes = [low_prefix, high_prefix];
+    let required_prefixes: [u8; 2] = value_encoding.committed_prefixes().into();
 
     let mut outputs = Vec::with_capacity(fixture_outputs.len());
     let mut agreement = Vec::with_capacity(fixture_outputs.len());

@@ -143,13 +143,13 @@ impl ConfidentialReadbackDecoder for ReferenceReadbackDecoder {
                     .witness
                     .surjection_proof
                     .as_ref()
-                    .map(|proof| proof.serialize())
+                    .map(secp256k1_zkp::SurjectionProof::serialize)
                     .unwrap_or_default(),
                 rangeproof: output
                     .witness
                     .rangeproof
                     .as_ref()
-                    .map(|proof| proof.serialize())
+                    .map(secp256k1_zkp::RangeProof::serialize)
                     .unwrap_or_default(),
             });
         }
