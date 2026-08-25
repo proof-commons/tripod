@@ -30,15 +30,35 @@
 //! node produced, recorded so a later reader can ask the chain the same
 //! question.
 //!
-//! # The shapes it does not build, and why
+//! # The shape it does not build, and why the reason changed
 //!
-//! A private-merge is one output, and the registry refuses a manifest with
-//! fewer than two. That is not an unbuilt fixture but an unconstructible
-//! one on this lane, and the guide's own merge predicate — inputs at least
-//! two and outputs exactly one — is mutually unsatisfiable with the
-//! registry's two-output floor. The merge row stays unmoved and typed, and
-//! the conflict is filed as a guide erratum rather than resolved by
-//! relaxing either rule.
+//! A private-merge is one output, and the registry used to refuse any
+//! manifest of fewer than two. On that ground this module recorded the
+//! merge unconstructible, and recorded the guide's own merge predicate —
+//! inputs at least two and outputs exactly one — as mutually
+//! unsatisfiable with the registry's floor.
+//!
+//! THAT GROUND IS GONE. The floor was a first-party construction-model
+//! convention rather than a consensus rule, the shape census typed it as
+//! one, and it has been structurally removed: a manifest whose single
+//! output declares the fully-solved balancing form registers, and the
+//! strict one-to-one built on that form has been accepted by a real node.
+//! The merge predicate is satisfiable as the guide states it.
+//!
+//! The merge still does not run HERE, and the reason is now a different
+//! one that this module should not let a reader confuse with the old one.
+//! This ceremony funds ONE predecessor from an explicit input, so that
+//! predecessor's two output blinders are ordered additive inverses. A
+//! merge consuming both halves of an inverse pair presents a ZERO input
+//! blinder sum, and the lone output's blinder is forced to that sum — a
+//! commitment of exactly the value times the value generator, hiding
+//! nothing while the tally still balances. The registry refuses it, and
+//! refusing it is correct.
+//!
+//! So the wall moved from the output count to the blinders, which is to
+//! say from an accident to the property that actually matters. What the
+//! merge needs is a precursor whose outputs do not cancel, and the census
+//! files that as its removal path.
 
 use std::collections::BTreeMap;
 
@@ -1266,13 +1286,54 @@ pub mod run_of_record {
     /// The several-owners transfer's wall time, in seconds.
     pub const SEVERAL_OWNERS_WALL_SECONDS: f64 = 15.6;
 
+    /// The identity the target computed for the accepted STRICT
+    /// ONE-TO-ONE.
+    ///
+    /// # What this identity is evidence of
+    ///
+    /// ONE receipt consumed and ONE output created — a shape this
+    /// workspace's own fixture registry refused to express until the
+    /// two-output floor was structurally removed. The consensus shape
+    /// census recorded it source-derived-possible and refused, with the
+    /// floor named as a first-party convention rather than a protocol
+    /// rule; this is the acceptance that moves that entry off the
+    /// derivation and onto a chain.
+    ///
+    /// It moves NO matrix row. The guide's §15.2 positive private table
+    /// has no member for the strict one-to-one, and the census entry is
+    /// what an acceptance of it moves.
+    ///
+    /// The lone output's value blinder is FORCED to the input blinder
+    /// sum, which for one consumed receipt is that coin's own blinder.
+    /// Nothing here is claimed about a merge: a merge consumes two coins
+    /// and this consumed one.
+    pub const STRICT_ONE_TO_ONE_ACCEPTED_TXID: &str =
+        "139b9d4475d93e242fd0c5c8efb986b523945ae905edea427b66ca2050df6db8";
+
+    /// The strict one-to-one successor fixture's digest.
+    pub const STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST: &str =
+        "b41dbdee47f2de2f6a9dec1e0c6ffc4c21e6e6a591828d5e793b82b11436f70d";
+
+    /// How many bytes the strict one-to-one handed to the node.
+    ///
+    /// The smallest submission of any shape this lane has run, and for a
+    /// structural reason rather than by chance: one output means one range
+    /// proof, and the range proof is most of a confidential transaction.
+    pub const STRICT_ONE_TO_ONE_SUBMITTED_BYTES: usize = 4_773;
+
+    /// The range-proof bytes its one output witness carried.
+    pub const STRICT_ONE_TO_ONE_PROOF_BYTES: [usize; 1] = [4_174];
+
+    /// The strict one-to-one's wall time, in seconds.
+    pub const STRICT_ONE_TO_ONE_WALL_SECONDS: f64 = 11.2;
+
     /// How many receipt inputs each shape consumed, in the order the
     /// restart runs them.
     ///
     /// Recorded rather than assumed, so a shape whose cardinality drifted
     /// is readable here rather than inferred from a name.
-    pub const RECEIPT_LEAVES: [usize; 3] = [1, 2, 2];
+    pub const RECEIPT_LEAVES: [usize; 4] = [1, 2, 2, 1];
 
     /// How many outputs each shape created, in the same order.
-    pub const OUTPUT_COUNTS: [usize; 3] = [3, 3, 2];
+    pub const OUTPUT_COUNTS: [usize; 4] = [3, 3, 2, 1];
 }
