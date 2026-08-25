@@ -1731,12 +1731,16 @@ mod tests {
     }
 
     #[test]
-    fn no_pair_supports_minimality_and_the_deficit_is_two_named_components() {
+    fn no_pair_supports_minimality_and_the_deficit_is_one_named_component() {
         // The wave's central honest finding, held as a test. §16.2 is a
-        // conjunction of ten and two of them name components that do not
-        // exist, so no pair supports minimality — and a registry that
-        // reported otherwise would be the one thing this module exists to
-        // prevent.
+        // conjunction of ten and two of them are blocked, so no pair
+        // supports minimality — and a registry that reported otherwise
+        // would be the one thing this module exists to prevent.
+        //
+        // The two blocked conditions now name the SAME component, and
+        // that is a repair rather than a weakening: the acceptance
+        // condition used to name the digest blocker, which is cleared,
+        // and is downstream of the constructibility condition anyway.
         let rows = build_minimality_pairs().expect("the pair registry builds");
         let mut blockers = BTreeSet::new();
         for row in &rows {
@@ -1749,10 +1753,7 @@ mod tests {
         }
         assert_eq!(
             blockers,
-            BTreeSet::from([
-                LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
-                LiveInfrastructureBlocker::OwnerSighashNotComputable,
-            ]),
+            BTreeSet::from([LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded]),
         );
     }
 
@@ -1775,7 +1776,7 @@ mod tests {
             (
                 PairAcceptanceCondition::BothTargetTransactionsAccept,
                 MinimalityConditionStanding::Blocked(
-                    LiveInfrastructureBlocker::OwnerSighashNotComputable,
+                    LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
                 ),
             ),
             (

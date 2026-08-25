@@ -14,6 +14,7 @@ vectors_source_files = files(
   'src/confidential_predecessor.rs',
   'src/lib.rs',
   'src/live_capability.rs',
+  'src/live_closeout.rs',
   'src/live_comparison.rs',
   'src/live_disclosure.rs',
   'src/live_evidence.rs',
