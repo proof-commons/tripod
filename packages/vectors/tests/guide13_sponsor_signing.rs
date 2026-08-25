@@ -219,6 +219,12 @@ struct Submission {
     read_back: Option<Vec<u8>>,
     /// The block the target mined it into.
     block: Option<(String, u32)>,
+    /// The weight the target itself computed for the bytes it took.
+    ///
+    /// The target's own arithmetic rather than this lane's, because a
+    /// weight a submitter predicts is a prediction and the record is
+    /// about what the node weighed.
+    weight: Option<u64>,
 }
 
 /// The finalization a sponsor request was formed against.
@@ -710,6 +716,7 @@ impl SponsorSigningPlanner {
                 .mined_readback
                 .as_ref()
                 .map(|readback| (readback.block_hash.clone(), readback.block_height)),
+            weight: response.resources.transaction_weight,
         });
 
         if response.observed_layer != ObservedOutcomeLayer::Accepted {
@@ -1120,50 +1127,61 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
         "the bytes submitted are not the bytes the replay produced"
     );
 
-    // And the verdict is a TYPED STOP, not an acceptance. The residual
-    // is not cleared, and this assertion is what makes a later change
-    // have to notice: evaluation now reaches the sponsored leaf's own
-    // fee-role check and fails it, because the deployment pins the fee
-    // program digest to a fixture constant while construction writes
-    // the empty fee program the target's structure requires.
-    //
-    // The owner signature is NOT the reason any more, and that is this
-    // wave's progress made checkable: the same submission previously
-    // refused with an invalid-signature verdict.
+    // And the verdict is an ACCEPTANCE. The three obstacles the previous
+    // waves recorded are behind it, and the sequence is what makes this
+    // checkable rather than merely asserted: the same submission was
+    // once refused for an invalid Schnorr signature, then — with the
+    // owners really signing — for an OP_EQUALVERIFY failure at the
+    // sponsored leaf's own fee-role check, and now, with the fee
+    // program's digest threaded to the value the target itself computes
+    // for the empty program construction writes, it is taken.
     assert_eq!(
         submission.layer,
-        ObservedOutcomeLayer::ScriptPathRejection,
-        "the target's verdict moved from the recorded typed stop: {:?}",
+        ObservedOutcomeLayer::Accepted,
+        "the sponsor-signed control was not accepted: {:?}",
         submission.detail,
     );
-    let detail = submission
-        .detail
-        .clone()
-        .expect("a script-path rejection carries the target's own words");
     assert!(
-        detail.contains("OP_EQUALVERIFY"),
-        "the refusal is not the fee-role equality this stop is about: {detail}"
+        submission.detail.is_none(),
+        "an acceptance carried a refusal detail: {:?}",
+        submission.detail,
     );
-    assert!(
-        !detail.contains("Schnorr"),
-        "the owners' signatures are refused again, which this wave repaired: {detail}"
-    );
-    assert!(
-        submission.txid.is_none(),
-        "a refused submission named a transaction identity"
-    );
-    // Read from the record rather than written as literals, so the
-    // three say "none" because the target reported none and not
-    // because this test assumed a refusal.
+
+    // The identity, and the readback that makes the acceptance CHECKED
+    // rather than believed: the target's own copy of what it mined,
+    // compared against the exact bytes handed to it. The planner already
+    // refuses a mismatch, and this states the property where a reader of
+    // the test can see it.
     let txid = submission
         .txid
         .clone()
-        .unwrap_or_else(|| String::from("none"));
+        .expect("an accepted submission names a transaction identity");
+    let read_back_bytes = submission
+        .read_back
+        .clone()
+        .expect("an accepted submission reads back the mined transaction");
+    assert_eq!(
+        read_back_bytes, submission.sent,
+        "the target's own copy of the mined transaction is not the bytes submitted"
+    );
     let (block_hash, block_height) = submission
         .block
         .clone()
-        .unwrap_or_else(|| (String::from("none"), 0));
-    let read_back = submission.read_back.as_ref().map_or(0, Vec::len);
+        .expect("an accepted submission names the block it was mined into");
+    let read_back = read_back_bytes.len();
+
+    // THE RELAY BOUNDARY WAS CROSSED, and that is read from the path
+    // rather than assumed. The executor reaches an accepted layer only
+    // when `testmempoolaccept` answered `allowed`, and it then confirms
+    // the transaction with `generateblock` so the acceptance is an
+    // acceptance by block validation too. So this control was judged
+    // relayable AND consensus-valid, which the previous three
+    // submissions never reached: they were refused at script evaluation
+    // and learned nothing about standardness.
+    assert!(
+        !block_hash.is_empty() && block_hash != "none",
+        "an accepted control names no block, so only relay was exercised"
+    );
 
     // The run says in its own bytes what it did and what it did not
     // establish, where a lane can read it afterwards. Nothing is
@@ -1216,12 +1234,19 @@ fn write_the_record(
          observed_layer {:?}\n\
          accepted_txid {}\n\
          readback_bytes {}\n\
+         readback_matches_submission true\n\
          block_hash {}\n\
          block_height {}\n\
+         fee_weighed {}\n\
+         fee_asset reserve\n\
+         target_computed_weight {}\n\
          submitted_anything true\n\
-         relay_boundary_crossed false\n\
-         clears_the_sponsor_residual false\n\
-         stopped_at fee_role_program_digest_is_a_fixture_constant\n\
+         relay_boundary_crossed true\n\
+         relay_and_block_both_exercised true\n\
+         clears_the_sponsor_residual true\n\
+         stopped_at none\n\
+         establishes_sponsor_envelope_wire true\n\
+         establishes_one_target_acceptance true\n\
          establishes_multi_party_sponsor_signing false\n\
          wall_seconds {:.1}\n",
         round.sent.len(),
@@ -1238,6 +1263,10 @@ fn write_the_record(
         read_back,
         block_hash,
         block_height,
+        SPONSOR_FEE,
+        submission
+            .weight
+            .map_or_else(|| String::from("unreported"), |weight| weight.to_string()),
         started.elapsed().as_secs_f64(),
     );
     if let Some(path) = report {
@@ -1245,16 +1274,31 @@ fn write_the_record(
     }
 
     // The run says in its own bytes what it did NOT establish, in the
-    // place a later reader will look. One fixed regtest key signed
-    // once; that is a wire and a target acceptance, and it is not a
-    // multi-party ceremony.
+    // place a later reader will look, and the scoping matters more now
+    // that there IS an acceptance to overclaim from.
+    //
+    // What this establishes is the sponsor envelope's WIRE and ONE
+    // target acceptance of a control carrying a sponsor witness. What it
+    // does not establish is production multi-party sponsor signing: one
+    // fixed regtest key signed once, which is a wire exercised and not a
+    // ceremony. Every key and scalar in the lane is public disposable
+    // material under ADR-015's test-material rule, so nothing here
+    // authorizes anything on a network anyone uses.
     assert!(
-        record.contains("clears_the_sponsor_residual false"),
-        "the run record does not say what it left standing",
+        record.contains("clears_the_sponsor_residual true"),
+        "the run record does not say that the residual is cleared",
+    );
+    assert!(
+        record.contains("establishes_sponsor_envelope_wire true"),
+        "the run record does not say what it established",
     );
     assert!(
         record.contains("establishes_multi_party_sponsor_signing false"),
         "the run record does not say what it left unestablished",
+    );
+    assert!(
+        record.contains("relay_boundary_crossed true"),
+        "the run record does not state the relay fact",
     );
 }
 
