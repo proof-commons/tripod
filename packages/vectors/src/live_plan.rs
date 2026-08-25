@@ -72,6 +72,22 @@ pub const SECOND_SCALAR: [u8; FIELD_ELEMENT_BYTES] = [
 /// A run that does so is a run's business, not this module's.
 pub const PROTOCOL_ASSET: [u8; 32] = [0xb1; 32];
 
+/// The reserve asset this demonstration deployment resolves.
+///
+/// The sponsor and fee roles' asset, and a constant for exactly the
+/// reason [`PROTOCOL_ASSET`] is one: §10.7's isolation fragments push it
+/// as a literal, so it is welded into the leaves and therefore into
+/// every destination program the taptree commits.
+///
+/// It is separated from the protocol asset here because the two are not
+/// knowable at the same time. A run learns the protocol asset from the
+/// issuance it asked for, and learns the reserve from the answer to a
+/// sponsor-funding request it deliberately sends without naming an
+/// asset — what a development network uses as its reserve being the
+/// network's own fact. A deployment is welded to BOTH, and two reserves
+/// are two deployments exactly as two protocol assets are.
+pub const RESERVE_ASSET: [u8; 32] = [0xb2; 32];
+
 /// The reviewed contract, unmodified.
 ///
 /// # Errors
@@ -191,22 +207,28 @@ pub fn demonstration_live_bundle() -> Result<CandidateLinkedLiveTransferBundle, 
 
 /// The link proper, run once behind the cache.
 fn link_demonstration_bundle() -> Result<CandidateLinkedLiveTransferBundle, VectorError> {
-    link_live_bundle_for_asset(PROTOCOL_ASSET)
+    link_live_bundle_for_asset(PROTOCOL_ASSET, RESERVE_ASSET)
 }
 
-/// The demonstration link, over one stated protocol asset.
+/// The demonstration link, over one stated pair of assets.
 ///
-/// The constant-asset link above is this function at [`PROTOCOL_ASSET`],
-/// and the parameter exists for one reason: a target-native run does not
-/// get to choose the asset. §14.3's materialization funds real coins, and
-/// on a disposable chain the asset is whatever the issuance step created
-/// — a value the run learns *after* it starts. The linked programs push
-/// the asset as a literal, so a run against a target-issued asset has to
-/// link again once it knows one, and the constructors, their committed
-/// trees, and therefore the destination programs all move with it.
+/// The constant-asset link above is this function at [`PROTOCOL_ASSET`]
+/// and [`RESERVE_ASSET`], and the parameters exist for one reason: a
+/// target-native run does not get to choose either asset. §14.3's
+/// materialization funds real coins, and on a disposable chain the
+/// protocol asset is whatever the issuance step created while the
+/// reserve is whatever the network already pays in — values the run
+/// learns *after* it starts, from two different answers. The linked
+/// programs push both as literals, so a run against target-supplied
+/// assets has to link again once it knows them, and the constructors,
+/// their committed trees, and therefore the destination programs all
+/// move with them.
 ///
 /// That is a fact about the deployment rather than a workaround: a
-/// deployment is welded to its asset, and two assets are two deployments.
+/// deployment is welded to its assets, and two pairs are two
+/// deployments. The reserve's own arrival is the sharper case, because
+/// nothing asks for it: the sponsor-funding request deliberately names
+/// no asset, and the executor reports which one it funded in.
 ///
 /// # Errors
 ///
@@ -214,10 +236,11 @@ fn link_demonstration_bundle() -> Result<CandidateLinkedLiveTransferBundle, Vect
 /// emission, the deployment parameters, or the link refuses.
 pub fn link_live_bundle_for_asset(
     protocol_asset: [u8; 32],
+    reserve_asset: [u8; 32],
 ) -> Result<CandidateLinkedLiveTransferBundle, VectorError> {
     let target = reviewed_target()?;
     let bundles = relocatable_live_bundles()?;
-    let deployment = live_deployment_for_asset(protocol_asset)?;
+    let deployment = live_deployment_for_asset(protocol_asset, reserve_asset)?;
     link_live_candidate(&target, &bundles, &deployment)
         .map_err(|_| VectorError::LiveSubstrateUnavailable)
 }
@@ -285,6 +308,7 @@ pub fn relocatable_live_bundles() -> Result<Vec<CandidateRelocatableLiveTransfer
 /// parameters refuse.
 pub fn live_deployment_for_asset(
     protocol_asset: [u8; 32],
+    reserve_asset: [u8; 32],
 ) -> Result<LiveLinkDeploymentParameters, VectorError> {
     let target = reviewed_target()?;
     LiveLinkDeploymentParameters::new(
@@ -292,7 +316,7 @@ pub fn live_deployment_for_asset(
         live_symbols(
             &target,
             protocol_asset.to_vec(),
-            vec![0xb2; 32],
+            reserve_asset.to_vec(),
             vec![0xb4; 32],
             vec![0xb5; 32],
         )?,
@@ -325,16 +349,16 @@ pub fn live_deployment_for_asset(
 pub fn demonstration_live_abi() -> Result<CandidateLiveTransferAbi, VectorError> {
     static CACHED: OnceLock<Result<CandidateLiveTransferAbi, VectorError>> = OnceLock::new();
     CACHED
-        .get_or_init(|| live_abi_for_asset(PROTOCOL_ASSET))
+        .get_or_init(|| live_abi_for_asset(PROTOCOL_ASSET, RESERVE_ASSET))
         .clone()
 }
 
-/// The candidate ABI over one stated protocol asset.
+/// The candidate ABI over one stated pair of assets.
 ///
 /// The run-time counterpart of [`demonstration_live_abi`], for the reason
 /// [`link_live_bundle_for_asset`] states. Deliberately not memoized: a
-/// run links once for the asset it was given, and a cache keyed by
-/// nothing would hand the second asset the first one's programs.
+/// run links once for the pair it was given, and a cache keyed by
+/// nothing would hand the second pair the first one's programs.
 ///
 /// # Errors
 ///
@@ -342,12 +366,13 @@ pub fn demonstration_live_abi() -> Result<CandidateLiveTransferAbi, VectorError>
 /// derivation refuses.
 pub fn live_abi_for_asset(
     protocol_asset: [u8; 32],
+    reserve_asset: [u8; 32],
 ) -> Result<CandidateLiveTransferAbi, VectorError> {
     let target = reviewed_target()?;
     let curve = OracleLiveCurve::new(reviewed_target()?);
     derive_live_transfer_abi(
         &target,
-        &link_live_bundle_for_asset(protocol_asset)?,
+        &link_live_bundle_for_asset(protocol_asset, reserve_asset)?,
         &curve,
     )
     .map_err(|_| VectorError::LiveSubstrateUnavailable)

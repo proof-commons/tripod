@@ -112,8 +112,8 @@ use transaction::view::{PublicConstructionView, PublicOutputView};
 use crate::error::VectorError;
 use crate::live_capability::OracleLiveCurve;
 use crate::live_plan::{
-    FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset, published_owner,
-    reviewed_target, signing_material,
+    FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset,
+    published_owner, reviewed_target, signing_material,
 };
 
 /// What each funded receipt holds.
@@ -729,7 +729,7 @@ impl OwnerObservationPlanner {
             .clone()
             .ok_or(OwnerObservationRefusal::IssuanceNamedNoAsset)?;
         let identity = asset_of(&asset).ok_or(OwnerObservationRefusal::IssuanceNamedNoAsset)?;
-        let abi = live_abi_for_asset(*identity.internal())
+        let abi = live_abi_for_asset(*identity.internal(), RESERVE_ASSET)
             .map_err(|_| OwnerObservationRefusal::RelinkRefused)?;
         self.explicit_program = explicit_destination_program(&abi)
             .map_err(|_| OwnerObservationRefusal::RelinkRefused)?;

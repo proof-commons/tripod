@@ -87,8 +87,9 @@ use transaction::view::{PublicConstructionView, PublicOutputView};
 use crate::error::VectorError;
 use crate::live_capability::OracleFixtureValues;
 use crate::live_plan::{
-    FIRST_SCALAR, PROTOCOL_ASSET, SECOND_SCALAR, demonstration_live_abi, live_deployment_for_asset,
-    live_transfer_plan, owner_key, published_owner, relocatable_live_bundles, reviewed_target,
+    FIRST_SCALAR, PROTOCOL_ASSET, RESERVE_ASSET, SECOND_SCALAR, demonstration_live_abi,
+    live_deployment_for_asset, live_transfer_plan, owner_key, published_owner,
+    relocatable_live_bundles, reviewed_target,
 };
 use crate::live_safety::{LiveSafetyRow, required_safety_matrix};
 
@@ -1107,7 +1108,7 @@ fn honest_asset_definition() -> Result<(LiveLinkSymbol, LiveSymbolValue), LiveFa
     let bundle = bundles
         .first()
         .ok_or(LiveFaultRefusal::ControlNotConstructible)?;
-    let deployment = live_deployment_for_asset(PROTOCOL_ASSET)?;
+    let deployment = live_deployment_for_asset(PROTOCOL_ASSET, RESERVE_ASSET)?;
     let census = collect_live_definitions(&target, bundle, &deployment)
         .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
     census

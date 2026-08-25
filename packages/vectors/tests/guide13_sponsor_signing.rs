@@ -78,8 +78,8 @@ use transaction::sponsor::{
 use transaction::view::{PublicConstructionView, PublicOutputView};
 use vectors::live_evidence::UNAUTHORIZING_SIGNATURE;
 use vectors::live_plan::{
-    FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset, published_owner,
-    reviewed_target,
+    FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset,
+    published_owner, reviewed_target,
 };
 
 /// What each funded receipt is asked to hold.
@@ -273,7 +273,8 @@ impl SponsorSigningPlanner {
             .clone()
             .ok_or(Refusal::IssuanceNamedNoAsset)?;
         let identity = asset_of(&asset).ok_or(Refusal::IssuanceNamedNoAsset)?;
-        let abi = live_abi_for_asset(*identity.internal()).map_err(|_| Refusal::RelinkRefused)?;
+        let abi = live_abi_for_asset(*identity.internal(), RESERVE_ASSET)
+            .map_err(|_| Refusal::RelinkRefused)?;
         self.explicit_program = destination_program(&abi)?;
         self.issued_asset = Some(asset);
         self.abi = abi;

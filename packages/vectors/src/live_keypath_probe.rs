@@ -90,8 +90,8 @@ use crate::live_owner_observation::{
     ObservedFundedCoin, asset_of, decode_hex, outpoint_of, printed, printed_order,
 };
 use crate::live_plan::{
-    FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset, published_owner,
-    reviewed_target, signing_material,
+    FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset,
+    published_owner, reviewed_target, signing_material,
 };
 
 /// What the single funded receipt holds.
@@ -500,7 +500,7 @@ impl KeyPathProbePlanner {
             .clone()
             .ok_or(KeyPathProbeRefusal::IssuanceNamedNoAsset)?;
         let identity = asset_of(&asset).ok_or(KeyPathProbeRefusal::IssuanceNamedNoAsset)?;
-        let abi = live_abi_for_asset(*identity.internal())
+        let abi = live_abi_for_asset(*identity.internal(), RESERVE_ASSET)
             .map_err(|_| KeyPathProbeRefusal::RelinkRefused)?;
         self.record.binding =
             Some(explicit_binding(&abi).map_err(|_| KeyPathProbeRefusal::RelinkRefused)?);
