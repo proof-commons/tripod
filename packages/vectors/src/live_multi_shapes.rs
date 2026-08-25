@@ -147,7 +147,7 @@ impl PrivateShape {
 
     /// Which predecessor outputs this shape consumes, in fixed order.
     #[must_use]
-    fn consumed(self) -> &'static [ConsumedReceipt] {
+    const fn consumed(self) -> &'static [ConsumedReceipt] {
         match self {
             Self::Split => &[ConsumedReceipt::Primary],
             Self::ManyToMany | Self::SeveralDistinctOwners => {
@@ -595,7 +595,7 @@ impl MultiShapePlanner {
             .collect();
         let live_destinations: Vec<LiveReceiptDestination> = destinations
             .iter()
-            .map(|destination| self.receipt_destination(destination))
+            .map(Self::receipt_destination)
             .collect::<Result<_, _>>()?;
         let request = LiveTransferRequest::new(
             receipts,
@@ -655,7 +655,6 @@ impl MultiShapePlanner {
 
     /// One receipt destination, an owner and a protocol value.
     fn receipt_destination(
-        &self,
         destination: &Destination,
     ) -> Result<LiveReceiptDestination, PrivateRestartRefusal> {
         let owner = published_owner(&destination.scalar)
@@ -763,7 +762,7 @@ impl TargetOperationPlanner for MultiShapePlanner {
 /// The commitment prefix a reported coin carried, where the node reported
 /// a commitment.
 #[must_use]
-fn commitment_prefix(coin: &Coin) -> Option<u8> {
+const fn commitment_prefix(coin: &Coin) -> Option<u8> {
     match coin.value() {
         ValueField::Commitment(commitment) => commitment.first().copied(),
         _ => None,
