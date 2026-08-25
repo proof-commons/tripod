@@ -90,7 +90,12 @@ use target_elements_conformance::protocol::{
 };
 use transaction::bytes::{AssetField, AssetId, Outpoint, Txid, ValueField};
 use transaction::live_abi::CandidateLiveTransferAbi;
+use transaction::live_census::{
+    AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
+    OwnerSigningCensus, OwnerSigningInputRequest,
+};
 use transaction::live_construct::{complete_live_transfer, finalize_live_transfer};
+use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message};
 use transaction::live_request::{
     LiveReceiptDestination, LiveTransferRequest, ProtocolValue, RequestedForm, SponsorChangeRequest,
 };
@@ -98,15 +103,22 @@ use transaction::live_signing::{LiveOwnerResponse, authorize_live_transfer};
 use transaction::sponsor::{
     SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest,
 };
+use transaction::taproot::{Digest32, leaf_hash};
 use transaction::view::{PublicConstructionView, PublicOutputView};
-use vectors::live_evidence::UNAUTHORIZING_SIGNATURE;
+use vectors::live_capability::OracleLiveCurve;
 use vectors::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset, published_owner,
-    reviewed_target,
+    reviewed_target, signing_material,
 };
 
 /// What each funded receipt is asked to hold.
 const RECEIPT_AMOUNT: u64 = 5_000;
+
+/// The auxiliary randomness every owner signature here is taken with.
+///
+/// Published, fixed, and disposable: ADR-015 test material, like the two
+/// signing scalars themselves.
+const SIGNING_AUXILIARY: [u8; 32] = [0x37; 32];
 
 /// What the sponsor coin is asked to hold.
 ///
@@ -261,6 +273,11 @@ enum Refusal {
     SponsorAssetsDisagree,
     /// The sponsor-funding step reported no reserve asset at all.
     SponsorFundingNamedNoReserve,
+    /// The owner signing census refused to describe the sponsored
+    /// control, so no owner message could be formed for it.
+    OwnerCensusRefused(String),
+    /// An owner's signature could not be produced over its message.
+    OwnerSigningRefused,
     /// The target refused the sponsor-signed control, or answered at a
     /// layer below acceptance.
     SubmissionDidNotHappen(ObservedOutcomeLayer),
@@ -282,6 +299,8 @@ struct SponsorSigningPlanner {
     /// The reserve identity the chain reported, welded into the
     /// deployment before anything is linked against it.
     reserve: Option<AssetId>,
+    /// The chain this lane's owner messages commit to.
+    genesis: Digest32,
     explicit_program: Vec<u8>,
     receipts: Vec<ObservedCoin>,
     sponsor: Option<ObservedCoin>,
@@ -308,7 +327,7 @@ struct ObservedCoin {
 }
 
 impl SponsorSigningPlanner {
-    fn new() -> Result<Self, Refusal> {
+    fn new(genesis: Digest32) -> Result<Self, Refusal> {
         let abi = demonstration_live_abi().map_err(|_| Refusal::SubstrateUnavailable)?;
         let explicit_program = destination_program(&abi)?;
         Ok(Self {
@@ -316,6 +335,7 @@ impl SponsorSigningPlanner {
             abi,
             issued_asset: None,
             reserve: None,
+            genesis,
             explicit_program,
             receipts: Vec::new(),
             sponsor: None,
@@ -326,7 +346,7 @@ impl SponsorSigningPlanner {
         })
     }
 
-    const fn refuse(&mut self, refusal: Refusal) -> PlanRefused {
+    fn refuse(&mut self, refusal: Refusal) -> PlanRefused {
         self.refusal = Some(refusal);
         self.stage = Stage::Done;
         PlanRefused
@@ -500,21 +520,14 @@ impl SponsorSigningPlanner {
         let report = finalization.report().clone();
         let finalized = finalization.into_finalized();
 
-        // The owners authorize with bytes that authorize nothing. The
-        // sponsor round trip is about the sponsor's signature over the
-        // finalized bytes, and those bytes are settled before any owner
-        // response is read; an owner signature would change what is
-        // signed over here not at all.
-        let responses: Vec<_> = finalized
-            .signing_requests()
-            .iter()
-            .map(|signing| {
-                (
-                    signing.input(),
-                    LiveOwnerResponse::to(signing, UNAUTHORIZING_SIGNATURE.to_vec()),
-                )
-            })
-            .collect();
+        // The owners really sign. This lane once handed them bytes that
+        // authorize nothing, which cost the round trip nothing while
+        // nothing was submitted — the sponsor's signature is over the
+        // finalized bytes either way. A submitted control is a different
+        // matter: a target evaluates the owner's leaf, and placeholder
+        // bytes are refused there with an invalid-signature verdict that
+        // says nothing about the sponsor envelope this lane is about.
+        let responses = self.owner_responses(&finalized)?;
         let authorized = authorize_live_transfer(finalized, responses)
             .map_err(|_| Refusal::ControlNotConstructible)?;
 
@@ -529,6 +542,66 @@ impl SponsorSigningPlanner {
         };
         let recorded = recorded.borrow().clone();
         Ok(((authorized, report), recorded, placeholder))
+    }
+
+    /// Every owner signature the finalized control asks for.
+    ///
+    /// Real signatures over the message consensus forms, taken through
+    /// the same owner signing census the observation lane uses, so that
+    /// what reaches the target is a control whose owner leaves actually
+    /// authorize it.
+    ///
+    /// Both receipts were funded to one destination program — the first
+    /// owner's explicit constructor — so one scalar answers for both.
+    fn owner_responses(
+        &self,
+        finalized: &transaction::live_finalize::FinalizedLiveTransfer,
+    ) -> Result<Vec<(u16, LiveOwnerResponse)>, Refusal> {
+        let target = reviewed_target().map_err(|_| Refusal::SubstrateUnavailable)?;
+        let curve =
+            OracleLiveCurve::new(reviewed_target().map_err(|_| Refusal::SubstrateUnavailable)?);
+        let requests: Vec<OwnerSigningInputRequest> = finalized
+            .receipts()
+            .iter()
+            .map(|record| {
+                OwnerSigningInputRequest::new(
+                    u32::from(record.position()),
+                    leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
+                    LeafVersion::TAPSCRIPT,
+                    OWNER_CODESEPARATOR_POSITION,
+                    AnnexDisposition::Absent,
+                    IssuanceDisposition::Absent,
+                    record.control_block().to_vec(),
+                )
+            })
+            .collect();
+        let census = OwnerSigningCensus::from_explicit_finalized(
+            &target,
+            finalized,
+            LiveDeployment::new(self.genesis),
+            &requests,
+            &curve,
+        )
+        .map_err(|cause| Refusal::OwnerCensusRefused(format!("{cause:?}")))?;
+
+        let material =
+            signing_material(&FIRST_SCALAR).map_err(|_| Refusal::SubstrateUnavailable)?;
+        let mut responses = Vec::new();
+        for signing in finalized.signing_requests() {
+            let input = census
+                .signing_inputs()
+                .iter()
+                .find(|entry| entry.input_index() == u32::from(signing.input()))
+                .ok_or(Refusal::ControlNotConstructible)?;
+            let message =
+                candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown);
+            let signature = material
+                .sign(&message, &SIGNING_AUXILIARY)
+                .map_err(|_| Refusal::OwnerSigningRefused)?
+                .to_vec();
+            responses.push((signing.input(), LiveOwnerResponse::to(&signing, signature)));
+        }
+        Ok(responses)
     }
 
     /// The sponsor signing step, carrying the exact finalized bytes.
@@ -921,7 +994,10 @@ fn run_the_lane() -> (RoundTrip, Submission, usize, Option<PathBuf>) {
         ExecutorDiagnostics::in_directory(diagnostics),
     );
 
-    let mut planner = SponsorSigningPlanner::new().expect("the candidate substrate builds");
+    let mut genesis_internal = identifier(&genesis);
+    genesis_internal.reverse();
+    let mut planner =
+        SponsorSigningPlanner::new(genesis_internal).expect("the candidate substrate builds");
     let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
 
     // The submission's own record is read BEFORE the refusal is
