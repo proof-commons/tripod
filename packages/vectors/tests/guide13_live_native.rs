@@ -980,3 +980,168 @@ fn run_one_private_control(
     assert!(rendered.contains("evidences_no_negative_case true"));
     assert!(rendered.contains("moves_the_sponsor_row false"));
 }
+
+/// One KEY-PATH spend attempt against a funded explicit constructor.
+///
+/// # What this run is for
+///
+/// Every constructor here is spent by its script path, under an internal
+/// key that is a published nothing-up-my-sleeve point. Nobody had ever
+/// offered this target a one-item witness at one of these programs, so
+/// nothing was known about what layer such a candidate lands at, what
+/// the node says about it, or whether the generic submission wire
+/// carries it at all. This asks.
+///
+/// # What a refusal discharges
+///
+/// That the attempt was observed and refused. Nothing else. The
+/// signature offered is by a published test key that is not the output
+/// key, so a target refusing it is refusing a signature that does not
+/// verify — which says nothing whatever about who knows the internal
+/// key's discrete logarithm. The residual assumption stands regardless,
+/// and the artifact says so in its own bytes.
+///
+/// # What it asserts, and what it merely records
+///
+/// The shape of a completed attempt: the deployment relinked before it
+/// funded, the node's own fields agreed with the ceremony's expectation,
+/// the constructor's internal key is the published point, the witness is
+/// the one-item shape, and the signing key is not the output key. What
+/// the target DECIDED is written into the artifact and asserted nowhere.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
+    use vectors::live_keypath_probe::{KeyPathProbePlanner, ProbeProvenance, render_keypath_probe};
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension("keypath-probe");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    // The target's provenance, as the run's own environment reports it.
+    // The declared source tip is the operator's declaration about the
+    // binary the adapter was pointed at; this probe records it and
+    // verifies nothing about it, which is what its name says.
+    let provenance = ProbeProvenance {
+        network_id: network,
+        genesis_id: genesis.clone(),
+        target_version: format!("{:?}", target.definition().version()),
+        declared_source_tip: environment("ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP"),
+        executor_trust: format!("{:?}", ExecutorTrust::ReviewedNonMock),
+    };
+
+    let mut planner =
+        KeyPathProbePlanner::new(identifier(&genesis), provenance).expect("the ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_keypath_probe(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    outcome.expect("the ceremony reached the target");
+
+    // The deployment was welded to the chain before anything was funded,
+    // so the program the attempt spends belongs to a deployment of the
+    // asset the target issued.
+    assert!(record.relinked(), "the ceremony funded before it linked");
+    assert_eq!(record.coins().len(), 1, "the probe funds exactly one coin");
+    assert!(
+        record
+            .coins()
+            .iter()
+            .all(vectors::live_owner_observation::ObservedFundedCoin::matches_expectation),
+        "the node reported a coin the ceremony did not ask for",
+    );
+
+    // The constructor under probe is the one this run is about. A
+    // deployment whose internal key was not the published point would
+    // make the whole record a report on a different question.
+    let program = record
+        .binding()
+        .expect("the ceremony carries the constructor it funded");
+    assert!(
+        program.internal_key_is_the_published_point(),
+        "the funded constructor did not inherit the published internal key",
+    );
+
+    // The attempt was built and offered, and it is the shape the run
+    // claims: one witness item, and a signing key that is not the output
+    // key the program carries. The second is the assertion that keeps
+    // the refusal honest — an attempt signed by the output key would be
+    // a different experiment entirely.
+    let attempt = record
+        .attempt()
+        .expect("the ceremony built the key-path attempt");
+    assert!(
+        attempt.is_the_one_item_shape(),
+        "the witness is not the one-item key-path shape",
+    );
+    assert_ne!(
+        program.output_key().as_slice(),
+        attempt.signing_public_key().as_slice(),
+        "the attempt was signed by the output key, which is not this probe",
+    );
+    // The submitted bytes carry a whole transaction and not only the
+    // witness item, which is the cheapest check that the attempt was
+    // assembled rather than merely signed.
+    assert!(
+        attempt.submitted_bytes().len() > attempt.witness_stack()[0].len(),
+        "the submitted bytes are no larger than the witness item",
+    );
+
+    // The target answered. What it answered is recorded and asserted
+    // nowhere: a probe that panicked on an unexpected layer would hide
+    // the one outcome most worth reading.
+    assert!(
+        record.observation().is_some(),
+        "the attempt was not answered",
+    );
+
+    // The run says in its own bytes what it did not establish.
+    assert!(rendered.contains("residual_internal_key_unspendability_stands true"));
+    assert!(rendered.contains("discharges_no_matrix_row true"));
+}

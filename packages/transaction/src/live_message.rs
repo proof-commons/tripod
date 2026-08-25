@@ -185,6 +185,94 @@ pub fn candidate_owner_message(
     input: &OwnerSigningInputCensus,
     treatment: WitnessVectorTreatment,
 ) -> Digest32 {
+    let mut stream = whole_transaction_stream(census, treatment);
+
+    // Term 13, computed at `:2748` and written at `:2749`. Script path
+    // and no annex, so it is a constant.
+    stream.push(OWNER_SPEND_TYPE_BYTE);
+
+    // Term 14, written at `:2768`. Term 15, the annex hash, is absent
+    // because the profile refuses the annex — which is what made term 13
+    // a constant.
+    stream.extend_from_slice(&input.input_index().to_le_bytes());
+
+    // Terms 16, 17 and 18, the tapscript additions, written at
+    // `:2793-2798`. The key version is the target's constant; the
+    // codeseparator position is carried by the census rather than
+    // assumed, because its constancy is a condition on the leaf
+    // vocabulary rather than a property of the target.
+    stream.extend_from_slice(input.tapleaf_hash());
+    stream.push(OWNER_KEY_VERSION_BYTE);
+    stream.extend_from_slice(&input.codeseparator_position().to_le_bytes());
+
+    // One SHA256 over the whole stream, at `:2801`.
+    tagged_hash(TAP_SIGHASH_TAG, &stream)
+}
+
+/// The spend-type byte a key-path spend with no annex writes.
+///
+/// BIP-341 composes the byte as twice the extension flag plus the annex
+/// bit, and the target follows it at `:2748`. A script path with no
+/// annex is [`OWNER_SPEND_TYPE_BYTE`]; the key path's extension flag is
+/// zero, so the byte is zero, and the three tapscript terms that follow
+/// the input index in the script-path stream are not written at all.
+pub const KEY_PATH_SPEND_TYPE_BYTE: u8 = 0x00;
+
+/// A candidate message for a KEY-PATH spend of the same candidate.
+///
+/// # This is not a reviewed construction, and the distinction matters
+///
+/// [`candidate_owner_message`] is written from the Wave-1 source
+/// review's term table, term by term, at the lines the review cites. No
+/// review in this repository covers the key path, because no constructor
+/// here is meant to be spent by one. So this function is the script-path
+/// stream with its tapscript tail replaced by what the source's own
+/// composition rule says a key-path spend writes, and it is
+/// candidate-scoped in the strict sense: nothing has observed that a
+/// target forms this message, and nothing here claims it does.
+///
+/// It shares its whole-transaction prefix with the reviewed
+/// construction — one private function writes terms 0 to 12 for both —
+/// rather than respelling twelve terms, so the two messages differ in
+/// their tail and in nothing else. A caller comparing
+/// them is comparing the spend type and the tapscript additions, which
+/// is the only comparison this function supports.
+///
+/// # What it is for
+///
+/// One probe, which offers a key-path witness to a target and records
+/// what the target says. The probe's finding is the target's answer; the
+/// message this function returns is a datum about what was submitted,
+/// not a claim about what was verified against.
+#[must_use]
+pub fn candidate_key_path_message(
+    census: &OwnerSigningCensus,
+    input: &OwnerSigningInputCensus,
+    treatment: WitnessVectorTreatment,
+) -> Digest32 {
+    let mut stream = whole_transaction_stream(census, treatment);
+
+    // The key path's spend type, then the input index — and then
+    // nothing. The tapleaf hash, the key version and the codeseparator
+    // position are the extension the script path writes, and a key-path
+    // stream that carried them would be the script-path stream with a
+    // different first byte rather than a different spend.
+    stream.push(KEY_PATH_SPEND_TYPE_BYTE);
+    stream.extend_from_slice(&input.input_index().to_le_bytes());
+
+    tagged_hash(TAP_SIGHASH_TAG, &stream)
+}
+
+/// Terms 0 to 12: everything both spend paths write, in order.
+///
+/// Extracted rather than duplicated. The two spend paths share every
+/// whole-transaction term and diverge only at the spend-type byte, and a
+/// second spelling of the shared prefix would be a second place for the
+/// reviewed construction to drift from the one the probe submits under.
+fn whole_transaction_stream(
+    census: &OwnerSigningCensus,
+    treatment: WitnessVectorTreatment,
+) -> Vec<u8> {
     let candidate = census.candidate();
     let mut stream = Vec::new();
 
@@ -226,26 +314,7 @@ pub fn candidate_owner_message(
         treatment.output_side_grown(),
     ));
 
-    // Term 13, computed at `:2748` and written at `:2749`. Script path
-    // and no annex, so it is a constant.
-    stream.push(OWNER_SPEND_TYPE_BYTE);
-
-    // Term 14, written at `:2768`. Term 15, the annex hash, is absent
-    // because the profile refuses the annex — which is what made term 13
-    // a constant.
-    stream.extend_from_slice(&input.input_index().to_le_bytes());
-
-    // Terms 16, 17 and 18, the tapscript additions, written at
-    // `:2793-2798`. The key version is the target's constant; the
-    // codeseparator position is carried by the census rather than
-    // assumed, because its constancy is a condition on the leaf
-    // vocabulary rather than a property of the target.
-    stream.extend_from_slice(input.tapleaf_hash());
-    stream.push(OWNER_KEY_VERSION_BYTE);
-    stream.extend_from_slice(&input.codeseparator_position().to_le_bytes());
-
-    // One SHA256 over the whole stream, at `:2801`.
-    tagged_hash(TAP_SIGHASH_TAG, &stream)
+    stream
 }
 
 /// The recorded diagnosis's two candidate messages for one signing
