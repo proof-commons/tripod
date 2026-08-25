@@ -802,9 +802,19 @@ fn shape_abi(
         LiveTransactionForm::Sponsorless
     };
 
-    // The sponsorless form pays no fee, so nothing relays it on its own
-    // and it travels as a package child — the same version the
-    // compact-ASH ABI reaches for the same reason.
+    // The sponsorless form was written down when it paid no fee, so
+    // nothing relayed it on its own and it travelled as a package child —
+    // the same version the compact-ASH ABI reaches for the same reason.
+    //
+    // The fee axis makes that premise conditional rather than false: a
+    // sponsorless shape that pays its own fee carries its own relay
+    // economics and needs no package parent. The version is nonetheless
+    // left on the FORM, and deliberately, because moving it is a claim
+    // about relay rather than about layout, and a version this ABI has
+    // never watched a node answer for is not one to assign from an
+    // argument. The form that pays its own fee is built at the version
+    // its predecessors were built at, and whether it deserves the other
+    // one is filed rather than decided here.
     let version = match form {
         LiveTransactionForm::Sponsored => TargetTransactionVersion::Standard,
         LiveTransactionForm::Sponsorless => TargetTransactionVersion::TopologyRestricted,
