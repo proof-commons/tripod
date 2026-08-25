@@ -1270,7 +1270,22 @@ impl TargetOperationPlanner for ExplicitShapePlanner {
         &mut self,
         previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
     ) -> Result<Option<OperationStep>, PlanRefused> {
-        let (first_coins, second_coins) = self.shape.funded_coins();
+        self.advance(previous)?;
+        self.emit_step()
+    }
+}
+
+impl ExplicitShapePlanner {
+    /// Settle the previous step's answer and choose the next stage.
+    ///
+    /// Split from the step the ceremony emits because the two are
+    /// different jobs: this one reads what the target said, and the
+    /// other decides what to ask next.
+    fn advance(
+        &mut self,
+        previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+    ) -> Result<(), PlanRefused> {
+        let (_first_coins, second_coins) = self.shape.funded_coins();
         if let Some((_case, response)) = previous {
             match self.stage {
                 Stage::Issue => {
@@ -1309,6 +1324,12 @@ impl TargetOperationPlanner for ExplicitShapePlanner {
             }
         }
 
+        Ok(())
+    }
+
+    /// The step the ceremony asks for next.
+    fn emit_step(&mut self) -> Result<Option<OperationStep>, PlanRefused> {
+        let (first_coins, second_coins) = self.shape.funded_coins();
         match self.stage {
             Stage::Issue => match self.funding_step(
                 "issue-protocol-asset",
