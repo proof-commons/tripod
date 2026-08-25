@@ -61,8 +61,8 @@ pub use live_finalize::{
     ReceiptInputRecord,
 };
 pub use live_message::{
-    CandidateMessagePair, TAP_SIGHASH_TAG, WitnessVectorTreatment, candidate_message_pair,
-    candidate_owner_message,
+    CandidateMessagePair, KEY_PATH_SPEND_TYPE_BYTE, TAP_SIGHASH_TAG, WitnessVectorTreatment,
+    candidate_key_path_message, candidate_message_pair, candidate_owner_message,
 };
 pub use live_private::{
     ConfidentialConstructionModel, PrivateConstructionDemonstration, PrivateConstructionNonClaim,

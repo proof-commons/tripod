@@ -49,7 +49,8 @@ use crate::live_census::{
     check_signature_width, check_type_byte, spend_type_byte,
 };
 use crate::live_message::{
-    TAP_SIGHASH_TAG, WitnessVectorTreatment, candidate_message_pair, candidate_owner_message,
+    KEY_PATH_SPEND_TYPE_BYTE, TAP_SIGHASH_TAG, WitnessVectorTreatment, candidate_key_path_message,
+    candidate_message_pair, candidate_owner_message,
 };
 use crate::live_taproot::{LiveCurveCapability, TweakedOutputKey};
 use crate::taproot::{
@@ -808,6 +809,92 @@ fn all_four_witness_treatments_are_distinct() {
             );
         }
     }
+}
+
+// --- The key-path construction, and what separates it from the reviewed one ---
+
+#[test]
+fn the_key_path_message_differs_from_the_script_path_message() {
+    // The two constructions share every whole-transaction term and part
+    // company at the spend type. If they agreed, the probe that submits
+    // under one of them would be submitting under the other and could
+    // not say which.
+    let target = reviewed_target();
+    let census = pinned_census(&target);
+    let input = &census.signing_inputs()[0];
+
+    assert_ne!(
+        candidate_key_path_message(&census, input, WitnessVectorTreatment::BothGrown),
+        candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown),
+    );
+}
+
+#[test]
+fn the_key_path_spend_type_is_the_composition_rule_at_a_zero_extension_flag() {
+    // Written out rather than derived, on the pattern the profile's own
+    // constants follow: the byte is twice the extension flag plus the
+    // annex bit, and the key path's flag is zero where the script path's
+    // is one. The script-path value is asserted beside it so that a
+    // reader sees the pair rather than one number.
+    assert_eq!(KEY_PATH_SPEND_TYPE_BYTE, 0x00);
+    assert_eq!(OWNER_SPEND_TYPE_BYTE, 0x02);
+    assert_eq!(spend_type_byte(AnnexDisposition::Absent), 0x02);
+}
+
+#[test]
+fn the_key_path_message_does_not_move_when_the_tapleaf_hash_moves() {
+    // The check that the tapscript tail is genuinely absent rather than
+    // merely differently spelled. A leaf hash change moves the reviewed
+    // message, because term 16 is that hash; it must leave the key-path
+    // message exactly where it was, because a key-path spend writes no
+    // leaf at all. Both halves are asserted, since a construction that
+    // ignored the census entirely would also pass the second one.
+    let target = reviewed_target();
+    let census = pinned_census(&target);
+    let other = parts_census(&target, pinned_candidate(), |mut parts| {
+        parts.requests = vec![OwnerSigningInputRequest::new(
+            0,
+            [0x7e; 32],
+            LeafVersion::TAPSCRIPT,
+            OWNER_CODESEPARATOR_POSITION,
+            AnnexDisposition::Absent,
+            IssuanceDisposition::Absent,
+            control_block(),
+        )];
+        parts
+    });
+
+    let input = &census.signing_inputs()[0];
+    let moved = &other.signing_inputs()[0];
+    assert_ne!(input.tapleaf_hash(), moved.tapleaf_hash());
+
+    assert_ne!(
+        candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown),
+        candidate_owner_message(&other, moved, WitnessVectorTreatment::BothGrown),
+        "the reviewed message must commit to the leaf",
+    );
+    assert_eq!(
+        candidate_key_path_message(&census, input, WitnessVectorTreatment::BothGrown),
+        candidate_key_path_message(&other, moved, WitnessVectorTreatment::BothGrown),
+        "a key-path message must not commit to a leaf",
+    );
+}
+
+#[test]
+fn the_key_path_message_still_carries_the_output_witness_term() {
+    // The other half of the same claim: the shared prefix is shared
+    // rather than stubbed out. The output-witness term is the one whose
+    // treatment the ceremonies vary, so it is the one worth measuring —
+    // a key-path construction that had quietly dropped the whole-
+    // transaction terms would be constant across treatments.
+    let target = reviewed_target();
+    let census = pinned_census(&target);
+    let input = &census.signing_inputs()[0];
+
+    assert_ne!(
+        candidate_key_path_message(&census, input, WitnessVectorTreatment::BothGrown),
+        candidate_key_path_message(&census, input, WitnessVectorTreatment::OutputsEmptied),
+    );
 }
 
 #[test]
