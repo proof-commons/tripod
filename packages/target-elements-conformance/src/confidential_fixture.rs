@@ -160,7 +160,7 @@ pub enum FixtureOutputRole {
     /// outputs to subtract, so the solve returns the input blinder sum
     /// itself, and the bounded parity search — which searches over
     /// freely chosen blinders — has nothing to search and degenerates to
-    /// the well-formedness check [`prefixes_match`] describes.
+    /// the well-formedness check `prefixes_match` describes.
     ///
     /// # The degeneracy this member does not hide
     ///
