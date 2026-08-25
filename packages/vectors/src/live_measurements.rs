@@ -1035,6 +1035,29 @@ fn measure_one(
             program,
         ));
     }
+    // The sponsor coin, stated before the view is sealed: a sponsored
+    // build reads its sponsor inputs from this same view, and it holds
+    // exactly what the offer spends — the fee, plus the residual when
+    // the recipe takes change — because a sponsor input carrying more
+    // than the transaction spends leaves the reserve asset unbalanced.
+    let sponsor_point = match recipe.sponsor {
+        MeasuredSponsorRole::Absent => None,
+        _ => Some(measured_outpoint(recipe, 0x03, 0).map_err(|_| not_final())?),
+    };
+    if let Some(point) = sponsor_point {
+        let held = match recipe.sponsor {
+            MeasuredSponsorRole::PresentWithChange => {
+                MEASURED_SPONSOR_FEE.saturating_add(MEASURED_SPONSOR_CHANGE)
+            }
+            _ => MEASURED_SPONSOR_FEE,
+        };
+        views.push(PublicOutputView::new(
+            point,
+            AssetField::Explicit(abi.symbols().reserve_asset()),
+            ValueField::Explicit(held),
+            abi.symbols().sponsor_change_program().to_vec(),
+        ));
+    }
     let view = PublicConstructionView::new(views).map_err(|_| not_final())?;
 
     let mut destinations = Vec::with_capacity(recipe.destinations.len());
@@ -1060,15 +1083,11 @@ fn measure_one(
     )
     .map_err(|_| not_final())?;
 
-    let envelope = match recipe.sponsor {
-        MeasuredSponsorRole::Absent => None,
-        role => Some(
-            MeasuredSponsorEnvelope::new(
-                measured_outpoint(recipe, 0x03, 0).map_err(|_| not_final())?,
-                role,
-            )
-            .map_err(|_| not_final())?,
-        ),
+    let envelope = match sponsor_point {
+        None => None,
+        Some(point) => {
+            Some(MeasuredSponsorEnvelope::new(point, recipe.sponsor).map_err(|_| not_final())?)
+        }
     };
     let sponsor: Option<&dyn SponsorCapability> = envelope
         .as_ref()

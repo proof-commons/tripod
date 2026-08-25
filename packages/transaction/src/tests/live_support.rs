@@ -332,6 +332,22 @@ pub(super) fn single_representation_live_abi(
         .expect("the one-representation live ABI derives")
 }
 
+/// A public view of a sponsor coin at `outpoint`, in the reserve asset.
+///
+/// The counterpart of [`receipt_view`] for the sponsor region. A
+/// sponsored construction offers coins from the same view its receipts
+/// come from, and until the reserve-asset guard existed no live fixture
+/// ever stated one — every sponsored fixture named an outpoint in its
+/// offer and showed the builder nothing about it.
+pub(super) fn sponsor_view(outpoint: Outpoint, amount: u64) -> PublicOutputView {
+    PublicOutputView::new(
+        outpoint,
+        AssetField::Explicit(AssetId::from_internal(LIVE_RESERVE_ASSET)),
+        ValueField::Explicit(amount),
+        LIVE_SPONSOR_CHANGE_PROGRAM.to_vec(),
+    )
+}
+
 /// A public view of one owner's live receipt at `outpoint`.
 pub(super) fn receipt_view(
     abi: &CandidateLiveTransferAbi,

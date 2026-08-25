@@ -258,6 +258,10 @@ impl CandidateLiveTransferTransaction {
 /// [`TransactionRefusal::ReceiptInputCarriesForeignAsset`] and
 /// [`TransactionRefusal::ReceiptInputValueFormRefused`] for a selected
 /// outpoint the deployment does not recognize;
+/// [`TransactionRefusal::MissingPublicSponsorView`] and
+/// [`TransactionRefusal::LiveSponsorInputCarriesForeignAsset`] for an
+/// offered sponsor input the caller cannot show, or shows holding an
+/// asset that is not the deployment's reserve;
 /// [`TransactionRefusal::DestinationOwnerHasNoConstructor`] for a
 /// destination owner nothing was linked for;
 /// [`TransactionRefusal::DestinationTotalOutOfRange`] and
@@ -320,6 +324,30 @@ pub fn finalize_live_transfer(
     for outpoint in &sponsor_inputs {
         if request.receipts().contains(outpoint) {
             return Err(TransactionRefusal::SponsorOverlapsReceiptFamily(*outpoint));
+        }
+
+        // And the sponsor region's own asset, checked here rather than
+        // left to the target. §10.7 isolates the sponsor and fee roles
+        // in the reserve asset, and the fee output this build is about
+        // to write names that asset as a literal the deployment welded
+        // in; a sponsor input carrying anything else funds a fee in an
+        // asset it does not hold, which is a transaction that cannot
+        // balance.
+        //
+        // The compact-ASH lane has refused exactly this since it had a
+        // sponsor region, and the absence here was not a decision —
+        // `LiveSponsorInputCarriesForeignAsset` was already minted for
+        // this check and nothing had ever raised it. Without it the
+        // mismatch is invisible until a node reads the transaction, and
+        // a construction defect reported by a target is a defect
+        // reported at the wrong layer.
+        let stated = view
+            .get(*outpoint)
+            .ok_or(TransactionRefusal::MissingPublicSponsorView(*outpoint))?;
+        if stated.asset() != AssetField::Explicit(abi.symbols().reserve_asset()) {
+            return Err(TransactionRefusal::LiveSponsorInputCarriesForeignAsset(
+                *outpoint,
+            ));
         }
     }
 

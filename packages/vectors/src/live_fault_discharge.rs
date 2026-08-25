@@ -701,8 +701,26 @@ fn sponsored_control(
     abi: &CandidateLiveTransferAbi,
     change: bool,
 ) -> Result<(LiveTransferRequest, PublicConstructionView, StagedSponsor), VectorError> {
-    let (_, view) = explicit_control(abi)?;
+    let (_, receipts) = explicit_control(abi)?;
     let [first, second] = honest_points()?;
+    let sponsor_point = outpoint(0xe3, 0)?;
+
+    // The sponsor coin joins the view the receipts came from. Both §15.6
+    // cases are about a fault somewhere else entirely — an empty offer,
+    // and a change destination naming the fee role's program — so the
+    // sponsor input has to be one construction has no complaint about,
+    // or the mutation under study would not be the reason either half
+    // was refused.
+    let mut views: Vec<PublicOutputView> = receipts.outputs().values().cloned().collect();
+    views.push(PublicOutputView::new(
+        sponsor_point,
+        AssetField::Explicit(abi.symbols().reserve_asset()),
+        ValueField::Explicit(if change { 375 } else { 250 }),
+        abi.symbols().sponsor_change_program().to_vec(),
+    ));
+    let view =
+        PublicConstructionView::new(views).map_err(|_| VectorError::LiveSubstrateUnavailable)?;
+
     let request = LiveTransferRequest::new(
         [first, second],
         [
@@ -721,7 +739,7 @@ fn sponsored_control(
     .map_err(|_| VectorError::LiveSubstrateUnavailable)?;
     let sponsor = StagedSponsor {
         offer: SponsorOffer::new(
-            [outpoint(0xe3, 0)?],
+            [sponsor_point],
             250,
             change.then_some(ValueField::Explicit(125)),
         )

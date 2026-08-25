@@ -8,7 +8,7 @@ use linker::live_backend::LiveTransferRepresentationPlan;
 use super::live_support::{
     FIRST_OWNER, FixturePrivateValue, LIVE_PROTOCOL_ASSET, LIVE_RESERVE_ASSET,
     LIVE_SPONSOR_CHANGE_PROGRAM, PUBLISHED_RANDOMNESS, SECOND_OWNER, live_abi, owner, receipt_view,
-    single_representation_live_abi,
+    single_representation_live_abi, sponsor_view,
 };
 use super::{outpoint, reviewed_target, view};
 use crate::bytes::{AssetField, AssetId, Outpoint, ValueField};
@@ -33,10 +33,19 @@ struct FixtureSponsor {
     change: Option<ValueField>,
 }
 
+/// The outpoint every fixture sponsor offers.
+///
+/// Named once because the offer and the view must agree about it; two
+/// spellings could drift apart and the guard would then be refusing the
+/// fixture rather than the defect it is for.
+fn sponsor_coin() -> Outpoint {
+    outpoint(0xdd, 2)
+}
+
 impl FixtureSponsor {
     fn new(fee: u64, change: Option<ValueField>) -> Self {
         Self {
-            inputs: vec![outpoint(0xdd, 2)],
+            inputs: vec![sponsor_coin()],
             fee,
             change,
         }
@@ -101,6 +110,10 @@ fn explicit_fixture(
             LiveTransferRepresentationPlan::Explicit,
             ValueField::Explicit(600),
         ),
+        // The coin the fixture sponsor offers, stated rather than
+        // merely named: a sponsored build reads its sponsor inputs from
+        // this same view.
+        sponsor_view(sponsor_coin(), 130),
     ]);
     let request = LiveTransferRequest::new(
         [first, second],
@@ -599,6 +612,121 @@ fn an_outpoint_in_both_regions_is_refused_before_the_sort() {
         )
         .err(),
         Some(TransactionRefusal::SponsorOverlapsReceiptFamily(shared)),
+    );
+}
+
+#[test]
+fn a_sponsor_input_the_caller_cannot_show_is_refused() {
+    // The offer names an outpoint and the view says nothing about it.
+    // The refusal is about the view rather than about the coin, because
+    // that is all the builder knows: it has not seen an asset to call
+    // foreign.
+    let abi = live_abi();
+    let (request, _) = explicit_fixture(
+        &abi,
+        RequestedForm::Sponsored,
+        SponsorChangeRequest::NotRequested,
+    );
+    let receipts_only = view([
+        receipt_view(
+            &abi,
+            outpoint(0xa1, 0),
+            &owner(&FIRST_OWNER),
+            LiveTransferRepresentationPlan::Explicit,
+            ValueField::Explicit(400),
+        ),
+        receipt_view(
+            &abi,
+            outpoint(0xa2, 1),
+            &owner(&SECOND_OWNER),
+            LiveTransferRepresentationPlan::Explicit,
+            ValueField::Explicit(600),
+        ),
+    ]);
+    let sponsor = FixtureSponsor::new(90, None);
+    assert_eq!(
+        finalize_live_transfer(
+            &reviewed_target(),
+            &abi,
+            &request,
+            &receipts_only,
+            Some(&sponsor),
+            None,
+        )
+        .err(),
+        Some(TransactionRefusal::MissingPublicSponsorView(sponsor_coin())),
+    );
+}
+
+#[test]
+fn a_sponsor_input_carrying_an_asset_that_is_not_the_reserve_is_refused() {
+    // Both sides of the guard, against one another. The deployment's
+    // reserve is welded into the leaves and pushed as a literal by
+    // §10.7's isolation fragments, and the fee output this build writes
+    // names it; a sponsor input holding anything else funds that output
+    // in an asset it does not hold.
+    //
+    // The two runs differ in the sponsor view's asset and in nothing
+    // else — same request, same offer, same receipts — so the refusal
+    // is attributable to the asset and to no other difference.
+    let abi = live_abi();
+    let (request, admitted) = explicit_fixture(
+        &abi,
+        RequestedForm::Sponsored,
+        SponsorChangeRequest::NotRequested,
+    );
+    let sponsor = FixtureSponsor::new(90, None);
+    assert!(
+        finalize_live_transfer(
+            &reviewed_target(),
+            &abi,
+            &request,
+            &admitted,
+            Some(&sponsor),
+            None,
+        )
+        .is_ok(),
+        "the reserve-asset sponsor input is the admitted case",
+    );
+
+    let foreign = view([
+        receipt_view(
+            &abi,
+            outpoint(0xa1, 0),
+            &owner(&FIRST_OWNER),
+            LiveTransferRepresentationPlan::Explicit,
+            ValueField::Explicit(400),
+        ),
+        receipt_view(
+            &abi,
+            outpoint(0xa2, 1),
+            &owner(&SECOND_OWNER),
+            LiveTransferRepresentationPlan::Explicit,
+            ValueField::Explicit(600),
+        ),
+        crate::view::PublicOutputView::new(
+            sponsor_coin(),
+            // The protocol asset, which is exactly the near miss a
+            // deployment welded to two assets can produce: a coin of
+            // the right chain and the wrong role.
+            AssetField::Explicit(AssetId::from_internal(LIVE_PROTOCOL_ASSET)),
+            ValueField::Explicit(130),
+            LIVE_SPONSOR_CHANGE_PROGRAM.to_vec(),
+        ),
+    ]);
+    assert_eq!(
+        finalize_live_transfer(
+            &reviewed_target(),
+            &abi,
+            &request,
+            &foreign,
+            Some(&sponsor),
+            None,
+        )
+        .err(),
+        Some(TransactionRefusal::LiveSponsorInputCarriesForeignAsset(
+            sponsor_coin()
+        )),
     );
 }
 
