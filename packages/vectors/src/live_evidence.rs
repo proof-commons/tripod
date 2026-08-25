@@ -1694,6 +1694,68 @@ mod tests {
     }
 
     #[test]
+    fn exactly_the_negative_rows_a_refusal_answered_are_answered() {
+        // The negative half's delta, spelled for the same reason the
+        // positive one is: a row moved by an edit rather than by a run
+        // fails here.
+        //
+        // Both are §15.3 witness-content rows and both were answered by
+        // ONE run, which submitted two mutants and then the unmutated
+        // control to one node on one chain. Each standing carries the
+        // accepted control's identity -- the half a reader can check
+        // against a chain, the refusal having left no transaction to
+        // look up -- and the target's own words.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let mut answered = BTreeSet::new();
+        for row in plan.rows() {
+            if let LiveRowStanding::NativeRefusalObserved {
+                control_identity,
+                refusal_detail,
+            } = row.standing()
+            {
+                assert_eq!(
+                    control_identity.len(),
+                    64,
+                    "{} names something that is not a target identity",
+                    row.row(),
+                );
+                assert!(
+                    !refusal_detail.is_empty(),
+                    "{} carries no refusal detail",
+                    row.row(),
+                );
+                assert!(row.standing().is_answered());
+                answered.insert(row.row().name());
+            }
+        }
+        assert_eq!(
+            answered,
+            BTreeSet::from(["empty-signature", "malformed-signature"]),
+        );
+        assert_eq!(plan.census().native_refusal_observed(), 2);
+
+        // The two are DISTINGUISHABLE, which is what makes each one its
+        // own row rather than one observation counted twice. The empty
+        // offering failed the check that consumed it; the well-sized
+        // non-signature was consumed and judged.
+        use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
+        assert_ne!(
+            witness::EMPTY_SIGNATURE_REFUSAL,
+            witness::MALFORMED_SIGNATURE_REFUSAL,
+        );
+
+        // And neither is the refusal the wrong submission order
+        // produced, which named an identity already on the chain and was
+        // about nothing either row is about.
+        for detail in [
+            witness::EMPTY_SIGNATURE_REFUSAL,
+            witness::MALFORMED_SIGNATURE_REFUSAL,
+        ] {
+            assert_ne!(detail, witness::REFUSAL_UNDER_CONTROL_FIRST_ORDER);
+        }
+    }
+
+    #[test]
     fn the_computability_blocker_is_carried_by_no_row() {
         // The clearing, checked against the classification rather than
         // against the sentence that describes it. A row still carrying
