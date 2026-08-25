@@ -26,6 +26,7 @@ vectors_source_files = files(
   'src/live_owner_observation.rs',
   'src/live_pairs.rs',
   'src/live_plan.rs',
+  'src/live_private_restart.rs',
   'src/live_proof_bearing_observation.rs',
   'src/live_report.rs',
   'src/live_resource_report.rs',

@@ -23,6 +23,7 @@ pub mod live_native;
 pub mod live_owner_observation;
 pub mod live_pairs;
 pub mod live_plan;
+pub mod live_private_restart;
 pub mod live_proof_bearing_observation;
 pub mod live_report;
 pub mod live_resource_report;

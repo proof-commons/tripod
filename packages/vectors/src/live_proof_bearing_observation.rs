@@ -877,7 +877,7 @@ impl OwnerLeaf {
 // --- The fixtures ------------------------------------------------------
 
 /// The materialization profiles this ceremony runs under.
-const fn materialization_profiles() -> ConfidentialMaterializationProfiles {
+pub(crate) const fn materialization_profiles() -> ConfidentialMaterializationProfiles {
     ConfidentialMaterializationProfiles {
         reproducibility_contract: target_elements::ReproducibilityContract::ByteIdentity,
         custody_profile: ConfidentialCustodyProfile::CentralPublicFixtures,
@@ -979,7 +979,7 @@ fn project(fixture: &ResolvedFixture) -> Result<ConfidentialFixtureView, ProofBe
 }
 
 /// One registered and frozen fixture, resolved under its own digest.
-fn register(
+pub(crate) fn register(
     handle: &str,
     explicit_asset: [u8; 32],
     input_blinder_sum: [u8; 32],
