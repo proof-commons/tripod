@@ -44,7 +44,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::live_evidence::LiveInfrastructureBlocker;
 use crate::live_restart::{RestartLedger, RestartStep};
-use crate::live_roles::CeremonyEvidenceRoles;
+use crate::live_roles::{
+    CandidateEvidenceRole, CeremonyEvidenceRoles, CeremonyEvidenceRolesBuilder, RoleEvidence,
+    RoleGround,
+};
 
 /// The ten positive private classes, as the row delta names them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -430,6 +433,212 @@ pub fn validate_closeout(
     Ok(ConfidentialFundingCloseoutReport { parts })
 }
 
+/// The confidential-funding guide's closeout, as this wave's runs
+/// settled it.
+///
+/// # Why this is a function and not a document
+///
+/// The closeout has three invariants that are checked rather than
+/// trusted, and a document cannot be checked. Assembling it here means
+/// the workspace's own test suite refuses a closeout that cleared two
+/// residuals, that cleared the digest blocker from funding evidence, or
+/// whose disposition disagrees with the order that was actually run.
+///
+/// # What it says, and what it stops short of
+///
+/// The order reached step two and stopped at step three. Steps one and
+/// two accepted, on two runs against a real node, and the two rows they
+/// answer are in the delta with the identities that answered them.
+/// Step three is where this wave's execution stops, and the stop is
+/// typed rather than silent.
+///
+/// # Errors
+///
+/// Every member of [`CloseoutRefusal`]. It returns a `Result` rather
+/// than a value precisely so that the invariants are checked on every
+/// call rather than at the moment somebody wrote the numbers down.
+pub fn wave_five_closeout() -> Result<ConfidentialFundingCloseoutReport, CloseoutRefusal> {
+    use crate::live_private_restart::run_of_record as run;
+    use crate::live_restart::{RestartStep, RestartStepResult};
+
+    let mut ledger = RestartLedger::new();
+    ledger
+        .record(
+            RestartStep::AcceptedSponsorlessControl,
+            RestartStepResult::Accepted {
+                accepted_identities: vec![run::ACCEPTED_TXID.to_owned()],
+                established: "one sponsorless private one-to-one receipt-covenant control, \
+                              accepted, its witness verified from the node's own copy against \
+                              an independently recomputed message"
+                    .to_owned(),
+            },
+        )
+        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+    ledger
+        .record(
+            RestartStep::BothParitySuccessors,
+            RestartStepResult::Accepted {
+                accepted_identities: vec![
+                    run::ACCEPTED_TXID.to_owned(),
+                    run::PARITY_ACCEPTED_TXID.to_owned(),
+                ],
+                established: "both admitted commitment parities, each consumed in its own \
+                              complete accepted successor"
+                    .to_owned(),
+            },
+        )
+        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+    ledger
+        .record(
+            RestartStep::TargetCtConservation,
+            RestartStepResult::StoppedTyped {
+                blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
+                because: "a conservation claim needs a refused non-conserving case beside the \
+                          accepted conserving one, and the non-conserving case is the fourth \
+                          step's wrong-blinder mutation, which this wave did not run"
+                    .to_owned(),
+            },
+        )
+        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+
+    let mut roles = CeremonyEvidenceRolesBuilder::new();
+    let settle = |builder: &mut CeremonyEvidenceRolesBuilder, role, ground| {
+        builder
+            .settle(role, RoleEvidence::new(role, ground))
+            .map_err(|_| CloseoutRefusal::SponsorRowMoved)
+    };
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::Funding,
+        RoleGround::ObservedAcceptance {
+            accepted_identity: run::ACCEPTED_TXID.to_owned(),
+            independent_check: "the funding record validated against the first-party \
+                                commitment oracle, and both predecessor coins matched"
+                .to_owned(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::OwnerSignature,
+        RoleGround::ObservedAcceptance {
+            accepted_identity: run::ACCEPTED_TXID.to_owned(),
+            independent_check: "the witness read back out of the node's own copy verifies \
+                                against an independently recomputed message"
+                .to_owned(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::Safety,
+        RoleGround::ObservedAcceptance {
+            accepted_identity: run::PARITY_ACCEPTED_TXID.to_owned(),
+            independent_check: "two positive private matrix rows moved, each on an acceptance \
+                                of its own shape"
+                .to_owned(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::CtConservation,
+        RoleGround::OrderNotReached {
+            stopped_before_step: RestartStep::TargetCtConservation.number(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::Minimality,
+        RoleGround::OrderNotReached {
+            stopped_before_step: RestartStep::TargetCtConservation.number(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::Resource,
+        RoleGround::OutsideThisCeremony {
+            owned_by: "the live-transfer resource study".to_owned(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::Lifecycle,
+        RoleGround::OutsideThisCeremony {
+            owned_by: "the lifecycle report".to_owned(),
+        },
+    )?;
+    let roles = roles
+        .complete()
+        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+
+    validate_closeout(CloseoutParts {
+        disposition: CloseoutDisposition::TypedStopped {
+            step: RestartStep::TargetCtConservation,
+            blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
+        },
+        ledger,
+        contracts: BTreeMap::from([(
+            "private-one-to-one-control".to_owned(),
+            "byte-identity".to_owned(),
+        )]),
+        funding: BTreeMap::from([(
+            "ctf-v1/predecessor-dual-parity".to_owned(),
+            run::PREDECESSOR_DIGEST.to_owned(),
+        )]),
+        target_facts: vec![
+            "target Elements Core v28.99.0-b7fc5d080a7e".to_owned(),
+            format!("issued_asset {}", run::ISSUED_ASSET),
+            format!("successor_digest {}", run::SUCCESSOR_DIGEST),
+            format!("parity_successor_digest {}", run::PARITY_SUCCESSOR_DIGEST),
+            format!("submitted_bytes {}", run::SUBMITTED_BYTES),
+        ],
+        sighash_result: Some(
+            "the reviewed owner-sighash profile, established over its six-member required set \
+             by a verdict this guide consumed and did not produce"
+                .to_owned(),
+        ),
+        roles: BTreeMap::from([("private-one-to-one-control".to_owned(), roles)]),
+        cleared_residuals: BTreeSet::from([CLEARED_BY_FUNDING]),
+        blockers: BTreeSet::from([
+            LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
+            LiveInfrastructureBlocker::PredecessorConstructorAbsent,
+        ]),
+        // Zero, and it has to be: nothing moved before the external
+        // closure, because the external closure was already recorded
+        // when this wave began.
+        pre_sighash_matrix_delta: 0,
+        wave5_matrix_delta: vec![
+            moved_on_acceptance(PositivePrivateClass::OneToOne, run::ACCEPTED_TXID)?,
+            moved_on_acceptance(
+                PositivePrivateClass::BothCommitmentParityForms,
+                run::PARITY_ACCEPTED_TXID,
+            )?,
+        ],
+        exclusions: vec![
+            "private-amounts".to_owned(),
+            "fixture-openings".to_owned(),
+            "value-blinders".to_owned(),
+            "nonce-inputs".to_owned(),
+            "proof-inputs".to_owned(),
+            "wallet-data".to_owned(),
+            "credentials".to_owned(),
+            "environment-values".to_owned(),
+            "diagnostics".to_owned(),
+        ],
+        non_claims: vec![
+            "production-custody-not-established".to_owned(),
+            "production-cryptography-not-established".to_owned(),
+            "production-multi-owner-protocol-not-established".to_owned(),
+            "privacy-not-established".to_owned(),
+            "public-fixtures-not-secret".to_owned(),
+            "stock-rpc-hybrid-support-not-established".to_owned(),
+            "funding-does-not-prove-transfer-safety-minimality-or-resource".to_owned(),
+            "malformed-rejection-does-not-replace-control".to_owned(),
+            "owner-sighash-not-established-here".to_owned(),
+            "candidate-interface-not-final".to_owned(),
+        ],
+        wall_times: BTreeMap::from([("private-one-to-one-control".to_owned(), run::WALL_SECONDS)]),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -477,6 +686,44 @@ mod tests {
             non_claims: Vec::new(),
             wall_times: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn the_waves_own_closeout_validates_and_stops_where_the_order_stopped() {
+        use super::wave_five_closeout;
+        use crate::live_restart::RestartStep;
+
+        let report = wave_five_closeout().expect("the wave's closeout validates");
+        let rendered = report.render();
+
+        // Two rows moved, each on its own acceptance, and the sponsor
+        // row is named as unmoved rather than left out.
+        assert_eq!(report.moved_rows().len(), 2);
+        assert!(rendered.contains("wave5_matrix_delta 2"));
+        assert!(rendered.contains("unmoved_row private-sponsor-values"));
+        assert!(rendered.contains("pre_sighash_matrix_delta 0"));
+
+        // The stop is where the ledger says it is.
+        assert_eq!(
+            report.parts().disposition,
+            super::CloseoutDisposition::TypedStopped {
+                step: RestartStep::TargetCtConservation,
+                blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
+            },
+        );
+        assert_eq!(
+            report.parts().ledger.stopped_at(),
+            Some(RestartStep::TargetCtConservation),
+        );
+
+        // Exactly one residual cleared, and the two carried ones
+        // unchanged.
+        assert_eq!(report.parts().cleared_residuals.len(), 1);
+        assert_eq!(report.parts().blockers.len(), 2);
+
+        // The whole non-claim census travels with the report.
+        assert_eq!(report.parts().non_claims.len(), 10);
+        assert_eq!(report.parts().exclusions.len(), 9);
     }
 
     #[test]
