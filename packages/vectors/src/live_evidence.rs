@@ -932,46 +932,59 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // the rule this map is held to forbids citing an acceptance of a
         // DIFFERENT shape rather than an acceptance that is an instance
         // of two classes at once.
-        "one-input-to-one-output" => {
+        // The one-to-one acceptance, cited by BOTH rows it is an
+        // instance of. The accepted bytes consume one receipt and create
+        // one output, and they carry no sponsor region, so they are the
+        // `one-input-to-one-output` class and the `sponsorless` class at
+        // once. Building a second, gratuitously different transfer so
+        // that each row could cite its own hex string would be dressing
+        // one fact up as two.
+        "one-input-to-one-output" | "sponsorless" => {
             Some(crate::live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID)
         }
-        "one-input-split-into-two" => {
+        // The split acceptance, likewise both: one receipt split into
+        // two destinations belonging to two DISTINCT published owners is
+        // an instance of the split class and of the
+        // several-destination-owners class.
+        "one-input-split-into-two" | "several-destination-owners" => {
             Some(crate::live_explicit_shapes::run_of_record::SPLIT_ACCEPTED_TXID)
         }
-        "several-inputs-merged-into-one" => {
+        // The merge acceptance, and this pair is the strongest of the
+        // three rather than the weakest. The normalization run offered
+        // the same two receipts in the REVERSE of their canonical order
+        // and the merge run offered them in it; the two built
+        // byte-identical transactions and the node computed ONE identity
+        // for them. The shared identity IS the normalization, observed
+        // rather than asserted -- a second identity would have been
+        // evidence that the request does not normalize.
+        "several-inputs-merged-into-one" | "canonical-input-normalization" => {
             Some(crate::live_explicit_shapes::run_of_record::MERGE_ACCEPTED_TXID)
         }
         "several-inputs-to-several-outputs" => {
             Some(crate::live_explicit_shapes::run_of_record::SEVERAL_TO_SEVERAL_ACCEPTED_TXID)
         }
+        // TWO inputs under ONE owner: the repetition is the subject, and
+        // both signatures verify out of the node's own copy, each over
+        // its own position's recomputed message.
         "repeated-owner" => {
             Some(crate::live_explicit_shapes::run_of_record::REPEATED_OWNER_ACCEPTED_TXID)
         }
+        // TWO inputs under two DISTINCT owners. Its destinations are the
+        // several-to-several run's exactly and the identities differ
+        // anyway, because the SPENT programs differ -- which is what
+        // makes this run about its input owners.
         "several-distinct-owners" => {
             Some(crate::live_explicit_shapes::run_of_record::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID)
         }
         "one-destination-owner" => {
             Some(crate::live_explicit_shapes::run_of_record::ONE_DESTINATION_OWNER_ACCEPTED_TXID)
         }
-        // The split's own acceptance: a split into two destinations
-        // belonging to two distinct owners is an instance of both
-        // classes.
-        "several-destination-owners" => {
-            Some(crate::live_explicit_shapes::run_of_record::SPLIT_ACCEPTED_TXID)
-        }
+        // Destinations of one unit and the remainder. One is the
+        // boundary the request type states rather than a small number
+        // somebody picked, and the node took it.
         "semantic-boundary-values" => {
             Some(crate::live_explicit_shapes::run_of_record::BOUNDARY_VALUES_ACCEPTED_TXID)
         }
-        // The merge's own acceptance, and the sharing is this row's
-        // evidence rather than a shortcut: the normalization run offered
-        // the same two receipts in the REVERSE of their canonical order,
-        // and the node computed this identity for what it built. A
-        // second identity would have been evidence that the request does
-        // not normalize.
-        "canonical-input-normalization" => {
-            Some(crate::live_explicit_shapes::run_of_record::MERGE_ACCEPTED_TXID)
-        }
-        "sponsorless" => Some(crate::live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID),
         "candidate-maximum-inputs" => {
             Some(crate::live_explicit_shapes::run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID)
         }
