@@ -376,7 +376,7 @@ pub fn validate_closeout(
     // 1. Exactly one residual cleared, and it is the one funding clears.
     if parts.cleared_residuals.len() != 1 {
         return Err(CloseoutRefusal::ClearedResidualsAreNotExactlyOne {
-            offered: parts.cleared_residuals.clone(),
+            offered: parts.cleared_residuals,
         });
     }
     for cleared in &parts.cleared_residuals {
@@ -422,7 +422,7 @@ pub fn validate_closeout(
     };
     if !agrees {
         return Err(CloseoutRefusal::DispositionDisagreesWithTheLedger {
-            claimed: parts.disposition.clone(),
+            claimed: parts.disposition,
             ledger_stopped_at,
         });
     }
