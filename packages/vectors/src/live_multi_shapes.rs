@@ -14,7 +14,7 @@
 //! outputs than that construction supplied.
 //!
 //! This module builds those fixtures. The multi-output constructor is
-//! [`crate::live_proof_bearing_observation::register_multi`], the
+//! `live_proof_bearing_observation::register_multi`, the
 //! arity-general sibling of the one-to-one registration, and the ceremony
 //! reuses the shared construction spine — the linked predecessor, the
 //! funding step, the funded-coin observation, and the census-sign-assemble
