@@ -1109,7 +1109,7 @@ mod tests {
 
         // The submitted bytes carry a transaction and not only the
         // witness item.
-        assert!(run::SUBMITTED_BYTES > run::WITNESS_ITEM_BYTES);
+        const { assert!(run::SUBMITTED_BYTES > run::WITNESS_ITEM_BYTES) };
 
         // The verdict was a refusal, and the artifact says so in the
         // target's own words rather than in a mapped name.
