@@ -509,7 +509,8 @@ pub fn live_abi_for_vocabulary(
 #[cfg(test)]
 mod tests {
     use super::{
-        FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, demonstration_live_bundle,
+        FEE_PROGRAM_DIGEST, FIRST_SCALAR, LiveShapeVocabulary, PROTOCOL_ASSET, RESERVE_ASSET,
+        SECOND_SCALAR, demonstration_live_abi, demonstration_live_bundle, live_abi_for_vocabulary,
         live_transfer_plan, published_owner,
     };
     use std::collections::BTreeSet;
@@ -526,6 +527,62 @@ mod tests {
         assert_ne!(bundle.constructors().len(), 0);
         let abi = demonstration_live_abi().expect("the ABI derives");
         assert_eq!(abi.destinations().entries().len(), 4);
+    }
+
+    #[test]
+    fn the_fee_bearing_deployment_carries_the_shape_a_self_paid_fee_needs() {
+        // The construction path is only reachable with a node, so the
+        // thing that would send a ceremony to a real target to learn
+        // `UnsupportedLiveShape` is asked here instead: does a candidate
+        // exist for one receipt in, one receipt out, no sponsor, and a
+        // fee? Selection matches on exactly these terms, so a shape
+        // answering them is what stands between the ceremony and a
+        // typed stop that costs a node run to observe.
+        let abi = live_abi_for_vocabulary(
+            LiveShapeVocabulary::FeeBearing,
+            PROTOCOL_ASSET,
+            RESERVE_ASSET,
+            FEE_PROGRAM_DIGEST,
+        )
+        .expect("the fee-bearing ABI derives");
+
+        let selected = abi
+            .shapes()
+            .values()
+            .find(|candidate| {
+                let shape = candidate.shape();
+                shape.receipt_inputs() == 1
+                    && shape.receipt_outputs() == 1
+                    && shape.sponsor_inputs() == 0
+                    && candidate.sponsor_change_position().is_none()
+                    && candidate.fee_position().is_some()
+            })
+            .expect("the fee-bearing candidate emits a sponsorless one-to-one shape with a fee");
+
+        // The fee sits immediately after the single destination, and the
+        // exact output count leaves no position over. Both are what the
+        // covenant's own family census asserts, so a disagreement here
+        // is a disagreement the emitted program would have carried.
+        assert_eq!(selected.fee_position(), Some(1));
+        assert_eq!(selected.shape().outputs(), 2);
+        assert_eq!(selected.shape().inputs(), 1);
+    }
+
+    #[test]
+    fn the_demonstration_deployment_still_offers_no_such_shape() {
+        // The converse, and the reason the two vocabularies are separate
+        // deployments rather than one widened set: nothing that links
+        // against the demonstration candidate can accidentally select a
+        // fee-bearing shape, so no existing ceremony changes what it
+        // builds.
+        let abi = demonstration_live_abi().expect("the ABI derives");
+
+        assert!(
+            !abi.shapes().values().any(|candidate| {
+                candidate.shape().sponsor_inputs() == 0 && candidate.fee_position().is_some()
+            }),
+            "the demonstration deployment gained a sponsorless fee-bearing shape"
+        );
     }
 
     #[test]
