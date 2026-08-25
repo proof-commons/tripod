@@ -1614,3 +1614,263 @@ fn run_one_multi_shape(shape: vectors::live_multi_shapes::PrivateShape, extensio
     assert!(rendered.contains("evidences_no_negative_case true"));
     assert!(rendered.contains("moves_the_sponsor_row false"));
 }
+
+// --- §15.1: the positive explicit table, one run per row ---
+
+/// One §15.1 shape, funded, submitted, mined and read back.
+///
+/// The explicit-lane sibling of [`run_one_multi_shape`], and deliberately
+/// the same shape of function: the two lanes differ in what they build and
+/// not in how a run is judged. Nothing here asserts what the node decided.
+/// What it asserts is that a run completed, that the shape the ceremony
+/// reports is the shape it was asked for, and — where an acceptance
+/// happened — that the two origins agree.
+fn run_one_explicit_shape(shape: vectors::live_explicit_shapes::ExplicitShape, extension: &str) {
+    use vectors::live_explicit_shapes::{ExplicitShapePlanner, render_explicit_shape};
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension(extension);
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner = ExplicitShapePlanner::for_shape(shape, identifier(&genesis))
+        .expect("the shape ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_explicit_shape(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as
+    // one. It is never a target verdict, so the run stops here rather
+    // than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the explicit shape ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    // The shape's own cardinalities, read off the record rather than off
+    // the shape's name.
+    assert_eq!(
+        record.coins().len(),
+        shape.input_count(),
+        "the node funded a different number of coins than the shape asked for",
+    );
+    assert!(
+        record
+            .coins()
+            .iter()
+            .all(vectors::live_explicit_shapes::ObservedShapeCoin::matches_expectation),
+        "the node reported a coin the ceremony did not ask for",
+    );
+    assert_eq!(record.input_count(), shape.input_count());
+    assert_eq!(record.output_count(), shape.output_count());
+
+    // The candidate reached the node.
+    assert!(record.submitted_bytes() > 0);
+    assert!(record.observed_layer().is_some(), "no layer was observed");
+
+    // The two origins, where an acceptance was observed. Both are
+    // conditions on an acceptance rather than assertions that one
+    // happened.
+    if let Some(check) = record.reverification() {
+        assert!(
+            check.readback_matches_submission(),
+            "the bytes the node reported are not the bytes it was handed",
+        );
+        assert!(
+            check.every_input_verified(),
+            "an accepted signature does not verify against its recomputed message",
+        );
+        assert_eq!(
+            check.inputs().len(),
+            shape.input_count(),
+            "the read-back copy carries a witness for every input",
+        );
+    }
+
+    // The run says in its own bytes what it did not establish.
+    assert!(rendered.contains("evidences_no_negative_case true"));
+    assert!(rendered.contains("builds_no_sponsor_region true"));
+}
+
+/// §15.1 `one-input-to-one-output`.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_one_to_one_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(ExplicitShape::OneToOne, "explicit-one-to-one");
+}
+
+/// §15.1 `one-input-split-into-two`.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_split_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(ExplicitShape::SplitIntoTwo, "explicit-split");
+}
+
+/// §15.1 `several-inputs-merged-into-one`.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_merge_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(ExplicitShape::MergedIntoOne, "explicit-merge");
+}
+
+/// §15.1 `several-inputs-to-several-outputs`.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_several_to_several_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(
+        ExplicitShape::SeveralToSeveral,
+        "explicit-several-to-several",
+    );
+}
+
+/// §15.1 `repeated-owner`: one owner authorizes two separate inputs.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_repeated_owner_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(ExplicitShape::RepeatedOwner, "explicit-repeated-owner");
+}
+
+/// §15.1 `several-distinct-owners`: two inputs under two published owners.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_several_owners_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(
+        ExplicitShape::SeveralDistinctOwners,
+        "explicit-several-owners",
+    );
+}
+
+/// §15.1 `one-destination-owner`: every output created for one owner.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_one_destination_owner_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(
+        ExplicitShape::OneDestinationOwner,
+        "explicit-one-destination-owner",
+    );
+}
+
+/// §15.1 `several-destination-owners`.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_several_destination_owners_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(
+        ExplicitShape::SeveralDestinationOwners,
+        "explicit-several-destination-owners",
+    );
+}
+
+/// §15.1 `semantic-boundary-values`: the smallest destination the request
+/// type admits, and the remainder.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_boundary_values_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(
+        ExplicitShape::SemanticBoundaryValues,
+        "explicit-boundary-values",
+    );
+}
+
+/// §15.1 `canonical-input-normalization`: the receipts offered in the
+/// reverse of their canonical order.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_normalization_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(
+        ExplicitShape::CanonicalInputNormalization,
+        "explicit-normalization",
+    );
+}
+
+/// §15.1 `sponsorless`.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_sponsorless_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(ExplicitShape::Sponsorless, "explicit-sponsorless");
+}
+
+/// §15.1 `candidate-maximum-inputs`.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_maximum_inputs_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(ExplicitShape::MaximumInputs, "explicit-maximum-inputs");
+}
+
+/// §15.1 `candidate-maximum-outputs`.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_maximum_outputs_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(ExplicitShape::MaximumOutputs, "explicit-maximum-outputs");
+}
