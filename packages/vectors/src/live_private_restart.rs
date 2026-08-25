@@ -749,7 +749,11 @@ pub(crate) fn link_and_register(
         .outputs()
         .get(consumed.index())
         .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?
-        .value_blinder();
+        .value_blinder()
+        // A consumed predecessor output has an opening. A fee output has
+        // none, and is unspendable besides, so a receipt that resolved to
+        // one names no coin.
+        .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?;
 
     let (successor_digest, successor_view) = register(
         SUCCESSOR_HANDLE,
@@ -880,7 +884,9 @@ fn observe_one_coin(
         .recompute(
             linked.asset,
             projected.semantic_amount(),
-            projected.value_blinder(),
+            projected
+                .value_blinder()
+                .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?,
         )
         .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
     let matches_expectation = asset == linked.asset

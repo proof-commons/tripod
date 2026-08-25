@@ -558,7 +558,7 @@ impl MultiShapePlanner {
         let (digest, view) = register_multi(
             &handle,
             *linked.asset.internal(),
-            self.input_blinder_sum(linked),
+            self.input_blinder_sum(linked)?,
             outputs,
         )
         .map_err(|_| PrivateRestartRefusal::FixtureNotRegistrable {
@@ -573,24 +573,48 @@ impl MultiShapePlanner {
     /// The successor's input blinder sum: the sum of the consumed
     /// predecessor coins' value blinders.
     ///
-    /// A one-input shape balances against that one coin's blinder. A
-    /// two-input shape consumes both predecessor outputs, whose blinders
-    /// are ordered additive inverses because the predecessor was
-    /// registered with a zero input blinder sum, so their sum is the zero
-    /// scalar. This is the term a two-input successor does not get for
-    /// free and a one-input successor does; it is stated from the
-    /// predecessor's structure rather than recomputed with a bignum this
-    /// crate does not carry.
-    #[must_use]
-    fn input_blinder_sum(&self, linked: &LinkedDeployment) -> [u8; 32] {
-        match self.shape.consumed() {
-            [single] => linked
+    /// # Summed over the coins, not stated from the fixture
+    ///
+    /// This used to answer a two-input shape with a literal zero, on the
+    /// ground that this ceremony's one predecessor is funded from an
+    /// explicit input and its two output blinders therefore come out
+    /// ordered additive inverses. That ground was sound and the answer was
+    /// right, for that predecessor. It was a statement about one manifest's
+    /// STRUCTURE standing in for a sum over the coins actually being spent,
+    /// and it was true of no other predecessor — a ceremony consuming two
+    /// coins of a wider one has a nonzero sum, and the stated zero would
+    /// have built a candidate whose value balance does not close, which is
+    /// a thing one learns from a chain.
+    ///
+    /// So the sum is computed, over exactly the coins the shape names as
+    /// consumed, through the conformance crate's own scalar arithmetic.
+    /// The inverse pair still sums to zero and the registry still refuses
+    /// that by name; what changed is that the zero is now an OBSERVATION
+    /// about two blinders rather than an assumption about one manifest.
+    ///
+    /// # Errors
+    ///
+    /// [`PrivateRestartRefusal::PredecessorBlindersDoNotClose`] where a
+    /// consumed index names no predecessor output, where that output
+    /// carries no opening, or where a blinder is not a readable scalar.
+    fn input_blinder_sum(
+        &self,
+        linked: &LinkedDeployment,
+    ) -> Result<[u8; 32], PrivateRestartRefusal> {
+        let mut blinders: Vec<[u8; 32]> = Vec::with_capacity(self.shape.consumed().len());
+        for consumed in self.shape.consumed() {
+            let output = linked
                 .predecessor_view
                 .outputs()
-                .get(single.index())
-                .map_or([0_u8; 32], |output| *output.value_blinder()),
-            _ => [0_u8; 32],
+                .get(consumed.index())
+                .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?;
+            let blinder = output
+                .value_blinder()
+                .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?;
+            blinders.push(*blinder);
         }
+        target_elements_conformance::confidential_fixture::sum_blinders(&blinders)
+            .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)
     }
 
     /// The confidential funding step, against the registered predecessor.
@@ -712,6 +736,12 @@ impl MultiShapePlanner {
                 ),
                 role: match destination.role {
                     FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
+                    // The fee role is stated rather than swept into the
+                    // catch-all. It used to fall through to `Balancing`,
+                    // which would have asked the materializer to solve a
+                    // blinder for an output that must not carry one — a
+                    // blinded fee, and not a fee.
+                    FixtureOutputRole::Fee => ConfidentialOutputRole::Fee,
                     // Both solving roles are the view's one solving role:
                     // the sole form is a solve over no others, which is
                     // the same instruction to the materializer.
@@ -1097,7 +1127,7 @@ mod tests {
         assert_eq!(view.outputs().len(), 1);
         assert_eq!(
             view.outputs()[0].value_blinder(),
-            &NON_CANCELING_SUM,
+            Some(&NON_CANCELING_SUM),
             "the lone output's blinder is the input blinder sum itself",
         );
     }
@@ -1209,7 +1239,7 @@ mod tests {
 
         // A fee, and admitted. The blinded output balances; the fee is
         // held out of the solve at a zero blinder.
-        let projection = register_multi(
+        let (_, view) = register_multi(
             "ctf-v1/test-fee-role",
             ASSET,
             NON_CANCELING_SUM,
@@ -1218,21 +1248,42 @@ mod tests {
                 output(FixtureOutputRole::Fee, 100_000_000, Vec::new()),
             ],
         )
-        .expect_err("the fee-bearing manifest registers, and the PROJECTION stops");
+        .expect("the fee-bearing manifest registers AND projects");
 
-        // The typed stop, stated rather than worked around. The registry
-        // expresses the fee output; the materializer's own role vocabulary
-        // does not, so the projection refuses by name instead of mapping a
-        // fee onto the balancing role — which would have produced a
-        // BLINDED fee output, and a blinded fee is not a fee at all.
+        // This assertion used to read the other way. The projection
+        // refused `FeeRoleNotProjectable`, and the refusal was correct
+        // while the materializer had no fee stage: mapping a fee onto the
+        // balancing role to get past that line would have produced a
+        // BLINDED fee output, which is not a fee at the target. The stage
+        // exists now, so the refusal does not — the variant is gone from
+        // the vocabulary rather than left standing as a stopper nothing
+        // can return — and the test is updated to the new fact instead of
+        // being loosened to accept either.
+        assert_eq!(view.outputs().len(), 2);
+        let fee = &view.outputs()[1];
+        assert_eq!(
+            fee.role(),
+            transaction::live_materialize::ConfidentialOutputRole::Fee
+        );
+        assert_eq!(fee.semantic_amount(), 100_000_000);
         assert!(
-            matches!(
-                projection,
-                crate::live_proof_bearing_observation::ProofBearingRefusal::FeeRoleNotProjectable {
-                    output: 1
-                }
-            ),
-            "the fee-bearing shape stops at the projection, and the stop is typed: {projection:?}",
+            fee.output_program().is_empty(),
+            "a fee output's program is empty, which is most of what makes it one",
+        );
+
+        // The opening is ABSENT and not zero-filled. Three zeroed scalars
+        // would read like an opening, and an explicit output has none.
+        assert!(fee.value_blinder().is_none());
+        assert!(fee.nonce_input().is_none());
+        assert!(fee.rangeproof_seed().is_none());
+
+        // And the blinded output beside it still solves. The fee is held
+        // out of the solve at a zero blinder, so the sole balancing output
+        // takes the input blinder sum unchanged.
+        assert_eq!(
+            view.outputs()[0].value_blinder(),
+            Some(&NON_CANCELING_SUM),
+            "the fee contributes nothing to the solve",
         );
     }
 }

@@ -1452,6 +1452,45 @@ pub fn solve_balancing_blinder(
     Some(scalar_bytes(&balancing))
 }
 
+/// The sum of a set of value blinders, in the group.
+///
+/// # Why a zero sum is a RESULT here and a refusal there
+///
+/// [`solve_balancing_blinder`] refuses a zero solution, and refusing it is
+/// correct: a solved balancing blinder of zero is a commitment of exactly
+/// the value times the value generator, which anybody recomputes from a
+/// guessed amount, and which therefore hides nothing while the tally still
+/// balances.
+///
+/// This function is the other half of the same arithmetic and must NOT
+/// refuse it. The sum of the blinders a transaction CONSUMES is an
+/// observation about coins that already exist; a ceremony whose only way
+/// to report a zero sum was to fail could not tell a caller what its own
+/// inputs were. Zero comes back as zero, and the refusal happens one layer
+/// later at the registry, where it can name the manifest it refused and
+/// arrive as `DegenerateBalancingScalar` rather than as an absence.
+///
+/// # Why it exists at all
+///
+/// A consuming ceremony used to STATE its input blinder sum from the
+/// structure of the one predecessor it had — a predecessor funded from an
+/// explicit input, whose two output blinders are therefore ordered
+/// additive inverses summing to zero. That was true of that predecessor
+/// and is a fact about no other. A ceremony that consumes two coins of a
+/// wider predecessor has a nonzero sum, and stating zero would have built
+/// a candidate whose value balance does not close.
+///
+/// `None` where a blinder is not a readable scalar.
+#[must_use]
+pub fn sum_blinders(blinders: &[[u8; DERIVED_BYTES]]) -> Option<[u8; DERIVED_BYTES]> {
+    let mut total = BigUint::zero();
+    for blinder in blinders {
+        let scalar = commitment::read_scalar(blinder).ok()?;
+        total = add_scalars(&total, &scalar);
+    }
+    Some(scalar_bytes(&total))
+}
+
 /// The prefix pair the search is looking for, in fixed order.
 ///
 /// Read from the reviewed target contract rather than written here

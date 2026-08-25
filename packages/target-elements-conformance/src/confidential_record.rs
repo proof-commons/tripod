@@ -1371,7 +1371,7 @@ const fn step_of(refusal: ConfidentialFundingRefusal) -> FundingRecordRefusal {
 /// admits the explicit prefix and the zero byte, neither of which is a
 /// committed prefix — so membership here reads on the committed pair
 /// and never on that.
-pub(crate) fn prefix_admitted_at(
+pub(crate) const fn prefix_admitted_at(
     value_encoding: &target_elements::ConfidentialFieldEncoding,
     prefix: u8,
     index: usize,
