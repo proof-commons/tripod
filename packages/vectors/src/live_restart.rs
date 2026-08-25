@@ -97,6 +97,14 @@ impl RestartStep {
     ];
 
     /// The step's one-based number, as the guide numbers them.
+    ///
+    /// # Panics
+    ///
+    /// Never in practice: the position lookup is over [`Self::ALL`],
+    /// which is exhaustive by construction, and seven fits a byte. Both
+    /// expectations are spelled rather than silently unwrapped so that a
+    /// later member added outside the census fails loudly here instead
+    /// of being numbered zero.
     #[must_use]
     pub fn number(self) -> u8 {
         let position = Self::ALL
@@ -206,6 +214,12 @@ impl RestartLedger {
     /// [`RestartOrderRefusal::OutOfOrder`] where `step` is not the step
     /// the order is waiting for, and [`RestartOrderRefusal::AfterStop`]
     /// where the order has already stopped.
+    ///
+    /// # Panics
+    ///
+    /// Never: a ledger that has neither stopped nor recorded all seven
+    /// steps always expects one, and the two conditions are checked
+    /// above in that order.
     pub fn record(
         &mut self,
         step: RestartStep,
@@ -275,13 +289,16 @@ impl RestartLedger {
     /// The order rendered one step per line, for a run transcript.
     #[must_use]
     pub fn render(&self) -> String {
+        use std::fmt::Write as _;
+
         let mut out = String::new();
         for (step, result) in self.entries() {
-            out.push_str(&format!(
-                "restart_step {} {} {result:?}\n",
+            let _ = writeln!(
+                out,
+                "restart_step {} {} {result:?}",
                 step.number(),
                 step.name(),
-            ));
+            );
         }
         out
     }

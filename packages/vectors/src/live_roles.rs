@@ -325,6 +325,12 @@ pub struct CeremonyEvidenceRoles {
 
 impl CeremonyEvidenceRoles {
     /// The ground settled for `role`.
+    ///
+    /// # Panics
+    ///
+    /// Never: [`CeremonyEvidenceRolesBuilder::complete`] is the only
+    /// constructor and it refuses while any role is unsettled, so a
+    /// value of this type has a ground for all seven.
     #[must_use]
     pub fn ground(&self, role: CandidateEvidenceRole) -> &RoleGround {
         self.settled
@@ -355,14 +361,17 @@ impl CeremonyEvidenceRoles {
     /// The map, rendered one role per line, for a run transcript.
     #[must_use]
     pub fn render(&self) -> String {
+        use std::fmt::Write as _;
+
         let mut out = String::new();
         for role in CandidateEvidenceRole::ALL {
-            out.push_str(&format!(
-                "role {} {} {:?}\n",
+            let _ = writeln!(
+                out,
+                "role {} {} {:?}",
                 role.name(),
                 self.disposition(role).name(),
                 self.ground(role),
-            ));
+            );
         }
         out
     }
@@ -501,6 +510,9 @@ mod tests {
             map.disposition(CandidateEvidenceRole::OwnerSignature),
             EvidenceDisposition::Blocked,
         );
-        assert!(map.render().lines().count() == CandidateEvidenceRole::ALL.len());
+        assert_eq!(
+            map.render().lines().count(),
+            CandidateEvidenceRole::ALL.len()
+        );
     }
 }
