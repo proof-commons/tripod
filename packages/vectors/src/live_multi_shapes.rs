@@ -1275,6 +1275,112 @@ fn hex(bytes: [u8; 32]) -> String {
 }
 
 #[cfg(test)]
+mod byte_identity_tests {
+    use super::{MultiShapePlanner, PrivateShape, hex, run_of_record as run};
+
+    /// Every shape that ran BEFORE this wave still registers its
+    /// successor under the digest that run recorded.
+    ///
+    /// # What this is a check on
+    ///
+    /// This wave added two members to the shape vocabulary, a second
+    /// predecessor to the ceremony, a fee member to the materializer's
+    /// output roles, an optional opening to the projected view, and an
+    /// arity-general prefix rule on both sides of the executor wire. Any
+    /// one of those could have perturbed the derivation of a case that
+    /// already existed -- a transcript member emitted unconditionally, a
+    /// role code reassigned, a parity counter that settles one step
+    /// later -- and a perturbed derivation is a different fixture wearing
+    /// the same handle.
+    ///
+    /// The digests below were written down by ceremonies that ran against
+    /// a pinned node before any of it. Recomputing them re-derives every
+    /// blinder, every nonce input, every range-proof seed and every
+    /// commitment prefix of four fixtures whose successors a target
+    /// ACCEPTED, so the claim that nothing moved is a running check
+    /// rather than a sentence in a commit message.
+    ///
+    /// The predecessor half of the same claim is checked by the sibling
+    /// test in the private-restart module, which holds the dual-parity
+    /// predecessor and both one-to-one successors to their own recorded
+    /// digests.
+    #[test]
+    fn the_shapes_that_ran_before_this_wave_register_under_their_recorded_digests() {
+        // The genesis identity is not a term of any fixture digest, and
+        // this test would fail loudly if it became one.
+        let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
+        for (shape, expected) in [
+            (PrivateShape::Split, run::SPLIT_SUCCESSOR_DIGEST),
+            (PrivateShape::ManyToMany, run::MANY_TO_MANY_SUCCESSOR_DIGEST),
+            (
+                PrivateShape::SeveralDistinctOwners,
+                run::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
+            ),
+            (
+                PrivateShape::StrictOneToOne,
+                run::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST,
+            ),
+        ] {
+            let mut planner =
+                MultiShapePlanner::for_shape(shape, genesis).expect("the ceremony builds");
+            planner
+                .settle_asset(run::ISSUED_ASSET)
+                .expect("the run of record's own fixtures register");
+            assert_eq!(
+                planner
+                    .record()
+                    .successor_digest()
+                    .map(hex)
+                    .expect("the successor registered"),
+                expected,
+                "{}'s successor fixture drifted from the run of record",
+                shape.name(),
+            );
+        }
+    }
+
+    /// The two shapes this wave added record their own digests, and they
+    /// are not each other's and not anybody else's.
+    ///
+    /// A new fixture that happened to derive an existing case's digest
+    /// would mean the handle is not a term of the transcript, which is a
+    /// defect and not a coincidence.
+    #[test]
+    fn the_shapes_this_wave_added_carry_digests_of_their_own() {
+        let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
+        let mut digests = Vec::new();
+        for shape in PrivateShape::ALL {
+            let mut planner =
+                MultiShapePlanner::for_shape(shape, genesis).expect("the ceremony builds");
+            planner
+                .settle_asset(run::ISSUED_ASSET)
+                .expect("every shape's fixtures register");
+            digests.push(
+                planner
+                    .record()
+                    .successor_digest()
+                    .map(hex)
+                    .expect("the successor registered"),
+            );
+        }
+        assert_eq!(digests.len(), PrivateShape::ALL.len());
+
+        let mut distinct = digests.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(
+            distinct.len(),
+            digests.len(),
+            "two shapes registered the same successor fixture: {digests:?}",
+        );
+
+        // And the two new ones are the ones their runs recorded.
+        assert_eq!(digests[4], run::FEE_BEARING_SUCCESSOR_DIGEST);
+        assert_eq!(digests[5], run::MERGE_SUCCESSOR_DIGEST);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use target_elements_conformance::confidential_fixture::{
         ConfidentialFixtureOutput, FixtureOutputRole, RegistrationRefusal,
