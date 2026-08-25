@@ -478,6 +478,18 @@ pub(crate) struct LinkedDeployment {
     programs: [Vec<u8>; 2],
 }
 
+impl LinkedDeployment {
+    /// The predecessor fixture's digest.
+    pub(crate) const fn predecessor_digest(&self) -> [u8; 32] {
+        self.predecessor_digest
+    }
+
+    /// The successor fixture's digest.
+    pub(crate) const fn successor_digest(&self) -> [u8; 32] {
+        self.successor_digest
+    }
+}
+
 /// The Wave-5 restart ceremony, step one.
 pub struct PrivateRestartPlanner {
     stage: Stage,
@@ -761,6 +773,24 @@ pub(crate) fn link_and_register(
         successor_view,
         programs,
     })
+}
+
+/// The issuing step that creates the disposable reserve the deployment is
+/// linked against.
+///
+/// Shared so the proof-negative ceremony issues the identical disposable
+/// asset the one-to-one ceremony does.
+pub(crate) fn issue_step() -> OperationStep {
+    OperationStep::new(
+        ISSUE_STEP,
+        OperationSubject::Funding(Box::new(TargetFundingSubject {
+            issue_asset: true,
+            asset: None,
+            output_program: ISSUE_PROGRAM.to_vec(),
+            outputs: ISSUE_OUTPUTS,
+            amount_per_output: ISSUE_AMOUNT_PER_OUTPUT,
+        })),
+    )
 }
 
 /// The confidential funding step against the registered predecessor.
@@ -1201,16 +1231,7 @@ impl TargetOperationPlanner for PrivateRestartPlanner {
         }
 
         match self.stage {
-            Stage::Issue => Ok(Some(OperationStep::new(
-                ISSUE_STEP,
-                OperationSubject::Funding(Box::new(TargetFundingSubject {
-                    issue_asset: true,
-                    asset: None,
-                    output_program: ISSUE_PROGRAM.to_vec(),
-                    outputs: ISSUE_OUTPUTS,
-                    amount_per_output: ISSUE_AMOUNT_PER_OUTPUT,
-                })),
-            ))),
+            Stage::Issue => Ok(Some(issue_step())),
             Stage::Fund => match self.funding_step() {
                 Ok(step) => Ok(Some(step)),
                 Err(refusal) => Err(self.refuse(refusal)),
