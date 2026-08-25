@@ -61,21 +61,23 @@ The window is chosen for the first-party half, where the counts do matter: the r
 | Shape | Consensus verdict | Evidence | First-party status | Limitation |
 |---|---|---|---|---|
 | One blinded input to one blinded output | Possible | Observed | Constructible after removal | (`rule:shapes:two-output-floor`), removed |
-| One blinded input to one blinded output beside a fee output | Possible | Source-derived | Expressible and unrun | (`rule:shapes:absent-fee-role`), removed |
+| One blinded input to one blinded output beside a fee output | Possible | Source-derived | Submitted and refused | (`rule:shapes:absent-fee-role`), one removed and one standing |
 | One blinded input to two blinded outputs | Possible | Observed | Constructible and observed | none |
 | One blinded input to three blinded outputs | Possible | Observed | Constructible and observed | none |
-| Two blinded inputs merged to one blinded output | Possible | Source-derived | Refused | (`rule:shapes:canceling-predecessor`) |
+| Two blinded inputs merged to one blinded output | Possible | Observed | Constructible after removal | (`rule:shapes:canceling-predecessor`), removed |
 | Two blinded inputs to two blinded outputs | Possible | Observed | Constructible and observed | none |
 | Two blinded inputs to three blinded outputs | Possible | Observed | Constructible and observed | none |
 | One blinded input to a fee output and nothing else | Impossible | Source-derived | Refusal guards consensus | (`rule:shapes:fee-only`) |
 
 Every limitation tag in the last column is cited above in a parenthesized group, because each is minted at its own section below and a bare occurrence here would be a second mint of the same name.
 
-Five of eight shapes have been run and accepted. Three have not.
+Six of eight shapes have been run and accepted. Two have not.
 
-The counts moved because two limitations were structurally removed, and the three first-party statuses in the fourth column are three different things that a single word would have flattened. Constructible and observed is a shape this lane always built. Constructible after removal is a shape it was refused until a convention was removed, and the row keeps citing the removed convention, because a row saying only that a shape works loses the fact that a wall stood there — and a wall nobody remembers is one that gets rebuilt. Expressible and unrun is the fee-bearing shape: the vocabulary really does express it now and no node has ever been offered one, which are two facts and not one.
+The counts moved because four limitations have now been structurally removed, and the first-party statuses in the fourth column are different things that a single word would have flattened. Constructible and observed is a shape this lane always built. Constructible after removal is a shape it was refused until a convention was removed, and the row keeps citing the removed convention, because a row saying only that a shape works loses the fact that a wall stood there — and a wall nobody remembers is one that gets rebuilt. Submitted and refused is the fee-bearing shape: it was BUILT with a real fee output and OFFERED to a node, and the node turned it away, which is more than nobody having tried and less than an acceptance.
 
-Of the three unrun shapes, one is consensus-impossible, one is expressible here and stopped short of a node, and one is the merge, which is refused for a reason that is no longer the reason it used to be.
+Expressible and unrun is now nobody's status, and the register keeps the words because that is what the fee-bearing shape was until it was offered. A status vacated by work is not a status deleted.
+
+Of the two unrun shapes, one is consensus-impossible and one is the fee-bearing shape, refused at a covenant this workspace wrote rather than at anything the protocol says about fees.
 
 The one-to-two row carries the first of two identities the lane recorded for that shape; the second, is the same shape spending the opposite commitment parity, and the register cites one because a shape needs one acceptance and not because the other is doubted.
 
@@ -97,7 +99,7 @@ The degeneracy was answered by both admitted paths at once rather than by choosi
 
 A target accepted the strict one-to-one: 4773 bytes, one range proof of 4174, its readback witness verified against an independently recomputed message. It is the smallest submission this lane has made, for a structural reason rather than by chance, one output meaning one range proof. That acceptance is what makes this a removal rather than a claim about a registry.
 
-The removal did NOT free the merge, and the register says so rather than letting one acceptance stand for two shapes. What stops the merge now is recorded at (`rule:shapes:canceling-predecessor`).
+The removal did NOT free the merge, and the register says so rather than letting one acceptance stand for two shapes. What stopped the merge next is recorded at (`rule:shapes:canceling-predecessor`), and it has since been removed too — the merge was accepted, which took a second removal and not this one. The sentence above stays as written because it was true when written and because what it guarded against is exactly what a later reader might do: read one acceptance as freeing two shapes.
 
 **The degeneracy the removal must name.** The forced blinder can be zero, and then it hides nothing. A merge's single output takes the sum of the consumed coins' blinders, so merging the two halves of this repository's inverse-pair dual-parity predecessor — whose blinders cancel by construction, which is what makes it an inverse pair — forces that sum to zero. The output commitment is then exactly v\*H: a point anyone can recompute from a guessed value, carrying a blinded output's form and none of its hiding. The form is still sound and the tally still balances; what fails is confidentiality, silently. A predecessor whose blinders do not cancel avoids it, so the removal must either require a non-canceling predecessor or refuse a solved zero blinder outright. Filing the form without this warning would file a confidentiality hole as a feature.
 
@@ -129,6 +131,16 @@ Two further corrections came with it, and both are the same correction said twic
 
 The projection therefore refuses by name rather than mapping a fee onto the balancing role. That mapping would have compiled and would have produced a candidate whose fee output was blinded — not a fee at the target, and a silently wrong transaction rather than an honest stop. A register that recorded this shape as observed because its vocabulary could express it would be committing the exact error the register was built to prevent.
 
+**The projection was REMOVED under T5-045, and the shape was offered to a node.** The materializer's role vocabulary gained a fee member; its per-output stage gained a fee stage emitting an explicit value, an explicit asset, a null nonce, an empty program and an empty witness entry, which then asks the built output whether it IS a fee by the target's own three-conjunct predicate rather than trusting that it built one; the projected view's three opening scalars became optional, because a fee output's opening is absent and not zero; and both projections state the fee arm instead of letting a catch-all solve a blinder for it. The typed refusal that named the missing projection is gone from the vocabulary rather than left standing, because a refusal nothing can return is a stopper that gets cited as current.
+
+The fee output built by that chain is a fee. The run's own output-witness census reads one range proof of 4174 bytes and one EMPTY entry, which is the evidence the projection worked and the thing a fee mapped onto the balancing role could not have produced: that mapping would have read 4174 twice.
+
+**The node refused the candidate, and the refusal is not about fees.** It answered mandatory-script-verify-flag-failed, Script failed an OP_EQUALVERIFY operation, at 4870 bytes submitted. Elements admits a fee output in a non-policy asset at consensus and at policy alike — CTxOut::IsFee at src/primitives/transaction.h:324-327 constrains the form and never the asset, HasValidFee at src/confidential_validation.cpp:33-49 checks only that the amount is nonzero and in money range, and nothing anywhere in the tree rejects a transaction for the asset its fee output names — and the adapter's node runs at a zero minimum relay feerate. The candidate did not fail for carrying a fee.
+
+**The third layer, uncovered by the second removal exactly as the second was uncovered by the first.** The reviewed live-transfer shape vocabulary has no sponsorless fee-bearing member. A sponsorless form is defined there as one that pays no fee at all, on the reviewed target's own representation of a zero fee by the ABSENCE of the output; so a two-destination sponsorless request selects a shape of two RECEIPT outputs, and the receipt covenant requires the second output to carry the second owner's private receipt constructor program. The second output is the fee, whose program is empty, and the comparison fails.
+
+**Removal path, FILED and not taken.** Give the reviewed shape vocabulary a sponsorless member that pays its own fee, so a fee destination is not counted as a receipt output. The covenant already owns the discriminator it would need: the sponsored isolation fragment recognizes a fee output BY FORM, at a negative version marker against the digest of the empty program, and never by amount. What is missing is a shape that says a sponsorless form may carry one. This is filed rather than taken because that vocabulary states a REVIEWED reading of the target, and changing a reviewed reading is a ruling rather than an edit.
+
 **Revising this limitation touches:** this section; the output role vocabulary and every match over it; the empty-program clause and its typed refusal; the balancing-role uniqueness clause, which today counts a positional assignment; the shared multi-output manifest builder's last-output-balances rule; the census rows for the fee-bearing shapes and the tests that recompute them; the ceremony test recording a fee output as inexpressible beyond the cardinality floor; and the observation in this register that no accepted identity carries a fee output, which stops being a statement about what the lane happens to build and becomes one about what it chooses to.
 
 ## The predecessor that cancels · `rule:shapes:canceling-predecessor`
@@ -146,6 +158,18 @@ The registry refuses that, and refusing it is correct. This is the one limitatio
 **It is a different KIND of limitation from the others.** Not a rule the registry states, but a predecessor the ceremony happens to fund. A merge of coins whose blinders do not cancel registers today, with no change to any rule.
 
 **Removal path.** Chain a precursor submission whose outputs do not cancel, and merge two of those. A three-output precursor's blinders sum to the coin it consumed, so any two of them sum to that total less the third, which is nonzero for no reason anybody has to arrange. The ceremony already mines each acceptance rather than leaving it in the mempool, precisely so that the coins an acceptance creates are visible to a later step, so what is missing is a second submission stage and not a capability.
+
+**REMOVED, under T5-045, and a target accepted the merge.** Two receipts consumed, one output created, 5156 bytes, one range proof of 4174, the mined bytes equal to the submitted ones and the read-back witness verifying against an independently recomputed message.
+
+**The path taken diverges from the path filed, and the divergence is the honest half of this record.** The filed path chains a precursor SUBMISSION; what was built widens the FUNDING stage. The ceremony now funds a second predecessor of three outputs, identical to the dual-parity one in every respect but its output count — one explicit input, the same zero input blinder sum, the same profiles, the same issuing step — and merges two of its coins.
+
+The arithmetic is the arithmetic the filed path named, and the register said as much when it filed it: three blinders summing to zero cancel in no pair, any two of them summing to the negation of the third. What differs is which stage produces the coins, and that difference is why the cheaper form was taken. A funding response carries the decoded coins WITH their openings; a submission response carries a transaction identity and mined bytes and no coin set at all. Reaching a non-canceling pair through a second submission stage would therefore have meant building the coin-return path the ceremony does not have, while reaching it through a wider funding stage needed nothing that did not already exist. The wall was the predecessor's arity, and the cheaper honest way through an arity wall is to fund a wider predecessor rather than to chain one.
+
+**The forced blinder is nonzero, and that is observed rather than argued.** The argument is good — the merged pair's sum is the negation of the third coin's blinder, a derived blinder, and a derived blinder is searched upward until it is nonzero and never admitted zero — but an argument is not an observation and this register's whole discipline is not blurring the two. So the ceremony sums the coins it actually consumes, compares that sum with the blinder the registry solved for the sole output, and writes four facts into its own transcript: how many coins the sum was taken over, whether that sum is zero, whether the forced blinder is zero, and whether the two agree. Never the scalar itself, which would be publishing an opening.
+
+**What did NOT change is the refusal this section records.** The registry still refuses a merge of the inverse pair, by name, with `DegenerateBalancingScalar`, and nobody wanted that removed — a zero-blinder commitment hides nothing and no part of this workspace may claim hiding for one. What was removed is the ceremony's inability to offer any other pair of coins, which is exactly what this section said wanted removing.
+
+**One further change came with it.** The consumed blinder sum is now SUMMED over the coins a shape names as consumed, rather than stated from the one predecessor's structure. The stated zero was true of that predecessor and of no other; against a wider one it would have built a candidate whose value balance does not close, which is a thing one learns from a chain.
 
 **Revising this limitation touches:** this section; the ceremony's stage vocabulary and its submission step names, which must stay distinct or the executor refuses a duplicate step; the input blinder sum rule, which today states the two-input case's zero from the predecessor's structure rather than summing the consumed coins; the fixture reference the merge's inputs resolve against, which would be the precursor's successor rather than the funded predecessor; the census row for the merge and the test that recomputes it; the §15.2 private-merge matrix row, which an acceptance of this shape would move; and the merge erratum in the Guide-13 feature-request register.
 
@@ -171,8 +195,8 @@ It does not claim that the source-derived-possible shapes would be accepted. It 
 
 It does not claim the observed shapes exhaust what has been run; it claims each cites an acceptance of its own shape.
 
-It does not claim that a removed limitation means the shapes it refused now run. Two limitations were removed and one shape ran. The merge met a second wall the first had been hiding, and the fee-bearing shape is expressible without having been offered to a node — both recorded as what they are rather than as consequences of a removal that did not have them.
+It does not claim that a removed limitation means the shapes it refused now run. Four limitations have been removed across three waves and each removal freed at most one shape. The merge met a second wall the first had been hiding, and the fee-bearing shape met a third the second had been hiding — both recorded as what they are rather than as consequences of a removal that did not have them. A register that reported only the removals would imply every refused shape now runs.
 
-It does not claim the remaining removal path is scheduled, designed in detail, or agreed. It is named, which is what the ruling asks for at this stage. No part of it is taken.
+It does not claim the fee-bearing shape's remaining removal path is scheduled, designed in detail, or agreed. It is named, which is what the ruling asks for at this stage. No part of it is taken, and taking it means changing a reviewed reading of the target rather than a registry clause.
 
 It does not extend to issuance, which is excluded (`rule:exclusions:issuance-bytes`), nor to sponsored shapes, whose signer dependency this workspace does not close.
