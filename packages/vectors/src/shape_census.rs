@@ -299,8 +299,13 @@ pub enum FirstPartyStatus {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Limitation {
     /// The registry refuses any manifest of fewer than two outputs.
+    ///
+    /// Argued at `(´[PLAN-rule:shapes:two-output-floor]´)`, which
+    /// carries the revision surface this row cannot.
     TwoOutputFloor,
     /// The fixture vocabulary has no fee output role.
+    ///
+    /// Argued at `(´[PLAN-rule:shapes:absent-fee-role]´)`.
     AbsentFeeRole,
 }
 

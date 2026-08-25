@@ -14,6 +14,7 @@ deployment evidence.
 | [draft-gap-census.md](draft-gap-census.md) | Active review reference |
 | [elements-tapscript.md](elements-tapscript.md) | Active review reference |
 | [owner-sighash-review.md](owner-sighash-review.md) | Active review reference |
+| [shape-possibility.md](shape-possibility.md) | Active review reference |
 | [upstream-frictions.md](upstream-frictions.md) | Active review reference |
 
 ## Reference rule · `rule:reference:authority`
