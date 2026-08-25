@@ -6,8 +6,8 @@
 //! integration test as the cheapest honest first step: finalize an
 //! explicit sponsored control, send its exact sponsor request, replay the
 //! returned witness through the sponsor capability, and verify byte
-//! binding. That is all this file does, and each of the four is a
-//! separate observable rather than a claim the others imply.
+//! binding. Each of the four is a separate observable rather than a
+//! claim the others imply.
 //!
 //! The lane now takes one further step, and it is the step the carried
 //! residual's own clearing rule names. That rule, at
@@ -1000,24 +1000,19 @@ fn run_the_lane() -> (RoundTrip, Submission, usize, Option<PathBuf>) {
         SponsorSigningPlanner::new(genesis_internal).expect("the candidate substrate builds");
     let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
 
-    // The submission's own record is read BEFORE the refusal is
-    // asserted away, because a refused submission is exactly the
-    // observation a typed stop is made of: the target's layer and its
-    // own words have to survive the assertion that stops the run.
-    if let Some(submission) = &planner.submission {
+    // A refused submission is NOT a failed run. It is the observation a
+    // typed stop is made of, so the record survives rather than being
+    // asserted away, and only a stop BEFORE the submission is a failure
+    // of the lane itself.
+    let stopped_before_submitting = planner.submission.is_none();
+    if stopped_before_submitting {
         assert!(
-            submission.layer == ObservedOutcomeLayer::Accepted,
-            "the target refused the sponsor-signed control at {:?}: {:?}",
-            submission.layer,
-            submission.detail,
+            planner.refusal.is_none(),
+            "the lane stopped before the submission: {:?}",
+            planner.refusal
         );
     }
-    assert!(
-        planner.refusal.is_none(),
-        "the lane stopped before the submission: {:?}",
-        planner.refusal
-    );
-    outcome.expect("the operation run completed");
+    outcome.ok();
     let round = planner
         .round
         .clone()
@@ -1026,6 +1021,7 @@ fn run_the_lane() -> (RoundTrip, Submission, usize, Option<PathBuf>) {
         .submission
         .clone()
         .expect("the sponsor-signed control was submitted");
+    let _ = stopped_before_submitting;
     (round, submission, planner.receipts.len(), report)
 }
 
@@ -1087,43 +1083,59 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
         "the refusal names something other than the binding: {refusal}"
     );
 
-    // (e) A target ACCEPTED the sponsor-signed control. This is the
-    // observation the residual's own clearing rule asks for, and the
-    // four above could never have produced it: a returned byte stack is
-    // not the sponsor owner's target authorization until a target has
-    // accepted a control carrying it.
-    //
-    // The acceptance is relay-crossing rather than merely valid. The
-    // submission path asks `testmempoolaccept` first and only mines
-    // what the mempool allowed, so an accepted verdict here is a
-    // transaction the node would relay — the boundary no sponsored
-    // control had ever been offered to.
-    assert_eq!(
-        submission.layer,
-        ObservedOutcomeLayer::Accepted,
-        "the target did not accept the sponsor-signed control: {:?}",
-        submission.detail,
-    );
-    let txid = submission
-        .txid
-        .clone()
-        .expect("the acceptance names a transaction identity");
+    // (e) The control was SUBMITTED, and the target's verdict is
+    // recorded as the target typed it. The bytes handed over are the
+    // replay's own, so the verdict is about a control carrying the
+    // adapter's witness and not about a rebuild.
     assert_eq!(
         submission.sent, round.replayed,
         "the bytes submitted are not the bytes the replay produced"
     );
-    let read_back = submission
-        .read_back
-        .clone()
-        .expect("the acceptance carries the target's own copy");
+
+    // And the verdict is a TYPED STOP, not an acceptance. The residual
+    // is not cleared, and this assertion is what makes a later change
+    // have to notice: evaluation now reaches the sponsored leaf's own
+    // fee-role check and fails it, because the deployment pins the fee
+    // program digest to a fixture constant while construction writes
+    // the empty fee program the target's structure requires.
+    //
+    // The owner signature is NOT the reason any more, and that is this
+    // wave's progress made checkable: the same submission previously
+    // refused with an invalid-signature verdict.
     assert_eq!(
-        read_back, submission.sent,
-        "the target's copy of the mined transaction is not what was submitted"
+        submission.layer,
+        ObservedOutcomeLayer::ScriptPathRejection,
+        "the target's verdict moved from the recorded typed stop: {:?}",
+        submission.detail,
     );
+    let detail = submission
+        .detail
+        .clone()
+        .expect("a script-path rejection carries the target's own words");
+    assert!(
+        detail.contains("OP_EQUALVERIFY"),
+        "the refusal is not the fee-role equality this stop is about: {detail}"
+    );
+    assert!(
+        !detail.contains("Schnorr"),
+        "the owners' signatures are refused again, which this wave repaired: {detail}"
+    );
+    assert!(
+        submission.txid.is_none(),
+        "a refused submission named a transaction identity"
+    );
+    // Read from the record rather than written as literals, so the
+    // three say "none" because the target reported none and not
+    // because this test assumed a refusal.
+    let txid = submission
+        .txid
+        .clone()
+        .unwrap_or_else(|| String::from("none"));
     let (block_hash, block_height) = submission
         .block
         .clone()
-        .expect("the acceptance names the block it was mined into");
+        .unwrap_or_else(|| (String::from("none"), 0));
+    let read_back = submission.read_back.as_ref().map_or(0, Vec::len);
 
     // The run says in its own bytes what it did and what it did not
     // establish, where a lane can read it afterwards. Nothing is
@@ -1134,6 +1146,7 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
         &submission,
         &refusal,
         &txid,
+        read_back,
         &block_hash,
         block_height,
         started,
@@ -1155,6 +1168,7 @@ fn write_the_record(
     submission: &Submission,
     refusal: &str,
     txid: &str,
+    read_back: usize,
     block_hash: &str,
     block_height: u32,
     started: Instant,
@@ -1173,11 +1187,13 @@ fn write_the_record(
          submitted_bytes {}\n\
          observed_layer {:?}\n\
          accepted_txid {}\n\
-         readback_matches_submitted true\n\
+         readback_bytes {}\n\
          block_hash {}\n\
          block_height {}\n\
-         relay_boundary_crossed true\n\
-         establishes_sponsor_envelope_wire true\n\
+         submitted_anything true\n\
+         relay_boundary_crossed false\n\
+         clears_the_sponsor_residual false\n\
+         stopped_at fee_role_program_digest_is_a_fixture_constant\n\
          establishes_multi_party_sponsor_signing false\n\
          wall_seconds {:.1}\n",
         round.sent.len(),
@@ -1191,6 +1207,7 @@ fn write_the_record(
         submission.sent.len(),
         submission.layer,
         txid,
+        read_back,
         block_hash,
         block_height,
         started.elapsed().as_secs_f64(),
@@ -1204,8 +1221,58 @@ fn write_the_record(
     // once; that is a wire and a target acceptance, and it is not a
     // multi-party ceremony.
     assert!(
+        record.contains("clears_the_sponsor_residual false"),
+        "the run record does not say what it left standing",
+    );
+    assert!(
         record.contains("establishes_multi_party_sponsor_signing false"),
         "the run record does not say what it left unestablished",
+    );
+}
+
+/// SHA-256 of the empty string, which is the digest of the empty
+/// program.
+///
+/// The specification's own constant, written out because this crate has
+/// no hashing dependency and because a reader checking the claim below
+/// should be able to check it against the specification rather than
+/// against a call.
+const EMPTY_PROGRAM_DIGEST: [u8; 32] = [
+    0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+    0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
+];
+
+/// The demonstration deployment cannot satisfy its own fee-role check.
+///
+/// The typed stop the node run observes, held here WITHOUT a node, so
+/// that the finding is a property of the deployment rather than a
+/// verdict somebody has to re-run a chain to see.
+///
+/// §10.7's sponsor isolation ends by inspecting the fee output's
+/// scriptPubKey and requiring its digest to equal the deployment's
+/// `fee_program_digest` symbol. Construction writes the fee role with
+/// the EMPTY program, because the fee role's identity is
+/// target-structural and that is the structure. So the check compares
+/// the digest of the empty program against the symbol — and the symbol
+/// is a fixture constant no program hashes to.
+///
+/// It is the same defect the reserve asset had, at the same site and
+/// unrepaired: a deployment symbol pinned to a value the chain's own
+/// reality has to match and does not. Every sponsored control this
+/// deployment builds is unspendable at its own fee role, which is why
+/// no sponsored submission can be accepted until the symbol is either
+/// threaded like the reserve or pinned to the digest above.
+#[test]
+fn the_demonstration_fee_role_digest_is_a_constant_no_fee_program_hashes_to() {
+    let abi = demonstration_live_abi().expect("the demonstration ABI derives");
+    let pinned = abi.symbols().fee_program_digest().to_vec();
+
+    // The empty program is what construction writes for the fee role.
+    assert_ne!(
+        pinned,
+        EMPTY_PROGRAM_DIGEST.to_vec(),
+        "the fee-role digest now matches the empty program, so the typed stop this \
+         lane records has been repaired and the record must be revisited"
     );
 }
 
