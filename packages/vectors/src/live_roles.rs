@@ -67,6 +67,18 @@ pub enum CandidateEvidenceRole {
     Funding,
     /// That the target's own commitment-balance rule accepted a
     /// conserving private transaction and refused a non-conserving one.
+    ///
+    /// The "refused a non-conserving one" clause is a repo-authored
+    /// strengthening of §10.5, not a guide requirement. §10.5 step 3
+    /// asks only for "target CT conservation RECORDED against a
+    /// balance-valid control" and §11.2's gate is "needs a balance-valid
+    /// accepted control first" — neither names a refused case. The
+    /// strengthening is satisfied by the fourth restart step's
+    /// wrong-blinder mutant, whose balance-layer refusal is the same
+    /// observed run this role's conserving half is recorded from; it is
+    /// spelled out here so a later reader does not re-derive the
+    /// circular reading that a conservation claim cannot be recorded
+    /// until step four has run.
     CtConservation,
     /// That an owner's authorization over the protected bytes was
     /// accepted, and verifies against an independently recomputed
