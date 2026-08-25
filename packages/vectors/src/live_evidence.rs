@@ -270,15 +270,21 @@ pub enum LiveInfrastructureBlocker {
     /// The conformance package advertises a test sponsor authorization
     /// capability and the native executor implements it, with a fixed
     /// regtest key, deterministic signing, and a response bound to the
-    /// exact finalized transaction. Nothing here reaches it. The
-    /// distinction is the whole point of naming a blocker precisely:
-    /// clearing this one is an integration, not a design.
+    /// exact finalized transaction. Nothing in this lane reaches it. One
+    /// integration test beside the lane now does — it finalizes an
+    /// explicit sponsored control, sends its exact sponsor request,
+    /// replays the returned witness through the sponsor capability, and
+    /// observes that a witness bound to one mutated byte is refused —
+    /// and it fills no row here. The distinction is the whole point of
+    /// naming a blocker precisely: clearing this one is an integration,
+    /// not a design.
     ///
     /// Wiring it is still not enough to remove the blocker. §1.9 asks
     /// for the sponsor owner's *target authorization*, and a returned
     /// byte stack is not that until a target has accepted a control
-    /// carrying it — which needs the owner sighash first. A blocker
-    /// moves on an observed result and never on a capability existing.
+    /// carrying it. No control carrying one has been submitted, so no
+    /// such acceptance exists. A blocker moves on an observed result and
+    /// never on a capability existing.
     SponsorEnvelopeSignerAbsent,
     /// No predecessor exists to build the spend from.
     ///

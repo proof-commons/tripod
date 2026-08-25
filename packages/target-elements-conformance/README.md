@@ -408,15 +408,18 @@ submission earned. Nothing in that vocabulary names an operation's meaning,
 which is what lets this package supervise a compact-ASH run without owning
 one.
 
-One advertised capability has no first-party caller. `TestSponsorAuthorization`
-is declared here and implemented by the native executor — a fixed regtest
-sponsor key, deterministic signing, and a response bound to the exact finalized
-transaction it was given — and no evidence lane reaches it. The distinction is
-worth keeping precise in both directions: a reader of the Guide-13 evidence
-plan should not conclude that no adapter signer exists, and a reader here
-should not conclude that a returned byte stack is sponsor authorization. It
-becomes that when a target accepts a control carrying it, which needs an owner
-signature first.
+One advertised capability has one first-party caller, and it is a test rather
+than an evidence lane. `TestSponsorAuthorization` is declared here and
+implemented by the native executor — a fixed regtest sponsor key, deterministic
+signing, and a response bound to the exact finalized transaction it was given —
+and the vectors package's sponsor-signing integration test reaches it: an
+explicit sponsored control finalized, its exact sponsor request sent, the
+returned witness replayed, and the binding checked against a mutated-byte
+control. No evidence lane reaches it. The distinction is worth keeping precise
+in both directions: a reader of the Guide-13 evidence plan should not conclude
+that no adapter signer exists, and a reader here should not conclude that a
+returned byte stack is sponsor authorization. It becomes that when a target
+accepts a control carrying it, and no such control has been submitted.
 
 `ProtocolLimits` bounds each phase of what this side READS;
 `ProtocolLimits::DEFAULT` is the standard set, and `for_phase` reads the bound
