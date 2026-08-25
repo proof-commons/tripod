@@ -21,6 +21,7 @@ pub mod live_first_party;
 pub mod live_keypath_probe;
 pub mod live_measurements;
 pub mod live_minimality_report;
+pub mod live_multi_shapes;
 pub mod live_native;
 pub mod live_owner_observation;
 pub mod live_pairs;

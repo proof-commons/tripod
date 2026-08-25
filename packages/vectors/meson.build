@@ -24,6 +24,7 @@ vectors_source_files = files(
   'src/live_keypath_probe.rs',
   'src/live_measurements.rs',
   'src/live_minimality_report.rs',
+  'src/live_multi_shapes.rs',
   'src/live_native.rs',
   'src/live_owner_observation.rs',
   'src/live_pairs.rs',
