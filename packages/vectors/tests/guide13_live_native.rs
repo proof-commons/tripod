@@ -1053,7 +1053,7 @@ fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
     // binary the adapter was pointed at; this probe records it and
     // verifies nothing about it, which is what its name says.
     let provenance = ProbeProvenance {
-        network_id: network.clone(),
+        network_id: network,
         genesis_id: genesis.clone(),
         target_version: format!("{:?}", target.definition().version()),
         declared_source_tip: environment("ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP"),
@@ -1125,7 +1125,13 @@ fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
         attempt.signing_public_key().as_slice(),
         "the attempt was signed by the output key, which is not this probe",
     );
-    assert!(!attempt.submitted_bytes().is_empty());
+    // The submitted bytes carry a whole transaction and not only the
+    // witness item, which is the cheapest check that the attempt was
+    // assembled rather than merely signed.
+    assert!(
+        attempt.submitted_bytes().len() > attempt.witness_stack()[0].len(),
+        "the submitted bytes are no larger than the witness item",
+    );
 
     // The target answered. What it answered is recorded and asserted
     // nowhere: a probe that panicked on an unexpected layer would hide
