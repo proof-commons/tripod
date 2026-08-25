@@ -1705,6 +1705,8 @@ mod tests {
         // accepted control's identity -- the half a reader can check
         // against a chain, the refusal having left no transaction to
         // look up -- and the target's own words.
+        use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
+
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let mut answered = BTreeSet::new();
         for row in plan.rows() {
@@ -1738,7 +1740,6 @@ mod tests {
         // own row rather than one observation counted twice. The empty
         // offering failed the check that consumed it; the well-sized
         // non-signature was consumed and judged.
-        use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
         assert_ne!(
             witness::EMPTY_SIGNATURE_REFUSAL,
             witness::MALFORMED_SIGNATURE_REFUSAL,
