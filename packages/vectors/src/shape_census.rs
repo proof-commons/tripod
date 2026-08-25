@@ -1029,11 +1029,16 @@ mod tests {
     fn the_observed_cardinalities_match_the_recorded_run_counts() {
         use crate::live_multi_shapes::run_of_record::{OUTPUT_COUNTS, RECEIPT_LEAVES};
 
+        // The fee-bearing shape is in this list even though it was never
+        // accepted, because what the list checks is that the register
+        // describes the same CARDINALITIES the ceremony ran — a question
+        // a refusal answers exactly as well as an acceptance does.
         let ordered = [
             BlindedShape::OneToThree,
             BlindedShape::TwoToThree,
             BlindedShape::TwoToTwo,
             BlindedShape::OneToOne,
+            BlindedShape::OneToOneWithFee,
         ];
         for (index, shape) in ordered.into_iter().enumerate() {
             assert_eq!(

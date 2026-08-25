@@ -1376,6 +1376,75 @@ fn the_strict_one_to_one_shape_is_submitted_to_a_real_target() {
     run_one_multi_shape(PrivateShape::StrictOneToOne, "multi-strict-one-to-one");
 }
 
+/// One blinded input, one blinded output, and one REAL fee output.
+///
+/// # The shape the register called expressible and unrun
+///
+/// The fixture registry gained a fee role in the structural-removals
+/// wave and nothing downstream of it could carry one, so the shape
+/// registered, derived and digested and then stopped at the projection
+/// with a typed refusal naming the missing projection. The stop was
+/// honest and it was not a run: a register that had recorded the shape
+/// observed because its vocabulary could express it would have been
+/// committing the exact error the register exists to prevent.
+///
+/// This run is what that removal is worth. The fee output is a fee at
+/// the target and not a blinded output wearing the name -- explicit
+/// value, explicit asset, empty scriptPubKey, and no witness entry of
+/// its own -- and the blinded output beside it is the balancing one,
+/// whose blinder is solved over no other freely chosen blinder and
+/// therefore comes out as the consumed coin's own.
+///
+/// # What it does not establish
+///
+/// It is not `private-sponsor-values` and it moves no matrix row. Nobody
+/// sponsors anything here: the transaction pays its own fee out of its
+/// own consumed coin, in the disposable protocol asset, which is the
+/// only asset whose tally that fee can close. The sponsor rows' signer
+/// dependency is untouched.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_fee_bearing_one_to_one_shape_is_submitted_to_a_real_target() {
+    use vectors::live_multi_shapes::PrivateShape;
+
+    run_one_multi_shape(PrivateShape::OneToOneWithFee, "multi-one-to-one-with-fee");
+}
+
+/// Every committed output carries a range proof, and every fee output
+/// carries none.
+///
+/// Two assertions rather than one weakened to "some entries carry
+/// proofs". A blinded output that lost its proof is exactly what this
+/// check exists to catch, and a fee output that GREW one would be a fee
+/// that had been blinded — the failure the fee role was built to make
+/// impossible, and the one worth a second assertion of its own.
+fn assert_proofs_match_the_shape(
+    shape: vectors::live_multi_shapes::PrivateShape,
+    record: &vectors::live_multi_shapes::MultiShapeRecord,
+) {
+    let proving = record.output_count() - shape.fee_output_count();
+    assert_eq!(
+        record
+            .output_witness_proof_bytes()
+            .iter()
+            .filter(|bytes| **bytes > 2)
+            .count(),
+        proving,
+        "a committed output carried no range proof: {:?}",
+        record.output_witness_proof_bytes(),
+    );
+    assert_eq!(
+        record
+            .output_witness_proof_bytes()
+            .iter()
+            .filter(|bytes| **bytes == 0)
+            .count(),
+        shape.fee_output_count(),
+        "a fee output's witness entry is empty, and only a fee output's is: {:?}",
+        record.output_witness_proof_bytes(),
+    );
+}
+
 /// One multi-output or multi-input private shape, against the node.
 ///
 /// The same shape-only discipline the one-to-one control ran under: what
@@ -1475,14 +1544,7 @@ fn run_one_multi_shape(shape: vectors::live_multi_shapes::PrivateShape, extensio
         record.output_count(),
         "one output-witness entry per created output",
     );
-    assert!(
-        record
-            .output_witness_proof_bytes()
-            .iter()
-            .all(|bytes| *bytes > 2),
-        "an output-witness entry carried no range proof: {:?}",
-        record.output_witness_proof_bytes(),
-    );
+    assert_proofs_match_the_shape(shape, record);
 
     // The candidate reached the node.
     assert!(record.submitted_bytes() > 0);

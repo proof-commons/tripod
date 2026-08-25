@@ -129,6 +129,26 @@ struct Destination {
 /// moves is moved on an acceptance of THIS shape, and a representative is
 /// named as one rather than presented as a proof over every shape of its
 /// class.
+/// What the fee-bearing shape pays as its fee, in the protocol asset.
+///
+/// # Why this figure
+///
+/// It is the fee the sponsor arc's accepted control carried, so the two
+/// fee-bearing acceptances this workspace has recorded carry the same
+/// figure and a reader comparing them is comparing one number. That is
+/// the whole of the reason: nothing about the target requires this
+/// amount, and the asset is NOT the same one — the sponsor arc paid in
+/// the reserve asset and this shape pays in the disposable protocol asset
+/// its own consumed coin carries, because that is the only asset whose
+/// tally the fee can close.
+///
+/// It is nonzero, which is not a preference. A zero-value explicit output
+/// is admitted by the target only where its scriptPubKey is unspendable,
+/// and an empty script is not unspendable, so a zero fee output is
+/// refused outright — the fee-only row of the shape register records the
+/// same clause.
+const FEE_AMOUNT: u64 = 250;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrivateShape {
     /// One receipt in, three outputs: two recipients and one balancing
@@ -155,15 +175,34 @@ pub enum PrivateShape {
     /// inverse-pair predecessor would force a ZERO blinder, and that the
     /// registry refuses.
     StrictOneToOne,
+    /// ONE receipt in, one blinded output and one FEE output out.
+    ///
+    /// The first shape this lane builds that pays a fee at all. Every
+    /// identity the confidential lane has recorded was built sponsorless
+    /// and carries no fee output, so this one is the shape where the
+    /// target's fee rules are exercised rather than avoided.
+    ///
+    /// The blinded output is the BALANCING one and not the sole form: a
+    /// manifest of two outputs may not declare the sole form, and it does
+    /// not need to. The fee is held out of the solve at a zero blinder, so
+    /// the balancing output's blinder is solved over no others and comes
+    /// out as the consumed coin's own blinder -- nonzero, because a single
+    /// consumed coin's blinder is.
+    ///
+    /// The fee is in the PROTOCOL asset, which is the only asset that
+    /// makes the tally close. A fee in some other asset would leave the
+    /// protocol sum short by the fee.
+    OneToOneWithFee,
 }
 
 impl PrivateShape {
-    /// All four, in the order the restart runs them.
-    pub const ALL: [Self; 4] = [
+    /// All five, in the order the restart runs them.
+    pub const ALL: [Self; 5] = [
         Self::Split,
         Self::ManyToMany,
         Self::SeveralDistinctOwners,
         Self::StrictOneToOne,
+        Self::OneToOneWithFee,
     ];
 
     /// The ceremony's own name for the shape, used as the report
@@ -175,6 +214,7 @@ impl PrivateShape {
             Self::ManyToMany => "private-many-to-many",
             Self::SeveralDistinctOwners => "private-several-distinct-owners",
             Self::StrictOneToOne => "private-strict-one-to-one",
+            Self::OneToOneWithFee => "private-one-to-one-with-fee",
         }
     }
 
@@ -182,19 +222,26 @@ impl PrivateShape {
     /// it moves one.
     ///
     /// `None` is a real answer and not a missing entry. The strict
-    /// one-to-one is a shape of the CONSENSUS census, which enumerates
-    /// what the target's balance rule admits; the §15.2 positive private
-    /// table enumerates the guide's own classes and has no member for it.
-    /// An acceptance of it therefore moves a census entry and no row, and
-    /// naming a row here that the table does not carry would be inventing
-    /// one to have something to move.
+    /// one-to-one and the fee-bearing one-to-one are shapes of the
+    /// CONSENSUS census, which enumerates what the target's balance rule
+    /// admits; the §15.2 positive private table enumerates the guide's own
+    /// classes and has no member for either. An acceptance of one
+    /// therefore moves a census entry and no row, and naming a row here
+    /// that the table does not carry would be inventing one to have
+    /// something to move.
+    ///
+    /// The fee-bearing shape is emphatically NOT `private-sponsor-values`.
+    /// That row is about a sponsor paying another party's fee, whose
+    /// signer dependency this workspace does not close; this shape pays
+    /// its own fee out of its own consumed coin, and mapping it onto that
+    /// row would answer a question nobody asked it.
     #[must_use]
     pub const fn row_name(self) -> Option<&'static str> {
         match self {
             Self::Split => Some("private-split"),
             Self::ManyToMany => Some("private-many-to-many-representative"),
             Self::SeveralDistinctOwners => Some("private-several-distinct-owners"),
-            Self::StrictOneToOne => None,
+            Self::StrictOneToOne | Self::OneToOneWithFee => None,
         }
     }
 
@@ -205,11 +252,32 @@ impl PrivateShape {
         format!("ctf-v1/wave-seven-{}-successor", self.name())
     }
 
+    /// How many of this shape's outputs are fee outputs.
+    ///
+    /// Read by a caller that needs to know which output-witness entries
+    /// are EXPECTED to be empty. A fee output carries an explicit value
+    /// and therefore no range proof, so a lane asserting a proof on every
+    /// entry would fail on the one shape that pays a fee — and loosening
+    /// that assertion to "some entries carry proofs" would stop it
+    /// catching a blinded output that lost its proof, which is the thing
+    /// it exists to catch.
+    #[must_use]
+    pub const fn fee_output_count(self) -> usize {
+        match self {
+            Self::Split | Self::ManyToMany | Self::SeveralDistinctOwners | Self::StrictOneToOne => {
+                0
+            }
+            Self::OneToOneWithFee => 1,
+        }
+    }
+
     /// Which predecessor outputs this shape consumes, in fixed order.
     #[must_use]
     const fn consumed(self) -> &'static [ConsumedReceipt] {
         match self {
-            Self::Split | Self::StrictOneToOne => &[ConsumedReceipt::Primary],
+            Self::Split | Self::StrictOneToOne | Self::OneToOneWithFee => {
+                &[ConsumedReceipt::Primary]
+            }
             Self::ManyToMany | Self::SeveralDistinctOwners => {
                 &[ConsumedReceipt::Primary, ConsumedReceipt::Balancing]
             }
@@ -269,6 +337,19 @@ impl PrivateShape {
                 amount: 700_000_000,
                 role: FixtureOutputRole::SoleBalancing,
             }],
+            // ONE receipt in, one blinded output and one fee. The fee's
+            // scalar is never read -- a fee output carries no program at
+            // all, which is most of what makes it a fee -- and it is
+            // written as the second owner's only so the destination
+            // literal has the shape its neighbours have.
+            Self::OneToOneWithFee => vec![
+                balancing(SECOND_SCALAR, 700_000_000 - FEE_AMOUNT),
+                Destination {
+                    scalar: SECOND_SCALAR,
+                    amount: FEE_AMOUNT,
+                    role: FixtureOutputRole::Fee,
+                },
+            ],
         }
     }
 }
@@ -549,7 +630,16 @@ impl MultiShapePlanner {
                 Ok(ConfidentialFixtureOutput {
                     role: destination.role,
                     semantic_amount: destination.amount,
-                    output_program: private_program(&linked.abi, &destination.scalar)?,
+                    // A fee output's program is empty, and the registry
+                    // REQUIRES it empty of that role rather than merely
+                    // tolerating it. Deriving a receipt constructor here
+                    // and handing it over would be refused there, which is
+                    // the clause working.
+                    output_program: if destination.role == FixtureOutputRole::Fee {
+                        Vec::new()
+                    } else {
+                        private_program(&linked.abi, &destination.scalar)?
+                    },
                 })
             })
             .collect::<Result<_, PrivateRestartRefusal>>()?;
@@ -1443,8 +1533,62 @@ pub mod run_of_record {
     ///
     /// Recorded rather than assumed, so a shape whose cardinality drifted
     /// is readable here rather than inferred from a name.
-    pub const RECEIPT_LEAVES: [usize; 4] = [1, 2, 2, 1];
+    pub const RECEIPT_LEAVES: [usize; 5] = [1, 2, 2, 1, 1];
 
     /// How many outputs each shape created, in the same order.
-    pub const OUTPUT_COUNTS: [usize; 4] = [3, 3, 2, 1];
+    pub const OUTPUT_COUNTS: [usize; 5] = [3, 3, 2, 1, 2];
+
+    // --- The fee-bearing shape: a refusal, and NOT an acceptance -------
+
+    /// The fee-bearing one-to-one's successor fixture digest.
+    ///
+    /// The fixture registered, derived and PROJECTED. Recording the digest
+    /// is recording that much and no more.
+    pub const FEE_BEARING_SUCCESSOR_DIGEST: &str =
+        "d08a306819cc5ad713b393ecd956f2b5b38c7eb46de20069e8780620d79ed0cf";
+
+    /// No identity is minted for the fee-bearing shape, and this constant
+    /// exists to say so in the module acceptances are cited from.
+    ///
+    /// The target ACCEPTED NOTHING. Filing a non-acceptance among the
+    /// identities would be the one error a run of record exists to
+    /// prevent, so the shape's evidence is its own reproducible bytes and
+    /// the verdict the target returned, both recorded below.
+    pub const FEE_BEARING_ACCEPTED_IDENTITY: Option<&str> = None;
+
+    /// How many bytes the fee-bearing one-to-one handed to the node.
+    pub const FEE_BEARING_SUBMITTED_BYTES: usize = 4_870;
+
+    /// The output-witness entries the fee-bearing candidate carried.
+    ///
+    /// This array is the fee projection's own evidence, and it is the
+    /// reason the run is worth recording despite the refusal. The blinded
+    /// output carries a range proof of the usual size; the FEE output
+    /// carries an empty entry. A fee that had been mapped onto the
+    /// balancing role would read `[4_174, 4_174]` here — a blinded fee,
+    /// and not a fee at all.
+    pub const FEE_BEARING_PROOF_BYTES: [usize; 2] = [4_174, 0];
+
+    /// The verdict the target returned, verbatim and unmapped.
+    ///
+    /// A script-path rejection, at the workspace's OWN receipt covenant
+    /// rather than at any confidential rule. The candidate's value balance
+    /// was never reached and nothing here is a statement about the target's
+    /// fee rules: Elements admits a fee output in a non-policy asset at
+    /// consensus and at policy alike, and this node runs with a zero
+    /// minimum relay feerate, so the transaction did not fail for carrying
+    /// a fee.
+    ///
+    /// What it failed is the covenant the shape selection built for it.
+    /// The request states two destinations, the reviewed live-transfer
+    /// shape vocabulary reads a two-destination sponsorless shape as TWO
+    /// RECEIPT OUTPUTS, and the receipt covenant therefore requires the
+    /// second output to carry the second owner's private receipt
+    /// constructor program. The second output is the fee, whose program is
+    /// empty, so the comparison fails.
+    pub const FEE_BEARING_OBSERVED_DETAIL: &str =
+        "mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)";
+
+    /// The fee-bearing run's wall time, in seconds.
+    pub const FEE_BEARING_WALL_SECONDS: f64 = 12.4;
 }

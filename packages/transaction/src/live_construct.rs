@@ -996,6 +996,48 @@ impl PrivateLiveFinalization {
     }
 }
 
+/// The confidential destinations, each with the program its role
+/// determines.
+///
+/// Split out of the finalization because it is the one place where a
+/// destination's program is decided, and because a fee destination
+/// decides it differently — see the comment inside.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::DestinationOwnerHasNoConstructor`] where a
+/// non-fee destination names an owner the ABI does not carry a
+/// constructor for.
+fn private_destination_intents(
+    abi: &CandidateLiveTransferAbi,
+    request: &LiveTransferRequest,
+    openings: &PrivateLiveOpenings,
+) -> Result<Vec<ConfidentialDestinationIntent>, TransactionRefusal> {
+    let mut destinations = Vec::with_capacity(request.destinations().len());
+    for (destination, opening) in request.destinations().iter().zip(openings.destinations()) {
+        let program = if opening.role == ConfidentialOutputRole::Fee {
+            Vec::new()
+        } else {
+            abi.destinations()
+                .get(destination.owner(), request.representation())
+                .ok_or_else(|| TransactionRefusal::DestinationOwnerHasNoConstructor {
+                    owner: destination.owner().clone(),
+                })?
+                .instance()
+                .program()
+                .to_vec()
+        };
+        destinations.push(ConfidentialDestinationIntent::new(
+            destination.value().amount(),
+            abi.symbols().protocol_asset(),
+            program,
+            opening.fixture.clone(),
+            opening.role,
+        ));
+    }
+    Ok(destinations)
+}
+
 /// Finalize a private live transfer transaction-wide.
 ///
 /// The private lane's entry point, and the one §8.9 names when it says
@@ -1094,22 +1136,18 @@ pub fn finalize_private_live_transfer(
     // determines for that owner. Taking the program from anywhere else
     // is what would make the candidate a private transfer that is not a
     // live-receipt transfer.
-    let mut destinations = Vec::with_capacity(request.destinations().len());
-    for (destination, opening) in request.destinations().iter().zip(openings.destinations()) {
-        let constructor = abi
-            .destinations()
-            .get(destination.owner(), request.representation())
-            .ok_or_else(|| TransactionRefusal::DestinationOwnerHasNoConstructor {
-                owner: destination.owner().clone(),
-            })?;
-        destinations.push(ConfidentialDestinationIntent::new(
-            destination.value().amount(),
-            abi.symbols().protocol_asset(),
-            constructor.instance().program().to_vec(),
-            opening.fixture.clone(),
-            opening.role,
-        ));
-    }
+    //
+    // A FEE destination is the exception, and it is an exception with a
+    // reason rather than a special case: a fee output's program is EMPTY
+    // by the target's own definition of a fee, so there is no owner to
+    // resolve and no constructor to look up. The role decides, which is
+    // where every other role already comes from — the opening — and the
+    // request's owner parameter at a fee position is not consulted at
+    // all. The private request vocabulary is the explicit lane's and has
+    // no fee destination member to state instead; that is a gap in the
+    // request vocabulary and it is named here rather than papered over by
+    // resolving an owner whose program would then be discarded.
+    let destinations = private_destination_intents(abi, request, openings)?;
 
     let intent = ConfidentialConstructionIntent::new(
         inputs,
