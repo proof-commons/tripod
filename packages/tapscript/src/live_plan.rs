@@ -607,7 +607,41 @@ pub fn explicit_conservation_fragment(
             i64::from(position),
         )?);
     }
-    instructions.extend(fold(shape.receipt_outputs()));
+
+    // A SELF-PAID FEE IS A TERM OF THIS EQUALITY, and leaving it out is
+    // the one way this fragment can be quietly unsatisfiable.
+    //
+    // The relation the explicit plan closes locally is that what the
+    // receipts carried is what the transaction created. Where a sponsor
+    // pays the fee that is receipts equals destinations, because the fee
+    // came out of the sponsor region in the reserve asset and never
+    // touched the protocol sum. Where the transfer pays its OWN fee the
+    // value leaves through the fee position instead, in the protocol
+    // asset, out of the very receipts being summed -- so the equality is
+    // receipts equals destinations PLUS fee, which is the same tally the
+    // target performs and not a second opinion about it.
+    //
+    // Emitting the sponsored form's equality for a self-paying shape
+    // would demand that a positive fee be zero: no such transaction
+    // exists, and the leaf would refuse every candidate offered to it
+    // rather than fail to compile. The fee's value is readable here for
+    // the reason the amount is readable at all under this plan -- the
+    // target requires a fee output's value to be EXPLICIT -- so the term
+    // costs no confidentiality the plan was keeping.
+    let created = if shape.fee() == FeePresence::Present && !shape.sponsored() {
+        instructions.extend(explicit_amount(
+            target,
+            OpcodeId::InspectOutputValue,
+            // Immediately after the destinations. A sponsorless shape has
+            // no change role to sit between them, sponsor change
+            // requiring a sponsor region.
+            i64::from(shape.receipt_outputs()),
+        )?);
+        shape.receipt_outputs().saturating_add(1)
+    } else {
+        shape.receipt_outputs()
+    };
+    instructions.extend(fold(created));
 
     let (receipts_first, receipts_end) = shape.receipt_input_range();
     for position in receipts_first..receipts_end {

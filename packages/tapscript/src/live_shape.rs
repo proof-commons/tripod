@@ -304,9 +304,31 @@ impl LiveTransferShape {
     /// No sponsor region and no sponsor change, so the counts that could
     /// contradict the claim are fixed here rather than accepted and
     /// refused. The fee output is the target's structural one exactly as
-    /// a sponsored form's is — same reserve asset, same empty program,
-    /// same position after the destinations — and the only thing that
-    /// differs is who funded the value behind it.
+    /// a sponsored form's is — same empty program at the same position
+    /// after the destinations — and what differs is who funded the value
+    /// behind it.
+    ///
+    /// # What the conservation relation becomes
+    ///
+    /// Receipts equal destinations PLUS the fee, where a sponsored
+    /// form's is receipts equal destinations. The difference is not a
+    /// weakening: a sponsored fee leaves through the sponsor region in
+    /// the reserve asset and never enters the protocol sum, while a
+    /// self-paid fee leaves through the fee position in the protocol
+    /// asset, out of the very receipts being counted. The fee term is
+    /// therefore part of the equality rather than an allowance made
+    /// against it, and it is read at the fee position under the same
+    /// explicit-amount discipline the other terms use — which the target
+    /// permits, a fee output's value being required to be explicit.
+    /// [`crate::live_plan::explicit_conservation_fragment`] emits exactly
+    /// that, and it is the same tally the target performs rather than a
+    /// second opinion about it.
+    ///
+    /// Which asset the fee carries follows the same reasoning and is
+    /// stated at
+    /// [`crate::live_plan::live_sponsor_isolation_fragment`]: the
+    /// protocol asset, because a sponsorless form has no reserve-asset
+    /// input and Elements balances per asset.
     ///
     /// # Errors
     ///
