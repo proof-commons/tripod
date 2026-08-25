@@ -53,6 +53,13 @@ use crate::live_abi::{CandidateLiveTransferAbi, LiveShapeAbi, LiveTransactionFor
 use crate::live_finalize::{
     FinalizedLiveTransfer, FinalizedOutputCensus, FinalizedParts, ReceiptInputRecord,
 };
+use crate::live_materialize::{
+    ConfidentialConstructionIntent, ConfidentialDestinationIntent, ConfidentialInputIntent,
+    ConfidentialMaterializationProfiles, ConfidentialOutputRole, ConfidentialProofMaterializer,
+    FixtureOpeningReference, FrozenConfidentialFixtureView, IndependentCommitmentCheck,
+    MaterializedConfidentialCandidate, NonProtocolFundingRegion, SCALAR_BYTES,
+    materialize_confidential_candidate,
+};
 use crate::live_private::{
     ConfidentialConstructionModel, PrivateValueCapability, SelectedConstructionModel,
 };
@@ -786,4 +793,318 @@ fn receipt_records(
             ))
         })
         .collect()
+}
+
+// -------------------------------------------------------------------------
+// The private lane's own finalization (rule:guide-ctf-exec:per-output-retirement)
+// -------------------------------------------------------------------------
+
+/// What the request cannot say, stated by the caller instead.
+///
+/// # Why this is a parameter and not a field of the request
+///
+/// Three of these facts are opening material and one is an election, and
+/// the request vocabulary can carry neither.
+///
+/// The opening material — which registered fixture each input and each
+/// destination belongs to, and the explicit amount behind a spent
+/// commitment — is exactly what a request is forbidden to carry: a
+/// request travels on a wire whose canonical form is a handle and a
+/// digest, and a request that carried an amount would put a private
+/// amount in a schema whose exclusions say it holds none
+/// (rule:guide-ctf-exec:exclusions).
+///
+/// The election is the balancing designation. A transaction-wide
+/// materializer has to be told which destination absorbs the blinder
+/// residue, and the receipt-destination vocabulary has no way to say it,
+/// because for an explicit transfer there is nothing to absorb. Electing
+/// it here, out loud, is better than electing it by position and calling
+/// the convention obvious.
+///
+/// # It is public disposable test material and nothing else
+///
+/// Every scalar reachable through this type is ADR-015 test material.
+/// Nothing here is, becomes, or stands in for production custody, and
+/// the record built downstream carries that as a non-claim rather than
+/// as a sentence in this comment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrivateLiveOpenings {
+    inputs: Vec<PrivateInputOpening>,
+    destinations: Vec<PrivateDestinationOpening>,
+    non_protocol_region: NonProtocolFundingRegion,
+    profiles: ConfidentialMaterializationProfiles,
+}
+
+/// One spent predecessor output's opening facts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrivateInputOpening {
+    /// Which registered fixture output this input is.
+    pub opening: FixtureOpeningReference,
+    /// The explicit amount behind the spent commitment.
+    pub explicit_amount: u64,
+    /// The asset blinder, which the guide's representation fixes at
+    /// zero and which is carried rather than assumed so that a
+    /// representation that stopped fixing it would be a changed value
+    /// here and not a changed constant somewhere else.
+    pub zero_asset_blinder: [u8; SCALAR_BYTES],
+}
+
+/// One destination's opening facts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrivateDestinationOpening {
+    /// Which registered fixture output this destination is.
+    pub fixture: FixtureOpeningReference,
+    /// Whether this destination is the primary one or the one that
+    /// absorbs the blinder residue.
+    pub role: ConfidentialOutputRole,
+}
+
+impl PrivateLiveOpenings {
+    /// The openings for one private transfer.
+    #[must_use]
+    pub const fn new(
+        inputs: Vec<PrivateInputOpening>,
+        destinations: Vec<PrivateDestinationOpening>,
+        non_protocol_region: NonProtocolFundingRegion,
+        profiles: ConfidentialMaterializationProfiles,
+    ) -> Self {
+        Self {
+            inputs,
+            destinations,
+            non_protocol_region,
+            profiles,
+        }
+    }
+
+    /// The per-input openings, in the request's receipt order.
+    #[must_use]
+    pub fn inputs(&self) -> &[PrivateInputOpening] {
+        &self.inputs
+    }
+
+    /// The per-destination openings, in the request's destination order.
+    #[must_use]
+    pub fn destinations(&self) -> &[PrivateDestinationOpening] {
+        &self.destinations
+    }
+}
+
+/// A private transfer, finalized transaction-wide.
+///
+/// # Why this is not a `LiveFinalization`
+///
+/// Because a `LiveFinalization` carries a [`FinalizedLiveTransfer`],
+/// whose protected bytes are the witnessless serialization, and the
+/// proof-finalized candidate's protected bytes are not. Holding one
+/// inside the other would leave a proof-free preimage authoritative,
+/// which is the exact loss the materializer's own freeze exists to
+/// prevent — so the private lane returns a different type rather than a
+/// wrapped one.
+///
+/// What it does carry beside the candidate is the receipt records, and
+/// those are the reason this function exists rather than a direct call
+/// to the materializer: each record holds the leaf its own input
+/// position executes and the control block that authenticates it, which
+/// is what makes the spend a *live-receipt covenant* spend rather than a
+/// spend of some program the caller chose.
+#[derive(Clone, Debug)]
+pub struct PrivateLiveFinalization {
+    materialized: MaterializedConfidentialCandidate,
+    receipts: Vec<ReceiptInputRecord>,
+    report: LiveConstructionReport,
+}
+
+impl PrivateLiveFinalization {
+    /// The proof-finalized candidate.
+    #[must_use]
+    pub const fn materialized(&self) -> &MaterializedConfidentialCandidate {
+        &self.materialized
+    }
+
+    /// The receipt records, each carrying its own leaf and control
+    /// block.
+    #[must_use]
+    pub fn receipts(&self) -> &[ReceiptInputRecord] {
+        &self.receipts
+    }
+
+    /// The construction report.
+    #[must_use]
+    pub const fn report(&self) -> &LiveConstructionReport {
+        &self.report
+    }
+
+    /// The candidate, taken out.
+    #[must_use]
+    pub fn into_materialized(self) -> MaterializedConfidentialCandidate {
+        self.materialized
+    }
+}
+
+/// Finalize a private live transfer transaction-wide.
+///
+/// The private lane's entry point, and the one §8.9 names when it says
+/// the private branch takes the transaction-wide path. The per-output
+/// role is untouched and still serves the per-output path it always
+/// served; what moves here is the private COMPLETE-TRANSACTION claim,
+/// which now rests on a materializer that sees the whole transaction —
+/// every opening, every destination, and the balance across them — and
+/// therefore produces a candidate carrying real range proofs and a
+/// blinder sum that closes.
+///
+/// The stages it shares with the explicit lane are shared rather than
+/// copied: the shape is selected by the same function over the same
+/// counts, the receipts are recognized against the same view, and the
+/// receipt records come out of the same assembly. Only the outputs and
+/// the protected transaction are the materializer's instead of this
+/// module's, which is the whole of the difference and is why the two
+/// lanes cannot drift about what a live receipt is.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::PrivateFinalizationIsNotTheExplicitLane`] for a
+/// request that is not private;
+/// [`TransactionRefusal::PrivateFinalizationIsSponsorless`] for a
+/// sponsored one; [`TransactionRefusal::RepresentationNotLinked`] where
+/// the ABI carries no private plan;
+/// [`TransactionRefusal::PrivateOpeningsDoNotCoverTheRequest`] where the
+/// openings and the request disagree about how many things there are;
+/// [`TransactionRefusal::PrivateMaterializationRefused`] carrying the
+/// materializer's own refusal; and any refusal of [`select_shape`] or of
+/// receipt recognition.
+pub fn finalize_private_live_transfer(
+    abi: &CandidateLiveTransferAbi,
+    request: &LiveTransferRequest,
+    view: &PublicConstructionView,
+    openings: &PrivateLiveOpenings,
+    fixtures: &FrozenConfidentialFixtureView,
+    crypto: &dyn ConfidentialProofMaterializer,
+    checker: &dyn IndependentCommitmentCheck,
+) -> Result<PrivateLiveFinalization, TransactionRefusal> {
+    if request.representation() != LiveTransferRepresentationPlan::PrivateCommitted {
+        return Err(
+            TransactionRefusal::PrivateFinalizationIsNotTheExplicitLane {
+                representation: request.representation(),
+            },
+        );
+    }
+    if request.form() != RequestedForm::Sponsorless {
+        return Err(TransactionRefusal::PrivateFinalizationIsSponsorless);
+    }
+    if !abi.representations().contains(&request.representation()) {
+        return Err(TransactionRefusal::RepresentationNotLinked);
+    }
+    if openings.inputs().len() != request.receipts().len() {
+        return Err(TransactionRefusal::PrivateOpeningsDoNotCoverTheRequest {
+            offered: openings.inputs().len(),
+            required: request.receipts().len(),
+        });
+    }
+    if openings.destinations().len() != request.destinations().len() {
+        return Err(TransactionRefusal::PrivateOpeningsDoNotCoverTheRequest {
+            offered: openings.destinations().len(),
+            required: request.destinations().len(),
+        });
+    }
+
+    // The explicit lane's own stages, called and not reimplemented.
+    let shape = select_shape(abi, request, 0)?;
+    let recognized = recognize_receipts(abi, request, view)?;
+    let created_total = request
+        .destination_total()
+        .ok_or(TransactionRefusal::DestinationTotalOutOfRange)?;
+
+    // The inputs the materializer sees are the ones the node reported,
+    // carried through recognition unchanged, plus the opening each one
+    // needs and the per-output role cannot reach.
+    let inputs: Vec<ConfidentialInputIntent> = recognized
+        .iter()
+        .zip(openings.inputs())
+        .map(|(receipt, opening)| {
+            ConfidentialInputIntent::new(
+                receipt.outpoint,
+                receipt.asset,
+                receipt.value,
+                receipt.program.clone(),
+                LIVE_TRANSFER_SEQUENCE,
+                opening.opening.clone(),
+                opening.explicit_amount,
+                opening.zero_asset_blinder,
+            )
+        })
+        .collect();
+
+    // Each destination pays to the private constructor the ABI
+    // determines for that owner. Taking the program from anywhere else
+    // is what would make the candidate a private transfer that is not a
+    // live-receipt transfer.
+    let mut destinations = Vec::with_capacity(request.destinations().len());
+    for (destination, opening) in request.destinations().iter().zip(openings.destinations()) {
+        let constructor = abi
+            .destinations()
+            .get(destination.owner(), request.representation())
+            .ok_or_else(|| TransactionRefusal::DestinationOwnerHasNoConstructor {
+                owner: destination.owner().clone(),
+            })?;
+        destinations.push(ConfidentialDestinationIntent::new(
+            destination.value().amount(),
+            abi.symbols().protocol_asset(),
+            constructor.instance().program().to_vec(),
+            opening.fixture.clone(),
+            opening.role,
+        ));
+    }
+
+    let intent = ConfidentialConstructionIntent::new(
+        inputs,
+        destinations,
+        openings.non_protocol_region.clone(),
+        openings.profiles,
+        shape.version().version(),
+        abi.lock_time(),
+    );
+
+    let materialized = materialize_confidential_candidate(&intent, fixtures, crypto, checker)
+        .map_err(|refusal| TransactionRefusal::PrivateMaterializationRefused(Box::new(refusal)))?;
+
+    // Stage 10 of the explicit lane, unchanged: the leaf each position
+    // executes and the control block that authenticates it.
+    let receipts = receipt_records(abi, request, shape, &recognized)?;
+
+    let owners = LiveOwnerCensus {
+        distinct_semantic_owners: receipts
+            .iter()
+            .map(|record| record.owner().clone())
+            .collect(),
+        receipt_inputs: receipts.len(),
+    };
+
+    let report = LiveConstructionReport {
+        shape: shape.shape(),
+        representation: request.representation(),
+        form: shape.form(),
+        version: shape.version(),
+        owners,
+        destinations: request.destinations().len(),
+        created_total,
+        // Absent, and absent for a reason the explicit lane also
+        // records: a public subtotal of private amounts is refused, and
+        // the conservation this candidate satisfies is the target's
+        // commitment balance rather than an arithmetic this module can
+        // close.
+        consumed_total: None,
+        // The proof-bearing constructor, which is what retires
+        // NoRangeProofIsProducedOrChecked — and retires it by scope,
+        // for a lane where a proof is genuinely produced and checked,
+        // rather than by edit.
+        model: Some(SelectedConstructionModel::record_proof_bearing(
+            ConfidentialConstructionModel::EXPECTED,
+        )?),
+    };
+
+    Ok(PrivateLiveFinalization {
+        materialized,
+        receipts,
+        report,
+    })
 }

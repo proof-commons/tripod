@@ -19,7 +19,9 @@ use std::collections::BTreeSet;
 
 use linker::OwnerParameter;
 use linker::backend::{CompactAshShape, InputRole, LeafRole, OutputRole};
-use linker::live_backend::{LiveFamily, LiveTransferLeafRole, LiveTransferShape};
+use linker::live_backend::{
+    LiveFamily, LiveTransferLeafRole, LiveTransferRepresentationPlan, LiveTransferShape,
+};
 use target_elements::ResourceDimension;
 
 use crate::bytes::Outpoint;
@@ -547,6 +549,42 @@ pub enum TransactionRefusal {
         /// The output position with no field.
         position: u16,
     },
+    /// The transaction-wide private finalization was handed a request
+    /// whose representation is not the private one.
+    ///
+    /// Its own refusal rather than a reuse of the explicit lane's,
+    /// because the two lanes now have two entry points and a caller
+    /// standing at the wrong one should be told which one it is at
+    /// (rule:guide-ctf-exec:per-output-retirement).
+    PrivateFinalizationIsNotTheExplicitLane {
+        /// The representation the request selected.
+        representation: LiveTransferRepresentationPlan,
+    },
+    /// A transaction-wide private finalization was asked for a sponsored
+    /// form.
+    ///
+    /// Not a claim that sponsored private transfers are impossible. A
+    /// statement that no signer for a sponsor envelope is wired into
+    /// this lane — the standing residual `SponsorEnvelopeSignerAbsent`
+    /// is exactly that — and that building a candidate nothing could
+    /// authorize would earn a refusal attributable to the missing signer
+    /// rather than to the form.
+    PrivateFinalizationIsSponsorless,
+    /// The openings offered do not cover the request's inputs, or its
+    /// destinations, one for one.
+    PrivateOpeningsDoNotCoverTheRequest {
+        /// How many entries the openings carry.
+        offered: usize,
+        /// How many the request needs.
+        required: usize,
+    },
+    /// The transaction-wide materializer refused the private candidate.
+    ///
+    /// Wrapped rather than flattened, on the pattern the accepted-result
+    /// vocabulary already sets: the materializer's census is far finer
+    /// than anything this enum should re-spell, and a caller that wants
+    /// the detail should get the materializer's own word for it.
+    PrivateMaterializationRefused(Box<crate::live_materialize::MaterializationRefusal>),
 
     // --- Live-transfer owner signing (§12.7) --------------------------
     /// A required owner offered no response.
