@@ -567,3 +567,202 @@ fn the_two_output_prefix_pair_is_still_required_in_fixed_order() {
         "the second output carries the second admitted prefix",
     );
 }
+
+// --- The single-output fully-solved balancing form ---------------------
+
+/// One manifest of a single sole-balancing output.
+///
+/// The input blinder sum is the caller's, because it is the whole
+/// question this form asks: the lone output's blinder IS that sum, so a
+/// test that fixed it here could not reach the degenerate case.
+fn sole_manifest(handle: &str, input_blinder_sum: [u8; 32]) -> ConfidentialFixtureManifest {
+    ConfidentialFixtureManifest {
+        handle: ConfidentialFixtureHandle::new(handle.to_owned()),
+        material_class: PublicDisposableTestMaterial::EXPECTED,
+        derivation_profile: FixtureDerivationProfile::GuideCtfV1,
+        profiles: profiles(ReproducibilityContract::ByteIdentity),
+        retry_limit: MAX_PARITY_COUNTER,
+        explicit_asset: ASSET,
+        input_blinder_sum,
+        outputs: vec![ConfidentialFixtureOutput {
+            role: FixtureOutputRole::SoleBalancing,
+            semantic_amount: 1_000_000_000,
+            output_program: vec![0x51],
+        }],
+    }
+}
+
+/// A nonzero input blinder sum, standing in for a predecessor whose
+/// consumed blinders do not cancel.
+///
+/// Public disposable test material under ADR-015. It is small and
+/// obviously below the group order, which is all this form asks of it.
+const NON_CANCELING_SUM: [u8; 32] = {
+    let mut bytes = [0_u8; 32];
+    bytes[31] = 0x2a;
+    bytes
+};
+
+#[test]
+fn the_single_output_form_registers_and_takes_the_input_blinder_sum_verbatim() {
+    let mut registry = ConfidentialFixtureRegistry::new();
+    registry
+        .register(sole_manifest("ctf-v1/sole-form", NON_CANCELING_SUM))
+        .expect("the declared single-output form registers");
+    let frozen = registry.freeze();
+    let handle = ConfidentialFixtureHandle::new("ctf-v1/sole-form".to_owned());
+    let digest = *frozen
+        .registered_digest(&handle)
+        .expect("the registry holds its own digest");
+    let resolved = frozen.resolve(&handle, &digest).expect("it resolves");
+
+    let FixtureOpenings::Derived {
+        openings,
+        parity_counter,
+    } = resolved.openings()
+    else {
+        panic!("byte identity derives openings");
+    };
+    assert_eq!(openings.len(), 1, "the form has exactly one output");
+
+    // The whole claim of the form: the blinder is not derived and not
+    // searched for. It is the input blinder sum, unchanged.
+    assert_eq!(
+        openings[0].value_blinder, NON_CANCELING_SUM,
+        "the lone output's blinder is FORCED to the input blinder sum",
+    );
+
+    // And the search that would have chosen it has nothing to choose, so
+    // it settles at the first counter. This is asserted rather than
+    // described because a bounded search that cannot fail must not be
+    // reported as one that discriminated.
+    assert_eq!(
+        *parity_counter, 0,
+        "the parity search degenerates to a well-formedness check",
+    );
+
+    // Whichever prefix the forced blinder yields is the one it carries.
+    // Both are admitted and neither was selected.
+    let admitted = target_elements::reviewed_confidential_review_facts().value();
+    assert!(
+        admitted.admits_prefix(openings[0].value_commitment[0]),
+        "the commitment's parity is whatever the forced blinder yields",
+    );
+}
+
+#[test]
+fn a_canceling_predecessor_is_refused_rather_than_built_hiding_nothing() {
+    // THE DEGENERACY, held as a refusal.
+    //
+    // A zero input blinder sum is what merging the two halves of an
+    // inverse pair produces: the halves cancel by construction, which is
+    // what makes them an inverse pair. The forced blinder would then be
+    // zero and the commitment exactly the value times the value
+    // generator — a point anyone recomputes from a guessed amount,
+    // carrying a blinded output's form and none of its hiding.
+    //
+    // The registry does not build it and does not annotate it. It
+    // refuses.
+    let refusal = ConfidentialFixtureRegistry::new()
+        .register(sole_manifest("ctf-v1/sole-canceling", [0_u8; 32]))
+        .expect_err("a canceling predecessor is refused");
+    assert_eq!(
+        refusal,
+        RegistrationRefusal::Derivation {
+            refusal: FixtureDerivationRefusal::DegenerateBalancingScalar
+        },
+        "the zero solved blinder is refused outright and never nudged",
+    );
+}
+
+#[test]
+fn a_lone_output_that_does_not_declare_the_form_still_meets_the_floor() {
+    // The removal is a narrowing and not a relaxation. Nothing that was
+    // refused before registers now unless it says which form it means,
+    // and the refusal it draws is the same one with the same count.
+    let refused = |role: FixtureOutputRole| {
+        let mut subject = sole_manifest("ctf-v1/sole-undeclared", NON_CANCELING_SUM);
+        subject.outputs[0].role = role;
+        ConfidentialFixtureRegistry::new()
+            .register(subject)
+            .expect_err("an undeclared lone output is refused")
+    };
+    assert_eq!(
+        refused(FixtureOutputRole::Balancing),
+        RegistrationRefusal::OutputSetTooSmall { found: 1 },
+        "a lone output asking to be solved from others that are not there",
+    );
+    assert_eq!(
+        refused(FixtureOutputRole::Primary),
+        RegistrationRefusal::OutputSetTooSmall { found: 1 },
+    );
+}
+
+#[test]
+fn the_sole_form_is_refused_beside_other_outputs() {
+    // The form is the whole manifest. Read as a wider manifest's
+    // balancing output it would let a caller reach the single-output
+    // solve without the single-output shape.
+    let mut subject = manifest();
+    subject.outputs[1].role = FixtureOutputRole::SoleBalancing;
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(subject)
+            .expect_err("the role is refused beside others"),
+        RegistrationRefusal::SoleBalancingRoleNotAlone { found: 2 },
+    );
+}
+
+#[test]
+fn the_two_output_predecessor_derives_exactly_what_it_derived_before() {
+    // The bit-for-bit clause of the removal, held against the values the
+    // two-output case had before the single-output form existed rather
+    // than against a fresh recomputation.
+    let registry = frozen();
+    let handle = predecessor_handle();
+    let digest = *registry
+        .registered_digest(&handle)
+        .expect("the registry holds its own digest");
+    let resolved = registry.resolve(&handle, &digest).expect("it resolves");
+    let FixtureOpenings::Derived {
+        openings,
+        parity_counter,
+    } = resolved.openings()
+    else {
+        panic!("byte identity derives openings");
+    };
+
+    // The dual-parity rule: the admitted pair in FIXED ORDER, which is
+    // the discriminating power the search really does have and which the
+    // widened rule left untouched.
+    let admitted = target_elements::reviewed_confidential_review_facts().value();
+    let (low, high) = admitted.committed_prefixes();
+    assert_eq!(openings[0].value_commitment[0], low);
+    assert_eq!(openings[1].value_commitment[0], high);
+
+    // The two blinders are ordered additive inverses.
+    let order = group_order();
+    let first = read_scalar(&openings[0].value_blinder).expect("a scalar");
+    let second = read_scalar(&openings[1].value_blinder).expect("a scalar");
+    assert_eq!((first + second) % order, BigUint::from(0_u32));
+
+    // And the derivation repeats, at the same counter, byte for byte.
+    // The counter is not asserted to be any particular number here:
+    // what the two-output case is owed is that it derives what it
+    // derived, and the run-of-record digest check in the restart lane is
+    // where that is held against values recorded before this form
+    // existed.
+    let mut again = ConfidentialFixtureRegistry::new();
+    again.register(manifest()).expect("it registers again");
+    let again = again.freeze();
+    let repeated = again.resolve(&handle, &digest).expect("the same digest");
+    assert_eq!(repeated.openings(), resolved.openings());
+    let FixtureOpenings::Derived {
+        parity_counter: repeated_counter,
+        ..
+    } = repeated.openings()
+    else {
+        panic!("byte identity derives openings");
+    };
+    assert_eq!(repeated_counter, parity_counter);
+}

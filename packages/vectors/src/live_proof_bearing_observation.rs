@@ -951,7 +951,19 @@ fn project(fixture: &ResolvedFixture) -> Result<ConfidentialFixtureView, ProofBe
     for (output, opening) in fixture.outputs().iter().zip(openings) {
         let role = match output.role {
             FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
-            FixtureOutputRole::Balancing => ConfidentialOutputRole::Balancing,
+            // Both solving roles project to the view's one solving role,
+            // and that is not a role being flattened away. The view's
+            // `Balancing` means "this output's blinder is solved from
+            // the others", and the sole form is that statement with no
+            // others — the same instruction to the materializer, whose
+            // solve over an empty set of other blinders returns the
+            // input blinder sum. What the registry's extra member
+            // carries is a DECLARATION about the manifest's shape, and a
+            // declaration has done its work by the time the manifest is
+            // registered.
+            FixtureOutputRole::Balancing | FixtureOutputRole::SoleBalancing => {
+                ConfidentialOutputRole::Balancing
+            }
             // The registry's role vocabulary is open and the view's is
             // not. A role added there with no place here is a refusal
             // rather than a silent substitution.

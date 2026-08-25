@@ -125,10 +125,27 @@ impl PublicDisposableTestMaterial {
 
 /// What one output of a fixture is for.
 ///
-/// Exhaustive and disjoint: exactly one output of a transaction is
-/// `Balancing` and every other is `Primary`. The balancing blinder is
-/// solved rather than derived, which is the general rule the first
-/// predecessor's ordered additive inverses are one instance of.
+/// Exactly one output of a transaction solves the balance and every
+/// other is `Primary`. The solving blinder is solved rather than
+/// derived, which is the general rule the first predecessor's ordered
+/// additive inverses are one instance of.
+///
+/// # Why solving has two members rather than one
+///
+/// [`Self::Balancing`] and [`Self::SoleBalancing`] perform the same
+/// arithmetic — the input blinder sum less the other outputs' — and the
+/// second is the first with no others to subtract. They are separate
+/// members anyway, because the difference between them is not
+/// arithmetic but DECLARATION. A manifest of one output is admitted only
+/// where it says which form it means, so the single-output form is
+/// something a caller asks for rather than something the registry infers
+/// from a count; a one-output manifest that states `Balancing` draws the
+/// cardinality floor exactly as it always did.
+///
+/// That is what makes the removal of the two-output floor a narrowing
+/// rather than a relaxation. Nothing a caller could register before
+/// registers differently now, and nothing registers now that did not
+/// name the form it wanted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum FixtureOutputRole {
@@ -136,15 +153,59 @@ pub enum FixtureOutputRole {
     Primary,
     /// The one output whose value blinder is solved from the others.
     Balancing,
+    /// The ONLY output, whose value blinder is forced to the input
+    /// blinder sum.
+    ///
+    /// The single-output fully-solved balancing form. There are no other
+    /// outputs to subtract, so the solve returns the input blinder sum
+    /// itself, and the bounded parity search — which searches over
+    /// freely chosen blinders — has nothing to search and degenerates to
+    /// the well-formedness check [`prefixes_match`] describes.
+    ///
+    /// # The degeneracy this member does not hide
+    ///
+    /// A forced blinder can be ZERO, and a zero blinder hides nothing: a
+    /// commitment of exactly the value times the value generator is a
+    /// point anyone recomputes from a guessed amount, carrying a blinded
+    /// output's form and none of its hiding. The tally still balances and
+    /// only confidentiality fails, silently.
+    ///
+    /// It is refused rather than warned about. A zero solved blinder is
+    /// [`FixtureDerivationRefusal::DegenerateBalancingScalar`], which
+    /// this registry already returned before this form existed and which
+    /// this form makes load-bearing: for a sole output the solve returns
+    /// the input blinder sum unchanged, so the refusal fires exactly when
+    /// the consumed coins' blinders cancel. Merging the two halves of an
+    /// inverse pair is therefore not a fixture this registry will build,
+    /// and a caller who wants the merge brings a predecessor whose
+    /// blinders do not cancel.
+    SoleBalancing,
 }
 
 impl FixtureOutputRole {
     /// The role's transcript code.
+    ///
+    /// Stable once written: these bytes are inside every registered
+    /// digest, so a code may be added but never reassigned.
     #[must_use]
     pub const fn transcript_code(self) -> u8 {
         match self {
             Self::Primary => 1,
             Self::Balancing => 2,
+            Self::SoleBalancing => 3,
+        }
+    }
+
+    /// Whether this role's blinder is solved rather than derived.
+    ///
+    /// The uniqueness clause counts this rather than one named member,
+    /// so that adding a solving form does not silently create a manifest
+    /// with two solved outputs and an underdetermined blinder sum.
+    #[must_use]
+    pub const fn solves_the_balance(self) -> bool {
+        match self {
+            Self::Balancing | Self::SoleBalancing => true,
+            Self::Primary => false,
         }
     }
 }
@@ -154,6 +215,7 @@ impl std::fmt::Display for FixtureOutputRole {
         let text = match self {
             Self::Primary => "primary",
             Self::Balancing => "balancing",
+            Self::SoleBalancing => "sole balancing",
         };
         formatter.write_str(text)
     }
@@ -623,17 +685,40 @@ pub enum RegistrationRefusal {
     DuplicateFixtureHandle,
     /// The manifest declares a class this registry does not admit.
     MaterialClassNotAdmitted,
-    /// The manifest states fewer outputs than a balance needs.
+    /// The manifest states fewer outputs than a balance needs, and does
+    /// not declare the single-output form that needs no more.
+    ///
+    /// The floor is narrower than it was and still stands where it
+    /// always stood. A manifest of one output whose role is
+    /// [`FixtureOutputRole::SoleBalancing`] is the fully-solved form and
+    /// is admitted; a manifest of one output stating any other role is
+    /// refused here exactly as before, because the form is something a
+    /// caller declares rather than something a count implies.
     OutputSetTooSmall {
         /// How many outputs were stated.
         found: usize,
     },
+    /// The sole-balancing role was stated in a manifest of several
+    /// outputs.
+    ///
+    /// The form is the whole manifest and not one member of it. Stated
+    /// beside other outputs it is a contradiction rather than a wider
+    /// manifest's balancing output, and reading it as the latter would
+    /// let a caller reach the single-output solve without the
+    /// single-output shape.
+    SoleBalancingRoleNotAlone {
+        /// How many outputs were stated beside it.
+        found: usize,
+    },
     /// The roles are not exhaustive and disjoint.
     ///
-    /// Exactly one output is balancing. Zero leaves the blinder sum
-    /// unsolvable and two leaves it underdetermined.
+    /// Exactly one output solves the balance. Zero leaves the blinder
+    /// sum unsolvable and two leaves it underdetermined. The clause
+    /// counts [`FixtureOutputRole::solves_the_balance`] rather than one
+    /// named member, so a solving form added to the vocabulary cannot
+    /// slip past it.
     BalancingRoleNotUnique {
-        /// How many balancing outputs were stated.
+        /// How many solving outputs were stated.
         found: usize,
     },
     /// An output states an amount outside the semantic domain.
@@ -680,6 +765,10 @@ impl std::fmt::Display for RegistrationRefusal {
             Self::OutputSetTooSmall { found } => {
                 write!(formatter, "the manifest states {found} outputs")
             }
+            Self::SoleBalancingRoleNotAlone { found } => write!(
+                formatter,
+                "the manifest states the sole-balancing role beside {found} outputs",
+            ),
             Self::BalancingRoleNotUnique { found } => {
                 write!(formatter, "the manifest states {found} balancing outputs")
             }
@@ -1076,7 +1165,7 @@ fn derive_at_counter(
     let mut blinders: Vec<Option<[u8; DERIVED_BYTES]>> = Vec::with_capacity(manifest.outputs.len());
     let mut derived_sum = BigUint::zero();
     for (index, output) in manifest.outputs.iter().enumerate() {
-        if output.role == FixtureOutputRole::Balancing {
+        if output.role.solves_the_balance() {
             blinders.push(None);
             continue;
         }
@@ -1097,7 +1186,29 @@ fn derive_at_counter(
     // predecessor the input contributes zero and the two blinders come
     // out ordered additive inverses, which is that requirement as an
     // instance of the general rule rather than as a special case.
+    //
+    // The single-output form is the same statement with an empty sum to
+    // subtract, so the solved blinder IS the input blinder sum. Nothing
+    // below is special-cased for it, which is the point: the form was
+    // always what this arithmetic did, and only the cardinality clause
+    // above ever stood in its way.
     let balancing = add_scalars(input_blinder_sum, &negate_scalar(&derived_sum));
+    // The zero refusal, which the single-output form makes load-bearing.
+    //
+    // It has always been here and it has never before decided anything a
+    // caller could reach: with at least one derived blinder in the sum, a
+    // zero solution is an accident of the hash. For a sole output the
+    // solve returns the input blinder sum unchanged, so this fires
+    // exactly when the consumed coins' blinders cancel — which is what
+    // merging the two halves of an inverse pair does by construction.
+    //
+    // The commitment such a merge would carry is exactly the value times
+    // the value generator: a point anyone recomputes from a guessed
+    // amount, with a blinded output's form and none of its hiding. The
+    // tally would still balance and only confidentiality would fail, and
+    // it would fail silently. So it is refused here rather than built and
+    // annotated, and a caller who wants a merge brings a predecessor
+    // whose blinders do not cancel.
     if balancing.is_zero() || &balancing >= order() {
         return Err(FixtureDerivationRefusal::DegenerateBalancingScalar);
     }
@@ -1177,6 +1288,13 @@ fn derive_at_counter(
 /// `None` for a solved scalar that is zero or out of range, which is a
 /// refusal and never a nudge: there is no arm here that adds one and
 /// tries again.
+///
+/// An EMPTY `other_blinders` is the single-output fully-solved form and
+/// not a caller mistake: the sum of no blinders is zero, so the solve
+/// returns the input blinder sum itself. The zero refusal above then
+/// carries the whole weight of the merge degeneracy, because a sole
+/// output's forced blinder is zero exactly when the consumed coins'
+/// blinders cancel.
 #[must_use]
 pub fn solve_balancing_blinder(
     input_blinder_sum: &[u8; DERIVED_BYTES],
@@ -1224,11 +1342,22 @@ fn required_prefixes() -> (u8, u8) {
 /// admitted set is a pair — and inventing one here would be this file
 /// deciding a question the target contract does not answer.
 ///
-/// The consequence is stated rather than hidden: for a wider fixture the
-/// search is a well-formedness check the first counter satisfies, because
-/// a well-formed commitment carries an admitted prefix by construction.
-/// The search's discriminating power belongs to the two-output
-/// dual-parity case and is claimed for no other.
+/// A single-output fixture is held to the same weaker rule, and for a
+/// sharper reason than width. Its one blinder is not chosen at all — it
+/// is forced to the input blinder sum — so the parity counter cannot
+/// move the commitment it produces, and a search over counters is
+/// searching a space of one. The prefix that commitment carries is
+/// whichever the forced blinder yields, and both admitted prefixes are
+/// valid, so there is nothing to select and nothing to reject.
+///
+/// The consequence is stated rather than hidden: for any fixture but a
+/// two-output one the search is a well-formedness check the first
+/// counter satisfies, because a well-formed commitment carries an
+/// admitted prefix by construction. The search's discriminating power
+/// belongs to the two-output dual-parity case and is claimed for no
+/// other. Saying so is part of the single-output form rather than a note
+/// beside it: a bounded search that cannot fail, described as though it
+/// could, is a claim of discrimination the code does not perform.
 ///
 /// Before this, a fixture of any width but two could not derive at all.
 /// The required pair was compared by LENGTH, so a three-output manifest
@@ -1333,15 +1462,46 @@ impl ConfidentialFixtureRegistry {
         if manifest.material_class != PublicDisposableTestMaterial::EXPECTED {
             return Err(RegistrationRefusal::MaterialClassNotAdmitted);
         }
-        if manifest.outputs.len() < 2 {
+        // The cardinality floor, narrowed to what it was always for.
+        //
+        // It was written to guard the balancing-output model: a manifest
+        // names one balancing output whose blinder is solved from the
+        // others, and with one output there is no other. That model has
+        // a single-output form — the solve returns the input blinder sum
+        // itself — and the floor predated it rather than refusing it.
+        //
+        // So the clause now asks whether the manifest DECLARES that
+        // form, and refuses a short manifest that does not. A caller who
+        // states `Balancing` on a lone output still gets the same typed
+        // refusal with the same count, because that caller has asked for
+        // a solve over others that are not there.
+        let declares_the_sole_form = matches!(
+            manifest.outputs.as_slice(),
+            [output] if output.role == FixtureOutputRole::SoleBalancing
+        );
+        if manifest.outputs.len() < 2 && !declares_the_sole_form {
             return Err(RegistrationRefusal::OutputSetTooSmall {
+                found: manifest.outputs.len(),
+            });
+        }
+        // The form is the whole manifest, so the role may not appear in
+        // a wider one. Without this clause a caller could reach the
+        // single-output solve from a manifest that is not single-output,
+        // and the declaration would stop meaning what it says.
+        if manifest.outputs.len() > 1
+            && manifest
+                .outputs
+                .iter()
+                .any(|output| output.role == FixtureOutputRole::SoleBalancing)
+        {
+            return Err(RegistrationRefusal::SoleBalancingRoleNotAlone {
                 found: manifest.outputs.len(),
             });
         }
         let balancing = manifest
             .outputs
             .iter()
-            .filter(|output| output.role == FixtureOutputRole::Balancing)
+            .filter(|output| output.role.solves_the_balance())
             .count();
         if balancing != 1 {
             return Err(RegistrationRefusal::BalancingRoleNotUnique { found: balancing });
