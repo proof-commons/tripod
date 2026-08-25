@@ -368,7 +368,7 @@ impl PrivateRestartRecord {
     /// The construction refusal, where the ceremony stopped before the
     /// node.
     #[must_use]
-    pub fn refusal(&self) -> Option<&PrivateRestartRefusal> {
+    pub const fn refusal(&self) -> Option<&PrivateRestartRefusal> {
         self.refusal.as_ref()
     }
 
@@ -846,25 +846,26 @@ impl PrivateRestartPlanner {
     }
 
     /// Record what the target did with the control.
-    fn settle_control(
-        &mut self,
-        response: &NativeOperationResponse,
-    ) -> Result<(), PrivateRestartRefusal> {
+    fn settle_control(&mut self, response: &NativeOperationResponse) {
         self.record.observed_layer = Some(response.observed_layer);
-        self.record.observed_detail = response.observed_detail.clone();
-        self.record.accepted_txid = response.accepted_txid.clone();
+        self.record
+            .observed_detail
+            .clone_from(&response.observed_detail);
+        self.record
+            .accepted_txid
+            .clone_from(&response.accepted_txid);
 
         // The second origin, and only where there is an acceptance to
         // check. A refusal has no witness to read back.
         if response.observed_layer != ObservedOutcomeLayer::Accepted {
-            return Ok(());
+            return;
         }
         let (Some(readback), Some(submitted), Some(census)) = (
             response.mined_readback.as_ref(),
             self.submitted.as_ref(),
             self.census.as_ref(),
         ) else {
-            return Ok(());
+            return;
         };
 
         let readback_matches_submission = readback.raw_transaction == *submitted;
@@ -882,7 +883,6 @@ impl PrivateRestartPlanner {
             readback_matches_submission,
             verified,
         });
-        Ok(())
     }
 }
 
@@ -970,9 +970,7 @@ impl TargetOperationPlanner for PrivateRestartPlanner {
                     self.stage = Stage::Submit;
                 }
                 Stage::Submit => {
-                    if let Err(refusal) = self.settle_control(response) {
-                        return Err(self.refuse(refusal));
-                    }
+                    self.settle_control(response);
                     self.stage = Stage::Done;
                 }
                 Stage::Done => {}
@@ -1096,7 +1094,12 @@ pub fn render_private_restart(record: &PrivateRestartRecord) -> String {
 
 /// One digest as its printed spelling.
 fn hex(bytes: [u8; 32]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    use std::fmt::Write as _;
+
+    bytes.iter().fold(String::new(), |mut out, byte| {
+        let _ = write!(out, "{byte:02x}");
+        out
+    })
 }
 
 #[cfg(test)]
