@@ -1540,3 +1540,58 @@ mod tests {
         assert_eq!(planner.record().receipt_leaves(), 0);
     }
 }
+
+#[cfg(test)]
+mod byte_identity_tests {
+    use super::{ConsumedReceipt, hex, link_and_register, run_of_record as run};
+
+    /// The two fixtures of the run of record register under exactly the
+    /// digests that run recorded.
+    ///
+    /// # Why this test is worth its weight
+    ///
+    /// The digests below were written down by a ceremony that ran against
+    /// a pinned node BEFORE the single-output form and the fee role were
+    /// added to the registry's vocabulary. They are therefore an
+    /// expectation this workspace cannot quietly move: recomputing them
+    /// from the manifests re-derives every blinder, every nonce input,
+    /// every range-proof seed, and every commitment prefix of a fixture
+    /// whose successor a target ACCEPTED at
+    /// `run_of_record::ACCEPTED_TXID`.
+    ///
+    /// So this is the byte-identity clause of both removals, stated as a
+    /// running check rather than as a claim in a commit message. A
+    /// vocabulary change that perturbed the derivation of an existing
+    /// case — a transcript member added unconditionally, a role code
+    /// reassigned, a search whose counter moved — would land here, and it
+    /// would land here before it landed on a chain.
+    #[test]
+    fn the_run_of_record_fixtures_register_under_the_digests_it_recorded() {
+        for consumed in ConsumedReceipt::ALL {
+            let linked = link_and_register(consumed, run::ISSUED_ASSET)
+                .expect("the run of record's own fixtures register");
+
+            // The predecessor is the same manifest for both runs, so both
+            // must land on the one recorded digest.
+            assert_eq!(
+                hex(linked.predecessor_digest()),
+                run::PREDECESSOR_DIGEST,
+                "the predecessor fixture drifted from the run of record",
+            );
+
+            // The successors differ, and each run recorded its own. The
+            // primary receipt is the run whose consumed commitment
+            // carried the first admitted prefix.
+            let expected = match consumed {
+                ConsumedReceipt::Primary => run::SUCCESSOR_DIGEST,
+                ConsumedReceipt::Balancing => run::PARITY_SUCCESSOR_DIGEST,
+            };
+            assert_eq!(
+                hex(linked.successor_digest()),
+                expected,
+                "the successor fixture for {} drifted from the run of record",
+                consumed.name(),
+            );
+        }
+    }
+}

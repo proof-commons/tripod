@@ -506,10 +506,30 @@ impl ConfidentialMaterializationProfiles {
 
 /// Which role one fixture output plays.
 ///
-/// Mirrors the fixture registry's own two roles. It is a second spelling
-/// only in the sense that two packages with no edge between them must
-/// each be able to say the word: this crate may not depend on the one
-/// where the registry lives, and a view it cannot name is not a view.
+/// Mirrors the fixture registry's roles. It is a second spelling only in
+/// the sense that two packages with no edge between them must each be
+/// able to say the word: this crate may not depend on the one where the
+/// registry lives, and a view it cannot name is not a view.
+///
+/// # It is NARROWER than the registry's vocabulary, deliberately
+///
+/// The registry distinguishes an output solved from the others from the
+/// sole output of a single-output manifest. Both project onto
+/// [`Self::Balancing`] here, and nothing is lost: the view's balancing
+/// role means "this blinder is solved from the others", and the sole form
+/// is that instruction with no others — the solve over an empty set
+/// returns the input blinder sum, which is exactly what the sole form
+/// wants. What the registry's extra member carries is a DECLARATION about
+/// a manifest's shape, and a declaration has done its work by the time
+/// the manifest is registered.
+///
+/// The registry also has a FEE role, and this vocabulary has no member
+/// for it. That absence is load-bearing rather than pending: an output
+/// with an explicit value, no nonce and no range proof is not something
+/// the stages below can build, so a fee-bearing fixture is refused at the
+/// projection instead of arriving here wearing a role it does not have.
+/// Adding a member here without teaching those stages would turn a typed
+/// stop into a blinded fee output, which is not a fee at all.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ConfidentialOutputRole {
     /// An ordinary output whose blinder is derived.

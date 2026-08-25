@@ -28,7 +28,7 @@
 //! # What this module does not do
 //!
 //! It observes nothing. Every OBSERVED-ACCEPTED verdict cites a
-//! `run_of_record` identity some earlier wave produced; no verdict here
+//! `run_of_record` identity a ceremony produced; no verdict here
 //! is produced by running anything, and a shape consensus admits but
 //! nobody has submitted is recorded SOURCE-DERIVED and never "run".
 //! Nothing here moves a matrix row, a blocker or a residual: this is a
@@ -236,7 +236,7 @@ pub enum ConsensusVerdict {
     ///
     /// The strongest class, and the only one carrying a target-computed
     /// identity. The identity is not a literal here: it is the
-    /// `run_of_record` constant an earlier wave recorded, so a wave that
+    /// `run_of_record` constant a ceremony recorded, so a wave that
     /// re-ran and got different bytes would move this register too.
     ObservedAccepted {
         /// The identity the target computed for the accepted shape.
@@ -260,10 +260,16 @@ pub enum ConsensusVerdict {
 
 /// What this workspace's own fixture registry does with a shape.
 ///
-/// The second, independent verdict. Its three members are the three
-/// ways a first-party position can stand against the consensus one, and
-/// naming them apart is what stops a local convention being read as a
-/// protocol rule.
+/// The second, independent verdict. Its members are the distinct ways a
+/// first-party position can stand against the consensus one, and naming
+/// them apart is what stops a local convention being read as a protocol
+/// rule.
+///
+/// Two of them exist because limitations get REMOVED, and a removal is
+/// not one event but two facts that arrive separately: a vocabulary
+/// learns to express a shape, and a chain accepts one. The register
+/// carries a member for each rather than rounding the first up to the
+/// second.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FirstPartyStatus {
     /// The registry builds it and a run of record observed it accepted.
@@ -287,15 +293,133 @@ pub enum FirstPartyStatus {
         /// The typed refusal the registry actually returns.
         refusal: RegistrationRefusal,
     },
+    /// The registry refused it by convention, the convention was
+    /// STRUCTURALLY REMOVED, and a run of record then observed the shape
+    /// accepted.
+    ///
+    /// # Why this is not just [`Self::ConstructibleAndObserved`]
+    ///
+    /// It could have been. The shape is constructible and it was
+    /// observed, and collapsing it into that member would lose nothing a
+    /// verdict depends on.
+    ///
+    /// What it would lose is the HISTORY, and the history is the point.
+    /// The ruling this register implements asks that a first-party
+    /// limitation be labeled, pinned, explained, and eventually removed —
+    /// four stages, of which a register recording only the last would be
+    /// evidence of none. A row that says "constructible" says nothing
+    /// about a wall having stood there, and a wall nobody remembers is
+    /// one that gets rebuilt.
+    ///
+    /// So the removed limitation stays cited from the row it used to
+    /// refuse, and the removal carries what changed and what proved it.
+    ConstructibleAfterRemoval {
+        /// The convention that used to refuse the shape.
+        removed: Limitation,
+        /// What ended it, and what proved that it had.
+        removal: LimitationRemoval,
+    },
+    /// The registry expresses the shape, and something downstream of the
+    /// registry stops it short of a node.
+    ///
+    /// # Why this is not a refusal, and not an observation either
+    ///
+    /// The registry does not refuse it: a manifest of this shape
+    /// registers, derives and digests. So recording it under
+    /// [`Self::RefusedByConvention`] would name a refusal that no longer
+    /// happens.
+    ///
+    /// And nothing has run it, so recording it constructible-and-observed
+    /// would be the one error this register exists to prevent — a
+    /// vocabulary that CAN express a shape is not a chain that HAS
+    /// accepted one.
+    ///
+    /// It is a third thing, and the register would rather carry a third
+    /// member than round it to whichever of the other two is nearer.
+    ExpressibleAndUnrun {
+        /// The convention that used to make the shape inexpressible.
+        removed: Limitation,
+        /// What ended that convention.
+        removal: LimitationRemoval,
+        /// Where a run stops now, in the layer's own terms.
+        stops_at: &'static str,
+    },
 }
+
+/// How a first-party limitation was structurally removed.
+///
+/// The fourth stage of the ruling's arc, recorded so the whole arc reads
+/// from one place. A removal names the row that took it, the structural
+/// change it made, and the target-computed identity that proved the
+/// shape really runs — because a removal nobody ran is a claim about a
+/// registry rather than about a chain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LimitationRemoval {
+    /// The backlog row that took the removal.
+    pub row: &'static str,
+    /// What structurally changed, in the registry's own terms.
+    pub change: &'static str,
+    /// The run-of-record identity of the first shape it unlocked, where
+    /// one has run.
+    ///
+    /// `None` is a removal that is REAL at the registry and that nothing
+    /// has yet carried to a node. The register keeps the two apart on
+    /// purpose: a vocabulary that can express a shape and a chain that has
+    /// accepted one are different facts, and this is the register whose
+    /// whole reason for existing is not collapsing facts of different
+    /// kinds into one word.
+    pub proven_by: Option<&'static str>,
+}
+
+/// The two-output floor's removal, recorded once.
+///
+/// One constant rather than two literals, because the census row that
+/// cites it and the limitation that reports it must not be able to
+/// disagree about what happened. A test holds them equal; naming the
+/// value makes the test a statement about wiring rather than about
+/// somebody having copied a paragraph correctly.
+const TWO_OUTPUT_FLOOR_REMOVAL: LimitationRemoval = LimitationRemoval {
+    row: "T5-041",
+    change: "The cardinality clause stopped counting outputs and started asking whether a short \
+             manifest DECLARES the single-output fully-solved balancing form, which a new \
+             `SoleBalancing` role states. The floor still refuses a lone output that does not \
+             declare it, so nothing was relaxed; the zero-blinder degeneracy is answered by the \
+             registry's existing `DegenerateBalancingScalar` refusal, left standing and now \
+             load-bearing.",
+    proven_by: Some(crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID),
+};
+
+/// The absent fee role's removal, recorded once.
+///
+/// Its `proven_by` is `None`, and that absence is the honest half of this
+/// record. The fixture vocabulary really does express a fee output now —
+/// explicit-valued, held out of the solve at a zero blinder, and required
+/// to carry an empty program — and no node has been offered one, because
+/// the layers between the registry and a chain have not learned the role.
+const ABSENT_FEE_ROLE_REMOVAL: LimitationRemoval = LimitationRemoval {
+    row: "T5-042",
+    change: "A `Fee` member joined the fixture output role vocabulary, and the empty-program \
+             clause moved from every output alike onto the role: a fee output is REQUIRED to \
+             carry an empty program rather than excused from carrying one, and every other role \
+             still needs a program. The fee is held out of the blinder solve at a zero blinder, \
+             its opening is absent rather than zero-filled, and the admitted-prefix rule reads on \
+             the outputs that have commitments instead of on the output count.",
+    proven_by: None,
+};
 
 /// A first-party convention that refuses a shape consensus admits.
 ///
-/// Each member names a rule of this repository's own fixture registry,
-/// the model that rule came out of, and the removal path that would end
-/// it. This is the "explicitly labeled, pinned and explained" half of
-/// the ruling the register implements; the removal is filed and NOT
-/// taken here.
+/// Each member names a convention of this repository's own, the model it
+/// came out of, and the removal path that would end it. Most are rules
+/// the fixture registry states; [`Self::CancelingPredecessorOnly`] is
+/// not, and the difference is worth keeping — it is a coin the ceremony
+/// happens to fund rather than a rule anybody wrote, which is a wall of a
+/// different kind and one no registry change would move.
+///
+/// This is the "explicitly labeled, pinned and explained" half of the
+/// ruling the register implements. [`Self::removal`] carries the fourth
+/// stage where it has been reached, and returns `None` where it has not,
+/// so a filed path can never read as a taken one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Limitation {
     /// The registry refuses any manifest of fewer than two outputs.
@@ -307,6 +431,19 @@ pub enum Limitation {
     ///
     /// Argued at `(´[PLAN-rule:shapes:absent-fee-role]´)`.
     AbsentFeeRole,
+    /// This lane funds only a predecessor whose blinders cancel.
+    ///
+    /// The limitation the two-output floor's removal UNCOVERED, and the
+    /// clearest evidence that removing a wall does not always reveal open
+    /// ground behind it. The registry now admits a merge; this ceremony
+    /// still cannot build one, because the only coins it can offer a
+    /// merge are the two halves of an inverse pair.
+    ///
+    /// It is a first-party limitation like the others and it is a
+    /// different KIND of one: not a rule the registry states, but a
+    /// predecessor the ceremony happens to fund. Argued at
+    /// `(´[PLAN-rule:shapes:canceling-predecessor]´)`.
+    CancelingPredecessorOnly,
 }
 
 impl Limitation {
@@ -321,6 +458,12 @@ impl Limitation {
             Self::AbsentFeeRole => {
                 "packages/target-elements-conformance/src/confidential_fixture.rs, the \
                  `output_program.is_empty()` clause of `register_with_source`"
+            }
+            Self::CancelingPredecessorOnly => {
+                "packages/target-elements-conformance/src/confidential_fixture.rs, the \
+                 zero-solution clause of `derive_at_counter`, reached because \
+                 packages/vectors/src/live_multi_shapes.rs funds one predecessor whose two \
+                 output blinders are ordered additive inverses"
             }
         }
     }
@@ -349,6 +492,17 @@ impl Limitation {
                  The vocabulary has no member for an output that is explicit, unspendable and \
                  outside the blinder solve, so the shape is inexpressible rather than rejected."
             }
+            Self::CancelingPredecessorOnly => {
+                "The single funded predecessor. This ceremony funds ONE confidential predecessor \
+                 from an EXPLICIT input, so that predecessor's own input blinder sum is zero and \
+                 its two output blinders come out ordered additive inverses. Every two-input \
+                 merge the ceremony could offer therefore consumes both halves of an inverse pair \
+                 and presents a ZERO input blinder sum, which forces the lone output's blinder to \
+                 zero — a commitment of exactly the value times the value generator, hiding \
+                 nothing while the tally still balances. The registry refuses it, correctly. The \
+                 limitation is the ceremony's, not the registry's: a merge of coins whose \
+                 blinders do not cancel registers today."
+            }
         }
     }
 
@@ -358,6 +512,22 @@ impl Limitation {
         match self {
             Self::TwoOutputFloor => RemovalPath::SingleOutputSolvedBalancingForm,
             Self::AbsentFeeRole => RemovalPath::FeeOutputRole,
+            Self::CancelingPredecessorOnly => RemovalPath::NonCancelingPrecursor,
+        }
+    }
+
+    /// How this limitation was structurally removed, where it has been.
+    ///
+    /// `None` is the honest answer for a limitation still standing, and
+    /// the register is careful not to let a filed removal path read as a
+    /// taken one: [`Self::removal_path`] says what WOULD end it, and this
+    /// says what DID.
+    #[must_use]
+    pub const fn removal(self) -> Option<LimitationRemoval> {
+        match self {
+            Self::TwoOutputFloor => Some(TWO_OUTPUT_FLOOR_REMOVAL),
+            Self::AbsentFeeRole => Some(ABSENT_FEE_ROLE_REMOVAL),
+            Self::CancelingPredecessorOnly => None,
         }
     }
 
@@ -374,22 +544,29 @@ impl Limitation {
     pub const fn guards_only_incidentally(self) -> bool {
         match self {
             Self::TwoOutputFloor => true,
-            Self::AbsentFeeRole => false,
+            Self::AbsentFeeRole | Self::CancelingPredecessorOnly => false,
         }
     }
 }
 
 /// A named structural removal for a limitation.
 ///
-/// FILED, not implemented. Each member is a design this register commits
-/// to naming and to nothing else; the work sits in the feature-request
-/// register, and no part of it is taken by this module.
+/// A path is a DESIGN this register commits to naming. Naming one says
+/// nothing about whether it has been taken: [`Limitation::removal`] is
+/// the only place that answers that, and it answers `None` by default.
+///
+/// Two of the paths below have since been taken and their descriptions
+/// are left exactly as they were written, because a path's description is
+/// what was proposed and the record of what was done belongs beside it
+/// rather than on top of it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RemovalPath {
     /// A manifest form whose single output is fully solved.
     SingleOutputSolvedBalancingForm,
     /// A fee member of the fixture output role vocabulary.
     FeeOutputRole,
+    /// A precursor transaction whose outputs do not cancel.
+    NonCancelingPrecursor,
 }
 
 impl RemovalPath {
@@ -412,6 +589,15 @@ impl RemovalPath {
                  output program rather than merely permitted one, so that the role is checked and \
                  not just excused from the nonempty-program clause. The clause then reads on the \
                  role instead of on every output alike."
+            }
+            Self::NonCancelingPrecursor => {
+                "Chain a PRECURSOR submission whose outputs do not cancel, and merge two of \
+                 those. A three-output precursor's blinders sum to the coin it consumed, so any \
+                 TWO of them sum to that total less the third — nonzero for no reason anybody has \
+                 to arrange. The ceremony already mines each acceptance rather than leaving it in \
+                 the mempool, precisely so the coins it creates are visible to a later step, so \
+                 what is missing is a second submission stage and not a capability. Nothing in \
+                 the registry changes: it admits the merge already."
             }
         }
     }
@@ -436,7 +622,7 @@ impl RemovalPath {
                  so the removal must either require a non-canceling predecessor or refuse a \
                  solved zero blinder outright.",
             ),
-            Self::FeeOutputRole => None,
+            Self::FeeOutputRole | Self::NonCancelingPrecursor => None,
         }
     }
 }
@@ -467,18 +653,53 @@ pub struct ShapeCensusEntry {
 #[must_use]
 pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
     let (consensus, first_party) = match shape {
-        BlindedShape::OneToOne | BlindedShape::TwoToOne => (
-            ConsensusVerdict::SourceDerivedPossible,
-            FirstPartyStatus::RefusedByConvention {
-                refusal: RegistrationRefusal::OutputSetTooSmall { found: 1 },
-                limitation: Limitation::TwoOutputFloor,
+        // The strict one-to-one, which the two-output floor refused until
+        // the floor was removed and which a target has now accepted. Its
+        // row keeps citing the removed limitation, because a row that said
+        // only "constructible" would have lost the wall's history.
+        BlindedShape::OneToOne => (
+            ConsensusVerdict::ObservedAccepted {
+                identity: crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
+            },
+            FirstPartyStatus::ConstructibleAfterRemoval {
+                removed: Limitation::TwoOutputFloor,
+                removal: TWO_OUTPUT_FLOOR_REMOVAL,
             },
         ),
-        BlindedShape::OneToOneWithFee => (
+        // The merge, which the SAME removal did not free. The floor no
+        // longer refuses it and the registry admits it; what refuses it
+        // now is the zero blinder its only available inputs would force,
+        // which is a fact about this ceremony's predecessor rather than
+        // about the registry's rules. The wall moved from a cardinality
+        // accident to the confidentiality property that actually matters,
+        // and the row says which wall it is standing at.
+        BlindedShape::TwoToOne => (
             ConsensusVerdict::SourceDerivedPossible,
             FirstPartyStatus::RefusedByConvention {
-                refusal: RegistrationRefusal::OutputProgramEmpty { output: 1 },
-                limitation: Limitation::AbsentFeeRole,
+                refusal: RegistrationRefusal::Derivation {
+                    refusal: target_elements_conformance::confidential_fixture::FixtureDerivationRefusal::DegenerateBalancingScalar,
+                },
+                limitation: Limitation::CancelingPredecessorOnly,
+            },
+        ),
+        // The fee-bearing shape. The vocabulary now expresses it and no
+        // node has been offered one, which is two facts this register
+        // refuses to round into either "refused" or "observed".
+        BlindedShape::OneToOneWithFee => (
+            ConsensusVerdict::SourceDerivedPossible,
+            FirstPartyStatus::ExpressibleAndUnrun {
+                removed: Limitation::AbsentFeeRole,
+                removal: ABSENT_FEE_ROLE_REMOVAL,
+                stops_at: "packages/vectors/src/live_proof_bearing_observation.rs, the fixture \
+                           projection, which refuses `FeeRoleNotProjectable`: the materializer's \
+                           own output-role vocabulary has no fee member, its per-output stage \
+                           would compute a commitment and a range proof for an output that must \
+                           carry an explicit value and no witness, and the executor adapter's \
+                           fixture catalogue and parity search read every output as a committed \
+                           one. The projection refuses rather than mapping a fee onto the \
+                           balancing role, which would have produced a blinded fee output — not a \
+                           fee at the target, and a silently wrong transaction rather than an \
+                           honest stop.",
             },
         ),
         BlindedShape::OneToTwo => (
@@ -521,7 +742,9 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
 
 #[cfg(test)]
 mod tests {
-    use target_elements_conformance::confidential_fixture::RegistrationRefusal;
+    use target_elements_conformance::confidential_fixture::{
+        ConfidentialFixtureOutput, FixtureOutputRole, RegistrationRefusal,
+    };
 
     use super::{
         BlindedShape, ConsensusVerdict, FirstPartyStatus, Limitation, RemovalPath, census_entry,
@@ -535,9 +758,19 @@ mod tests {
 
     /// An input blinder sum the registry admits as a scalar.
     ///
-    /// The drives below reach cardinality and role clauses that run
-    /// BEFORE any blinder arithmetic, so this is a well-formedness
-    /// placeholder and not a claim about any predecessor's blinders.
+    /// # It stopped being a placeholder
+    ///
+    /// It used to be one. Every drive below reached a cardinality or role
+    /// clause that runs BEFORE any blinder arithmetic, so the value never
+    /// mattered and this said so.
+    ///
+    /// For the MERGE row it now matters, and it is the right value rather
+    /// than a convenient one. This ceremony funds one predecessor from an
+    /// explicit input, so that predecessor's two output blinders are
+    /// ordered additive inverses and a merge consuming both presents
+    /// exactly this sum: zero. The merge's recomputed refusal is therefore
+    /// a statement about the coins this lane really has, not about an
+    /// arbitrary scalar.
     const CENSUS_BLINDER_SUM: [u8; 32] = [0_u8; 32];
 
     /// Drives the registry with a manifest of the shape's output arity.
@@ -565,15 +798,57 @@ mod tests {
     /// that does. The refusal reached is the empty-program clause either
     /// way.
     fn recomputed_registry_refusal(shape: BlindedShape) -> Option<RegistrationRefusal> {
-        let outputs = shape.outputs();
-        let fee_at = (shape.fee_outputs() == 1).then(|| outputs - 1);
-        let amounts: Vec<u64> = (0..outputs).map(|_| 100_000_000_u64).collect();
-        let programs: Vec<Vec<u8>> = (0..outputs)
+        let count = shape.outputs();
+        let fee_at = (shape.fee_outputs() == 1).then(|| count - 1);
+        let outputs: Vec<ConfidentialFixtureOutput> = (0..count)
             .map(|index| {
-                if Some(index) == fee_at {
-                    Vec::new()
-                } else {
-                    vec![0x51_u8]
+                let is_fee = Some(index) == fee_at;
+                ConfidentialFixtureOutput {
+                    // The role is STATED rather than read off the output
+                    // order, the shared builder having stopped assigning
+                    // it by position. What is stated is what this helper
+                    // used to be handed implicitly — the last output
+                    // balances — so the refusals below are recomputed
+                    // against the same manifests as before and no census
+                    // row moves because a builder changed.
+                    //
+                    // The fee output is cast as balancing here, and that
+                    // is not a modelling choice: the vocabulary has no fee
+                    // member to cast it as, which is the absent role this
+                    // register records. It is the second face of the same
+                    // absence the positional builder wore.
+                    // The role is STATED, the shared builder having
+                    // stopped assigning it by position.
+                    //
+                    // A shape of ONE output declares the single-output
+                    // fully-solved form, because that is what such a shape
+                    // IS and a drive that withheld the declaration would be
+                    // recomputing the refusal for a manifest nobody would
+                    // write. The test is the manifest's whole output count
+                    // and not its blinded count: the form is a statement
+                    // about the manifest, so a lone blinded output sitting
+                    // beside a fee output is not it.
+                    //
+                    // The fee output states the FEE role, which the
+                    // vocabulary now has. It used to be cast as balancing
+                    // — the one output that must never balance, wearing
+                    // the role of the output that does — because there was
+                    // nothing else to cast it as.
+                    //
+                    // The balancing output is therefore the last NON-fee
+                    // output rather than the last output, which is the
+                    // same correction said a second way.
+                    role: if is_fee {
+                        FixtureOutputRole::Fee
+                    } else if count == 1 {
+                        FixtureOutputRole::SoleBalancing
+                    } else if index + 1 == count - shape.fee_outputs() {
+                        FixtureOutputRole::Balancing
+                    } else {
+                        FixtureOutputRole::Primary
+                    },
+                    semantic_amount: 100_000_000_u64,
+                    output_program: if is_fee { Vec::new() } else { vec![0x51_u8] },
                 }
             })
             .collect();
@@ -581,8 +856,7 @@ mod tests {
             &format!("ctf-v1/census-{}", shape.handle()),
             CENSUS_ASSET,
             CENSUS_BLINDER_SUM,
-            &amounts,
-            &programs,
+            outputs,
         )
     }
 
@@ -671,7 +945,9 @@ mod tests {
         let mut refused = 0_usize;
         for shape in BlindedShape::ALL {
             let censused = match census_entry(shape).first_party {
-                FirstPartyStatus::ConstructibleAndObserved => continue,
+                FirstPartyStatus::ConstructibleAndObserved
+                | FirstPartyStatus::ConstructibleAfterRemoval { .. }
+                | FirstPartyStatus::ExpressibleAndUnrun { .. } => continue,
                 FirstPartyStatus::RefusedByConvention { refusal, .. }
                 | FirstPartyStatus::RefusalGuardsConsensus { refusal } => refusal,
             };
@@ -685,7 +961,10 @@ mod tests {
             );
             refused += 1;
         }
-        assert_eq!(refused, 4, "four of the eight shapes are refused");
+        assert_eq!(
+            refused, 2,
+            "two of the eight shapes are refused: this lane's merge, and the impossible one",
+        );
     }
 
     /// Every constructible row cites a run-of-record identity.
@@ -697,6 +976,10 @@ mod tests {
     #[test]
     fn every_observed_row_cites_its_run_of_record_identity() {
         let expected = [
+            (
+                BlindedShape::OneToOne,
+                crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
+            ),
             (
                 BlindedShape::OneToTwo,
                 crate::live_private_restart::run_of_record::ACCEPTED_TXID,
@@ -722,12 +1005,17 @@ mod tests {
                 "{} cites its own run of record",
                 shape.handle(),
             );
-            assert_eq!(
-                entry.first_party,
-                FirstPartyStatus::ConstructibleAndObserved
+            assert!(
+                matches!(
+                    entry.first_party,
+                    FirstPartyStatus::ConstructibleAndObserved
+                        | FirstPartyStatus::ConstructibleAfterRemoval { .. }
+                ),
+                "{} is observed, so its first-party status is a constructible one",
+                shape.handle(),
             );
         }
-        assert_eq!(expected.len(), 4, "four of the eight shapes have been run");
+        assert_eq!(expected.len(), 5, "five of the eight shapes have been run");
     }
 
     /// The observed rows' cardinalities match the ceremonies' own
@@ -745,6 +1033,7 @@ mod tests {
             BlindedShape::OneToThree,
             BlindedShape::TwoToThree,
             BlindedShape::TwoToTwo,
+            BlindedShape::OneToOne,
         ];
         for (index, shape) in ordered.into_iter().enumerate() {
             assert_eq!(
@@ -799,11 +1088,165 @@ mod tests {
         paths.dedup();
         assert_eq!(
             paths,
-            vec![
-                RemovalPath::SingleOutputSolvedBalancingForm,
-                RemovalPath::FeeOutputRole,
-            ],
-            "the two limitations file two distinct removal paths",
+            vec![RemovalPath::NonCancelingPrecursor],
+            "one limitation still refuses a consensus-possible shape, and it files a path",
+        );
+    }
+
+    /// A removed limitation stays cited from the row it used to refuse,
+    /// and carries what ended it.
+    ///
+    /// The ruling's arc — labeled, pinned, explained, REMOVED — held
+    /// structurally rather than left to prose. A row whose limitation was
+    /// removed must still name that limitation, must still be able to say
+    /// what the convention was, and must carry a removal naming the row
+    /// that took it and the target-computed identity that proved the
+    /// shape really runs.
+    #[test]
+    fn a_removed_limitation_keeps_its_history_and_names_what_ended_it() {
+        let mut removed = Vec::new();
+        for shape in BlindedShape::ALL {
+            let FirstPartyStatus::ConstructibleAfterRemoval {
+                removed: limitation,
+                removal,
+            } = census_entry(shape).first_party
+            else {
+                continue;
+            };
+
+            // The three earlier stages of the arc survive the fourth.
+            assert_ne!(
+                limitation.refused_at(),
+                "",
+                "the refusing row is still named"
+            );
+            assert_ne!(
+                limitation.convention(),
+                "",
+                "the convention is still explained"
+            );
+
+            // And the fourth stage is recorded rather than implied.
+            assert_eq!(
+                limitation.removal(),
+                Some(removal),
+                "the row's removal is the limitation's own",
+            );
+            assert_ne!(removal.change, "", "the structural change is stated");
+            assert_eq!(
+                removal.proven_by.map(str::len),
+                Some(64),
+                "a removal recorded on an observed row is proven by a target-computed identity",
+            );
+
+            // The consensus half must have moved with it. A removal that
+            // did not end in an acceptance is a claim about a registry.
+            assert!(
+                matches!(
+                    census_entry(shape).consensus,
+                    ConsensusVerdict::ObservedAccepted { .. }
+                ),
+                "{} records a removal, so a node must have accepted it",
+                shape.handle(),
+            );
+            removed.push(limitation);
+        }
+        assert_eq!(
+            removed,
+            vec![Limitation::TwoOutputFloor],
+            "exactly the two-output floor has been removed and run",
+        );
+
+        // A limitation still standing does NOT claim a removal, so a
+        // filed path cannot read as a taken one.
+        assert_eq!(Limitation::CancelingPredecessorOnly.removal(), None);
+    }
+
+    /// A removal that nothing has run says so, and says where a run
+    /// stops.
+    ///
+    /// The register's sharpest discipline, applied to its own work. The
+    /// fee role was really added and a fee-bearing manifest really
+    /// registers — but a vocabulary that CAN express a shape is not a
+    /// chain that HAS accepted one, and the whole reason this register
+    /// exists is that those two had been collapsing into one word.
+    ///
+    /// So the row carries no identity, its removal carries no identity,
+    /// and the place a run stops is named in the stopping layer's own
+    /// terms rather than left as "not yet".
+    #[test]
+    fn an_unrun_removal_claims_no_acceptance_and_names_where_it_stops() {
+        let mut expressible = Vec::new();
+        for shape in BlindedShape::ALL {
+            let FirstPartyStatus::ExpressibleAndUnrun {
+                removed,
+                removal,
+                stops_at,
+            } = census_entry(shape).first_party
+            else {
+                continue;
+            };
+
+            assert_eq!(
+                removal.proven_by,
+                None,
+                "{} has not run, so its removal proves nothing about a chain",
+                shape.handle(),
+            );
+            assert_ne!(stops_at, "", "the stopping layer is named");
+            assert_eq!(removed.removal(), Some(removal));
+
+            // And the consensus half must NOT have moved. An expressible
+            // shape nobody has submitted is source-derived, and a register
+            // that let this age into an observation would be the failure
+            // it was built to prevent.
+            assert_eq!(
+                census_entry(shape).consensus,
+                ConsensusVerdict::SourceDerivedPossible,
+                "{} is expressible and unrun, so its evidence class is a derivation",
+                shape.handle(),
+            );
+            expressible.push(shape);
+        }
+        assert_eq!(expressible, vec![BlindedShape::OneToOneWithFee]);
+    }
+
+    /// Removing the floor did not free the merge, and the register says
+    /// which wall it is standing at now.
+    ///
+    /// # The observation this replaces
+    ///
+    /// The register's sharpest observation used to be that the two-output
+    /// floor returned the SAME refusal for the impossible fee-only shape
+    /// and the perfectly possible merge, so it guarded consensus by
+    /// accident and a reader taking the refusal as a verdict would be
+    /// wrong about one of the two.
+    ///
+    /// That coincidence has ENDED, and ending it is most of what the
+    /// removal was worth. The merge no longer meets a cardinality wall at
+    /// all: it meets the zero blinder its only available inputs would
+    /// force, which is the confidentiality property that actually
+    /// separates a merge worth building from one that hides nothing. The
+    /// two shapes now draw different refusals, and each refusal is about
+    /// its own shape.
+    #[test]
+    fn the_merge_and_the_fee_only_shape_no_longer_share_a_refusal() {
+        let fee_only = recomputed_registry_refusal(BlindedShape::FeeOnly)
+            .expect("the registry refuses the fee-only shape");
+        let merge = recomputed_registry_refusal(BlindedShape::TwoToOne)
+            .expect("the registry refuses this lane's merge");
+        assert_ne!(
+            fee_only, merge,
+            "the accident the register recorded has ended: the two draw different refusals",
+        );
+        assert_eq!(
+            fee_only,
+            RegistrationRefusal::OutputSetTooSmall { found: 1 },
+            "a lone FEE output can never declare the solved form, so the floor still holds it",
+        );
+        assert!(
+            matches!(merge, RegistrationRefusal::Derivation { .. }),
+            "the merge's wall is now its blinders and no longer its output count",
         );
     }
 
@@ -840,14 +1283,18 @@ mod tests {
     fn the_cardinality_floor_guards_consensus_only_incidentally() {
         assert!(Limitation::TwoOutputFloor.guards_only_incidentally());
         assert!(!Limitation::AbsentFeeRole.guards_only_incidentally());
+        assert!(!Limitation::CancelingPredecessorOnly.guards_only_incidentally());
 
+        // The floor still refuses the one consensus-IMPOSSIBLE shape, and
+        // still for a reason that has nothing to do with consensus: it
+        // counts outputs. What has changed is that it no longer refuses a
+        // possible shape with the same message, which is held next door by
+        // `the_merge_and_the_fee_only_shape_no_longer_share_a_refusal`.
         let fee_only = recomputed_registry_refusal(BlindedShape::FeeOnly)
             .expect("the registry refuses the fee-only shape");
-        let merge = recomputed_registry_refusal(BlindedShape::TwoToOne)
-            .expect("the registry refuses the merge");
         assert_eq!(
-            fee_only, merge,
-            "one consensus-impossible and one consensus-possible shape draw the SAME refusal",
+            fee_only,
+            RegistrationRefusal::OutputSetTooSmall { found: 1 }
         );
     }
 }

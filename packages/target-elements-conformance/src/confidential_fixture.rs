@@ -125,10 +125,27 @@ impl PublicDisposableTestMaterial {
 
 /// What one output of a fixture is for.
 ///
-/// Exhaustive and disjoint: exactly one output of a transaction is
-/// `Balancing` and every other is `Primary`. The balancing blinder is
-/// solved rather than derived, which is the general rule the first
-/// predecessor's ordered additive inverses are one instance of.
+/// Exactly one output of a transaction solves the balance and every
+/// other is `Primary`. The solving blinder is solved rather than
+/// derived, which is the general rule the first predecessor's ordered
+/// additive inverses are one instance of.
+///
+/// # Why solving has two members rather than one
+///
+/// [`Self::Balancing`] and [`Self::SoleBalancing`] perform the same
+/// arithmetic — the input blinder sum less the other outputs' — and the
+/// second is the first with no others to subtract. They are separate
+/// members anyway, because the difference between them is not
+/// arithmetic but DECLARATION. A manifest of one output is admitted only
+/// where it says which form it means, so the single-output form is
+/// something a caller asks for rather than something the registry infers
+/// from a count; a one-output manifest that states `Balancing` draws the
+/// cardinality floor exactly as it always did.
+///
+/// That is what makes the removal of the two-output floor a narrowing
+/// rather than a relaxation. Nothing a caller could register before
+/// registers differently now, and nothing registers now that did not
+/// name the form it wanted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum FixtureOutputRole {
@@ -136,15 +153,122 @@ pub enum FixtureOutputRole {
     Primary,
     /// The one output whose value blinder is solved from the others.
     Balancing,
+    /// The ONLY output, whose value blinder is forced to the input
+    /// blinder sum.
+    ///
+    /// The single-output fully-solved balancing form. There are no other
+    /// outputs to subtract, so the solve returns the input blinder sum
+    /// itself, and the bounded parity search — which searches over
+    /// freely chosen blinders — has nothing to search and degenerates to
+    /// the well-formedness check [`prefixes_match`] describes.
+    ///
+    /// # The degeneracy this member does not hide
+    ///
+    /// A forced blinder can be ZERO, and a zero blinder hides nothing: a
+    /// commitment of exactly the value times the value generator is a
+    /// point anyone recomputes from a guessed amount, carrying a blinded
+    /// output's form and none of its hiding. The tally still balances and
+    /// only confidentiality fails, silently.
+    ///
+    /// It is refused rather than warned about. A zero solved blinder is
+    /// [`FixtureDerivationRefusal::DegenerateBalancingScalar`], which
+    /// this registry already returned before this form existed and which
+    /// this form makes load-bearing: for a sole output the solve returns
+    /// the input blinder sum unchanged, so the refusal fires exactly when
+    /// the consumed coins' blinders cancel. Merging the two halves of an
+    /// inverse pair is therefore not a fixture this registry will build,
+    /// and a caller who wants the merge brings a predecessor whose
+    /// blinders do not cancel.
+    SoleBalancing,
+    /// The transaction fee: explicit value, explicit asset, and an EMPTY
+    /// output program.
+    ///
+    /// Held OUT of the blinder solve at a zero blinder, because that is
+    /// what the target does with it rather than a convention chosen here.
+    /// `CTxOut::IsFee` holds only for an output with an empty
+    /// `scriptPubKey` and an explicit value and asset, so a fee output
+    /// contributes a zero blinder to the Pedersen tally and can never be
+    /// the output that absorbs the input blinder sum.
+    ///
+    /// # The empty program is REQUIRED, not merely permitted
+    ///
+    /// The vocabulary could have excused a fee output from the
+    /// nonempty-program clause and left it there. It does not: a fee role
+    /// carrying a program is refused [`RegistrationRefusal::FeeProgramNotEmpty`].
+    /// The difference matters because the empty program is the fee's whole
+    /// identity at the target — an output with a program is not a fee, it
+    /// is a payment — so a role that merely tolerated an empty program
+    /// would let a manifest declare a fee the target would not read as
+    /// one.
+    ///
+    /// # What a fee output does not have
+    ///
+    /// No value blinder to derive, no nonce input, no range-proof seed,
+    /// and no value commitment. Its opening is ABSENT rather than
+    /// zero-filled, which is why openings are optional per output: a
+    /// zero-filled record reads like an opening, and this output has
+    /// none.
+    ///
+    /// The registry places no cardinality rule on the role. Every shape
+    /// this workspace has censused carries at most one fee output, but
+    /// that is an observation about the shapes built and not a rule the
+    /// target states, and inventing one here would be this file deciding
+    /// a question the target contract does not answer.
+    Fee,
 }
 
 impl FixtureOutputRole {
     /// The role's transcript code.
+    ///
+    /// Stable once written: these bytes are inside every registered
+    /// digest, so a code may be added but never reassigned.
     #[must_use]
     pub const fn transcript_code(self) -> u8 {
         match self {
             Self::Primary => 1,
             Self::Balancing => 2,
+            Self::SoleBalancing => 3,
+            Self::Fee => 4,
+        }
+    }
+
+    /// Whether this role's blinder is solved rather than derived.
+    ///
+    /// The uniqueness clause counts this rather than one named member,
+    /// so that adding a solving form does not silently create a manifest
+    /// with two solved outputs and an underdetermined blinder sum.
+    #[must_use]
+    pub const fn solves_the_balance(self) -> bool {
+        match self {
+            Self::Balancing | Self::SoleBalancing => true,
+            Self::Primary | Self::Fee => false,
+        }
+    }
+
+    /// Whether this role's output carries a derived opening at all.
+    ///
+    /// False for [`Self::Fee`] alone. An explicit output has no blinder
+    /// to derive, no nonce to derive, no proof to seed and no commitment
+    /// to compute, and the registry records that absence as an absence.
+    #[must_use]
+    pub const fn carries_an_opening(self) -> bool {
+        match self {
+            Self::Primary | Self::Balancing | Self::SoleBalancing => true,
+            Self::Fee => false,
+        }
+    }
+
+    /// Whether this role REQUIRES an empty output program.
+    ///
+    /// True for [`Self::Fee`] alone, and required rather than permitted:
+    /// the empty program is the fee's identity at the target, so a role
+    /// that only tolerated it would admit a declared fee the target would
+    /// read as something else.
+    #[must_use]
+    pub const fn requires_an_empty_program(self) -> bool {
+        match self {
+            Self::Fee => true,
+            Self::Primary | Self::Balancing | Self::SoleBalancing => false,
         }
     }
 }
@@ -154,6 +278,8 @@ impl std::fmt::Display for FixtureOutputRole {
         let text = match self {
             Self::Primary => "primary",
             Self::Balancing => "balancing",
+            Self::SoleBalancing => "sole balancing",
+            Self::Fee => "fee",
         };
         formatter.write_str(text)
     }
@@ -431,8 +557,16 @@ pub enum FixtureOpenings {
     Derived {
         /// The parity counter the search settled on.
         parity_counter: u16,
-        /// One opening per output, in fixture order.
-        openings: Vec<DerivedOpening>,
+        /// One entry per output, in fixture order, ABSENT for an output
+        /// that has no opening.
+        ///
+        /// The vector is indexed by output position and never compacted,
+        /// so an entry's index is its output's index. `None` is an
+        /// explicit output — today only a fee — and it is `None` rather
+        /// than a zero-filled [`DerivedOpening`] on purpose: a record of
+        /// zeroes reads like an opening, and an explicit output does not
+        /// have one to read.
+        openings: Vec<Option<DerivedOpening>>,
     },
     /// No openings, because the run has not produced them yet.
     RunProduced,
@@ -527,12 +661,24 @@ impl ResolvedFixture {
     ///
     /// Absent under recorded randomness, where the openings do not exist
     /// until the run produces them.
+    ///
+    /// # It lists the outputs that HAVE a commitment
+    ///
+    /// An explicit output contributes none, so for a fee-bearing fixture
+    /// this vector is shorter than the output list and its indices are
+    /// not output indices. That is the right shape for its callers, which
+    /// ask about the committed values as a set — the admitted prefix rule
+    /// is a statement about commitments, and a fee output has no prefix to
+    /// state anything about. A caller that needs to know WHICH output a
+    /// commitment belongs to reads [`Self::openings`], which is indexed by
+    /// output.
     #[must_use]
     pub fn value_commitments(&self) -> Option<Vec<[u8; COMMITMENT_BYTES]>> {
         match &self.openings {
             FixtureOpenings::Derived { openings, .. } => Some(
                 openings
                     .iter()
+                    .flatten()
                     .map(|opening| opening.value_commitment)
                     .collect(),
             ),
@@ -623,17 +769,40 @@ pub enum RegistrationRefusal {
     DuplicateFixtureHandle,
     /// The manifest declares a class this registry does not admit.
     MaterialClassNotAdmitted,
-    /// The manifest states fewer outputs than a balance needs.
+    /// The manifest states fewer outputs than a balance needs, and does
+    /// not declare the single-output form that needs no more.
+    ///
+    /// The floor is narrower than it was and still stands where it
+    /// always stood. A manifest of one output whose role is
+    /// [`FixtureOutputRole::SoleBalancing`] is the fully-solved form and
+    /// is admitted; a manifest of one output stating any other role is
+    /// refused here exactly as before, because the form is something a
+    /// caller declares rather than something a count implies.
     OutputSetTooSmall {
         /// How many outputs were stated.
         found: usize,
     },
+    /// The sole-balancing role was stated in a manifest of several
+    /// outputs.
+    ///
+    /// The form is the whole manifest and not one member of it. Stated
+    /// beside other outputs it is a contradiction rather than a wider
+    /// manifest's balancing output, and reading it as the latter would
+    /// let a caller reach the single-output solve without the
+    /// single-output shape.
+    SoleBalancingRoleNotAlone {
+        /// How many outputs were stated beside it.
+        found: usize,
+    },
     /// The roles are not exhaustive and disjoint.
     ///
-    /// Exactly one output is balancing. Zero leaves the blinder sum
-    /// unsolvable and two leaves it underdetermined.
+    /// Exactly one output solves the balance. Zero leaves the blinder
+    /// sum unsolvable and two leaves it underdetermined. The clause
+    /// counts [`FixtureOutputRole::solves_the_balance`] rather than one
+    /// named member, so a solving form added to the vocabulary cannot
+    /// slip past it.
     BalancingRoleNotUnique {
-        /// How many balancing outputs were stated.
+        /// How many solving outputs were stated.
         found: usize,
     },
     /// An output states an amount outside the semantic domain.
@@ -647,7 +816,21 @@ pub enum RegistrationRefusal {
         output: usize,
     },
     /// An output states no program.
+    ///
+    /// The clause reads on the ROLE rather than on every output alike: a
+    /// fee output must state no program, and every other role must state
+    /// one.
     OutputProgramEmpty {
+        /// Which output.
+        output: usize,
+    },
+    /// A fee output states a program.
+    ///
+    /// The other half of the same clause, and the reason the fee role is
+    /// checked rather than merely excused. An empty `scriptPubKey` is the
+    /// fee's whole identity at the target, so a fee carrying a program is
+    /// not a fee the target would recognize.
+    FeeProgramNotEmpty {
         /// Which output.
         output: usize,
     },
@@ -680,6 +863,10 @@ impl std::fmt::Display for RegistrationRefusal {
             Self::OutputSetTooSmall { found } => {
                 write!(formatter, "the manifest states {found} outputs")
             }
+            Self::SoleBalancingRoleNotAlone { found } => write!(
+                formatter,
+                "the manifest states the sole-balancing role beside {found} outputs",
+            ),
             Self::BalancingRoleNotUnique { found } => {
                 write!(formatter, "the manifest states {found} balancing outputs")
             }
@@ -694,6 +881,9 @@ impl std::fmt::Display for RegistrationRefusal {
             }
             Self::OutputProgramEmpty { output } => {
                 write!(formatter, "output {output} states no program")
+            }
+            Self::FeeProgramNotEmpty { output } => {
+                write!(formatter, "fee output {output} states a program")
             }
             Self::RetryLimitAboveBound { stated } => write!(
                 formatter,
@@ -899,13 +1089,30 @@ fn digest_transcript(
         transcript.octet(output.role.transcript_code());
         transcript.framed(&manifest.explicit_asset);
         transcript.framed(&output.output_program);
-        if let FixtureOpenings::Derived { openings, .. } = openings {
-            let opening = &openings[index];
+        // Whether an opening block follows is decided by the ROLE code
+        // emitted just above, which is why no presence flag is needed and
+        // why none was added: adding one would have shifted the bytes of
+        // every manifest registered before this role existed. Two
+        // transcripts that differ in whether the block follows differ in
+        // the role code at a fixed position, so the framing stays
+        // unambiguous without costing a single existing digest.
+        if output.role.carries_an_opening() {
+            if let FixtureOpenings::Derived { openings, .. } = openings
+                && let Some(opening) = openings.get(index).and_then(Option::as_ref)
+            {
+                transcript.quad(output.semantic_amount);
+                transcript.framed(&opening.value_blinder);
+                transcript.framed(&opening.nonce_input);
+                transcript.framed(&opening.rangeproof_seed);
+                transcript.octet(opening.value_commitment[0]);
+            }
+        } else {
+            // An explicit output's value is public and on the wire, so it
+            // is bound under BOTH contracts rather than only where
+            // openings exist. Withholding it under recorded randomness
+            // would be treating a published amount as though it were part
+            // of a secret opening.
             transcript.quad(output.semantic_amount);
-            transcript.framed(&opening.value_blinder);
-            transcript.framed(&opening.nonce_input);
-            transcript.framed(&opening.rangeproof_seed);
-            transcript.octet(opening.value_commitment[0]);
         }
     }
     transcript.finish()
@@ -1069,15 +1276,24 @@ fn derive_at_counter(
     manifest: &ConfidentialFixtureManifest,
     input_blinder_sum: &BigUint,
     parity_counter: u16,
-) -> Result<Vec<DerivedOpening>, FixtureDerivationRefusal> {
+) -> Result<Vec<Option<DerivedOpening>>, FixtureDerivationRefusal> {
     let profile = manifest.derivation_profile;
     let handle = &manifest.handle;
 
     let mut blinders: Vec<Option<[u8; DERIVED_BYTES]>> = Vec::with_capacity(manifest.outputs.len());
     let mut derived_sum = BigUint::zero();
     for (index, output) in manifest.outputs.iter().enumerate() {
-        if output.role == FixtureOutputRole::Balancing {
+        if output.role.solves_the_balance() {
             blinders.push(None);
+            continue;
+        }
+        // A fee output is explicit, so its blinder is ZERO and it is held
+        // out of the solve. It contributes nothing to the derived sum,
+        // which is exactly what the target's tally does with it: an
+        // explicit value is committed with an all-zero blinder and joins
+        // the same sum, so a fee can never absorb the input blinder sum.
+        if !output.role.carries_an_opening() {
+            blinders.push(Some([0_u8; DERIVED_BYTES]));
             continue;
         }
         let (bytes, scalar) = search_scalar(
@@ -1097,7 +1313,29 @@ fn derive_at_counter(
     // predecessor the input contributes zero and the two blinders come
     // out ordered additive inverses, which is that requirement as an
     // instance of the general rule rather than as a special case.
+    //
+    // The single-output form is the same statement with an empty sum to
+    // subtract, so the solved blinder IS the input blinder sum. Nothing
+    // below is special-cased for it, which is the point: the form was
+    // always what this arithmetic did, and only the cardinality clause
+    // above ever stood in its way.
     let balancing = add_scalars(input_blinder_sum, &negate_scalar(&derived_sum));
+    // The zero refusal, which the single-output form makes load-bearing.
+    //
+    // It has always been here and it has never before decided anything a
+    // caller could reach: with at least one derived blinder in the sum, a
+    // zero solution is an accident of the hash. For a sole output the
+    // solve returns the input blinder sum unchanged, so this fires
+    // exactly when the consumed coins' blinders cancel — which is what
+    // merging the two halves of an inverse pair does by construction.
+    //
+    // The commitment such a merge would carry is exactly the value times
+    // the value generator: a point anyone recomputes from a guessed
+    // amount, with a blinded output's form and none of its hiding. The
+    // tally would still balance and only confidentiality would fail, and
+    // it would fail silently. So it is refused here rather than built and
+    // annotated, and a caller who wants a merge brings a predecessor
+    // whose blinders do not cancel.
     if balancing.is_zero() || &balancing >= order() {
         return Err(FixtureDerivationRefusal::DegenerateBalancingScalar);
     }
@@ -1111,6 +1349,11 @@ fn derive_at_counter(
     // The independent recheck, which is not the same statement as the
     // solve: the solve produced the value and this reads every blinder
     // back and adds them again.
+    // The independent recheck sums every output's blinder, the fee's zero
+    // included. Adding zero changes nothing, and including it is the
+    // point: the recheck is over the whole output set, so an output
+    // silently dropped from the sum would be a mismatch rather than an
+    // omission nobody noticed.
     let mut recheck = BigUint::zero();
     for slot in blinders.iter().copied() {
         let bytes = slot.ok_or(FixtureDerivationRefusal::BlinderBalanceMismatch)?;
@@ -1124,6 +1367,13 @@ fn derive_at_counter(
 
     let mut openings = Vec::with_capacity(manifest.outputs.len());
     for (index, output) in manifest.outputs.iter().enumerate() {
+        // An explicit output has no opening, and the absence is recorded
+        // as an absence. Nothing is derived for it: no blinder to search,
+        // no nonce, no proof seed, and no commitment.
+        if !output.role.carries_an_opening() {
+            openings.push(None);
+            continue;
+        }
         let value_blinder =
             blinders[index].ok_or(FixtureDerivationRefusal::DegenerateBalancingScalar)?;
         let (nonce_input, _) = search_scalar(
@@ -1156,12 +1406,12 @@ fn derive_at_counter(
                 FixtureDerivationRefusal::BlinderBalanceMismatch
             }
         })?;
-        openings.push(DerivedOpening {
+        openings.push(Some(DerivedOpening {
             value_blinder,
             nonce_input,
             rangeproof_seed,
             value_commitment,
-        });
+        }));
     }
     Ok(openings)
 }
@@ -1177,6 +1427,13 @@ fn derive_at_counter(
 /// `None` for a solved scalar that is zero or out of range, which is a
 /// refusal and never a nudge: there is no arm here that adds one and
 /// tries again.
+///
+/// An EMPTY `other_blinders` is the single-output fully-solved form and
+/// not a caller mistake: the sum of no blinders is zero, so the solve
+/// returns the input blinder sum itself. The zero refusal above then
+/// carries the whole weight of the merge degeneracy, because a sole
+/// output's forced blinder is zero exactly when the consumed coins'
+/// blinders cancel.
 #[must_use]
 pub fn solve_balancing_blinder(
     input_blinder_sum: &[u8; DERIVED_BYTES],
@@ -1224,11 +1481,22 @@ fn required_prefixes() -> (u8, u8) {
 /// admitted set is a pair — and inventing one here would be this file
 /// deciding a question the target contract does not answer.
 ///
-/// The consequence is stated rather than hidden: for a wider fixture the
-/// search is a well-formedness check the first counter satisfies, because
-/// a well-formed commitment carries an admitted prefix by construction.
-/// The search's discriminating power belongs to the two-output
-/// dual-parity case and is claimed for no other.
+/// A single-output fixture is held to the same weaker rule, and for a
+/// sharper reason than width. Its one blinder is not chosen at all — it
+/// is forced to the input blinder sum — so the parity counter cannot
+/// move the commitment it produces, and a search over counters is
+/// searching a space of one. The prefix that commitment carries is
+/// whichever the forced blinder yields, and both admitted prefixes are
+/// valid, so there is nothing to select and nothing to reject.
+///
+/// The consequence is stated rather than hidden: for any fixture but a
+/// two-output one the search is a well-formedness check the first
+/// counter satisfies, because a well-formed commitment carries an
+/// admitted prefix by construction. The search's discriminating power
+/// belongs to the two-output dual-parity case and is claimed for no
+/// other. Saying so is part of the single-output form rather than a note
+/// beside it: a bounded search that cannot fail, described as though it
+/// could, is a claim of discrimination the code does not perform.
 ///
 /// Before this, a fixture of any width but two could not derive at all.
 /// The required pair was compared by LENGTH, so a three-output manifest
@@ -1236,15 +1504,22 @@ fn required_prefixes() -> (u8, u8) {
 /// thousand and ninety-six attempts. That is the deepest layer of the
 /// absent multi-output shape constructor, and it was a cardinality
 /// assumption in this file rather than a rule the target states.
-fn prefixes_match(openings: &[DerivedOpening]) -> bool {
+fn prefixes_match(openings: &[Option<DerivedOpening>]) -> bool {
     let (first, second) = required_prefixes();
-    if openings.len() == 2 {
-        return openings
+    // The rule reads on the COMMITTED openings, because it is a rule
+    // about commitments. An explicit output has no commitment and
+    // therefore no prefix, so counting it would make the dual-parity rule
+    // depend on how many fee outputs a manifest carries — and a
+    // two-output fixture of one blinded output beside a fee is not the
+    // dual-parity case, whatever its output count says.
+    let committed: Vec<&DerivedOpening> = openings.iter().flatten().collect();
+    if committed.len() == 2 {
+        return committed
             .iter()
             .zip([first, second])
             .all(|(opening, wanted)| opening.value_commitment[0] == wanted);
     }
-    openings.iter().all(|opening| {
+    committed.iter().all(|opening| {
         opening.value_commitment[0] == first || opening.value_commitment[0] == second
     })
 }
@@ -1258,7 +1533,7 @@ fn search_parity(
     source: &dyn DerivationSource,
     manifest: &ConfidentialFixtureManifest,
     input_blinder_sum: &BigUint,
-) -> Result<(u16, Vec<DerivedOpening>), FixtureDerivationRefusal> {
+) -> Result<(u16, Vec<Option<DerivedOpening>>), FixtureDerivationRefusal> {
     let bound = manifest.retry_limit.min(MAX_PARITY_COUNTER);
     let mut counter = 0_u16;
     loop {
@@ -1333,15 +1608,46 @@ impl ConfidentialFixtureRegistry {
         if manifest.material_class != PublicDisposableTestMaterial::EXPECTED {
             return Err(RegistrationRefusal::MaterialClassNotAdmitted);
         }
-        if manifest.outputs.len() < 2 {
+        // The cardinality floor, narrowed to what it was always for.
+        //
+        // It was written to guard the balancing-output model: a manifest
+        // names one balancing output whose blinder is solved from the
+        // others, and with one output there is no other. That model has
+        // a single-output form — the solve returns the input blinder sum
+        // itself — and the floor predated it rather than refusing it.
+        //
+        // So the clause now asks whether the manifest DECLARES that
+        // form, and refuses a short manifest that does not. A caller who
+        // states `Balancing` on a lone output still gets the same typed
+        // refusal with the same count, because that caller has asked for
+        // a solve over others that are not there.
+        let declares_the_sole_form = matches!(
+            manifest.outputs.as_slice(),
+            [output] if output.role == FixtureOutputRole::SoleBalancing
+        );
+        if manifest.outputs.len() < 2 && !declares_the_sole_form {
             return Err(RegistrationRefusal::OutputSetTooSmall {
+                found: manifest.outputs.len(),
+            });
+        }
+        // The form is the whole manifest, so the role may not appear in
+        // a wider one. Without this clause a caller could reach the
+        // single-output solve from a manifest that is not single-output,
+        // and the declaration would stop meaning what it says.
+        if manifest.outputs.len() > 1
+            && manifest
+                .outputs
+                .iter()
+                .any(|output| output.role == FixtureOutputRole::SoleBalancing)
+        {
+            return Err(RegistrationRefusal::SoleBalancingRoleNotAlone {
                 found: manifest.outputs.len(),
             });
         }
         let balancing = manifest
             .outputs
             .iter()
-            .filter(|output| output.role == FixtureOutputRole::Balancing)
+            .filter(|output| output.role.solves_the_balance())
             .count();
         if balancing != 1 {
             return Err(RegistrationRefusal::BalancingRoleNotUnique { found: balancing });
@@ -1353,7 +1659,14 @@ impl ConfidentialFixtureRegistry {
             if !is_semantic_amount(output.semantic_amount) {
                 return Err(RegistrationRefusal::AmountNotSemantic { output: index });
             }
-            if output.output_program.is_empty() {
+            // The program clause reads on the ROLE. A fee output must
+            // carry no program and every other role must carry one, so
+            // neither case is a tolerated exception to the other.
+            if output.role.requires_an_empty_program() {
+                if !output.output_program.is_empty() {
+                    return Err(RegistrationRefusal::FeeProgramNotEmpty { output: index });
+                }
+            } else if output.output_program.is_empty() {
                 return Err(RegistrationRefusal::OutputProgramEmpty { output: index });
             }
         }

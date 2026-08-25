@@ -1345,6 +1345,37 @@ fn the_several_distinct_owners_shape_is_submitted_to_a_real_target() {
     run_one_multi_shape(PrivateShape::SeveralDistinctOwners, "multi-several-owners");
 }
 
+/// The strict one-to-one: ONE receipt in and ONE output out, against a
+/// real node.
+///
+/// # The shape the registry used to refuse
+///
+/// This is not a step of the restart order and it moves no matrix row.
+/// It is a row of the CONSENSUS shape census, which enumerates what the
+/// target's balance rule admits rather than what the guide's own class
+/// table names, and it sat there recorded source-derived-possible and
+/// refused: the fixture registry's two-output floor turned it away before
+/// looking at its one output. The census typed that floor as a
+/// first-party convention rather than a protocol rule, and this run is
+/// what a structural removal is worth — the shape's lone output declares
+/// the fully-solved balancing form, takes the consumed coin's own value
+/// blinder, and is offered to a node.
+///
+/// # Why THIS one-output shape and not the merge
+///
+/// It consumes one receipt, so its input blinder sum is a single coin's
+/// blinder with nothing to cancel against. A merge of this ceremony's
+/// predecessor consumes an inverse pair whose blinders sum to zero, and a
+/// forced zero blinder hides nothing — the registry refuses it, so no
+/// merge is submitted from here and none is claimed.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_strict_one_to_one_shape_is_submitted_to_a_real_target() {
+    use vectors::live_multi_shapes::PrivateShape;
+
+    run_one_multi_shape(PrivateShape::StrictOneToOne, "multi-strict-one-to-one");
+}
+
 /// One multi-output or multi-input private shape, against the node.
 ///
 /// The same shape-only discipline the one-to-one control ran under: what

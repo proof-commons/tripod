@@ -421,6 +421,32 @@ pub enum ProofBearingRefusal {
     /// The registry's derived openings are not the byte-identity
     /// contract's derived form.
     OpeningsAreNotDerived,
+    /// The manifest states a FEE output, which this projection cannot
+    /// carry to the materializer.
+    ///
+    /// # A typed stop, and what it is a stop on
+    ///
+    /// The fixture registry HAS a fee role: explicit-valued, held out of
+    /// the blinder solve at a zero blinder, and required to carry an empty
+    /// output program. A fee-bearing manifest registers, derives, and
+    /// digests here.
+    ///
+    /// What has not been built is everything downstream of that. The
+    /// materializer's own output-role vocabulary has no fee member; its
+    /// per-output stage would compute a commitment and a range proof for
+    /// an output that must carry an explicit value and no witness at all;
+    /// and the executor adapter's fixture catalogue and parity search read
+    /// every output as a committed one.
+    ///
+    /// So the projection REFUSES rather than substituting a role, and the
+    /// refusal is named for the thing that is missing. Mapping a fee to
+    /// the balancing role to get past this line would produce a candidate
+    /// whose fee output was blinded — not a fee at the target, and a
+    /// silently wrong transaction rather than an honest stop.
+    FeeRoleNotProjectable {
+        /// Which output states it.
+        output: usize,
+    },
     /// The two predecessor blinders do not sum to the value the
     /// successor is balanced against.
     PredecessorBlindersDoNotClose,
@@ -926,7 +952,7 @@ fn derived_openings(
     fixture: &ResolvedFixture,
 ) -> Result<
     (
-        &[target_elements_conformance::confidential_fixture::DerivedOpening],
+        &[Option<target_elements_conformance::confidential_fixture::DerivedOpening>],
         u16,
     ),
     ProofBearingRefusal,
@@ -948,15 +974,37 @@ fn derived_openings(
 fn project(fixture: &ResolvedFixture) -> Result<ConfidentialFixtureView, ProofBearingRefusal> {
     let (openings, parity_counter) = derived_openings(fixture)?;
     let mut outputs = Vec::with_capacity(openings.len());
-    for (output, opening) in fixture.outputs().iter().zip(openings) {
+    for (index, (output, opening)) in fixture.outputs().iter().zip(openings).enumerate() {
         let role = match output.role {
             FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
-            FixtureOutputRole::Balancing => ConfidentialOutputRole::Balancing,
+            // The typed stop. The registry expresses a fee output; nothing
+            // downstream of this line does yet.
+            FixtureOutputRole::Fee => {
+                return Err(ProofBearingRefusal::FeeRoleNotProjectable { output: index });
+            }
+            // Both solving roles project to the view's one solving role,
+            // and that is not a role being flattened away. The view's
+            // `Balancing` means "this output's blinder is solved from
+            // the others", and the sole form is that statement with no
+            // others — the same instruction to the materializer, whose
+            // solve over an empty set of other blinders returns the
+            // input blinder sum. What the registry's extra member
+            // carries is a DECLARATION about the manifest's shape, and a
+            // declaration has done its work by the time the manifest is
+            // registered.
+            FixtureOutputRole::Balancing | FixtureOutputRole::SoleBalancing => {
+                ConfidentialOutputRole::Balancing
+            }
             // The registry's role vocabulary is open and the view's is
             // not. A role added there with no place here is a refusal
             // rather than a silent substitution.
             _ => return Err(ProofBearingRefusal::OpeningsAreNotDerived),
         };
+        // Every role that reaches here carries an opening, the one that
+        // does not having refused above.
+        let opening = opening
+            .as_ref()
+            .ok_or(ProofBearingRefusal::OpeningsAreNotDerived)?;
         outputs.push(ConfidentialFixtureOutputView::new(
             role,
             output.semantic_amount,
@@ -1017,36 +1065,33 @@ pub(crate) fn register(
 
 /// One manifest of arbitrary output arity, built from its own parts.
 ///
-/// The multi-output constructor the restart order's fifth step needs, and
-/// the whole of what `LiveInfrastructureBlocker::MultiOutputShapeConstructorAbsent`
-/// records as missing: [`manifest`] is fixed at the two outputs a
-/// one-to-one control has, while a split, a many-to-many, or a
-/// several-owner transfer has more. The last output is the balancing one
-/// and every earlier output is primary, which is the registry's own rule
-/// that exactly one output is balancing, expressed as a position rather
-/// than restated at each call.
+/// The multi-output constructor the restart order's fifth step needs:
+/// [`manifest`] is fixed at the two outputs a one-to-one control has,
+/// while a split, a many-to-many, or a several-owner transfer has more.
+///
+/// # The roles are stated by the caller, not by a position
+///
+/// This builder used to cast the LAST output as the balancing one and
+/// every earlier output as primary. That read as a convenient spelling of
+/// the registry's exactly-one-balancing rule, and it was one for as long
+/// as every output was a blinded protocol output.
+///
+/// It stopped being one twice over. A FEE output is the one output that
+/// must never balance, and arriving last it arrived cast as the output
+/// that does. And a SINGLE-output manifest must DECLARE the fully-solved
+/// form rather than be assigned a role that asks to be solved from others
+/// that are not there — a positional rule cannot express a declaration,
+/// because a position is not something a caller says.
+///
+/// So the role travels with the output. The builder no longer decides
+/// anything about the balance, which moves the decision to the call site
+/// that actually knows the shape it is building.
 fn multi_manifest(
     handle: &str,
     explicit_asset: [u8; 32],
     input_blinder_sum: [u8; 32],
-    amounts: &[u64],
-    programs: &[Vec<u8>],
+    outputs: Vec<ConfidentialFixtureOutput>,
 ) -> ConfidentialFixtureManifest {
-    let last = amounts.len().saturating_sub(1);
-    let outputs = amounts
-        .iter()
-        .zip(programs)
-        .enumerate()
-        .map(|(index, (amount, program))| ConfidentialFixtureOutput {
-            role: if index == last {
-                FixtureOutputRole::Balancing
-            } else {
-                FixtureOutputRole::Primary
-            },
-            semantic_amount: *amount,
-            output_program: program.clone(),
-        })
-        .collect();
     ConfidentialFixtureManifest {
         handle: ConfidentialFixtureHandle::new(handle.to_owned()),
         material_class: PublicDisposableTestMaterial::EXPECTED,
@@ -1078,8 +1123,7 @@ pub(crate) fn register_multi(
     handle: &str,
     explicit_asset: [u8; 32],
     input_blinder_sum: [u8; 32],
-    amounts: &[u64],
-    programs: &[Vec<u8>],
+    outputs: Vec<ConfidentialFixtureOutput>,
 ) -> Result<(ConfidentialFixtureDigest, ConfidentialFixtureView), ProofBearingRefusal> {
     let mut registry = ConfidentialFixtureRegistry::new();
     registry
@@ -1087,8 +1131,7 @@ pub(crate) fn register_multi(
             handle,
             explicit_asset,
             input_blinder_sum,
-            amounts,
-            programs,
+            outputs,
         ))
         .map_err(|refusal| ProofBearingRefusal::FixtureNotRegistrable {
             handle: handle.to_owned(),
@@ -1125,8 +1168,7 @@ pub(crate) fn registry_refusal_for(
     handle: &str,
     explicit_asset: [u8; 32],
     input_blinder_sum: [u8; 32],
-    amounts: &[u64],
-    programs: &[Vec<u8>],
+    outputs: Vec<ConfidentialFixtureOutput>,
 ) -> Option<RegistrationRefusal> {
     let mut registry = ConfidentialFixtureRegistry::new();
     registry
@@ -1134,8 +1176,7 @@ pub(crate) fn registry_refusal_for(
             handle,
             explicit_asset,
             input_blinder_sum,
-            amounts,
-            programs,
+            outputs,
         ))
         .err()
 }

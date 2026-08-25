@@ -60,18 +60,22 @@ The window is chosen for the first-party half, where the counts do matter: the r
 
 | Shape | Consensus verdict | Evidence | First-party status | Limitation |
 |---|---|---|---|---|
-| One blinded input to one blinded output | Possible | Source-derived | Refused | (`rule:shapes:two-output-floor`) |
-| One blinded input to one blinded output beside a fee output | Possible | Source-derived | Refused | (`rule:shapes:absent-fee-role`) |
+| One blinded input to one blinded output | Possible | Observed | Constructible after removal | (`rule:shapes:two-output-floor`), removed |
+| One blinded input to one blinded output beside a fee output | Possible | Source-derived | Expressible and unrun | (`rule:shapes:absent-fee-role`), removed |
 | One blinded input to two blinded outputs | Possible | Observed | Constructible and observed | none |
 | One blinded input to three blinded outputs | Possible | Observed | Constructible and observed | none |
-| Two blinded inputs merged to one blinded output | Possible | Source-derived | Refused | (`rule:shapes:two-output-floor`) |
+| Two blinded inputs merged to one blinded output | Possible | Source-derived | Refused | (`rule:shapes:canceling-predecessor`) |
 | Two blinded inputs to two blinded outputs | Possible | Observed | Constructible and observed | none |
 | Two blinded inputs to three blinded outputs | Possible | Observed | Constructible and observed | none |
 | One blinded input to a fee output and nothing else | Impossible | Source-derived | Refusal guards consensus | (`rule:shapes:fee-only`) |
 
-Both limitation tags in the last column are cited above in a parenthesized group, because each is minted at its own section below and a bare occurrence here would be a second mint of the same name.
+Every limitation tag in the last column is cited above in a parenthesized group, because each is minted at its own section below and a bare occurrence here would be a second mint of the same name.
 
-Four of eight shapes have been run and accepted. Four have not, and none of those four has ever been offered to a node.
+Five of eight shapes have been run and accepted. Three have not.
+
+The counts moved because two limitations were structurally removed, and the three first-party statuses in the fourth column are three different things that a single word would have flattened. Constructible and observed is a shape this lane always built. Constructible after removal is a shape it was refused until a convention was removed, and the row keeps citing the removed convention, because a row saying only that a shape works loses the fact that a wall stood there — and a wall nobody remembers is one that gets rebuilt. Expressible and unrun is the fee-bearing shape: the vocabulary really does express it now and no node has ever been offered one, which are two facts and not one.
+
+Of the three unrun shapes, one is consensus-impossible, one is expressible here and stopped short of a node, and one is the merge, which is refused for a reason that is no longer the reason it used to be.
 
 The one-to-two row carries the first of two identities the lane recorded for that shape; the second, is the same shape spending the opposite commitment parity, and the register cites one because a shape needs one acceptance and not because the other is doubted.
 
@@ -85,11 +89,23 @@ The one-to-two row carries the first of two identities the lane recorded for tha
 
 That is a fact about the model and not about the arithmetic. A lone output's blinder is fully determined by the input blinder sum, and determining it is exactly what solving means. The floor is therefore a construction-model convention, not a consensus rule, and the register records it as one.
 
-**Removal path.** Extend the registry with a single-output fully-solved balancing form: a manifest whose one output is balancing and carries no freely chosen blinder, taking the input blinder sum directly. The parity search then has nothing to search and degenerates to a well-formedness check, which the code should say plainly rather than claim a discriminating power it would not have. This admits both the strict one-to-one and the private merge, and the two-output case stays bit-for-bit as it is.
+**Removal path, TAKEN.** Extend the registry with a single-output fully-solved balancing form: a manifest whose one output is balancing and carries no freely chosen blinder, taking the input blinder sum directly. The parity search then has nothing to search and degenerates to a well-formedness check, which the code should say plainly rather than claim a discriminating power it would not have. This admits both the strict one-to-one and the private merge, and the two-output case stays bit-for-bit as it is.
+
+**REMOVED, under T5-041.** The cardinality clause stopped counting outputs and started asking whether a short manifest DECLARES the form, which a new sole-balancing role states. The floor still refuses a lone output that does not declare it, so nothing was relaxed and nothing that registered before registers differently; what changed is that a caller can now ask for the form by name. The declaration rides in the output role rather than in a new manifest member, which is what kept every existing fixture's digest identical — the digest transcript already emits a role code per output, so adding roles perturbs nothing a previous manifest hashed, while a manifest-level field would have moved every registered digest.
+
+The degeneracy was answered by both admitted paths at once rather than by choosing between them. The registry's existing zero-solution refusal was left standing and is now load-bearing: for a sole output the solve returns the input blinder sum unchanged, so the refusal fires exactly when the consumed coins' blinders cancel. And the shape that ran was built from a predecessor that cannot cancel, a one-input transfer whose blinder sum is a single coin's blinder.
+
+A target accepted the strict one-to-one: 4773 bytes, one range proof of 4174, its readback witness verified against an independently recomputed message. It is the smallest submission this lane has made, for a structural reason rather than by chance, one output meaning one range proof. That acceptance is what makes this a removal rather than a claim about a registry.
+
+The removal did NOT free the merge, and the register says so rather than letting one acceptance stand for two shapes. What stops the merge now is recorded at (`rule:shapes:canceling-predecessor`).
 
 **The degeneracy the removal must name.** The forced blinder can be zero, and then it hides nothing. A merge's single output takes the sum of the consumed coins' blinders, so merging the two halves of this repository's inverse-pair dual-parity predecessor — whose blinders cancel by construction, which is what makes it an inverse pair — forces that sum to zero. The output commitment is then exactly v\*H: a point anyone can recompute from a guessed value, carrying a blinded output's form and none of its hiding. The form is still sound and the tally still balances; what fails is confidentiality, silently. A predecessor whose blinders do not cancel avoids it, so the removal must either require a non-canceling predecessor or refuse a solved zero blinder outright. Filing the form without this warning would file a confidentiality hole as a feature.
 
-**This floor guards consensus only by accident.** It counts outputs. It refuses the consensus-impossible fee-only shape and the perfectly possible merge with the same message and the same indifference, which the census tests hold by driving both and comparing the two refusals. A reader who took the refusal as a consensus verdict would be wrong about one of the two, and the register says which.
+**This floor guarded consensus only by accident, and that accident has ended.** It counted outputs. It refused the consensus-impossible fee-only shape and the perfectly possible merge with the same message and the same indifference, so a reader who took the refusal as a consensus verdict would have been wrong about one of the two.
+
+The coincidence is now gone, and ending it is most of what the removal was worth. The merge no longer meets a cardinality wall at all; it meets the zero blinder its only available inputs would force, which is the confidentiality property that actually separates a merge worth building from one that hides nothing. The fee-only shape still meets the floor, because a lone fee output can never declare the solved form — a fee is explicit, so it can never be the output that solves. The two draw different refusals now and each refusal is about its own shape, which the census tests hold by driving both and comparing.
+
+The floor still guards the impossible shape for a reason that has nothing to do with consensus, so the register keeps saying so.
 
 **Revising this limitation touches:** this section; the registry clause and its typed refusal, together with the parity search whose degeneration the new form has to state; the fixture manifest vocabulary, which today cannot express a zero-free-output manifest; the census module's rows for the one-to-one and merge shapes and the four tests that recompute them; the ceremony test in the multi-shape module that records the one-output floor as the merge wall; the merge erratum in the Guide-13 feature-request register, whose ground is this section; the positive private class vocabulary's merge member and whatever records it as unconstructible; and every backlog paragraph that describes the one-output shapes as typed at the registry floor, which is true only while the floor stands.
 
@@ -103,9 +119,35 @@ That is a fact about the model and not about the arithmetic. A lone output's bli
 
 A second face of the same absence shows in the shared manifest builder, which casts the final output as the balancing one. The builder has no way to say explicit and outside the solve, so the one output that must never balance arrives cast as the output that does.
 
-**Removal path.** Add a fee member to the fixture output role vocabulary: explicit-valued, held out of the blinder solve at a zero blinder, and required to carry an empty output program rather than merely permitted one, so the role is checked and not just excused from the nonempty-program clause. The clause then reads on the role instead of on every output alike, and the balancing role stops being assigned by position.
+**Removal path, TAKEN at the registry.** Add a fee member to the fixture output role vocabulary: explicit-valued, held out of the blinder solve at a zero blinder, and required to carry an empty output program rather than merely permitted one, so the role is checked and not just excused from the nonempty-program clause. The clause then reads on the role instead of on every output alike, and the balancing role stops being assigned by position.
+
+**REMOVED, under T5-042.** All of it. The role exists, the empty program is required of it rather than tolerated, the clause reads on the role and a non-fee output with no program is refused exactly as before, and the positional assignment is retired in both the manifest builder and the openings layer — every call site now states the roles it used to be handed implicitly, which is why no fixture's digest moved.
+
+Two further corrections came with it, and both are the same correction said twice. A fee output's opening is ABSENT rather than zero-filled, because a record of zeroes reads like an opening and an explicit output has none; and the admitted-prefix rule reads on the outputs that have commitments rather than on the output count, so a two-output fixture of one blinded output beside a fee is not the dual-parity case whatever its output count says.
+
+**And the shape still has not run, which is a different sentence.** The row is recorded expressible and unrun, not observed, and its removal carries no identity. A fee-bearing manifest registers, derives and digests; nothing between the registry and a chain has learned the role. The materializer's own output-role vocabulary has no fee member, its per-output stage would compute a commitment and a range proof for an output that must carry an explicit value and no witness at all, and the executor adapter's fixture catalogue and parity search read every output as a committed one.
+
+The projection therefore refuses by name rather than mapping a fee onto the balancing role. That mapping would have compiled and would have produced a candidate whose fee output was blinded — not a fee at the target, and a silently wrong transaction rather than an honest stop. A register that recorded this shape as observed because its vocabulary could express it would be committing the exact error the register was built to prevent.
 
 **Revising this limitation touches:** this section; the output role vocabulary and every match over it; the empty-program clause and its typed refusal; the balancing-role uniqueness clause, which today counts a positional assignment; the shared multi-output manifest builder's last-output-balances rule; the census rows for the fee-bearing shapes and the tests that recompute them; the ceremony test recording a fee output as inexpressible beyond the cardinality floor; and the observation in this register that no accepted identity carries a fee output, which stops being a statement about what the lane happens to build and becomes one about what it chooses to.
+
+## The predecessor that cancels · `rule:shapes:canceling-predecessor`
+
+**Refused.** A merge of this lane's own coins is refused at the registry's zero-solution clause, because the only two coins it can offer a merge are the two halves of an inverse pair.
+
+**Refused at.** packages/target-elements-conformance/src/confidential_fixture.rs, the zero-solution clause of the derivation, reached because packages/vectors/src/live_multi_shapes.rs funds one predecessor whose two output blinders are ordered additive inverses.
+
+**This limitation was UNCOVERED by a removal, not created by one.** It is worth recording as such. Removing the two-output floor was supposed to free two shapes and freed one; the merge walked forward and met a second wall that the first had been hiding. A register that reported only the removal would have implied the merge now runs, and a register that reported only the merge's continued absence would have implied nothing had changed.
+
+**Convention.** The single funded predecessor. This ceremony funds one confidential predecessor from an explicit input, so that predecessor's own input blinder sum is zero and its two output blinders come out ordered additive inverses. Every two-input merge the ceremony could offer therefore consumes both halves of an inverse pair and presents a zero input blinder sum, which forces the lone output's blinder to zero — a commitment of exactly the value times the value generator, a point anyone recomputes from a guessed amount, hiding nothing while the tally still balances.
+
+The registry refuses that, and refusing it is correct. This is the one limitation in the register whose refusal nobody wants removed: what wants removing is the ceremony's inability to offer any other pair of coins.
+
+**It is a different KIND of limitation from the others.** Not a rule the registry states, but a predecessor the ceremony happens to fund. A merge of coins whose blinders do not cancel registers today, with no change to any rule.
+
+**Removal path.** Chain a precursor submission whose outputs do not cancel, and merge two of those. A three-output precursor's blinders sum to the coin it consumed, so any two of them sum to that total less the third, which is nonzero for no reason anybody has to arrange. The ceremony already mines each acceptance rather than leaving it in the mempool, precisely so that the coins an acceptance creates are visible to a later step, so what is missing is a second submission stage and not a capability.
+
+**Revising this limitation touches:** this section; the ceremony's stage vocabulary and its submission step names, which must stay distinct or the executor refuses a duplicate step; the input blinder sum rule, which today states the two-input case's zero from the predecessor's structure rather than summing the consumed coins; the fixture reference the merge's inputs resolve against, which would be the precursor's successor rather than the funded predecessor; the census row for the merge and the test that recomputes it; the §15.2 private-merge matrix row, which an acceptance of this shape would move; and the merge erratum in the Guide-13 feature-request register.
 
 ## The one impossible shape · `rule:shapes:fee-only`
 
@@ -115,16 +157,22 @@ This is source-derived and not observed. No node has refused one of these, becau
 
 **The escapes both change the shape.** A zero-blinder input would balance, but an input whose blinder is zero is not a blinded input and the shape is a different one. An added blinded dummy output would balance, and is then the one-to-one-with-fee shape under another name. Neither is the fee-only shape, and recording them as escapes rather than as solutions is the honest form.
 
-**What refuses it here, and why that is not the reason.** The registry refuses it OutputSetTooSmall — the cardinality floor, which fires before any output is inspected and never reaches the empty program at all. The refusal is correct and its reasoning has nothing to do with consensus. Were the floor removed tomorrow by the path recorded above, this shape would need the fee role to be expressible and would still be impossible, and the wall that stopped it would have moved without anybody deciding it should.
+**What refuses it here, and why that is not the reason.** The registry refuses it OutputSetTooSmall — the cardinality floor, which fires before any output is inspected and never reaches the empty program at all. The refusal is correct and its reasoning has nothing to do with consensus.
+
+That sentence was written when the floor's removal was a filed path, and it predicted what the removal would do to this row: the shape would need the fee role to be expressible and would still be impossible. Both halves happened, and this row did not move. The fee role now exists, so the shape is expressible in the sense that the vocabulary has words for it; the floor still refuses it, because a lone fee output can never declare the single-output solved form — a fee is explicit, so it can never be the output that solves — and the tally still cannot balance, because there is no blinded output to absorb the input blinder sum.
+
+So the wall did not move without anybody deciding it should, which is what the prediction was guarding against. What did change is that the floor no longer refuses a POSSIBLE shape with the same message, so the refusal here no longer has a twin that would mislead a reader about which of the two consensus forbids.
 
 **Revising this section touches:** nothing in the registry, because nothing in the registry is what makes this shape impossible. It touches this section and the census row alone, and would only ever be revised by a consensus change to how explicit outputs enter the tally.
 
 ## What the register does not claim · `rem:shapes:non-claims`
 
-It does not claim that the four source-derived-possible shapes would be accepted. It claims the balance rule does not forbid them. A transaction has to satisfy range proofs, script validity, policy and relay besides, and none of that is in scope here.
+It does not claim that the source-derived-possible shapes would be accepted. It claims the balance rule does not forbid them. A transaction has to satisfy range proofs, script validity, policy and relay besides, and none of that is in scope here.
 
-It does not claim the four observed shapes exhaust what has been run; it claims each cites an acceptance of its own shape.
+It does not claim the observed shapes exhaust what has been run; it claims each cites an acceptance of its own shape.
 
-It does not claim the removal paths are scheduled, designed in detail, or agreed. They are named, which is what the ruling asks for at this stage, and filed in the feature-request register. No part of any of them is taken here.
+It does not claim that a removed limitation means the shapes it refused now run. Two limitations were removed and one shape ran. The merge met a second wall the first had been hiding, and the fee-bearing shape is expressible without having been offered to a node — both recorded as what they are rather than as consequences of a removal that did not have them.
+
+It does not claim the remaining removal path is scheduled, designed in detail, or agreed. It is named, which is what the ruling asks for at this stage. No part of it is taken.
 
 It does not extend to issuance, which is excluded (`rule:exclusions:issuance-bytes`), nor to sponsored shapes, whose signer dependency this workspace does not close.
