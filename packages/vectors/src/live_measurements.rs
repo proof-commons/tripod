@@ -1488,6 +1488,47 @@ mod tests {
         CACHED.get_or_init(|| measure_resource_cases().expect("every case is measurable"))
     }
 
+    /// The shared public analysis reads the same peaks this study measures
+    /// privately.
+    ///
+    /// The private `walk_program` validates each prefix of a linked live
+    /// program and takes the deepest main and alternate stacks any of them
+    /// reaches. The public `tapscript::program_stack_profile` walks the same
+    /// prefixes from the same live precondition and returns those peaks, so
+    /// this test demonstrates the two agree over every linked program the
+    /// demonstration bundle carries. It relies on nothing shared yet:
+    /// `walk_program` stays, and a later slice retires it once the
+    /// equivalence is depended upon rather than merely shown.
+    #[test]
+    fn the_public_profile_matches_the_private_walk_over_every_linked_live_program() {
+        use crate::live_plan::{demonstration_live_bundle, reviewed_target};
+        use tapscript::{AbstractLimits, live_program_precondition, program_stack_profile};
+
+        let target = reviewed_target().expect("the reviewed contract validates");
+        let bundle = demonstration_live_bundle().expect("the demonstration bundle links");
+
+        let mut compared = 0_u32;
+        for constructor in bundle.constructors().values() {
+            for linked in constructor.programs().values() {
+                let program = linked.program();
+                let walk = super::walk_program(&target, program);
+                let profile = program_stack_profile(
+                    &target,
+                    program,
+                    &live_program_precondition(&target),
+                    AbstractLimits::for_target(&target),
+                );
+                assert_eq!(profile.peak_main(), walk.peak_main);
+                assert_eq!(profile.peak_alternate(), walk.peak_alternate);
+                compared += 1;
+            }
+        }
+        assert!(
+            compared > 0,
+            "the demonstration bundle carries linked programs to compare",
+        );
+    }
+
     #[test]
     fn the_study_measures_section_eighteen_twos_fifteen_cases() {
         // The case census, checked against §18.2's own list rather than

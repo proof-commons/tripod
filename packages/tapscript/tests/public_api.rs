@@ -10,7 +10,8 @@
 use compiler::target::{ExternalEvidenceRole, RequiredCapability};
 use tapscript::{
     AbstractLimits, AbstractStackState, AssessmentDisposition, EvidenceAssessmentDisposition,
-    StackItem, TapscriptError, TapscriptInstruction, TapscriptProgram, validate_program,
+    StackItem, TapscriptError, TapscriptInstruction, TapscriptProgram, program_stack_profile,
+    validate_program,
 };
 use target_elements::{
     ElementsCapability, OpcodeId, ReviewedElementsTapscriptDefinition, TargetEvidenceRequirementId,
@@ -230,4 +231,31 @@ fn an_external_consumer_receives_three_outcome_sets_and_not_one_boolean() {
     );
     assert!(!result.aborts().is_empty());
     assert!(!result.always_aborts());
+}
+
+#[test]
+fn an_external_consumer_reads_the_program_stack_profile_the_analysis_names() {
+    // The same program, through the analysis surface: profiling every
+    // prefix reads the deepest each stack reaches anywhere. The two
+    // pushes reach two, the non-aborting failure of the addition reaches
+    // three, and nothing touches the alternate stack, so the main peak is
+    // three and the alternate peak is zero.
+    let target = reviewed_target();
+    let operand = StackItem::signed_le64(&target, 1);
+    let program = TapscriptProgram::new(vec![
+        TapscriptInstruction::Push(operand.clone()),
+        TapscriptInstruction::Push(operand),
+        TapscriptInstruction::Opcode(OpcodeId::Add64),
+    ])
+    .expect("three instructions are within the limit");
+
+    let profile = program_stack_profile(
+        &target,
+        &program,
+        &AbstractStackState::from_main(Vec::new()),
+        AbstractLimits::for_target(&target),
+    );
+
+    assert_eq!(profile.peak_main(), 3);
+    assert_eq!(profile.peak_alternate(), 0);
 }

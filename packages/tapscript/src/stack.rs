@@ -610,6 +610,78 @@ pub fn validate_program(
     })
 }
 
+/// The deepest each stack grows anywhere a program can reach.
+///
+/// Two dimensions are carried: the main stack and the alternate stack.
+/// Each peak is the greatest depth that dimension holds in any state the
+/// program reaches, read from the abstract executor rather than counted
+/// by hand.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub struct ProgramStackProfile {
+    peak_main: u64,
+    peak_alternate: u64,
+}
+
+impl ProgramStackProfile {
+    /// The greatest main-stack depth any reachable state holds.
+    #[must_use]
+    pub const fn peak_main(&self) -> u64 {
+        self.peak_main
+    }
+
+    /// The greatest alternate-stack depth any reachable state holds.
+    #[must_use]
+    pub const fn peak_alternate(&self) -> u64 {
+        self.peak_alternate
+    }
+}
+
+/// Profiles how deep a program drives each stack.
+///
+/// Every prefix of the program is validated in turn, and the deepest main
+/// and alternate stacks any reached state holds — across successful and
+/// non-aborting-failure states alike — are the profile. Seeding from the
+/// initial state means a program that pushes nothing still reports the
+/// depth it began with, and the peaks are the abstract executor's own
+/// rather than a hand count of pushes and pops.
+///
+/// A prefix the program cannot express, or one the executor refuses under
+/// the given limits, contributes nothing and is skipped; the profile
+/// reports what the reachable states show.
+#[must_use]
+pub fn program_stack_profile(
+    target: &ReviewedElementsTapscriptDefinition,
+    program: &TapscriptProgram,
+    initial: &AbstractStackState,
+    limits: AbstractLimits,
+) -> ProgramStackProfile {
+    let mut profile = ProgramStackProfile {
+        peak_main: u64::try_from(initial.main().len()).unwrap_or(0),
+        peak_alternate: u64::try_from(initial.alternate().len()).unwrap_or(0),
+    };
+    for length in 1..=program.len() {
+        let Ok(prefix) = TapscriptProgram::new(program.instructions()[..length].to_vec()) else {
+            continue;
+        };
+        let Ok(outcome) = validate_program(target, &prefix, initial, limits) else {
+            continue;
+        };
+        for state in outcome
+            .success()
+            .iter()
+            .chain(outcome.nonaborting_failure())
+        {
+            profile.peak_main = profile
+                .peak_main
+                .max(u64::try_from(state.main().len()).unwrap_or(0));
+            profile.peak_alternate = profile
+                .peak_alternate
+                .max(u64::try_from(state.alternate().len()).unwrap_or(0));
+        }
+    }
+    profile
+}
+
 /// Records one reached state against the state budget.
 fn admit(
     next: &mut BTreeSet<(AbstractStackState, bool, KnownLiterals)>,
