@@ -1408,6 +1408,59 @@ mod byte_identity_tests {
         assert_eq!(digests[4], run::FEE_BEARING_SUCCESSOR_DIGEST);
         assert_eq!(digests[5], run::MERGE_SUCCESSOR_DIGEST);
     }
+
+    /// The fee-bearing digest now carries an acceptance, and the two are
+    /// checked against each other rather than side by side.
+    ///
+    /// This figure moved three times while the fee axis was being built,
+    /// and every move was free for one reason: no node had accepted the
+    /// fixture, so re-recording it restated nothing. That reason has now
+    /// expired. A node has accepted a candidate built against THIS
+    /// deployment, so the digest and the identity are two halves of one
+    /// observation and moving either alone would leave the register
+    /// citing a run that produced the other.
+    ///
+    /// So the freedom the earlier commits used is closed here
+    /// deliberately: from now on a change that moves this digest must
+    /// move the identity with it, which means running the shape again.
+    #[test]
+    fn the_fee_bearing_digest_and_its_acceptance_belong_to_one_run() {
+        let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
+        let mut planner = MultiShapePlanner::for_shape(PrivateShape::OneToOneWithFee, genesis)
+            .expect("the ceremony builds");
+        planner
+            .settle_asset(run::ISSUED_ASSET)
+            .expect("the fee-bearing successor registers");
+        let digest = planner
+            .record()
+            .successor_digest()
+            .map(hex)
+            .expect("the ceremony recorded a successor digest");
+
+        assert_eq!(
+            digest,
+            run::FEE_BEARING_SUCCESSOR_DIGEST,
+            "the fee-bearing fixture re-registers under the digest its accepted run recorded",
+        );
+
+        // The acceptance is present, is the identity the register cites,
+        // and is a target-computed one rather than a placeholder.
+        assert_eq!(
+            run::FEE_BEARING_ACCEPTED_IDENTITY,
+            Some(run::FEE_BEARING_SUCCESSOR_IDENTITY),
+            "the optional acceptance and the cited identity are the same run",
+        );
+        assert_eq!(
+            run::FEE_BEARING_SUCCESSOR_IDENTITY.len(),
+            64,
+            "an accepted identity is a target-computed transaction identity",
+        );
+        assert_ne!(
+            run::FEE_BEARING_SUCCESSOR_IDENTITY,
+            run::FEE_BEARING_SUCCESSOR_DIGEST,
+            "the identity a node computed is not the digest a registry computed",
+        );
+    }
 }
 
 #[cfg(test)]
