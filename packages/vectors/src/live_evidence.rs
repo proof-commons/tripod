@@ -20,23 +20,36 @@
 //!
 //! # The honest finding this plan carries
 //!
-//! No positive row of §15.1 or §15.2 is answerable today, and the reason
-//! is one missing component rather than a shortage of effort:
-//! [`LiveInfrastructureBlocker::OwnerSighashNotComputable`]. §10.2 checks
-//! an owner signature with the target's own verifying primitive over the
-//! target's own taproot sighash, and no first-party component in this
-//! workspace computes that digest — §1.7 leaves it to the target and
-//! forbids a builder from asserting one. So no valid transfer can be
-//! witnessed, and no target can accept one.
+//! No positive row of §15.1 or §15.2 is answered today. Every one of
+//! them stands at [`LiveRowStanding::NativeRunRequired`], which is a
+//! statement that a run would answer it and not a statement that
+//! nothing could.
 //!
-//! That blocks the negative half too, and the plan says so rather than
-//! collecting refusals. A census of rejections from a pipeline that has
-//! never had a transaction accepted establishes that the target rejects
-//! things, which every target that rejects everything also does; §14.5's
-//! positive class witnesses and the conformance package's own
-//! `NoAcceptingCase` defect are the same argument made twice already.
+//! That is a narrower finding than this paragraph used to carry, and
+//! the narrowing is a repair rather than a softening. What it used to
+//! say was that one missing component blocked every positive row and
+//! that the component was
+//! [`LiveInfrastructureBlocker::OwnerSighashNotComputable`]. That
+//! sentence was true when it was written and has stopped being true:
+//! the digest is computed, the selected profile is established over its
+//! required set, a real node accepted a first-party spend on the
+//! explicit lane and another on the proof-bearing one, and the blocker
+//! is carried by zero rows — which the census below asserts rather than
+//! claims. Leaving the old sentence in place would have made the
+//! blocker's own doc comment and this header disagree about the same
+//! fact.
+//!
+//! What has NOT changed is the discipline the old sentence protected. A
+//! census of rejections from a pipeline that has never had a transaction
+//! accepted establishes that the target rejects things, which every
+//! target that rejects everything also does; §14.5's positive class
+//! witnesses and the conformance package's own `NoAcceptingCase` defect
+//! are the same argument made twice already.
 //! [`LiveInfrastructureBlocker::NoAcceptingControlExists`] is that
-//! argument made a third time, as a state a row can be in.
+//! argument made a third time, as a state a row can be in — and it is
+//! why the restart order of the confidential-funding guide puts an
+//! accepted control before any negative case
+//! (task:guide-ctf-exec:restart-order).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -911,15 +924,27 @@ pub fn blocker_census(
     census
 }
 
-/// The bytes that stand in a signature position no signer can fill.
+/// The bytes that stand in a signature position this lane does not
+/// fill.
 ///
-/// Not a signature, and named so at every use. §10.2's fragment checks
-/// the target's own verifying primitive over the target's own taproot
-/// sighash, and [`LiveInfrastructureBlocker::OwnerSighashNotComputable`]
-/// records that nothing here computes that digest; §1.9 puts a sponsor's
-/// authorization outside protocol data and
+/// Not a signature, and named so at every use.
+///
+/// The reason has narrowed and the constant has not. It used to be that
+/// nothing in this workspace computed the digest §10.2's fragment checks
+/// against, so no signature could be produced at all. That is no longer
+/// so: the digest is computed, the profile is established, and two
+/// ceremonies carry observed acceptances of candidates they signed for
+/// real. What remains true is narrower and is still a reason — the lanes
+/// that use this constant do not run a signing ceremony, either because
+/// they are weighing a serialization rather than authorizing one, or
+/// because §1.9 puts a sponsor's authorization outside protocol data and
 /// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`] records
 /// that no adapter signer is wired into this lane to supply one.
+///
+/// The distinction matters at exactly one place and it is worth stating
+/// there: a lane filling this in is producing a transaction that earns
+/// no target verdict about its own relation, and that is now a property
+/// of the LANE rather than of the workspace.
 ///
 /// So a witness position that has to be *filled* — to serialize a
 /// transaction at all, or to weigh one — is filled with bytes of the

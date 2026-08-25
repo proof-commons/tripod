@@ -14,14 +14,22 @@
 //! are a transaction a node will decode and judge at all. And which
 //! §1.11 layer the node's verdict arrives at, per submitted form.
 //!
-//! It cannot discharge a single §15 row, and the reason is stated in
-//! [`crate::live_evidence`] rather than discovered here: no owner
-//! signature can be produced over the digest §10.2's authorization
-//! fragment checks against, so the submitted transfers carry a witness
-//! whose signature position holds opaque bytes. Every rejection is
-//! therefore attributable to that, and §19.2's condition — that a
-//! negative case was refused *for its intended relation* — is met by
-//! none of them.
+//! It cannot discharge a single §15 row, and the reason is a property
+//! of THIS lane rather than of the workspace. The transfers it submits
+//! carry a witness whose signature position holds
+//! [`UNAUTHORIZING_SIGNATURE`] — bytes of the right width that
+//! authorize nothing — so every rejection is attributable to that, and
+//! §19.2's condition, that a negative case was refused *for its
+//! intended relation*, is met by none of them.
+//!
+//! The reason used to be wider and is not any more. It used to be that
+//! no owner signature could be produced over the digest §10.2's
+//! authorization fragment checks against, because nothing computed that
+//! digest. That is settled: two ceremonies elsewhere in this crate sign
+//! for real and carry observed acceptances. This lane does not, and
+//! what it measures — which layer a node's verdict arrives at, and what
+//! a serialization weighs — is a measurement an unauthorizing witness
+//! does not spoil.
 //!
 //! # So why run it
 //!

@@ -1104,6 +1104,20 @@ fn opening(index: usize) -> crate::live_materialize::FixtureOpeningReference {
     )
 }
 
+/// One value commitment of the admitted parity `prefix`.
+///
+/// A private predecessor's value field IS a commitment — receipt
+/// recognition refuses an explicit one under the private plan, which is
+/// how this fixture found out it was wrong the first time — so the two
+/// spent outputs carry the two admitted prefixes rather than amounts.
+/// The bytes after the prefix are meaningless public test material: no
+/// test below reaches a point where they are opened.
+fn commitment(prefix: u8) -> [u8; crate::bytes::COMMITMENT_BYTES] {
+    let mut bytes = [0x5a_u8; crate::bytes::COMMITMENT_BYTES];
+    bytes[0] = prefix;
+    bytes
+}
+
 /// The private two-in two-out request and the view that recognizes it.
 fn private_fixture(
     abi: &CandidateLiveTransferAbi,
@@ -1117,14 +1131,14 @@ fn private_fixture(
             first,
             &owner(&FIRST_OWNER),
             LiveTransferRepresentationPlan::PrivateCommitted,
-            ValueField::Explicit(1_000),
+            ValueField::Commitment(commitment(0x08)),
         ),
         receipt_view(
             abi,
             second,
             &owner(&SECOND_OWNER),
             LiveTransferRepresentationPlan::PrivateCommitted,
-            ValueField::Explicit(1_000),
+            ValueField::Commitment(commitment(0x09)),
         ),
     ]);
     let request = LiveTransferRequest::new(
