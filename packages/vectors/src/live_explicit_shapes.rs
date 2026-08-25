@@ -1641,12 +1641,12 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
 /// So the identity is shared and the sharing is stated:
 ///
 /// - `one-input-to-one-output` and `sponsorless` share
-///   [`ONE_TO_ONE_ACCEPTED_TXID`]. The accepted bytes are both.
+///   [`self::ONE_TO_ONE_ACCEPTED_TXID`]. The accepted bytes are both.
 /// - `one-input-split-into-two` and `several-destination-owners` share
-///   [`SPLIT_ACCEPTED_TXID`]. A split into two destinations belonging to
+///   [`self::SPLIT_ACCEPTED_TXID`]. A split into two destinations belonging to
 ///   two distinct owners is both.
 /// - `several-inputs-merged-into-one` and
-///   `canonical-input-normalization` share [`MERGE_ACCEPTED_TXID`], and
+///   `canonical-input-normalization` share [`self::MERGE_ACCEPTED_TXID`], and
 ///   this pair is the strongest of the three rather than the weakest.
 ///   The normalization run offered its two receipts in the REVERSE of
 ///   their canonical order and the merge run offered them in it; the two
