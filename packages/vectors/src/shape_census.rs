@@ -468,6 +468,31 @@ const FEE_ROLE_PROJECTION_REMOVAL: LimitationRemoval = LimitationRemoval {
     proven_by: None,
 };
 
+/// The sponsorless fee-bearing shape's removal, recorded once.
+///
+/// `proven_by` carries an identity because the shape RAN. The vocabulary
+/// gained the member, a candidate was built against it, and a node
+/// accepted and mined the candidate -- which is the only thing that
+/// turns a filed path into a taken one.
+const SPONSORLESS_FEE_REMOVAL: LimitationRemoval = LimitationRemoval {
+    row: "T5-047",
+    change: "The reviewed live-transfer shape vocabulary gained a fee axis of its own, carried on \
+             the BOUNDS so the demonstration candidate unrolls exactly as before and every \
+             recorded digest re-derives. A sponsorless form may now declare the target fee role, \
+             so a fee destination is no longer counted as a receipt output. Four coupled readings \
+             moved together: the output count, the family-range census, the isolation fragment's \
+             fee clause, and the pattern census deciding whether that fragment is emitted at all. \
+             Shape selection counts the declared fee positions out of the destinations before \
+             matching, reading them off the OPENINGS' roles, which is where the lane already \
+             decides a destination is a fee. The fee clause takes its asset from who funded the \
+             fee -- the protocol asset for a self-paying form, Elements balancing per asset and a \
+             sponsorless shape having no reserve-asset input -- and the explicit conservation \
+             relation gained the fee as a term rather than an allowance. The fee-bearing \
+             deployment is welded to the digest an empty program actually hashes to, the \
+             demonstration keeping its fixture constant and its identities untouched.",
+    proven_by: Some(crate::live_multi_shapes::run_of_record::FEE_BEARING_SUCCESSOR_IDENTITY),
+};
+
 /// A first-party convention that refuses a shape consensus admits.
 ///
 /// Each member names a convention of this repository's own, the model it
@@ -644,7 +669,7 @@ impl Limitation {
             Self::AbsentFeeRole => Some(ABSENT_FEE_ROLE_REMOVAL),
             Self::CancelingPredecessorOnly => Some(CANCELING_PREDECESSOR_REMOVAL),
             Self::AbsentFeeProjection => Some(FEE_ROLE_PROJECTION_REMOVAL),
-            Self::SponsorlessShapeHasNoFeeMember => None,
+            Self::SponsorlessShapeHasNoFeeMember => Some(SPONSORLESS_FEE_REMOVAL),
         }
     }
 
@@ -836,19 +861,18 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
                 removal: CANCELING_PREDECESSOR_REMOVAL,
             },
         ),
-        // The fee-bearing shape, which was BUILT and OFFERED and refused.
-        // Its fee output really is a fee -- the run's own output-witness
-        // census reads one range proof and one EMPTY entry -- and the
-        // target turned the candidate away at a covenant this workspace
-        // wrote, not at any rule about fees.
+        // The fee-bearing shape, which was BUILT and OFFERED and refused
+        // three times and is now ACCEPTED. Its fee output really is a fee
+        // -- the run's own output-witness census reads one range proof
+        // and one EMPTY entry -- and every refusal on the way was a
+        // covenant this workspace wrote rather than any rule about fees.
         BlindedShape::OneToOneWithFee => (
-            ConsensusVerdict::SourceDerivedPossible,
-            FirstPartyStatus::SubmittedAndRefused {
-                removed: Limitation::AbsentFeeProjection,
-                removal: FEE_ROLE_PROJECTION_REMOVAL,
-                limitation: Limitation::SponsorlessShapeHasNoFeeMember,
-                observed_detail:
-                    crate::live_multi_shapes::run_of_record::FEE_BEARING_OBSERVED_DETAIL,
+            ConsensusVerdict::ObservedAccepted {
+                identity: crate::live_multi_shapes::run_of_record::FEE_BEARING_SUCCESSOR_IDENTITY,
+            },
+            FirstPartyStatus::ConstructibleAfterRemoval {
+                removed: Limitation::SponsorlessShapeHasNoFeeMember,
+                removal: SPONSORLESS_FEE_REMOVAL,
             },
         ),
         BlindedShape::OneToTwo => (
@@ -899,6 +923,7 @@ mod tests {
         BlindedShape, ConsensusVerdict, FirstPartyStatus, Limitation, RemovalPath, census_entry,
     };
     use crate::live_proof_bearing_observation::registry_refusal_for;
+    use std::collections::BTreeSet;
 
     /// A disposable asset for the registry drives below.
     ///
@@ -1175,7 +1200,7 @@ mod tests {
                 shape.handle(),
             );
         }
-        assert_eq!(expected.len(), 6, "six of the eight shapes have been run");
+        assert_eq!(expected.len(), 7, "seven of the eight shapes have been run");
 
         // The converse, which this test used to leave unchecked. The list
         // above says every shape in it is observed; without this, a shape
@@ -1306,10 +1331,17 @@ mod tests {
             );
             submitted.push(limitation.removal_path());
         }
-        assert_eq!(
-            submitted,
-            vec![RemovalPath::SponsorlessFeeBearingShape],
-            "one shape was offered to a node and refused, and it files a path",
+        // EMPTY, and the emptiness is the wave's result rather than a
+        // loosening. The one shape that sat here was offered to a node,
+        // refused, given the vocabulary member it was missing, and
+        // accepted -- so it moved to a constructible status and took its
+        // filed path with it as a TAKEN one. The loop above is kept
+        // because the status is still reachable and still documented, and
+        // the next shape to be refused by a target will be held to
+        // exactly these four conditions.
+        assert!(
+            submitted.is_empty(),
+            "no shape stands offered-and-refused any more: {submitted:?}",
         );
     }
 
@@ -1375,16 +1407,26 @@ mod tests {
             removed,
             vec![
                 Limitation::TwoOutputFloor,
-                Limitation::CancelingPredecessorOnly
+                Limitation::CancelingPredecessorOnly,
+                Limitation::SponsorlessShapeHasNoFeeMember,
             ],
-            "two limitations have been removed AND run: the floor, and the canceling predecessor",
+            "three limitations have been removed AND run: the floor, the canceling predecessor, \
+             and the shape vocabulary with no sponsorless fee-bearing member",
         );
 
-        // A limitation still standing does NOT claim a removal, so a
-        // filed path cannot read as a taken one. The canceling
-        // predecessor used to be this example and is no longer available
-        // to be one, which is what the wave did.
-        assert_eq!(Limitation::SponsorlessShapeHasNoFeeMember.removal(), None);
+        // Every removal recorded on an observed row is proven by a
+        // DISTINCT identity, which is what stops one acceptance being
+        // cited for work it did not do. Three removals, three runs.
+        let identities: BTreeSet<&str> = removed
+            .iter()
+            .filter_map(|limitation| limitation.removal())
+            .filter_map(|removal| removal.proven_by)
+            .collect();
+        assert_eq!(
+            identities.len(),
+            removed.len(),
+            "each removal is proven by its own run, not by a shared one",
+        );
     }
 
     /// A removal that nothing has run says so, and says where a run
@@ -1439,11 +1481,19 @@ mod tests {
         );
 
         // The fee-bearing shape used to be the sole member here, and it
-        // left this status by being OFFERED rather than by being
-        // accepted. That is the distinction the sixth status was minted
-        // to carry, and it is checked rather than described: the row's
-        // removal still proves nothing about a chain, and the consensus
-        // half still has not moved.
+        // has now left this status too -- by being ACCEPTED, which is the
+        // second and last way out. The sixth status was minted to carry
+        // the distinction between having been offered and having been
+        // taken, and the shape has now been both in turn.
+        //
+        // The status is UNOCCUPIED and is kept, on the same reasoning
+        // that keeps ConstructibleAfterRemoval alive: a vocabulary member
+        // that can no longer be reached is not thereby wrong, and the
+        // next shape a target refuses must be able to say so. What is
+        // checked here is therefore that the status remains COHERENT --
+        // anything sitting in it would still owe an unproven removal, a
+        // carried verdict and an unmoved consensus half -- rather than
+        // that something currently sits in it.
         let mut submitted = Vec::new();
         for shape in BlindedShape::ALL {
             let FirstPartyStatus::SubmittedAndRefused {
@@ -1471,7 +1521,10 @@ mod tests {
             );
             submitted.push(shape);
         }
-        assert_eq!(submitted, vec![BlindedShape::OneToOneWithFee]);
+        assert!(
+            submitted.is_empty(),
+            "no shape stands offered-and-refused any more: {submitted:?}",
+        );
     }
 
     /// Removing the floor did not free the merge, and the register says
