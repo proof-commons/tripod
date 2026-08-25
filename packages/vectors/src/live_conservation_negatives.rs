@@ -19,8 +19,8 @@
 //! case beside the accepted conserving one, and that refused case is step
 //! four's wrong-blinder mutant. The pinned target refuses the wrong-blinder
 //! mutant at the BALANCE layer — the balance check
-//! (src/confidential_validation.cpp:364) is queued before the range-proof
-//! loop (:368), and the mempool path (src/validation.cpp:1097, pvChecks
+//! (`src/confidential_validation.cpp:364`) is queued before the range-proof
+//! loop (`:368`), and the mempool path (`src/validation.cpp:1097`, pvChecks
 //! null) runs each queued check inline in source order and returns at the
 //! first failure — so ONE observed wrong-blinder run is the conservation
 //! claim's non-conserving half AND step four's first case. The record
@@ -42,7 +42,7 @@
 //!
 //! The target emits one identical refusal for all three mutations —
 //! `bad-txns-in-ne-out` / "value in != value out"
-//! (src/consensus/tx_verify.cpp:250-251), because the internal
+//! (`src/consensus/tx_verify.cpp:250-251`), because the internal
 //! `SCRIPT_ERR_PEDERSEN_TALLY` and `SCRIPT_ERR_RANGEPROOF` codes are
 //! discarded inside `VerifyAmounts` and never leave it, and
 //! [`ObservedOutcomeLayer`] mirrors that with a single
@@ -545,16 +545,15 @@ fn commitment_sentinel(
         .outputs()
         .get(output)
         .map(TargetOutput::value)
-        .ok_or(ConservationNegativeRefusal::ControlNotConstructible(
-            "the mutated output is absent".to_owned(),
-        ))?;
-    let original = match value {
-        ValueField::Commitment(commitment) => commitment,
-        _ => {
-            return Err(ConservationNegativeRefusal::ControlNotConstructible(
-                "the mutated output is not confidential".to_owned(),
-            ));
-        }
+        .ok_or_else(|| {
+            ConservationNegativeRefusal::ControlNotConstructible(
+                "the mutated output is absent".to_owned(),
+            )
+        })?;
+    let ValueField::Commitment(original) = value else {
+        return Err(ConservationNegativeRefusal::ControlNotConstructible(
+            "the mutated output is not confidential".to_owned(),
+        ));
     };
     let mut sentinel = [0_u8; COMMITMENT_BYTES];
     for (index, byte) in original.iter().enumerate() {
@@ -570,12 +569,11 @@ fn replace_output_value(
     commitment: [u8; COMMITMENT_BYTES],
 ) -> Result<TargetTransaction, ConservationNegativeRefusal> {
     let mut outputs = control.outputs().to_vec();
-    let target =
-        outputs
-            .get_mut(output)
-            .ok_or(ConservationNegativeRefusal::ControlNotConstructible(
-                "the mutated output is absent".to_owned(),
-            ))?;
+    let target = outputs.get_mut(output).ok_or_else(|| {
+        ConservationNegativeRefusal::ControlNotConstructible(
+            "the mutated output is absent".to_owned(),
+        )
+    })?;
     *target = TargetOutput::new(
         target.asset(),
         ValueField::Commitment(commitment),
@@ -592,12 +590,11 @@ fn replace_output_range_proof(
     range_proof: Vec<u8>,
 ) -> Result<TargetTransaction, ConservationNegativeRefusal> {
     let mut witnesses = control.output_witnesses().to_vec();
-    let target =
-        witnesses
-            .get_mut(output)
-            .ok_or(ConservationNegativeRefusal::ControlNotConstructible(
-                "the mutated output witness is absent".to_owned(),
-            ))?;
+    let target = witnesses.get_mut(output).ok_or_else(|| {
+        ConservationNegativeRefusal::ControlNotConstructible(
+            "the mutated output witness is absent".to_owned(),
+        )
+    })?;
     *target = OutputWitness::new(target.surjection_proof().to_vec(), range_proof);
     rebuild(control, control.outputs().to_vec(), witnesses)
 }
@@ -612,14 +609,16 @@ fn corrupt_range_proof(
         .output_witnesses()
         .get(output)
         .map(|witness| witness.range_proof().to_vec())
-        .ok_or(ConservationNegativeRefusal::ControlNotConstructible(
-            "the mutated output witness is absent".to_owned(),
-        ))?;
-    let first = bytes
-        .first_mut()
-        .ok_or(ConservationNegativeRefusal::ControlNotConstructible(
+        .ok_or_else(|| {
+            ConservationNegativeRefusal::ControlNotConstructible(
+                "the mutated output witness is absent".to_owned(),
+            )
+        })?;
+    let first = bytes.first_mut().ok_or_else(|| {
+        ConservationNegativeRefusal::ControlNotConstructible(
             "the mutated output carries no range proof".to_owned(),
-        ))?;
+        )
+    })?;
     *first = !*first;
     Ok(bytes)
 }
@@ -722,14 +721,16 @@ impl TargetOperationPlanner for ConservationNegativePlanner {
                 };
                 Ok(Some(confidential_funding_step(linked, printed)))
             }
-            Stage::Mutant(index) => match self.mutant_step(index) {
-                Some(step) => Ok(Some(step)),
-                None => Err(
-                    self.refuse(ConservationNegativeRefusal::ControlNotConstructible(
-                        "a proof-negative mutant is missing".to_owned(),
-                    )),
-                ),
-            },
+            Stage::Mutant(index) => self.mutant_step(index).map_or_else(
+                || {
+                    Err(
+                        self.refuse(ConservationNegativeRefusal::ControlNotConstructible(
+                            "a proof-negative mutant is missing".to_owned(),
+                        )),
+                    )
+                },
+                |step| Ok(Some(step)),
+            ),
             Stage::Control => {
                 let Some(bytes) = self.record.control_bytes.clone() else {
                     return Err(
