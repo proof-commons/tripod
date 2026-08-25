@@ -1150,3 +1150,69 @@ fn check_resource_bounds(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod program_stack_profile_equivalence {
+    //! The shared public analysis reads the same peak this package
+    //! measures privately.
+    //!
+    //! The private peak_main_stack wrapper validates each prefix of a
+    //! program and takes the deepest main stack any of them reaches. The
+    //! public tapscript::program_stack_profile walks the same prefixes
+    //! and returns that peak among its dimensions. These tests demonstrate
+    //! the two agree over the prototypes this package builds; nothing here
+    //! retires the wrapper, which a later slice does once the equivalence
+    //! is relied upon rather than merely shown.
+
+    use super::{PrototypeProgram, peak_main_stack};
+    use tapscript::stack::{AbstractLimits, program_stack_profile};
+    use target_elements::{ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript};
+
+    fn target() -> ReviewedElementsTapscriptDefinition {
+        reviewed_elements_tapscript().expect("the reviewed contract validates")
+    }
+
+    fn public_peak_main(
+        target: &ReviewedElementsTapscriptDefinition,
+        program: &PrototypeProgram,
+    ) -> u64 {
+        program_stack_profile(
+            target,
+            program.program(),
+            program.initial_stack(),
+            AbstractLimits::for_target(target),
+        )
+        .peak_main()
+    }
+
+    #[test]
+    fn the_public_profile_matches_the_private_peak_on_the_continuity_prototype() {
+        let target = target();
+        let prototype =
+            PrototypeProgram::continuity(&target).expect("the continuity prototype is admitted");
+
+        let private = peak_main_stack(&target, prototype.program(), prototype.initial_stack());
+        let public = public_peak_main(&target, &prototype);
+
+        assert_eq!(public, private);
+        // Anchored to the canonical measurement this prototype reports, so
+        // an equivalence that agreed on the wrong number would still fail.
+        assert_eq!(private, 9);
+    }
+
+    #[test]
+    fn the_public_profile_matches_the_private_peak_on_the_wide_floor_prototype() {
+        let target = target();
+        let prototype =
+            PrototypeProgram::wide_floor(&target).expect("the wide-floor prototype is admitted");
+
+        let private = peak_main_stack(&target, prototype.program(), prototype.initial_stack());
+        let public = public_peak_main(&target, &prototype);
+
+        assert_eq!(public, private);
+        assert!(
+            private >= 5,
+            "the wide-floor construction settles five witnessed amounts"
+        );
+    }
+}
