@@ -88,6 +88,30 @@ pub const PROTOCOL_ASSET: [u8; 32] = [0xb1; 32];
 /// are two deployments exactly as two protocol assets are.
 pub const RESERVE_ASSET: [u8; 32] = [0xb2; 32];
 
+/// The fee-role program digest this demonstration deployment resolves.
+///
+/// §10.7's sponsor isolation ends by inspecting the fee output's
+/// scriptPubKey and requiring its digest to equal this symbol, so like
+/// both assets above it is pushed as a literal by the isolation
+/// fragments and welded into the leaves.
+///
+/// It is a parameter for a DIFFERENT reason than the assets are, and the
+/// difference is worth stating plainly. A run cannot know either asset
+/// in advance: the protocol asset is whatever the issuance created and
+/// the reserve is whatever the network answers a funding request in,
+/// both learned from a chain. This digest is learned from nothing — the
+/// fee role's program is target-structural, construction writes it, and
+/// its digest is therefore computable before any node is started. It is
+/// threaded anyway because a deployment is welded to its symbols and
+/// this constant is welded into the demonstration's: the value here
+/// hashes to no program at all, and moving it to the real digest would
+/// move the demonstration's committed taptree and with it every live
+/// run-of-record identity the plans cite. So the demonstration keeps
+/// the constant it was linked with, and a deployment that actually
+/// intends to spend a sponsored control supplies the digest of the fee
+/// program IT constructs.
+pub const FEE_PROGRAM_DIGEST: [u8; 32] = [0xb5; 32];
+
 /// The reviewed contract, unmodified.
 ///
 /// # Errors
@@ -207,7 +231,7 @@ pub fn demonstration_live_bundle() -> Result<CandidateLinkedLiveTransferBundle, 
 
 /// The link proper, run once behind the cache.
 fn link_demonstration_bundle() -> Result<CandidateLinkedLiveTransferBundle, VectorError> {
-    link_live_bundle_for_asset(PROTOCOL_ASSET, RESERVE_ASSET)
+    link_live_bundle_for_asset(PROTOCOL_ASSET, RESERVE_ASSET, FEE_PROGRAM_DIGEST)
 }
 
 /// The demonstration link, over one stated pair of assets.
@@ -237,10 +261,11 @@ fn link_demonstration_bundle() -> Result<CandidateLinkedLiveTransferBundle, Vect
 pub fn link_live_bundle_for_asset(
     protocol_asset: [u8; 32],
     reserve_asset: [u8; 32],
+    fee_program_digest: [u8; 32],
 ) -> Result<CandidateLinkedLiveTransferBundle, VectorError> {
     let target = reviewed_target()?;
     let bundles = relocatable_live_bundles()?;
-    let deployment = live_deployment_for_asset(protocol_asset, reserve_asset)?;
+    let deployment = live_deployment_for_asset(protocol_asset, reserve_asset, fee_program_digest)?;
     link_live_candidate(&target, &bundles, &deployment)
         .map_err(|_| VectorError::LiveSubstrateUnavailable)
 }
@@ -309,6 +334,7 @@ pub fn relocatable_live_bundles() -> Result<Vec<CandidateRelocatableLiveTransfer
 pub fn live_deployment_for_asset(
     protocol_asset: [u8; 32],
     reserve_asset: [u8; 32],
+    fee_program_digest: [u8; 32],
 ) -> Result<LiveLinkDeploymentParameters, VectorError> {
     let target = reviewed_target()?;
     LiveLinkDeploymentParameters::new(
@@ -318,7 +344,7 @@ pub fn live_deployment_for_asset(
             protocol_asset.to_vec(),
             reserve_asset.to_vec(),
             vec![0xb4; 32],
-            vec![0xb5; 32],
+            fee_program_digest.to_vec(),
         )?,
         UNSPENDABLE_INTERNAL_KEY.to_vec(),
         NonZeroU32::new(8).ok_or(VectorError::LiveSubstrateUnavailable)?,
@@ -349,7 +375,7 @@ pub fn live_deployment_for_asset(
 pub fn demonstration_live_abi() -> Result<CandidateLiveTransferAbi, VectorError> {
     static CACHED: OnceLock<Result<CandidateLiveTransferAbi, VectorError>> = OnceLock::new();
     CACHED
-        .get_or_init(|| live_abi_for_asset(PROTOCOL_ASSET, RESERVE_ASSET))
+        .get_or_init(|| live_abi_for_asset(PROTOCOL_ASSET, RESERVE_ASSET, FEE_PROGRAM_DIGEST))
         .clone()
 }
 
@@ -367,12 +393,13 @@ pub fn demonstration_live_abi() -> Result<CandidateLiveTransferAbi, VectorError>
 pub fn live_abi_for_asset(
     protocol_asset: [u8; 32],
     reserve_asset: [u8; 32],
+    fee_program_digest: [u8; 32],
 ) -> Result<CandidateLiveTransferAbi, VectorError> {
     let target = reviewed_target()?;
     let curve = OracleLiveCurve::new(reviewed_target()?);
     derive_live_transfer_abi(
         &target,
-        &link_live_bundle_for_asset(protocol_asset, reserve_asset)?,
+        &link_live_bundle_for_asset(protocol_asset, reserve_asset, fee_program_digest)?,
         &curve,
     )
     .map_err(|_| VectorError::LiveSubstrateUnavailable)

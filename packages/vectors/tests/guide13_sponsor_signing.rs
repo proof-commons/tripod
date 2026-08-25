@@ -105,6 +105,7 @@ use transaction::sponsor::{
 };
 use transaction::taproot::{Digest32, leaf_hash};
 use transaction::view::{PublicConstructionView, PublicOutputView};
+use vectors::bundle::fee_program_digest;
 use vectors::live_capability::OracleLiveCurve;
 use vectors::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset, published_owner,
@@ -368,12 +369,35 @@ impl SponsorSigningPlanner {
         Ok(())
     }
 
-    /// Weld the deployment to BOTH assets the chain reported.
+    /// Weld the deployment to BOTH assets the chain reported, and to the
+    /// digest of the fee program this lane actually constructs.
     ///
     /// The link the whole lane waited for. Until it happens the
     /// deployment names a reserve no chain has issued, and the fee
     /// output of any control built from it is payable in an asset its
     /// sponsor input does not carry.
+    ///
+    /// # The fee digest is DERIVED, and the previous submission proved it
+    ///
+    /// The third symbol is not learned from the chain the way the two
+    /// assets are. It is computed, and it has to be, because §10.7's
+    /// isolation fragment emits no hash opcode at all: it pushes the fee
+    /// output's position, runs `OP_INSPECTOUTPUTSCRIPTPUBKEY`, and
+    /// compares what the TARGET pushed. For an output that is not a
+    /// witness program the target pushes the SHA-256 of the whole
+    /// `scriptPubKey` under a version of -1, so the fragment's two
+    /// `OP_EQUALVERIFY`s check the marker and then the digest. The fee
+    /// role's whole identity is its empty program, so the value the
+    /// check demands is SHA-256 of nothing — determined, never chosen.
+    ///
+    /// [`fee_program_digest`] computes exactly that, and it is reused
+    /// rather than restated because this defect has been met before: the
+    /// compact-ASH lane carried an arbitrary `[0xa5; 32]` here, nothing
+    /// noticed while no sponsored shape was ever built, and its first
+    /// sponsored rows were refused
+    /// `Script failed an OP_EQUALVERIFY operation` — the same refusal,
+    /// at the same comparison, that stopped this lane's previous
+    /// submission against `[0xb5; 32]`.
     fn relink(&mut self) -> Result<(), Refusal> {
         let printed = self
             .issued_asset
@@ -381,8 +405,12 @@ impl SponsorSigningPlanner {
             .ok_or(Refusal::IssuanceNamedNoAsset)?;
         let protocol = asset_of(&printed).ok_or(Refusal::IssuanceNamedNoAsset)?;
         let reserve = self.reserve.ok_or(Refusal::SponsorFundingNamedNoReserve)?;
-        let abi = live_abi_for_asset(*protocol.internal(), *reserve.internal())
-            .map_err(|_| Refusal::RelinkRefused)?;
+        let abi = live_abi_for_asset(
+            *protocol.internal(),
+            *reserve.internal(),
+            fee_program_digest(),
+        )
+        .map_err(|_| Refusal::RelinkRefused)?;
         self.explicit_program = destination_program(&abi)?;
         self.abi = abi;
         Ok(())
@@ -1230,38 +1258,33 @@ fn write_the_record(
     );
 }
 
-/// SHA-256 of the empty string, which is the digest of the empty
-/// program.
+/// The demonstration deployment still cannot satisfy its own fee-role
+/// check, and that is now a CHOICE rather than a defect.
 ///
-/// The specification's own constant, written out because this crate has
-/// no hashing dependency and because a reader checking the claim below
-/// should be able to check it against the specification rather than
-/// against a call.
-const EMPTY_PROGRAM_DIGEST: [u8; 32] = [
-    0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
-    0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
-];
-
-/// The demonstration deployment cannot satisfy its own fee-role check.
-///
-/// The typed stop the node run observes, held here WITHOUT a node, so
-/// that the finding is a property of the deployment rather than a
-/// verdict somebody has to re-run a chain to see.
+/// Held WITHOUT a node, so the finding stays a property of the
+/// deployment rather than a verdict somebody has to re-run a chain to
+/// see. What it asserts changed when the digest was threaded, and the
+/// distinction is the whole point of the threading.
 ///
 /// §10.7's sponsor isolation ends by inspecting the fee output's
 /// scriptPubKey and requiring its digest to equal the deployment's
 /// `fee_program_digest` symbol. Construction writes the fee role with
 /// the EMPTY program, because the fee role's identity is
-/// target-structural and that is the structure. So the check compares
-/// the digest of the empty program against the symbol — and the symbol
-/// is a fixture constant no program hashes to.
+/// target-structural and that is the structure. So the check demands
+/// SHA-256 of nothing, and the demonstration's symbol is a fixture
+/// constant no program hashes to.
 ///
-/// It is the same defect the reserve asset had, at the same site and
-/// unrepaired: a deployment symbol pinned to a value the chain's own
-/// reality has to match and does not. Every sponsored control this
-/// deployment builds is unspendable at its own fee role, which is why
-/// no sponsored submission can be accepted until the symbol is either
-/// threaded like the reserve or pinned to the digest above.
+/// It STAYS that constant deliberately. The demonstration is welded to
+/// its symbols: moving this one would move the committed taptree and
+/// with it every live run-of-record identity the plans cite. A
+/// deployment that intends to spend a sponsored control supplies the
+/// derived digest instead, which is what this lane's own `relink` now
+/// does — so the demonstration's inability is no longer a blocker on
+/// anything, only a fact about a deployment nobody submits.
+///
+/// The literal that used to sit beside this test is gone on purpose: a
+/// written-out digest next to a helper that computes the same value is
+/// the exact drift the helper exists to prevent.
 #[test]
 fn the_demonstration_fee_role_digest_is_a_constant_no_fee_program_hashes_to() {
     let abi = demonstration_live_abi().expect("the demonstration ABI derives");
@@ -1270,9 +1293,40 @@ fn the_demonstration_fee_role_digest_is_a_constant_no_fee_program_hashes_to() {
     // The empty program is what construction writes for the fee role.
     assert_ne!(
         pinned,
-        EMPTY_PROGRAM_DIGEST.to_vec(),
-        "the fee-role digest now matches the empty program, so the typed stop this \
-         lane records has been repaired and the record must be revisited"
+        fee_program_digest().to_vec(),
+        "the demonstration's fee-role digest now matches the empty program, so the \
+         demonstration deployment has MOVED and every live run-of-record identity \
+         the plans cite must be re-derived before this passes again"
+    );
+}
+
+/// A deployment linked for a real submission carries the derived digest.
+///
+/// The positive counterpart of the test above, and the reason the
+/// threading is worth anything: the same three functions that keep the
+/// demonstration's constant hand a submitting lane the digest of the fee
+/// program construction actually writes. Held without a node, because
+/// the claim is about what the linker resolves and not about what a
+/// chain thinks of it.
+///
+/// The assets are the demonstration's own — this test is not about
+/// which assets a deployment names, and using the constants keeps it
+/// from depending on a chain having answered anything.
+#[test]
+fn a_deployment_linked_for_submission_carries_the_derived_fee_digest() {
+    let derived = fee_program_digest();
+    let abi = vectors::live_plan::live_abi_for_asset(
+        vectors::live_plan::PROTOCOL_ASSET,
+        vectors::live_plan::RESERVE_ASSET,
+        derived,
+    )
+    .expect("the ABI derives for a stated fee digest");
+
+    assert_eq!(
+        abi.symbols().fee_program_digest().to_vec(),
+        derived.to_vec(),
+        "the threaded fee digest did not reach the resolved symbols, so a submitting \
+         lane would still be linking the demonstration's fixture constant"
     );
 }
 
