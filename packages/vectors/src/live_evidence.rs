@@ -25,13 +25,19 @@
 //! [`LiveRowStanding::NativeRunRequired`] — a statement that a run
 //! would answer them and not a statement that nothing could.
 //!
-//! One is answered. `private-one-to-one` stands at
-//! [`LiveRowStanding::NativeRunObserved`], carrying the identity a real
-//! node computed for a sponsorless private receipt-covenant transfer of
-//! that row's own shape which it accepted, and whose witness was
-//! verified out of the node's own copy against an independently
-//! recomputed message. One row, one identity, and the standing carries
-//! it so the claim can be checked against a chain rather than believed.
+//! Two are answered. `private-one-to-one` and
+//! `both-commitment-parity-forms` stand at
+//! [`LiveRowStanding::NativeRunObserved`], each carrying the identity a
+//! real node computed for a sponsorless private receipt-covenant
+//! transfer of that row's own shape which it accepted, and whose
+//! witness was verified out of the node's own copy against an
+//! independently recomputed message. The standing carries the identity
+//! so the claim can be checked against a chain rather than believed.
+//!
+//! Twenty-five of twenty-six remains the honest headline. Two rows
+//! moved because two runs answered them, and the twenty-four that did
+//! not move are not waiting on a component — they are waiting on runs
+//! nobody has taken yet.
 //!
 //! That is a narrower finding than this paragraph used to carry, and
 //! the narrowing is a repair rather than a softening. What it used to
@@ -764,6 +770,14 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // and spending a mined confidential predecessor at this
         // deployment's own private receipt constructor.
         "private-one-to-one" => Some(crate::live_private_restart::run_of_record::ACCEPTED_TXID),
+        // Both admitted commitment parities, each consumed in its own
+        // complete accepted successor. The identity cited is the run
+        // that COMPLETED the pair; the first parity's acceptance is the
+        // row above's, and it takes both runs to say that both parities
+        // were exercised. The run of record carries the pair.
+        "both-commitment-parity-forms" => {
+            Some(crate::live_private_restart::run_of_record::PARITY_ACCEPTED_TXID)
+        }
         _ => None,
     }
 }
@@ -1274,8 +1288,11 @@ mod tests {
             }
         }
         assert_eq!(positives, 26, "both positive tables together");
-        assert_eq!(answered, BTreeSet::from(["private-one-to-one"]));
-        assert_eq!(plan.census().native_run_observed(), 1);
+        assert_eq!(
+            answered,
+            BTreeSet::from(["both-commitment-parity-forms", "private-one-to-one"]),
+        );
+        assert_eq!(plan.census().native_run_observed(), 2);
     }
 
     #[test]

@@ -1238,8 +1238,35 @@ pub mod run_of_record {
     /// later reader does not have to take the word "one-to-one" for it.
     pub const RECEIPT_LEAVES: usize = 1;
 
+    /// The commitment prefix the consumed coin carried.
+    ///
+    /// The first of the target's two admitted parities, as the NODE
+    /// reported the commitment.
+    pub const CONSUMED_COMMITMENT_PREFIX: u8 = 0x08;
+
     /// The run's wall time, in seconds.
     pub const WALL_SECONDS: f64 = 11.5;
+
+    /// The successor fixture's digest for the second parity's run.
+    ///
+    /// Different from [`SUCCESSOR_DIGEST`] because the two runs consume
+    /// different receipts and therefore balance against different
+    /// blinders and split different amounts. A pair of runs whose
+    /// successor digests agreed would be one run reported twice.
+    pub const PARITY_SUCCESSOR_DIGEST: &str =
+        "6b80d64e5692745ce4dbfa0fb6fcf36e5ef27c3c452afad49d11de0a2ac54748";
+
+    /// The identity the target computed for the second parity's
+    /// accepted successor.
+    ///
+    /// The run that COMPLETED the pair. The first parity's acceptance is
+    /// [`ACCEPTED_TXID`]; both are complete accepted successors, and it
+    /// takes both to say that both parities were exercised.
+    pub const PARITY_ACCEPTED_TXID: &str =
+        "45f1c5669cdc868f5612f6b18b2e285b791d7f093e45b2d28147eac63427dd95";
+
+    /// The commitment prefix the second run's consumed coin carried.
+    pub const PARITY_CONSUMED_COMMITMENT_PREFIX: u8 = 0x09;
 }
 
 /// One digest as its printed spelling.
@@ -1306,6 +1333,22 @@ mod tests {
                 .all(|bytes| *bytes > 2)
         );
         assert!(run::SUBMITTED_BYTES > run::OUTPUT_WITNESS_PROOF_BYTES.iter().sum::<usize>());
+
+        // The two runs are two runs. Different successors, different
+        // identities, and the two admitted parities between them — a
+        // pair whose members agreed anywhere here would be one run
+        // reported twice.
+        assert_ne!(run::ACCEPTED_TXID, run::PARITY_ACCEPTED_TXID);
+        assert_ne!(run::SUCCESSOR_DIGEST, run::PARITY_SUCCESSOR_DIGEST);
+        assert_eq!(run::PARITY_ACCEPTED_TXID.len(), 64);
+        assert_eq!(
+            [
+                run::CONSUMED_COMMITMENT_PREFIX,
+                run::PARITY_CONSUMED_COMMITMENT_PREFIX
+            ],
+            [0x08, 0x09],
+            "the two runs did not exercise the two admitted parities",
+        );
     }
 
     #[test]
