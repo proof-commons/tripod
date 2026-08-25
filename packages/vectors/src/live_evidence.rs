@@ -20,7 +20,7 @@
 //!
 //! # The honest finding this plan carries
 //!
-//! Twenty of the twenty-six positive rows of §15.1 and §15.2 are
+//! Twenty-two of the twenty-six positive rows of §15.1 and §15.2 are
 //! answered. Each stands at [`LiveRowStanding::NativeRunObserved`],
 //! carrying the identity a real node computed for a transfer of that
 //! row's own shape which it accepted, whose bytes were read back out of
@@ -29,11 +29,12 @@
 //! standing carries the identity so the claim can be checked against a
 //! chain rather than believed.
 //!
-//! The six that did not move stand at
+//! The four that did not move stand at
 //! [`LiveRowStanding::NativeRunRequired`] — a statement that a run
-//! would answer them and not a statement that nothing could. Three of
-//! them ask for a sponsor region, and three are private rows whose
-//! grounds the delta test below names one by one.
+//! would answer them and not a statement that nothing could. One asks
+//! for a sponsored transfer that takes change, which no ceremony here
+//! builds, and three are private rows whose grounds the delta test
+//! below names one by one.
 //!
 //! This paragraph has been rewritten each time a wave observed
 //! something, and the rewriting is the discipline rather than churn: it
@@ -991,6 +992,23 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         "candidate-maximum-outputs" => {
             Some(crate::live_explicit_shapes::run_of_record::MAXIMUM_OUTPUTS_ACCEPTED_TXID)
         }
+        // The sponsor-signed explicit control, cited by both rows it is
+        // an instance of. It carries a sponsor region -- a sponsor
+        // input, a two-item sponsor witness the adapter produced over
+        // the exact finalized bytes, and a fee output in the reserve
+        // asset -- and it requests NO sponsor change, which is read off
+        // the ceremony's own request rather than inferred from the
+        // outputs. So it is the `sponsored` class and the
+        // `sponsor-change-absent` class at once.
+        //
+        // It is NOT `sponsor-change-present`, and that row stays
+        // unanswered: no ceremony in this workspace builds a sponsored
+        // control that TAKES change, and the register this arm reads
+        // from records why, correcting an earlier wave's prediction
+        // about which obstacle stands in the way.
+        "sponsored" | "sponsor-change-absent" => {
+            Some(crate::live_explicit_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID)
+        }
         _ => None,
     }
 }
@@ -1474,11 +1492,11 @@ mod tests {
     #[test]
     fn exactly_the_positive_rows_a_run_answered_are_answered() {
         // The wave's delta, held as a test rather than written in a
-        // report. Twenty-six positive rows; twenty of them are answered,
+        // report. Twenty-six positive rows; twenty-two of them are answered,
         // and each is answered because a real node accepted a transaction
         // of ITS OWN SHAPE and the standing carries the identity. The
-        // other six await the run that would answer them, and awaiting a
-        // run is not an answer.
+        // other four await the run that would answer them, and awaiting
+        // a run is not an answer.
         //
         // It read seven until the explicit shape ceremony ran thirteen
         // shapes against a real node and every one was accepted, which
@@ -1542,11 +1560,13 @@ mod tests {
                 "several-distinct-owners",
                 "several-inputs-merged-into-one",
                 "several-inputs-to-several-outputs",
+                "sponsor-change-absent",
+                "sponsored",
                 "sponsorless",
                 "target-ct-conservation",
             ]),
         );
-        assert_eq!(plan.census().native_run_observed(), 20);
+        assert_eq!(plan.census().native_run_observed(), 22);
 
         // The three positive private classes that did NOT move are named
         // here rather than left to the count, because a matrix that only
@@ -1564,18 +1584,19 @@ mod tests {
         // A row is removed from this list by a run of its own shape and
         // by nothing else, and that run happened.
         //
-        // The three explicit rows that did not move are named beside
-        // them and for a sharper reason: all three ask for a SPONSOR
-        // region, and this ceremony builds none. They are not blocked --
-        // a sponsor-signed explicit control has been accepted on this
-        // lane -- they are unrun by a ceremony that has no sponsor stage.
+        // The ONE explicit row that did not move is named beside them.
+        // It asks for a sponsored transfer that TAKES CHANGE, and no
+        // ceremony here builds one: the construction path places a
+        // change output only where the sponsor's offer states a change
+        // amount, and the sponsor lane funds its coin to exactly the
+        // offer. It is not blocked on a component -- a sponsor-signed
+        // explicit control has been accepted on this lane -- it is
+        // unrun.
         for unmoved in [
             "private-sponsor-values",
             "deterministic-public-fixture-openings",
             "projection-equality-with-paired-explicit",
-            "sponsored",
             "sponsor-change-present",
-            "sponsor-change-absent",
         ] {
             assert!(
                 !answered.contains(unmoved),

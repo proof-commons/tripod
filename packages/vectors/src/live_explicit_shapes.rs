@@ -1503,3 +1503,111 @@ mod tests {
         assert!(ExplicitShape::CanonicalInputNormalization.offers_reversed_receipts());
     }
 }
+
+/// What the sponsor-signing lane observed, for the two §15.1 rows whose
+/// subject is the sponsor region.
+///
+/// A separate register from [`run_of_record`] because it comes from a
+/// separate ceremony: the shape ceremony above builds no sponsor region
+/// at all, and the sponsored control is built by the sponsor-envelope
+/// lane, which reaches a real adapter for both halves of its round trip
+/// and therefore runs under its own environment.
+///
+/// # Reproduced rather than transcribed
+///
+/// The identity here is the one the sponsor wave first observed, and it
+/// was OBSERVED AGAIN by running that lane at this branch's tip rather
+/// than copied out of a closeout. Two runs on two disposable chains
+/// computed the same identity, which is what a deterministic ceremony on
+/// a deterministic chain does; the point of re-running was that a row
+/// should move on something this wave watched happen.
+///
+/// # What it is an instance of, and what it is not
+///
+/// The accepted control carries a sponsor region — a sponsor input, a
+/// two-item sponsor witness the adapter produced over the exact
+/// finalized bytes, and a fee output in the reserve asset — so it is an
+/// instance of the `sponsored` class.
+///
+/// It requests NO sponsor change, and that is read off the ceremony's
+/// own request rather than inferred from the outputs: the lane finalizes
+/// at `RequestedForm::Sponsored` with
+/// [`SponsorChangeRequest::NotRequested`]. So it is also an instance of
+/// the `sponsor-change-absent` class, whose subject is exactly a
+/// sponsored transfer that declares no change role.
+///
+/// It is NOT an instance of `sponsor-change-present`, and nothing here
+/// should be read as making that row's case. One acceptance is also not
+/// production multi-party sponsor signing: one fixed regtest key signed
+/// once, and a single key answering a request is not a ceremony. ADR-015
+/// public disposable test material throughout.
+pub mod sponsored_run_of_record {
+    /// The identity the target computed for the accepted sponsor-signed
+    /// explicit control.
+    ///
+    /// 1480 bytes submitted and 1480 read back from the node's own copy,
+    /// equal to the submitted bytes; mined at height 6; a two-item
+    /// sponsor witness of 72 and 33 bytes replayed from the adapter's
+    /// answer.
+    pub const SPONSORED_ACCEPTED_TXID: &str =
+        "8528d455cfd7e2cc92e88f2f0432bd0faed8c6f6417c675573a6b4963e1c01b2";
+
+    /// How many bytes the sponsored control handed the node.
+    pub const SPONSORED_SUBMITTED_BYTES: usize = 1_480;
+
+    /// The weight the target itself computed for it.
+    pub const SPONSORED_TARGET_WEIGHT: u64 = 2_482;
+
+    /// The fee the target weighed, in the reserve asset.
+    ///
+    /// The sponsor coin is funded to exactly the offer, because this
+    /// ceremony asks for no change — which is the same fact the
+    /// `sponsor-change-absent` row rests on, read from the other side.
+    pub const SPONSORED_FEE_WEIGHED: u64 = 250;
+
+    /// Whether the control crossed the relay boundary before the mine.
+    ///
+    /// Read off the submission path rather than assumed: the adapter
+    /// offers a submission to `testmempoolaccept` first and reports an
+    /// acceptance only where that answered allowed, then confirms with
+    /// `generateblock`. So this control was judged relayable AND
+    /// consensus-valid.
+    pub const SPONSORED_CROSSED_RELAY_AND_BLOCK: bool = true;
+
+    /// Whether any ceremony in this workspace builds a sponsored control
+    /// that TAKES CHANGE.
+    ///
+    /// `false`, and recorded as a value rather than left to a reader to
+    /// notice, because it is what stops the `sponsor-change-present` row
+    /// from being answered.
+    ///
+    /// # The obstacle is not the one an earlier wave predicted
+    ///
+    /// That prediction was that the demonstration deployment's
+    /// sponsor-change program symbol is a fixture pattern no program
+    /// hashes to, and that a control taking change would therefore die
+    /// at its own change-role check the way the first sponsored controls
+    /// died at the fee-role check. Reading the two sites says otherwise,
+    /// and the difference is worth stating because the two symbols look
+    /// alike.
+    ///
+    /// The FEE role's program is target-structural: the role's whole
+    /// identity is its empty program, so construction wrote the empty
+    /// program while the symbol was an arbitrary pattern, and the two
+    /// disagreed. The CHANGE role's program is a deployment's own
+    /// choice, and construction writes the change output FROM the
+    /// deployment's symbol — refusing outright if a sponsor capability
+    /// offers any other destination. So the covenant's comparison is
+    /// against the value construction just wrote, and it agrees.
+    ///
+    /// What is actually missing is an OFFER that carries change. The
+    /// construction path places a change output only where the sponsor's
+    /// offer states a change amount, and the sponsor lane funds its
+    /// sponsor coin to exactly the offer, so no offer this workspace
+    /// makes has ever carried one. Closing the row needs a sponsor
+    /// funding step that funds ABOVE the offer and a request that asks
+    /// for the change — and, so that the shape lane can reach it at all,
+    /// the sponsor ceremony lifted out of the integration test it
+    /// currently lives in, which is why this is filed rather than taken.
+    pub const A_SPONSORED_CONTROL_TAKING_CHANGE_EXISTS: bool = false;
+}
