@@ -1941,6 +1941,30 @@ pub mod run_of_record {
     ///
     /// The fixture registered, derived and PROJECTED. Recording the digest
     /// is recording that much and no more.
+    ///
+    /// # This figure MOVED with the fee axis, and it is the only one that
+    /// did
+    ///
+    /// The fee-bearing ceremony links against the fee-bearing shape
+    /// vocabulary rather than the demonstration one, and a candidate's
+    /// shape set becomes one coordinator leaf per shape: the extra member
+    /// changes the taptree root, the root tweaks the taproot output key,
+    /// and that key is the destination program this fixture's manifest is
+    /// digested over. So the digest had to move, and moving it costs no
+    /// evidence for a reason that is checkable rather than asserted --
+    /// this fixture never carried an acceptance, so nothing a node did is
+    /// being restated.
+    ///
+    /// Every OTHER recorded digest re-derives unchanged, and that is a
+    /// running check rather than a claim made here: the four shapes that
+    /// ran before the removals wave re-register under their own recorded
+    /// digests, and the dual-parity predecessor and both one-to-one
+    /// successors under theirs. Not one of those tests was touched to
+    /// accommodate this figure. Had any of them moved, the correct
+    /// response would have been to revert the design and never to
+    /// re-record them: they are what pinned nodes did, and a digest
+    /// rewritten to keep a test green destroys the claim the test exists
+    /// to make.
     pub const FEE_BEARING_SUCCESSOR_DIGEST: &str =
         "d08a306819cc5ad713b393ecd956f2b5b38c7eb46de20069e8780620d79ed0cf";
 

@@ -11,9 +11,9 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU8;
 
 use crate::live_shape::{
-    LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds, LiveTransferShapeSet,
-    MINIMUM_TRANSFER_RECEIPT_INPUTS, MINIMUM_TRANSFER_RECEIPT_OUTPUTS,
-    demonstration_live_shape_set, dense_live_shape_set,
+    FeePresence, LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds,
+    LiveTransferShapeSet, MINIMUM_TRANSFER_RECEIPT_INPUTS, MINIMUM_TRANSFER_RECEIPT_OUTPUTS,
+    demonstration_live_shape_set, dense_live_shape_set, fee_bearing_live_shape_set,
 };
 use crate::shape::SponsorChangePresence;
 
@@ -288,4 +288,104 @@ fn a_shape_the_candidate_did_not_build_is_not_admitted() {
     .expect("admissible under the wider window");
 
     assert!(!set.admits(outside));
+}
+
+#[test]
+fn the_demonstration_set_carries_no_fee_bearing_member_and_therefore_moves_no_tree() {
+    // The running form of the one hazard the fee axis had. A candidate's
+    // shape set becomes one coordinator leaf per shape, the leaves tweak
+    // the taproot output key, and that key is the destination program
+    // every recorded fixture digest was taken over. So a fee-bearing
+    // member reaching the demonstration set would silently move digests
+    // belonging to runs a pinned node already accepted, and the failure
+    // would surface far away from the edit that caused it. Asked here, it
+    // surfaces at the edit.
+    let set = demonstration_live_shape_set();
+
+    assert_eq!(
+        set.bounds().sponsorless_fee(),
+        FeePresence::Absent,
+        "the demonstration bounds must leave the fee axis off"
+    );
+    for shape in set.shapes() {
+        assert_eq!(
+            shape.fee() == FeePresence::Present,
+            shape.sponsored(),
+            "a demonstration shape's fee still follows its form exactly"
+        );
+    }
+}
+
+#[test]
+fn the_fee_bearing_set_is_the_demonstration_set_plus_the_forms_that_pay_their_own_fee() {
+    // Stated as a containment and a difference rather than a count, so
+    // the claim survives a bound change: everything the demonstration
+    // candidate emits a program for, the fee-bearing candidate emits the
+    // same program for, and what it adds is sponsorless and fee-bearing
+    // and nothing else.
+    let demonstration = demonstration_live_shape_set();
+    let widened = fee_bearing_live_shape_set();
+
+    for shape in demonstration.shapes() {
+        assert!(
+            widened.admits(shape),
+            "the fee-bearing candidate drops a demonstration shape: {shape:?}"
+        );
+    }
+
+    let added: Vec<LiveTransferShape> = widened
+        .shapes()
+        .filter(|shape| !demonstration.admits(*shape))
+        .collect();
+    assert!(!added.is_empty(), "the fee axis added nothing at all");
+    for shape in &added {
+        assert!(!shape.sponsored(), "the added forms carry no sponsor");
+        assert_eq!(shape.fee(), FeePresence::Present);
+        assert_eq!(
+            shape.outputs(),
+            u16::from(shape.receipt_outputs()) + 1,
+            "one fee position beyond the destinations, and nothing else"
+        );
+    }
+}
+
+#[test]
+fn a_sponsored_form_may_not_decline_the_fee_role() {
+    // The reviewed reading the fee axis had to keep: a sponsor region
+    // exists in order to pay the target, so the sponsored form's fee is
+    // not optional. Checked through the widened bounds so the refusal
+    // cannot be the axis simply being off.
+    let bounds = LiveTransferShapeBounds::new(count(3), count(3), 1).admitting_sponsorless_fee();
+
+    for shape in dense_live_shape_set(bounds).shapes() {
+        if shape.sponsored() {
+            assert_eq!(
+                shape.fee(),
+                FeePresence::Present,
+                "a sponsored shape reached the set without a fee role: {shape:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_candidate_that_emits_no_fee_bearing_program_refuses_the_form_as_unbuilt() {
+    // Unbuilt HERE rather than invalid anywhere, which is the same
+    // distinction the count bounds draw and is why it takes a rejection
+    // of its own rather than reusing one about validity.
+    let narrow = LiveTransferShapeBounds::new(count(3), count(3), 1);
+
+    assert_eq!(
+        LiveTransferShape::paying_its_own_fee(narrow, count(1), count(1)),
+        Err(LiveShapeRejection::SponsorlessFeeBeyondBound)
+    );
+    assert!(
+        LiveTransferShape::paying_its_own_fee(
+            narrow.admitting_sponsorless_fee(),
+            count(1),
+            count(1)
+        )
+        .is_ok(),
+        "the same shape is built where the candidate admits it"
+    );
 }
