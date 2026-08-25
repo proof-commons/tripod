@@ -1171,17 +1171,28 @@ mod tests {
         }
     }
 
-    /// The fee-only case is unconstructible a second, deeper way than the
-    /// cardinality floor: a fee output carries an empty scriptPubKey, and
-    /// the confidential fixture vocabulary has no fee role and refuses an
-    /// empty output program. Even were the two-output floor relaxed, a fee
-    /// output is inexpressible here — shown by a two-output probe whose
-    /// balancing output has an empty program, which the registry refuses
-    /// `OutputProgramEmpty` rather than admitting.
+    /// A fee output is expressible now, and the empty-program clause
+    /// still refuses an output that is not a fee.
+    ///
+    /// # What this test used to say
+    ///
+    /// It recorded the fee-only case as unconstructible a second, deeper
+    /// way than the cardinality floor: a fee output carries an empty
+    /// scriptPubKey, the fixture vocabulary had no fee role, and every
+    /// output was required to carry a nonempty program. Even with the
+    /// floor relaxed, a fee output was inexpressible.
+    ///
+    /// The vocabulary now HAS the role, and the clause reads on the role
+    /// rather than on every output alike. So the same empty program is
+    /// admitted where the output declares itself a fee and refused where
+    /// it does not — which is the difference between a rule and an
+    /// exception, and the reason the role was added rather than the clause
+    /// loosened.
     #[test]
-    fn a_fee_output_is_inexpressible_beyond_the_cardinality_floor() {
+    fn the_empty_program_clause_now_reads_on_the_role() {
+        // Not a fee, and still refused. Nothing was loosened.
         let refusal = registry_refusal_for(
-            "ctf-v1/test-fee-output",
+            "ctf-v1/test-empty-program",
             ASSET,
             ZERO_SUM,
             vec![
@@ -1189,11 +1200,39 @@ mod tests {
                 output(FixtureOutputRole::Balancing, 500_000_000, Vec::new()),
             ],
         )
-        .expect("a fee-shaped empty-program output is refused");
+        .expect("a non-fee output with no program is refused");
         assert_eq!(
             refusal,
             RegistrationRefusal::OutputProgramEmpty { output: 1 },
-            "the fee output's empty program is refused independently of cardinality",
+            "an output that does not declare itself a fee still needs a program",
+        );
+
+        // A fee, and admitted. The blinded output balances; the fee is
+        // held out of the solve at a zero blinder.
+        let projection = register_multi(
+            "ctf-v1/test-fee-role",
+            ASSET,
+            NON_CANCELING_SUM,
+            vec![
+                output(FixtureOutputRole::Balancing, 900_000_000, vec![0x51]),
+                output(FixtureOutputRole::Fee, 100_000_000, Vec::new()),
+            ],
+        )
+        .expect_err("the fee-bearing manifest registers, and the PROJECTION stops");
+
+        // The typed stop, stated rather than worked around. The registry
+        // expresses the fee output; the materializer's own role vocabulary
+        // does not, so the projection refuses by name instead of mapping a
+        // fee onto the balancing role — which would have produced a
+        // BLINDED fee output, and a blinded fee is not a fee at all.
+        assert!(
+            matches!(
+                projection,
+                crate::live_proof_bearing_observation::ProofBearingRefusal::FeeRoleNotProjectable {
+                    output: 1
+                }
+            ),
+            "the fee-bearing shape stops at the projection, and the stop is typed: {projection:?}",
         );
     }
 }

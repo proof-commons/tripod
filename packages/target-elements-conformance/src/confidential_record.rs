@@ -1449,6 +1449,16 @@ pub fn validate_confidential_funding_record(
             return Err(FundingRecordRefusal::ReproducibilityClaimMismatch);
         }
     };
+    // This record validates a funded PREDECESSOR, every output of which is
+    // a blinded protocol output that must carry an opening. An absent
+    // opening here would mean an explicit output in a region this record
+    // reads as blinded, and the two-origin comparisons below would have
+    // nothing to compare; it is a mismatch rather than a member to skip.
+    let openings: Vec<&crate::confidential_fixture::DerivedOpening> = openings
+        .iter()
+        .map(Option::as_ref)
+        .collect::<Option<Vec<_>>>()
+        .ok_or(FundingRecordRefusal::ReproducibilityClaimMismatch)?;
 
     let reported_witness_id = evidence
         .response

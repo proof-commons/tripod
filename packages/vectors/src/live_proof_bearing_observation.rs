@@ -421,6 +421,32 @@ pub enum ProofBearingRefusal {
     /// The registry's derived openings are not the byte-identity
     /// contract's derived form.
     OpeningsAreNotDerived,
+    /// The manifest states a FEE output, which this projection cannot
+    /// carry to the materializer.
+    ///
+    /// # A typed stop, and what it is a stop on
+    ///
+    /// The fixture registry HAS a fee role: explicit-valued, held out of
+    /// the blinder solve at a zero blinder, and required to carry an empty
+    /// output program. A fee-bearing manifest registers, derives, and
+    /// digests here.
+    ///
+    /// What has not been built is everything downstream of that. The
+    /// materializer's own output-role vocabulary has no fee member; its
+    /// per-output stage would compute a commitment and a range proof for
+    /// an output that must carry an explicit value and no witness at all;
+    /// and the executor adapter's fixture catalogue and parity search read
+    /// every output as a committed one.
+    ///
+    /// So the projection REFUSES rather than substituting a role, and the
+    /// refusal is named for the thing that is missing. Mapping a fee to
+    /// the balancing role to get past this line would produce a candidate
+    /// whose fee output was blinded — not a fee at the target, and a
+    /// silently wrong transaction rather than an honest stop.
+    FeeRoleNotProjectable {
+        /// Which output states it.
+        output: usize,
+    },
     /// The two predecessor blinders do not sum to the value the
     /// successor is balanced against.
     PredecessorBlindersDoNotClose,
@@ -926,7 +952,7 @@ fn derived_openings(
     fixture: &ResolvedFixture,
 ) -> Result<
     (
-        &[target_elements_conformance::confidential_fixture::DerivedOpening],
+        &[Option<target_elements_conformance::confidential_fixture::DerivedOpening>],
         u16,
     ),
     ProofBearingRefusal,
@@ -948,9 +974,14 @@ fn derived_openings(
 fn project(fixture: &ResolvedFixture) -> Result<ConfidentialFixtureView, ProofBearingRefusal> {
     let (openings, parity_counter) = derived_openings(fixture)?;
     let mut outputs = Vec::with_capacity(openings.len());
-    for (output, opening) in fixture.outputs().iter().zip(openings) {
+    for (index, (output, opening)) in fixture.outputs().iter().zip(openings).enumerate() {
         let role = match output.role {
             FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
+            // The typed stop. The registry expresses a fee output; nothing
+            // downstream of this line does yet.
+            FixtureOutputRole::Fee => {
+                return Err(ProofBearingRefusal::FeeRoleNotProjectable { output: index });
+            }
             // Both solving roles project to the view's one solving role,
             // and that is not a role being flattened away. The view's
             // `Balancing` means "this output's blinder is solved from
@@ -969,6 +1000,11 @@ fn project(fixture: &ResolvedFixture) -> Result<ConfidentialFixtureView, ProofBe
             // rather than a silent substitution.
             _ => return Err(ProofBearingRefusal::OpeningsAreNotDerived),
         };
+        // Every role that reaches here carries an opening, the one that
+        // does not having refused above.
+        let opening = opening
+            .as_ref()
+            .ok_or(ProofBearingRefusal::OpeningsAreNotDerived)?;
         outputs.push(ConfidentialFixtureOutputView::new(
             role,
             output.semantic_amount,

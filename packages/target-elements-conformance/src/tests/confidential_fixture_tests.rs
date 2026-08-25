@@ -16,10 +16,10 @@ use crate::commitment_oracle::commitment::read_scalar;
 use crate::commitment_oracle::curve::group_order;
 use crate::confidential_fixture::{
     ConfidentialFixtureManifest, ConfidentialFixtureOutput, ConfidentialFixtureRegistry,
-    DerivationRole, DerivationSource, FixtureDerivationProfile, FixtureDerivationRefusal,
-    FixtureDiagnosticKind, FixtureOpenings, FixtureOutputRole, HandleGrammarDefect,
-    MAX_PARITY_COUNTER, PublicDisposableTestMaterial, RegistrationRefusal, TaggedHashDerivation,
-    check_handle_grammar, predecessor_handle,
+    DerivationRole, DerivationSource, DerivedOpening, FixtureDerivationProfile,
+    FixtureDerivationRefusal, FixtureDiagnosticKind, FixtureOpenings, FixtureOutputRole,
+    HandleGrammarDefect, MAX_PARITY_COUNTER, PublicDisposableTestMaterial, RegistrationRefusal,
+    TaggedHashDerivation, check_handle_grammar, predecessor_handle,
 };
 use crate::confidential_funding::FixtureResolutionRefused;
 use crate::protocol::{
@@ -64,6 +64,24 @@ fn manifest() -> ConfidentialFixtureManifest {
             },
         ],
     }
+}
+
+/// The openings of the outputs that carry one.
+///
+/// Openings are optional per output because an explicit output has none.
+/// Every fixture in this file is all-blinded, so this is every output of
+/// it; the helper exists so that a test about a blinder reads a blinder
+/// rather than an option of one, and so that an unexpectedly absent
+/// opening fails loudly here instead of being skipped quietly.
+fn committed(openings: &[Option<DerivedOpening>]) -> Vec<&DerivedOpening> {
+    openings
+        .iter()
+        .map(|opening| {
+            opening
+                .as_ref()
+                .expect("a blinded output carries an opening")
+        })
+        .collect()
 }
 
 /// One frozen registry holding the predecessor.
@@ -144,6 +162,7 @@ fn the_two_value_blinders_are_ordered_additive_inverses() {
     let FixtureOpenings::Derived { openings, .. } = resolved.openings() else {
         panic!("byte identity derives its openings");
     };
+    let openings = committed(openings);
     let first = read_scalar(&openings[0].value_blinder).expect("a scalar");
     let second = read_scalar(&openings[1].value_blinder).expect("a scalar");
     assert_ne!(first, BigUint::from(0_u32));
@@ -165,10 +184,11 @@ fn derivation_is_role_separated_and_case_separated() {
     let FixtureOpenings::Derived { openings, .. } = resolved.openings() else {
         panic!("byte identity derives its openings");
     };
+    let openings = committed(openings);
     // Role separation: no role's value stands in for another's, and no
     // output's stands in for another output's.
     let mut seen: BTreeSet<[u8; 32]> = BTreeSet::new();
-    for opening in openings {
+    for opening in &openings {
         assert!(seen.insert(opening.value_blinder));
         assert!(seen.insert(opening.nonce_input));
         assert!(seen.insert(opening.rangeproof_seed));
@@ -193,6 +213,7 @@ fn derivation_is_role_separated_and_case_separated() {
     else {
         panic!("byte identity derives its openings");
     };
+    let theirs = committed(theirs);
     for opening in theirs {
         assert!(!seen.contains(&opening.value_blinder));
         assert!(!seen.contains(&opening.nonce_input));
@@ -525,6 +546,7 @@ fn a_fixture_wider_than_two_outputs_derives() {
     let FixtureOpenings::Derived { openings, .. } = resolved.openings() else {
         panic!("byte identity derives its openings");
     };
+    let openings = committed(openings);
 
     // One opening per output, and every commitment carries an admitted
     // prefix — which is the whole of what the target contract states about
@@ -557,6 +579,7 @@ fn the_two_output_prefix_pair_is_still_required_in_fixed_order() {
     let FixtureOpenings::Derived { openings, .. } = resolved.openings() else {
         panic!("byte identity derives its openings");
     };
+    let openings = committed(openings);
     assert_eq!(openings.len(), 2);
     assert_eq!(
         openings[0].value_commitment[0], 0x08,
@@ -623,6 +646,7 @@ fn the_single_output_form_registers_and_takes_the_input_blinder_sum_verbatim() {
     else {
         panic!("byte identity derives openings");
     };
+    let openings = committed(openings);
     assert_eq!(openings.len(), 1, "the form has exactly one output");
 
     // The whole claim of the form: the blinder is not derived and not
@@ -731,6 +755,7 @@ fn the_two_output_predecessor_derives_exactly_what_it_derived_before() {
     else {
         panic!("byte identity derives openings");
     };
+    let openings = committed(openings);
 
     // The dual-parity rule: the admitted pair in FIXED ORDER, which is
     // the discriminating power the search really does have and which the
@@ -765,4 +790,168 @@ fn the_two_output_predecessor_derives_exactly_what_it_derived_before() {
         panic!("byte identity derives openings");
     };
     assert_eq!(repeated_counter, parity_counter);
+}
+
+// --- The fee output role -----------------------------------------------
+
+/// One manifest of a blinded output beside a fee output.
+///
+/// The blinded output BALANCES: it is the only output that can, the fee
+/// contributing a zero blinder by the target's own definition of a fee.
+fn fee_bearing_manifest(program: Vec<u8>) -> ConfidentialFixtureManifest {
+    ConfidentialFixtureManifest {
+        handle: ConfidentialFixtureHandle::new("ctf-v1/fee-bearing".to_owned()),
+        material_class: PublicDisposableTestMaterial::EXPECTED,
+        derivation_profile: FixtureDerivationProfile::GuideCtfV1,
+        profiles: profiles(ReproducibilityContract::ByteIdentity),
+        retry_limit: MAX_PARITY_COUNTER,
+        explicit_asset: ASSET,
+        input_blinder_sum: NON_CANCELING_SUM,
+        outputs: vec![
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::Balancing,
+                semantic_amount: 900_000_000,
+                output_program: vec![0x51],
+            },
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::Fee,
+                semantic_amount: 100_000_000,
+                output_program: program,
+            },
+        ],
+    }
+}
+
+#[test]
+fn a_fee_bearing_manifest_registers_with_the_fee_held_out_of_the_solve() {
+    let mut registry = ConfidentialFixtureRegistry::new();
+    registry
+        .register(fee_bearing_manifest(Vec::new()))
+        .expect("a fee-bearing manifest registers");
+    let frozen = registry.freeze();
+    let handle = ConfidentialFixtureHandle::new("ctf-v1/fee-bearing".to_owned());
+    let digest = *frozen.registered_digest(&handle).expect("its own digest");
+    let resolved = frozen.resolve(&handle, &digest).expect("it resolves");
+
+    let FixtureOpenings::Derived { openings, .. } = resolved.openings() else {
+        panic!("byte identity derives openings");
+    };
+    assert_eq!(openings.len(), 2, "one entry per output, never compacted");
+
+    // The fee's opening is ABSENT rather than zero-filled. A record of
+    // zeroes would read like an opening, and an explicit output has none.
+    assert!(
+        openings[1].is_none(),
+        "an explicit output carries no opening at all",
+    );
+
+    // And the fee is held OUT of the solve at a zero blinder, so the
+    // blinded output takes the whole input blinder sum — exactly what it
+    // would take with no fee output present. That is the fee role's whole
+    // arithmetic claim.
+    let blinded = openings[0]
+        .as_ref()
+        .expect("the blinded output carries an opening");
+    assert_eq!(
+        blinded.value_blinder, NON_CANCELING_SUM,
+        "the fee contributes a zero blinder, so the solve is unchanged by it",
+    );
+
+    // One commitment, not two: the commitments are the outputs that have
+    // one, and a fee has none.
+    assert_eq!(
+        resolved
+            .value_commitments()
+            .expect("byte identity carries openings")
+            .len(),
+        1,
+    );
+}
+
+#[test]
+fn a_fee_output_carrying_a_program_is_refused() {
+    // REQUIRED empty, not merely permitted. An empty scriptPubKey is the
+    // fee's identity at the target, so a fee carrying a program is a fee
+    // the target would not read as one — and a role that only tolerated
+    // an empty program would let a manifest declare exactly that.
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(fee_bearing_manifest(vec![0x51]))
+            .expect_err("a fee output with a program is refused"),
+        RegistrationRefusal::FeeProgramNotEmpty { output: 1 },
+    );
+}
+
+#[test]
+fn a_fee_output_may_not_be_the_only_output_and_may_not_balance() {
+    // The fee-only shape stays refused, and this is the register's one
+    // consensus-IMPOSSIBLE shape: a fee is mandatorily explicit, so it
+    // contributes a zero blinder and there is nothing left to absorb a
+    // nonzero input blinder sum. The floor turns it away on cardinality
+    // first, which is the same wall it always met.
+    let mut sole_fee = fee_bearing_manifest(Vec::new());
+    sole_fee.outputs.remove(0);
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(sole_fee)
+            .expect_err("a lone fee output is refused"),
+        RegistrationRefusal::OutputSetTooSmall { found: 1 },
+    );
+
+    // And a manifest of nothing but fee outputs states no solving output
+    // at all, which is the refusal that names the real reason.
+    let mut all_fees = fee_bearing_manifest(Vec::new());
+    all_fees.outputs[0].role = FixtureOutputRole::Fee;
+    all_fees.outputs[0].output_program = Vec::new();
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(all_fees)
+            .expect_err("no output solves the balance"),
+        RegistrationRefusal::BalancingRoleNotUnique { found: 0 },
+    );
+}
+
+#[test]
+fn a_zero_valued_fee_is_refused_like_any_other_output() {
+    // The consensus fact this holds: a fee must be nonzero. A zero-value
+    // explicit output is admitted at the target only where its script is
+    // unspendable, and an empty script is not unspendable, so a zero-value
+    // fee output is refused there outright. The registry never builds one,
+    // and the clause that stops it is the positive-amount clause every
+    // output already meets.
+    let mut zero_fee = fee_bearing_manifest(Vec::new());
+    zero_fee.outputs[1].semantic_amount = 0;
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(zero_fee)
+            .expect_err("a zero-value fee is refused"),
+        RegistrationRefusal::AmountNotPositive { output: 1 },
+    );
+}
+
+#[test]
+fn the_dual_parity_rule_reads_on_commitments_and_not_on_output_count() {
+    // A two-OUTPUT fixture of one blinded output beside a fee is not the
+    // dual-parity case, whatever its output count says: it has one
+    // commitment, and the admitted pair in fixed order is a rule about
+    // two. Had the rule kept counting outputs, this manifest would have
+    // been required to produce a second prefix it has no second
+    // commitment to carry, and the bounded search would have exhausted.
+    ConfidentialFixtureRegistry::new()
+        .register(fee_bearing_manifest(Vec::new()))
+        .expect("a fee-bearing two-output manifest is not held to the pair");
+
+    // And the genuine dual-parity case is still held to it, which the
+    // predecessor's own fixed-order test asserts next door.
+    let registry = frozen();
+    let commitments = registry
+        .resolve(&predecessor_handle(), &{
+            *registry
+                .registered_digest(&predecessor_handle())
+                .expect("its own digest")
+        })
+        .expect("it resolves")
+        .value_commitments()
+        .expect("byte identity carries openings");
+    assert_eq!(commitments.len(), 2, "two blinded outputs, two commitments");
 }

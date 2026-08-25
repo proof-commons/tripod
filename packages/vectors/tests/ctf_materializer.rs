@@ -166,9 +166,20 @@ fn frozen_predecessor() -> FrozenConfidentialFixtureRegistry {
 /// The derived openings of one resolved fixture.
 fn openings(
     fixture: &ResolvedFixture,
-) -> &[target_elements_conformance::confidential_fixture::DerivedOpening] {
+) -> Vec<&target_elements_conformance::confidential_fixture::DerivedOpening> {
     match fixture.openings() {
-        FixtureOpenings::Derived { openings, .. } => openings,
+        // Openings are optional per output, because an explicit output
+        // has none. Every fixture this test builds is all-blinded, so an
+        // absent opening here is a defect rather than a member to skip,
+        // and it is louder as a panic than as a silently shorter vector.
+        FixtureOpenings::Derived { openings, .. } => openings
+            .iter()
+            .map(|opening| {
+                opening
+                    .as_ref()
+                    .expect("a blinded output carries an opening")
+            })
+            .collect(),
         FixtureOpenings::RunProduced => panic!("the byte-identity contract derives its openings"),
     }
 }
@@ -179,16 +190,17 @@ fn project(fixture: &ResolvedFixture) -> ConfidentialFixtureView {
     let outputs = fixture
         .outputs()
         .iter()
-        .zip(derived)
+        .zip(&derived)
         .map(|(output, opening)| {
             ConfidentialFixtureOutputView::new(
                 match output.role {
                     FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
                     FixtureOutputRole::Balancing => ConfidentialOutputRole::Balancing,
                     // The registry's role vocabulary is open and the
-                    // view's is not. A role added there without a place
-                    // here stops this test compiling, which is where a
-                    // reader wants to find out.
+                    // view's is not, so a role added there has no place
+                    // here. It panics rather than substituting one — a
+                    // fee mapped to the balancing role would produce a
+                    // blinded fee output, which is not a fee at all.
                     other => panic!("the view projects no role named {other:?}"),
                 },
                 output.semantic_amount,
@@ -229,7 +241,7 @@ fn ceremony() -> Ceremony {
     let predecessor = predecessor_registry
         .resolve(&predecessor_handle, &predecessor_digest)
         .expect("the predecessor resolves under its own digest");
-    let consumed_opening = openings(predecessor)[CONSUMED_OUTPUT].clone();
+    let consumed_opening = (*openings(predecessor)[CONSUMED_OUTPUT]).clone();
 
     // The successor balances against the consumed output's own blinder,
     // which is derived rather than chosen: a test that picked a round

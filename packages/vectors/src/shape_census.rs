@@ -313,6 +313,31 @@ pub enum FirstPartyStatus {
         /// What ended it, and what proved that it had.
         removal: LimitationRemoval,
     },
+    /// The registry expresses the shape, and something downstream of the
+    /// registry stops it short of a node.
+    ///
+    /// # Why this is not a refusal, and not an observation either
+    ///
+    /// The registry does not refuse it: a manifest of this shape
+    /// registers, derives and digests. So recording it under
+    /// [`Self::RefusedByConvention`] would name a refusal that no longer
+    /// happens.
+    ///
+    /// And nothing has run it, so recording it constructible-and-observed
+    /// would be the one error this register exists to prevent — a
+    /// vocabulary that CAN express a shape is not a chain that HAS
+    /// accepted one.
+    ///
+    /// It is a third thing, and the register would rather carry a third
+    /// member than round it to whichever of the other two is nearer.
+    ExpressibleAndUnrun {
+        /// The convention that used to make the shape inexpressible.
+        removed: Limitation,
+        /// What ended that convention.
+        removal: LimitationRemoval,
+        /// Where a run stops now, in the layer's own terms.
+        stops_at: &'static str,
+    },
 }
 
 /// How a first-party limitation was structurally removed.
@@ -328,8 +353,16 @@ pub struct LimitationRemoval {
     pub row: &'static str,
     /// What structurally changed, in the registry's own terms.
     pub change: &'static str,
-    /// The run-of-record identity of the first shape it unlocked.
-    pub proven_by: &'static str,
+    /// The run-of-record identity of the first shape it unlocked, where
+    /// one has run.
+    ///
+    /// `None` is a removal that is REAL at the registry and that nothing
+    /// has yet carried to a node. The register keeps the two apart on
+    /// purpose: a vocabulary that can express a shape and a chain that has
+    /// accepted one are different facts, and this is the register whose
+    /// whole reason for existing is not collapsing facts of different
+    /// kinds into one word.
+    pub proven_by: Option<&'static str>,
 }
 
 /// The two-output floor's removal, recorded once.
@@ -347,7 +380,25 @@ const TWO_OUTPUT_FLOOR_REMOVAL: LimitationRemoval = LimitationRemoval {
              declare it, so nothing was relaxed; the zero-blinder degeneracy is answered by the \
              registry's existing `DegenerateBalancingScalar` refusal, left standing and now \
              load-bearing.",
-    proven_by: crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
+    proven_by: Some(crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID),
+};
+
+/// The absent fee role's removal, recorded once.
+///
+/// Its `proven_by` is `None`, and that absence is the honest half of this
+/// record. The fixture vocabulary really does express a fee output now —
+/// explicit-valued, held out of the solve at a zero blinder, and required
+/// to carry an empty program — and no node has been offered one, because
+/// the layers between the registry and a chain have not learned the role.
+const ABSENT_FEE_ROLE_REMOVAL: LimitationRemoval = LimitationRemoval {
+    row: "T5-042",
+    change: "A `Fee` member joined the fixture output role vocabulary, and the empty-program \
+             clause moved from every output alike onto the role: a fee output is REQUIRED to \
+             carry an empty program rather than excused from carrying one, and every other role \
+             still needs a program. The fee is held out of the blinder solve at a zero blinder, \
+             its opening is absent rather than zero-filled, and the admitted-prefix rule reads on \
+             the outputs that have commitments instead of on the output count.",
+    proven_by: None,
 };
 
 /// A first-party convention that refuses a shape consensus admits.
@@ -463,7 +514,8 @@ impl Limitation {
     pub const fn removal(self) -> Option<LimitationRemoval> {
         match self {
             Self::TwoOutputFloor => Some(TWO_OUTPUT_FLOOR_REMOVAL),
-            Self::AbsentFeeRole | Self::CancelingPredecessorOnly => None,
+            Self::AbsentFeeRole => Some(ABSENT_FEE_ROLE_REMOVAL),
+            Self::CancelingPredecessorOnly => None,
         }
     }
 
@@ -613,11 +665,24 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
                 limitation: Limitation::CancelingPredecessorOnly,
             },
         ),
+        // The fee-bearing shape. The vocabulary now expresses it and no
+        // node has been offered one, which is two facts this register
+        // refuses to round into either "refused" or "observed".
         BlindedShape::OneToOneWithFee => (
             ConsensusVerdict::SourceDerivedPossible,
-            FirstPartyStatus::RefusedByConvention {
-                refusal: RegistrationRefusal::OutputProgramEmpty { output: 1 },
-                limitation: Limitation::AbsentFeeRole,
+            FirstPartyStatus::ExpressibleAndUnrun {
+                removed: Limitation::AbsentFeeRole,
+                removal: ABSENT_FEE_ROLE_REMOVAL,
+                stops_at: "packages/vectors/src/live_proof_bearing_observation.rs, the fixture \
+                           projection, which refuses `FeeRoleNotProjectable`: the materializer's \
+                           own output-role vocabulary has no fee member, its per-output stage \
+                           would compute a commitment and a range proof for an output that must \
+                           carry an explicit value and no witness, and the executor adapter's \
+                           fixture catalogue and parity search read every output as a committed \
+                           one. The projection refuses rather than mapping a fee onto the \
+                           balancing role, which would have produced a blinded fee output — not a \
+                           fee at the target, and a silently wrong transaction rather than an \
+                           honest stop.",
             },
         ),
         BlindedShape::OneToTwo => (
@@ -747,15 +812,20 @@ mod tests {
                     // about the manifest, so a lone blinded output sitting
                     // beside a fee output is not it.
                     //
-                    // The fee output is cast as balancing, and that is not
-                    // a modelling choice: the vocabulary has no fee member
-                    // to cast it as, which is the absent role this
-                    // register records.
+                    // The fee output states the FEE role, which the
+                    // vocabulary now has. It used to be cast as balancing
+                    // — the one output that must never balance, wearing
+                    // the role of the output that does — because there was
+                    // nothing else to cast it as.
+                    //
+                    // The balancing output is therefore the last NON-fee
+                    // output rather than the last output, which is the
+                    // same correction said a second way.
                     role: if is_fee {
-                        FixtureOutputRole::Balancing
+                        FixtureOutputRole::Fee
                     } else if count == 1 {
                         FixtureOutputRole::SoleBalancing
-                    } else if index + 1 == count {
+                    } else if index + 1 == count - shape.fee_outputs() {
                         FixtureOutputRole::Balancing
                     } else {
                         FixtureOutputRole::Primary
@@ -859,7 +929,8 @@ mod tests {
         for shape in BlindedShape::ALL {
             let censused = match census_entry(shape).first_party {
                 FirstPartyStatus::ConstructibleAndObserved
-                | FirstPartyStatus::ConstructibleAfterRemoval { .. } => continue,
+                | FirstPartyStatus::ConstructibleAfterRemoval { .. }
+                | FirstPartyStatus::ExpressibleAndUnrun { .. } => continue,
                 FirstPartyStatus::RefusedByConvention { refusal, .. }
                 | FirstPartyStatus::RefusalGuardsConsensus { refusal } => refusal,
             };
@@ -874,8 +945,8 @@ mod tests {
             refused += 1;
         }
         assert_eq!(
-            refused, 3,
-            "three of the eight shapes are refused, the strict one-to-one having been unlocked",
+            refused, 2,
+            "two of the eight shapes are refused: this lane's merge, and the impossible one",
         );
     }
 
@@ -1000,11 +1071,8 @@ mod tests {
         paths.dedup();
         assert_eq!(
             paths,
-            vec![
-                RemovalPath::FeeOutputRole,
-                RemovalPath::NonCancelingPrecursor
-            ],
-            "the two standing limitations file two distinct removal paths",
+            vec![RemovalPath::NonCancelingPrecursor],
+            "one limitation still refuses a consensus-possible shape, and it files a path",
         );
     }
 
@@ -1049,9 +1117,9 @@ mod tests {
             );
             assert_ne!(removal.change, "", "the structural change is stated");
             assert_eq!(
-                removal.proven_by.len(),
-                64,
-                "a removal is proven by a target-computed identity",
+                removal.proven_by.map(str::len),
+                Some(64),
+                "a removal recorded on an observed row is proven by a target-computed identity",
             );
 
             // The consensus half must have moved with it. A removal that
@@ -1074,8 +1142,56 @@ mod tests {
 
         // A limitation still standing does NOT claim a removal, so a
         // filed path cannot read as a taken one.
-        assert_eq!(Limitation::AbsentFeeRole.removal(), None);
         assert_eq!(Limitation::CancelingPredecessorOnly.removal(), None);
+    }
+
+    /// A removal that nothing has run says so, and says where a run
+    /// stops.
+    ///
+    /// The register's sharpest discipline, applied to its own work. The
+    /// fee role was really added and a fee-bearing manifest really
+    /// registers — but a vocabulary that CAN express a shape is not a
+    /// chain that HAS accepted one, and the whole reason this register
+    /// exists is that those two had been collapsing into one word.
+    ///
+    /// So the row carries no identity, its removal carries no identity,
+    /// and the place a run stops is named in the stopping layer's own
+    /// terms rather than left as "not yet".
+    #[test]
+    fn an_unrun_removal_claims_no_acceptance_and_names_where_it_stops() {
+        let mut expressible = Vec::new();
+        for shape in BlindedShape::ALL {
+            let FirstPartyStatus::ExpressibleAndUnrun {
+                removed,
+                removal,
+                stops_at,
+            } = census_entry(shape).first_party
+            else {
+                continue;
+            };
+
+            assert_eq!(
+                removal.proven_by,
+                None,
+                "{} has not run, so its removal proves nothing about a chain",
+                shape.handle(),
+            );
+            assert_ne!(stops_at, "", "the stopping layer is named");
+            assert_eq!(removed.removal(), Some(removal));
+
+            // And the consensus half must NOT have moved. An expressible
+            // shape nobody has submitted is source-derived, and a register
+            // that let this age into an observation would be the failure
+            // it was built to prevent.
+            assert_eq!(
+                census_entry(shape).consensus,
+                ConsensusVerdict::SourceDerivedPossible,
+                "{} is expressible and unrun, so its evidence class is a derivation",
+                shape.handle(),
+            );
+            expressible.push(shape);
+        }
+        assert_eq!(expressible, vec![BlindedShape::OneToOneWithFee]);
     }
 
     /// Removing the floor did not free the merge, and the register says
