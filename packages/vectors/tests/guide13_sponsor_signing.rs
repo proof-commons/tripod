@@ -671,11 +671,13 @@ fn identifier(text: &str) -> [u8; 32] {
     bytes
 }
 
-/// The four sub-steps the handoff card names, each observed separately.
-#[test]
-#[ignore = "needs a live Elements node and an executor adapter"]
-fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
-    let started = Instant::now();
+/// Everything up to the round trip: the environment, the deployment
+/// binding, the executor, and one run of the lane.
+///
+/// Separated from the assertions because a function that both arranges
+/// a run and judges it makes the judging hard to read past the
+/// arranging.
+fn run_the_lane() -> (RoundTrip, usize, Option<PathBuf>) {
     let executor =
         environment("TRIPOD_SPONSOR_EXECUTOR").expect("TRIPOD_SPONSOR_EXECUTOR names the adapter");
     let network = environment("TRIPOD_SPONSOR_NETWORK_ID")
@@ -725,6 +727,15 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
         .round
         .clone()
         .expect("the sponsor round trip completed");
+    (round, planner.receipts.len(), report)
+}
+
+/// The four sub-steps the handoff card names, each observed separately.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
+    let started = Instant::now();
+    let (round, receipts, report) = run_the_lane();
 
     // (a) An explicit sponsored control was finalized. The builder asked
     // the envelope for exactly one sponsor authorization — the request
@@ -736,7 +747,7 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
     );
     assert_eq!(
         usize::from(round.input),
-        planner.receipts.len(),
+        receipts,
         "the sponsor input is not the suffix member following every receipt input"
     );
 
