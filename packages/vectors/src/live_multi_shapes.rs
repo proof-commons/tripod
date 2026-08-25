@@ -992,3 +992,102 @@ mod tests {
         );
     }
 }
+
+/// The run of record: what one execution of the fifth step observed.
+///
+/// # Why the observation is a constant and not a stored file
+///
+/// The evidence a run produces is the observation, and an observation
+/// nobody can name is not evidence. These constants are the identities
+/// and figures ONE run against a real node produced, written down so that
+/// a later reader can ask the chain the same question, and so that a
+/// claim made anywhere in this workspace about the fifth step can be
+/// traced to a transaction identity rather than to a test having been
+/// written.
+///
+/// It re-runs nothing and proves nothing by existing. What it does is
+/// make the run's own answer quotable.
+///
+/// The target: Elements Core v28.99.0-b7fc5d080a7e, at the pinned tip the
+/// lane binds itself to, on a disposable development chain the run
+/// created and destroyed. All three shapes ran serialized against one
+/// node, because the shared instance does not sustain the parallel lane's
+/// concurrent nodes.
+pub mod run_of_record {
+    /// The disposable asset all three runs issued.
+    ///
+    /// The same identity the earlier steps issued, because the issuing
+    /// step is theirs and the chain is created fresh per run.
+    pub const ISSUED_ASSET: &str =
+        "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
+
+    /// The split shape's successor fixture digest.
+    pub const SPLIT_SUCCESSOR_DIGEST: &str =
+        "75d3cb8d99dff1f7fb5ad39dbf7fa1fe986896d7056d55020911acdf9eeea23f";
+
+    /// The identity the target computed for the accepted split.
+    ///
+    /// One receipt consumed, THREE outputs created: two recipients and
+    /// the balancing change. The row `private-split` moves on THIS
+    /// acceptance and cites it.
+    pub const SPLIT_ACCEPTED_TXID: &str =
+        "56c97ec9748ec730a6a6fab111c15830a4e215c0652ec5df4e4b34e7bd955a0c";
+
+    /// How many bytes the split handed to the node.
+    pub const SPLIT_SUBMITTED_BYTES: usize = 13_499;
+
+    /// The range-proof bytes each of the split's three outputs carried.
+    pub const SPLIT_OUTPUT_WITNESS_PROOF_BYTES: [usize; 3] = [4_174, 4_174, 4_174];
+
+    /// The split's wall time, in seconds.
+    pub const SPLIT_WALL_SECONDS: f64 = 12.9;
+
+    /// The many-to-many shape's successor fixture digest.
+    pub const MANY_TO_MANY_SUCCESSOR_DIGEST: &str =
+        "4de73ff0bdece00b0a5f5959beba455adc9998ae2aaef65ffdaffec157a3cc6e";
+
+    /// The identity the target computed for the accepted many-to-many.
+    ///
+    /// TWO receipts consumed and THREE outputs created — the
+    /// representative case, whose input and output counts both exceed the
+    /// one-to-one control's, so it is not a one-to-many or a many-to-one
+    /// under another name.
+    pub const MANY_TO_MANY_ACCEPTED_TXID: &str =
+        "fc1769b853b3f3abf24a6eb996fa76e5e19c87adfd379034392e9487af85a58d";
+
+    /// How many bytes the many-to-many handed to the node.
+    pub const MANY_TO_MANY_SUBMITTED_BYTES: usize = 13_882;
+
+    /// The many-to-many's wall time, in seconds.
+    pub const MANY_TO_MANY_WALL_SECONDS: f64 = 13.9;
+
+    /// The several-distinct-owners shape's successor fixture digest.
+    pub const SEVERAL_OWNERS_SUCCESSOR_DIGEST: &str =
+        "c80fc25c07cf59c969e8d0bd62edd9540b15731ec5fc548ad5d20c06dff39ec9";
+
+    /// The identity the target computed for the accepted
+    /// several-distinct-owners transfer.
+    ///
+    /// TWO receipts consumed under two DISTINCT published owners, each
+    /// input carrying the leaf its own position executes, and two outputs
+    /// created. Its subject is the input owners rather than the
+    /// cardinality.
+    pub const SEVERAL_OWNERS_ACCEPTED_TXID: &str =
+        "15ff668df082fb22f2222a52f8cc0fc27f5787ec82b3c0408472ae063fc1e207";
+
+    /// How many bytes the several-owners transfer handed to the node.
+    pub const SEVERAL_OWNERS_SUBMITTED_BYTES: usize = 9_519;
+
+    /// The several-owners transfer's wall time, in seconds.
+    pub const SEVERAL_OWNERS_WALL_SECONDS: f64 = 15.6;
+
+    /// How many receipt inputs each shape consumed, in the order the
+    /// restart runs them.
+    ///
+    /// Recorded rather than assumed, so a shape whose cardinality drifted
+    /// is readable here rather than inferred from a name.
+    pub const RECEIPT_LEAVES: [usize; 3] = [1, 2, 2];
+
+    /// How many outputs each shape created, in the same order.
+    pub const OUTPUT_COUNTS: [usize; 3] = [3, 3, 2];
+}
