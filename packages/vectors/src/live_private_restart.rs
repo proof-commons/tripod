@@ -726,7 +726,35 @@ pub(crate) fn link_and_register(
 ) -> Result<LinkedDeployment, PrivateRestartRefusal> {
     let asset = asset_of(printed).ok_or(PrivateRestartRefusal::IssuanceNamedNoAsset)?;
     let commit_order = *asset.internal();
-    let abi = live_abi_for_vocabulary(vocabulary, commit_order, RESERVE_ASSET, FEE_PROGRAM_DIGEST)
+    // WHICH FEE DIGEST A DEPLOYMENT IS WELDED TO FOLLOWS WHETHER IT
+    // MEANS TO SPEND A CONTROL THAT HAS A FEE.
+    //
+    // FEE_PROGRAM_DIGEST is a fixture constant that hashes to no program
+    // at all, and its own doc says so: the demonstration deployment
+    // keeps it because moving it would move the demonstration's
+    // committed taptree and with it every live run-of-record identity
+    // the plans cite. Nothing the demonstration builds ever executes the
+    // fee clause, so nothing there notices.
+    //
+    // A fee-bearing candidate executes exactly that clause. The covenant
+    // compares the fee output's scriptPubKey digest against the symbol,
+    // construction writes the target-structural EMPTY program, and the
+    // empty program's digest is the specification's SHA-256 of the empty
+    // string -- so a deployment linked against the fixture constant
+    // demands a value no program hashes to and refuses its own candidate
+    // at OP_EQUALVERIFY. That is the defect the sponsor arc met on the
+    // other lane and diagnosed in these words; it is met here for the
+    // same reason and answered the same way.
+    //
+    // Supplying the real digest costs nothing HERE precisely because the
+    // fee-bearing vocabulary is a separate deployment: its taptree is
+    // already its own, so the only digest that moves is one no node has
+    // ever accepted.
+    let fee_digest = match vocabulary {
+        LiveShapeVocabulary::Demonstration => FEE_PROGRAM_DIGEST,
+        LiveShapeVocabulary::FeeBearing => crate::bundle::fee_program_digest(),
+    };
+    let abi = live_abi_for_vocabulary(vocabulary, commit_order, RESERVE_ASSET, fee_digest)
         .map_err(|_| PrivateRestartRefusal::RelinkRefused)?;
 
     // The predecessor outputs pay to the published owners' PRIVATE receipt
