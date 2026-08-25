@@ -795,10 +795,10 @@ impl ExplicitShapePlanner {
     /// The ceremony for §15.3's witness-content negatives.
     ///
     /// One run submits THREE candidates to one node on one chain: the
-    /// unmutated one-input one-output control, then the same finalized
-    /// candidate with its signature position offering nothing, then the
-    /// same one again with the position offering bytes of the selected
-    /// width that are not a signature.
+    /// one-input one-output candidate with its signature position
+    /// offering nothing, the same one again with the position offering
+    /// bytes of the selected width that are not a signature, and THEN
+    /// the unmutated control.
     ///
     /// # Why all three are in one run
     ///
@@ -808,6 +808,22 @@ impl ExplicitShapePlanner {
     /// chain, over the same funded coins, in the same session. A control
     /// accepted last week on a chain that no longer exists would leave a
     /// refusal explicable by anything that changed in between.
+    ///
+    /// # Why the mutants go FIRST, which is not a preference
+    ///
+    /// The order was the other way round and the run that took it is
+    /// what corrected it. A witness-content mutation changes the WITNESS
+    /// and the witness is not part of a transaction's identity, so a
+    /// mutant has the SAME identity as its control. With the control
+    /// submitted and mined first, both mutants came back refused
+    /// `txn-already-known` at a layer before script evaluation: a true
+    /// refusal, naming the identity that was already on the chain, and
+    /// attributable to the submission order rather than to anything the
+    /// witness offered. Nothing about §15.3 could be read off it.
+    ///
+    /// So the mutants are offered while no transaction of that identity
+    /// exists yet, and the control follows. Each verdict then belongs to
+    /// the bytes that earned it.
     ///
     /// The control is the one-to-one shape for a stated reason: it has
     /// exactly one input, so there is exactly one signature position and
@@ -819,13 +835,11 @@ impl ExplicitShapePlanner {
     /// is unavailable.
     pub fn for_witness_negatives(printed_genesis_identity: Digest32) -> Result<Self, VectorError> {
         let mut planner = Self::for_shape(ExplicitShape::OneToOne, printed_genesis_identity)?;
-        planner.cases = std::iter::once(CaseKind::Control)
-            .chain(
-                ExplicitWitnessMutation::ALL
-                    .iter()
-                    .copied()
-                    .map(CaseKind::Mutated),
-            )
+        planner.cases = ExplicitWitnessMutation::ALL
+            .iter()
+            .copied()
+            .map(CaseKind::Mutated)
+            .chain(std::iter::once(CaseKind::Control))
             .collect();
         Ok(planner)
     }
@@ -1173,6 +1187,9 @@ impl ExplicitShapePlanner {
             return Ok(());
         }
 
+        // The control's own bytes, which a mutant-first run has already
+        // computed locally. Asserting the two agree would be comparing a
+        // value with itself, so it is simply set.
         self.record.control_bytes.clone_from(&submitted);
         self.record.observed_layer = Some(response.observed_layer);
         self.record
@@ -1331,6 +1348,17 @@ impl TargetOperationPlanner for ExplicitShapePlanner {
                     CaseKind::Control => (None, self.shape.case_name()),
                     CaseKind::Mutated(change) => (Some(change), change.case_name()),
                 };
+                // The comparison a mutant is measured against is the
+                // control's bytes, and with the mutants offered first
+                // the control has not been built yet. So it is built
+                // here -- locally, submitted to nothing -- rather than
+                // the measurement being skipped or deferred.
+                if mutation.is_some() && self.record.control_bytes.is_empty() {
+                    match self.candidate_bytes(None) {
+                        Ok((bytes, _)) => self.record.control_bytes = bytes,
+                        Err(refusal) => return Err(self.refuse(refusal)),
+                    }
+                }
                 match self.candidate_bytes(mutation) {
                     Ok((bytes, offered)) => {
                         if matches!(case, CaseKind::Control) {
