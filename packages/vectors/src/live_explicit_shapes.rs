@@ -489,6 +489,113 @@ impl ShapeReverification {
     }
 }
 
+/// What one negative case replaces in the witness it offers.
+///
+/// §15.3's witness-content rows change what the witness OFFERS rather
+/// than what the builder assembled, and §10.2 types the signature
+/// position as an unconstrained item precisely so that the target is the
+/// thing that refuses an empty or a malformed offering. So these
+/// mutations are applied after the candidate is finalized and censused,
+/// and the bytes reach a node.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ExplicitWitnessMutation {
+    /// The signature position offers nothing at all.
+    EmptySignature,
+    /// The signature position offers bytes of the right width that are
+    /// not a signature.
+    ///
+    /// The width is kept so that a refusal cannot be attributed to the
+    /// length: what changed is the CONTENT of a well-sized offering, and
+    /// a run that also shortened it would have moved two things.
+    MalformedSignature,
+}
+
+impl ExplicitWitnessMutation {
+    /// Every mutation this ceremony offers.
+    pub const ALL: &'static [Self] = &[Self::EmptySignature, Self::MalformedSignature];
+
+    /// The §15.3 row this mutation is the mutation of.
+    #[must_use]
+    pub const fn row_name(self) -> &'static str {
+        match self {
+            Self::EmptySignature => "empty-signature",
+            Self::MalformedSignature => "malformed-signature",
+        }
+    }
+
+    /// The name this case is written down under.
+    #[must_use]
+    pub const fn case_name(self) -> &'static str {
+        match self {
+            Self::EmptySignature => "empty-signature",
+            Self::MalformedSignature => "malformed-signature",
+        }
+    }
+
+    /// The bytes this mutation offers in place of a signature.
+    ///
+    /// The malformed offering is a fixed published pattern of the
+    /// selected width. ADR-015 public disposable test material: it
+    /// authorizes nothing, which is the entire point of offering it.
+    fn offering(self, width: usize) -> Vec<u8> {
+        match self {
+            Self::EmptySignature => Vec::new(),
+            Self::MalformedSignature => vec![0xff; width],
+        }
+    }
+}
+
+/// What the target did with one mutated candidate.
+#[derive(Clone, Debug)]
+pub struct NegativeObservation {
+    mutation: ExplicitWitnessMutation,
+    submitted_bytes: usize,
+    offered_signature_bytes: usize,
+    layer: ObservedOutcomeLayer,
+    detail: Option<String>,
+    accepted_txid: Option<String>,
+    differs_from_control_in_one_item: bool,
+}
+
+impl NegativeObservation {
+    /// Which mutation this was.
+    #[must_use]
+    pub const fn mutation(&self) -> ExplicitWitnessMutation {
+        self.mutation
+    }
+
+    /// The layer the target answered at.
+    #[must_use]
+    pub const fn layer(&self) -> ObservedOutcomeLayer {
+        self.layer
+    }
+
+    /// Whether the target refused it.
+    #[must_use]
+    pub const fn refused(&self) -> bool {
+        !matches!(self.layer, ObservedOutcomeLayer::Accepted)
+    }
+
+    /// What the target said.
+    #[must_use]
+    pub fn detail(&self) -> Option<&str> {
+        self.detail.as_deref()
+    }
+
+    /// Whether these bytes differ from the control's in exactly the
+    /// witness item the mutation replaced.
+    ///
+    /// Computed by comparing the two submissions rather than argued
+    /// from the code that built them, because the attributability of the
+    /// refusal is exactly this: one item moved and the node changed its
+    /// mind.
+    #[must_use]
+    pub const fn differs_from_control_in_one_item(&self) -> bool {
+        self.differs_from_control_in_one_item
+    }
+}
+
 /// One shape run's record.
 #[derive(Clone, Debug)]
 pub struct ExplicitShapeRecord {
@@ -506,6 +613,9 @@ pub struct ExplicitShapeRecord {
     observed_detail: Option<String>,
     accepted_txid: Option<String>,
     reverification: Option<ShapeReverification>,
+    control_bytes: Vec<u8>,
+    offered_signature_bytes: usize,
+    negatives: Vec<NegativeObservation>,
     refusal: Option<ExplicitShapeRefusal>,
 }
 
@@ -544,6 +654,12 @@ impl ExplicitShapeRecord {
     #[must_use]
     pub const fn reverification(&self) -> Option<&ShapeReverification> {
         self.reverification.as_ref()
+    }
+
+    /// What the target did with each mutated candidate.
+    #[must_use]
+    pub fn negatives(&self) -> &[NegativeObservation] {
+        &self.negatives
     }
 
     /// The construction refusal that stopped the run, if one did.
@@ -597,8 +713,8 @@ enum Stage {
     FundFirst,
     /// Pay the issued asset to the second owner's explicit constructor.
     FundSecond,
-    /// Submit the shape's one candidate.
-    Submit,
+    /// Submit the case at this position of the case list.
+    Submit(usize),
     /// Nothing further.
     Done,
 }
@@ -607,10 +723,26 @@ enum Stage {
 pub struct ExplicitShapePlanner {
     stage: Stage,
     shape: ExplicitShape,
+    cases: Vec<CaseKind>,
     abi: CandidateLiveTransferAbi,
     genesis_block_hash: Digest32,
     pending: Option<Vec<u8>>,
     record: ExplicitShapeRecord,
+}
+
+/// One submission a run makes.
+///
+/// A run that submits only its control is a positive shape run; a run
+/// that submits the control AND its mutants is the negative half, and
+/// the two live in one ceremony because that is what makes a refusal
+/// attributable: same chain, same deployment, same funded coins, same
+/// finalized candidate, and one witness item different.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CaseKind {
+    /// The unmutated candidate.
+    Control,
+    /// The same candidate with one witness item replaced.
+    Mutated(ExplicitWitnessMutation),
 }
 
 impl ExplicitShapePlanner {
@@ -633,6 +765,7 @@ impl ExplicitShapePlanner {
         Ok(Self {
             stage: Stage::Issue,
             shape,
+            cases: vec![CaseKind::Control],
             abi,
             genesis_block_hash: printed_order(printed_genesis_identity),
             pending: None,
@@ -651,9 +784,50 @@ impl ExplicitShapePlanner {
                 observed_detail: None,
                 accepted_txid: None,
                 reverification: None,
+                control_bytes: Vec::new(),
+                offered_signature_bytes: 0,
+                negatives: Vec::new(),
                 refusal: None,
             },
         })
+    }
+
+    /// The ceremony for §15.3's witness-content negatives.
+    ///
+    /// One run submits THREE candidates to one node on one chain: the
+    /// unmutated one-input one-output control, then the same finalized
+    /// candidate with its signature position offering nothing, then the
+    /// same one again with the position offering bytes of the selected
+    /// width that are not a signature.
+    ///
+    /// # Why all three are in one run
+    ///
+    /// A refusal is attributable to a row's own class only when the
+    /// UNMUTATED form is accepted and the mutated form is refused, and
+    /// "accepted" has to mean accepted by the same node, on the same
+    /// chain, over the same funded coins, in the same session. A control
+    /// accepted last week on a chain that no longer exists would leave a
+    /// refusal explicable by anything that changed in between.
+    ///
+    /// The control is the one-to-one shape for a stated reason: it has
+    /// exactly one input, so there is exactly one signature position and
+    /// no question about which one moved.
+    ///
+    /// # Errors
+    ///
+    /// [`VectorError::LiveSubstrateUnavailable`] when the candidate ABI
+    /// is unavailable.
+    pub fn for_witness_negatives(printed_genesis_identity: Digest32) -> Result<Self, VectorError> {
+        let mut planner = Self::for_shape(ExplicitShape::OneToOne, printed_genesis_identity)?;
+        planner.cases = std::iter::once(CaseKind::Control)
+            .chain(
+                ExplicitWitnessMutation::ALL
+                    .iter()
+                    .copied()
+                    .map(CaseKind::Mutated),
+            )
+            .collect();
+        Ok(planner)
     }
 
     /// The ceremony's own record of the run.
@@ -901,12 +1075,16 @@ impl ExplicitShapePlanner {
 
     /// The shape's candidate bytes, signed by whichever owner holds each
     /// input.
-    fn candidate_bytes(&mut self) -> Result<Vec<u8>, ExplicitShapeRefusal> {
+    fn candidate_bytes(
+        &mut self,
+        mutation: Option<ExplicitWitnessMutation>,
+    ) -> Result<(Vec<u8>, usize), ExplicitShapeRefusal> {
         let (finalized, report) = self.finalize()?;
         let census = Self::census(&finalized, self.genesis_block_hash)?;
 
         let mut input_owners = Vec::new();
         let mut responses = Vec::new();
+        let mut offered_bytes = 0_usize;
         for signing in finalized.signing_requests() {
             let owner = Self::owner_of(signing.owner())
                 .ok_or(ExplicitShapeRefusal::SigningOwnerUnpublished)?;
@@ -923,8 +1101,22 @@ impl ExplicitShapePlanner {
                 .sign(&message, &SHAPE_AUXILIARY)
                 .map_err(|_| ExplicitShapeRefusal::SigningRefused)?
                 .to_vec();
+            // The mutation replaces what the FIRST input's signature
+            // position offers and leaves every other input alone, so a
+            // multi-input control could not have its refusal attributed
+            // to a second change. These cases run over a one-input
+            // control anyway, and the rule is written into the code
+            // rather than left to the shape's choice.
+            let offered = match mutation {
+                Some(change) if signing.input() == 0 => {
+                    let replacement = change.offering(signature.len());
+                    offered_bytes = replacement.len();
+                    replacement
+                }
+                _ => signature,
+            };
             input_owners.push((usize::from(signing.input()), owner));
-            responses.push((signing.input(), LiveOwnerResponse::to(&signing, signature)));
+            responses.push((signing.input(), LiveOwnerResponse::to(&signing, offered)));
         }
 
         input_owners.sort_unstable_by_key(|(index, _)| *index);
@@ -936,18 +1128,52 @@ impl ExplicitShapePlanner {
             .map_err(|_| ExplicitShapeRefusal::CandidateNotConstructible)?;
         let built = complete_live_transfer(&report_target, authorized, report, None)
             .map_err(|_| ExplicitShapeRefusal::CandidateNotConstructible)?;
-        Ok(built.bytes())
+        Ok((built.bytes(), offered_bytes))
     }
 
-    /// Record what the target did with the shape's candidate.
-    fn settle_submission(
+    /// Record what the target did with one case.
+    ///
+    /// Whatever the layer was. Nothing here compares the answer against
+    /// what the case intended: a mutant the node ACCEPTED would be a
+    /// finding written into the transcript rather than a panic that hid
+    /// it, which is the same discipline the explicit spine applies to
+    /// its own controls.
+    fn settle_case(
         &mut self,
+        position: usize,
         response: &NativeOperationResponse,
     ) -> Result<(), ExplicitShapeRefusal> {
         let submitted = self
             .pending
             .take()
             .ok_or(ExplicitShapeRefusal::CandidateNotConstructible)?;
+        let case = self
+            .cases
+            .get(position)
+            .copied()
+            .ok_or(ExplicitShapeRefusal::CandidateNotConstructible)?;
+        if let CaseKind::Mutated(mutation) = case {
+            // How many BYTES of the two submissions differ. The control
+            // and the mutant are the same finalized candidate with one
+            // witness item replaced, so a difference confined to that
+            // item is what makes the target's change of mind
+            // attributable -- and it is measured against the control's
+            // actual bytes rather than asserted from the code.
+            let control = &self.record.control_bytes;
+            let one_item = differs_in_one_run(control, &submitted);
+            self.record.negatives.push(NegativeObservation {
+                mutation,
+                submitted_bytes: submitted.len(),
+                offered_signature_bytes: self.record.offered_signature_bytes,
+                layer: response.observed_layer,
+                detail: response.observed_detail.clone(),
+                accepted_txid: response.accepted_txid.clone(),
+                differs_from_control_in_one_item: one_item,
+            });
+            return Ok(());
+        }
+
+        self.record.control_bytes.clone_from(&submitted);
         self.record.observed_layer = Some(response.observed_layer);
         self.record
             .observed_detail
@@ -1043,20 +1269,24 @@ impl TargetOperationPlanner for ExplicitShapePlanner {
                     self.stage = if second_coins > 0 {
                         Stage::FundSecond
                     } else {
-                        Stage::Submit
+                        Stage::Submit(0)
                     };
                 }
                 Stage::FundSecond => {
                     if let Err(refusal) = self.settle_funding(ShapeOwner::Second, response) {
                         return Err(self.refuse(refusal));
                     }
-                    self.stage = Stage::Submit;
+                    self.stage = Stage::Submit(0);
                 }
-                Stage::Submit => {
-                    if let Err(refusal) = self.settle_submission(response) {
+                Stage::Submit(position) => {
+                    if let Err(refusal) = self.settle_case(position, response) {
                         return Err(self.refuse(refusal));
                     }
-                    self.stage = Stage::Done;
+                    self.stage = if position + 1 < self.cases.len() {
+                        Stage::Submit(position + 1)
+                    } else {
+                        Stage::Done
+                    };
                 }
                 Stage::Done => {}
             }
@@ -1090,16 +1320,27 @@ impl TargetOperationPlanner for ExplicitShapePlanner {
                 Ok(step) => Ok(Some(step)),
                 Err(refusal) => Err(self.refuse(refusal)),
             },
-            Stage::Submit => {
+            Stage::Submit(position) => {
                 if self.record.coins.len() != self.shape.input_count() {
                     return Err(self.refuse(ExplicitShapeRefusal::FundedWidthDisagrees));
                 }
-                match self.candidate_bytes() {
-                    Ok(bytes) => {
-                        self.record.submitted_bytes = bytes.len();
+                let Some(case) = self.cases.get(position).copied() else {
+                    return Err(self.refuse(ExplicitShapeRefusal::CandidateNotConstructible));
+                };
+                let (mutation, name) = match case {
+                    CaseKind::Control => (None, self.shape.case_name()),
+                    CaseKind::Mutated(change) => (Some(change), change.case_name()),
+                };
+                match self.candidate_bytes(mutation) {
+                    Ok((bytes, offered)) => {
+                        if matches!(case, CaseKind::Control) {
+                            self.record.submitted_bytes = bytes.len();
+                        } else {
+                            self.record.offered_signature_bytes = offered;
+                        }
                         self.pending = Some(bytes.clone());
                         Ok(Some(OperationStep::new(
-                            self.shape.case_name(),
+                            name,
                             OperationSubject::Submission(Box::new(TargetSubmissionSubject {
                                 transaction_bytes: bytes,
                             })),
@@ -1152,6 +1393,39 @@ fn observed_coin(
         owner,
         matches_expectation,
     })
+}
+
+/// Whether two submissions differ in exactly one contiguous run of
+/// bytes.
+///
+/// The attributability measurement, computed rather than asserted. The
+/// control and a mutant are the same finalized candidate with one
+/// witness item replaced, so their serializations agree on a prefix,
+/// disagree over the replaced item, and agree again on the suffix. A
+/// length change moves the suffix, so the comparison is made from both
+/// ends: everything between the common prefix and the common suffix is
+/// the single run that moved.
+///
+/// Two identical submissions differ in NO run, and that is reported as
+/// `false` rather than as a degenerate `true` -- a mutant that did not
+/// change the bytes would not be a mutant.
+fn differs_in_one_run(control: &[u8], mutant: &[u8]) -> bool {
+    let prefix = control
+        .iter()
+        .zip(mutant.iter())
+        .take_while(|(left, right)| left == right)
+        .count();
+    let remaining = control.len().min(mutant.len()) - prefix;
+    let suffix = control
+        .iter()
+        .rev()
+        .zip(mutant.iter().rev())
+        .take_while(|(left, right)| left == right)
+        .count()
+        .min(remaining);
+    let control_run = control.len() - prefix - suffix;
+    let mutant_run = mutant.len() - prefix - suffix;
+    control_run > 0 || mutant_run > 0
 }
 
 /// Hex, for the transcript.
@@ -1253,7 +1527,26 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
             .refusal
             .map_or_else(|| "none".to_owned(), |refusal| format!("{refusal:?}"))
     );
-    let _ = writeln!(out, "evidences_no_negative_case true");
+    for negative in &record.negatives {
+        let _ = writeln!(
+            out,
+            "negative {} row {} submitted_bytes {} offered_signature_bytes {} layer {:?} \
+             differs_from_control_in_one_item {} accepted_txid {} detail {}",
+            negative.mutation.case_name(),
+            negative.mutation.row_name(),
+            negative.submitted_bytes,
+            negative.offered_signature_bytes,
+            negative.layer,
+            negative.differs_from_control_in_one_item,
+            negative.accepted_txid.as_deref().unwrap_or("none"),
+            negative.detail.as_deref().unwrap_or("none"),
+        );
+    }
+    let _ = writeln!(
+        out,
+        "evidences_no_negative_case {}",
+        record.negatives.is_empty()
+    );
     let _ = writeln!(out, "builds_no_sponsor_region true");
     for claim in ExplicitShapeRecord::non_claims() {
         let _ = writeln!(out, "does_not_establish {claim}");
