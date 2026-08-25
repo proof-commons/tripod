@@ -1502,18 +1502,46 @@ mod tests {
             assert!(rendered.contains(moved), "{moved} is not in the delta");
         }
 
-        // Every moved row cites a target-computed identity, and the three
-        // this wave added are three DIFFERENT identities: three shapes
-        // reported once each rather than one run reported three times.
-        let shapes: BTreeSet<&str> = report
+        // Every moved row cites a target-computed identity.
+        let identities: BTreeSet<&str> = report
             .moved_rows()
             .iter()
             .map(super::MovedMatrixRow::accepted_identity)
             .collect();
-        assert_eq!(shapes.len(), 6, "one identity per moved row");
-        for identity in &shapes {
+        for identity in &identities {
             assert_eq!(identity.len(), 64, "{identity} is not a target identity");
         }
+
+        // Six rows cite FIVE distinct identities, and the collision is a
+        // disclosed fact rather than a defect: the conservation row's
+        // conserving half is the SAME observed run as the one-to-one
+        // control, which is what the previous wave's record discloses in
+        // its own words. Spelling five here is what keeps that disclosure
+        // true — a sixth identity appearing would mean conservation had
+        // quietly been re-grounded on some other run.
+        assert_eq!(identities.len(), 5, "six rows over five observed runs");
+        assert_eq!(
+            crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            crate::live_private_restart::run_of_record::ACCEPTED_TXID,
+            "the conserving control is the one-to-one control",
+        );
+
+        // The three shapes this wave added are three DIFFERENT identities:
+        // three runs reported once each rather than one run reported three
+        // times.
+        let shapes: BTreeSet<&str> = BTreeSet::from([
+            crate::live_multi_shapes::run_of_record::SPLIT_ACCEPTED_TXID,
+            crate::live_multi_shapes::run_of_record::MANY_TO_MANY_ACCEPTED_TXID,
+            crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID,
+        ]);
+        assert_eq!(shapes.len(), 3, "three shapes, three identities");
+        assert!(
+            shapes.is_disjoint(&BTreeSet::from([
+                crate::live_private_restart::run_of_record::ACCEPTED_TXID,
+                crate::live_private_restart::run_of_record::PARITY_ACCEPTED_TXID,
+            ])),
+            "a shape claims an identity an earlier wave's run produced",
+        );
 
         // The four that did not move are still named as unmoved, so a
         // reader counts ten either way.
