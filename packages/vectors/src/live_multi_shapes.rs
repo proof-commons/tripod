@@ -1935,7 +1935,7 @@ pub mod run_of_record {
     /// The merge's wall time, in seconds.
     pub const MERGE_WALL_SECONDS: f64 = 10.9;
 
-    // --- The fee-bearing shape: a refusal, and NOT an acceptance -------
+    // --- The fee-bearing shape: ACCEPTED, after three refusals ---------
 
     /// The fee-bearing one-to-one's successor fixture digest.
     ///
@@ -1968,17 +1968,42 @@ pub mod run_of_record {
     pub const FEE_BEARING_SUCCESSOR_DIGEST: &str =
         "d08a306819cc5ad713b393ecd956f2b5b38c7eb46de20069e8780620d79ed0cf";
 
-    /// No identity is minted for the fee-bearing shape, and this constant
-    /// exists to say so in the module acceptances are cited from.
+    /// The identity a real node computed for the fee-bearing transfer.
     ///
-    /// The target ACCEPTED NOTHING. Filing a non-acceptance among the
-    /// identities would be the one error a run of record exists to
-    /// prevent, so the shape's evidence is its own reproducible bytes and
-    /// the verdict the target returned, both recorded below.
-    pub const FEE_BEARING_ACCEPTED_IDENTITY: Option<&str> = None;
+    /// One receipt consumed, one blinded destination created, and the
+    /// transaction's own fee paid out of the value it consumed, with no
+    /// sponsor anywhere in it. The node accepted it and mined it, and the
+    /// bytes it handed back are equal to the bytes submitted.
+    ///
+    /// # Three refusals stood between the vocabulary and this figure
+    ///
+    /// Each was a layer the one before it uncovered, and each was a
+    /// first-party defect rather than a property of the target. The
+    /// registry had no fee output role. The materializer had no fee
+    /// projection, so a fee would have been blinded. Then the shape
+    /// vocabulary had no sponsorless fee-bearing member, so a
+    /// two-destination request selected a two-receipt-output shape and
+    /// the receipt covenant demanded a receipt program where the fee's
+    /// empty one sat.
+    ///
+    /// Giving the vocabulary the member uncovered a fourth, which is the
+    /// pattern holding rather than breaking: the deployment was welded to
+    /// a fee-program digest of 0xb5 bytes that no program hashes to, kept
+    /// deliberately so the demonstration's taptree would not move, and
+    /// nothing had ever executed the clause that reads it.
+    pub const FEE_BEARING_ACCEPTED_IDENTITY: Option<&str> =
+        Some("65a4b10b802292f583a15dd0ac9c40e57832981a4a072ee8574f00c5ef692b9f");
+
+    /// The same identity, as the register cites an acceptance.
+    ///
+    /// The `Option` above says whether an acceptance exists; a consensus
+    /// verdict needs the identity itself. Written once and read from
+    /// there, so the two can never disagree about what was accepted.
+    pub const FEE_BEARING_SUCCESSOR_IDENTITY: &str =
+        "65a4b10b802292f583a15dd0ac9c40e57832981a4a072ee8574f00c5ef692b9f";
 
     /// How many bytes the fee-bearing one-to-one handed to the node.
-    pub const FEE_BEARING_SUBMITTED_BYTES: usize = 4_870;
+    pub const FEE_BEARING_SUBMITTED_BYTES: usize = 4_927;
 
     /// The output-witness entries the fee-bearing candidate carried.
     ///
@@ -1990,7 +2015,14 @@ pub mod run_of_record {
     /// and not a fee at all.
     pub const FEE_BEARING_PROOF_BYTES: [usize; 2] = [4_174, 0];
 
-    /// The verdict the target returned, verbatim and unmapped.
+    /// The verdict the target returned when the shape vocabulary had no
+    /// member for this form.
+    ///
+    /// KEPT, and kept deliberately, though the shape is now accepted. It
+    /// is the diagnosis that located the third layer, and the register's
+    /// discipline is that a wall's history survives its removal -- a
+    /// removal whose refusal has been deleted cannot be checked against
+    /// what it claims to have removed.
     ///
     /// A script-path rejection, at the workspace's OWN receipt covenant
     /// rather than at any confidential rule. The candidate's value balance
@@ -2002,11 +2034,11 @@ pub mod run_of_record {
     ///
     /// What it failed is the covenant the shape selection built for it.
     /// The request states two destinations, the reviewed live-transfer
-    /// shape vocabulary reads a two-destination sponsorless shape as TWO
-    /// RECEIPT OUTPUTS, and the receipt covenant therefore requires the
+    /// shape vocabulary read a two-destination sponsorless shape as TWO
+    /// RECEIPT OUTPUTS, and the receipt covenant therefore required the
     /// second output to carry the second owner's private receipt
     /// constructor program. The second output is the fee, whose program is
-    /// empty, so the comparison fails.
+    /// empty, so the comparison failed.
     pub const FEE_BEARING_OBSERVED_DETAIL: &str =
         "mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)";
 
