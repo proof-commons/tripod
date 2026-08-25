@@ -147,6 +147,10 @@ fn every_transaction_refusal_is_censused(refusal: &Refusal) {
         | Refusal::PrivateValueCapabilityAbsent
         | Refusal::PrivateValueCapabilityWithoutPrivateForm
         | Refusal::DestinationValueCommitmentUndetermined { .. }
+        | Refusal::PrivateFinalizationIsNotTheExplicitLane { .. }
+        | Refusal::PrivateFinalizationIsSponsorless
+        | Refusal::PrivateOpeningsDoNotCoverTheRequest { .. }
+        | Refusal::PrivateMaterializationRefused(..)
         | Refusal::OwnerResponseMissing { .. }
         | Refusal::OwnerResponseDuplicated { .. }
         | Refusal::UnexpectedSigner { .. }

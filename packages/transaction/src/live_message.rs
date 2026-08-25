@@ -3,7 +3,7 @@
 //! # Where this construction's expectation comes from
 //!
 //! Every term below was written from the Wave-1 source review's own term
-//! table (`tab:sighash-review:terms` in
+//! table (tab:sighash-review:terms in
 //! `plans/reference/owner-sighash-review.md`) at the pinned Elements tip
 //! `b7fc5d080a`, and each is cited at the line the review cites. Nothing
 //! here was derived from the code that produces the census it consumes,

@@ -157,7 +157,7 @@ pub enum AnnexDisposition {
 /// Whether a signing input bears an issuance.
 ///
 /// The source review left this question on the census wave's desk by
-/// name (`rule:sighash-review:census-consequence`). The accepted result
+/// name (rule:sighash-review:census-consequence). The accepted result
 /// carries the output-witness vector and does *not* carry the
 /// input-witness vector, and that asymmetry rests on a condition rather
 /// than on a symmetry: term 10 of the message is the issuance

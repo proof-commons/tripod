@@ -300,6 +300,34 @@ pub struct ObservedFundedCoin {
 }
 
 impl ObservedFundedCoin {
+    /// One coin, from what the node reported and what was expected.
+    ///
+    /// Crate-visible rather than private because the live-transfer
+    /// planner takes its funded coins the same way, and the concept is
+    /// one concept. A second type of the same shape in the other module
+    /// would be a second place for the rule "the node's fields are the
+    /// ones that get signed over" to be stated, and a second place for
+    /// it to drift.
+    ///
+    /// The middle three arguments are in the order the spent-output
+    /// census carries them, so a call site that transposed two of them
+    /// would be transposing them in the message as well.
+    pub(crate) const fn observed(
+        outpoint: Outpoint,
+        asset: AssetField,
+        value: ValueField,
+        program: Vec<u8>,
+        matches_expectation: bool,
+    ) -> Self {
+        Self {
+            outpoint,
+            asset,
+            value,
+            program,
+            matches_expectation,
+        }
+    }
+
     /// The outpoint the node created.
     #[must_use]
     pub const fn outpoint(&self) -> Outpoint {

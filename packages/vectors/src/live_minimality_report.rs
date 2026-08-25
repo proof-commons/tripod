@@ -656,9 +656,17 @@ pub fn resolve_failure_modes(
     BTreeMap::from([
         // Whether a target rejects the private materialization is a
         // target's answer, and no member of any pair was submitted.
+        //
+        // Re-pointed. This named the digest blocker, which is cleared:
+        // the digest is computed and two ceremonies carry observed
+        // acceptances. What actually keeps the private member off a
+        // target is that this pipeline does not build one, which is the
+        // blocker the pair conditions carry.
         (
             Mode::PrivateMaterializationRejects,
-            Standing::AwaitsATargetRun(LiveInfrastructureBlocker::OwnerSighashNotComputable),
+            Standing::AwaitsATargetRun(
+                LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
+            ),
         ),
         (
             Mode::ExactReceiptValuesEnterProtocolPredicates,
@@ -1235,10 +1243,14 @@ mod tests {
                 .keys()
                 .copied()
                 .collect::<BTreeSet<_>>(),
-            BTreeSet::from([
-                LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
-                LiveInfrastructureBlocker::OwnerSighashNotComputable,
-            ]),
+            // ONE named component, and it used to be two. The digest
+            // blocker left because it is cleared, not because the
+            // deficit shrank: what every blocked condition and every
+            // blocked failure mode now names is the same single gap,
+            // that this pipeline builds no private member. A report
+            // still naming two would be counting a cleared blocker
+            // towards its own deficit.
+            BTreeSet::from([LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded]),
         );
         let standings = pair_standings(&validated);
         assert_eq!(standings.len(), MinimalityPair::ALL.len());
@@ -1433,8 +1445,11 @@ mod tests {
 
         assert_eq!(
             report.failures()[&MinimalityFailureMode::PrivateMaterializationRejects],
+            // Re-pointed with the standing itself. The digest blocker is
+            // cleared, so a failure mode still awaiting a run on it
+            // would be awaiting a run nothing is holding up.
             FailureModeStanding::AwaitsATargetRun(
-                LiveInfrastructureBlocker::OwnerSighashNotComputable
+                LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded
             ),
         );
         // §18's study filled this one. It is a conjunction, and no pair

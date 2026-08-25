@@ -20,23 +20,50 @@
 //!
 //! # The honest finding this plan carries
 //!
-//! No positive row of §15.1 or §15.2 is answerable today, and the reason
-//! is one missing component rather than a shortage of effort:
-//! [`LiveInfrastructureBlocker::OwnerSighashNotComputable`]. §10.2 checks
-//! an owner signature with the target's own verifying primitive over the
-//! target's own taproot sighash, and no first-party component in this
-//! workspace computes that digest — §1.7 leaves it to the target and
-//! forbids a builder from asserting one. So no valid transfer can be
-//! witnessed, and no target can accept one.
+//! Twenty-five of the twenty-six positive rows of §15.1 and §15.2 are
+//! unanswered today, and they stand at
+//! [`LiveRowStanding::NativeRunRequired`] — a statement that a run
+//! would answer them and not a statement that nothing could.
 //!
-//! That blocks the negative half too, and the plan says so rather than
-//! collecting refusals. A census of rejections from a pipeline that has
-//! never had a transaction accepted establishes that the target rejects
-//! things, which every target that rejects everything also does; §14.5's
-//! positive class witnesses and the conformance package's own
-//! `NoAcceptingCase` defect are the same argument made twice already.
+//! Two are answered. `private-one-to-one` and
+//! `both-commitment-parity-forms` stand at
+//! [`LiveRowStanding::NativeRunObserved`], each carrying the identity a
+//! real node computed for a sponsorless private receipt-covenant
+//! transfer of that row's own shape which it accepted, and whose
+//! witness was verified out of the node's own copy against an
+//! independently recomputed message. The standing carries the identity
+//! so the claim can be checked against a chain rather than believed.
+//!
+//! Twenty-five of twenty-six remains the honest headline. Two rows
+//! moved because two runs answered them, and the twenty-four that did
+//! not move are not waiting on a component — they are waiting on runs
+//! nobody has taken yet.
+//!
+//! That is a narrower finding than this paragraph used to carry, and
+//! the narrowing is a repair rather than a softening. What it used to
+//! say was that one missing component blocked every positive row and
+//! that the component was
+//! [`LiveInfrastructureBlocker::OwnerSighashNotComputable`]. That
+//! sentence was true when it was written and has stopped being true:
+//! the digest is computed, the selected profile is established over its
+//! required set, a real node accepted a first-party spend on the
+//! explicit lane and another on the proof-bearing one, and the blocker
+//! is carried by zero rows — which the census below asserts rather than
+//! claims. Leaving the old sentence in place would have made the
+//! blocker's own doc comment and this header disagree about the same
+//! fact.
+//!
+//! What has NOT changed is the discipline the old sentence protected. A
+//! census of rejections from a pipeline that has never had a transaction
+//! accepted establishes that the target rejects things, which every
+//! target that rejects everything also does; §14.5's positive class
+//! witnesses and the conformance package's own `NoAcceptingCase` defect
+//! are the same argument made twice already.
 //! [`LiveInfrastructureBlocker::NoAcceptingControlExists`] is that
-//! argument made a third time, as a state a row can be in.
+//! argument made a third time, as a state a row can be in — and it is
+//! why the restart order of the confidential-funding guide puts an
+//! accepted control before any negative case
+//! (task:guide-ctf-exec:restart-order).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -376,6 +403,32 @@ pub enum LiveRowStanding {
     /// guide determines one, so a run's observation can be filed against
     /// a relation rather than against a name.
     NativeRunRequired(Option<CoverageRequirementId>),
+    /// A target-native run answered the row, and here is the identity.
+    ///
+    /// # Why this variant had to be minted
+    ///
+    /// Until this wave the matrix could say that a row NEEDED a run and
+    /// could not say that a run had ANSWERED one. Every positive row
+    /// therefore stood at [`Self::NativeRunRequired`] whatever happened
+    /// on a chain, and the only way to record an acceptance would have
+    /// been to move the row to a first-party discharge — which would be
+    /// filing a target's verdict under a validator's refusal, exactly
+    /// the layer blur §1.7 forbids.
+    ///
+    /// # What may occupy it
+    ///
+    /// An identity the TARGET computed for a transaction the target
+    /// ACCEPTED, of the row's own shape, whose witness was verified
+    /// against an independently recomputed message. Not a run that
+    /// happened; not a candidate that was constructible; not a
+    /// capability that exists. The identity is carried rather than a
+    /// boolean so that the claim can be checked against a chain by
+    /// somebody who does not trust this crate.
+    NativeRunObserved {
+        /// The identity the target computed for the accepted
+        /// transaction.
+        accepted_identity: &'static str,
+    },
     /// A component the row needs does not exist.
     InfrastructureBlocked(LiveInfrastructureBlocker),
     /// The row's boundary is this workspace's own report bytes.
@@ -416,7 +469,9 @@ impl LiveRowStanding {
     pub const fn is_answered(&self) -> bool {
         matches!(
             self,
-            Self::FirstPartyDischarged { .. } | Self::ReportLayerAnswerable
+            Self::FirstPartyDischarged { .. }
+                | Self::NativeRunObserved { .. }
+                | Self::ReportLayerAnswerable
         )
     }
 
@@ -455,6 +510,7 @@ pub struct LiveEvidenceCensus {
     first_party_discharged: usize,
     first_party_undischarged: usize,
     native_run_required: usize,
+    native_run_observed: usize,
     infrastructure_blocked: usize,
     report_layer: usize,
     vocabulary_closed: usize,
@@ -478,6 +534,16 @@ impl LiveEvidenceCensus {
     #[must_use]
     pub const fn first_party_undischarged(&self) -> usize {
         self.first_party_undischarged
+    }
+
+    /// How many rows a target-native run has answered.
+    ///
+    /// The wave's own delta, as a number. Every one of them is a row
+    /// whose standing carries the identity that answered it, so the
+    /// figure can be audited row by row rather than believed.
+    #[must_use]
+    pub const fn native_run_observed(&self) -> usize {
+        self.native_run_observed
     }
 
     /// How many rows are waiting on a target-native run.
@@ -684,6 +750,38 @@ fn specific_blocker(row: &LiveSafetyRow) -> Option<LiveInfrastructureBlocker> {
     }
 }
 
+/// The identity that answered one row, where a run answered it.
+///
+/// Beside [`specific_blocker`] and shaped like it, because the two
+/// answer the same kind of question from opposite directions: what
+/// stands in a row's way, and what has already got out of it.
+///
+/// Every entry cites a run of record, so a reader following the name
+/// arrives at the constants one execution against a real node produced
+/// rather than at a claim in this file.
+///
+/// A row is added here on an observed acceptance OF THAT ROW'S SHAPE
+/// and on nothing else. An acceptance of a different shape is evidence
+/// about the different shape.
+fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
+    match row.name() {
+        // One receipt consumed, one recipient created, the balancing
+        // output back to the sender as change, sponsorless, private,
+        // and spending a mined confidential predecessor at this
+        // deployment's own private receipt constructor.
+        "private-one-to-one" => Some(crate::live_private_restart::run_of_record::ACCEPTED_TXID),
+        // Both admitted commitment parities, each consumed in its own
+        // complete accepted successor. The identity cited is the run
+        // that COMPLETED the pair; the first parity's acceptance is the
+        // row above's, and it takes both runs to say that both parities
+        // were exercised. The run of record carries the pair.
+        "both-commitment-parity-forms" => {
+            Some(crate::live_private_restart::run_of_record::PARITY_ACCEPTED_TXID)
+        }
+        _ => None,
+    }
+}
+
 /// Classify one row of the §15 matrix.
 fn classify(
     row: &'static LiveSafetyRow,
@@ -718,6 +816,12 @@ fn classify(
 
     if let Some(blocker) = specific_blocker(row) {
         return Ok(LiveRowStanding::InfrastructureBlocked(blocker));
+    }
+    // An answered row before a blocked one would let an observation
+    // paper over a component that is still missing, so this is asked
+    // AFTER the specific blocker and never before it.
+    if let Some(accepted_identity) = observed_row_acceptance(row) {
+        return Ok(LiveRowStanding::NativeRunObserved { accepted_identity });
     }
     if !a_positive_control_exists() {
         return Ok(LiveRowStanding::InfrastructureBlocked(
@@ -824,6 +928,7 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
             LiveRowStanding::FirstPartyDischarged { .. } => census.first_party_discharged += 1,
             LiveRowStanding::FirstPartyUndischarged(_) => census.first_party_undischarged += 1,
             LiveRowStanding::NativeRunRequired(_) => census.native_run_required += 1,
+            LiveRowStanding::NativeRunObserved { .. } => census.native_run_observed += 1,
             LiveRowStanding::InfrastructureBlocked(_) => census.infrastructure_blocked += 1,
             LiveRowStanding::ReportLayerAnswerable => census.report_layer += 1,
             LiveRowStanding::OperationVocabularyClosed => census.vocabulary_closed += 1,
@@ -911,15 +1016,27 @@ pub fn blocker_census(
     census
 }
 
-/// The bytes that stand in a signature position no signer can fill.
+/// The bytes that stand in a signature position this lane does not
+/// fill.
 ///
-/// Not a signature, and named so at every use. §10.2's fragment checks
-/// the target's own verifying primitive over the target's own taproot
-/// sighash, and [`LiveInfrastructureBlocker::OwnerSighashNotComputable`]
-/// records that nothing here computes that digest; §1.9 puts a sponsor's
-/// authorization outside protocol data and
+/// Not a signature, and named so at every use.
+///
+/// The reason has narrowed and the constant has not. It used to be that
+/// nothing in this workspace computed the digest §10.2's fragment checks
+/// against, so no signature could be produced at all. That is no longer
+/// so: the digest is computed, the profile is established, and two
+/// ceremonies carry observed acceptances of candidates they signed for
+/// real. What remains true is narrower and is still a reason — the lanes
+/// that use this constant do not run a signing ceremony, either because
+/// they are weighing a serialization rather than authorizing one, or
+/// because §1.9 puts a sponsor's authorization outside protocol data and
 /// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`] records
 /// that no adapter signer is wired into this lane to supply one.
+///
+/// The distinction matters at exactly one place and it is worth stating
+/// there: a lane filling this in is producing a transaction that earns
+/// no target verdict about its own relation, and that is now a property
+/// of the LANE rather than of the workspace.
 ///
 /// So a witness position that has to be *filled* — to serialize a
 /// transaction at all, or to weigh one — is filled with bytes of the
@@ -991,6 +1108,7 @@ mod tests {
             census.first_party_discharged()
                 + census.first_party_undischarged()
                 + census.native_run_required()
+                + census.native_run_observed()
                 + census.infrastructure_blocked()
                 + census.report_layer()
                 + census.vocabulary_closed()
@@ -1097,6 +1215,7 @@ mod tests {
             census.first_party_discharged()
                 + census.first_party_undischarged()
                 + census.native_run_required()
+                + census.native_run_observed()
                 + census.infrastructure_blocked()
                 + census.report_layer()
                 + census.vocabulary_closed()
@@ -1127,31 +1246,53 @@ mod tests {
     }
 
     #[test]
-    fn no_positive_row_is_answered_and_every_one_of_them_awaits_a_run() {
-        // What the observation converted, and what it did not. Every
-        // positive row stopped being infrastructure-blocked, because the
-        // component they were all waiting on exists; not one of them
-        // became answered, because a standing is not evidence and no run
-        // of any row has been filed.
+    fn exactly_the_positive_rows_a_run_answered_are_answered() {
+        // The wave's delta, held as a test rather than written in a
+        // report. Twenty-six positive rows; one of them is answered,
+        // and it is answered because a real node accepted a transaction
+        // of ITS OWN SHAPE and the standing carries the identity. The
+        // other twenty-five await the run that would answer them, and
+        // awaiting a run is not an answer.
+        //
+        // The count is spelled rather than derived so that a row moved
+        // by an edit and not by a run fails here. That is the whole
+        // point of the assertion: a delta that could grow quietly is a
+        // delta nobody is checking.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let mut positives = 0_usize;
+        let mut answered = BTreeSet::new();
         for row in plan.rows() {
             if row.row().polarity() != LiveSafetyPolarity::Positive {
                 continue;
             }
             positives += 1;
-            assert!(
-                matches!(row.standing(), LiveRowStanding::NativeRunRequired(_)),
-                "{} does not await the run that would answer it",
-                row.row(),
-            );
-            assert!(
-                !row.standing().is_answered(),
-                "{} claims an answer no run produced",
-                row.row(),
-            );
+            match row.standing() {
+                LiveRowStanding::NativeRunObserved { accepted_identity } => {
+                    assert_eq!(
+                        accepted_identity.len(),
+                        64,
+                        "{} is answered by something that is not a target identity",
+                        row.row(),
+                    );
+                    assert!(row.standing().is_answered());
+                    answered.insert(row.row().name());
+                }
+                LiveRowStanding::NativeRunRequired(_) => {
+                    assert!(
+                        !row.standing().is_answered(),
+                        "{} claims an answer no run produced",
+                        row.row(),
+                    );
+                }
+                other => panic!("{} stands at {other:?}", row.row()),
+            }
         }
         assert_eq!(positives, 26, "both positive tables together");
+        assert_eq!(
+            answered,
+            BTreeSet::from(["both-commitment-parity-forms", "private-one-to-one"]),
+        );
+        assert_eq!(plan.census().native_run_observed(), 2);
     }
 
     #[test]
