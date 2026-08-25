@@ -1867,6 +1867,33 @@ pub fn predecessor_handle() -> ConfidentialFixtureHandle {
     ConfidentialFixtureHandle::new(PREDECESSOR_HANDLE.to_owned())
 }
 
+/// The three-output predecessor's handle: the one that does NOT cancel.
+///
+/// # Why a second predecessor exists at all
+///
+/// The dual-parity predecessor is funded from an explicit input, so its
+/// input blinder sum is zero and its TWO output blinders come out ordered
+/// additive inverses. Merging both halves of it therefore forces a sole
+/// output's blinder to zero, and a zero blinder is a commitment of
+/// exactly the value times the value generator — a point anybody
+/// recomputes from a guessed amount. The registry refuses that, and
+/// refusing it is right.
+///
+/// Cancellation is a consequence of having TWO outputs, not of the
+/// explicit input. Three output blinders summing to zero cancel in no
+/// pair: any two of them sum to the negation of the third, and the third
+/// is never zero — a derived blinder is searched until it is nonzero and
+/// a solved one is refused when it is not. So a three-output predecessor
+/// funded exactly the way the dual one is offers a merge two coins whose
+/// blinders provably do not cancel.
+pub const TRIPLE_PREDECESSOR_HANDLE: &str = "ctf-v1/predecessor-triple-noncanceling";
+
+/// The three-output non-canceling predecessor's handle.
+#[must_use]
+pub fn triple_predecessor_handle() -> ConfidentialFixtureHandle {
+    ConfidentialFixtureHandle::new(TRIPLE_PREDECESSOR_HANDLE.to_owned())
+}
+
 /// The scalar width every derived value carries.
 ///
 /// Stated once here so a reader of this module does not have to reach

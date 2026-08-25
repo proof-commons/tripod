@@ -903,6 +903,19 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         "private-several-distinct-owners" => {
             Some(crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID)
         }
+        // TWO receipts consumed and ONE output created: the merge.
+        //
+        // The row moves on an acceptance of a merge whose forced blinder
+        // is NONZERO, and the distinction is the whole of what took two
+        // waves to reach. A merge of an inverse pair forces a zero
+        // blinder, whose output commitment is exactly the value times the
+        // value generator -- a point anybody recomputes from a guessed
+        // amount. Such a transaction would balance and a node would
+        // accept it, so an acceptance alone is not what answers this row:
+        // what answers it is an acceptance of a merge that HIDES, and the
+        // ceremony writes the forced blinder's nonzero-ness into its own
+        // transcript rather than leaving it to be assumed.
+        "private-merge" => Some(crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID),
         _ => None,
     }
 }
@@ -1431,24 +1444,31 @@ mod tests {
             BTreeSet::from([
                 "both-commitment-parity-forms",
                 "private-many-to-many-representative",
+                "private-merge",
                 "private-one-to-one",
                 "private-several-distinct-owners",
                 "private-split",
                 "target-ct-conservation",
             ]),
         );
-        assert_eq!(plan.census().native_run_observed(), 6);
+        assert_eq!(plan.census().native_run_observed(), 7);
 
-        // The four positive private classes that did NOT move are named
+        // The three positive private classes that did NOT move are named
         // here rather than left to the count, because a matrix that only
-        // said how many rows moved could not say which. Private-merge is
-        // structurally unconstructible on this lane, private-sponsor-values
-        // is blocked by a residual this guide does not clear, the
-        // fixture-openings row asks for a determinism observation rather
-        // than a submission, and the projection-equality row needs both
-        // sides of its pair accepted.
+        // said how many rows moved could not say which.
+        // Private-sponsor-values is blocked by a residual this guide does
+        // not clear, the fixture-openings row asks for a determinism
+        // observation rather than a submission, and the
+        // projection-equality row needs both sides of its pair accepted.
+        //
+        // Private-merge USED to be in this list, described as structurally
+        // unconstructible on this lane. It was never unconstructible: it
+        // was refused first by a cardinality floor this workspace chose
+        // and then by the arity of the one predecessor its ceremony
+        // funded, and both are conventions rather than protocol rules.
+        // A row is removed from this list by a run of its own shape and
+        // by nothing else, and that run happened.
         for unmoved in [
-            "private-merge",
             "private-sponsor-values",
             "deterministic-public-fixture-openings",
             "projection-equality-with-paired-explicit",

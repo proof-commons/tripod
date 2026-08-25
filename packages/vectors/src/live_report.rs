@@ -991,14 +991,15 @@ mod tests {
         // scoreboard exists to make the "mostly" visible at a glance
         // rather than to round it away. Neither table waits on a
         // component that does not exist any more. The explicit table is
-        // answered nowhere. The private table is answered in exactly six
+        // answered nowhere. The private table is answered in exactly seven
         // rows, because a real node accepted private transfers of those
         // rows' shapes — and the number is asserted rather than bounded,
         // because a scoreboard that said "some" would let the next row
         // in without a run. It read two before the shape wave built the
         // multi-output and multi-input fixtures and ran three more shapes,
-        // and it is updated to that observed fact rather than loosened to
-        // a range that would stop noticing.
+        // and six until a merge whose forced blinder is nonzero was
+        // accepted; each time it is updated to the observed fact rather
+        // than loosened to a range that would stop noticing.
         let (explicit_rows, explicit_answered, explicit_blocked) =
             board[&LiveSafetySection::PositiveExplicit];
         assert_eq!(explicit_answered, 0, "the explicit table claims an answer");
@@ -1007,7 +1008,7 @@ mod tests {
 
         let (private_rows, private_answered, private_blocked) =
             board[&LiveSafetySection::PositivePrivate];
-        assert_eq!(private_answered, 6, "the private table's answered count");
+        assert_eq!(private_answered, 7, "the private table's answered count");
         assert_eq!(private_blocked, 0);
         assert_eq!(private_rows, 10);
         assert_eq!(LiveSafetyPolarity::ALL.len(), 2);

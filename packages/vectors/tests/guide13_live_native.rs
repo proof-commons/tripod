@@ -1410,6 +1410,46 @@ fn the_fee_bearing_one_to_one_shape_is_submitted_to_a_real_target() {
     run_one_multi_shape(PrivateShape::OneToOneWithFee, "multi-one-to-one-with-fee");
 }
 
+/// TWO blinded inputs merged into ONE blinded output.
+///
+/// # The shape that met two walls
+///
+/// The first was the fixture registry's two-output floor, which refused
+/// any manifest of fewer than two outputs and turned the merge away
+/// before looking at it. The sole-balancing form removed that floor, and
+/// the merge walked forward into a second wall the first had been
+/// hiding: the only coins the ceremony could offer it were the two
+/// halves of an inverse pair, whose blinders sum to zero, so the lone
+/// output's forced blinder was zero -- a commitment of exactly the value
+/// times the value generator, which anybody recomputes from a guessed
+/// amount. The registry refused it by name, and refusing it was right.
+///
+/// # What makes this one different, in one sentence
+///
+/// It spends a THREE-output predecessor, whose blinders cancel in no
+/// pair.
+///
+/// Three blinders summing to zero leave any two of them summing to the
+/// negation of the third. The third here is a DERIVED blinder, and a
+/// derived blinder is searched upward until it is nonzero and never
+/// admitted zero -- so the forced blinder is nonzero for a reason that
+/// can be stated. The registry would refuse a zero one by name if the
+/// reasoning were wrong, which is what makes the successor registering
+/// at all a proof and not a hope.
+///
+/// # What it establishes
+///
+/// The row `private-merge` of the positive private table, on an
+/// acceptance of THIS shape and nothing wider. It is a two-input
+/// one-output transfer and it is not a claim about merges in general.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_private_merge_shape_is_submitted_to_a_real_target() {
+    use vectors::live_multi_shapes::PrivateShape;
+
+    run_one_multi_shape(PrivateShape::PrivateMerge, "multi-private-merge");
+}
+
 /// Every committed output carries a range proof, and every fee output
 /// carries none.
 ///
@@ -1522,8 +1562,16 @@ fn run_one_multi_shape(shape: vectors::live_multi_shapes::PrivateShape, extensio
     }
     outcome.expect("the ceremony reached the target");
 
-    // The predecessor is the confidential one the ceremony asked for.
-    assert_eq!(record.coins().len(), 2);
+    // The predecessor is the confidential one the ceremony asked for,
+    // and its COUNT is the shape's own choice of predecessor rather than
+    // a constant: the merge funds a three-output predecessor because a
+    // two-output one funded from an explicit input can only offer it an
+    // inverse pair.
+    assert_eq!(
+        record.coins().len(),
+        shape.predecessor().outputs(),
+        "the node funded a predecessor of a different width than the shape asked for",
+    );
     assert!(
         record
             .coins()

@@ -344,6 +344,28 @@ pub enum FirstPartyStatus {
         /// Where a run stops now, in the layer's own terms.
         stops_at: &'static str,
     },
+    /// The shape was BUILT, OFFERED to a node, and refused by it.
+    ///
+    /// The sixth status, and it exists because the fifth could not say
+    /// this. Expressible-and-unrun is a shape nobody has offered; this is
+    /// a shape somebody offered and a target turned away, which is more
+    /// than the one and less than an acceptance.
+    ///
+    /// The refusal is a TARGET verdict and the limitation behind it is
+    /// this workspace's own, and holding both in one member is the point:
+    /// a reader who saw only the target's string would conclude the
+    /// protocol forbids the shape, and a reader who saw only the
+    /// limitation would not know a node had ever been asked.
+    SubmittedAndRefused {
+        /// The convention that used to make the shape unbuildable.
+        removed: Limitation,
+        /// What ended that convention.
+        removal: LimitationRemoval,
+        /// The convention that refuses it now.
+        limitation: Limitation,
+        /// The target's own verdict, verbatim and unmapped.
+        observed_detail: &'static str,
+    },
 }
 
 /// How a first-party limitation was structurally removed.
@@ -407,6 +429,45 @@ const ABSENT_FEE_ROLE_REMOVAL: LimitationRemoval = LimitationRemoval {
     proven_by: None,
 };
 
+/// The canceling predecessor's removal, recorded once.
+///
+/// Its `proven_by` is an identity, and that is the whole difference
+/// between this removal and the fee role's. The ceremony now funds a
+/// three-output predecessor whose coins cancel in no pair, a merge of two
+/// of them was built, and a node accepted it.
+const CANCELING_PREDECESSOR_REMOVAL: LimitationRemoval = LimitationRemoval {
+    row: "T5-045",
+    change: "The ceremony gained a SECOND predecessor: three outputs, funded exactly as the \
+             dual-parity one is -- one explicit input, the same zero input blinder sum, the same \
+             profiles -- and different in its output count alone. Three blinders summing to zero \
+             cancel in no pair, any two of them summing to the negation of the third, and no \
+             blinder is ever zero, so a merge of two of its coins has a forced blinder that is \
+             nonzero for a reason that can be stated. The consumed sum is now SUMMED over the \
+             coins the shape names rather than stated from one predecessor's structure, and the \
+             ceremony writes the forced blinder's nonzero-ness into its own transcript.",
+    proven_by: Some(crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID),
+};
+
+/// The absent fee projection's removal, recorded once.
+///
+/// Its `proven_by` is `None`, and the reason is not the reason the fee
+/// role's own removal had one. The layers between the registry and a
+/// chain HAVE learned the role now: a fee-bearing candidate was built
+/// with a real fee output and offered to a node. The node refused it, at
+/// a wall further on, so no identity exists to cite -- which is a
+/// different sentence from nobody having tried.
+const FEE_ROLE_PROJECTION_REMOVAL: LimitationRemoval = LimitationRemoval {
+    row: "T5-045",
+    change: "The materializer's own output-role vocabulary gained a `Fee` member, its per-output \
+             stage gained a fee stage that emits an explicit value, an explicit asset, a null \
+             nonce, an empty program and an empty witness entry and then asks the built output \
+             whether it IS a fee by the target's own three-conjunct predicate, and both \
+             projections state the role instead of sweeping it into a catch-all that would have \
+             solved a blinder for it. The view's three opening scalars became optional, because a \
+             fee output's opening is ABSENT rather than zero.",
+    proven_by: None,
+};
+
 /// A first-party convention that refuses a shape consensus admits.
 ///
 /// Each member names a convention of this repository's own, the model it
@@ -444,6 +505,27 @@ pub enum Limitation {
     /// predecessor the ceremony happens to fund. Argued at
     /// `(´[PLAN-rule:shapes:canceling-predecessor]´)`.
     CancelingPredecessorOnly,
+    /// Nothing between the registry and a chain could carry a fee role.
+    ///
+    /// Minted here as a limitation because it STOOD as one. It was
+    /// recorded before as the place a fee-bearing shape stopped, which
+    /// said where the wall was without saying that it was a wall of this
+    /// workspace's own making. Argued at
+    /// `(´[PLAN-rule:shapes:absent-fee-role]´)`.
+    AbsentFeeProjection,
+    /// The reviewed live-transfer shape vocabulary has no sponsorless
+    /// fee-bearing member.
+    ///
+    /// The THIRD layer, uncovered by the second removal exactly as the
+    /// second was uncovered by the first. A sponsorless shape is defined
+    /// in that vocabulary as one that pays no fee at all, so a
+    /// two-destination sponsorless request selects a shape of TWO RECEIPT
+    /// OUTPUTS and the receipt covenant requires a receipt program at the
+    /// fee's position. The target refuses the candidate at script
+    /// verification, which is a target verdict on a covenant this
+    /// workspace wrote. Argued at
+    /// `(´[PLAN-rule:shapes:absent-fee-role]´)`.
+    SponsorlessShapeHasNoFeeMember,
 }
 
 impl Limitation {
@@ -464,6 +546,18 @@ impl Limitation {
                  zero-solution clause of `derive_at_counter`, reached because \
                  packages/vectors/src/live_multi_shapes.rs funds one predecessor whose two \
                  output blinders are ordered additive inverses"
+            }
+            Self::AbsentFeeProjection => {
+                "packages/vectors/src/live_proof_bearing_observation.rs, the fixture projection, \
+                 whose role match had no arm for a fee output and refused by name rather than \
+                 mapping one onto the balancing role"
+            }
+            Self::SponsorlessShapeHasNoFeeMember => {
+                "packages/tapscript/src/live_shape.rs, whose `LiveTransferShape` counts receipt \
+                 outputs and a sponsor region and nothing else, reached through \
+                 packages/transaction/src/live_construct.rs `select_shape`, which matches a \
+                 shape on `receipt_outputs() == destinations` and therefore reads a fee \
+                 destination as a receipt output"
             }
         }
     }
@@ -503,6 +597,25 @@ impl Limitation {
                  limitation is the ceremony's, not the registry's: a merge of coins whose \
                  blinders do not cancel registers today."
             }
+            Self::AbsentFeeProjection => {
+                "The committed-output materializer. Every stage between the registry and a \
+                 candidate was written for an output with a commitment: an independent \
+                 recomputation to compare against, a nonce to derive, a range to prove, a witness \
+                 entry to carry the proof. A fee output has none of them, so the role was \
+                 withheld from the materializer's vocabulary rather than added ahead of the \
+                 stages -- a member without the stages would have mapped a fee onto the \
+                 committed path and produced a BLINDED fee output, which the target does not \
+                 recognize as a fee at all."
+            }
+            Self::SponsorlessShapeHasNoFeeMember => {
+                "Fees are the sponsor's job. The reviewed live-transfer shape vocabulary reads a \
+                 sponsorless form as one that pays no fee at all, on the reviewed target's own \
+                 representation of a zero fee by the ABSENCE of the output. So the vocabulary has \
+                 no member for a sponsorless shape that pays its own fee, a fee destination is \
+                 counted as a receipt output, and the receipt covenant constrains it as one. \
+                 Nothing here decided against the shape; no decision was recorded because none \
+                 was made."
+            }
         }
     }
 
@@ -513,6 +626,8 @@ impl Limitation {
             Self::TwoOutputFloor => RemovalPath::SingleOutputSolvedBalancingForm,
             Self::AbsentFeeRole => RemovalPath::FeeOutputRole,
             Self::CancelingPredecessorOnly => RemovalPath::NonCancelingPrecursor,
+            Self::AbsentFeeProjection => RemovalPath::FeeRoleProjection,
+            Self::SponsorlessShapeHasNoFeeMember => RemovalPath::SponsorlessFeeBearingShape,
         }
     }
 
@@ -527,7 +642,9 @@ impl Limitation {
         match self {
             Self::TwoOutputFloor => Some(TWO_OUTPUT_FLOOR_REMOVAL),
             Self::AbsentFeeRole => Some(ABSENT_FEE_ROLE_REMOVAL),
-            Self::CancelingPredecessorOnly => None,
+            Self::CancelingPredecessorOnly => Some(CANCELING_PREDECESSOR_REMOVAL),
+            Self::AbsentFeeProjection => Some(FEE_ROLE_PROJECTION_REMOVAL),
+            Self::SponsorlessShapeHasNoFeeMember => None,
         }
     }
 
@@ -544,7 +661,10 @@ impl Limitation {
     pub const fn guards_only_incidentally(self) -> bool {
         match self {
             Self::TwoOutputFloor => true,
-            Self::AbsentFeeRole | Self::CancelingPredecessorOnly => false,
+            Self::AbsentFeeRole
+            | Self::CancelingPredecessorOnly
+            | Self::AbsentFeeProjection
+            | Self::SponsorlessShapeHasNoFeeMember => false,
         }
     }
 }
@@ -567,6 +687,10 @@ pub enum RemovalPath {
     FeeOutputRole,
     /// A precursor transaction whose outputs do not cancel.
     NonCancelingPrecursor,
+    /// A fee role carried from the registry to a candidate.
+    FeeRoleProjection,
+    /// A sponsorless shape that pays its own fee.
+    SponsorlessFeeBearingShape,
 }
 
 impl RemovalPath {
@@ -599,6 +723,28 @@ impl RemovalPath {
                  what is missing is a second submission stage and not a capability. Nothing in \
                  the registry changes: it admits the merge already."
             }
+            Self::FeeRoleProjection => {
+                "Carry the fee role from the registry to a candidate. The materializer's own \
+                 output-role vocabulary gains a fee member; its per-output stage gains a branch \
+                 that emits an explicit value, an explicit asset, a null nonce, an empty program \
+                 and an empty witness entry, and asks the built output whether it IS a fee by the \
+                 target's own predicate rather than trusting that it built one; the projection's \
+                 view carries the fee's ABSENT opening rather than a zero-filled one; and every \
+                 role match states the fee arm instead of letting a catch-all solve a blinder for \
+                 it."
+            }
+            Self::SponsorlessFeeBearingShape => {
+                "Give the reviewed live-transfer shape vocabulary a sponsorless member that pays \
+                 its own fee, so a fee destination is not counted as a receipt output and the \
+                 receipt covenant does not demand a receipt program at the fee's position. The \
+                 covenant already owns the discriminator it would need: the sponsored isolation \
+                 fragment recognizes a fee output BY FORM, at a negative version marker against \
+                 the digest of the empty program, and never by amount. What is missing is a shape \
+                 that says a sponsorless form may carry one. This is a guide-level reading rather \
+                 than a registry clause, and it is filed as a path rather than taken, because the \
+                 vocabulary states a REVIEWED reading of the target and changing one is a ruling \
+                 rather than an edit."
+            }
         }
     }
 
@@ -622,7 +768,10 @@ impl RemovalPath {
                  so the removal must either require a non-canceling predecessor or refuse a \
                  solved zero blinder outright.",
             ),
-            Self::FeeOutputRole | Self::NonCancelingPrecursor => None,
+            Self::FeeOutputRole
+            | Self::NonCancelingPrecursor
+            | Self::FeeRoleProjection
+            | Self::SponsorlessFeeBearingShape => None,
         }
     }
 }
@@ -673,33 +822,33 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
         // about the registry's rules. The wall moved from a cardinality
         // accident to the confidentiality property that actually matters,
         // and the row says which wall it is standing at.
+        // The private merge, which met two walls and is past both. The row
+        // cites the SECOND one, because that is the wall the shape was
+        // standing at when this removal reached it; the first is cited by
+        // the strict one-to-one's row and by the prose register, which
+        // carries the arc neither row can.
         BlindedShape::TwoToOne => (
-            ConsensusVerdict::SourceDerivedPossible,
-            FirstPartyStatus::RefusedByConvention {
-                refusal: RegistrationRefusal::Derivation {
-                    refusal: target_elements_conformance::confidential_fixture::FixtureDerivationRefusal::DegenerateBalancingScalar,
-                },
-                limitation: Limitation::CancelingPredecessorOnly,
+            ConsensusVerdict::ObservedAccepted {
+                identity: crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID,
+            },
+            FirstPartyStatus::ConstructibleAfterRemoval {
+                removed: Limitation::CancelingPredecessorOnly,
+                removal: CANCELING_PREDECESSOR_REMOVAL,
             },
         ),
-        // The fee-bearing shape. The vocabulary now expresses it and no
-        // node has been offered one, which is two facts this register
-        // refuses to round into either "refused" or "observed".
+        // The fee-bearing shape, which was BUILT and OFFERED and refused.
+        // Its fee output really is a fee -- the run's own output-witness
+        // census reads one range proof and one EMPTY entry -- and the
+        // target turned the candidate away at a covenant this workspace
+        // wrote, not at any rule about fees.
         BlindedShape::OneToOneWithFee => (
             ConsensusVerdict::SourceDerivedPossible,
-            FirstPartyStatus::ExpressibleAndUnrun {
-                removed: Limitation::AbsentFeeRole,
-                removal: ABSENT_FEE_ROLE_REMOVAL,
-                stops_at: "packages/vectors/src/live_proof_bearing_observation.rs, the fixture \
-                           projection, which refuses `FeeRoleNotProjectable`: the materializer's \
-                           own output-role vocabulary has no fee member, its per-output stage \
-                           would compute a commitment and a range proof for an output that must \
-                           carry an explicit value and no witness, and the executor adapter's \
-                           fixture catalogue and parity search read every output as a committed \
-                           one. The projection refuses rather than mapping a fee onto the \
-                           balancing role, which would have produced a blinded fee output — not a \
-                           fee at the target, and a silently wrong transaction rather than an \
-                           honest stop.",
+            FirstPartyStatus::SubmittedAndRefused {
+                removed: Limitation::AbsentFeeProjection,
+                removal: FEE_ROLE_PROJECTION_REMOVAL,
+                limitation: Limitation::SponsorlessShapeHasNoFeeMember,
+                observed_detail:
+                    crate::live_multi_shapes::run_of_record::FEE_BEARING_OBSERVED_DETAIL,
             },
         ),
         BlindedShape::OneToTwo => (
@@ -947,7 +1096,13 @@ mod tests {
             let censused = match census_entry(shape).first_party {
                 FirstPartyStatus::ConstructibleAndObserved
                 | FirstPartyStatus::ConstructibleAfterRemoval { .. }
-                | FirstPartyStatus::ExpressibleAndUnrun { .. } => continue,
+                | FirstPartyStatus::ExpressibleAndUnrun { .. }
+                // A shape a TARGET refused carries no registry refusal to
+                // recompute, and this test is about the registry. Its
+                // refusal is a target's verdict, recorded verbatim on the
+                // row and recomputed by nothing, because recomputing it
+                // would mean asking the target again.
+                | FirstPartyStatus::SubmittedAndRefused { .. } => continue,
                 FirstPartyStatus::RefusedByConvention { refusal, .. }
                 | FirstPartyStatus::RefusalGuardsConsensus { refusal } => refusal,
             };
@@ -962,8 +1117,9 @@ mod tests {
             refused += 1;
         }
         assert_eq!(
-            refused, 2,
-            "two of the eight shapes are refused: this lane's merge, and the impossible one",
+            refused, 1,
+            "one of the eight shapes is refused by the registry: the impossible one. The merge \
+             used to be the other, and it is now accepted",
         );
     }
 
@@ -996,6 +1152,10 @@ mod tests {
                 BlindedShape::TwoToThree,
                 crate::live_multi_shapes::run_of_record::MANY_TO_MANY_ACCEPTED_TXID,
             ),
+            (
+                BlindedShape::TwoToOne,
+                crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID,
+            ),
         ];
         for (shape, identity) in expected {
             let entry = census_entry(shape);
@@ -1015,7 +1175,30 @@ mod tests {
                 shape.handle(),
             );
         }
-        assert_eq!(expected.len(), 5, "five of the eight shapes have been run");
+        assert_eq!(expected.len(), 6, "six of the eight shapes have been run");
+
+        // The converse, which this test used to leave unchecked. The list
+        // above says every shape in it is observed; without this, a shape
+        // that BECAME observed and was never added to the list would pass
+        // unnoticed, and a register whose observed set can grow quietly is
+        // the one thing this module exists to prevent.
+        let observed: Vec<BlindedShape> = BlindedShape::ALL
+            .into_iter()
+            .filter(|shape| {
+                matches!(
+                    census_entry(*shape).consensus,
+                    ConsensusVerdict::ObservedAccepted { .. }
+                )
+            })
+            .collect();
+        let mut listed: Vec<BlindedShape> = expected.into_iter().map(|(shape, _)| shape).collect();
+        listed.sort_unstable_by_key(|shape| shape.handle());
+        let mut observed = observed;
+        observed.sort_unstable_by_key(|shape| shape.handle());
+        assert_eq!(
+            observed, listed,
+            "exactly the listed shapes are observed, and no others",
+        );
     }
 
     /// The observed rows' cardinalities match the ceremonies' own
@@ -1091,10 +1274,42 @@ mod tests {
         }
         paths.sort_unstable();
         paths.dedup();
+        assert!(
+            paths.is_empty(),
+            "no REGISTRY convention refuses a consensus-possible shape any more: {paths:?}",
+        );
+
+        // The discipline does not end with the registry, and this half is
+        // what keeps the emptiness above from reading as completion. A
+        // shape a target refused still owes a named path, and it owes one
+        // for the same reason -- a refusal recorded without a way out
+        // gets defended later as though it were consensus.
+        let mut submitted = Vec::new();
+        for shape in BlindedShape::ALL {
+            let FirstPartyStatus::SubmittedAndRefused { limitation, .. } =
+                census_entry(shape).first_party
+            else {
+                continue;
+            };
+            assert_ne!(limitation.refused_at(), "", "the refusing row is named");
+            assert_ne!(limitation.convention(), "", "the convention is explained");
+            assert_ne!(
+                limitation.removal_path().description(),
+                "",
+                "the removal path is described",
+            );
+            assert_eq!(
+                limitation.removal(),
+                None,
+                "{} still stands, so it may not claim a removal",
+                shape.handle(),
+            );
+            submitted.push(limitation.removal_path());
+        }
         assert_eq!(
-            paths,
-            vec![RemovalPath::NonCancelingPrecursor],
-            "one limitation still refuses a consensus-possible shape, and it files a path",
+            submitted,
+            vec![RemovalPath::SponsorlessFeeBearingShape],
+            "one shape was offered to a node and refused, and it files a path",
         );
     }
 
@@ -1158,13 +1373,18 @@ mod tests {
         }
         assert_eq!(
             removed,
-            vec![Limitation::TwoOutputFloor],
-            "exactly the two-output floor has been removed and run",
+            vec![
+                Limitation::TwoOutputFloor,
+                Limitation::CancelingPredecessorOnly
+            ],
+            "two limitations have been removed AND run: the floor, and the canceling predecessor",
         );
 
         // A limitation still standing does NOT claim a removal, so a
-        // filed path cannot read as a taken one.
-        assert_eq!(Limitation::CancelingPredecessorOnly.removal(), None);
+        // filed path cannot read as a taken one. The canceling
+        // predecessor used to be this example and is no longer available
+        // to be one, which is what the wave did.
+        assert_eq!(Limitation::SponsorlessShapeHasNoFeeMember.removal(), None);
     }
 
     /// A removal that nothing has run says so, and says where a run
@@ -1213,7 +1433,45 @@ mod tests {
             );
             expressible.push(shape);
         }
-        assert_eq!(expressible, vec![BlindedShape::OneToOneWithFee]);
+        assert!(
+            expressible.is_empty(),
+            "no shape is expressible-and-unrun any more: {expressible:?}",
+        );
+
+        // The fee-bearing shape used to be the sole member here, and it
+        // left this status by being OFFERED rather than by being
+        // accepted. That is the distinction the sixth status was minted
+        // to carry, and it is checked rather than described: the row's
+        // removal still proves nothing about a chain, and the consensus
+        // half still has not moved.
+        let mut submitted = Vec::new();
+        for shape in BlindedShape::ALL {
+            let FirstPartyStatus::SubmittedAndRefused {
+                removed,
+                removal,
+                observed_detail,
+                ..
+            } = census_entry(shape).first_party
+            else {
+                continue;
+            };
+            assert_eq!(
+                removal.proven_by,
+                None,
+                "{} was refused, so its removal proves nothing about a chain",
+                shape.handle(),
+            );
+            assert_eq!(removed.removal(), Some(removal));
+            assert_ne!(observed_detail, "", "the target's own verdict is carried");
+            assert_eq!(
+                census_entry(shape).consensus,
+                ConsensusVerdict::SourceDerivedPossible,
+                "{} was refused by a first-party covenant, so consensus is still a derivation",
+                shape.handle(),
+            );
+            submitted.push(shape);
+        }
+        assert_eq!(submitted, vec![BlindedShape::OneToOneWithFee]);
     }
 
     /// Removing the floor did not free the merge, and the register says
