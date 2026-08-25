@@ -864,3 +864,120 @@ pub fn render_conservation_negatives(record: &ConservationNegativeRecord) -> Str
     out.push_str("moves_the_sponsor_row false\n");
     out
 }
+
+/// The run of record: what one execution of steps three and four observed.
+///
+/// # Why the observation is a constant and not a stored file
+///
+/// The evidence a run produces is the observation, and an observation
+/// nobody can name is not evidence. These constants are the identities and
+/// figures ONE run against a real node produced, written down so a later
+/// reader can ask the chain the same question. The target: Elements Core
+/// v28.99.0-b7fc5d080a7e, at the pinned tip, on a disposable development
+/// chain the run created and destroyed. It re-runs nothing and proves
+/// nothing by existing; it makes the run's own answer quotable.
+pub mod run_of_record {
+    /// The disposable asset the run issued.
+    pub const ISSUED_ASSET: &str =
+        "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
+
+    /// The predecessor fixture's digest.
+    pub const PREDECESSOR_DIGEST: &str =
+        "ca43b210d6e74b76f7b3d3f79a6123556f150a7af9fa78e2571e2812b9d51fc2";
+
+    /// The successor fixture's digest.
+    pub const SUCCESSOR_DIGEST: &str =
+        "31501b776502ee48d48b115d8bc80f55ba01bfc8cb6e163e3f2882848d025aa0";
+
+    /// The identity the target computed for the accepted balance-valid
+    /// control.
+    ///
+    /// The conserving half of step three's conservation record and the
+    /// control step four's three mutants are derived from. Byte-identical
+    /// to the one-to-one control's own run of record, because the ceremony
+    /// is deterministic: two independent runs on two fresh chains produced
+    /// this same identity.
+    pub const CONTROL_ACCEPTED_TXID: &str =
+        "4571a077826d45f64402a5c83ac9c0454fe42cf53b75f7aac2c8d07b574ad152";
+
+    /// How many bytes the accepted control submitted.
+    pub const CONTROL_SUBMITTED_BYTES: usize = 9_136;
+
+    /// The commitment prefix the consumed coin carried, the first of the
+    /// two admitted parities.
+    pub const CONSUMED_COMMITMENT_PREFIX: u8 = 0x08;
+
+    /// The half-open byte range the wrong-blinder mutant declared and
+    /// stayed within: the mutated output's 33-byte value-commitment field.
+    pub const WRONG_BLINDER_FIELD_RANGE: (usize, usize) = (81, 114);
+
+    /// The half-open byte range the two range-proof mutants declared: the
+    /// mutated output-witness entry's range-proof region, length prefix
+    /// included so the emptying and the corruption both fall inside it.
+    pub const RANGEPROOF_FIELD_RANGE: (usize, usize) = (781, 4_958);
+
+    /// The one identical refusal the target gave all three mutants, at the
+    /// [`super::ObservedOutcomeLayer::ConsensusRejectionBeforeScript`]
+    /// layer.
+    pub const MUTANT_REJECT_DETAIL: &str = "bad-txns-in-ne-out";
+
+    /// The run's wall time, in seconds.
+    pub const WALL_SECONDS: f64 = 12.7;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ProofNegativeCase, changed_range, run_of_record as run};
+
+    #[test]
+    fn changed_range_bounds_a_mutation_from_both_ends() {
+        // A single-byte change in the middle is a one-byte range, not
+        // everything downstream of it.
+        assert_eq!(changed_range(&[0, 1, 2, 3, 4], &[0, 1, 9, 3, 4]), (2, 3));
+        // A deletion is a change inside a range, not a change to the tail.
+        assert_eq!(changed_range(&[0, 1, 2, 3, 4], &[0, 1, 3, 4]), (2, 3));
+        // Identical inputs change nothing.
+        assert_eq!(changed_range(&[7, 7], &[7, 7]), (2, 2));
+    }
+
+    #[test]
+    fn the_run_of_record_names_one_control_and_three_field_ranges() {
+        // The figures are the run's, and this checks their SHAPE rather
+        // than re-deriving them: a 64-hex control identity, a
+        // value-commitment field exactly 33 bytes wide, and a range-proof
+        // field wide enough to hold a real proof.
+        assert_eq!(run::CONTROL_ACCEPTED_TXID.len(), 64);
+        assert_eq!(run::PREDECESSOR_DIGEST.len(), 64);
+        assert_ne!(run::PREDECESSOR_DIGEST, run::SUCCESSOR_DIGEST);
+        assert_eq!(run::CONSUMED_COMMITMENT_PREFIX, 0x08);
+
+        let (wb_start, wb_end) = run::WRONG_BLINDER_FIELD_RANGE;
+        assert_eq!(
+            wb_end - wb_start,
+            33,
+            "the value-commitment field is 33 bytes"
+        );
+
+        let (rp_start, rp_end) = run::RANGEPROOF_FIELD_RANGE;
+        assert!(
+            rp_end - rp_start > 1000,
+            "the range-proof field holds a real proof"
+        );
+        assert!(
+            rp_start > wb_end,
+            "the range proof follows the value commitment"
+        );
+    }
+
+    #[test]
+    fn the_two_range_proof_cases_share_a_field_and_the_wrong_blinder_does_not() {
+        assert_eq!(
+            ProofNegativeCase::MissingRangeproof.mutated_field(),
+            ProofNegativeCase::MalformedRangeproof.mutated_field(),
+        );
+        assert_ne!(
+            ProofNegativeCase::WrongBlinder.mutated_field(),
+            ProofNegativeCase::MissingRangeproof.mutated_field(),
+        );
+    }
+}
