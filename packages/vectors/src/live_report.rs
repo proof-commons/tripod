@@ -730,6 +730,11 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         // standing's own payload and belongs in the evidence plan, not
         // in bytes whose job is to summarize.
         LiveRowStanding::NativeRunObserved { .. } => "native-run-observed",
+        // Its payload is withheld for the same reason and for one more:
+        // the refusal detail is the target's own sentence, and a summary
+        // that quoted a verdict would be carrying evidence in bytes
+        // whose job is to count.
+        LiveRowStanding::NativeRefusalObserved { .. } => "native-refusal-observed",
         LiveRowStanding::InfrastructureBlocked(_) => "infrastructure-blocked",
         LiveRowStanding::ReportLayerAnswerable => "report-layer-answerable",
         LiveRowStanding::OperationVocabularyClosed => "operation-vocabulary-closed",

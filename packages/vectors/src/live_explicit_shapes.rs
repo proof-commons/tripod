@@ -1942,3 +1942,76 @@ pub mod sponsored_run_of_record {
     /// currently lives in, which is why this is filed rather than taken.
     pub const A_SPONSORED_CONTROL_TAKING_CHANGE_EXISTS: bool = false;
 }
+
+/// What the witness-content negative run observed.
+///
+/// §15.3's two witness-content rows, answered by ONE run that submitted
+/// three candidates to one node on one chain: two mutants first, then
+/// the unmutated control.
+///
+/// # The order is part of the evidence, and the first attempt got it
+/// wrong
+///
+/// This register exists in the shape it does because a run falsified the
+/// obvious ordering. A witness-content mutation changes the witness, and
+/// the witness is not part of a transaction's identity, so a mutant and
+/// its control have the SAME identity. Submitting the control first and
+/// mining it made both mutants come back refused `txn-already-known` at
+/// a layer before script evaluation — a true refusal about an identity
+/// already on the chain, attributable to the submission order and to
+/// nothing the witness offered.
+///
+/// Read as an answer, that would have been the exact error the
+/// attributability rule exists to prevent: a refusal counted for a row
+/// whose class had nothing to do with it. The mutants now go first, and
+/// the target's answers changed with the order — which is itself the
+/// demonstration that the earlier answers were about the order.
+pub mod witness_negatives_run_of_record {
+    /// The identity the target computed for the accepted control.
+    ///
+    /// The same one-input one-output candidate the positive table cites,
+    /// accepted again here after both mutants had been refused — which
+    /// is what makes each refusal attributable rather than merely
+    /// recorded.
+    pub const CONTROL_ACCEPTED_TXID: &str =
+        "872a2294da5ea650a7a74ffd8a5932210930ab70d6a08a991eb3ea471ee29abb";
+
+    /// What the target said to a signature position offering nothing.
+    ///
+    /// Its own words, verbatim. The offering was empty, so the check
+    /// that consumed it failed rather than the signature being judged
+    /// invalid — which is why this row and the malformed one are
+    /// distinguishable at all.
+    pub const EMPTY_SIGNATURE_REFUSAL: &str =
+        "mandatory-script-verify-flag-failed (Script failed an OP_CHECKSIGVERIFY operation)";
+
+    /// How many bytes the empty-signature candidate handed the node.
+    ///
+    /// Sixty-four fewer than the control, which is the signature that is
+    /// no longer there.
+    pub const EMPTY_SIGNATURE_SUBMITTED_BYTES: usize = 529;
+
+    /// What the target said to a well-sized offering that is not a
+    /// signature.
+    ///
+    /// A DIFFERENT verdict from the empty case, and the difference is
+    /// what makes each row its own: the width was kept, so the check
+    /// consumed an item and judged it, and the target named the judgement
+    /// rather than the arity.
+    pub const MALFORMED_SIGNATURE_REFUSAL: &str =
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)";
+
+    /// How many bytes the malformed-signature candidate handed the node.
+    ///
+    /// Exactly the control's count, because only the CONTENT of a
+    /// well-sized item moved.
+    pub const MALFORMED_SIGNATURE_SUBMITTED_BYTES: usize = 593;
+
+    /// What the earlier, control-first ordering produced.
+    ///
+    /// Kept rather than deleted, because a register that recorded only
+    /// the ordering that worked would lose the reason the ordering
+    /// matters, and a reader reversing it would rediscover this the
+    /// expensive way.
+    pub const REFUSAL_UNDER_CONTROL_FIRST_ORDER: &str = "txn-already-known";
+}

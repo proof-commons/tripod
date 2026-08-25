@@ -513,6 +513,35 @@ pub enum LiveRowStanding {
         /// transaction.
         accepted_identity: &'static str,
     },
+    /// A target REFUSED a candidate staging this row's own class,
+    /// while accepting the unmutated form of the same candidate.
+    ///
+    /// The negative half's counterpart to [`Self::NativeRunObserved`],
+    /// and shaped like it for the same reason: what makes a refusal
+    /// evidence is not that a refusal happened but that a specific one
+    /// did, and a reader who does not trust this crate has to be able to
+    /// check it.
+    ///
+    /// # Why a refusal carries an ACCEPTED identity
+    ///
+    /// A census of rejections from a pipeline that has never had a
+    /// transaction accepted establishes that the target rejects things,
+    /// which every target that rejects everything also does. So the
+    /// evidence for a negative row is a PAIR: the unmutated candidate
+    /// accepted, and the mutated one refused. The accepted identity is
+    /// carried here because it is the half a reader can check against a
+    /// chain — the refusal left no transaction to look up, which is what
+    /// being refused means.
+    ///
+    /// The refusal detail is the target's own words, recorded verbatim
+    /// and never paraphrased into this workspace's vocabulary.
+    NativeRefusalObserved {
+        /// The identity the target computed for the accepted control the
+        /// refusal is attributable against.
+        control_identity: &'static str,
+        /// What the target said when it refused the mutated candidate.
+        refusal_detail: &'static str,
+    },
     /// A component the row needs does not exist.
     InfrastructureBlocked(LiveInfrastructureBlocker),
     /// The row's boundary is this workspace's own report bytes.
@@ -555,6 +584,7 @@ impl LiveRowStanding {
             self,
             Self::FirstPartyDischarged { .. }
                 | Self::NativeRunObserved { .. }
+                | Self::NativeRefusalObserved { .. }
                 | Self::ReportLayerAnswerable
         )
     }
@@ -595,6 +625,7 @@ pub struct LiveEvidenceCensus {
     first_party_undischarged: usize,
     native_run_required: usize,
     native_run_observed: usize,
+    native_refusal_observed: usize,
     infrastructure_blocked: usize,
     report_layer: usize,
     vocabulary_closed: usize,
@@ -628,6 +659,18 @@ impl LiveEvidenceCensus {
     #[must_use]
     pub const fn native_run_observed(&self) -> usize {
         self.native_run_observed
+    }
+
+    /// How many negative rows a target-native refusal has answered.
+    ///
+    /// Counted apart from [`Self::native_run_observed`] rather than
+    /// added to it, because the two are different observations: one is a
+    /// transaction on a chain and the other is a verdict about bytes
+    /// that never reached one. A single figure would let a reader take a
+    /// refusal for an acceptance.
+    #[must_use]
+    pub const fn native_refusal_observed(&self) -> usize {
+        self.native_refusal_observed
     }
 
     /// How many rows are waiting on a target-native run.
@@ -1013,6 +1056,39 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
     }
 }
 
+/// The refusal that answered one negative row, where a run answered it.
+///
+/// The negative half's counterpart to [`observed_row_acceptance`], and
+/// held to the matching rule: a row is added here when a target REFUSED
+/// a candidate staging that row's own class WHILE having accepted the
+/// unmutated form of the same candidate, on the same chain, in the same
+/// session. A refusal without its control is not evidence, and a
+/// control from another chain is not this one's.
+///
+/// Each entry returns the accepted control's identity and the target's
+/// own words, both from a run of record.
+fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static str)> {
+    use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
+
+    match row.name() {
+        // §10.2 types the signature position as an unconstrained item
+        // precisely so that the TARGET is what refuses an empty or a
+        // malformed offering, and it did. The two rows are answered by
+        // one run and are distinguishable in it: the empty offering
+        // failed the check that consumed it, and the well-sized
+        // non-signature was judged and found invalid.
+        "empty-signature" => Some((
+            witness::CONTROL_ACCEPTED_TXID,
+            witness::EMPTY_SIGNATURE_REFUSAL,
+        )),
+        "malformed-signature" => Some((
+            witness::CONTROL_ACCEPTED_TXID,
+            witness::MALFORMED_SIGNATURE_REFUSAL,
+        )),
+        _ => None,
+    }
+}
+
 /// Classify one row of the §15 matrix.
 fn classify(
     row: &'static LiveSafetyRow,
@@ -1053,6 +1129,15 @@ fn classify(
     // AFTER the specific blocker and never before it.
     if let Some(accepted_identity) = observed_row_acceptance(row) {
         return Ok(LiveRowStanding::NativeRunObserved { accepted_identity });
+    }
+    // Beside it and after it, for the same reason it sits after the
+    // specific blocker: a refusal answers a row only once the row is
+    // not waiting on something that would have to exist first.
+    if let Some((control_identity, refusal_detail)) = observed_row_refusal(row) {
+        return Ok(LiveRowStanding::NativeRefusalObserved {
+            control_identity,
+            refusal_detail,
+        });
     }
     if !a_positive_control_exists() {
         return Ok(LiveRowStanding::InfrastructureBlocked(
@@ -1160,6 +1245,7 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
             LiveRowStanding::FirstPartyUndischarged(_) => census.first_party_undischarged += 1,
             LiveRowStanding::NativeRunRequired(_) => census.native_run_required += 1,
             LiveRowStanding::NativeRunObserved { .. } => census.native_run_observed += 1,
+            LiveRowStanding::NativeRefusalObserved { .. } => census.native_refusal_observed += 1,
             LiveRowStanding::InfrastructureBlocked(_) => census.infrastructure_blocked += 1,
             LiveRowStanding::ReportLayerAnswerable => census.report_layer += 1,
             LiveRowStanding::OperationVocabularyClosed => census.vocabulary_closed += 1,
