@@ -71,6 +71,7 @@ use transaction::view::{PublicConstructionView, PublicOutputView};
 use crate::error::VectorError;
 use crate::live_capability::OracleFixtureValues;
 use crate::live_evidence::UNAUTHORIZING_SIGNATURE;
+use crate::live_owner_observation::ObservedFundedCoin;
 use crate::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset, published_owner,
     reviewed_target,
@@ -278,8 +279,8 @@ pub struct LiveNativeTranscript {
     not_submitted: BTreeSet<(LiveTransferRepresentationPlan, LiveFormNotSubmitted)>,
     explicit_program: Vec<u8>,
     private_program: Vec<u8>,
-    explicit_coins: Vec<WireOutpoint>,
-    private_coins: Vec<WireOutpoint>,
+    explicit_coins: Vec<ObservedFundedCoin>,
+    private_coins: Vec<ObservedFundedCoin>,
     observations: Vec<LiveNativeObservation>,
     predicted: BTreeMap<LiveTransferRepresentationPlan, PredictedTransferResources>,
     refusal: Option<LiveNativeRefusal>,
@@ -329,6 +330,34 @@ impl LiveNativeTranscript {
                 self.private_coins.len(),
             ),
         ])
+    }
+
+    /// The coins the node reported for one plan's funding step.
+    ///
+    /// The node's own fields, which are the ones the candidate is built
+    /// over and therefore the ones any message is formed from.
+    #[must_use]
+    pub fn coins(&self, plan: LiveTransferRepresentationPlan) -> &[ObservedFundedCoin] {
+        match plan {
+            LiveTransferRepresentationPlan::Explicit => &self.explicit_coins,
+            LiveTransferRepresentationPlan::PrivateCommitted => &self.private_coins,
+        }
+    }
+
+    /// Whether every coin the node reported is the coin this ceremony
+    /// asked for.
+    ///
+    /// The expectation is reported and never applied. A run that funded
+    /// something other than what it asked for is a finding about the
+    /// funding step; it is not a licence to build over the request
+    /// instead, which is what silently substituting the expectation
+    /// would amount to.
+    #[must_use]
+    pub fn funded_coins_match_expectation(&self) -> bool {
+        self.explicit_coins
+            .iter()
+            .chain(&self.private_coins)
+            .all(ObservedFundedCoin::matches_expectation)
     }
 
     /// Every observation, in the order the steps were answered.
@@ -485,7 +514,18 @@ fn decode_hex(text: &str) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-/// What each funded receipt holds.
+/// What each funding step ASKS the target to put in a receipt.
+///
+/// A request, and not a fact about the chain. This constant used to be
+/// documented as what each funded receipt *holds*, which was a sentence
+/// about the chain written from a value nobody had asked the chain
+/// about — and it was the sentence that kept the substitution below
+/// invisible for as long as it lasted. What a receipt holds is what the
+/// node says it holds, and that is [`ObservedFundedCoin::value`].
+///
+/// It survives for two uses, both honest: it is the amount the funding
+/// subject requests, and it is one term of the expectation each observed
+/// coin is compared against.
 const RECEIPT_AMOUNT: u64 = 5_000;
 
 pub struct LiveTransferOperationPlanner {
@@ -575,26 +615,65 @@ impl LiveTransferOperationPlanner {
         Ok(())
     }
 
-    /// One funding step's created coins.
+    /// One funding step's created coins, taken from the node's own
+    /// report of them.
+    ///
+    /// Every field is the node's. The ceremony's expectation is compared
+    /// against it and recorded as one flag, and it is the node's answer
+    /// that is carried forward: the spent asset, value and program are
+    /// terms of the message an owner signs, so a signature taken over
+    /// what the builder assumed rather than over what the chain holds
+    /// would be a signature over a different message than the one the
+    /// target forms.
+    ///
+    /// This used to keep the outpoint and discard the other three
+    /// fields, rebuilding them downstream from the planner's own
+    /// expectations. That was invisible while nothing here authorized
+    /// anything — the witness position held bytes that authorize nothing,
+    /// so no message was ever formed and no fabricated term could be
+    /// wrong. It stopped being invisible when signatures started to
+    /// authorize, which is why the repair belongs to this wave and not
+    /// to an earlier one.
     fn settle_funding(
         &mut self,
         step: LiveNativeStep,
         response: &NativeOperationResponse,
-    ) -> Result<Vec<WireOutpoint>, LiveNativeRefusal> {
+    ) -> Result<Vec<ObservedFundedCoin>, LiveNativeRefusal> {
         self.observe(step, response);
         if response.funded_outputs.is_empty() {
             return Err(LiveNativeRefusal::FundingCreatedNoPredecessor);
         }
+        let expected_asset = self
+            .transcript
+            .issued_asset
+            .as_deref()
+            .and_then(asset_of)
+            .ok_or(LiveNativeRefusal::IssuanceNamedNoAsset)?;
+        let expected_program = match step {
+            LiveNativeStep::FundPrivateConstructor => &self.transcript.private_program,
+            _ => &self.transcript.explicit_program,
+        };
+
+        let mut coins = Vec::with_capacity(response.funded_outputs.len());
         for funded in &response.funded_outputs {
-            if outpoint_of(&funded.outpoint).is_none() {
-                return Err(LiveNativeRefusal::MalformedFundedOutpoint);
-            }
+            let outpoint =
+                outpoint_of(&funded.outpoint).ok_or(LiveNativeRefusal::MalformedFundedOutpoint)?;
+            let asset =
+                asset_of(&funded.asset).ok_or(LiveNativeRefusal::MalformedFundedOutpoint)?;
+            let program =
+                decode_hex(&funded.script).ok_or(LiveNativeRefusal::MalformedFundedOutpoint)?;
+            let matches_expectation = asset == expected_asset
+                && funded.amount_satoshis == RECEIPT_AMOUNT
+                && program == *expected_program;
+            coins.push(ObservedFundedCoin::observed(
+                outpoint,
+                AssetField::Explicit(asset),
+                ValueField::Explicit(funded.amount_satoshis),
+                program,
+                matches_expectation,
+            ));
         }
-        Ok(response
-            .funded_outputs
-            .iter()
-            .map(|funded| funded.outpoint.clone())
-            .collect())
+        Ok(coins)
     }
 
     /// The funding step for one plan's constructor program.
@@ -628,35 +707,34 @@ impl LiveTransferOperationPlanner {
             LiveTransferRepresentationPlan::Explicit => &self.transcript.explicit_coins,
             LiveTransferRepresentationPlan::PrivateCommitted => &self.transcript.private_coins,
         };
-        let asset = self
-            .transcript
-            .issued_asset
-            .as_deref()
-            .and_then(asset_of)
-            .ok_or(LiveNativeRefusal::IssuanceNamedNoAsset)?;
-        let program = match plan {
-            LiveTransferRepresentationPlan::Explicit => &self.transcript.explicit_program,
-            LiveTransferRepresentationPlan::PrivateCommitted => &self.transcript.private_program,
-        };
-
+        // The three message-bearing fields come off the observed coin
+        // and not out of this planner's expectations. What the ceremony
+        // asked for survives as ObservedFundedCoin::matches_expectation,
+        // which the run reports; it is not what gets built.
         let mut points = Vec::with_capacity(coins.len());
         let mut views = Vec::with_capacity(coins.len());
-        for wire in coins {
-            let point = outpoint_of(wire).ok_or(LiveNativeRefusal::MalformedFundedOutpoint)?;
-            points.push(point);
+        let mut total = 0_u64;
+        for coin in coins {
+            points.push(coin.outpoint());
             views.push(PublicOutputView::new(
-                point,
-                AssetField::Explicit(asset),
-                ValueField::Explicit(RECEIPT_AMOUNT),
-                program.clone(),
+                coin.outpoint(),
+                coin.asset(),
+                coin.value(),
+                coin.program().to_vec(),
             ));
+            // A destination split has to be derived from what was
+            // actually funded, so a coin whose value the node reports as
+            // a commitment refuses here rather than being coerced to an
+            // amount this lane would have had to invent.
+            let ValueField::Explicit(amount) = coin.value() else {
+                return Err(LiveNativeRefusal::TransferNotConstructible);
+            };
+            total = total
+                .checked_add(amount)
+                .ok_or(LiveNativeRefusal::TransferNotConstructible)?;
         }
         let view = PublicConstructionView::new(views)
             .map_err(|_| LiveNativeRefusal::TransferNotConstructible)?;
-
-        let total = RECEIPT_AMOUNT
-            .checked_mul(u64::try_from(coins.len()).unwrap_or(0))
-            .ok_or(LiveNativeRefusal::TransferNotConstructible)?;
         let destination = |scalar: &[u8; 32], amount: u64| {
             let owner =
                 published_owner(scalar).map_err(|_| LiveNativeRefusal::SubstrateUnavailable)?;
