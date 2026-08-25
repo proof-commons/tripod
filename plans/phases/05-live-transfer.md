@@ -203,6 +203,7 @@ Phase 5 exits when:
 - explicit transfer passes complete safety evidence;
 - confidential-value transfer passes where claimed;
 - confidential sponsor values pass on an observed acceptance of their own shape, the private-sponsor-values row moving with it;
+- fee-bearing transfer is supported in all four forms — sponsored and sponsorless, explicit and confidential — each passing on an observed acceptance of its own shape, with every fee output explicit as consensus requires;
 - safety and minimality reports remain distinct;
 - lifecycle incompleteness is explicit;
 - mixed-program vectors reject;
