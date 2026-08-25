@@ -231,9 +231,10 @@ pub const KEY_PATH_SPEND_TYPE_BYTE: u8 = 0x00;
 /// candidate-scoped in the strict sense: nothing has observed that a
 /// target forms this message, and nothing here claims it does.
 ///
-/// It shares [`whole_transaction_stream`] with the reviewed
-/// construction rather than respelling twelve terms, so the two
-/// messages differ in their tail and in nothing else. A caller comparing
+/// It shares its whole-transaction prefix with the reviewed
+/// construction — one private function writes terms 0 to 12 for both —
+/// rather than respelling twelve terms, so the two messages differ in
+/// their tail and in nothing else. A caller comparing
 /// them is comparing the spend type and the tapscript additions, which
 /// is the only comparison this function supports.
 ///
