@@ -52,6 +52,7 @@ use crate::error::TransactionRefusal;
 use crate::live_abi::{CandidateLiveTransferAbi, LiveShapeAbi, LiveTransactionForm};
 use crate::live_finalize::{
     FinalizedLiveTransfer, FinalizedOutputCensus, FinalizedParts, ReceiptInputRecord,
+    SpentSponsorOutput,
 };
 use crate::live_materialize::{
     ConfidentialConstructionIntent, ConfidentialDestinationIntent, ConfidentialInputIntent,
@@ -321,7 +322,7 @@ pub fn finalize_live_transfer(
         .as_ref()
         .map(|offer| offer.inputs().iter().copied().collect())
         .unwrap_or_default();
-    recognize_sponsors(abi, request, view, &sponsor_inputs)?;
+    let sponsor_spent = recognize_sponsors(abi, request, view, &sponsor_inputs)?;
 
     // Stage 4: the shape, chosen by every count at once.
     let shape = select_shape(abi, request, sponsor_inputs.len())?;
@@ -412,6 +413,7 @@ pub fn finalize_live_transfer(
         ),
         receipts,
         sponsor_inputs,
+        sponsor_spent,
         required_dimensions: abi.sighash_profile().profile().required().collect(),
         protected_data: abi.protected_data().clone(),
     });
@@ -600,7 +602,8 @@ fn recognize_sponsors(
     request: &LiveTransferRequest,
     view: &PublicConstructionView,
     sponsor_inputs: &[Outpoint],
-) -> Result<(), TransactionRefusal> {
+) -> Result<Vec<SpentSponsorOutput>, TransactionRefusal> {
+    let mut spent = Vec::with_capacity(sponsor_inputs.len());
     for outpoint in sponsor_inputs {
         if request.receipts().contains(outpoint) {
             return Err(TransactionRefusal::SponsorOverlapsReceiptFamily(*outpoint));
@@ -613,8 +616,17 @@ fn recognize_sponsors(
                 *outpoint,
             ));
         }
+
+        // Kept, not merely checked. The owner's signature commits to
+        // every spent output, and this is the last place that holds a
+        // view of the sponsor region.
+        spent.push(SpentSponsorOutput::new(
+            stated.asset(),
+            stated.value(),
+            stated.program().to_vec(),
+        ));
     }
-    Ok(())
+    Ok(spent)
 }
 
 /// Recognize every selected outpoint as some owner's live receipt.

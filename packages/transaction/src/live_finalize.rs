@@ -292,6 +292,7 @@ pub struct FinalizedLiveTransfer {
     outputs: FinalizedOutputCensus,
     receipts: Vec<ReceiptInputRecord>,
     sponsor_inputs: Vec<Outpoint>,
+    sponsor_spent: Vec<SpentSponsorOutput>,
     required_dimensions: BTreeSet<SighashDimension>,
     protected_data: BTreeSet<ProtectedDatum>,
 }
@@ -303,6 +304,56 @@ pub struct FinalizedLiveTransfer {
 /// shape and which representation it is. Naming them at the call site is
 /// also what keeps two `(u16, u16)` ranges from being passed the wrong
 /// way round.
+/// One sponsor input's spent output, as the caller showed it.
+///
+/// # Why a finalization carries these at all
+///
+/// The owner's signature commits to EVERY spent output the transaction
+/// consumes, not only the receipts'. The sponsor offer carries outpoints
+/// and nothing else, so construction — which reads the public view — is
+/// the last place that knows the sponsor region's assets, values and
+/// programs. A finalization that dropped them would leave no route to an
+/// owner message for the sponsored form at all, which is exactly the
+/// state this type was added to end: the owner signing census derived
+/// its spent outputs from the receipts alone and refused every sponsored
+/// control with a spent-output cardinality mismatch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SpentSponsorOutput {
+    asset: AssetField,
+    value: ValueField,
+    program: Vec<u8>,
+}
+
+impl SpentSponsorOutput {
+    /// The spent sponsor output carrying these observed fields.
+    #[must_use]
+    pub const fn new(asset: AssetField, value: ValueField, program: Vec<u8>) -> Self {
+        Self {
+            asset,
+            value,
+            program,
+        }
+    }
+
+    /// The asset field, as the view stated it.
+    #[must_use]
+    pub const fn asset(&self) -> AssetField {
+        self.asset
+    }
+
+    /// The value field, as the view stated it.
+    #[must_use]
+    pub const fn value(&self) -> ValueField {
+        self.value
+    }
+
+    /// The output program, as the view stated it.
+    #[must_use]
+    pub fn program(&self) -> &[u8] {
+        &self.program
+    }
+}
+
 pub(crate) struct FinalizedParts {
     pub(crate) shape: LiveTransferShape,
     pub(crate) representation: LiveTransferRepresentationPlan,
@@ -311,6 +362,7 @@ pub(crate) struct FinalizedParts {
     pub(crate) outputs: FinalizedOutputCensus,
     pub(crate) receipts: Vec<ReceiptInputRecord>,
     pub(crate) sponsor_inputs: Vec<Outpoint>,
+    pub(crate) sponsor_spent: Vec<SpentSponsorOutput>,
     pub(crate) required_dimensions: BTreeSet<SighashDimension>,
     pub(crate) protected_data: BTreeSet<ProtectedDatum>,
 }
@@ -379,6 +431,7 @@ impl FinalizedLiveTransfer {
             outputs: parts.outputs,
             receipts: parts.receipts,
             sponsor_inputs: parts.sponsor_inputs,
+            sponsor_spent: parts.sponsor_spent,
             required_dimensions: parts.required_dimensions,
             protected_data: parts.protected_data,
         }
@@ -454,6 +507,15 @@ impl FinalizedLiveTransfer {
     #[must_use]
     pub fn sponsor_inputs(&self) -> &[Outpoint] {
         &self.sponsor_inputs
+    }
+
+    /// The sponsor suffix's spent outputs, in the same order.
+    ///
+    /// One per [`Self::sponsor_inputs`] entry, which is what lets an
+    /// owner message be formed over the whole input set.
+    #[must_use]
+    pub fn sponsor_spent(&self) -> &[SpentSponsorOutput] {
+        &self.sponsor_spent
     }
 
     /// Which of §12.6's ten items this form settled.

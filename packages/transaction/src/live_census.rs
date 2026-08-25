@@ -739,6 +739,12 @@ impl OwnerSigningCensus {
 
         let candidate = finalized.protected().clone();
         let output_witnesses = candidate.output_witnesses().to_vec();
+        // Receipts first and the sponsor suffix after, which is the
+        // input order construction wrote. The sponsor entries are what
+        // make an owner message formable for the SPONSORED form at all:
+        // deriving the spent outputs from the receipts alone left every
+        // sponsored control refused here on cardinality, and an owner
+        // who cannot be handed a message cannot authorize a spend.
         let spent_outputs = finalized
             .receipts()
             .iter()
@@ -749,6 +755,9 @@ impl OwnerSigningCensus {
                     record.program().to_vec(),
                 )
             })
+            .chain(finalized.sponsor_spent().iter().map(|spent| {
+                SpentOutputCensusEntry::new(spent.asset(), spent.value(), spent.program().to_vec())
+            }))
             .collect::<Vec<_>>();
 
         Self::assemble(

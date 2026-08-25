@@ -646,7 +646,7 @@ impl SponsorSigningPlanner {
     /// adapter's witness — and never a rebuild. A rebuilt control is a
     /// different control, and submitting one would report a verdict
     /// about bytes no sponsor ever signed.
-    fn submit_step(&mut self) -> Result<OperationStep, Refusal> {
+    fn submit_step(&self) -> Result<OperationStep, Refusal> {
         let round = self.round.clone().ok_or(Refusal::ControlNotConstructible)?;
         if round.replayed.is_empty() {
             return Err(Refusal::ControlNotConstructible);
@@ -1129,6 +1129,37 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
     // establish, where a lane can read it afterwards. Nothing is
     // printed: what a run found belongs in an artifact rather than in a
     // scrollback nobody keeps.
+    write_the_record(
+        &round,
+        &submission,
+        &refusal,
+        &txid,
+        &block_hash,
+        block_height,
+        started,
+        report.as_deref(),
+    );
+}
+
+/// What the run found, written where a later lane can read it.
+///
+/// Nothing is printed: what a run found belongs in an artifact rather
+/// than in a scrollback nobody keeps.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "every observation the record states is a separate one, and \
+              bundling them into a struct here would only move the list"
+)]
+fn write_the_record(
+    round: &RoundTrip,
+    submission: &Submission,
+    refusal: &str,
+    txid: &str,
+    block_hash: &str,
+    block_height: u32,
+    started: Instant,
+    report: Option<&Path>,
+) {
     let record = format!(
         "sponsor_round_trip\n\
          sent_bytes {}\n\
@@ -1164,7 +1195,7 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
         block_height,
         started.elapsed().as_secs_f64(),
     );
-    if let Some(path) = report.as_deref() {
+    if let Some(path) = report {
         std::fs::write(path, &record).expect("the run record is writable");
     }
 
