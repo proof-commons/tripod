@@ -97,10 +97,19 @@ impl PositivePrivateClass {
 
     /// Whether this guide may move the class at all.
     ///
-    /// Nine of ten, and the tenth is not a matter of effort: it is
+    /// Nine of ten, and the tenth is not a matter of effort. It was
     /// blocked independently by
     /// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`], which
-    /// this guide does not clear.
+    /// this guide does not clear; that residual has since cleared
+    /// elsewhere on an observed acceptance, and the class STILL may not
+    /// enter the delta.
+    ///
+    /// The ground is a different one now, and naming it is what keeps
+    /// the two facts from being confused. The accepted sponsored control
+    /// is EXPLICIT, and this class asks for confidential sponsor values.
+    /// An acceptance of an explicit sponsored control answers nothing
+    /// about a confidential one, so the row waits on a run of its own
+    /// shape exactly as it did before.
     #[must_use]
     pub const fn may_enter_the_delta(self) -> bool {
         !matches!(self, Self::PrivateSponsorValues)
@@ -996,6 +1005,18 @@ pub fn wave_six_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeout
 /// Step seven follows it in the mandatory order and is therefore not
 /// reached; the ledger's own `AfterStop` refusal is what makes that
 /// structural rather than a matter of this wave's choosing.
+///
+/// # This ledger is a record, and it is not amended
+///
+/// The dependency it stops on has since closed: a later wave threaded
+/// the deployment's fee-role program digest, submitted a sponsored
+/// control, and had it accepted. Nothing here changes on that account.
+/// This function states what WAVE SEVEN observed, and wave seven
+/// observed a typed stop; editing it to say otherwise would be
+/// backdating an acceptance into a wave that did not have one, which is
+/// the one thing a ledger of record exists to prevent. Its `because`
+/// prose is read as of its own wave, and a reader wanting the current
+/// standing reads `carried_residuals` instead.
 fn wave_seven_ledger() -> Result<RestartLedger, CloseoutRefusal> {
     use crate::live_conservation_negatives::run_of_record as cn;
     use crate::live_multi_shapes::run_of_record as ms;
@@ -1239,7 +1260,8 @@ fn wave_seven_target_facts() -> Vec<String> {
 /// Exactly one residual, and it is the one confidential funding clears.
 /// `MultiOutputShapeConstructorAbsent` is NOT added to it, and the
 /// omission is the site's own rule rather than an oversight: that blocker
-/// was never a member of `carried_residuals`, which holds two. It lived in
+/// was never a member of `carried_residuals`, which held two when this
+/// wave closed and holds one now. It lived in
 /// the previous wave's ledger as the fifth step's stop, and the way a
 /// constructor absence leaves is that the step it stopped is recorded
 /// accepted instead — which is exactly what `wave_seven_ledger` does. A

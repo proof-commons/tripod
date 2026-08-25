@@ -81,8 +81,8 @@ use crate::live_capability::OracleFixtureValues;
 use crate::live_evidence::UNAUTHORIZING_SIGNATURE;
 use crate::live_owner_observation::ObservedFundedCoin;
 use crate::live_plan::{
-    FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset,
-    published_owner, reviewed_target,
+    FEE_PROGRAM_DIGEST, FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, demonstration_live_abi,
+    live_abi_for_asset, published_owner, reviewed_target,
 };
 
 /// The published randomness the private construction consumes.
@@ -609,7 +609,7 @@ impl LiveTransferOperationPlanner {
             .clone()
             .ok_or(LiveNativeRefusal::IssuanceNamedNoAsset)?;
         let identity = asset_of(&asset).ok_or(LiveNativeRefusal::IssuanceNamedNoAsset)?;
-        let abi = live_abi_for_asset(*identity.internal(), RESERVE_ASSET)
+        let abi = live_abi_for_asset(*identity.internal(), RESERVE_ASSET, FEE_PROGRAM_DIGEST)
             .map_err(|_| LiveNativeRefusal::RelinkRefused)?;
         self.transcript.explicit_program =
             destination_program(&abi, LiveTransferRepresentationPlan::Explicit)

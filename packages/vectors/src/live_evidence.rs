@@ -279,12 +279,61 @@ pub enum LiveInfrastructureBlocker {
     /// naming a blocker precisely: clearing this one is an integration,
     /// not a design.
     ///
-    /// Wiring it is still not enough to remove the blocker. §1.9 asks
+    /// Wiring it was still not enough to remove the blocker. §1.9 asks
     /// for the sponsor owner's *target authorization*, and a returned
     /// byte stack is not that until a target has accepted a control
-    /// carrying it. No control carrying one has been submitted, so no
-    /// such acceptance exists. A blocker moves on an observed result and
-    /// never on a capability existing.
+    /// carrying it. A blocker moves on an observed result and never on a
+    /// capability existing.
+    ///
+    /// # It is no longer carried, and the observation that moved it
+    ///
+    /// That acceptance now exists, and this blocker is CLEARED. A
+    /// sponsored explicit control — the sponsor region funded before the
+    /// receipts, both owners really signing, the sponsor witness
+    /// obtained from the adapter and replayed into the finalized bytes —
+    /// was submitted to a real node and accepted, read back out of the
+    /// node byte for byte, and mined. The condition the paragraph above
+    /// names is the condition that was observed, so the rule is applied
+    /// rather than reinterpreted.
+    ///
+    /// What stood between the wiring and the acceptance was never the
+    /// signer. Three submissions were refused before this one: the first
+    /// for an invalid Schnorr signature, the second — with the owners
+    /// really signing — at the sponsored leaf's own §10.7 fee-role
+    /// check, and the difference between the second and the third was a
+    /// first-party defect in this workspace rather than anything about
+    /// the target. The demonstration deployment's fee-role program
+    /// digest was a fixture constant no program hashes to, while
+    /// construction writes the empty fee program the target's structure
+    /// requires. Threading that digest to the value the target itself
+    /// computes for the empty program is what produced the acceptance.
+    ///
+    /// The word stays in this vocabulary because it is still the right
+    /// name for the condition, and a lane that genuinely has no sponsor
+    /// signer wired into it must be able to say so. Several still do:
+    /// the pairs lane models an envelope that declines to sign, and the
+    /// transaction-wide private finalization lane has no signer either.
+    /// What changed is that this plan no longer CARRIES it.
+    ///
+    /// # What did not move with it
+    ///
+    /// No matrix row was answered. The row this blocker was the specific
+    /// blocker of, `missing-sponsor-authorization`, is a negative asking
+    /// that a control MISSING the sponsor's authorization be refused,
+    /// and what was accepted is a positive sponsored control; the row
+    /// moved from blocked to awaiting a run of its own shape, which is
+    /// not an answer. `private-sponsor-values` may not move at all and
+    /// did not: it asks for confidential sponsor values and the accepted
+    /// control is explicit. [`Self::PredecessorConstructorAbsent`] is
+    /// untouched. The pairs lane still completes no sponsored member.
+    ///
+    /// # What one acceptance is not
+    ///
+    /// It establishes the sponsor envelope's wire and ONE target
+    /// acceptance. It does not establish production multi-party sponsor
+    /// signing: one fixed regtest key signed once, and a single key
+    /// answering a request is not a ceremony. Every value involved is
+    /// public disposable material under ADR-015's test-material rule.
     SponsorEnvelopeSignerAbsent,
     /// No predecessor exists to build the spend from.
     ///
@@ -766,15 +815,33 @@ const fn a_positive_control_exists() -> bool {
 /// The blocker one specific negative row carries, where it has its own.
 ///
 /// Most target-boundary rows are blocked by the absent positive control.
-/// Three carry a blocker of their own as well, and the more specific one
-/// wins: a reader repairing the pipeline needs to know that these three
+/// Two carry a blocker of their own as well, and the more specific one
+/// wins: a reader repairing the pipeline needs to know that these two
 /// would still be outstanding after the digest existed.
+///
+/// # It was three, and the sponsor row left
+///
+/// `missing-sponsor-authorization` carried
+/// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`] until that
+/// residual cleared on an observed acceptance. Its entry is removed
+/// here rather than left standing, because leaving it would make two
+/// artifacts disagree about one row: the residual set would say the
+/// sponsor signer dependency is closed while this function still said
+/// the row is blocked on it. A previous wave found exactly that
+/// disagreement between a closeout and the matrix and had to repair it,
+/// and the repair is cheaper before the fact than after.
+///
+/// The row does NOT thereby become answered, and the fall-through is
+/// what keeps that honest. With no specific blocker it reaches
+/// [`observed_row_acceptance`], which has no acceptance of this row's
+/// own shape to offer — the accepted sponsored control is a POSITIVE
+/// control, and this row is a negative asking that a control MISSING
+/// the sponsor's authorization be refused. So the row resolves to
+/// `NativeRunRequired`: no longer blocked, not yet run, and waiting on a
+/// run of its own shape that nothing now prevents.
 fn specific_blocker(row: &LiveSafetyRow) -> Option<LiveInfrastructureBlocker> {
     match row.name() {
         "time-locked-input" => Some(LiveInfrastructureBlocker::PredecessorConstructorAbsent),
-        "missing-sponsor-authorization" => {
-            Some(LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent)
-        }
         "raw-transaction-bypassing-safe-construction" => {
             Some(LiveInfrastructureBlocker::RawSurgeryPathAbsent)
         }
@@ -1116,18 +1183,31 @@ pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 /// left because this function is what the paragraph is about and a
 /// reader following it would otherwise be told the constant is a set.
 ///
-/// Two members, and it was three. The one that left is
-/// [`LiveInfrastructureBlocker::SighashProfileUnreviewed`], cleared by
+/// ONE member, and it was three. Two have left, and they left by
+/// different kinds of evidence, which is the distinction this set exists
+/// to keep legible.
+///
+/// [`LiveInfrastructureBlocker::SighashProfileUnreviewed`] was cleared by
 /// the owner-sighash review verdict together with the
 /// post-verdict re-typing — by a verdict, that is, and never by a
 /// run, which is the discipline that residual was separated from the
 /// digest blocker in order to keep.
+///
+/// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`] was
+/// cleared the other way, by a RUN and only by a run: a sponsored
+/// explicit control carrying a sponsor owner's authorization was
+/// submitted to a real node, accepted, read back byte for byte, and
+/// mined. Its defining site said a returned byte stack is not a target
+/// authorization until a target has accepted a control carrying it, and
+/// that is the sentence this clearing satisfies.
+///
+/// The one that remains,
+/// [`LiveInfrastructureBlocker::PredecessorConstructorAbsent`], is about
+/// a time-locked predecessor this workspace does not build, and neither
+/// clearing touched it.
 #[must_use]
 pub fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
-    BTreeSet::from([
-        LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
-        LiveInfrastructureBlocker::PredecessorConstructorAbsent,
-    ])
+    BTreeSet::from([LiveInfrastructureBlocker::PredecessorConstructorAbsent])
 }
 
 #[cfg(test)]
@@ -1425,11 +1505,20 @@ mod tests {
         // positive half has never run.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         assert!(!plan.census().every_required_row_is_answered());
-        // Three rows carry a blocker of their own, and those three do
-        // not move: a predecessor constructor, a sponsor envelope
-        // signer, and a raw path, none of which the owner message was
-        // ever in the way of.
-        assert_eq!(plan.census().infrastructure_blocked(), 3);
+        // TWO rows carry a blocker of their own, and it was three: a
+        // predecessor constructor and a raw path, neither of which the
+        // owner message was ever in the way of.
+        //
+        // The third was the sponsor envelope signer, and it left because
+        // its residual cleared on an observed acceptance. The row it
+        // blocked, missing-sponsor-authorization, is NOT answered by
+        // that: it is a negative asking that a control missing the
+        // sponsor's authorization be refused, and what was accepted is a
+        // positive sponsored control. The row moved from blocked to
+        // awaiting a run of its own shape, which is why the count above
+        // fell by one while the completeness assertion below did not
+        // change at all.
+        assert_eq!(plan.census().infrastructure_blocked(), 2);
     }
 
     #[test]

@@ -105,6 +105,7 @@ use transaction::sponsor::{
 };
 use transaction::taproot::{Digest32, leaf_hash};
 use transaction::view::{PublicConstructionView, PublicOutputView};
+use vectors::bundle::fee_program_digest;
 use vectors::live_capability::OracleLiveCurve;
 use vectors::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset, published_owner,
@@ -218,6 +219,12 @@ struct Submission {
     read_back: Option<Vec<u8>>,
     /// The block the target mined it into.
     block: Option<(String, u32)>,
+    /// The weight the target itself computed for the bytes it took.
+    ///
+    /// The target's own arithmetic rather than this lane's, because a
+    /// weight a submitter predicts is a prediction and the record is
+    /// about what the node weighed.
+    weight: Option<u64>,
 }
 
 /// The finalization a sponsor request was formed against.
@@ -368,12 +375,35 @@ impl SponsorSigningPlanner {
         Ok(())
     }
 
-    /// Weld the deployment to BOTH assets the chain reported.
+    /// Weld the deployment to BOTH assets the chain reported, and to the
+    /// digest of the fee program this lane actually constructs.
     ///
     /// The link the whole lane waited for. Until it happens the
     /// deployment names a reserve no chain has issued, and the fee
     /// output of any control built from it is payable in an asset its
     /// sponsor input does not carry.
+    ///
+    /// # The fee digest is DERIVED, and the previous submission proved it
+    ///
+    /// The third symbol is not learned from the chain the way the two
+    /// assets are. It is computed, and it has to be, because §10.7's
+    /// isolation fragment emits no hash opcode at all: it pushes the fee
+    /// output's position, runs `OP_INSPECTOUTPUTSCRIPTPUBKEY`, and
+    /// compares what the TARGET pushed. For an output that is not a
+    /// witness program the target pushes the SHA-256 of the whole
+    /// `scriptPubKey` under a version of -1, so the fragment's two
+    /// `OP_EQUALVERIFY`s check the marker and then the digest. The fee
+    /// role's whole identity is its empty program, so the value the
+    /// check demands is SHA-256 of nothing — determined, never chosen.
+    ///
+    /// [`fee_program_digest`] computes exactly that, and it is reused
+    /// rather than restated because this defect has been met before: the
+    /// compact-ASH lane carried an arbitrary `[0xa5; 32]` here, nothing
+    /// noticed while no sponsored shape was ever built, and its first
+    /// sponsored rows were refused
+    /// `Script failed an OP_EQUALVERIFY operation` — the same refusal,
+    /// at the same comparison, that stopped this lane's previous
+    /// submission against `[0xb5; 32]`.
     fn relink(&mut self) -> Result<(), Refusal> {
         let printed = self
             .issued_asset
@@ -381,8 +411,12 @@ impl SponsorSigningPlanner {
             .ok_or(Refusal::IssuanceNamedNoAsset)?;
         let protocol = asset_of(&printed).ok_or(Refusal::IssuanceNamedNoAsset)?;
         let reserve = self.reserve.ok_or(Refusal::SponsorFundingNamedNoReserve)?;
-        let abi = live_abi_for_asset(*protocol.internal(), *reserve.internal())
-            .map_err(|_| Refusal::RelinkRefused)?;
+        let abi = live_abi_for_asset(
+            *protocol.internal(),
+            *reserve.internal(),
+            fee_program_digest(),
+        )
+        .map_err(|_| Refusal::RelinkRefused)?;
         self.explicit_program = destination_program(&abi)?;
         self.abi = abi;
         Ok(())
@@ -682,6 +716,7 @@ impl SponsorSigningPlanner {
                 .mined_readback
                 .as_ref()
                 .map(|readback| (readback.block_hash.clone(), readback.block_height)),
+            weight: response.resources.transaction_weight,
         });
 
         if response.observed_layer != ObservedOutcomeLayer::Accepted {
@@ -1092,50 +1127,61 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
         "the bytes submitted are not the bytes the replay produced"
     );
 
-    // And the verdict is a TYPED STOP, not an acceptance. The residual
-    // is not cleared, and this assertion is what makes a later change
-    // have to notice: evaluation now reaches the sponsored leaf's own
-    // fee-role check and fails it, because the deployment pins the fee
-    // program digest to a fixture constant while construction writes
-    // the empty fee program the target's structure requires.
-    //
-    // The owner signature is NOT the reason any more, and that is this
-    // wave's progress made checkable: the same submission previously
-    // refused with an invalid-signature verdict.
+    // And the verdict is an ACCEPTANCE. The three obstacles the previous
+    // waves recorded are behind it, and the sequence is what makes this
+    // checkable rather than merely asserted: the same submission was
+    // once refused for an invalid Schnorr signature, then — with the
+    // owners really signing — for an OP_EQUALVERIFY failure at the
+    // sponsored leaf's own fee-role check, and now, with the fee
+    // program's digest threaded to the value the target itself computes
+    // for the empty program construction writes, it is taken.
     assert_eq!(
         submission.layer,
-        ObservedOutcomeLayer::ScriptPathRejection,
-        "the target's verdict moved from the recorded typed stop: {:?}",
+        ObservedOutcomeLayer::Accepted,
+        "the sponsor-signed control was not accepted: {:?}",
         submission.detail,
     );
-    let detail = submission
-        .detail
-        .clone()
-        .expect("a script-path rejection carries the target's own words");
     assert!(
-        detail.contains("OP_EQUALVERIFY"),
-        "the refusal is not the fee-role equality this stop is about: {detail}"
+        submission.detail.is_none(),
+        "an acceptance carried a refusal detail: {:?}",
+        submission.detail,
     );
-    assert!(
-        !detail.contains("Schnorr"),
-        "the owners' signatures are refused again, which this wave repaired: {detail}"
-    );
-    assert!(
-        submission.txid.is_none(),
-        "a refused submission named a transaction identity"
-    );
-    // Read from the record rather than written as literals, so the
-    // three say "none" because the target reported none and not
-    // because this test assumed a refusal.
+
+    // The identity, and the readback that makes the acceptance CHECKED
+    // rather than believed: the target's own copy of what it mined,
+    // compared against the exact bytes handed to it. The planner already
+    // refuses a mismatch, and this states the property where a reader of
+    // the test can see it.
     let txid = submission
         .txid
         .clone()
-        .unwrap_or_else(|| String::from("none"));
+        .expect("an accepted submission names a transaction identity");
+    let read_back_bytes = submission
+        .read_back
+        .clone()
+        .expect("an accepted submission reads back the mined transaction");
+    assert_eq!(
+        read_back_bytes, submission.sent,
+        "the target's own copy of the mined transaction is not the bytes submitted"
+    );
     let (block_hash, block_height) = submission
         .block
         .clone()
-        .unwrap_or_else(|| (String::from("none"), 0));
-    let read_back = submission.read_back.as_ref().map_or(0, Vec::len);
+        .expect("an accepted submission names the block it was mined into");
+    let read_back = read_back_bytes.len();
+
+    // THE RELAY BOUNDARY WAS CROSSED, and that is read from the path
+    // rather than assumed. The executor reaches an accepted layer only
+    // when `testmempoolaccept` answered `allowed`, and it then confirms
+    // the transaction with `generateblock` so the acceptance is an
+    // acceptance by block validation too. So this control was judged
+    // relayable AND consensus-valid, which the previous three
+    // submissions never reached: they were refused at script evaluation
+    // and learned nothing about standardness.
+    assert!(
+        !block_hash.is_empty() && block_hash != "none",
+        "an accepted control names no block, so only relay was exercised"
+    );
 
     // The run says in its own bytes what it did and what it did not
     // establish, where a lane can read it afterwards. Nothing is
@@ -1188,12 +1234,19 @@ fn write_the_record(
          observed_layer {:?}\n\
          accepted_txid {}\n\
          readback_bytes {}\n\
+         readback_matches_submission true\n\
          block_hash {}\n\
          block_height {}\n\
+         fee_weighed {}\n\
+         fee_asset reserve\n\
+         target_computed_weight {}\n\
          submitted_anything true\n\
-         relay_boundary_crossed false\n\
-         clears_the_sponsor_residual false\n\
-         stopped_at fee_role_program_digest_is_a_fixture_constant\n\
+         relay_boundary_crossed true\n\
+         relay_and_block_both_exercised true\n\
+         clears_the_sponsor_residual true\n\
+         stopped_at none\n\
+         establishes_sponsor_envelope_wire true\n\
+         establishes_one_target_acceptance true\n\
          establishes_multi_party_sponsor_signing false\n\
          wall_seconds {:.1}\n",
         round.sent.len(),
@@ -1210,6 +1263,10 @@ fn write_the_record(
         read_back,
         block_hash,
         block_height,
+        SPONSOR_FEE,
+        submission
+            .weight
+            .map_or_else(|| String::from("unreported"), |weight| weight.to_string()),
         started.elapsed().as_secs_f64(),
     );
     if let Some(path) = report {
@@ -1217,51 +1274,61 @@ fn write_the_record(
     }
 
     // The run says in its own bytes what it did NOT establish, in the
-    // place a later reader will look. One fixed regtest key signed
-    // once; that is a wire and a target acceptance, and it is not a
-    // multi-party ceremony.
+    // place a later reader will look, and the scoping matters more now
+    // that there IS an acceptance to overclaim from.
+    //
+    // What this establishes is the sponsor envelope's WIRE and ONE
+    // target acceptance of a control carrying a sponsor witness. What it
+    // does not establish is production multi-party sponsor signing: one
+    // fixed regtest key signed once, which is a wire exercised and not a
+    // ceremony. Every key and scalar in the lane is public disposable
+    // material under ADR-015's test-material rule, so nothing here
+    // authorizes anything on a network anyone uses.
     assert!(
-        record.contains("clears_the_sponsor_residual false"),
-        "the run record does not say what it left standing",
+        record.contains("clears_the_sponsor_residual true"),
+        "the run record does not say that the residual is cleared",
+    );
+    assert!(
+        record.contains("establishes_sponsor_envelope_wire true"),
+        "the run record does not say what it established",
     );
     assert!(
         record.contains("establishes_multi_party_sponsor_signing false"),
         "the run record does not say what it left unestablished",
     );
+    assert!(
+        record.contains("relay_boundary_crossed true"),
+        "the run record does not state the relay fact",
+    );
 }
 
-/// SHA-256 of the empty string, which is the digest of the empty
-/// program.
+/// The demonstration deployment still cannot satisfy its own fee-role
+/// check, and that is now a CHOICE rather than a defect.
 ///
-/// The specification's own constant, written out because this crate has
-/// no hashing dependency and because a reader checking the claim below
-/// should be able to check it against the specification rather than
-/// against a call.
-const EMPTY_PROGRAM_DIGEST: [u8; 32] = [
-    0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
-    0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
-];
-
-/// The demonstration deployment cannot satisfy its own fee-role check.
-///
-/// The typed stop the node run observes, held here WITHOUT a node, so
-/// that the finding is a property of the deployment rather than a
-/// verdict somebody has to re-run a chain to see.
+/// Held WITHOUT a node, so the finding stays a property of the
+/// deployment rather than a verdict somebody has to re-run a chain to
+/// see. What it asserts changed when the digest was threaded, and the
+/// distinction is the whole point of the threading.
 ///
 /// §10.7's sponsor isolation ends by inspecting the fee output's
 /// scriptPubKey and requiring its digest to equal the deployment's
 /// `fee_program_digest` symbol. Construction writes the fee role with
 /// the EMPTY program, because the fee role's identity is
-/// target-structural and that is the structure. So the check compares
-/// the digest of the empty program against the symbol — and the symbol
-/// is a fixture constant no program hashes to.
+/// target-structural and that is the structure. So the check demands
+/// SHA-256 of nothing, and the demonstration's symbol is a fixture
+/// constant no program hashes to.
 ///
-/// It is the same defect the reserve asset had, at the same site and
-/// unrepaired: a deployment symbol pinned to a value the chain's own
-/// reality has to match and does not. Every sponsored control this
-/// deployment builds is unspendable at its own fee role, which is why
-/// no sponsored submission can be accepted until the symbol is either
-/// threaded like the reserve or pinned to the digest above.
+/// It STAYS that constant deliberately. The demonstration is welded to
+/// its symbols: moving this one would move the committed taptree and
+/// with it every live run-of-record identity the plans cite. A
+/// deployment that intends to spend a sponsored control supplies the
+/// derived digest instead, which is what this lane's own `relink` now
+/// does — so the demonstration's inability is no longer a blocker on
+/// anything, only a fact about a deployment nobody submits.
+///
+/// The literal that used to sit beside this test is gone on purpose: a
+/// written-out digest next to a helper that computes the same value is
+/// the exact drift the helper exists to prevent.
 #[test]
 fn the_demonstration_fee_role_digest_is_a_constant_no_fee_program_hashes_to() {
     let abi = demonstration_live_abi().expect("the demonstration ABI derives");
@@ -1270,25 +1337,65 @@ fn the_demonstration_fee_role_digest_is_a_constant_no_fee_program_hashes_to() {
     // The empty program is what construction writes for the fee role.
     assert_ne!(
         pinned,
-        EMPTY_PROGRAM_DIGEST.to_vec(),
-        "the fee-role digest now matches the empty program, so the typed stop this \
-         lane records has been repaired and the record must be revisited"
+        fee_program_digest().to_vec(),
+        "the demonstration's fee-role digest now matches the empty program, so the \
+         demonstration deployment has MOVED and every live run-of-record identity \
+         the plans cite must be re-derived before this passes again"
     );
 }
 
-/// Wiring the signer does not clear the residual, and this says so where
-/// a change would have to notice.
+/// A deployment linked for a real submission carries the derived digest.
+///
+/// The positive counterpart of the test above, and the reason the
+/// threading is worth anything: the same three functions that keep the
+/// demonstration's constant hand a submitting lane the digest of the fee
+/// program construction actually writes. Held without a node, because
+/// the claim is about what the linker resolves and not about what a
+/// chain thinks of it.
+///
+/// The assets are the demonstration's own — this test is not about
+/// which assets a deployment names, and using the constants keeps it
+/// from depending on a chain having answered anything.
+#[test]
+fn a_deployment_linked_for_submission_carries_the_derived_fee_digest() {
+    let derived = fee_program_digest();
+    let abi = vectors::live_plan::live_abi_for_asset(
+        vectors::live_plan::PROTOCOL_ASSET,
+        vectors::live_plan::RESERVE_ASSET,
+        derived,
+    )
+    .expect("the ABI derives for a stated fee digest");
+
+    assert_eq!(
+        abi.symbols().fee_program_digest().to_vec(),
+        derived.to_vec(),
+        "the threaded fee digest did not reach the resolved symbols, so a submitting \
+         lane would still be linking the demonstration's fixture constant"
+    );
+}
+
+/// The residual is CLEARED, and this says so where a change would have
+/// to notice.
 ///
 /// It runs in the ordinary lane rather than behind the node gate, on
-/// purpose: the claim is about what this repository still carries, and a
-/// claim only a node can check is one nobody checks.
+/// purpose: the claim is about what this repository carries, and a claim
+/// only a node can check is one nobody checks. The acceptance that
+/// cleared it needed a node; the fact that the set no longer holds it
+/// does not.
+///
+/// The assertion is inverted from the one that stood here through three
+/// waves. It asserted the residual was still carried, because wiring a
+/// signer is not the same as a target accepting what the signer
+/// produced. A target has now accepted one, which is the condition the
+/// blocker's own defining site named, so the set is one member shorter
+/// and this test is what makes a regression say so.
 #[test]
-fn wiring_the_signer_leaves_the_carried_residual_standing() {
+fn the_sponsor_residual_is_no_longer_carried() {
     assert!(
-        vectors::live_evidence::carried_residuals().contains(
+        !vectors::live_evidence::carried_residuals().contains(
             &vectors::live_evidence::LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent
         ),
-        "the sponsor residual left the carried set, and no submitted and accepted \
-         control carrying a sponsor witness exists to have moved it"
+        "the sponsor residual is carried again, and an observed acceptance of a \
+         control carrying a sponsor witness cannot be un-observed"
     );
 }

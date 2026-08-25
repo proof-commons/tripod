@@ -575,10 +575,18 @@ pub enum TransactionRefusal {
     ///
     /// Not a claim that sponsored private transfers are impossible. A
     /// statement that no signer for a sponsor envelope is wired into
-    /// this lane — the standing residual `SponsorEnvelopeSignerAbsent`
-    /// is exactly that — and that building a candidate nothing could
-    /// authorize would earn a refusal attributable to the missing signer
-    /// rather than to the form.
+    /// THIS lane, and that building a candidate nothing could authorize
+    /// would earn a refusal attributable to the missing signer rather
+    /// than to the form.
+    ///
+    /// The scope of that sentence has narrowed and the sentence has not.
+    /// `SponsorEnvelopeSignerAbsent` was a standing residual of the live
+    /// evidence plan when this refusal was minted, and it is no longer,
+    /// a target having accepted an explicit sponsored control carrying a
+    /// sponsor owner's authorization. What stays true is the local fact
+    /// this refusal is about: the transaction-wide PRIVATE finalization
+    /// lane has no sponsor signer wired into it, and the control that
+    /// was accepted is explicit.
     PrivateFinalizationIsSponsorless,
     /// The openings offered do not cover the request's inputs, or its
     /// destinations, one for one.

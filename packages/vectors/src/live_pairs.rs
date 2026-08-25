@@ -592,8 +592,16 @@ impl ResourceComparisonStanding {
 /// §1.9 puts the sponsor's own authorization outside protocol data and it
 /// arrives through an adapter, and no adapter signer is wired into this
 /// evidence lane — [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`].
-/// An envelope that returned bytes here would be modelling the signer the
-/// evidence plan says it does not have.
+/// An envelope that returned bytes here would be modelling the signer this
+/// lane does not have.
+///
+/// That blocker is no longer a CARRIED residual of the evidence plan, a
+/// target having accepted a sponsored control elsewhere, and the name is
+/// still the right one here for the reason the variant's own doc gives:
+/// it names a condition, and this lane is in it. What would be wrong is
+/// to read the cleared residual as meaning THIS envelope now signs. It
+/// does not, and a modelled signature would be exactly the fabrication
+/// the declining behaviour exists to refuse.
 struct ModelledSponsorEnvelope {
     offer: SponsorOffer,
 }
@@ -681,7 +689,14 @@ impl PairMaterialization {
     /// Absent for a member no signer can complete at all — the sponsored
     /// pair, whose suffix needs an authorization
     /// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`] records
-    /// as having no producer. Absent rather than zero, on §18.4's rule.
+    /// as having no producer IN THIS LANE. Absent rather than zero, on
+    /// §18.4's rule.
+    ///
+    /// The residual has cleared for the evidence plan and this figure is
+    /// still absent, which is not a contradiction: a producer exists and
+    /// is not wired here, so this lane still completes no sponsored
+    /// member and has no weight to report. Reporting one would mean
+    /// weighing a transaction whose sponsor witness this lane invented.
     #[must_use]
     pub const fn complete_weight(&self) -> Option<u64> {
         self.complete_weight
