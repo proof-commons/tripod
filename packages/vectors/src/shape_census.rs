@@ -521,7 +521,9 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
 
 #[cfg(test)]
 mod tests {
-    use target_elements_conformance::confidential_fixture::RegistrationRefusal;
+    use target_elements_conformance::confidential_fixture::{
+        ConfidentialFixtureOutput, FixtureOutputRole, RegistrationRefusal,
+    };
 
     use super::{
         BlindedShape, ConsensusVerdict, FirstPartyStatus, Limitation, RemovalPath, census_entry,
@@ -565,15 +567,32 @@ mod tests {
     /// that does. The refusal reached is the empty-program clause either
     /// way.
     fn recomputed_registry_refusal(shape: BlindedShape) -> Option<RegistrationRefusal> {
-        let outputs = shape.outputs();
-        let fee_at = (shape.fee_outputs() == 1).then(|| outputs - 1);
-        let amounts: Vec<u64> = (0..outputs).map(|_| 100_000_000_u64).collect();
-        let programs: Vec<Vec<u8>> = (0..outputs)
+        let count = shape.outputs();
+        let fee_at = (shape.fee_outputs() == 1).then(|| count - 1);
+        let outputs: Vec<ConfidentialFixtureOutput> = (0..count)
             .map(|index| {
-                if Some(index) == fee_at {
-                    Vec::new()
-                } else {
-                    vec![0x51_u8]
+                let is_fee = Some(index) == fee_at;
+                ConfidentialFixtureOutput {
+                    // The role is STATED rather than read off the output
+                    // order, the shared builder having stopped assigning
+                    // it by position. What is stated is what this helper
+                    // used to be handed implicitly — the last output
+                    // balances — so the refusals below are recomputed
+                    // against the same manifests as before and no census
+                    // row moves because a builder changed.
+                    //
+                    // The fee output is cast as balancing here, and that
+                    // is not a modelling choice: the vocabulary has no fee
+                    // member to cast it as, which is the absent role this
+                    // register records. It is the second face of the same
+                    // absence the positional builder wore.
+                    role: if index + 1 == count {
+                        FixtureOutputRole::Balancing
+                    } else {
+                        FixtureOutputRole::Primary
+                    },
+                    semantic_amount: 100_000_000_u64,
+                    output_program: if is_fee { Vec::new() } else { vec![0x51_u8] },
                 }
             })
             .collect();
@@ -581,8 +600,7 @@ mod tests {
             &format!("ctf-v1/census-{}", shape.handle()),
             CENSUS_ASSET,
             CENSUS_BLINDER_SUM,
-            &amounts,
-            &programs,
+            outputs,
         )
     }
 

@@ -68,6 +68,10 @@ use transaction::live_request::{
 use transaction::taproot::Digest32;
 use transaction::view::{PublicConstructionView, PublicOutputView};
 
+use target_elements_conformance::confidential_fixture::{
+    ConfidentialFixtureOutput, FixtureOutputRole,
+};
+
 use crate::confidential_materializer::{
     FirstPartyCommitmentCheck, ReferenceConfidentialMaterializer,
 };
@@ -90,6 +94,13 @@ struct Destination {
     scalar: [u8; SCALAR_BYTES],
     /// The semantic amount the output carries.
     amount: u64,
+    /// What this output does in the balance.
+    ///
+    /// Stated per destination rather than derived from its position. A
+    /// shape whose single output is fully solved cannot be described by a
+    /// position at all, because the fully-solved form is something a
+    /// manifest DECLARES.
+    role: FixtureOutputRole,
 }
 
 /// The remaining positive private shapes of §15.2 this wave builds.
@@ -111,11 +122,29 @@ pub enum PrivateShape {
     /// published owners, each input carrying the leaf its position
     /// executes.
     SeveralDistinctOwners,
+    /// ONE receipt in and ONE output out: the strict one-to-one.
+    ///
+    /// The shape the registry's two-output floor used to refuse. Its lone
+    /// output declares the fully-solved balancing form and takes the
+    /// consumed coin's own value blinder, so there is no second output to
+    /// absorb anything and none is needed.
+    ///
+    /// It is a one-INPUT shape, which is what keeps it constructible: the
+    /// input blinder sum is a single consumed coin's blinder and cannot
+    /// cancel against anything. A two-input merge of this ceremony's
+    /// inverse-pair predecessor would force a ZERO blinder, and that the
+    /// registry refuses.
+    StrictOneToOne,
 }
 
 impl PrivateShape {
-    /// All three, in the order the restart runs them.
-    pub const ALL: [Self; 3] = [Self::Split, Self::ManyToMany, Self::SeveralDistinctOwners];
+    /// All four, in the order the restart runs them.
+    pub const ALL: [Self; 4] = [
+        Self::Split,
+        Self::ManyToMany,
+        Self::SeveralDistinctOwners,
+        Self::StrictOneToOne,
+    ];
 
     /// The ceremony's own name for the shape, used as the report
     /// extension and the successor fixture handle's discriminator.
@@ -125,16 +154,27 @@ impl PrivateShape {
             Self::Split => "private-split",
             Self::ManyToMany => "private-many-to-many",
             Self::SeveralDistinctOwners => "private-several-distinct-owners",
+            Self::StrictOneToOne => "private-strict-one-to-one",
         }
     }
 
-    /// The §15.2 safety-matrix row this shape's acceptance moves.
+    /// The §15.2 safety-matrix row this shape's acceptance moves, where
+    /// it moves one.
+    ///
+    /// `None` is a real answer and not a missing entry. The strict
+    /// one-to-one is a shape of the CONSENSUS census, which enumerates
+    /// what the target's balance rule admits; the §15.2 positive private
+    /// table enumerates the guide's own classes and has no member for it.
+    /// An acceptance of it therefore moves a census entry and no row, and
+    /// naming a row here that the table does not carry would be inventing
+    /// one to have something to move.
     #[must_use]
-    pub const fn row_name(self) -> &'static str {
+    pub const fn row_name(self) -> Option<&'static str> {
         match self {
-            Self::Split => "private-split",
-            Self::ManyToMany => "private-many-to-many-representative",
-            Self::SeveralDistinctOwners => "private-several-distinct-owners",
+            Self::Split => Some("private-split"),
+            Self::ManyToMany => Some("private-many-to-many-representative"),
+            Self::SeveralDistinctOwners => Some("private-several-distinct-owners"),
+            Self::StrictOneToOne => None,
         }
     }
 
@@ -149,7 +189,7 @@ impl PrivateShape {
     #[must_use]
     const fn consumed(self) -> &'static [ConsumedReceipt] {
         match self {
-            Self::Split => &[ConsumedReceipt::Primary],
+            Self::Split | Self::StrictOneToOne => &[ConsumedReceipt::Primary],
             Self::ManyToMany | Self::SeveralDistinctOwners => {
                 &[ConsumedReceipt::Primary, ConsumedReceipt::Balancing]
             }
@@ -165,25 +205,50 @@ impl PrivateShape {
     /// there rather than here.
     #[must_use]
     fn destinations(self) -> Vec<Destination> {
-        let d = |scalar, amount| Destination { scalar, amount };
+        // A primary output's blinder is derived; the balancing one's is
+        // solved from the others. Every shape below states which is which
+        // rather than leaving it to be read off the output order.
+        let primary = |scalar, amount| Destination {
+            scalar,
+            amount,
+            role: FixtureOutputRole::Primary,
+        };
+        let balancing = |scalar, amount| Destination {
+            scalar,
+            amount,
+            role: FixtureOutputRole::Balancing,
+        };
         match self {
             // 700_000_000 in, split three ways back to the two owners.
             Self::Split => vec![
-                d(SECOND_SCALAR, 400_000_000),
-                d(FIRST_SCALAR, 200_000_000),
-                d(FIRST_SCALAR, 100_000_000),
+                primary(SECOND_SCALAR, 400_000_000),
+                primary(FIRST_SCALAR, 200_000_000),
+                balancing(FIRST_SCALAR, 100_000_000),
             ],
             // 1_000_000_000 in across two receipts, three ways out.
             Self::ManyToMany => vec![
-                d(SECOND_SCALAR, 500_000_000),
-                d(FIRST_SCALAR, 300_000_000),
-                d(SECOND_SCALAR, 200_000_000),
+                primary(SECOND_SCALAR, 500_000_000),
+                primary(FIRST_SCALAR, 300_000_000),
+                balancing(SECOND_SCALAR, 200_000_000),
             ],
             // 1_000_000_000 in across two distinctly owned receipts, two
             // ways out.
             Self::SeveralDistinctOwners => {
-                vec![d(SECOND_SCALAR, 600_000_000), d(FIRST_SCALAR, 400_000_000)]
+                vec![
+                    primary(SECOND_SCALAR, 600_000_000),
+                    balancing(FIRST_SCALAR, 400_000_000),
+                ]
             }
+            // ONE receipt in and ONE output out: the strict one-to-one,
+            // whose lone output declares the fully-solved form and takes
+            // the consumed coin's own blinder. Nothing is split and
+            // nothing changes hands twice, so the whole consumed amount
+            // travels to the second owner.
+            Self::StrictOneToOne => vec![Destination {
+                scalar: SECOND_SCALAR,
+                amount: 700_000_000,
+                role: FixtureOutputRole::SoleBalancing,
+            }],
         }
     }
 }
@@ -458,22 +523,23 @@ impl MultiShapePlanner {
         linked: &LinkedDeployment,
     ) -> Result<Successor, PrivateRestartRefusal> {
         let destinations = self.shape.destinations();
-        let programs: Vec<Vec<u8>> = destinations
+        let outputs: Vec<ConfidentialFixtureOutput> = destinations
             .iter()
-            .map(|destination| private_program(&linked.abi, &destination.scalar))
-            .collect::<Result<_, _>>()?;
-        let amounts: Vec<u64> = destinations
-            .iter()
-            .map(|destination| destination.amount)
-            .collect();
+            .map(|destination| {
+                Ok(ConfidentialFixtureOutput {
+                    role: destination.role,
+                    semantic_amount: destination.amount,
+                    output_program: private_program(&linked.abi, &destination.scalar)?,
+                })
+            })
+            .collect::<Result<_, PrivateRestartRefusal>>()?;
 
         let handle = self.shape.successor_handle();
         let (digest, view) = register_multi(
             &handle,
             *linked.asset.internal(),
             self.input_blinder_sum(linked),
-            &amounts,
-            &programs,
+            outputs,
         )
         .map_err(|_| PrivateRestartRefusal::FixtureNotRegistrable {
             handle: handle.clone(),
@@ -610,18 +676,26 @@ impl MultiShapePlanner {
         )
         .map_err(|_| PrivateRestartRefusal::ControlNotRequestable)?;
 
-        let last = destinations.len().saturating_sub(1);
-        let destination_openings: Vec<PrivateDestinationOpening> = (0..destinations.len())
-            .map(|index| PrivateDestinationOpening {
+        // The openings carry the roles the shape stated, not the roles a
+        // position implies. This is the second face of the same
+        // retirement: the fixture registry stopped inferring the balance
+        // from an output's index, and so does the layer that hands the
+        // materializer its openings.
+        let destination_openings: Vec<PrivateDestinationOpening> = destinations
+            .iter()
+            .enumerate()
+            .map(|(index, destination)| PrivateDestinationOpening {
                 fixture: FixtureOpeningReference::new(
                     self.shape.successor_handle(),
                     successor.digest,
                     index,
                 ),
-                role: if index == last {
-                    ConfidentialOutputRole::Balancing
-                } else {
-                    ConfidentialOutputRole::Primary
+                role: match destination.role {
+                    FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
+                    // Both solving roles are the view's one solving role:
+                    // the sole form is a solve over no others, which is
+                    // the same instruction to the materializer.
+                    _ => ConfidentialOutputRole::Balancing,
                 },
             })
             .collect();
@@ -864,9 +938,24 @@ fn hex(bytes: [u8; 32]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use target_elements_conformance::confidential_fixture::RegistrationRefusal;
+    use target_elements_conformance::confidential_fixture::{
+        ConfidentialFixtureOutput, FixtureOutputRole, RegistrationRefusal,
+    };
 
     use crate::live_proof_bearing_observation::{register_multi, registry_refusal_for};
+
+    /// One output, stated whole.
+    ///
+    /// The builders below name each output's role rather than relying on
+    /// its position, which is the retirement these tests are the first
+    /// readers of.
+    fn output(role: FixtureOutputRole, amount: u64, program: Vec<u8>) -> ConfidentialFixtureOutput {
+        ConfidentialFixtureOutput {
+            role,
+            semantic_amount: amount,
+            output_program: program,
+        }
+    }
 
     /// A disposable asset for the offline registration checks. Public
     /// test material under ADR-015; it names no chain.
@@ -874,7 +963,24 @@ mod tests {
 
     /// The zero input blinder sum a two-input transfer's consumed coins
     /// sum to, and a valid scalar the registry admits.
+    ///
+    /// It is zero for a real reason and not for convenience: this
+    /// ceremony's predecessor is funded from an explicit input, so its
+    /// own input blinder sum is zero and its two output blinders come out
+    /// ordered additive inverses. A transfer consuming both of them
+    /// therefore presents exactly this sum.
     const ZERO_SUM: [u8; 32] = [0_u8; 32];
+
+    /// An input blinder sum that does not cancel.
+    ///
+    /// What a ONE-input transfer presents: a single consumed coin's own
+    /// blinder, which has nothing to cancel against. Public disposable
+    /// test material under ADR-015.
+    const NON_CANCELING_SUM: [u8; 32] = {
+        let mut bytes = [0_u8; 32];
+        bytes[31] = 0x2a;
+        bytes
+    };
 
     /// The multi-output constructor the step-five stop said was absent
     /// now builds a three-output successor: the split shape's fixture,
@@ -885,8 +991,11 @@ mod tests {
             "ctf-v1/test-three-output",
             ASSET,
             ZERO_SUM,
-            &[400_000_000, 200_000_000, 100_000_000],
-            &[vec![0x51], vec![0x52], vec![0x53]],
+            vec![
+                output(FixtureOutputRole::Primary, 400_000_000, vec![0x51]),
+                output(FixtureOutputRole::Primary, 200_000_000, vec![0x52]),
+                output(FixtureOutputRole::Balancing, 100_000_000, vec![0x53]),
+            ],
         )
         .expect("the three-output successor registers");
         assert_eq!(
@@ -903,32 +1012,103 @@ mod tests {
             "ctf-v1/test-two-output",
             ASSET,
             ZERO_SUM,
-            &[600_000_000, 400_000_000],
-            &[vec![0x51], vec![0x52]],
+            vec![
+                output(FixtureOutputRole::Primary, 600_000_000, vec![0x51]),
+                output(FixtureOutputRole::Balancing, 400_000_000, vec![0x52]),
+            ],
         )
         .expect("the two-output successor registers");
         assert_eq!(view.outputs().len(), 2);
     }
 
-    /// A one-output shape — private-merge, the strict one-to-one, and the
-    /// fee-only case alike — hits the registry's two-output floor. This is
-    /// the same wall for all three: the registry counts outputs before it
-    /// inspects any of them, so a single output is refused
-    /// `OutputSetTooSmall` whatever that output is.
+    /// The one-output floor, as it stands after the single-output form
+    /// was admitted.
+    ///
+    /// # What this test used to say, and why it is worth reading twice
+    ///
+    /// It used to record that a one-output shape — private-merge, the
+    /// strict one-to-one, and the fee-only case alike — hit a single
+    /// cardinality wall: the registry counted outputs before inspecting
+    /// any of them, so one output was refused `OutputSetTooSmall`
+    /// whatever that output was. The shape census then typed that wall as
+    /// a first-party convention rather than a consensus rule, and the
+    /// convention has since been structurally removed.
+    ///
+    /// The wall did not disappear. It NARROWED, to exactly the case it
+    /// was always about: a lone output that asks to be solved from others
+    /// that are not there. A lone output that DECLARES the fully-solved
+    /// form registers. Both halves are asserted here, at the site that
+    /// recorded the wall, so a reader meets the removal where they would
+    /// have met the refusal.
     #[test]
-    fn a_one_output_shape_hits_the_registry_floor() {
+    fn the_one_output_floor_narrowed_to_the_undeclared_case() {
         let refusal = registry_refusal_for(
             "ctf-v1/test-one-output",
             ASSET,
             ZERO_SUM,
-            &[700_000_000],
-            &[vec![0x51]],
+            vec![output(
+                FixtureOutputRole::Balancing,
+                700_000_000,
+                vec![0x51],
+            )],
         )
-        .expect("a one-output manifest is refused");
+        .expect("an undeclared one-output manifest is still refused");
         assert_eq!(
             refusal,
             RegistrationRefusal::OutputSetTooSmall { found: 1 },
-            "the one-output floor is the merge wall, and it is a cardinality wall",
+            "a lone output not declaring the form meets the floor it always met",
+        );
+
+        // And the removal itself. The input blinder sum is NONZERO here
+        // because that is the whole condition the form carries: a sole
+        // output's blinder is forced to this sum, and a sum that cancelled
+        // would force a zero blinder that hides nothing.
+        let (_digest, view) = register_multi(
+            "ctf-v1/test-one-output-declared",
+            ASSET,
+            NON_CANCELING_SUM,
+            vec![output(
+                FixtureOutputRole::SoleBalancing,
+                700_000_000,
+                vec![0x51],
+            )],
+        )
+        .expect("the declared single-output form registers");
+        assert_eq!(view.outputs().len(), 1);
+        assert_eq!(
+            view.outputs()[0].value_blinder(),
+            &NON_CANCELING_SUM,
+            "the lone output's blinder is the input blinder sum itself",
+        );
+    }
+
+    /// A merge of this ceremony's inverse-pair predecessor is refused
+    /// rather than built.
+    ///
+    /// The degeneracy the single-output form carries, at the one place a
+    /// reader of this ceremony would look for it. The predecessor's two
+    /// output blinders are ordered additive inverses, so a two-input merge
+    /// consuming both of them presents a ZERO input blinder sum; the lone
+    /// output's blinder is forced to that sum, and a zero blinder hides
+    /// nothing at all. The registry refuses it, so this ceremony cannot
+    /// build a merge from its own predecessor even now that the
+    /// cardinality floor has moved.
+    #[test]
+    fn a_merge_of_the_inverse_pair_is_refused_as_a_zero_blinder() {
+        let refusal = registry_refusal_for(
+            "ctf-v1/test-merge-canceling",
+            ASSET,
+            ZERO_SUM,
+            vec![output(
+                FixtureOutputRole::SoleBalancing,
+                1_000_000_000,
+                vec![0x51],
+            )],
+        )
+        .expect("a canceling merge is refused");
+        assert!(
+            matches!(refusal, RegistrationRefusal::Derivation { .. }),
+            "the wall is now the zero blinder and no longer the output count",
         );
     }
 
@@ -946,8 +1126,11 @@ mod tests {
                 "ctf-v1/test-determinism",
                 ASSET,
                 ZERO_SUM,
-                &[400_000_000, 200_000_000, 100_000_000],
-                &[vec![0x51], vec![0x52], vec![0x53]],
+                vec![
+                    output(FixtureOutputRole::Primary, 400_000_000, vec![0x51]),
+                    output(FixtureOutputRole::Primary, 200_000_000, vec![0x52]),
+                    output(FixtureOutputRole::Balancing, 100_000_000, vec![0x53]),
+                ],
             )
             .expect("the successor registers")
         };
@@ -981,8 +1164,10 @@ mod tests {
             "ctf-v1/test-fee-output",
             ASSET,
             ZERO_SUM,
-            &[500_000_000, 500_000_000],
-            &[vec![0x51], vec![]],
+            vec![
+                output(FixtureOutputRole::Primary, 500_000_000, vec![0x51]),
+                output(FixtureOutputRole::Balancing, 500_000_000, Vec::new()),
+            ],
         )
         .expect("a fee-shaped empty-program output is refused");
         assert_eq!(

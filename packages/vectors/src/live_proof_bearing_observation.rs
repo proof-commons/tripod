@@ -1029,36 +1029,33 @@ pub(crate) fn register(
 
 /// One manifest of arbitrary output arity, built from its own parts.
 ///
-/// The multi-output constructor the restart order's fifth step needs, and
-/// the whole of what `LiveInfrastructureBlocker::MultiOutputShapeConstructorAbsent`
-/// records as missing: [`manifest`] is fixed at the two outputs a
-/// one-to-one control has, while a split, a many-to-many, or a
-/// several-owner transfer has more. The last output is the balancing one
-/// and every earlier output is primary, which is the registry's own rule
-/// that exactly one output is balancing, expressed as a position rather
-/// than restated at each call.
+/// The multi-output constructor the restart order's fifth step needs:
+/// [`manifest`] is fixed at the two outputs a one-to-one control has,
+/// while a split, a many-to-many, or a several-owner transfer has more.
+///
+/// # The roles are stated by the caller, not by a position
+///
+/// This builder used to cast the LAST output as the balancing one and
+/// every earlier output as primary. That read as a convenient spelling of
+/// the registry's exactly-one-balancing rule, and it was one for as long
+/// as every output was a blinded protocol output.
+///
+/// It stopped being one twice over. A FEE output is the one output that
+/// must never balance, and arriving last it arrived cast as the output
+/// that does. And a SINGLE-output manifest must DECLARE the fully-solved
+/// form rather than be assigned a role that asks to be solved from others
+/// that are not there — a positional rule cannot express a declaration,
+/// because a position is not something a caller says.
+///
+/// So the role travels with the output. The builder no longer decides
+/// anything about the balance, which moves the decision to the call site
+/// that actually knows the shape it is building.
 fn multi_manifest(
     handle: &str,
     explicit_asset: [u8; 32],
     input_blinder_sum: [u8; 32],
-    amounts: &[u64],
-    programs: &[Vec<u8>],
+    outputs: Vec<ConfidentialFixtureOutput>,
 ) -> ConfidentialFixtureManifest {
-    let last = amounts.len().saturating_sub(1);
-    let outputs = amounts
-        .iter()
-        .zip(programs)
-        .enumerate()
-        .map(|(index, (amount, program))| ConfidentialFixtureOutput {
-            role: if index == last {
-                FixtureOutputRole::Balancing
-            } else {
-                FixtureOutputRole::Primary
-            },
-            semantic_amount: *amount,
-            output_program: program.clone(),
-        })
-        .collect();
     ConfidentialFixtureManifest {
         handle: ConfidentialFixtureHandle::new(handle.to_owned()),
         material_class: PublicDisposableTestMaterial::EXPECTED,
@@ -1090,8 +1087,7 @@ pub(crate) fn register_multi(
     handle: &str,
     explicit_asset: [u8; 32],
     input_blinder_sum: [u8; 32],
-    amounts: &[u64],
-    programs: &[Vec<u8>],
+    outputs: Vec<ConfidentialFixtureOutput>,
 ) -> Result<(ConfidentialFixtureDigest, ConfidentialFixtureView), ProofBearingRefusal> {
     let mut registry = ConfidentialFixtureRegistry::new();
     registry
@@ -1099,8 +1095,7 @@ pub(crate) fn register_multi(
             handle,
             explicit_asset,
             input_blinder_sum,
-            amounts,
-            programs,
+            outputs,
         ))
         .map_err(|refusal| ProofBearingRefusal::FixtureNotRegistrable {
             handle: handle.to_owned(),
@@ -1137,8 +1132,7 @@ pub(crate) fn registry_refusal_for(
     handle: &str,
     explicit_asset: [u8; 32],
     input_blinder_sum: [u8; 32],
-    amounts: &[u64],
-    programs: &[Vec<u8>],
+    outputs: Vec<ConfidentialFixtureOutput>,
 ) -> Option<RegistrationRefusal> {
     let mut registry = ConfidentialFixtureRegistry::new();
     registry
@@ -1146,8 +1140,7 @@ pub(crate) fn registry_refusal_for(
             handle,
             explicit_asset,
             input_blinder_sum,
-            amounts,
-            programs,
+            outputs,
         ))
         .err()
 }
