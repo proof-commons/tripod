@@ -332,6 +332,24 @@ pub struct LimitationRemoval {
     pub proven_by: &'static str,
 }
 
+/// The two-output floor's removal, recorded once.
+///
+/// One constant rather than two literals, because the census row that
+/// cites it and the limitation that reports it must not be able to
+/// disagree about what happened. A test holds them equal; naming the
+/// value makes the test a statement about wiring rather than about
+/// somebody having copied a paragraph correctly.
+const TWO_OUTPUT_FLOOR_REMOVAL: LimitationRemoval = LimitationRemoval {
+    row: "T5-041",
+    change: "The cardinality clause stopped counting outputs and started asking whether a short \
+             manifest DECLARES the single-output fully-solved balancing form, which a new \
+             `SoleBalancing` role states. The floor still refuses a lone output that does not \
+             declare it, so nothing was relaxed; the zero-blinder degeneracy is answered by the \
+             registry's existing `DegenerateBalancingScalar` refusal, left standing and now \
+             load-bearing.",
+    proven_by: crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
+};
+
 /// A first-party convention that refuses a shape consensus admits.
 ///
 /// Each member names a rule of this repository's own fixture registry,
@@ -444,16 +462,7 @@ impl Limitation {
     #[must_use]
     pub const fn removal(self) -> Option<LimitationRemoval> {
         match self {
-            Self::TwoOutputFloor => Some(LimitationRemoval {
-                row: "T5-041",
-                change: "The cardinality clause stopped counting outputs and started asking \
-                         whether a short manifest DECLARES the single-output fully-solved \
-                         balancing form, which a new `SoleBalancing` role states. The floor still \
-                         refuses a lone output that does not declare it, so nothing was relaxed; \
-                         the zero-blinder degeneracy is answered by the registry's existing \
-                         `DegenerateBalancingScalar` refusal, left standing and now load-bearing.",
-                proven_by: crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
-            }),
+            Self::TwoOutputFloor => Some(TWO_OUTPUT_FLOOR_REMOVAL),
             Self::AbsentFeeRole | Self::CancelingPredecessorOnly => None,
         }
     }
@@ -585,14 +594,7 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
             },
             FirstPartyStatus::ConstructibleAfterRemoval {
                 removed: Limitation::TwoOutputFloor,
-                removal: match Limitation::TwoOutputFloor.removal() {
-                    Some(removal) => removal,
-                    // Unreachable: the floor's removal is recorded above.
-                    // Stated as a match rather than an unwrap because this
-                    // is a const fn, and stated at all so that deleting the
-                    // removal record cannot silently empty this row.
-                    None => panic!("the two-output floor's removal is recorded"),
-                },
+                removal: TWO_OUTPUT_FLOOR_REMOVAL,
             },
         ),
         // The merge, which the SAME removal did not free. The floor no
