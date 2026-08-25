@@ -954,6 +954,91 @@ fn observation_lines(observation: &KeyPathObservation) -> Vec<String> {
     lines
 }
 
+/// The run of record: what one execution of this probe observed.
+///
+/// # Why the observation is a constant and not a stored file
+///
+/// The evidence a run produces is the observation, and an observation
+/// nobody can name is not evidence. These are the figures ONE run
+/// against a real node produced, written down so that a claim made
+/// anywhere in this workspace about the key path can be traced to bytes
+/// and to a verdict rather than to a test having been written.
+///
+/// It re-runs nothing and proves nothing by existing.
+///
+/// # There is no accepted identity here, and there should not be
+///
+/// The other ceremonies' runs of record are anchored on the identity
+/// the target gave an accepted transaction. This one has none, because
+/// the target accepted nothing, and minting an observation identity for
+/// a refusal would file a non-acceptance in the vocabulary acceptances
+/// are cited from. What anchors this run instead is the candidate's own
+/// bytes, which are reproducible from inputs that are all written down,
+/// and the verdict recorded verbatim beside them.
+///
+/// The target: Elements Core v28.99.0-b7fc5d080a7e, at the pinned tip
+/// the lane binds itself to, on a disposable development chain the run
+/// created and destroyed. The outpoint is omitted, as the other runs of
+/// record omit theirs: it names a chain that no longer exists.
+pub mod run_of_record {
+    /// The disposable asset the run issued.
+    pub const ISSUED_ASSET: &str =
+        "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
+
+    /// The witness program the funded coin paid to.
+    pub const FUNDED_PROGRAM: &str =
+        "51208d696527d4d1517c67ba5e72b9c5b9c730cb463f20d59b84d7e813d9a188ef69";
+
+    /// The tweaked output key that program carries.
+    pub const OUTPUT_KEY: &str = "8d696527d4d1517c67ba5e72b9c5b9c730cb463f20d59b84d7e813d9a188ef69";
+
+    /// The taptree root the output key is tweaked by.
+    pub const MERKLE_ROOT: &str =
+        "70c084e34b9e1f63b6806d999d0a2df507493b67ef1a3d8711f062d678cf6e45";
+
+    /// The x-only public key of the scalar that signed the attempt.
+    ///
+    /// The first published owner's. Not [`OUTPUT_KEY`], which is the
+    /// whole reason the refusal below establishes nothing about the
+    /// internal key.
+    pub const SIGNING_PUBLIC_KEY: &str =
+        "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659";
+
+    /// The candidate key-path message the signature was taken over.
+    ///
+    /// Candidate-scoped. Reviewed by nobody, and observed to be the
+    /// target's message by nothing.
+    pub const CANDIDATE_KEY_PATH_MESSAGE: &str =
+        "d165412ea39cc0ee067af1313c04bacdaff2f9add0db6ae895da207ab0943c05";
+
+    /// How many bytes were handed to the submission wire.
+    pub const SUBMITTED_BYTES: usize = 281;
+
+    /// How many items the single input's witness carried.
+    pub const WITNESS_ITEMS: usize = 1;
+
+    /// How wide that one item was.
+    pub const WITNESS_ITEM_BYTES: usize = 64;
+
+    /// What the target said, verbatim and unmapped.
+    pub const OBSERVED_DETAIL: &str =
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)";
+
+    /// The layer the adapter filed the verdict under.
+    ///
+    /// Recorded as the string the run produced rather than as the enum,
+    /// because the name is itself the finding: the observed-layer
+    /// vocabulary has no key-path member, so a key-path refusal is filed
+    /// under a script-path name. The adapter classifies on the refusal
+    /// text's prefix and cannot do otherwise with the vocabulary it has.
+    /// Repairing that is the typed carrier the follow-up phase owns; the
+    /// probe reports it and changes nothing.
+    pub const OBSERVED_LAYER: &str = "ScriptPathRejection";
+
+    /// The run's wall time.
+    pub const WALL_SECONDS: f64 = 4.1;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -995,6 +1080,40 @@ mod tests {
         assert!(rendered.contains("residual_internal_key_unspendability_stands true"));
         assert!(rendered.contains("discharges_no_matrix_row true"));
         assert!(rendered.ends_with('\n'));
+    }
+
+    #[test]
+    fn the_run_of_record_names_one_refused_attempt_at_one_witness_item() {
+        // The figures are the run's, and this checks their SHAPE rather
+        // than re-deriving them. The two that carry the claim are the
+        // witness census and the key disagreement: a run of record whose
+        // witness had grown a second item would not be a key-path
+        // attempt, and one whose signing key equalled the output key
+        // would be a different experiment reported under this name.
+        use super::run_of_record as run;
+
+        assert_eq!(run::WITNESS_ITEMS, 1);
+        assert_eq!(run::WITNESS_ITEM_BYTES, 64);
+        assert_ne!(run::SIGNING_PUBLIC_KEY, run::OUTPUT_KEY);
+
+        // The program is the witness-version-one script for the output
+        // key: two prefix bytes and the key. Checked by construction so
+        // that a transcription slip in either constant is a failure
+        // rather than a pair of numbers nobody compared.
+        assert_eq!(run::FUNDED_PROGRAM, format!("5120{}", run::OUTPUT_KEY));
+
+        assert_eq!(run::OUTPUT_KEY.len(), 64);
+        assert_eq!(run::MERKLE_ROOT.len(), 64);
+        assert_eq!(run::ISSUED_ASSET.len(), 64);
+        assert_eq!(run::CANDIDATE_KEY_PATH_MESSAGE.len(), 64);
+
+        // The submitted bytes carry a transaction and not only the
+        // witness item.
+        assert!(run::SUBMITTED_BYTES > run::WITNESS_ITEM_BYTES);
+
+        // The verdict was a refusal, and the artifact says so in the
+        // target's own words rather than in a mapped name.
+        assert!(run::OBSERVED_DETAIL.contains("Invalid Schnorr signature"));
     }
 
     #[test]
