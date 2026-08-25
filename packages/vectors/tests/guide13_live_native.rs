@@ -1874,3 +1874,113 @@ fn the_explicit_maximum_outputs_shape_is_submitted_to_a_real_target() {
 
     run_one_explicit_shape(ExplicitShape::MaximumOutputs, "explicit-maximum-outputs");
 }
+
+/// §15.3's two witness-content rows, with their control, on one chain.
+///
+/// # Why the control and the mutants are one test
+///
+/// A refusal is attributable to a row's own class only when the
+/// unmutated form is ACCEPTED and the mutated form is refused. This run
+/// submits the unmutated one-input one-output candidate first, then the
+/// same finalized candidate twice more with its one signature position
+/// offering something else — nothing at all, and then bytes of the
+/// selected width that are not a signature.
+///
+/// Nothing here asserts what the node decided. What it asserts is that
+/// all three submissions were answered and that the mutants differ from
+/// the control in one run of bytes, which is the condition under which
+/// the verdicts mean anything at all.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_witness_content_negatives_are_offered_beside_their_control() {
+    use vectors::live_explicit_shapes::{ExplicitShapePlanner, render_explicit_shape};
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension("explicit-witness-negatives");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner = ExplicitShapePlanner::for_witness_negatives(identifier(&genesis))
+        .expect("the negative ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_explicit_shape(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    if let Some(refusal) = record.refusal() {
+        panic!("the negative ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    // Every case was answered.
+    assert!(
+        record.observed_layer().is_some(),
+        "the control was answered"
+    );
+    assert_eq!(
+        record.negatives().len(),
+        2,
+        "one observation per witness-content mutation",
+    );
+
+    // The attributability condition, measured rather than argued: each
+    // mutant differs from the control in exactly one run of bytes.
+    for negative in record.negatives() {
+        assert!(
+            negative.differs_from_control_in_one_item(),
+            "{:?} does not differ from the control in one run of bytes",
+            negative.mutation(),
+        );
+    }
+
+    // Where the control was accepted, the two origins hold for it.
+    if let Some(check) = record.reverification() {
+        assert!(check.readback_matches_submission());
+        assert!(check.every_input_verified());
+    }
+}
