@@ -19,6 +19,7 @@ vectors_source_files = files(
   'src/live_conservation_negatives.rs',
   'src/live_disclosure.rs',
   'src/live_evidence.rs',
+  'src/live_explicit_shapes.rs',
   'src/live_fault_discharge.rs',
   'src/live_first_party.rs',
   'src/live_keypath_probe.rs',

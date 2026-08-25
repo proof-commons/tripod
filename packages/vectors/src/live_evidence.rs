@@ -20,24 +20,27 @@
 //!
 //! # The honest finding this plan carries
 //!
-//! Twenty-five of the twenty-six positive rows of §15.1 and §15.2 are
-//! unanswered today, and they stand at
+//! Twenty-two of the twenty-six positive rows of §15.1 and §15.2 are
+//! answered. Each stands at [`LiveRowStanding::NativeRunObserved`],
+//! carrying the identity a real node computed for a transfer of that
+//! row's own shape which it accepted, whose bytes were read back out of
+//! the node's own copy equal to the bytes it was handed, and whose
+//! witness verified against an independently recomputed message. The
+//! standing carries the identity so the claim can be checked against a
+//! chain rather than believed.
+//!
+//! The four that did not move stand at
 //! [`LiveRowStanding::NativeRunRequired`] — a statement that a run
-//! would answer them and not a statement that nothing could.
+//! would answer them and not a statement that nothing could. One asks
+//! for a sponsored transfer that takes change, which no ceremony here
+//! builds, and three are private rows whose grounds the delta test
+//! below names one by one.
 //!
-//! Two are answered. `private-one-to-one` and
-//! `both-commitment-parity-forms` stand at
-//! [`LiveRowStanding::NativeRunObserved`], each carrying the identity a
-//! real node computed for a sponsorless private receipt-covenant
-//! transfer of that row's own shape which it accepted, and whose
-//! witness was verified out of the node's own copy against an
-//! independently recomputed message. The standing carries the identity
-//! so the claim can be checked against a chain rather than believed.
-//!
-//! Twenty-five of twenty-six remains the honest headline. Two rows
-//! moved because two runs answered them, and the twenty-four that did
-//! not move are not waiting on a component — they are waiting on runs
-//! nobody has taken yet.
+//! This paragraph has been rewritten each time a wave observed
+//! something, and the rewriting is the discipline rather than churn: it
+//! said two while two were answered, and seven while seven were, and a
+//! header that kept an old number would be the plan's own summary
+//! disagreeing with the census it computes.
 //!
 //! That is a narrower finding than this paragraph used to carry, and
 //! the narrowing is a repair rather than a softening. What it used to
@@ -510,6 +513,35 @@ pub enum LiveRowStanding {
         /// transaction.
         accepted_identity: &'static str,
     },
+    /// A target REFUSED a candidate staging this row's own class,
+    /// while accepting the unmutated form of the same candidate.
+    ///
+    /// The negative half's counterpart to [`Self::NativeRunObserved`],
+    /// and shaped like it for the same reason: what makes a refusal
+    /// evidence is not that a refusal happened but that a specific one
+    /// did, and a reader who does not trust this crate has to be able to
+    /// check it.
+    ///
+    /// # Why a refusal carries an ACCEPTED identity
+    ///
+    /// A census of rejections from a pipeline that has never had a
+    /// transaction accepted establishes that the target rejects things,
+    /// which every target that rejects everything also does. So the
+    /// evidence for a negative row is a PAIR: the unmutated candidate
+    /// accepted, and the mutated one refused. The accepted identity is
+    /// carried here because it is the half a reader can check against a
+    /// chain — the refusal left no transaction to look up, which is what
+    /// being refused means.
+    ///
+    /// The refusal detail is the target's own words, recorded verbatim
+    /// and never paraphrased into this workspace's vocabulary.
+    NativeRefusalObserved {
+        /// The identity the target computed for the accepted control the
+        /// refusal is attributable against.
+        control_identity: &'static str,
+        /// What the target said when it refused the mutated candidate.
+        refusal_detail: &'static str,
+    },
     /// A component the row needs does not exist.
     InfrastructureBlocked(LiveInfrastructureBlocker),
     /// The row's boundary is this workspace's own report bytes.
@@ -552,6 +584,7 @@ impl LiveRowStanding {
             self,
             Self::FirstPartyDischarged { .. }
                 | Self::NativeRunObserved { .. }
+                | Self::NativeRefusalObserved { .. }
                 | Self::ReportLayerAnswerable
         )
     }
@@ -592,6 +625,7 @@ pub struct LiveEvidenceCensus {
     first_party_undischarged: usize,
     native_run_required: usize,
     native_run_observed: usize,
+    native_refusal_observed: usize,
     infrastructure_blocked: usize,
     report_layer: usize,
     vocabulary_closed: usize,
@@ -625,6 +659,18 @@ impl LiveEvidenceCensus {
     #[must_use]
     pub const fn native_run_observed(&self) -> usize {
         self.native_run_observed
+    }
+
+    /// How many negative rows a target-native refusal has answered.
+    ///
+    /// Counted apart from [`Self::native_run_observed`] rather than
+    /// added to it, because the two are different observations: one is a
+    /// transaction on a chain and the other is a verdict about bytes
+    /// that never reached one. A single figure would let a reader take a
+    /// refusal for an acceptance.
+    #[must_use]
+    pub const fn native_refusal_observed(&self) -> usize {
+        self.native_refusal_observed
     }
 
     /// How many rows are waiting on a target-native run.
@@ -916,6 +962,129 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // ceremony writes the forced blinder's nonzero-ness into its own
         // transcript rather than leaving it to be assumed.
         "private-merge" => Some(crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID),
+
+        // §15.1, the positive explicit table. Thirteen of its sixteen
+        // rows are answered by thirteen runs of the explicit shape
+        // ceremony, each accepted by a real node, each read back equal
+        // to the bytes it was handed, and each with every input's
+        // signature verified out of the node's own copy against an
+        // independently recomputed message.
+        //
+        // Three identities are each cited by two rows, and the register
+        // this arm reads from states which and why: those rows are two
+        // CLASSES of one transaction rather than two transactions, and
+        // the rule this map is held to forbids citing an acceptance of a
+        // DIFFERENT shape rather than an acceptance that is an instance
+        // of two classes at once.
+        // The one-to-one acceptance, cited by BOTH rows it is an
+        // instance of. The accepted bytes consume one receipt and create
+        // one output, and they carry no sponsor region, so they are the
+        // `one-input-to-one-output` class and the `sponsorless` class at
+        // once. Building a second, gratuitously different transfer so
+        // that each row could cite its own hex string would be dressing
+        // one fact up as two.
+        "one-input-to-one-output" | "sponsorless" => {
+            Some(crate::live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID)
+        }
+        // The split acceptance, likewise both: one receipt split into
+        // two destinations belonging to two DISTINCT published owners is
+        // an instance of the split class and of the
+        // several-destination-owners class.
+        "one-input-split-into-two" | "several-destination-owners" => {
+            Some(crate::live_explicit_shapes::run_of_record::SPLIT_ACCEPTED_TXID)
+        }
+        // The merge acceptance, and this pair is the strongest of the
+        // three rather than the weakest. The normalization run offered
+        // the same two receipts in the REVERSE of their canonical order
+        // and the merge run offered them in it; the two built
+        // byte-identical transactions and the node computed ONE identity
+        // for them. The shared identity IS the normalization, observed
+        // rather than asserted -- a second identity would have been
+        // evidence that the request does not normalize.
+        "several-inputs-merged-into-one" | "canonical-input-normalization" => {
+            Some(crate::live_explicit_shapes::run_of_record::MERGE_ACCEPTED_TXID)
+        }
+        "several-inputs-to-several-outputs" => {
+            Some(crate::live_explicit_shapes::run_of_record::SEVERAL_TO_SEVERAL_ACCEPTED_TXID)
+        }
+        // TWO inputs under ONE owner: the repetition is the subject, and
+        // both signatures verify out of the node's own copy, each over
+        // its own position's recomputed message.
+        "repeated-owner" => {
+            Some(crate::live_explicit_shapes::run_of_record::REPEATED_OWNER_ACCEPTED_TXID)
+        }
+        // TWO inputs under two DISTINCT owners. Its destinations are the
+        // several-to-several run's exactly and the identities differ
+        // anyway, because the SPENT programs differ -- which is what
+        // makes this run about its input owners.
+        "several-distinct-owners" => {
+            Some(crate::live_explicit_shapes::run_of_record::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID)
+        }
+        "one-destination-owner" => {
+            Some(crate::live_explicit_shapes::run_of_record::ONE_DESTINATION_OWNER_ACCEPTED_TXID)
+        }
+        // Destinations of one unit and the remainder. One is the
+        // boundary the request type states rather than a small number
+        // somebody picked, and the node took it.
+        "semantic-boundary-values" => {
+            Some(crate::live_explicit_shapes::run_of_record::BOUNDARY_VALUES_ACCEPTED_TXID)
+        }
+        "candidate-maximum-inputs" => {
+            Some(crate::live_explicit_shapes::run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID)
+        }
+        "candidate-maximum-outputs" => {
+            Some(crate::live_explicit_shapes::run_of_record::MAXIMUM_OUTPUTS_ACCEPTED_TXID)
+        }
+        // The sponsor-signed explicit control, cited by both rows it is
+        // an instance of. It carries a sponsor region -- a sponsor
+        // input, a two-item sponsor witness the adapter produced over
+        // the exact finalized bytes, and a fee output in the reserve
+        // asset -- and it requests NO sponsor change, which is read off
+        // the ceremony's own request rather than inferred from the
+        // outputs. So it is the `sponsored` class and the
+        // `sponsor-change-absent` class at once.
+        //
+        // It is NOT `sponsor-change-present`, and that row stays
+        // unanswered: no ceremony in this workspace builds a sponsored
+        // control that TAKES change, and the register this arm reads
+        // from records why, correcting an earlier wave's prediction
+        // about which obstacle stands in the way.
+        "sponsored" | "sponsor-change-absent" => {
+            Some(crate::live_explicit_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID)
+        }
+        _ => None,
+    }
+}
+
+/// The refusal that answered one negative row, where a run answered it.
+///
+/// The negative half's counterpart to [`observed_row_acceptance`], and
+/// held to the matching rule: a row is added here when a target REFUSED
+/// a candidate staging that row's own class WHILE having accepted the
+/// unmutated form of the same candidate, on the same chain, in the same
+/// session. A refusal without its control is not evidence, and a
+/// control from another chain is not this one's.
+///
+/// Each entry returns the accepted control's identity and the target's
+/// own words, both from a run of record.
+fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static str)> {
+    use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
+
+    match row.name() {
+        // §10.2 types the signature position as an unconstrained item
+        // precisely so that the TARGET is what refuses an empty or a
+        // malformed offering, and it did. The two rows are answered by
+        // one run and are distinguishable in it: the empty offering
+        // failed the check that consumed it, and the well-sized
+        // non-signature was judged and found invalid.
+        "empty-signature" => Some((
+            witness::CONTROL_ACCEPTED_TXID,
+            witness::EMPTY_SIGNATURE_REFUSAL,
+        )),
+        "malformed-signature" => Some((
+            witness::CONTROL_ACCEPTED_TXID,
+            witness::MALFORMED_SIGNATURE_REFUSAL,
+        )),
         _ => None,
     }
 }
@@ -960,6 +1129,15 @@ fn classify(
     // AFTER the specific blocker and never before it.
     if let Some(accepted_identity) = observed_row_acceptance(row) {
         return Ok(LiveRowStanding::NativeRunObserved { accepted_identity });
+    }
+    // Beside it and after it, for the same reason it sits after the
+    // specific blocker: a refusal answers a row only once the row is
+    // not waiting on something that would have to exist first.
+    if let Some((control_identity, refusal_detail)) = observed_row_refusal(row) {
+        return Ok(LiveRowStanding::NativeRefusalObserved {
+            control_identity,
+            refusal_detail,
+        });
     }
     if !a_positive_control_exists() {
         return Ok(LiveRowStanding::InfrastructureBlocked(
@@ -1067,6 +1245,7 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
             LiveRowStanding::FirstPartyUndischarged(_) => census.first_party_undischarged += 1,
             LiveRowStanding::NativeRunRequired(_) => census.native_run_required += 1,
             LiveRowStanding::NativeRunObserved { .. } => census.native_run_observed += 1,
+            LiveRowStanding::NativeRefusalObserved { .. } => census.native_refusal_observed += 1,
             LiveRowStanding::InfrastructureBlocked(_) => census.infrastructure_blocked += 1,
             LiveRowStanding::ReportLayerAnswerable => census.report_layer += 1,
             LiveRowStanding::OperationVocabularyClosed => census.vocabulary_closed += 1,
@@ -1260,6 +1439,7 @@ mod tests {
                 + census.first_party_undischarged()
                 + census.native_run_required()
                 + census.native_run_observed()
+                + census.native_refusal_observed()
                 + census.infrastructure_blocked()
                 + census.report_layer()
                 + census.vocabulary_closed()
@@ -1367,6 +1547,7 @@ mod tests {
                 + census.first_party_undischarged()
                 + census.native_run_required()
                 + census.native_run_observed()
+                + census.native_refusal_observed()
                 + census.infrastructure_blocked()
                 + census.report_layer()
                 + census.vocabulary_closed()
@@ -1399,11 +1580,18 @@ mod tests {
     #[test]
     fn exactly_the_positive_rows_a_run_answered_are_answered() {
         // The wave's delta, held as a test rather than written in a
-        // report. Twenty-six positive rows; six of them are answered,
+        // report. Twenty-six positive rows; twenty-two of them are answered,
         // and each is answered because a real node accepted a transaction
         // of ITS OWN SHAPE and the standing carries the identity. The
-        // other twenty await the run that would answer them, and
-        // awaiting a run is not an answer.
+        // other four await the run that would answer them, and awaiting
+        // a run is not an answer.
+        //
+        // It read seven until the explicit shape ceremony ran thirteen
+        // shapes against a real node and every one was accepted, which
+        // moved thirteen of §15.1's sixteen rows at once. Three of those
+        // identities are each cited by two rows, because the accepted
+        // bytes are an instance of both rows' classes; the register in
+        // `live_explicit_shapes` names the pairs and the ground.
         //
         // The count is spelled rather than derived so that a row moved
         // by an edit and not by a run fails here. That is the whole
@@ -1443,15 +1631,30 @@ mod tests {
             answered,
             BTreeSet::from([
                 "both-commitment-parity-forms",
+                "candidate-maximum-inputs",
+                "candidate-maximum-outputs",
+                "canonical-input-normalization",
+                "one-destination-owner",
+                "one-input-split-into-two",
+                "one-input-to-one-output",
                 "private-many-to-many-representative",
                 "private-merge",
                 "private-one-to-one",
                 "private-several-distinct-owners",
                 "private-split",
+                "repeated-owner",
+                "semantic-boundary-values",
+                "several-destination-owners",
+                "several-distinct-owners",
+                "several-inputs-merged-into-one",
+                "several-inputs-to-several-outputs",
+                "sponsor-change-absent",
+                "sponsored",
+                "sponsorless",
                 "target-ct-conservation",
             ]),
         );
-        assert_eq!(plan.census().native_run_observed(), 7);
+        assert_eq!(plan.census().native_run_observed(), 22);
 
         // The three positive private classes that did NOT move are named
         // here rather than left to the count, because a matrix that only
@@ -1468,15 +1671,88 @@ mod tests {
         // funded, and both are conventions rather than protocol rules.
         // A row is removed from this list by a run of its own shape and
         // by nothing else, and that run happened.
+        //
+        // The ONE explicit row that did not move is named beside them.
+        // It asks for a sponsored transfer that TAKES CHANGE, and no
+        // ceremony here builds one: the construction path places a
+        // change output only where the sponsor's offer states a change
+        // amount, and the sponsor lane funds its coin to exactly the
+        // offer. It is not blocked on a component -- a sponsor-signed
+        // explicit control has been accepted on this lane -- it is
+        // unrun.
         for unmoved in [
             "private-sponsor-values",
             "deterministic-public-fixture-openings",
             "projection-equality-with-paired-explicit",
+            "sponsor-change-present",
         ] {
             assert!(
                 !answered.contains(unmoved),
                 "{unmoved} claims an answer no run of its own shape produced",
             );
+        }
+    }
+
+    #[test]
+    fn exactly_the_negative_rows_a_refusal_answered_are_answered() {
+        // The negative half's delta, spelled for the same reason the
+        // positive one is: a row moved by an edit rather than by a run
+        // fails here.
+        //
+        // Both are §15.3 witness-content rows and both were answered by
+        // ONE run, which submitted two mutants and then the unmutated
+        // control to one node on one chain. Each standing carries the
+        // accepted control's identity -- the half a reader can check
+        // against a chain, the refusal having left no transaction to
+        // look up -- and the target's own words.
+        use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
+
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let mut answered = BTreeSet::new();
+        for row in plan.rows() {
+            if let LiveRowStanding::NativeRefusalObserved {
+                control_identity,
+                refusal_detail,
+            } = row.standing()
+            {
+                assert_eq!(
+                    control_identity.len(),
+                    64,
+                    "{} names something that is not a target identity",
+                    row.row(),
+                );
+                assert!(
+                    !refusal_detail.is_empty(),
+                    "{} carries no refusal detail",
+                    row.row(),
+                );
+                assert!(row.standing().is_answered());
+                answered.insert(row.row().name());
+            }
+        }
+        assert_eq!(
+            answered,
+            BTreeSet::from(["empty-signature", "malformed-signature"]),
+        );
+        assert_eq!(plan.census().native_refusal_observed(), 2);
+
+        // The two are DISTINGUISHABLE, which is what makes each one its
+        // own row rather than one observation counted twice. The empty
+        // offering failed the check that consumed it; the well-sized
+        // non-signature was consumed and judged.
+        assert_ne!(
+            witness::EMPTY_SIGNATURE_REFUSAL,
+            witness::MALFORMED_SIGNATURE_REFUSAL,
+        );
+
+        // And neither is the refusal the wrong submission order
+        // produced, which named an identity already on the chain and was
+        // about nothing either row is about.
+        for detail in [
+            witness::EMPTY_SIGNATURE_REFUSAL,
+            witness::MALFORMED_SIGNATURE_REFUSAL,
+        ] {
+            assert_ne!(detail, witness::REFUSAL_UNDER_CONTROL_FIRST_ORDER);
         }
     }
 

@@ -730,6 +730,11 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         // standing's own payload and belongs in the evidence plan, not
         // in bytes whose job is to summarize.
         LiveRowStanding::NativeRunObserved { .. } => "native-run-observed",
+        // Its payload is withheld for the same reason and for one more:
+        // the refusal detail is the target's own sentence, and a summary
+        // that quoted a verdict would be carrying evidence in bytes
+        // whose job is to count.
+        LiveRowStanding::NativeRefusalObserved { .. } => "native-refusal-observed",
         LiveRowStanding::InfrastructureBlocked(_) => "infrastructure-blocked",
         LiveRowStanding::ReportLayerAnswerable => "report-layer-answerable",
         LiveRowStanding::OperationVocabularyClosed => "operation-vocabulary-closed",
@@ -987,22 +992,28 @@ mod tests {
         let total: usize = board.values().map(|(rows, _, _)| rows).sum();
         assert_eq!(total, crate::live_safety::row_count());
 
-        // The positive tables are still mostly unanswered, and the
-        // scoreboard exists to make the "mostly" visible at a glance
-        // rather than to round it away. Neither table waits on a
-        // component that does not exist any more. The explicit table is
-        // answered nowhere. The private table is answered in exactly seven
-        // rows, because a real node accepted private transfers of those
-        // rows' shapes — and the number is asserted rather than bounded,
-        // because a scoreboard that said "some" would let the next row
-        // in without a run. It read two before the shape wave built the
-        // multi-output and multi-input fixtures and ran three more shapes,
-        // and six until a merge whose forced blinder is nonzero was
-        // accepted; each time it is updated to the observed fact rather
-        // than loosened to a range that would stop noticing.
+        // Neither positive table waits on a component that does not
+        // exist, and the scoreboard exists to say how far each one has
+        // actually got rather than to round it away. Both numbers are
+        // asserted rather than bounded, because a scoreboard that said
+        // "some" would let the next row in without a run.
+        //
+        // The explicit table is answered in fifteen of its sixteen rows,
+        // and it read ZERO until the explicit shape ceremony ran
+        // thirteen shapes against a real node and every one of them was
+        // accepted; the sponsor-envelope lane's own accepted control
+        // answered two more. The one that remains asks for a sponsored
+        // transfer that TAKES CHANGE, and no ceremony here builds one.
+        //
+        // The private table is answered in exactly seven rows. It read
+        // two before the shape wave built the multi-output and
+        // multi-input fixtures and ran three more shapes, and six until
+        // a merge whose forced blinder is nonzero was accepted; each
+        // time it is updated to the observed fact rather than loosened
+        // to a range that would stop noticing.
         let (explicit_rows, explicit_answered, explicit_blocked) =
             board[&LiveSafetySection::PositiveExplicit];
-        assert_eq!(explicit_answered, 0, "the explicit table claims an answer");
+        assert_eq!(explicit_answered, 15, "the explicit table's answered count");
         assert_eq!(explicit_blocked, 0);
         assert_ne!(explicit_rows, 0);
 
