@@ -1260,3 +1260,246 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
     }
     out
 }
+
+/// What one execution of every shape against a real node produced.
+///
+/// Hand-recorded from the transcripts that run wrote, on the pattern the
+/// private lane's own register sets and for the same reason: a matrix
+/// row cites a value a chain produced, and a value a chain produced has
+/// to be written down somewhere a reader can reach it.
+///
+/// The target was the pinned Elements node the live lane binds itself
+/// to, on a disposable development chain each run created and
+/// destroyed. Every run issued its own asset and every one issued the
+/// same identity, which is what a deterministic disposable chain does
+/// and not a sign that one run was reported thirteen times.
+///
+/// # Thirteen runs and TEN identities, which is a finding rather than a
+/// defect
+///
+/// Three pairs of runs produced the same identity, and in each case for
+/// the same reason: the two rows are two CLASSES of one transaction
+/// rather than two transactions. §15.1 names sixteen classes and a
+/// single transfer is an instance of several of them at once — a
+/// one-input one-output sponsorless transfer is simultaneously the
+/// `one-input-to-one-output` class and the `sponsorless` class, and
+/// building a second, gratuitously different transfer so that each row
+/// could cite its own hex string would be dressing one fact up as two.
+///
+/// So the identity is shared and the sharing is stated:
+///
+/// - `one-input-to-one-output` and `sponsorless` share
+///   [`ONE_TO_ONE_ACCEPTED_TXID`]. The accepted bytes are both.
+/// - `one-input-split-into-two` and `several-destination-owners` share
+///   [`SPLIT_ACCEPTED_TXID`]. A split into two destinations belonging to
+///   two distinct owners is both.
+/// - `several-inputs-merged-into-one` and
+///   `canonical-input-normalization` share [`MERGE_ACCEPTED_TXID`], and
+///   this pair is the strongest of the three rather than the weakest.
+///   The normalization run offered its two receipts in the REVERSE of
+///   their canonical order and the merge run offered them in it; the two
+///   built byte-identical transactions and the node computed one
+///   identity for them. The collision IS the normalization, observed
+///   rather than asserted, and a run that had produced a second identity
+///   would have been evidence that the request does not normalize.
+///
+/// What the rule this register is held to actually forbids is citing an
+/// acceptance of a DIFFERENT shape. None of these does: in each pair the
+/// accepted bytes are an instance of both rows' classes.
+pub mod run_of_record {
+    /// The disposable asset every run issued.
+    pub const ISSUED_ASSET: &str =
+        "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
+
+    /// One receipt consumed, one created, sponsorless.
+    ///
+    /// Cited by `one-input-to-one-output` and by `sponsorless`. The
+    /// smallest submission this lane has made, 593 bytes, for the
+    /// structural reason that an explicit transfer carries no range
+    /// proof at all.
+    pub const ONE_TO_ONE_ACCEPTED_TXID: &str =
+        "872a2294da5ea650a7a74ffd8a5932210930ab70d6a08a991eb3ea471ee29abb";
+
+    /// How many bytes the one-to-one handed the node.
+    pub const ONE_TO_ONE_SUBMITTED_BYTES: usize = 593;
+
+    /// One receipt consumed, TWO created for two distinct owners.
+    ///
+    /// Cited by `one-input-split-into-two` and by
+    /// `several-destination-owners`.
+    pub const SPLIT_ACCEPTED_TXID: &str =
+        "0fcf267058e83e06e87a950bbeec920a15e3641ef7f76c55df0a8fff544e64c1";
+
+    /// How many bytes the split handed the node.
+    pub const SPLIT_SUBMITTED_BYTES: usize = 751;
+
+    /// TWO receipts consumed, ONE created.
+    ///
+    /// Cited by `several-inputs-merged-into-one` and by
+    /// `canonical-input-normalization`, the second because the
+    /// normalization run offered the same two receipts in the reverse
+    /// order and the node computed this same identity for what it built.
+    pub const MERGE_ACCEPTED_TXID: &str =
+        "7a0ac33f0268e48ebeb1316dbc262c8d40569ba5c96274d1b8262f394c6f7c39";
+
+    /// How many bytes the merge handed the node.
+    pub const MERGE_SUBMITTED_BYTES: usize = 1_006;
+
+    /// TWO receipts consumed, TWO created.
+    pub const SEVERAL_TO_SEVERAL_ACCEPTED_TXID: &str =
+        "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029";
+
+    /// TWO receipts under ONE owner, three outputs created.
+    ///
+    /// The repetition is the subject: one published owner authorized two
+    /// separate inputs, each at its own position and each over its own
+    /// recomputed message, and both signatures verify out of the node's
+    /// own copy.
+    pub const REPEATED_OWNER_ACCEPTED_TXID: &str =
+        "3f833570061c28f1b6cae0cd2abda65ed2c573bf62f418e847836a7999382114";
+
+    /// TWO receipts under two DISTINCT published owners.
+    ///
+    /// Its destinations are the several-to-several run's exactly, and
+    /// the identities differ anyway — because the SPENT programs differ,
+    /// one coin having been paid to each owner's explicit constructor.
+    /// That the two runs diverge on their input side alone is what makes
+    /// this run about its input owners.
+    pub const SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID: &str =
+        "f87e1ef327f69fe1f6de5f763cc73d14edbe9425372f7a451d79d8e30e42b660";
+
+    /// TWO destinations, both created for ONE owner.
+    pub const ONE_DESTINATION_OWNER_ACCEPTED_TXID: &str =
+        "c9bd2bd7ea47f2e7df3d95751d008e2db2448d6b9611425114b06e09d7a2a0a8";
+
+    /// Destinations at the boundary values the request type admits.
+    ///
+    /// One and the remainder. The smallest is ONE because
+    /// [`super::ProtocolValue`] refuses zero by name, so the value is
+    /// the boundary the type states rather than a small number somebody
+    /// picked — and the node accepted it, which is the fact worth
+    /// having: nothing on this chain turned a one-unit output away.
+    pub const BOUNDARY_VALUES_ACCEPTED_TXID: &str =
+        "a53626927129a23c37681973eede8d23996743a1fb04adc71853e2bfe0d608be";
+
+    /// THREE receipts consumed, the candidate's stated input bound.
+    ///
+    /// The widest submission of this table at 1421 bytes.
+    pub const MAXIMUM_INPUTS_ACCEPTED_TXID: &str =
+        "fce6e069897f841297803e36da5d51f3e7b4e15422ff0083a1cac4735147c112";
+
+    /// THREE destinations created, the candidate's stated output bound.
+    pub const MAXIMUM_OUTPUTS_ACCEPTED_TXID: &str =
+        "6a5617cc547f0fe22cefa261ed2fb885a82a9e7293aefad76be5c35f0b531613";
+}
+
+impl ExplicitShape {
+    /// The identity the target computed for this shape's accepted
+    /// transaction.
+    ///
+    /// Every member answers, because every member ran and every run was
+    /// accepted. Three identities are each shared by two shapes, and
+    /// [`run_of_record`] states which and why.
+    #[must_use]
+    pub const fn observed_identity(self) -> &'static str {
+        match self {
+            Self::OneToOne | Self::Sponsorless => run_of_record::ONE_TO_ONE_ACCEPTED_TXID,
+            Self::SplitIntoTwo | Self::SeveralDestinationOwners => {
+                run_of_record::SPLIT_ACCEPTED_TXID
+            }
+            Self::MergedIntoOne | Self::CanonicalInputNormalization => {
+                run_of_record::MERGE_ACCEPTED_TXID
+            }
+            Self::SeveralToSeveral => run_of_record::SEVERAL_TO_SEVERAL_ACCEPTED_TXID,
+            Self::RepeatedOwner => run_of_record::REPEATED_OWNER_ACCEPTED_TXID,
+            Self::SeveralDistinctOwners => run_of_record::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID,
+            Self::OneDestinationOwner => run_of_record::ONE_DESTINATION_OWNER_ACCEPTED_TXID,
+            Self::SemanticBoundaryValues => run_of_record::BOUNDARY_VALUES_ACCEPTED_TXID,
+            Self::MaximumInputs => run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID,
+            Self::MaximumOutputs => run_of_record::MAXIMUM_OUTPUTS_ACCEPTED_TXID,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use super::{ExplicitShape, run_of_record};
+
+    #[test]
+    fn every_shape_names_a_distinct_row_of_the_explicit_table() {
+        // The shape table and the matrix table are two authorities, and
+        // a shape that answered a row twice would be one of them
+        // disagreeing with itself.
+        let rows: BTreeSet<&str> = ExplicitShape::ALL
+            .iter()
+            .map(|shape| shape.row_name())
+            .collect();
+        assert_eq!(rows.len(), ExplicitShape::ALL.len());
+        assert_eq!(ExplicitShape::ALL.len(), 13);
+    }
+
+    #[test]
+    fn every_recorded_identity_is_a_target_identity() {
+        for shape in ExplicitShape::ALL {
+            let identity = shape.observed_identity();
+            assert_eq!(
+                identity.len(),
+                64,
+                "{shape:?} cites something that is not a target identity",
+            );
+            assert!(identity.chars().all(|digit| digit.is_ascii_hexdigit()));
+        }
+        assert_eq!(run_of_record::ISSUED_ASSET.len(), 64);
+    }
+
+    #[test]
+    fn exactly_three_identities_are_shared_and_the_sharing_is_the_documented_one() {
+        // The collision census, spelled rather than derived. A pair that
+        // started sharing an identity because a shape stopped differing
+        // would fail here, which is the whole point: two rows may share
+        // an acceptance only where the accepted bytes are an instance of
+        // both classes, and that is a judgement rather than an accident.
+        let mut by_identity: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for shape in ExplicitShape::ALL {
+            by_identity
+                .entry(shape.observed_identity())
+                .or_default()
+                .insert(shape.row_name());
+        }
+        assert_eq!(by_identity.len(), 10, "thirteen runs, ten identities");
+
+        let shared: BTreeSet<BTreeSet<&str>> = by_identity
+            .values()
+            .filter(|rows| rows.len() > 1)
+            .cloned()
+            .collect();
+        assert_eq!(
+            shared,
+            BTreeSet::from([
+                BTreeSet::from(["one-input-to-one-output", "sponsorless"]),
+                BTreeSet::from(["one-input-split-into-two", "several-destination-owners"]),
+                BTreeSet::from([
+                    "canonical-input-normalization",
+                    "several-inputs-merged-into-one"
+                ]),
+            ]),
+        );
+    }
+
+    #[test]
+    fn the_shape_cardinalities_are_the_ones_the_runs_reported() {
+        // Read back off the shape rather than off the transcript, so a
+        // shape edited after its run fails here instead of quietly
+        // citing an identity for something else.
+        assert_eq!(ExplicitShape::OneToOne.input_count(), 1);
+        assert_eq!(ExplicitShape::OneToOne.output_count(), 1);
+        assert_eq!(ExplicitShape::MergedIntoOne.input_count(), 2);
+        assert_eq!(ExplicitShape::MergedIntoOne.output_count(), 1);
+        assert_eq!(ExplicitShape::MaximumInputs.input_count(), 3);
+        assert_eq!(ExplicitShape::MaximumOutputs.output_count(), 3);
+        assert_eq!(ExplicitShape::SeveralDistinctOwners.funded_coins(), (1, 1));
+        assert!(ExplicitShape::CanonicalInputNormalization.offers_reversed_receipts());
+    }
+}

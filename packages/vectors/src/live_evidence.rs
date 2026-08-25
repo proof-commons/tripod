@@ -20,24 +20,26 @@
 //!
 //! # The honest finding this plan carries
 //!
-//! Twenty-five of the twenty-six positive rows of §15.1 and §15.2 are
-//! unanswered today, and they stand at
+//! Twenty of the twenty-six positive rows of §15.1 and §15.2 are
+//! answered. Each stands at [`LiveRowStanding::NativeRunObserved`],
+//! carrying the identity a real node computed for a transfer of that
+//! row's own shape which it accepted, whose bytes were read back out of
+//! the node's own copy equal to the bytes it was handed, and whose
+//! witness verified against an independently recomputed message. The
+//! standing carries the identity so the claim can be checked against a
+//! chain rather than believed.
+//!
+//! The six that did not move stand at
 //! [`LiveRowStanding::NativeRunRequired`] — a statement that a run
-//! would answer them and not a statement that nothing could.
+//! would answer them and not a statement that nothing could. Three of
+//! them ask for a sponsor region, and three are private rows whose
+//! grounds the delta test below names one by one.
 //!
-//! Two are answered. `private-one-to-one` and
-//! `both-commitment-parity-forms` stand at
-//! [`LiveRowStanding::NativeRunObserved`], each carrying the identity a
-//! real node computed for a sponsorless private receipt-covenant
-//! transfer of that row's own shape which it accepted, and whose
-//! witness was verified out of the node's own copy against an
-//! independently recomputed message. The standing carries the identity
-//! so the claim can be checked against a chain rather than believed.
-//!
-//! Twenty-five of twenty-six remains the honest headline. Two rows
-//! moved because two runs answered them, and the twenty-four that did
-//! not move are not waiting on a component — they are waiting on runs
-//! nobody has taken yet.
+//! This paragraph has been rewritten each time a wave observed
+//! something, and the rewriting is the discipline rather than churn: it
+//! said two while two were answered, and seven while seven were, and a
+//! header that kept an old number would be the plan's own summary
+//! disagreeing with the census it computes.
 //!
 //! That is a narrower finding than this paragraph used to carry, and
 //! the narrowing is a repair rather than a softening. What it used to
@@ -916,6 +918,66 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // ceremony writes the forced blinder's nonzero-ness into its own
         // transcript rather than leaving it to be assumed.
         "private-merge" => Some(crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID),
+
+        // §15.1, the positive explicit table. Thirteen of its sixteen
+        // rows are answered by thirteen runs of the explicit shape
+        // ceremony, each accepted by a real node, each read back equal
+        // to the bytes it was handed, and each with every input's
+        // signature verified out of the node's own copy against an
+        // independently recomputed message.
+        //
+        // Three identities are each cited by two rows, and the register
+        // this arm reads from states which and why: those rows are two
+        // CLASSES of one transaction rather than two transactions, and
+        // the rule this map is held to forbids citing an acceptance of a
+        // DIFFERENT shape rather than an acceptance that is an instance
+        // of two classes at once.
+        "one-input-to-one-output" => {
+            Some(crate::live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID)
+        }
+        "one-input-split-into-two" => {
+            Some(crate::live_explicit_shapes::run_of_record::SPLIT_ACCEPTED_TXID)
+        }
+        "several-inputs-merged-into-one" => {
+            Some(crate::live_explicit_shapes::run_of_record::MERGE_ACCEPTED_TXID)
+        }
+        "several-inputs-to-several-outputs" => {
+            Some(crate::live_explicit_shapes::run_of_record::SEVERAL_TO_SEVERAL_ACCEPTED_TXID)
+        }
+        "repeated-owner" => {
+            Some(crate::live_explicit_shapes::run_of_record::REPEATED_OWNER_ACCEPTED_TXID)
+        }
+        "several-distinct-owners" => {
+            Some(crate::live_explicit_shapes::run_of_record::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID)
+        }
+        "one-destination-owner" => {
+            Some(crate::live_explicit_shapes::run_of_record::ONE_DESTINATION_OWNER_ACCEPTED_TXID)
+        }
+        // The split's own acceptance: a split into two destinations
+        // belonging to two distinct owners is an instance of both
+        // classes.
+        "several-destination-owners" => {
+            Some(crate::live_explicit_shapes::run_of_record::SPLIT_ACCEPTED_TXID)
+        }
+        "semantic-boundary-values" => {
+            Some(crate::live_explicit_shapes::run_of_record::BOUNDARY_VALUES_ACCEPTED_TXID)
+        }
+        // The merge's own acceptance, and the sharing is this row's
+        // evidence rather than a shortcut: the normalization run offered
+        // the same two receipts in the REVERSE of their canonical order,
+        // and the node computed this identity for what it built. A
+        // second identity would have been evidence that the request does
+        // not normalize.
+        "canonical-input-normalization" => {
+            Some(crate::live_explicit_shapes::run_of_record::MERGE_ACCEPTED_TXID)
+        }
+        "sponsorless" => Some(crate::live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID),
+        "candidate-maximum-inputs" => {
+            Some(crate::live_explicit_shapes::run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID)
+        }
+        "candidate-maximum-outputs" => {
+            Some(crate::live_explicit_shapes::run_of_record::MAXIMUM_OUTPUTS_ACCEPTED_TXID)
+        }
         _ => None,
     }
 }
@@ -1399,11 +1461,18 @@ mod tests {
     #[test]
     fn exactly_the_positive_rows_a_run_answered_are_answered() {
         // The wave's delta, held as a test rather than written in a
-        // report. Twenty-six positive rows; six of them are answered,
+        // report. Twenty-six positive rows; twenty of them are answered,
         // and each is answered because a real node accepted a transaction
         // of ITS OWN SHAPE and the standing carries the identity. The
-        // other twenty await the run that would answer them, and
-        // awaiting a run is not an answer.
+        // other six await the run that would answer them, and awaiting a
+        // run is not an answer.
+        //
+        // It read seven until the explicit shape ceremony ran thirteen
+        // shapes against a real node and every one was accepted, which
+        // moved thirteen of §15.1's sixteen rows at once. Three of those
+        // identities are each cited by two rows, because the accepted
+        // bytes are an instance of both rows' classes; the register in
+        // `live_explicit_shapes` names the pairs and the ground.
         //
         // The count is spelled rather than derived so that a row moved
         // by an edit and not by a run fails here. That is the whole
@@ -1443,15 +1512,28 @@ mod tests {
             answered,
             BTreeSet::from([
                 "both-commitment-parity-forms",
+                "candidate-maximum-inputs",
+                "candidate-maximum-outputs",
+                "canonical-input-normalization",
+                "one-destination-owner",
+                "one-input-split-into-two",
+                "one-input-to-one-output",
                 "private-many-to-many-representative",
                 "private-merge",
                 "private-one-to-one",
                 "private-several-distinct-owners",
                 "private-split",
+                "repeated-owner",
+                "semantic-boundary-values",
+                "several-destination-owners",
+                "several-distinct-owners",
+                "several-inputs-merged-into-one",
+                "several-inputs-to-several-outputs",
+                "sponsorless",
                 "target-ct-conservation",
             ]),
         );
-        assert_eq!(plan.census().native_run_observed(), 7);
+        assert_eq!(plan.census().native_run_observed(), 20);
 
         // The three positive private classes that did NOT move are named
         // here rather than left to the count, because a matrix that only
@@ -1468,10 +1550,19 @@ mod tests {
         // funded, and both are conventions rather than protocol rules.
         // A row is removed from this list by a run of its own shape and
         // by nothing else, and that run happened.
+        //
+        // The three explicit rows that did not move are named beside
+        // them and for a sharper reason: all three ask for a SPONSOR
+        // region, and this ceremony builds none. They are not blocked --
+        // a sponsor-signed explicit control has been accepted on this
+        // lane -- they are unrun by a ceremony that has no sponsor stage.
         for unmoved in [
             "private-sponsor-values",
             "deterministic-public-fixture-openings",
             "projection-equality-with-paired-explicit",
+            "sponsored",
+            "sponsor-change-present",
+            "sponsor-change-absent",
         ] {
             assert!(
                 !answered.contains(unmoved),
