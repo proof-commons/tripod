@@ -1,0 +1,853 @@
+//! The consensus shape-possibility register for the confidential lane.
+//!
+//! What transaction shapes can a blinded transfer take, which of those
+//! has this workspace actually run, and where a shape consensus admits
+//! is refused here, what refuses it and what would remove the refusal.
+//!
+//! # Why the register exists
+//!
+//! Two very different facts had been collapsing into one word. A shape
+//! this workspace does not build because the target would reject it,
+//! and a shape it does not build because its own fixture registry
+//! declines to express it, were both being described as
+//! "unconstructible" — and the second kind is a convention this
+//! repository chose and could unchoose, while the first is arithmetic
+//! nobody can vote on. Recording them under one name makes a local
+//! convention read as a law of the protocol, which is the error this
+//! module exists to make impossible.
+//!
+//! So every entry carries TWO verdicts that are computed and cited
+//! separately. [`ConsensusVerdict`] says what the target's balance rule
+//! admits, in a three-member evidence vocabulary that never lets a
+//! derivation pass as an observation. [`FirstPartyStatus`] says what
+//! this workspace's own registry does about it, and where the two
+//! disagree — consensus admits, the registry refuses — the entry
+//! carries a [`Limitation`] naming the refusal, the convention behind
+//! it, and the [`RemovalPath`] that would end it.
+//!
+//! # What this module does not do
+//!
+//! It observes nothing. Every OBSERVED-ACCEPTED verdict cites a
+//! `run_of_record` identity some earlier wave produced; no verdict here
+//! is produced by running anything, and a shape consensus admits but
+//! nobody has submitted is recorded SOURCE-DERIVED and never "run".
+//! Nothing here moves a matrix row, a blocker or a residual: this is a
+//! register, and a register is not evidence.
+//!
+//! # The balance rule the consensus verdicts are derived from
+//!
+//! Elements checks value conservation as a Pedersen tally over
+//! commitments, at the pinned tip `b7fc5d080a`:
+//! `src/confidential_validation.cpp:73-81` runs
+//! `secp256k1_pedersen_verify_tally` over every input commitment
+//! against every output commitment, queued at `:363-366`. An explicit
+//! value does not sit outside that sum — it is committed at `:345-349`
+//! with an ALL-ZERO blinder and joins the same tally, which is the
+//! whole reason the derivations below work.
+//!
+//! Write a commitment as `v*H + r*G` for value `v` under blinder `r`.
+//! The tally holds exactly when both coordinates balance: the values
+//! sum equal, AND the blinders sum equal. The second half is the one
+//! that decides shape possibility, because an explicit output
+//! contributes `r = 0` and can never absorb a blinder.
+//!
+//! So the whole consensus question reduces to one predicate, computed
+//! here by [`BlindedShape::blinder_sum_is_absorbable`]: does the output
+//! set contain at least one BLINDED output? If it does, that output's
+//! blinder can be set to whatever closes the sum and the shape is
+//! possible. If every output is explicit, the output blinder sum is
+//! fixed at zero, and the shape is possible only if the input blinder
+//! sum is zero too — which for a genuinely blinded input it is not.
+//!
+//! # Where the fee output enters
+//!
+//! A fee output is mandatorily EXPLICIT. `CTxOut::IsFee`
+//! (`src/primitives/transaction.h:324-327`) holds only for an output
+//! with an empty `scriptPubKey` and an explicit value AND asset. A fee
+//! output therefore always contributes a zero blinder, and can never be
+//! the output that absorbs the input blinder sum. That single fact is
+//! what separates [`BlindedShape::OneToOneWithFee`], which stays
+//! possible because its OTHER output is blinded, from
+//! [`BlindedShape::FeeOnly`], which is the one impossible shape in the
+//! enumeration.
+//!
+//! A fee output is not mandatory in the other direction: a transaction
+//! with no fee output at all is consensus-acceptable, which is not a
+//! derivation here but an observation — every accepted identity this
+//! module cites was built sponsorless and carries no fee output.
+
+use target_elements_conformance::confidential_fixture::RegistrationRefusal;
+
+/// One transaction shape of the blinded confidential lane.
+///
+/// A shape is the pair (blinded inputs, outputs) together with whether
+/// one of those outputs is the mandatorily explicit fee output. Nothing
+/// else about a transaction changes either verdict, which is why the
+/// axis is this narrow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BlindedShape {
+    /// One blinded input to one blinded output, no fee output.
+    OneToOne,
+    /// One blinded input to one blinded output beside a fee output.
+    OneToOneWithFee,
+    /// One blinded input to two blinded outputs.
+    OneToTwo,
+    /// One blinded input to three blinded outputs.
+    OneToThree,
+    /// Two blinded inputs merged into one blinded output.
+    TwoToOne,
+    /// Two blinded inputs to two blinded outputs.
+    TwoToTwo,
+    /// Two blinded inputs to three blinded outputs.
+    TwoToThree,
+    /// One blinded input to a fee output and nothing else.
+    FeeOnly,
+}
+
+impl BlindedShape {
+    /// Every shape the register enumerates.
+    ///
+    /// # The closure rule
+    ///
+    /// The enumeration is the small-shape window: at least one blinded
+    /// input, at most two of them, and one to three outputs, plus the
+    /// two fee-bearing members that window does not otherwise reach.
+    ///
+    /// It is closed, and a reader can see nothing is missing, because
+    /// of what [`Self::blinder_sum_is_absorbable`] shows: the consensus
+    /// verdict depends on NOTHING but whether at least one output is
+    /// blinded. It does not depend on the input count, and it does not
+    /// depend on the output count beyond the difference between "some
+    /// blinded output" and "none". Both of those cases already appear
+    /// in the window — every member but [`Self::FeeOnly`] is the first,
+    /// and `FeeOnly` is the second — so every shape OUTSIDE the window
+    /// inherits the verdict of whichever case it falls into, and adding
+    /// it would restate a row rather than add one.
+    ///
+    /// The window is therefore chosen for the first-party half, where
+    /// the counts DO matter: the registry's own clauses are cardinality
+    /// clauses, and every shape this lane has built or been refused
+    /// falls inside it.
+    pub const ALL: [Self; 8] = [
+        Self::OneToOne,
+        Self::OneToOneWithFee,
+        Self::OneToTwo,
+        Self::OneToThree,
+        Self::TwoToOne,
+        Self::TwoToTwo,
+        Self::TwoToThree,
+        Self::FeeOnly,
+    ];
+
+    /// How many blinded inputs the shape consumes.
+    #[must_use]
+    pub const fn blinded_inputs(self) -> usize {
+        match self {
+            Self::OneToOne
+            | Self::OneToOneWithFee
+            | Self::OneToTwo
+            | Self::OneToThree
+            | Self::FeeOnly => 1,
+            Self::TwoToOne | Self::TwoToTwo | Self::TwoToThree => 2,
+        }
+    }
+
+    /// How many outputs the shape creates, the fee output included.
+    #[must_use]
+    pub const fn outputs(self) -> usize {
+        match self {
+            Self::OneToOne | Self::TwoToOne | Self::FeeOnly => 1,
+            Self::OneToOneWithFee | Self::OneToTwo | Self::TwoToTwo => 2,
+            Self::OneToThree | Self::TwoToThree => 3,
+        }
+    }
+
+    /// How many of those outputs are the explicit fee output.
+    ///
+    /// Zero or one; a transaction has no reason to carry two, and none
+    /// of the enumerated shapes does.
+    #[must_use]
+    pub const fn fee_outputs(self) -> usize {
+        match self {
+            Self::OneToOneWithFee | Self::FeeOnly => 1,
+            Self::OneToOne
+            | Self::OneToTwo
+            | Self::OneToThree
+            | Self::TwoToOne
+            | Self::TwoToTwo
+            | Self::TwoToThree => 0,
+        }
+    }
+
+    /// How many outputs carry a blinded value.
+    ///
+    /// Every non-fee output on this lane is blinded, so this is the
+    /// output count less the fee output.
+    #[must_use]
+    pub const fn blinded_outputs(self) -> usize {
+        self.outputs() - self.fee_outputs()
+    }
+
+    /// Whether the output set can absorb the input blinder sum.
+    ///
+    /// This is the whole consensus question, computed rather than
+    /// looked up. The tally balances the blinder coordinate as well as
+    /// the value coordinate; an explicit output contributes a zero
+    /// blinder; so a nonzero input blinder sum needs at least one
+    /// blinded output to land on, and every shape that has one is
+    /// possible.
+    ///
+    /// The answer is derived from the shape alone and is compared
+    /// against the entry's recorded [`ConsensusVerdict`] by
+    /// `the_recorded_verdicts_agree_with_the_tally_predicate`, so the
+    /// register cannot record a verdict its own arithmetic denies.
+    #[must_use]
+    pub const fn blinder_sum_is_absorbable(self) -> bool {
+        self.blinded_outputs() > 0
+    }
+
+    /// The handle the register's prose section uses for the shape.
+    #[must_use]
+    pub const fn handle(self) -> &'static str {
+        match self {
+            Self::OneToOne => "one-to-one",
+            Self::OneToOneWithFee => "one-to-one-with-fee",
+            Self::OneToTwo => "one-to-two",
+            Self::OneToThree => "one-to-three",
+            Self::TwoToOne => "two-to-one-merge",
+            Self::TwoToTwo => "two-to-two",
+            Self::TwoToThree => "two-to-three",
+            Self::FeeOnly => "fee-only",
+        }
+    }
+}
+
+/// What consensus says about a shape, and on what evidence.
+///
+/// The three members are three EVIDENCE CLASSES, not three degrees of
+/// confidence. The distinction they keep is the one this register was
+/// built for: a shape somebody submitted and a node accepted is a
+/// different kind of fact from a shape the balance rule permits and
+/// nobody has ever built, and the second must never be reported as the
+/// first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ConsensusVerdict {
+    /// A node accepted a transaction of this shape into a block.
+    ///
+    /// The strongest class, and the only one carrying a target-computed
+    /// identity. The identity is not a literal here: it is the
+    /// `run_of_record` constant an earlier wave recorded, so a wave that
+    /// re-ran and got different bytes would move this register too.
+    ObservedAccepted {
+        /// The identity the target computed for the accepted shape.
+        identity: &'static str,
+    },
+    /// The balance rule admits the shape; nobody has submitted one.
+    ///
+    /// Derived from the tally arithmetic and the pinned source, and
+    /// EXPLICITLY NOT an observation. A shape in this class has never
+    /// been offered to a node by this workspace, and the register says
+    /// so rather than letting a derivation age into a claim of having
+    /// run.
+    SourceDerivedPossible,
+    /// The balance rule cannot admit the shape.
+    ///
+    /// Also derived rather than observed — no node has refused one of
+    /// these either, because none was ever built. The ground is the
+    /// tally, not a node's verdict.
+    SourceDerivedImpossible,
+}
+
+/// What this workspace's own fixture registry does with a shape.
+///
+/// The second, independent verdict. Its three members are the three
+/// ways a first-party position can stand against the consensus one, and
+/// naming them apart is what stops a local convention being read as a
+/// protocol rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FirstPartyStatus {
+    /// The registry builds it and a run of record observed it accepted.
+    ConstructibleAndObserved,
+    /// Consensus admits it and the registry refuses it anyway.
+    ///
+    /// The interesting case, and the one carrying a removal path. The
+    /// refusal is recomputed by driving the registry, never asserted.
+    RefusedByConvention {
+        /// The typed refusal the registry actually returns.
+        refusal: RegistrationRefusal,
+        /// What refuses it, why, and what would remove it.
+        limitation: Limitation,
+    },
+    /// Consensus cannot admit it and the registry refuses it too.
+    ///
+    /// The refusal guards consensus — though see
+    /// [`Limitation::guards_only_incidentally`], because guarding by
+    /// accident and guarding by design are not the same thing.
+    RefusalGuardsConsensus {
+        /// The typed refusal the registry actually returns.
+        refusal: RegistrationRefusal,
+    },
+}
+
+/// A first-party convention that refuses a shape consensus admits.
+///
+/// Each member names a rule of this repository's own fixture registry,
+/// the model that rule came out of, and the removal path that would end
+/// it. This is the "explicitly labeled, pinned and explained" half of
+/// the ruling the register implements; the removal is filed and NOT
+/// taken here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Limitation {
+    /// The registry refuses any manifest of fewer than two outputs.
+    ///
+    /// Argued at `(´[PLAN-rule:shapes:two-output-floor]´)`, which
+    /// carries the revision surface this row cannot.
+    TwoOutputFloor,
+    /// The fixture vocabulary has no fee output role.
+    ///
+    /// Argued at `(´[PLAN-rule:shapes:absent-fee-role]´)`.
+    AbsentFeeRole,
+}
+
+impl Limitation {
+    /// The source row that refuses the shape.
+    #[must_use]
+    pub const fn refused_at(self) -> &'static str {
+        match self {
+            Self::TwoOutputFloor => {
+                "packages/target-elements-conformance/src/confidential_fixture.rs, the \
+                 `outputs.len() < 2` clause of `register_with_source`"
+            }
+            Self::AbsentFeeRole => {
+                "packages/target-elements-conformance/src/confidential_fixture.rs, the \
+                 `output_program.is_empty()` clause of `register_with_source`"
+            }
+        }
+    }
+
+    /// Why the convention exists, stated as the model it came out of.
+    ///
+    /// Recording this matters as much as recording the refusal. A
+    /// convention whose reason is written down can be argued with; one
+    /// whose reason was never written down gets defended as though it
+    /// were consensus.
+    #[must_use]
+    pub const fn convention(self) -> &'static str {
+        match self {
+            Self::TwoOutputFloor => {
+                "The balancing-output model. A manifest names exactly one balancing output whose \
+                 blinder is SOLVED to close the tally, and the registry's parity discipline \
+                 searches over the freely chosen blinders of the others. With one output there \
+                 is no other, so the model has nothing to search — which is a fact about the \
+                 model and not about the arithmetic, since a lone output's blinder is fully \
+                 determined by the input blinder sum and determining it is exactly what solving \
+                 means."
+            }
+            Self::AbsentFeeRole => {
+                "The absent fee role. Every fixture output must carry a nonempty output program, \
+                 and a fee output carries an empty one by the target's own definition of a fee. \
+                 The vocabulary has no member for an output that is explicit, unspendable and \
+                 outside the blinder solve, so the shape is inexpressible rather than rejected."
+            }
+        }
+    }
+
+    /// The named path that would structurally remove the limitation.
+    #[must_use]
+    pub const fn removal_path(self) -> RemovalPath {
+        match self {
+            Self::TwoOutputFloor => RemovalPath::SingleOutputSolvedBalancingForm,
+            Self::AbsentFeeRole => RemovalPath::FeeOutputRole,
+        }
+    }
+
+    /// Whether the refusal guards consensus only by accident.
+    ///
+    /// True where a refusal that happens to block a consensus-impossible
+    /// shape is not reasoning about consensus at all. The two-output
+    /// floor is such a refusal: it counts outputs, and would refuse the
+    /// impossible fee-only shape and the perfectly possible merge with
+    /// the same message and the same indifference. A reader who saw only
+    /// the refusal would learn nothing about which of the two consensus
+    /// forbids, so the register says which.
+    #[must_use]
+    pub const fn guards_only_incidentally(self) -> bool {
+        match self {
+            Self::TwoOutputFloor => true,
+            Self::AbsentFeeRole => false,
+        }
+    }
+}
+
+/// A named structural removal for a limitation.
+///
+/// FILED, not implemented. Each member is a design this register commits
+/// to naming and to nothing else; the work sits in the feature-request
+/// register, and no part of it is taken by this module.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RemovalPath {
+    /// A manifest form whose single output is fully solved.
+    SingleOutputSolvedBalancingForm,
+    /// A fee member of the fixture output role vocabulary.
+    FeeOutputRole,
+}
+
+impl RemovalPath {
+    /// What the removal would have to build.
+    #[must_use]
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::SingleOutputSolvedBalancingForm => {
+                "Extend the registry with a single-output fully-solved balancing form: a manifest \
+                 whose one output is balancing and carries NO freely chosen blinder, taking the \
+                 input blinder sum directly. The parity search has nothing to search and \
+                 degenerates to a well-formedness check, which the code should say plainly rather \
+                 than claim a discriminating power it would not have. This admits both the strict \
+                 one-to-one and the private merge, and the two-output case stays bit-for-bit as \
+                 it is."
+            }
+            Self::FeeOutputRole => {
+                "Add a fee member to the fixture output role vocabulary: explicit-valued, held \
+                 OUT of the blinder solve at a zero blinder, and REQUIRED to carry an empty \
+                 output program rather than merely permitted one, so that the role is checked and \
+                 not just excused from the nonempty-program clause. The clause then reads on the \
+                 role instead of on every output alike."
+            }
+        }
+    }
+
+    /// The degeneracy a single-output form has to name.
+    ///
+    /// Returns `Some` only for the merge form, and this is the reason
+    /// the form is filed with a warning attached rather than filed
+    /// plainly.
+    #[must_use]
+    pub const fn degeneracy(self) -> Option<&'static str> {
+        match self {
+            Self::SingleOutputSolvedBalancingForm => Some(
+                "The forced blinder can be ZERO, and then it hides nothing. A merge's single \
+                 output takes the SUM of the consumed coins' blinders, so merging the two halves \
+                 of this repository's inverse-pair dual-parity predecessor — whose blinders \
+                 cancel by construction, which is what makes it an inverse pair — forces that \
+                 sum to zero. The output commitment is then exactly `v*H`: a point anyone can \
+                 recompute from a guessed value, carrying a blinded output's form and none of its \
+                 hiding. The form is still sound, and the tally still balances; what fails is \
+                 confidentiality, silently. A predecessor whose blinders do NOT cancel avoids it, \
+                 so the removal must either require a non-canceling predecessor or refuse a \
+                 solved zero blinder outright.",
+            ),
+            Self::FeeOutputRole => None,
+        }
+    }
+}
+
+/// One row of the register: a shape and both its verdicts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShapeCensusEntry {
+    /// The shape this row is about.
+    pub shape: BlindedShape,
+    /// What consensus admits, and on what evidence.
+    pub consensus: ConsensusVerdict,
+    /// What this workspace's registry does about it.
+    pub first_party: FirstPartyStatus,
+}
+
+/// The register: every enumerated shape, with both verdicts.
+///
+/// Total over [`BlindedShape::ALL`] by construction — the match has no
+/// catch-all, so a shape added to the enumeration fails to compile here
+/// until it is censused, which is the property that makes the register
+/// a register rather than a list somebody keeps up to date by hand.
+///
+/// The strict one-to-one and the merge share an arm because they share
+/// every fact this register holds: both are one-output shapes, both are
+/// possible on the tally, and both draw the same cardinality refusal.
+/// What separates them is the merge's zero-blinder degeneracy, which is
+/// a property of the removal path rather than of the row.
+#[must_use]
+pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
+    let (consensus, first_party) = match shape {
+        BlindedShape::OneToOne | BlindedShape::TwoToOne => (
+            ConsensusVerdict::SourceDerivedPossible,
+            FirstPartyStatus::RefusedByConvention {
+                refusal: RegistrationRefusal::OutputSetTooSmall { found: 1 },
+                limitation: Limitation::TwoOutputFloor,
+            },
+        ),
+        BlindedShape::OneToOneWithFee => (
+            ConsensusVerdict::SourceDerivedPossible,
+            FirstPartyStatus::RefusedByConvention {
+                refusal: RegistrationRefusal::OutputProgramEmpty { output: 1 },
+                limitation: Limitation::AbsentFeeRole,
+            },
+        ),
+        BlindedShape::OneToTwo => (
+            ConsensusVerdict::ObservedAccepted {
+                identity: crate::live_private_restart::run_of_record::ACCEPTED_TXID,
+            },
+            FirstPartyStatus::ConstructibleAndObserved,
+        ),
+        BlindedShape::OneToThree => (
+            ConsensusVerdict::ObservedAccepted {
+                identity: crate::live_multi_shapes::run_of_record::SPLIT_ACCEPTED_TXID,
+            },
+            FirstPartyStatus::ConstructibleAndObserved,
+        ),
+        BlindedShape::TwoToTwo => (
+            ConsensusVerdict::ObservedAccepted {
+                identity: crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID,
+            },
+            FirstPartyStatus::ConstructibleAndObserved,
+        ),
+        BlindedShape::TwoToThree => (
+            ConsensusVerdict::ObservedAccepted {
+                identity: crate::live_multi_shapes::run_of_record::MANY_TO_MANY_ACCEPTED_TXID,
+            },
+            FirstPartyStatus::ConstructibleAndObserved,
+        ),
+        BlindedShape::FeeOnly => (
+            ConsensusVerdict::SourceDerivedImpossible,
+            FirstPartyStatus::RefusalGuardsConsensus {
+                refusal: RegistrationRefusal::OutputSetTooSmall { found: 1 },
+            },
+        ),
+    };
+    ShapeCensusEntry {
+        shape,
+        consensus,
+        first_party,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use target_elements_conformance::confidential_fixture::RegistrationRefusal;
+
+    use super::{
+        BlindedShape, ConsensusVerdict, FirstPartyStatus, Limitation, RemovalPath, census_entry,
+    };
+    use crate::live_proof_bearing_observation::registry_refusal_for;
+
+    /// A disposable asset for the registry drives below.
+    ///
+    /// Public test material under ADR-015; it names no chain.
+    const CENSUS_ASSET: [u8; 32] = [0x3b; 32];
+
+    /// An input blinder sum the registry admits as a scalar.
+    ///
+    /// The drives below reach cardinality and role clauses that run
+    /// BEFORE any blinder arithmetic, so this is a well-formedness
+    /// placeholder and not a claim about any predecessor's blinders.
+    const CENSUS_BLINDER_SUM: [u8; 32] = [0_u8; 32];
+
+    /// Drives the registry with a manifest of the shape's output arity.
+    ///
+    /// The point of the register's refused rows: the refusal is
+    /// RECOMPUTED against the live registry rather than copied out of a
+    /// comment, so a registry that changed its mind would fail this
+    /// module rather than leave it quietly stale.
+    ///
+    /// It lives in the test module because the crate's registry drivers
+    /// do — the register itself is a statement about the registry, and
+    /// only its verification needs to run one.
+    ///
+    /// Amounts and programs are the shape's own. A fee-bearing shape
+    /// gets an EMPTY program for its fee output, because an empty
+    /// `scriptPubKey` is what makes an output a fee at the target
+    /// (`src/primitives/transaction.h:324-327`) — exactly the property
+    /// the fixture vocabulary has no room for.
+    ///
+    /// The fee output goes LAST, where the shared manifest builder casts
+    /// the final output as the BALANCING one. That is not a modelling
+    /// choice made here but a second face of the same absent role: the
+    /// builder has no way to say "explicit, outside the solve", so the
+    /// one output that must never balance arrives cast as the output
+    /// that does. The refusal reached is the empty-program clause either
+    /// way.
+    fn recomputed_registry_refusal(shape: BlindedShape) -> Option<RegistrationRefusal> {
+        let outputs = shape.outputs();
+        let fee_at = (shape.fee_outputs() == 1).then(|| outputs - 1);
+        let amounts: Vec<u64> = (0..outputs).map(|_| 100_000_000_u64).collect();
+        let programs: Vec<Vec<u8>> = (0..outputs)
+            .map(|index| {
+                if Some(index) == fee_at {
+                    Vec::new()
+                } else {
+                    vec![0x51_u8]
+                }
+            })
+            .collect();
+        registry_refusal_for(
+            &format!("ctf-v1/census-{}", shape.handle()),
+            CENSUS_ASSET,
+            CENSUS_BLINDER_SUM,
+            &amounts,
+            &programs,
+        )
+    }
+
+    /// The register is total over its enumeration, with no shape
+    /// censused twice.
+    ///
+    /// Totality is what lets a reader trust the closure rule: the
+    /// enumeration states what the space is, and this says every member
+    /// of it has a row.
+    #[test]
+    fn the_register_is_total_over_the_enumeration() {
+        assert_eq!(BlindedShape::ALL.len(), 8);
+        let mut handles: Vec<&str> = BlindedShape::ALL
+            .iter()
+            .map(|shape| {
+                let entry = census_entry(*shape);
+                assert_eq!(
+                    entry.shape, *shape,
+                    "a row censuses the shape it is filed under"
+                );
+                shape.handle()
+            })
+            .collect();
+        handles.sort_unstable();
+        let censused = handles.len();
+        handles.dedup();
+        assert_eq!(handles.len(), censused, "no shape is censused twice");
+    }
+
+    /// The recorded consensus verdicts agree with the tally arithmetic.
+    ///
+    /// The register does not get to state a verdict its own derivation
+    /// denies. The predicate is computed from the shape alone; a row
+    /// claiming possibility for a shape with no blinded output, or
+    /// impossibility for one that has one, fails here.
+    #[test]
+    fn the_recorded_verdicts_agree_with_the_tally_predicate() {
+        for shape in BlindedShape::ALL {
+            let absorbable = shape.blinder_sum_is_absorbable();
+            match census_entry(shape).consensus {
+                ConsensusVerdict::ObservedAccepted { .. }
+                | ConsensusVerdict::SourceDerivedPossible => assert!(
+                    absorbable,
+                    "{} is recorded possible, so some output must absorb the blinder sum",
+                    shape.handle(),
+                ),
+                ConsensusVerdict::SourceDerivedImpossible => assert!(
+                    !absorbable,
+                    "{} is recorded impossible, so no output may absorb the blinder sum",
+                    shape.handle(),
+                ),
+            }
+        }
+    }
+
+    /// Exactly one shape is impossible, and it is the fee-only one.
+    ///
+    /// Stated as its own fact because it is the register's sharpest
+    /// claim: everything else the small-shape window holds, consensus
+    /// admits.
+    #[test]
+    fn the_fee_only_shape_is_the_only_impossible_one() {
+        let impossible: Vec<BlindedShape> = BlindedShape::ALL
+            .into_iter()
+            .filter(|shape| {
+                matches!(
+                    census_entry(*shape).consensus,
+                    ConsensusVerdict::SourceDerivedImpossible
+                )
+            })
+            .collect();
+        assert_eq!(impossible, vec![BlindedShape::FeeOnly]);
+        assert_eq!(BlindedShape::FeeOnly.blinded_outputs(), 0);
+        assert_eq!(BlindedShape::FeeOnly.fee_outputs(), 1);
+    }
+
+    /// Every refused row's refusal is the one the registry really
+    /// returns.
+    ///
+    /// The register's central claim, RECOMPUTED. Each refused shape's
+    /// manifest is built and handed to the live registry, and the
+    /// refusal that comes back must be the censused one. Nothing here
+    /// asserts a remembered value.
+    #[test]
+    fn every_refused_row_recomputes_its_refusal_against_the_registry() {
+        let mut refused = 0_usize;
+        for shape in BlindedShape::ALL {
+            let censused = match census_entry(shape).first_party {
+                FirstPartyStatus::ConstructibleAndObserved => continue,
+                FirstPartyStatus::RefusedByConvention { refusal, .. }
+                | FirstPartyStatus::RefusalGuardsConsensus { refusal } => refusal,
+            };
+            let recomputed = recomputed_registry_refusal(shape)
+                .unwrap_or_else(|| panic!("the registry refuses {}", shape.handle()));
+            assert_eq!(
+                recomputed,
+                censused,
+                "the censused refusal for {} is the one the registry returns",
+                shape.handle(),
+            );
+            refused += 1;
+        }
+        assert_eq!(refused, 4, "four of the eight shapes are refused");
+    }
+
+    /// Every constructible row cites a run-of-record identity.
+    ///
+    /// Cited rather than copied: the expected values below are the
+    /// `run_of_record` constants themselves, so this compares the
+    /// register against the evidence rather than against a literal
+    /// somebody transcribed.
+    #[test]
+    fn every_observed_row_cites_its_run_of_record_identity() {
+        let expected = [
+            (
+                BlindedShape::OneToTwo,
+                crate::live_private_restart::run_of_record::ACCEPTED_TXID,
+            ),
+            (
+                BlindedShape::OneToThree,
+                crate::live_multi_shapes::run_of_record::SPLIT_ACCEPTED_TXID,
+            ),
+            (
+                BlindedShape::TwoToTwo,
+                crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID,
+            ),
+            (
+                BlindedShape::TwoToThree,
+                crate::live_multi_shapes::run_of_record::MANY_TO_MANY_ACCEPTED_TXID,
+            ),
+        ];
+        for (shape, identity) in expected {
+            let entry = census_entry(shape);
+            assert_eq!(
+                entry.consensus,
+                ConsensusVerdict::ObservedAccepted { identity },
+                "{} cites its own run of record",
+                shape.handle(),
+            );
+            assert_eq!(
+                entry.first_party,
+                FirstPartyStatus::ConstructibleAndObserved
+            );
+        }
+        assert_eq!(expected.len(), 4, "four of the eight shapes have been run");
+    }
+
+    /// The observed rows' cardinalities match the ceremonies' own
+    /// recorded counts.
+    ///
+    /// The multi-shape ceremony writes down how many receipts each
+    /// shape consumed and how many outputs it created. If the register
+    /// described a different shape than the run it cites, these would
+    /// disagree.
+    #[test]
+    fn the_observed_cardinalities_match_the_recorded_run_counts() {
+        use crate::live_multi_shapes::run_of_record::{OUTPUT_COUNTS, RECEIPT_LEAVES};
+
+        let ordered = [
+            BlindedShape::OneToThree,
+            BlindedShape::TwoToThree,
+            BlindedShape::TwoToTwo,
+        ];
+        for (index, shape) in ordered.into_iter().enumerate() {
+            assert_eq!(
+                shape.blinded_inputs(),
+                RECEIPT_LEAVES[index],
+                "{} consumed the recorded number of receipts",
+                shape.handle(),
+            );
+            assert_eq!(
+                shape.outputs(),
+                OUTPUT_COUNTS[index],
+                "{} created the recorded number of outputs",
+                shape.handle(),
+            );
+        }
+        assert_eq!(
+            crate::live_private_restart::run_of_record::RECEIPT_LEAVES,
+            BlindedShape::OneToTwo.blinded_inputs(),
+            "the one-to-two control consumed the recorded number of receipts",
+        );
+    }
+
+    /// Every consensus-possible refused row carries a removal path.
+    ///
+    /// The ruling's second half, held structurally: a shape consensus
+    /// admits and this workspace refuses may not sit in the register
+    /// with the refusal recorded and nothing said about ending it.
+    #[test]
+    fn every_consensus_possible_refusal_names_a_removal_path() {
+        let mut paths = Vec::new();
+        for shape in BlindedShape::ALL {
+            let entry = census_entry(shape);
+            let FirstPartyStatus::RefusedByConvention { limitation, .. } = entry.first_party else {
+                continue;
+            };
+            assert_ne!(
+                entry.consensus,
+                ConsensusVerdict::SourceDerivedImpossible,
+                "{} is refused by convention, so consensus must admit it",
+                shape.handle(),
+            );
+            assert_ne!(limitation.refused_at(), "", "the refusing row is named");
+            assert_ne!(limitation.convention(), "", "the convention is explained");
+            assert_ne!(
+                limitation.removal_path().description(),
+                "",
+                "the removal path is described",
+            );
+            paths.push(limitation.removal_path());
+        }
+        paths.sort_unstable();
+        paths.dedup();
+        assert_eq!(
+            paths,
+            vec![
+                RemovalPath::SingleOutputSolvedBalancingForm,
+                RemovalPath::FeeOutputRole,
+            ],
+            "the two limitations file two distinct removal paths",
+        );
+    }
+
+    /// The merge removal path names its zero-blinder degeneracy, and
+    /// the fee one has none to name.
+    ///
+    /// The degeneracy is the reason the single-output form cannot be
+    /// filed as a plain convenience: for the inverse-pair predecessor
+    /// the forced blinder is zero and the "blinded" output hides
+    /// nothing. A removal path that did not carry the warning would be
+    /// filing a confidentiality hole as a feature.
+    #[test]
+    fn the_single_output_removal_path_names_the_zero_blinder_degeneracy() {
+        let degeneracy = RemovalPath::SingleOutputSolvedBalancingForm
+            .degeneracy()
+            .expect("the single-output form names its degeneracy");
+        assert!(degeneracy.contains("ZERO"));
+        assert!(degeneracy.contains("inverse-pair"));
+        assert!(
+            RemovalPath::FeeOutputRole.degeneracy().is_none(),
+            "an explicit fee output has no blinder to degenerate",
+        );
+    }
+
+    /// The two-output floor guards the impossible shape only by
+    /// accident, and the register says so.
+    ///
+    /// It counts outputs. It refuses the impossible fee-only shape and
+    /// the perfectly possible merge with the same message, so a reader
+    /// who took the refusal as a consensus verdict would draw the wrong
+    /// conclusion about one of them — which is precisely what this
+    /// register exists to prevent.
+    #[test]
+    fn the_cardinality_floor_guards_consensus_only_incidentally() {
+        assert!(Limitation::TwoOutputFloor.guards_only_incidentally());
+        assert!(!Limitation::AbsentFeeRole.guards_only_incidentally());
+
+        let fee_only = recomputed_registry_refusal(BlindedShape::FeeOnly)
+            .expect("the registry refuses the fee-only shape");
+        let merge = recomputed_registry_refusal(BlindedShape::TwoToOne)
+            .expect("the registry refuses the merge");
+        assert_eq!(
+            fee_only, merge,
+            "one consensus-impossible and one consensus-possible shape draw the SAME refusal",
+        );
+    }
+}

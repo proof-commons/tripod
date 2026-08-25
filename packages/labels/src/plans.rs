@@ -50,8 +50,36 @@ use serde::Serialize;
 /// `combined_bytes` and added `adr_hard_cap_bytes` to [`PlansReport`].
 pub const PLANS_REPORT_SCHEMA: u32 = 3;
 
-const HARD_CAP_BYTES: u64 = 768 * 1024;
-const SOFT_TARGET_BYTES: u64 = 520 * 1024;
+/// Ceiling for the maintained-prose budget (1 MiB).
+///
+/// Raised from 768 KiB by owner ruling. The old pair was inherited
+/// verbatim from the retired `scripts/check_plans.py`, which stated no
+/// derivation for it, so the ruling's own derivation governs: the hard
+/// cap goes to a round 1 MiB and the soft target rises by the same
+/// ratio.
+///
+/// What motivated the raise is a measurement rather than a preference.
+/// On 2026-08-25 the maintained tree measured 787489 bytes against the
+/// 768 KiB cap — over it, reached while recording one routine gate
+/// paragraph. A guardrail that a single paragraph of ordinary record
+/// keeping can breach has stopped sizing the tree and started sizing
+/// the sentence, and the repository has grown substantially since the
+/// figure was set. The cap still exists to catch duplication, so it is
+/// raised rather than removed.
+const HARD_CAP_BYTES: u64 = 1024 * 1024;
+/// Advisory target for the maintained-prose budget (693 KiB).
+///
+/// The old 520 KiB scaled by the same ratio the hard cap took is
+/// 532480 * 1048576 / 786432 = 709973 bytes exactly. That is rounded
+/// DOWN to 693 KiB, 709632 bytes — the nearest whole KiB below it, 341
+/// bytes under the exact figure — because every constant in this
+/// budget is a whole number of KiB and rounding down keeps the advisory
+/// strictly no weaker than the proportion asks.
+///
+/// Exceeding this is a warning and never a failure: it is the tree
+/// saying it is getting heavy, which is a thing an author should know
+/// and not a thing that should stop a commit.
+const SOFT_TARGET_BYTES: u64 = 693 * 1024;
 
 /// Ceiling for the root-ADR budget (2 MiB).
 ///
@@ -1126,8 +1154,8 @@ mod tests {
 
     #[test]
     fn weight_class_caps_match_the_budget_rule() {
-        assert_eq!(SOFT_TARGET_BYTES, 520 * 1024);
-        assert_eq!(HARD_CAP_BYTES, 768 * 1024);
+        assert_eq!(SOFT_TARGET_BYTES, 693 * 1024);
+        assert_eq!(HARD_CAP_BYTES, 1024 * 1024);
         assert_eq!(ADR_HARD_CAP_BYTES, 2 * 1024 * 1024);
         assert_eq!(ARCHIVE_HARD_CAP_BYTES, 4 * 1024 * 1024);
         assert_eq!(ADR_HARD_CAP_BYTES * 2, ARCHIVE_HARD_CAP_BYTES);
@@ -1727,6 +1755,16 @@ mod tests {
         fs::write(&readme, index).expect("indexed archive");
     }
 
+    /// A document body comfortably larger than the load-bearing cap.
+    ///
+    /// Derived from `HARD_CAP_BYTES` rather than written as a figure.
+    /// The two exclusion tests below mean "bigger than the cap", and a
+    /// literal that merely happened to be bigger stopped being so the
+    /// day the cap was raised — which is how it was found.
+    fn over_the_load_bearing_cap() -> usize {
+        usize::try_from(HARD_CAP_BYTES).expect("cap fits in usize") + 1024
+    }
+
     #[test]
     fn archive_bytes_are_excluded_from_the_combined_budget() {
         // The point of the split: an archive directory can hold more
@@ -1737,7 +1775,7 @@ mod tests {
         let bare_combined = bare.report.combined_bytes;
         assert_eq!(bare.report.archive_bytes, 0);
 
-        write_archive(dir.path(), "guides", 900 * 1024);
+        write_archive(dir.path(), "guides", over_the_load_bearing_cap());
         let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
 
         assert!(outcome.report.valid, "{:#?}", outcome.failures);
@@ -1747,7 +1785,7 @@ mod tests {
             outcome.report.archive_bytes,
         );
         // The archive README and the plans README index line are the
-        // only load-bearing growth; the 900 KiB document is not.
+        // only load-bearing growth; the oversize document is not.
         assert!(
             outcome.report.combined_bytes < bare_combined + 1024,
             "combined {} grew from {bare_combined}",
@@ -1844,7 +1882,7 @@ mod tests {
         let bare = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
         let bare_combined = bare.report.combined_bytes;
 
-        write_root_adr(dir.path(), 900 * 1024);
+        write_root_adr(dir.path(), over_the_load_bearing_cap());
         let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
 
         assert!(outcome.report.valid, "{:#?}", outcome.failures);

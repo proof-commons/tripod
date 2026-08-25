@@ -46,6 +46,7 @@ vectors_source_files = files(
   'src/render.rs',
   'src/report.rs',
   'src/resource_study.rs',
+  'src/shape_census.rs',
   'src/subject.rs',
   'src/violation.rs',
 )

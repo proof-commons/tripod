@@ -7,5 +7,6 @@ plans_reference_files = files(
   'draft-gap-census.md',
   'elements-tapscript.md',
   'owner-sighash-review.md',
+  'shape-possibility.md',
   'upstream-frictions.md',
 )
