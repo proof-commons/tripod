@@ -1024,3 +1024,282 @@ fn a_sponsored_transfer_reaches_candidate_bytes_with_the_sponsors_own_witness() 
         Ok(built.transaction()),
     );
 }
+
+// -------------------------------------------------------------------------
+// The private lane's own entry point (rule:guide-ctf-exec:per-output-retirement)
+// -------------------------------------------------------------------------
+
+/// A materializer collaborator that is never reached.
+///
+/// Every test below refuses before any materialization is attempted,
+/// and that is the property under test: a private finalization that
+/// disagreed with its request or its openings must say so before it
+/// spends any proof work, because a refusal produced after the fact
+/// would be attributable to two things.
+struct UnreachedMaterializer;
+
+impl crate::live_materialize::ConfidentialProofMaterializer for UnreachedMaterializer {
+    fn origin(&self) -> crate::live_materialize::CommitmentOrigin {
+        unreachable!("no test below reaches the materializer")
+    }
+
+    fn value_commitment(
+        &self,
+        _explicit_asset: AssetId,
+        _semantic_amount: u64,
+        _value_blinder: &[u8; crate::live_materialize::SCALAR_BYTES],
+    ) -> Option<crate::live_materialize::MaterializerCommitment> {
+        unreachable!("no test below reaches the materializer")
+    }
+
+    fn nonce_commitment(
+        &self,
+        _nonce_input: &[u8; crate::live_materialize::SCALAR_BYTES],
+    ) -> Option<[u8; crate::bytes::COMMITMENT_BYTES]> {
+        unreachable!("no test below reaches the materializer")
+    }
+
+    fn range_proof(
+        &self,
+        _request: &crate::live_materialize::RangeproofRequest<'_>,
+    ) -> Option<crate::live_materialize::MaterializedRangeproof> {
+        unreachable!("no test below reaches the materializer")
+    }
+}
+
+impl crate::live_materialize::IndependentCommitmentCheck for UnreachedMaterializer {
+    fn origin(&self) -> crate::live_materialize::CommitmentOrigin {
+        unreachable!("no test below reaches the checker")
+    }
+
+    fn recompute(
+        &self,
+        _explicit_asset: AssetId,
+        _semantic_amount: u64,
+        _value_blinder: &[u8; crate::live_materialize::SCALAR_BYTES],
+    ) -> Option<crate::live_materialize::IndependentCommitment> {
+        unreachable!("no test below reaches the checker")
+    }
+
+    fn solve_balancing_blinder(
+        &self,
+        _input_blinder_sum: &[u8; crate::live_materialize::SCALAR_BYTES],
+        _other_blinders: &[[u8; crate::live_materialize::SCALAR_BYTES]],
+    ) -> Option<[u8; crate::live_materialize::SCALAR_BYTES]> {
+        unreachable!("no test below reaches the checker")
+    }
+}
+
+/// An empty frozen view, for the refusals that fire before lookup.
+fn empty_fixtures() -> crate::live_materialize::FrozenConfidentialFixtureView {
+    crate::live_materialize::FrozenConfidentialFixtureView::new(std::collections::BTreeMap::new())
+}
+
+/// One opening reference into a fixture nothing resolves.
+fn opening(index: usize) -> crate::live_materialize::FixtureOpeningReference {
+    crate::live_materialize::FixtureOpeningReference::new(
+        "unresolved".to_owned(),
+        [0x11; 32],
+        index,
+    )
+}
+
+/// The private two-in two-out request and the view that recognizes it.
+fn private_fixture(
+    abi: &CandidateLiveTransferAbi,
+    form: RequestedForm,
+) -> (LiveTransferRequest, PublicConstructionView) {
+    let first = outpoint(0xb1, 0);
+    let second = outpoint(0xb2, 1);
+    let stated = view([
+        receipt_view(
+            abi,
+            first,
+            &owner(&FIRST_OWNER),
+            LiveTransferRepresentationPlan::PrivateCommitted,
+            ValueField::Explicit(1_000),
+        ),
+        receipt_view(
+            abi,
+            second,
+            &owner(&SECOND_OWNER),
+            LiveTransferRepresentationPlan::PrivateCommitted,
+            ValueField::Explicit(1_000),
+        ),
+    ]);
+    let request = LiveTransferRequest::new(
+        [first, second],
+        [
+            destination(&FIRST_OWNER, 1_200),
+            destination(&SECOND_OWNER, 800),
+        ],
+        LiveTransferRepresentationPlan::PrivateCommitted,
+        form,
+        SponsorChangeRequest::NotRequested,
+        Some(PublicTestRandomness::from_published_bytes(
+            PUBLISHED_RANDOMNESS,
+        )),
+    )
+    .expect("the fixture request validates");
+    (request, stated)
+}
+
+/// The openings for the fixture above, with `inputs` and `destinations`
+/// entries rather than the two-and-two the request needs.
+fn openings(inputs: usize, destinations: usize) -> crate::live_construct::PrivateLiveOpenings {
+    crate::live_construct::PrivateLiveOpenings::new(
+        (0..inputs)
+            .map(|index| crate::live_construct::PrivateInputOpening {
+                opening: opening(index),
+                explicit_amount: 1_000,
+                zero_asset_blinder: [0_u8; crate::live_materialize::SCALAR_BYTES],
+            })
+            .collect(),
+        (0..destinations)
+            .map(|index| crate::live_construct::PrivateDestinationOpening {
+                fixture: opening(index),
+                role: if index == 0 {
+                    crate::live_materialize::ConfidentialOutputRole::Primary
+                } else {
+                    crate::live_materialize::ConfidentialOutputRole::Balancing
+                },
+            })
+            .collect(),
+        crate::live_materialize::NonProtocolFundingRegion::default(),
+        crate::live_materialize::ConfidentialMaterializationProfiles {
+            reproducibility_contract: target_elements::ReproducibilityContract::ByteIdentity,
+            custody_profile:
+                crate::live_materialize::ConfidentialCustodyProfile::CentralPublicFixtures,
+            materializer_profile:
+                crate::live_materialize::ConfidentialMaterializerProfile::GuideCtfDeterministicV1,
+            proof_profile:
+                crate::live_materialize::ConfidentialProofProfile::ExplicitAssetRangeproofV1,
+            nonce_profile:
+                crate::live_materialize::ConfidentialNonceProfile::DeterministicDerivedV1,
+            order_profile: crate::live_materialize::ConfidentialOrderProfile::FixtureFixedOrder,
+            retry_profile: crate::live_materialize::ConfidentialRetryProfile::NoRetry,
+        },
+    )
+}
+
+#[test]
+fn the_private_entry_point_refuses_an_explicit_request_by_its_own_name() {
+    // Not RepresentationNotLinked and not a capability refusal: the two
+    // lanes have two entry points now, and a caller standing at the
+    // wrong one is told which one it is at.
+    let abi = live_abi();
+    let (request, stated) = explicit_fixture(
+        &abi,
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+    );
+    assert_eq!(
+        crate::live_construct::finalize_private_live_transfer(
+            &abi,
+            &request,
+            &stated,
+            &openings(2, 2),
+            &empty_fixtures(),
+            &UnreachedMaterializer,
+            &UnreachedMaterializer,
+        )
+        .err(),
+        Some(
+            TransactionRefusal::PrivateFinalizationIsNotTheExplicitLane {
+                representation: LiveTransferRepresentationPlan::Explicit,
+            }
+        ),
+    );
+}
+
+#[test]
+fn a_sponsored_private_request_refuses_on_the_absent_signer_rather_than_building() {
+    // The candidate is buildable and would be unauthorizable, which is
+    // the shape that produces a refusal attributable to the wrong
+    // thing. So the lane stops at the form.
+    let abi = live_abi();
+    let (request, stated) = private_fixture(&abi, RequestedForm::Sponsored);
+    assert_eq!(
+        crate::live_construct::finalize_private_live_transfer(
+            &abi,
+            &request,
+            &stated,
+            &openings(2, 2),
+            &empty_fixtures(),
+            &UnreachedMaterializer,
+            &UnreachedMaterializer,
+        )
+        .err(),
+        Some(TransactionRefusal::PrivateFinalizationIsSponsorless),
+    );
+}
+
+#[test]
+fn openings_that_do_not_cover_the_request_are_refused_on_both_sides() {
+    let abi = live_abi();
+    let (request, stated) = private_fixture(&abi, RequestedForm::Sponsorless);
+
+    // One opening short on the input side.
+    assert_eq!(
+        crate::live_construct::finalize_private_live_transfer(
+            &abi,
+            &request,
+            &stated,
+            &openings(1, 2),
+            &empty_fixtures(),
+            &UnreachedMaterializer,
+            &UnreachedMaterializer,
+        )
+        .err(),
+        Some(TransactionRefusal::PrivateOpeningsDoNotCoverTheRequest {
+            offered: 1,
+            required: 2,
+        }),
+    );
+
+    // And one over on the destination side. Both directions, because a
+    // check written as "at least as many" would pass the second.
+    assert_eq!(
+        crate::live_construct::finalize_private_live_transfer(
+            &abi,
+            &request,
+            &stated,
+            &openings(2, 3),
+            &empty_fixtures(),
+            &UnreachedMaterializer,
+            &UnreachedMaterializer,
+        )
+        .err(),
+        Some(TransactionRefusal::PrivateOpeningsDoNotCoverTheRequest {
+            offered: 3,
+            required: 2,
+        }),
+    );
+}
+
+#[test]
+fn a_materializer_refusal_arrives_as_the_materializers_own_word() {
+    // The fixture handle resolves to nothing, so the materializer
+    // refuses at its fixture stage. What matters here is that the
+    // refusal is WRAPPED rather than flattened: the caller gets the
+    // materializer's census member and not a re-spelling of it.
+    let abi = live_abi();
+    let (request, stated) = private_fixture(&abi, RequestedForm::Sponsorless);
+    let refusal = crate::live_construct::finalize_private_live_transfer(
+        &abi,
+        &request,
+        &stated,
+        &openings(2, 2),
+        &empty_fixtures(),
+        &UnreachedMaterializer,
+        &UnreachedMaterializer,
+    )
+    .expect_err("an unresolvable fixture handle refuses");
+    assert!(
+        matches!(
+            refusal,
+            TransactionRefusal::PrivateMaterializationRefused(_)
+        ),
+        "the materializer's refusal was not carried through: {refusal:?}",
+    );
+}

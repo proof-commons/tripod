@@ -1369,29 +1369,52 @@ fn resolve_conditions(
         && explicit.construction_model().is_none();
 
     BTreeMap::from([
-        // §14.3's sixth ingredient exists for neither member, and the
-        // private member additionally rests on a predecessor no funding
-        // step of this pipeline can create. The more specific blocker
-        // wins: clearing the digest alone would still leave the private
-        // half unbuildable on a chain.
+        // The private member rests on a predecessor this pipeline does
+        // not consume, and the blocker's word has been narrower than the
+        // condition for two waves now: a confidential predecessor IS
+        // fundable through the confidential arm and one has been mined.
+        // What kept the condition blocked was that this pipeline's
+        // private materialization did not take the transaction-wide
+        // path.
         //
-        // The blocker's word is retained deliberately and is not the
-        // whole of the reason any more. A confidential predecessor is
-        // fundable through the confidential arm and one has been mined;
-        // what keeps this condition blocked is that this pipeline
-        // consumes no such predecessor, because its private
-        // materialization does not take the transaction-wide path. That
-        // is a narrower condition than the word names, it has no name of
-        // its own here, and minting one is not this wave's to do -- so
-        // the standing is left exactly where it is rather than moved on
-        // a reading.
+        // That last sentence has stopped being true. The path exists —
+        // `transaction::live_construct::finalize_private_live_transfer`
+        // is the private lane's own entry point and it consumes an
+        // opening — and what remains is that THIS pipeline does not call
+        // it yet.
+        //
+        // So the standing stays blocked and the blocker's name stays
+        // where it is, and the reason for both is now a vocabulary rule
+        // rather than an absence of options. Every arm of
+        // `LiveInfrastructureBlocker` names a component that does not
+        // exist, and an unwired call site is not a missing component; it
+        // is an attempt not yet made. Minting an arm for it would put a
+        // member in that vocabulary that the vocabulary's own rule
+        // forbids, and the honest report is that the remaining gap has
+        // no name here BECAUSE it does not qualify for one. The word
+        // retained is the closest true one and it is documented as
+        // wider than its ground, which is the same disclosure the
+        // previous wave made and is not a new claim.
         (
             Condition::BothMaterializationsConstructible,
             Standing::Blocked(LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded),
         ),
+        // Re-pointed. This named `OwnerSighashNotComputable`, and that
+        // was stale: the digest is computed, the selected profile is
+        // established over its required set, and both lanes carry an
+        // observed acceptance — the census records the blocker as
+        // carried by zero rows.
+        //
+        // The true current gate is the condition immediately above.
+        // This function's own header says so in as many words: the
+        // acceptance condition "is downstream of the second rather than
+        // a third missing thing". A pair whose private half cannot be
+        // built cannot have both halves accepted, and naming a cleared
+        // blocker here would have made the pair look one repair away
+        // from a run when it is two.
         (
             Condition::BothTargetTransactionsAccept,
-            Standing::Blocked(LiveInfrastructureBlocker::OwnerSighashNotComputable),
+            Standing::Blocked(LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded),
         ),
         (
             Condition::BothProjectionsEqualTheExpectedTransfer,
