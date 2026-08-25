@@ -69,7 +69,7 @@ use crate::capability::census_enum;
 use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::live_pattern::{LiveFragmentId, LiveTransferSymbols};
-use crate::live_shape::LiveTransferShape;
+use crate::live_shape::{FeePresence, LiveTransferShape};
 use crate::pattern::{
     narrow_to_operand, number, op, require_amount_domain, require_asset, require_explicit,
     require_program,
@@ -380,7 +380,13 @@ pub fn live_family_ranges(shape: LiveTransferShape) -> CompleteFamilyRanges {
         ));
         next += 1;
     }
-    if shape.sponsored() {
+    // The fee range follows the shape's fee axis, not its sponsor count.
+    // The two answers coincide for every sponsored form; they part for
+    // the sponsorless form that pays its own fee, and this census is one
+    // of the three readings that has to part with them together or the
+    // emitted program and the family census will disagree about which
+    // position the fee occupies.
+    if shape.fee() == FeePresence::Present {
         outputs.push(range(
             LiveFamily::Output(Out::TargetFee),
             next,
@@ -700,7 +706,7 @@ pub fn live_sponsor_isolation_fragment(
         position += 1;
     }
 
-    if shape.sponsored() {
+    if shape.fee() == FeePresence::Present {
         instructions.extend(require_asset(
             target,
             OpcodeId::InspectOutputAsset,
@@ -711,6 +717,13 @@ pub fn live_sponsor_isolation_fragment(
         // replaces a program that is not a witness program by a digest of
         // it under a negative version marker, and that pair is the whole
         // discriminator.
+        //
+        // Nothing in this clause reads the sponsor region, which is why
+        // it needed no widening to serve a sponsorless fee-bearing shape:
+        // it already recognized the fee by its reserve asset and its
+        // empty program, and a fee funded from the receipts wears exactly
+        // that form. Only the *decision to emit it* was tied to the
+        // sponsor count, and that is what moved.
         instructions.extend([
             number(target, position)?,
             op(OpcodeId::InspectOutputScriptPubKey),
@@ -791,14 +804,38 @@ pub fn issuance_absence_fragment(
 
 /// Whether one shape has a sponsor region at all.
 ///
-/// The sponsor-isolation fragment of a shape without one is empty, and
-/// [`crate::live_pattern::patterns_for`] uses this to omit the pattern
-/// record rather than mint an identity over zero instructions — the same
-/// answer [`crate::live_pattern::has_member_position`] gives for the
-/// member leaf of a one-to-one transfer.
+/// Region membership, and nothing about the fee. This answered both
+/// questions while a fee output existed only where a sponsor region did;
+/// [`emits_isolation_fragment`] is the one to ask about the fragment
+/// now.
 #[must_use]
 pub const fn has_sponsor_region(shape: LiveTransferShape) -> bool {
     shape.sponsored() || matches!(shape.sponsor_change(), SponsorChangePresence::Present)
+}
+
+/// Whether [`live_sponsor_isolation_fragment`] emits anything for one
+/// shape.
+///
+/// The fragment carries three clauses — the sponsor inputs' reserve
+/// asset, the sponsor-change role, and the target fee role — and a shape
+/// reaching none of them gets an empty program.
+/// [`crate::live_pattern::patterns_for`] uses this to omit the pattern
+/// record rather than mint an identity over zero instructions, the same
+/// answer [`crate::live_pattern::has_member_position`] gives for the
+/// member leaf of a one-to-one transfer.
+///
+/// # Why this is not [`has_sponsor_region`]
+///
+/// It was, and the two came apart when the fee axis did. A sponsorless
+/// shape that pays its own fee has no sponsor region and still emits the
+/// fee clause, so asking the sponsor question would have dropped the
+/// pattern while the fragment went on carrying instructions — the
+/// emitted program and the pattern census disagreeing about what the
+/// leaf contains, which is exactly the silent gap the census exists to
+/// refuse.
+#[must_use]
+pub const fn emits_isolation_fragment(shape: LiveTransferShape) -> bool {
+    has_sponsor_region(shape) || matches!(shape.fee(), FeePresence::Present)
 }
 
 /// Whether a program introspects a value field at all.

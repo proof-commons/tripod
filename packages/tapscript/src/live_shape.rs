@@ -42,7 +42,37 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU8;
 
+use crate::capability::census_enum;
 use crate::shape::SponsorChangePresence;
+
+census_enum! {
+    /// Whether a shape carries the target fee role.
+    ///
+    /// A named pair rather than a Boolean, for the reason
+    /// [`SponsorChangePresence`] is one: §10.5 recognizes the fee role by
+    /// declared role, canonical position, reserve asset and admitted
+    /// program class, and never by comparing an amount with zero. The
+    /// reviewed target represents a zero fee by the *absence* of the
+    /// output, so absence here is a statement about the transaction's
+    /// positions and not about a number.
+    ///
+    /// # Why this is an axis and not a reading of the sponsor count
+    ///
+    /// It was the latter until the fee matrix was ruled on. A sponsored
+    /// form's fee is not optional — somebody funded the sponsor region in
+    /// order to pay it — but a *sponsorless* form has two admissible
+    /// readings, and the reviewed vocabulary had only ever written down
+    /// the one where the transaction pays nothing. The other is a
+    /// transfer that pays its own fee out of the value it consumes, which
+    /// the covenant already owns the discriminator for. Separating the
+    /// axis from the sponsor count is what lets both be said.
+    pub enum FeePresence {
+        /// The shape declares no target fee role.
+        Absent,
+        /// The shape declares exactly one target fee role.
+        Present,
+    }
+}
 
 /// The smallest receipt-input count a live transfer can have.
 ///
@@ -97,6 +127,23 @@ pub enum LiveShapeRejection {
     },
     /// A sponsor-change role with no sponsor region to belong to.
     SponsorChangeWithoutSponsorInput,
+    /// A sponsored form declaring no fee role.
+    ///
+    /// The one combination of the two role axes the reviewed reading
+    /// refuses outright. A sponsor region exists in order to pay the
+    /// target, so a sponsored form that declared no fee output would have
+    /// funded a payment it then never makes — and §10.5 represents a zero
+    /// fee by the absence of the *region*, not by a region with nothing
+    /// after it.
+    SponsoredFormWithoutFee,
+    /// A sponsorless fee-bearing shape a candidate does not admit.
+    ///
+    /// The fee axis is a candidate's emission decision exactly as the
+    /// three counts are, and this is its
+    /// [`Self::ReceiptInputsAboveBound`]. A candidate whose bounds leave
+    /// the axis off emits no program for the form, so a shape carrying it
+    /// is *unbuilt* here rather than invalid anywhere.
+    SponsorlessFeeBeyondBound,
     /// A candidate set holding no shape at all.
     ///
     /// A candidate is the shapes it emits programs for, so a set with
@@ -128,10 +175,20 @@ pub struct LiveTransferShapeBounds {
     receipt_inputs: NonZeroU8,
     receipt_outputs: NonZeroU8,
     sponsor_inputs: u8,
+    sponsorless_fee: FeePresence,
 }
 
 impl LiveTransferShapeBounds {
     /// Bounds admitting up to these receipt and sponsor counts.
+    ///
+    /// The sponsorless fee-bearing form is left out, which is what every
+    /// candidate written before the fee matrix was ruled on meant by
+    /// these three numbers. [`Self::admitting_sponsorless_fee`] turns it
+    /// on, and it is a separate statement rather than a fourth argument
+    /// here for the reason the type's own doc gives: §18.1 enumerates
+    /// three axes and these are those three, so a fee argument in this
+    /// list would read as a fourth research candidate the study never
+    /// asked for.
     #[must_use]
     pub const fn new(
         receipt_inputs: NonZeroU8,
@@ -142,7 +199,29 @@ impl LiveTransferShapeBounds {
             receipt_inputs,
             receipt_outputs,
             sponsor_inputs,
+            sponsorless_fee: FeePresence::Absent,
         }
+    }
+
+    /// The same bounds, also emitting programs for the sponsorless
+    /// fee-bearing form.
+    ///
+    /// The counts are untouched: the fee is a role axis and not a count,
+    /// so turning it on adds one shape per admitted count pair rather
+    /// than widening any range.
+    #[must_use]
+    pub const fn admitting_sponsorless_fee(self) -> Self {
+        Self {
+            sponsorless_fee: FeePresence::Present,
+            ..self
+        }
+    }
+
+    /// Whether this candidate emits programs for the sponsorless
+    /// fee-bearing form.
+    #[must_use]
+    pub const fn sponsorless_fee(self) -> FeePresence {
+        self.sponsorless_fee
     }
 
     /// The largest receipt-input count these bounds admit.
@@ -176,10 +255,19 @@ pub struct LiveTransferShape {
     receipt_outputs: NonZeroU8,
     sponsor_inputs: u8,
     sponsor_change: SponsorChangePresence,
+    fee: FeePresence,
 }
 
 impl LiveTransferShape {
-    /// The shape with these counts, if the candidate bounds admit it.
+    /// The shape with these counts, the fee role following the form.
+    ///
+    /// A sponsored form takes the fee role and a sponsorless one does
+    /// not, which is what this constructor meant before the fee axis
+    /// existed and is why every caller of it reads unchanged. The
+    /// sponsorless form that pays its own fee is
+    /// [`Self::paying_its_own_fee`], and it is a separate constructor
+    /// because it is a separate claim: the fee it declares is not implied
+    /// by any count it carries.
     ///
     /// # Errors
     ///
@@ -194,6 +282,66 @@ impl LiveTransferShape {
         receipt_outputs: NonZeroU8,
         sponsor_inputs: u8,
         sponsor_change: SponsorChangePresence,
+    ) -> Result<Self, LiveShapeRejection> {
+        let fee = if sponsor_inputs > 0 {
+            FeePresence::Present
+        } else {
+            FeePresence::Absent
+        };
+        Self::checked(
+            bounds,
+            receipt_inputs,
+            receipt_outputs,
+            sponsor_inputs,
+            sponsor_change,
+            fee,
+        )
+    }
+
+    /// The sponsorless shape that pays the target's fee out of the value
+    /// it consumes.
+    ///
+    /// No sponsor region and no sponsor change, so the counts that could
+    /// contradict the claim are fixed here rather than accepted and
+    /// refused. The fee output is the target's structural one exactly as
+    /// a sponsored form's is — same reserve asset, same empty program,
+    /// same position after the destinations — and the only thing that
+    /// differs is who funded the value behind it.
+    ///
+    /// # Errors
+    ///
+    /// [`LiveShapeRejection::ReceiptInputsAboveBound`] or
+    /// [`LiveShapeRejection::ReceiptOutputsAboveBound`] for a count
+    /// outside the candidate window, and
+    /// [`LiveShapeRejection::SponsorlessFeeBeyondBound`] for a candidate
+    /// that emits no program for this form.
+    pub const fn paying_its_own_fee(
+        bounds: LiveTransferShapeBounds,
+        receipt_inputs: NonZeroU8,
+        receipt_outputs: NonZeroU8,
+    ) -> Result<Self, LiveShapeRejection> {
+        Self::checked(
+            bounds,
+            receipt_inputs,
+            receipt_outputs,
+            0,
+            SponsorChangePresence::Absent,
+            FeePresence::Present,
+        )
+    }
+
+    /// Every conjunct of the validity condition, in one place.
+    ///
+    /// Both public constructors funnel through here so the rule is stated
+    /// once. They differ in what they may *say*, never in what is
+    /// checked.
+    const fn checked(
+        bounds: LiveTransferShapeBounds,
+        receipt_inputs: NonZeroU8,
+        receipt_outputs: NonZeroU8,
+        sponsor_inputs: u8,
+        sponsor_change: SponsorChangePresence,
+        fee: FeePresence,
     ) -> Result<Self, LiveShapeRejection> {
         if receipt_inputs.get() > bounds.receipt_inputs() {
             return Err(LiveShapeRejection::ReceiptInputsAboveBound {
@@ -216,11 +364,21 @@ impl LiveTransferShape {
         if matches!(sponsor_change, SponsorChangePresence::Present) && sponsor_inputs == 0 {
             return Err(LiveShapeRejection::SponsorChangeWithoutSponsorInput);
         }
+        if sponsor_inputs > 0 && matches!(fee, FeePresence::Absent) {
+            return Err(LiveShapeRejection::SponsoredFormWithoutFee);
+        }
+        if sponsor_inputs == 0
+            && matches!(fee, FeePresence::Present)
+            && matches!(bounds.sponsorless_fee(), FeePresence::Absent)
+        {
+            return Err(LiveShapeRejection::SponsorlessFeeBeyondBound);
+        }
         Ok(Self {
             receipt_inputs,
             receipt_outputs,
             sponsor_inputs,
             sponsor_change,
+            fee,
         })
     }
 
@@ -256,6 +414,17 @@ impl LiveTransferShape {
         self.sponsor_inputs > 0
     }
 
+    /// Whether this shape declares the target fee role.
+    ///
+    /// Read this rather than [`Self::sponsored`] wherever the question is
+    /// about the fee *output*. The two agreed for every shape built
+    /// before the fee matrix was ruled on, and they disagree for exactly
+    /// one form: the sponsorless transfer that pays its own fee.
+    #[must_use]
+    pub const fn fee(self) -> FeePresence {
+        self.fee
+    }
+
     /// The total input count this shape fixes.
     ///
     /// Exact rather than a lower bound: §12.1's layout is the receipt
@@ -270,19 +439,28 @@ impl LiveTransferShape {
     /// The total output count this shape fixes.
     ///
     /// Destinations first, then the sponsor-change role where the shape
-    /// declares one, then the target fee role where the form carries
-    /// one. A sponsorless shape pays no fee and therefore carries no fee
-    /// output at all: the reviewed target represents a zero fee by the
-    /// *absence* of the output and refuses a zero-valued one, which is
-    /// the same reading [`crate::shape::CompactAshShape::outputs`] takes
-    /// and for the same reason.
+    /// declares one, then the target fee role where the shape declares
+    /// that. The reviewed target represents a zero fee by the *absence*
+    /// of the output and refuses a zero-valued one, which is the same
+    /// reading [`crate::shape::CompactAshShape::outputs`] takes and for
+    /// the same reason — so [`FeePresence::Absent`] here is one fewer
+    /// position and never a position holding nothing.
+    ///
+    /// The fee term reads the shape's own axis rather than its sponsor
+    /// count. Those two answers coincide for every shape a candidate
+    /// built before the fee matrix was ruled on, and the axis is what
+    /// lets a sponsorless form pay its own fee without the count having
+    /// to lie about a sponsor region that is not there.
     #[must_use]
     pub const fn outputs(self) -> u16 {
         let change = match self.sponsor_change {
             SponsorChangePresence::Absent => 0,
             SponsorChangePresence::Present => 1,
         };
-        let fee = if self.sponsored() { 1 } else { 0 };
+        let fee = match self.fee {
+            FeePresence::Absent => 0,
+            FeePresence::Present => 1,
+        };
         self.receipt_outputs.get() as u16 + change + fee
     }
 
@@ -539,6 +717,15 @@ pub fn dense_live_shape_set(bounds: LiveTransferShapeBounds) -> LiveTransferShap
                     }
                 }
             }
+            // The fee axis, unrolled the same way and discarded the same
+            // way: a candidate that does not admit the sponsorless
+            // fee-bearing form refuses it here, so the axis is off by the
+            // bounds rather than by a branch this loop takes.
+            if let Ok(shape) =
+                LiveTransferShape::paying_its_own_fee(bounds, nonzero(inputs), nonzero(outputs))
+            {
+                shapes.insert(shape);
+            }
         }
     }
 
@@ -559,6 +746,33 @@ pub fn dense_live_shape_set(bounds: LiveTransferShapeBounds) -> LiveTransferShap
 #[must_use]
 pub fn demonstration_live_shape_set() -> LiveTransferShapeSet {
     dense_live_shape_set(LiveTransferShapeBounds::new(nonzero(3), nonzero(3), 1))
+}
+
+/// The Phase-5 demonstration set, also emitting the sponsorless
+/// fee-bearing form.
+///
+/// The same three counts as [`demonstration_live_shape_set`] with the
+/// fee axis turned on, which is the whole difference between the two
+/// candidates. It is a *separate* deployment rather than a widening of
+/// the demonstration one, and that is the load-bearing decision of this
+/// wave rather than a filing convenience: a candidate's shape set is
+/// walked into one coordinator leaf per shape, the leaves tweak the
+/// taproot output key, and the output key is the destination program
+/// every recorded fixture digest is taken over. Adding the fee-bearing
+/// member to the demonstration set would therefore move destination
+/// programs and digests for shapes that have already run against a
+/// pinned node, and the recorded digests of those runs are evidence
+/// rather than expectations — re-recording them to keep a test green
+/// would destroy the very claim the test exists to make.
+///
+/// Only a ceremony that intends to build a fee-bearing transfer links
+/// against this. Everything else keeps the demonstration deployment and
+/// digests exactly as it did.
+#[must_use]
+pub fn fee_bearing_live_shape_set() -> LiveTransferShapeSet {
+    dense_live_shape_set(
+        LiveTransferShapeBounds::new(nonzero(3), nonzero(3), 1).admitting_sponsorless_fee(),
+    )
 }
 
 /// A nonzero count, for the loops and constants above.

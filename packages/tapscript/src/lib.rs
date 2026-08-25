@@ -77,9 +77,10 @@ pub use live_pattern::{
 };
 pub use live_plan::{
     CompleteFamilyRanges, FamilyRangeDefect, LiveFamily, LiveFamilyRange, LiveInputFamily,
-    LiveOutputFamily, destination_closure_fragment, explicit_conservation_fragment,
-    family_range_defects, has_sponsor_region, issuance_absence_fragment, live_family_ranges,
-    live_sponsor_isolation_fragment, opens_an_amount, reads_a_value_field,
+    LiveOutputFamily, destination_closure_fragment, emits_isolation_fragment,
+    explicit_conservation_fragment, family_range_defects, has_sponsor_region,
+    issuance_absence_fragment, live_family_ranges, live_sponsor_isolation_fragment,
+    opens_an_amount, reads_a_value_field,
 };
 pub use live_private::{
     ComparableProjection, ComparisonSource, PrefixMask, PrivateAmountProhibition,
@@ -90,9 +91,9 @@ pub use live_private::{
     representation_comparison_axes, value_field_uses,
 };
 pub use live_shape::{
-    LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds, LiveTransferShapeSet,
-    MINIMUM_TRANSFER_RECEIPT_INPUTS, MINIMUM_TRANSFER_RECEIPT_OUTPUTS,
-    demonstration_live_shape_set, dense_live_shape_set,
+    FeePresence, LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds,
+    LiveTransferShapeSet, MINIMUM_TRANSFER_RECEIPT_INPUTS, MINIMUM_TRANSFER_RECEIPT_OUTPUTS,
+    demonstration_live_shape_set, dense_live_shape_set, fee_bearing_live_shape_set,
 };
 pub use operation_assessment::{
     EmissionRefusal, OperationAssessmentSet, OperationRequirement, OperationVerdict, VerdictGround,
