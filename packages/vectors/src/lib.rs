@@ -26,6 +26,8 @@ pub mod live_proof_bearing_observation;
 pub mod live_report;
 pub mod live_resource_report;
 pub mod live_resources;
+pub mod live_restart;
+pub mod live_roles;
 pub mod live_safety;
 pub mod materialize;
 pub mod matrix;
