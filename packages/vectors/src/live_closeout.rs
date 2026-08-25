@@ -433,31 +433,27 @@ pub fn validate_closeout(
     Ok(ConfidentialFundingCloseoutReport { parts })
 }
 
-/// The confidential-funding guide's closeout, as this wave's runs
-/// settled it.
+/// The order as this wave executed it.
 ///
-/// # Why this is a function and not a document
+/// # Why the closeout is assembled here and not written down
 ///
 /// The closeout has three invariants that are checked rather than
-/// trusted, and a document cannot be checked. Assembling it here means
-/// the workspace's own test suite refuses a closeout that cleared two
+/// trusted, and a document cannot be checked. Assembling it in code
+/// means the workspace's own suite refuses a closeout that cleared two
 /// residuals, that cleared the digest blocker from funding evidence, or
 /// whose disposition disagrees with the order that was actually run.
 ///
-/// # What it says, and what it stops short of
+/// # What the order reached, and where it stops
 ///
-/// The order reached step two and stopped at step three. Steps one and
-/// two accepted, on two runs against a real node, and the two rows they
-/// answer are in the delta with the identities that answered them.
-/// Step three is where this wave's execution stops, and the stop is
-/// typed rather than silent.
+/// Step two, stopping at step three. Steps one and two accepted, on two
+/// runs against a real node. Step three is where this wave's execution
+/// stops, and the stop is typed rather than silent.
 ///
-/// # Errors
-///
-/// Every member of [`CloseoutRefusal`]. It returns a `Result` rather
-/// than a value precisely so that the invariants are checked on every
-/// call rather than at the moment somebody wrote the numbers down.
-pub fn wave_five_closeout() -> Result<ConfidentialFundingCloseoutReport, CloseoutRefusal> {
+/// Split from the assembly because the order and the report are two
+/// readings: what happened, and what is claimed from it. A function
+/// that did both would let a reader lose track of which sentences were
+/// observations.
+fn wave_five_ledger() -> Result<RestartLedger, CloseoutRefusal> {
     use crate::live_private_restart::run_of_record as run;
     use crate::live_restart::{RestartStep, RestartStepResult};
 
@@ -500,6 +496,19 @@ pub fn wave_five_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeou
             },
         )
         .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+    Ok(ledger)
+}
+
+/// The evidence-role map for the control ceremony.
+///
+/// Every one of the seven roles is settled on its own ground, and the
+/// three that are not observations say which step the order stopped
+/// before or which ceremony owns the question instead. There is no
+/// entry filled from another entry's evidence, which is the property
+/// the builder refuses one call at a time.
+fn wave_five_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
+    use crate::live_private_restart::run_of_record as run;
+    use crate::live_restart::RestartStep;
 
     let mut roles = CeremonyEvidenceRolesBuilder::new();
     let settle = |builder: &mut CeremonyEvidenceRolesBuilder, role, ground| {
@@ -565,16 +574,29 @@ pub fn wave_five_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeou
             owned_by: "the lifecycle report".to_owned(),
         },
     )?;
-    let roles = roles
+    roles
         .complete()
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+        .map_err(|_| CloseoutRefusal::SponsorRowMoved)
+}
+
+/// The confidential-funding guide's closeout, as this wave's runs
+/// settled it.
+///
+/// # Errors
+///
+/// Every member of [`CloseoutRefusal`]. It returns a `Result` rather
+/// than a value precisely so that the invariants are checked on every
+/// call rather than at the moment somebody wrote the numbers down.
+pub fn wave_five_closeout() -> Result<ConfidentialFundingCloseoutReport, CloseoutRefusal> {
+    use crate::live_private_restart::run_of_record as run;
+    use crate::live_restart::RestartStep;
 
     validate_closeout(CloseoutParts {
         disposition: CloseoutDisposition::TypedStopped {
             step: RestartStep::TargetCtConservation,
             blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
         },
-        ledger,
+        ledger: wave_five_ledger()?,
         contracts: BTreeMap::from([(
             "private-one-to-one-control".to_owned(),
             "byte-identity".to_owned(),
@@ -595,7 +617,7 @@ pub fn wave_five_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeou
              by a verdict this guide consumed and did not produce"
                 .to_owned(),
         ),
-        roles: BTreeMap::from([("private-one-to-one-control".to_owned(), roles)]),
+        roles: BTreeMap::from([("private-one-to-one-control".to_owned(), wave_five_roles()?)]),
         cleared_residuals: BTreeSet::from([CLEARED_BY_FUNDING]),
         blockers: BTreeSet::from([
             LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
