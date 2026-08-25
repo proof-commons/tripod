@@ -292,6 +292,32 @@ pub enum LiveInfrastructureBlocker {
     /// constructors distinct and this workspace builds only the live one,
     /// so there is no time-locked output to offer a live transfer leaf.
     PredecessorConstructorAbsent,
+    /// No fixture constructs the remaining §15.2 positive shapes beyond
+    /// the one-to-one control.
+    ///
+    /// The restart order's fifth step asks for the remaining positive
+    /// private shapes — split, many-to-many, several distinct owners — each
+    /// where it accepts. Each needs a fixture this workspace has not built:
+    /// the registry's `manifest` builder and the private ceremony are fixed
+    /// at the one-to-one control's two outputs and one input, and a split
+    /// needs a three-output manifest while a many-to-many or a
+    /// several-owner transfer needs more inputs and more outputs than the
+    /// current construction supplies.
+    ///
+    /// It is the same kind of blocker as
+    /// [`Self::PredecessorConstructorAbsent`]: a constructor this workspace
+    /// has not built, not a target verdict and not a dependency this guide
+    /// cannot close. A following wave clears it by building the
+    /// multi-output and multi-input fixtures, at which point each shape
+    /// moves on its own observed acceptance.
+    ///
+    /// One of the shapes the fifth step names is not merely unbuilt but
+    /// structurally unconstructible: a private-merge is one output, and the
+    /// registry refuses a manifest with fewer than two. That is reported as
+    /// a divergence against the guide's own §14.5 merge predicate rather
+    /// than folded into this blocker, because the two are different facts —
+    /// one is work not done, the other is work the rules forbid.
+    MultiOutputShapeConstructorAbsent,
     /// No confidential predecessor can be funded on this chain.
     ///
     /// §6.3 admits a private transfer only over confidential receipt

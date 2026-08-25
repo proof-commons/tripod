@@ -459,8 +459,16 @@ enum Stage {
 }
 
 /// What the ceremony learned once the asset existed.
+///
+/// `pub(crate)` because the proof-negative ceremony
+/// ([`crate::live_conservation_negatives`]) builds its balance-valid
+/// control from the same linked deployment this one does, through the
+/// shared [`link_and_register`] and [`build_control`] entry points. It
+/// carries the two fixture views the successor is materialized against
+/// and the two owner programs, so a second ceremony reconstructs the
+/// identical control without re-deriving the registration.
 #[derive(Clone, Debug)]
-struct LinkedDeployment {
+pub(crate) struct LinkedDeployment {
     abi: CandidateLiveTransferAbi,
     asset: AssetId,
     predecessor_digest: [u8; 32],
@@ -468,6 +476,18 @@ struct LinkedDeployment {
     successor_digest: [u8; 32],
     successor_view: transaction::live_materialize::ConfidentialFixtureView,
     programs: [Vec<u8>; 2],
+}
+
+impl LinkedDeployment {
+    /// The predecessor fixture's digest.
+    pub(crate) const fn predecessor_digest(&self) -> [u8; 32] {
+        self.predecessor_digest
+    }
+
+    /// The successor fixture's digest.
+    pub(crate) const fn successor_digest(&self) -> [u8; 32] {
+        self.successor_digest
+    }
 }
 
 /// The Wave-5 restart ceremony, step one.
@@ -548,73 +568,11 @@ impl PrivateRestartPlanner {
     /// it. Registering before linking would bind a fixture to programs
     /// of a different deployment.
     fn settle_asset(&mut self, printed: &str) -> Result<(), PrivateRestartRefusal> {
-        let asset = asset_of(printed).ok_or(PrivateRestartRefusal::IssuanceNamedNoAsset)?;
-        let commit_order = *asset.internal();
-        let abi =
-            live_abi_for_asset(commit_order).map_err(|_| PrivateRestartRefusal::RelinkRefused)?;
-
-        // The two predecessor outputs pay to the two owners' PRIVATE
-        // receipt constructors. That is the whole difference between
-        // this ceremony and the proof-bearing one, and it is what makes
-        // the successor a live-receipt transfer rather than a spend of
-        // some other program.
-        let programs = [
-            private_program(&abi, &FIRST_SCALAR)?,
-            private_program(&abi, &SECOND_SCALAR)?,
-        ];
-
-        let (predecessor_digest, predecessor_view) = register(
-            predecessor_handle().as_str(),
-            commit_order,
-            // The funding input is explicit and contributes a zero value
-            // blinder. The adapter's own catalogue entry says the same,
-            // and a different figure would be refused there as a digest
-            // that drifted.
-            [0_u8; 32],
-            PREDECESSOR_AMOUNTS,
-            programs.clone(),
-        )
-        .map_err(|_| PrivateRestartRefusal::FixtureNotRegistrable {
-            handle: predecessor_handle().as_str().to_owned(),
-        })?;
-
-        // The successor balances against the ONE consumed blinder, not
-        // against a sum of two. A one-to-one control spends one output,
-        // so the input blinder sum is that output's blinder — stated
-        // here because it is the term a two-input ceremony gets for free
-        // and this one does not.
-        let consumed_blinder = *predecessor_view
-            .outputs()
-            .get(self.consumed.index())
-            .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?
-            .value_blinder();
-
-        let (successor_digest, successor_view) = register(
-            SUCCESSOR_HANDLE,
-            commit_order,
-            consumed_blinder,
-            self.consumed.split(),
-            // The recipient is the second owner and the change goes back
-            // to the first, so the two programs are the two
-            // constructors in the other order.
-            [programs[1].clone(), programs[0].clone()],
-        )
-        .map_err(|_| PrivateRestartRefusal::FixtureNotRegistrable {
-            handle: SUCCESSOR_HANDLE.to_owned(),
-        })?;
-
+        let linked = link_and_register(self.consumed, printed)?;
         self.record.issued_asset = Some(printed.to_owned());
-        self.record.predecessor_digest = Some(*predecessor_digest.bytes());
-        self.record.successor_digest = Some(*successor_digest.bytes());
-        self.linked = Some(LinkedDeployment {
-            abi,
-            asset,
-            predecessor_digest: *predecessor_digest.bytes(),
-            predecessor_view,
-            successor_digest: *successor_digest.bytes(),
-            successor_view,
-            programs,
-        });
+        self.record.predecessor_digest = Some(linked.predecessor_digest);
+        self.record.successor_digest = Some(linked.successor_digest);
+        self.linked = Some(linked);
         Ok(())
     }
 
@@ -630,29 +588,7 @@ impl PrivateRestartPlanner {
             .issued_asset
             .clone()
             .ok_or(PrivateRestartRefusal::IssuanceNamedNoAsset)?;
-
-        Ok(OperationStep::new(
-            FUND_STEP,
-            OperationSubject::ConfidentialFunding(Box::new(TargetConfidentialFundingSubject {
-                issue_asset: false,
-                asset: Some(printed),
-                destinations: linked
-                    .programs
-                    .iter()
-                    .map(|program| ConfidentialFundingDestination {
-                        output_program: program.clone(),
-                    })
-                    .collect(),
-                binding: ConfidentialFundingBinding {
-                    fixture_handle: predecessor_handle(),
-                    fixture_digest:
-                        target_elements_conformance::protocol::ConfidentialFixtureDigest::new(
-                            linked.predecessor_digest,
-                        ),
-                    profiles: selected_profiles(),
-                },
-            })),
-        ))
+        Ok(confidential_funding_step(linked, printed))
     }
 
     /// Take the funded coins from the node's own report of them.
@@ -660,14 +596,11 @@ impl PrivateRestartPlanner {
         &mut self,
         response: &NativeOperationResponse,
     ) -> Result<(), PrivateRestartRefusal> {
-        if response.confidential_funded_outputs.len() != PREDECESSOR_AMOUNTS.len() {
-            return Err(PrivateRestartRefusal::FundingCreatedNoPredecessor);
-        }
-        let mut coins = Vec::with_capacity(response.confidential_funded_outputs.len());
-        for (index, funded) in response.confidential_funded_outputs.iter().enumerate() {
-            coins.push(self.observed_coin(index, funded)?);
-        }
-        self.record.coins = coins;
+        let linked = self
+            .linked
+            .as_ref()
+            .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+        self.record.coins = observe_funded_coins(linked, response)?;
         self.record.consumed_receipt = Some(self.consumed.name());
         self.record.consumed_commitment_prefix = self
             .record
@@ -683,57 +616,15 @@ impl PrivateRestartPlanner {
         Ok(())
     }
 
-    /// One confidential coin, decoded from the node's report and
-    /// compared against the expectation rather than replaced by it.
-    fn observed_coin(
-        &self,
-        index: usize,
-        funded: &ConfidentialFundedOutput,
-    ) -> Result<RestartConfidentialCoin, PrivateRestartRefusal> {
-        let linked = self
-            .linked
-            .as_ref()
-            .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
-
-        let outpoint = outpoint_of(&funded.outpoint)
-            .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
-        let asset = asset_of(&funded.explicit_asset)
-            .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
-        let program =
-            decode_hex(&funded.script).ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
-        let commitment = <[u8; COMMITMENT_BYTES]>::try_from(funded.value_commitment.as_slice())
-            .map_err(|_| PrivateRestartRefusal::MalformedConfidentialOutput)?;
-
-        let projected = linked
-            .predecessor_view
-            .outputs()
-            .get(index)
-            .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
-        let checker = FirstPartyCommitmentCheck::new();
-        let derived = checker
-            .recompute(
-                linked.asset,
-                projected.semantic_amount(),
-                projected.value_blinder(),
-            )
-            .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
-        let matches_expectation = asset == linked.asset
-            && program == *projected.output_program()
-            && commitment == *derived.bytes();
-
-        Ok(RestartConfidentialCoin {
-            outpoint,
-            asset: AssetField::Explicit(asset),
-            value: ValueField::Commitment(commitment),
-            program,
-            rangeproof_bytes: funded.rangeproof.len(),
-            matches_expectation,
-        })
-    }
-
     /// The control, finalized through the private lane's own entry
     /// point.
-    fn finalize(&self) -> Result<PrivateLiveFinalization, PrivateRestartRefusal> {
+    /// The candidate's wire bytes, with every owner's authorization in
+    /// its own input's witness.
+    ///
+    /// A thin wrapper over the shared [`build_control`], which the
+    /// proof-negative ceremony also uses to reproduce this exact control
+    /// before mutating one field of it.
+    fn control_bytes(&mut self) -> Result<Vec<u8>, PrivateRestartRefusal> {
         let linked = self
             .linked
             .as_ref()
@@ -743,190 +634,13 @@ impl PrivateRestartPlanner {
             .coins
             .get(self.consumed.index())
             .ok_or(PrivateRestartRefusal::FundingCreatedNoPredecessor)?;
-
-        // The view is the node's report of the coin, not the ceremony's
-        // expectation of it.
-        let view = PublicConstructionView::new([PublicOutputView::new(
-            coin.outpoint(),
-            coin.asset(),
-            coin.value(),
-            coin.program().to_vec(),
-        )])
-        .map_err(|_| PrivateRestartRefusal::ControlNotRequestable)?;
-
-        let recipient = published_owner(&SECOND_SCALAR)
-            .map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?;
-        let sender = published_owner(&FIRST_SCALAR)
-            .map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?;
-        let destination = |owner, amount| {
-            ProtocolValue::new(amount)
-                .map(|value| LiveReceiptDestination::new(OwnerParameter::new(owner), value))
-                .map_err(|_| PrivateRestartRefusal::ControlNotRequestable)
-        };
-        let request = LiveTransferRequest::new(
-            [coin.outpoint()],
-            [
-                destination(recipient, self.consumed.split()[0])?,
-                destination(sender, self.consumed.split()[1])?,
-            ],
-            LiveTransferRepresentationPlan::PrivateCommitted,
-            RequestedForm::Sponsorless,
-            SponsorChangeRequest::NotRequested,
-            // The private form carries published randomness by the
-            // request's own rule. The materializer takes its blinders
-            // from fixtures rather than from this, so it is present
-            // because the request vocabulary requires it and is not a
-            // source of any opening.
-            Some(PublicTestRandomness::from_published_bytes([0x7e; 32])),
-        )
-        .map_err(|_| PrivateRestartRefusal::ControlNotRequestable)?;
-
-        let openings = PrivateLiveOpenings::new(
-            vec![PrivateInputOpening {
-                opening: FixtureOpeningReference::new(
-                    predecessor_handle().as_str().to_owned(),
-                    linked.predecessor_digest,
-                    self.consumed.index(),
-                ),
-                explicit_amount: PREDECESSOR_AMOUNTS[self.consumed.index()],
-                zero_asset_blinder: [0_u8; SCALAR_BYTES],
-            }],
-            vec![
-                PrivateDestinationOpening {
-                    fixture: FixtureOpeningReference::new(
-                        SUCCESSOR_HANDLE.to_owned(),
-                        linked.successor_digest,
-                        0,
-                    ),
-                    role: ConfidentialOutputRole::Primary,
-                },
-                PrivateDestinationOpening {
-                    fixture: FixtureOpeningReference::new(
-                        SUCCESSOR_HANDLE.to_owned(),
-                        linked.successor_digest,
-                        1,
-                    ),
-                    role: ConfidentialOutputRole::Balancing,
-                },
-            ],
-            NonProtocolFundingRegion::default(),
-            materialization_profiles(),
-        );
-
-        let fixtures = FrozenConfidentialFixtureView::new(BTreeMap::from([
-            (
-                predecessor_handle().as_str().to_owned(),
-                linked.predecessor_view.clone(),
-            ),
-            (SUCCESSOR_HANDLE.to_owned(), linked.successor_view.clone()),
-        ]));
-
-        finalize_private_live_transfer(
-            &linked.abi,
-            &request,
-            &view,
-            &openings,
-            &fixtures,
-            &ReferenceConfidentialMaterializer::new(),
-            &FirstPartyCommitmentCheck::new(),
-        )
-        .map_err(|refusal| PrivateRestartRefusal::FinalizationRefused(format!("{refusal:?}")))
-    }
-
-    /// The candidate's wire bytes, with every owner's authorization in
-    /// its own input's witness.
-    fn control_bytes(&mut self) -> Result<Vec<u8>, PrivateRestartRefusal> {
-        let finalization = self.finalize()?;
-        let materialized = finalization.materialized();
-
-        // Each receipt's signing request is built from the leaf THAT
-        // INPUT executes, which the finalization supplies. A ceremony
-        // that chose its own leaf would be authorizing a different
-        // program than the one the coin pays to.
-        let requests: Vec<OwnerSigningInputRequest> = finalization
-            .receipts()
-            .iter()
-            .map(|record| {
-                OwnerSigningInputRequest::new(
-                    u32::from(record.position()),
-                    leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
-                    LeafVersion::TAPSCRIPT,
-                    transaction::OWNER_CODESEPARATOR_POSITION,
-                    AnnexDisposition::Absent,
-                    IssuanceDisposition::Absent,
-                    record.control_block().to_vec(),
-                )
-            })
-            .collect();
-
-        let target = reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?;
-        let curve = crate::live_capability::OracleLiveCurve::new(
-            reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?,
-        );
-        let census = OwnerSigningCensus::from_proof_finalized(
-            &target,
-            materialized,
-            LiveDeployment::new(self.genesis_block_hash),
-            &requests,
-            &curve,
-        )
-        .map_err(PrivateRestartRefusal::CensusRefused)?;
-
-        let mut witnesses = Vec::with_capacity(finalization.receipts().len());
-        for record in finalization.receipts() {
-            let position = u32::from(record.position());
-            let input = census
-                .signing_inputs()
-                .iter()
-                .find(|entry| entry.input_index() == position)
-                .ok_or(PrivateRestartRefusal::CensusRefused(
-                    OwnerCensusRefusal::NoSigningInputRequested,
-                ))?;
-            // BothGrown is what consensus hashes. This ceremony runs no
-            // witness-vector control, so there is one treatment and it
-            // is the real one.
-            let message =
-                candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown);
-            let scalar = scalar_of(record.owner())?;
-            let material = signing_material(&scalar)
-                .map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?;
-            let signature = material
-                .sign(&message, &RESTART_AUXILIARY)
-                .map_err(|_| PrivateRestartRefusal::SigningRefused)?
-                .to_vec();
-            witnesses.push(InputWitness::new(vec![
-                signature,
-                record.leaf_script().to_vec(),
-                record.control_block().to_vec(),
-            ]));
-        }
-
-        self.spent_owner_bytes = finalization
-            .receipts()
-            .first()
-            .map(|record| record.owner().key().bytes().to_vec());
-
-        let frozen = materialized.proof_finalized().protected();
-        self.record.receipt_leaves = finalization.receipts().len();
-        self.record.output_witness_proof_bytes = frozen
-            .output_witnesses()
-            .iter()
-            .map(|witness| witness.range_proof().len())
-            .collect();
-
-        let submitted = TargetTransaction::with_output_witnesses(
-            frozen.version(),
-            frozen.inputs().to_vec(),
-            frozen.outputs().to_vec(),
-            frozen.lock_time(),
-            witnesses,
-            frozen.output_witnesses().to_vec(),
-        )
-        .map_err(|_| PrivateRestartRefusal::CandidateNotSerializable)?;
-
-        let bytes = submitted.encode();
+        let built = build_control(linked, coin, self.consumed, self.genesis_block_hash)?;
+        self.spent_owner_bytes = built.spent_owner_bytes;
+        self.record.receipt_leaves = built.receipt_leaves;
+        self.record.output_witness_proof_bytes = built.output_witness_proof_bytes;
+        let bytes = built.transaction.encode();
         self.record.submitted_bytes = bytes.len();
-        self.census = Some(census);
+        self.census = Some(built.census);
         Ok(bytes)
     }
 
@@ -969,6 +683,456 @@ impl PrivateRestartPlanner {
             verified,
         });
     }
+}
+
+/// Link the deployment against the issued asset and register both the
+/// predecessor and the one-to-one successor fixtures.
+///
+/// # Why it is a free function
+///
+/// Two ceremonies register the identical predecessor and successor: this
+/// module's one-to-one control and the proof-negative ceremony's
+/// balance-valid control. They must register the SAME fixtures — a
+/// balance-valid control the proof-negatives mutate is only balance-valid
+/// because it is the control this module submits — so the registration
+/// lives in one place rather than being copied and drifting.
+///
+/// The `consumed` receipt selects which predecessor output the successor
+/// balances against, exactly as step one and step two select their own.
+///
+/// # Errors
+///
+/// [`PrivateRestartRefusal::IssuanceNamedNoAsset`] where the printed
+/// asset does not decode, [`PrivateRestartRefusal::RelinkRefused`] where
+/// the deployment does not relink, and
+/// [`PrivateRestartRefusal::FixtureNotRegistrable`] where either fixture
+/// is not one the registry admits.
+pub(crate) fn link_and_register(
+    consumed: ConsumedReceipt,
+    printed: &str,
+) -> Result<LinkedDeployment, PrivateRestartRefusal> {
+    let asset = asset_of(printed).ok_or(PrivateRestartRefusal::IssuanceNamedNoAsset)?;
+    let commit_order = *asset.internal();
+    let abi = live_abi_for_asset(commit_order).map_err(|_| PrivateRestartRefusal::RelinkRefused)?;
+
+    // The two predecessor outputs pay to the two owners' PRIVATE receipt
+    // constructors. That is the whole difference between this ceremony
+    // and the proof-bearing one, and it is what makes the successor a
+    // live-receipt transfer rather than a spend of some other program.
+    let programs = [
+        private_program(&abi, &FIRST_SCALAR)?,
+        private_program(&abi, &SECOND_SCALAR)?,
+    ];
+
+    let (predecessor_digest, predecessor_view) = register(
+        predecessor_handle().as_str(),
+        commit_order,
+        // The funding input is explicit and contributes a zero value
+        // blinder. The adapter's own catalogue entry says the same, and a
+        // different figure would be refused there as a digest that
+        // drifted.
+        [0_u8; 32],
+        PREDECESSOR_AMOUNTS,
+        programs.clone(),
+    )
+    .map_err(|_| PrivateRestartRefusal::FixtureNotRegistrable {
+        handle: predecessor_handle().as_str().to_owned(),
+    })?;
+
+    // The successor balances against the ONE consumed blinder, not
+    // against a sum of two. A one-to-one control spends one output, so
+    // the input blinder sum is that output's blinder — stated here
+    // because it is the term a two-input ceremony gets for free and this
+    // one does not.
+    let consumed_blinder = *predecessor_view
+        .outputs()
+        .get(consumed.index())
+        .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?
+        .value_blinder();
+
+    let (successor_digest, successor_view) = register(
+        SUCCESSOR_HANDLE,
+        commit_order,
+        consumed_blinder,
+        consumed.split(),
+        // The recipient is the second owner and the change goes back to
+        // the first, so the two programs are the two constructors in the
+        // other order.
+        [programs[1].clone(), programs[0].clone()],
+    )
+    .map_err(|_| PrivateRestartRefusal::FixtureNotRegistrable {
+        handle: SUCCESSOR_HANDLE.to_owned(),
+    })?;
+
+    Ok(LinkedDeployment {
+        abi,
+        asset,
+        predecessor_digest: *predecessor_digest.bytes(),
+        predecessor_view,
+        successor_digest: *successor_digest.bytes(),
+        successor_view,
+        programs,
+    })
+}
+
+/// The issuing step that creates the disposable reserve the deployment is
+/// linked against.
+///
+/// Shared so the proof-negative ceremony issues the identical disposable
+/// asset the one-to-one ceremony does.
+pub(crate) fn issue_step() -> OperationStep {
+    OperationStep::new(
+        ISSUE_STEP,
+        OperationSubject::Funding(Box::new(TargetFundingSubject {
+            issue_asset: true,
+            asset: None,
+            output_program: ISSUE_PROGRAM.to_vec(),
+            outputs: ISSUE_OUTPUTS,
+            amount_per_output: ISSUE_AMOUNT_PER_OUTPUT,
+        })),
+    )
+}
+
+/// The confidential funding step against the registered predecessor.
+///
+/// Shared so the proof-negative ceremony funds the identical predecessor
+/// at the identical two receipt constructors.
+pub(crate) fn confidential_funding_step(
+    linked: &LinkedDeployment,
+    printed: String,
+) -> OperationStep {
+    OperationStep::new(
+        FUND_STEP,
+        OperationSubject::ConfidentialFunding(Box::new(TargetConfidentialFundingSubject {
+            issue_asset: false,
+            asset: Some(printed),
+            destinations: linked
+                .programs
+                .iter()
+                .map(|program| ConfidentialFundingDestination {
+                    output_program: program.clone(),
+                })
+                .collect(),
+            binding: ConfidentialFundingBinding {
+                fixture_handle: predecessor_handle(),
+                fixture_digest:
+                    target_elements_conformance::protocol::ConfidentialFixtureDigest::new(
+                        linked.predecessor_digest,
+                    ),
+                profiles: selected_profiles(),
+            },
+        })),
+    )
+}
+
+/// Take the funded coins from the node's own report of them, each decoded
+/// and compared against the expectation rather than replaced by it.
+///
+/// # Errors
+///
+/// [`PrivateRestartRefusal::FundingCreatedNoPredecessor`] where the node
+/// reported a different number of coins than the predecessor has outputs,
+/// and [`PrivateRestartRefusal::MalformedConfidentialOutput`] where a
+/// reported coin does not decode.
+pub(crate) fn observe_funded_coins(
+    linked: &LinkedDeployment,
+    response: &NativeOperationResponse,
+) -> Result<Vec<RestartConfidentialCoin>, PrivateRestartRefusal> {
+    if response.confidential_funded_outputs.len() != PREDECESSOR_AMOUNTS.len() {
+        return Err(PrivateRestartRefusal::FundingCreatedNoPredecessor);
+    }
+    let mut coins = Vec::with_capacity(response.confidential_funded_outputs.len());
+    for (index, funded) in response.confidential_funded_outputs.iter().enumerate() {
+        coins.push(observe_one_coin(linked, index, funded)?);
+    }
+    Ok(coins)
+}
+
+/// One confidential coin, decoded from the node's report and compared
+/// against the expectation rather than replaced by it.
+///
+/// # Errors
+///
+/// [`PrivateRestartRefusal::MalformedConfidentialOutput`] where the
+/// reported coin does not decode or its projected output is absent.
+fn observe_one_coin(
+    linked: &LinkedDeployment,
+    index: usize,
+    funded: &ConfidentialFundedOutput,
+) -> Result<RestartConfidentialCoin, PrivateRestartRefusal> {
+    let outpoint =
+        outpoint_of(&funded.outpoint).ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+    let asset = asset_of(&funded.explicit_asset)
+        .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+    let program =
+        decode_hex(&funded.script).ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+    let commitment = <[u8; COMMITMENT_BYTES]>::try_from(funded.value_commitment.as_slice())
+        .map_err(|_| PrivateRestartRefusal::MalformedConfidentialOutput)?;
+
+    let projected = linked
+        .predecessor_view
+        .outputs()
+        .get(index)
+        .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+    let checker = FirstPartyCommitmentCheck::new();
+    let derived = checker
+        .recompute(
+            linked.asset,
+            projected.semantic_amount(),
+            projected.value_blinder(),
+        )
+        .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+    let matches_expectation = asset == linked.asset
+        && program == *projected.output_program()
+        && commitment == *derived.bytes();
+
+    Ok(RestartConfidentialCoin {
+        outpoint,
+        asset: AssetField::Explicit(asset),
+        value: ValueField::Commitment(commitment),
+        program,
+        rangeproof_bytes: funded.rangeproof.len(),
+        matches_expectation,
+    })
+}
+
+/// One built control: the structured candidate and everything a caller
+/// needs to submit it, verify its readback, or derive a proof-negative
+/// mutant from it.
+///
+/// The transaction is structured rather than encoded, so a proof-negative
+/// ceremony can mutate exactly one output field and re-encode rather than
+/// hunt for a byte offset in a serialized blob.
+pub(crate) struct BuiltControl {
+    /// The complete candidate, every owner authorization in place.
+    pub(crate) transaction: TargetTransaction,
+    /// The signing census the authorizations were taken over.
+    pub(crate) census: OwnerSigningCensus,
+    /// The spent receipt owner's key bytes, for readback verification.
+    pub(crate) spent_owner_bytes: Option<Vec<u8>>,
+    /// How many receipt leaves the control consumed.
+    pub(crate) receipt_leaves: usize,
+    /// The range-proof byte length of each output-witness entry.
+    pub(crate) output_witness_proof_bytes: Vec<usize>,
+}
+
+/// Finalize the one-to-one control through the private lane's own entry
+/// point, against a coin the node reported.
+///
+/// # Errors
+///
+/// [`PrivateRestartRefusal::ControlNotRequestable`] where the request or
+/// its view will not build, [`PrivateRestartRefusal::SubstrateUnavailable`]
+/// where a published owner does not build, and
+/// [`PrivateRestartRefusal::FinalizationRefused`] where the private
+/// finalization refuses the control.
+fn finalize_control(
+    linked: &LinkedDeployment,
+    coin: &RestartConfidentialCoin,
+    consumed: ConsumedReceipt,
+) -> Result<PrivateLiveFinalization, PrivateRestartRefusal> {
+    // The view is the node's report of the coin, not the ceremony's
+    // expectation of it.
+    let view = PublicConstructionView::new([PublicOutputView::new(
+        coin.outpoint(),
+        coin.asset(),
+        coin.value(),
+        coin.program().to_vec(),
+    )])
+    .map_err(|_| PrivateRestartRefusal::ControlNotRequestable)?;
+
+    let recipient =
+        published_owner(&SECOND_SCALAR).map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?;
+    let sender =
+        published_owner(&FIRST_SCALAR).map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?;
+    let destination = |owner, amount| {
+        ProtocolValue::new(amount)
+            .map(|value| LiveReceiptDestination::new(OwnerParameter::new(owner), value))
+            .map_err(|_| PrivateRestartRefusal::ControlNotRequestable)
+    };
+    let request = LiveTransferRequest::new(
+        [coin.outpoint()],
+        [
+            destination(recipient, consumed.split()[0])?,
+            destination(sender, consumed.split()[1])?,
+        ],
+        LiveTransferRepresentationPlan::PrivateCommitted,
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+        // The private form carries published randomness by the request's
+        // own rule. The materializer takes its blinders from fixtures
+        // rather than from this, so it is present because the request
+        // vocabulary requires it and is not a source of any opening.
+        Some(PublicTestRandomness::from_published_bytes([0x7e; 32])),
+    )
+    .map_err(|_| PrivateRestartRefusal::ControlNotRequestable)?;
+
+    let openings = PrivateLiveOpenings::new(
+        vec![PrivateInputOpening {
+            opening: FixtureOpeningReference::new(
+                predecessor_handle().as_str().to_owned(),
+                linked.predecessor_digest,
+                consumed.index(),
+            ),
+            explicit_amount: PREDECESSOR_AMOUNTS[consumed.index()],
+            zero_asset_blinder: [0_u8; SCALAR_BYTES],
+        }],
+        vec![
+            PrivateDestinationOpening {
+                fixture: FixtureOpeningReference::new(
+                    SUCCESSOR_HANDLE.to_owned(),
+                    linked.successor_digest,
+                    0,
+                ),
+                role: ConfidentialOutputRole::Primary,
+            },
+            PrivateDestinationOpening {
+                fixture: FixtureOpeningReference::new(
+                    SUCCESSOR_HANDLE.to_owned(),
+                    linked.successor_digest,
+                    1,
+                ),
+                role: ConfidentialOutputRole::Balancing,
+            },
+        ],
+        NonProtocolFundingRegion::default(),
+        materialization_profiles(),
+    );
+
+    let fixtures = FrozenConfidentialFixtureView::new(BTreeMap::from([
+        (
+            predecessor_handle().as_str().to_owned(),
+            linked.predecessor_view.clone(),
+        ),
+        (SUCCESSOR_HANDLE.to_owned(), linked.successor_view.clone()),
+    ]));
+
+    finalize_private_live_transfer(
+        &linked.abi,
+        &request,
+        &view,
+        &openings,
+        &fixtures,
+        &ReferenceConfidentialMaterializer::new(),
+        &FirstPartyCommitmentCheck::new(),
+    )
+    .map_err(|refusal| PrivateRestartRefusal::FinalizationRefused(format!("{refusal:?}")))
+}
+
+/// Build the complete one-to-one control against a coin the node
+/// reported, every owner's authorization in its own input's witness.
+///
+/// Shared by the one-to-one control ceremony and the proof-negative
+/// ceremony: both submit the same control, and a control the
+/// proof-negatives mutate is only balance-valid because it is the control
+/// this builds.
+///
+/// # Errors
+///
+/// Every construction member of [`PrivateRestartRefusal`]: the
+/// finalization's, [`PrivateRestartRefusal::CensusRefused`],
+/// [`PrivateRestartRefusal::SigningRefused`], and
+/// [`PrivateRestartRefusal::CandidateNotSerializable`].
+pub(crate) fn build_control(
+    linked: &LinkedDeployment,
+    coin: &RestartConfidentialCoin,
+    consumed: ConsumedReceipt,
+    genesis_block_hash: Digest32,
+) -> Result<BuiltControl, PrivateRestartRefusal> {
+    let finalization = finalize_control(linked, coin, consumed)?;
+    let materialized = finalization.materialized();
+
+    // Each receipt's signing request is built from the leaf THAT INPUT
+    // executes, which the finalization supplies. A ceremony that chose
+    // its own leaf would be authorizing a different program than the one
+    // the coin pays to.
+    let requests: Vec<OwnerSigningInputRequest> = finalization
+        .receipts()
+        .iter()
+        .map(|record| {
+            OwnerSigningInputRequest::new(
+                u32::from(record.position()),
+                leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
+                LeafVersion::TAPSCRIPT,
+                transaction::OWNER_CODESEPARATOR_POSITION,
+                AnnexDisposition::Absent,
+                IssuanceDisposition::Absent,
+                record.control_block().to_vec(),
+            )
+        })
+        .collect();
+
+    let target = reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?;
+    let curve = crate::live_capability::OracleLiveCurve::new(
+        reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?,
+    );
+    let census = OwnerSigningCensus::from_proof_finalized(
+        &target,
+        materialized,
+        LiveDeployment::new(genesis_block_hash),
+        &requests,
+        &curve,
+    )
+    .map_err(PrivateRestartRefusal::CensusRefused)?;
+
+    let mut witnesses = Vec::with_capacity(finalization.receipts().len());
+    for record in finalization.receipts() {
+        let position = u32::from(record.position());
+        let input = census
+            .signing_inputs()
+            .iter()
+            .find(|entry| entry.input_index() == position)
+            .ok_or(PrivateRestartRefusal::CensusRefused(
+                OwnerCensusRefusal::NoSigningInputRequested,
+            ))?;
+        // BothGrown is what consensus hashes. This ceremony runs no
+        // witness-vector control, so there is one treatment and it is the
+        // real one.
+        let message = candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown);
+        let scalar = scalar_of(record.owner())?;
+        let material =
+            signing_material(&scalar).map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?;
+        let signature = material
+            .sign(&message, &RESTART_AUXILIARY)
+            .map_err(|_| PrivateRestartRefusal::SigningRefused)?
+            .to_vec();
+        witnesses.push(InputWitness::new(vec![
+            signature,
+            record.leaf_script().to_vec(),
+            record.control_block().to_vec(),
+        ]));
+    }
+
+    let spent_owner_bytes = finalization
+        .receipts()
+        .first()
+        .map(|record| record.owner().key().bytes().to_vec());
+
+    let frozen = materialized.proof_finalized().protected();
+    let receipt_leaves = finalization.receipts().len();
+    let output_witness_proof_bytes = frozen
+        .output_witnesses()
+        .iter()
+        .map(|witness| witness.range_proof().len())
+        .collect();
+
+    let transaction = TargetTransaction::with_output_witnesses(
+        frozen.version(),
+        frozen.inputs().to_vec(),
+        frozen.outputs().to_vec(),
+        frozen.lock_time(),
+        witnesses,
+        frozen.output_witnesses().to_vec(),
+    )
+    .map_err(|_| PrivateRestartRefusal::CandidateNotSerializable)?;
+
+    Ok(BuiltControl {
+        transaction,
+        census,
+        spent_owner_bytes,
+        receipt_leaves,
+        output_witness_proof_bytes,
+    })
 }
 
 /// The private receipt constructor's program for one published owner.
@@ -1015,7 +1179,11 @@ fn scalar_of(owner: &OwnerParameter) -> Result<[u8; SCALAR_BYTES], PrivateRestar
 /// itself. The owner it is checked for is the one the finalization said
 /// owns the spent receipt, so a run whose leaf and whose key were about
 /// two different owners fails here rather than passing quietly.
-fn verify_readback_signature(raw: &[u8], message: &Digest32, owner_bytes: &[u8]) -> bool {
+pub(crate) fn verify_readback_signature(
+    raw: &[u8],
+    message: &Digest32,
+    owner_bytes: &[u8],
+) -> bool {
     let Ok(decoded) = TargetTransaction::decode(raw) else {
         return false;
     };
@@ -1063,16 +1231,7 @@ impl TargetOperationPlanner for PrivateRestartPlanner {
         }
 
         match self.stage {
-            Stage::Issue => Ok(Some(OperationStep::new(
-                ISSUE_STEP,
-                OperationSubject::Funding(Box::new(TargetFundingSubject {
-                    issue_asset: true,
-                    asset: None,
-                    output_program: ISSUE_PROGRAM.to_vec(),
-                    outputs: ISSUE_OUTPUTS,
-                    amount_per_output: ISSUE_AMOUNT_PER_OUTPUT,
-                })),
-            ))),
+            Stage::Issue => Ok(Some(issue_step())),
             Stage::Fund => match self.funding_step() {
                 Ok(step) => Ok(Some(step)),
                 Err(refusal) => Err(self.refuse(refusal)),

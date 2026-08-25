@@ -6,6 +6,7 @@ plans_history_files = files(
   'attestation-floor-bounds.md',
   'backlog-history.md',
   'ctf-guide-wave-5-closeout.md',
+  'ctf-guide-wave-6-closeout.md',
   'guide-12-completion-report.md',
   'notation-semantic-census.md',
 )

@@ -18,6 +18,7 @@ Archived history is excluded from the load-bearing documentation weight budget a
 | [attestation-floor-bounds.md](attestation-floor-bounds.md) | Resolved research: the attestation containment and seigniorage claims and the SP5 capacity export. |
 | [backlog-history.md](backlog-history.md) | Closed sections moved out of [the backlog](../backlog.md): completed gate records and the finding registers of remediated static reviews. |
 | [ctf-guide-wave-5-closeout.md](ctf-guide-wave-5-closeout.md) | The confidential-funding execution guide's Wave-5 exit record: the restart order step by step, the row delta with the identity that moved each row, the residuals, and the divergences reported rather than repaired. |
+| [ctf-guide-wave-6-closeout.md](ctf-guide-wave-6-closeout.md) | The confidential-funding follow-up evidence wave's exit record: steps one through four accepted against a real node, the target-ct-conservation row moved beside the three proof-negatives attributed by field, the order typed-stopped at step five, and Wave 5's step-three mis-typing named as corrected. |
 | [guide-12-completion-report.md](guide-12-completion-report.md) | The Guide-12 exit record at tree 0.4.1-dev: the §29 checklist audited item by item, and the §30 completion report. |
 | [notation-semantic-census.md](notation-semantic-census.md) | Resolved research, closed as over-scoped: the existing label graph is sufficient, and the surviving work was attestation label minting and editorial repair. |
 
