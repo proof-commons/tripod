@@ -16,6 +16,7 @@ vectors_source_files = files(
   'src/live_capability.rs',
   'src/live_closeout.rs',
   'src/live_comparison.rs',
+  'src/live_conservation_negatives.rs',
   'src/live_disclosure.rs',
   'src/live_evidence.rs',
   'src/live_fault_discharge.rs',

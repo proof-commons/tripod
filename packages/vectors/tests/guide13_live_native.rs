@@ -981,6 +981,149 @@ fn run_one_private_control(
     assert!(rendered.contains("moves_the_sponsor_row false"));
 }
 
+/// The restart order's third and fourth steps: target CT conservation
+/// recorded against a balance-valid control, and the three proof-negatives
+/// run from that control.
+///
+/// # What this run is for
+///
+/// Step three records the target's own commitment-balance rule accepting a
+/// conserving private transaction, and step four mutates one field of that
+/// same control, one case at a time, and observes the target refuse each.
+/// The two are one ceremony because they share a control: the control step
+/// three records the conservation of is the control step four mutates.
+///
+/// # What it asserts, and what it merely records
+///
+/// What the target DECIDED — whether it accepted the control or refused the
+/// mutants — is written into the artifact and asserted nowhere, so a lane
+/// that asserted an acceptance would fail rather than report on the day the
+/// honest answer changed. Two things ARE asserted, both first-party
+/// construction facts rather than target verdicts: where the control was
+/// accepted, the two-origin agreement holds; and where a balance-valid
+/// control exists, each proof-negative is confined to its declared field,
+/// which is what makes its refusal attributable to that field and to
+/// nothing else.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
+    use vectors::live_conservation_negatives::{
+        ConservationNegativePlanner, render_conservation_negatives,
+    };
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let report = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written")
+        .with_extension("conservation-negatives");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner =
+        ConservationNegativePlanner::new(identifier(&genesis)).expect("the ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_conservation_negatives(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as one.
+    // It is never a target verdict, so it is reported and the test stops
+    // here rather than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the conservation ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    // Every one of the three proof-negatives was submitted and answered.
+    assert_eq!(record.mutants().len(), 3);
+    for mutant in record.mutants() {
+        assert!(
+            mutant.observed_layer().is_some(),
+            "the {} mutant was not answered",
+            mutant.case().name(),
+        );
+    }
+
+    // The control was submitted and answered.
+    assert!(
+        record.control_observed_layer().is_some(),
+        "the control was not answered",
+    );
+
+    // The two origins, where an acceptance was observed.
+    if let Some(check) = record.reverification() {
+        assert!(
+            check.readback_matches_submission(),
+            "the bytes the node reported are not the bytes it was handed",
+        );
+        assert!(
+            check.verified(),
+            "the accepted witness does not verify against the recomputed message",
+        );
+    }
+
+    // Where the control was accepted, its commitment balance was checked by
+    // the target, so a balance-valid control exists and every mutant must
+    // attribute to its own declared field. This is a first-party property
+    // of the construction — the mutant changed one field and nothing else —
+    // and not a claim about the target's verdict.
+    if let Some(control) = record.balance_valid_control() {
+        for mutant in record.mutants() {
+            mutant.attribute(&control).unwrap_or_else(|refusal| {
+                panic!(
+                    "the {} mutant is not confined to its declared field: {refusal:?}",
+                    mutant.case().name(),
+                )
+            });
+        }
+    }
+
+    // The run says in its own bytes what it did not establish.
+    assert!(rendered.contains("moves_the_sponsor_row false"));
+}
+
 /// One KEY-PATH spend attempt against a funded explicit constructor.
 ///
 /// # What this run is for
