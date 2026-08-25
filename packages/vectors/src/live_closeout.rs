@@ -1186,6 +1186,52 @@ fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         .map_err(|_| CloseoutRefusal::SponsorRowMoved)
 }
 
+/// The target facts the shape wave observed.
+///
+/// Each shape's identity, successor digest, and submitted byte count, plus
+/// the two cardinality arrays, so a reader counts the inputs and outputs
+/// of each shape from the record rather than from a shape's name. Split
+/// out from the closeout itself because a list this long inside it makes
+/// one function of two jobs.
+fn wave_seven_target_facts() -> Vec<String> {
+    use crate::live_multi_shapes::run_of_record as ms;
+
+    vec![
+        "target Elements Core v28.99.0-b7fc5d080a7e".to_owned(),
+        format!("issued_asset {}", ms::ISSUED_ASSET),
+        format!("split_accepted_txid {}", ms::SPLIT_ACCEPTED_TXID),
+        format!("split_successor_digest {}", ms::SPLIT_SUCCESSOR_DIGEST),
+        format!("split_submitted_bytes {}", ms::SPLIT_SUBMITTED_BYTES),
+        format!(
+            "many_to_many_accepted_txid {}",
+            ms::MANY_TO_MANY_ACCEPTED_TXID,
+        ),
+        format!(
+            "many_to_many_successor_digest {}",
+            ms::MANY_TO_MANY_SUCCESSOR_DIGEST,
+        ),
+        format!(
+            "many_to_many_submitted_bytes {}",
+            ms::MANY_TO_MANY_SUBMITTED_BYTES,
+        ),
+        format!(
+            "several_owners_accepted_txid {}",
+            ms::SEVERAL_OWNERS_ACCEPTED_TXID,
+        ),
+        format!(
+            "several_owners_successor_digest {}",
+            ms::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
+        ),
+        format!(
+            "several_owners_submitted_bytes {}",
+            ms::SEVERAL_OWNERS_SUBMITTED_BYTES,
+        ),
+        format!("shape_receipt_leaves {:?}", ms::RECEIPT_LEAVES),
+        format!("shape_output_counts {:?}", ms::OUTPUT_COUNTS),
+        "shape_runs_serialized_against_one_node true".to_owned(),
+    ]
+}
+
 /// The shape wave's closeout, as its runs settled it.
 ///
 /// # What the cleared set does and does not hold
@@ -1232,40 +1278,7 @@ pub fn wave_seven_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
             "ctf-v1/predecessor-dual-parity".to_owned(),
             cn::PREDECESSOR_DIGEST.to_owned(),
         )]),
-        target_facts: vec![
-            "target Elements Core v28.99.0-b7fc5d080a7e".to_owned(),
-            format!("issued_asset {}", ms::ISSUED_ASSET),
-            format!("split_accepted_txid {}", ms::SPLIT_ACCEPTED_TXID),
-            format!("split_successor_digest {}", ms::SPLIT_SUCCESSOR_DIGEST),
-            format!("split_submitted_bytes {}", ms::SPLIT_SUBMITTED_BYTES),
-            format!(
-                "many_to_many_accepted_txid {}",
-                ms::MANY_TO_MANY_ACCEPTED_TXID,
-            ),
-            format!(
-                "many_to_many_successor_digest {}",
-                ms::MANY_TO_MANY_SUCCESSOR_DIGEST,
-            ),
-            format!(
-                "many_to_many_submitted_bytes {}",
-                ms::MANY_TO_MANY_SUBMITTED_BYTES,
-            ),
-            format!(
-                "several_owners_accepted_txid {}",
-                ms::SEVERAL_OWNERS_ACCEPTED_TXID,
-            ),
-            format!(
-                "several_owners_successor_digest {}",
-                ms::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
-            ),
-            format!(
-                "several_owners_submitted_bytes {}",
-                ms::SEVERAL_OWNERS_SUBMITTED_BYTES,
-            ),
-            format!("shape_receipt_leaves {:?}", ms::RECEIPT_LEAVES),
-            format!("shape_output_counts {:?}", ms::OUTPUT_COUNTS),
-            "shape_runs_serialized_against_one_node true".to_owned(),
-        ],
+        target_facts: wave_seven_target_facts(),
         sighash_result: Some(
             "the reviewed owner-sighash profile, established over its six-member required set \
              by a verdict this guide consumed and did not produce"
