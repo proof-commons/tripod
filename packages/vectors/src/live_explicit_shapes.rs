@@ -297,7 +297,14 @@ impl ExplicitShape {
     #[must_use]
     pub fn destination_owners(self) -> Vec<ShapeOwner> {
         match self {
-            Self::OneToOne | Self::MergedIntoOne | Self::CanonicalInputNormalization => {
+            // The single-destination shapes, spelled in one arm: what
+            // separates them is their INPUT side or the order their
+            // receipts are offered in, and none of that is here.
+            Self::OneToOne
+            | Self::MergedIntoOne
+            | Self::CanonicalInputNormalization
+            | Self::Sponsorless
+            | Self::MaximumInputs => {
                 vec![ShapeOwner::Second]
             }
             Self::SplitIntoTwo
@@ -308,11 +315,9 @@ impl ExplicitShape {
                 vec![ShapeOwner::Second, ShapeOwner::First]
             }
             Self::OneDestinationOwner => vec![ShapeOwner::Second, ShapeOwner::Second],
-            Self::Sponsorless => vec![ShapeOwner::Second],
             Self::RepeatedOwner | Self::MaximumOutputs => {
                 vec![ShapeOwner::Second, ShapeOwner::First, ShapeOwner::Second]
             }
-            Self::MaximumInputs => vec![ShapeOwner::Second],
         }
     }
 
@@ -571,7 +576,7 @@ impl ExplicitShapeRecord {
 
     /// What this run establishes nothing about.
     #[must_use]
-    pub fn non_claims() -> [&'static str; 4] {
+    pub const fn non_claims() -> [&'static str; 4] {
         [
             "evidences no negative case: an accepted transfer is a positive control, and a \
              refusal is attributable because of it rather than answered by it",
@@ -944,8 +949,12 @@ impl ExplicitShapePlanner {
             .take()
             .ok_or(ExplicitShapeRefusal::CandidateNotConstructible)?;
         self.record.observed_layer = Some(response.observed_layer);
-        self.record.observed_detail = response.observed_detail.clone();
-        self.record.accepted_txid = response.accepted_txid.clone();
+        self.record
+            .observed_detail
+            .clone_from(&response.observed_detail);
+        self.record
+            .accepted_txid
+            .clone_from(&response.accepted_txid);
 
         if matches!(response.observed_layer, ObservedOutcomeLayer::Accepted) {
             let readback = response
