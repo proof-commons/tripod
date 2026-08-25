@@ -165,6 +165,19 @@ struct RoundTrip {
     mutated_refusal: Option<String>,
 }
 
+/// The finalization a sponsor request was formed against.
+///
+/// Kept whole rather than rebuilt, because a rebuilt finalization is a
+/// different one and the signature would then be bound to other bytes.
+type StagedFinalization = (
+    transaction::live_signing::AuthorizedLiveTransfer,
+    transaction::live_construct::LiveConstructionReport,
+);
+
+/// A staged control: its finalization, every sponsor request the builder
+/// issued against it, and the placeholder completion to compare against.
+type StagedControl = (StagedFinalization, Vec<(u16, Vec<u8>)>, Vec<u8>);
+
 /// Which step the lane is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stage {
@@ -211,10 +224,7 @@ struct SponsorSigningPlanner {
     sponsor: Option<ObservedCoin>,
     /// The finalization the sponsor request was formed against, kept so
     /// the replay pass completes the same one rather than a rebuild.
-    staged: Option<(
-        transaction::live_signing::AuthorizedLiveTransfer,
-        transaction::live_construct::LiveConstructionReport,
-    )>,
+    staged: Option<StagedFinalization>,
     round: Option<RoundTrip>,
     refusal: Option<Refusal>,
 }
@@ -250,7 +260,7 @@ impl SponsorSigningPlanner {
         })
     }
 
-    fn refuse(&mut self, refusal: Refusal) -> PlanRefused {
+    const fn refuse(&mut self, refusal: Refusal) -> PlanRefused {
         self.refusal = Some(refusal);
         self.stage = Stage::Done;
         PlanRefused
@@ -271,10 +281,7 @@ impl SponsorSigningPlanner {
     }
 
     /// One funding step's coins, taken from the node's report of them.
-    fn settle_funding(
-        &self,
-        response: &NativeOperationResponse,
-    ) -> Result<Vec<ObservedCoin>, Refusal> {
+    fn settle_funding(response: &NativeOperationResponse) -> Result<Vec<ObservedCoin>, Refusal> {
         if response.funded_outputs.is_empty() {
             return Err(Refusal::FundingCreatedNoPredecessor);
         }
@@ -314,17 +321,7 @@ impl SponsorSigningPlanner {
     /// Returns the recorded requests and the placeholder-completed bytes
     /// alongside the authorized value, so that the second pass replays
     /// into the same finalization rather than into a rebuilt one.
-    fn stage_control(
-        &self,
-    ) -> Result<
-        (
-            transaction::live_signing::AuthorizedLiveTransfer,
-            transaction::live_construct::LiveConstructionReport,
-            Vec<(u16, Vec<u8>)>,
-            Vec<u8>,
-        ),
-        Refusal,
-    > {
+    fn stage_control(&self) -> Result<StagedControl, Refusal> {
         let sponsor_coin = self
             .sponsor
             .as_ref()
@@ -401,12 +398,12 @@ impl SponsorSigningPlanner {
             return Err(Refusal::ControlNotConstructible);
         };
         let recorded = recorded.borrow().clone();
-        Ok((authorized, report, recorded, placeholder))
+        Ok(((authorized, report), recorded, placeholder))
     }
 
     /// The sponsor signing step, carrying the exact finalized bytes.
     fn sign_step(&mut self) -> Result<OperationStep, Refusal> {
-        let (authorized, report, recorded, placeholder) = self.stage_control()?;
+        let (staged, recorded, placeholder) = self.stage_control()?;
         if recorded.len() != 1 {
             return Err(Refusal::UnexpectedSponsorRequestCount(recorded.len()));
         }
@@ -422,7 +419,7 @@ impl SponsorSigningPlanner {
             placeholder,
             ..RoundTrip::default()
         });
-        self.staged = Some((authorized, report));
+        self.staged = Some(staged);
 
         Ok(OperationStep::new(
             "authorize-sponsor-input",
@@ -531,14 +528,14 @@ impl TargetOperationPlanner for SponsorSigningPlanner {
                     }
                     self.stage = Stage::FundReceipts;
                 }
-                Stage::FundReceipts => match self.settle_funding(response) {
+                Stage::FundReceipts => match Self::settle_funding(response) {
                     Ok(coins) => {
                         self.receipts = coins;
                         self.stage = Stage::FundSponsor;
                     }
                     Err(refusal) => return Err(self.refuse(refusal)),
                 },
-                Stage::FundSponsor => match self.settle_funding(response) {
+                Stage::FundSponsor => match Self::settle_funding(response) {
                     Ok(coins) => {
                         let Some(coin) = coins.into_iter().next() else {
                             return Err(self.refuse(Refusal::FundingCreatedNoPredecessor));
@@ -618,7 +615,12 @@ fn outpoint_of(wire: &WireOutpoint) -> Option<Outpoint> {
 fn txid_to_wire(txid: &Txid) -> String {
     let mut bytes = *txid.internal();
     bytes.reverse();
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    let mut text = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        text.push(char::from_digit(u32::from(byte >> 4), 16).unwrap_or('0'));
+        text.push(char::from_digit(u32::from(byte & 0x0f), 16).unwrap_or('0'));
+    }
+    text
 }
 
 fn asset_of(text: &str) -> Option<AssetId> {
@@ -775,13 +777,39 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
         "the refusal names something other than the binding: {refusal}"
     );
 
-    println!(
-        "sponsor round trip: sent {} bytes, {} witness items, replayed {} bytes, mutated binding refused with {}, {:?} wall",
+    // The run says in its own bytes what it did and what it did not
+    // establish, where a lane can read it afterwards. Nothing is
+    // printed: what a run found belongs in an artifact rather than in a
+    // scrollback nobody keeps.
+    let record = format!(
+        "sponsor_round_trip\n\
+         sent_bytes {}\n\
+         echoed_bytes {}\n\
+         witness_items {}\n\
+         witness_item_bytes {:?}\n\
+         replayed_bytes {}\n\
+         placeholder_bytes {}\n\
+         sponsor_input {}\n\
+         mutated_binding_refusal {}\n\
+         submitted_anything false\n\
+         clears_the_sponsor_residual false\n\
+         wall_seconds {:.1}\n",
         round.sent.len(),
+        round.echoed.len(),
         round.witness.len(),
+        round.witness.iter().map(Vec::len).collect::<Vec<_>>(),
         round.replayed.len(),
+        round.placeholder.len(),
+        round.input,
         refusal,
-        started.elapsed()
+        started.elapsed().as_secs_f64(),
+    );
+    if let Some(path) = report.as_deref() {
+        std::fs::write(path, &record).expect("the run record is writable");
+    }
+    assert!(
+        record.contains("clears_the_sponsor_residual false"),
+        "the run record does not say what it left standing",
     );
 }
 
