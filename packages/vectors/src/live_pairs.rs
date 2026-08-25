@@ -1124,6 +1124,25 @@ fn materialize_member(
             program,
         ));
     }
+    // The sponsor coin is stated before the view is sealed, because a
+    // sponsored build reads its sponsor inputs from this same view and
+    // the reserve asset is the one thing it checks about them. The
+    // fixture named this outpoint in the offer long before it showed
+    // the builder anything about it.
+    let sponsor_point = match fixture.sponsor {
+        SponsorPresence::Absent => None,
+        SponsorPresence::PresentWithoutChange => {
+            Some(sponsor_outpoint(fixture.pair).map_err(|_| fail())?)
+        }
+    };
+    if let Some(point) = sponsor_point {
+        views.push(PublicOutputView::new(
+            point,
+            AssetField::Explicit(abi.symbols().reserve_asset()),
+            ValueField::Explicit(SPONSOR_FEE),
+            abi.symbols().sponsor_change_program().to_vec(),
+        ));
+    }
     let view = PublicConstructionView::new(views).map_err(|_| fail())?;
 
     let mut destinations = Vec::with_capacity(fixture.destinations.len());
@@ -1152,12 +1171,9 @@ fn materialize_member(
     )
     .map_err(|_| fail())?;
 
-    let envelope = match fixture.sponsor {
-        SponsorPresence::Absent => None,
-        SponsorPresence::PresentWithoutChange => Some(
-            ModelledSponsorEnvelope::new(sponsor_outpoint(fixture.pair).map_err(|_| fail())?)
-                .map_err(|_| fail())?,
-        ),
+    let envelope = match sponsor_point {
+        None => None,
+        Some(point) => Some(ModelledSponsorEnvelope::new(point).map_err(|_| fail())?),
     };
     let sponsor: Option<&dyn SponsorCapability> = envelope
         .as_ref()

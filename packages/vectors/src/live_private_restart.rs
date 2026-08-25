@@ -112,8 +112,8 @@ use crate::confidential_predecessor::{
 use crate::error::VectorError;
 use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed_order};
 use crate::live_plan::{
-    FIRST_SCALAR, SECOND_SCALAR, live_abi_for_asset, published_owner, reviewed_target,
-    signing_material,
+    FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, live_abi_for_asset, published_owner,
+    reviewed_target, signing_material,
 };
 use crate::live_proof_bearing_observation::{materialization_profiles, register};
 
@@ -713,7 +713,8 @@ pub(crate) fn link_and_register(
 ) -> Result<LinkedDeployment, PrivateRestartRefusal> {
     let asset = asset_of(printed).ok_or(PrivateRestartRefusal::IssuanceNamedNoAsset)?;
     let commit_order = *asset.internal();
-    let abi = live_abi_for_asset(commit_order).map_err(|_| PrivateRestartRefusal::RelinkRefused)?;
+    let abi = live_abi_for_asset(commit_order, RESERVE_ASSET)
+        .map_err(|_| PrivateRestartRefusal::RelinkRefused)?;
 
     // The two predecessor outputs pay to the two owners' PRIVATE receipt
     // constructors. That is the whole difference between this ceremony

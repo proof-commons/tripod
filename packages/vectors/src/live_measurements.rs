@@ -997,6 +997,41 @@ pub fn measure_resource_cases() -> Result<Vec<CaseMeasurement>, ResourceStudyRef
     Ok(cases)
 }
 
+/// The sponsor coin one recipe's envelope spends, and its public view.
+///
+/// Stated before the view is sealed, because a sponsored build reads its
+/// sponsor inputs from that same view and the reserve asset is the one
+/// thing it checks about them.
+///
+/// The coin holds exactly what the offer spends — the fee, plus the
+/// residual when the recipe takes change — because a sponsor input
+/// carrying more than the transaction spends leaves the reserve asset
+/// unbalanced.
+fn measured_sponsor_coin(
+    abi: &CandidateLiveTransferAbi,
+    recipe: &MeasurementRecipe,
+) -> Result<Option<(Outpoint, PublicOutputView)>, VectorError> {
+    if matches!(recipe.sponsor, MeasuredSponsorRole::Absent) {
+        return Ok(None);
+    }
+    let point = measured_outpoint(recipe, 0x03, 0)?;
+    let held = match recipe.sponsor {
+        MeasuredSponsorRole::PresentWithChange => {
+            MEASURED_SPONSOR_FEE.saturating_add(MEASURED_SPONSOR_CHANGE)
+        }
+        _ => MEASURED_SPONSOR_FEE,
+    };
+    Ok(Some((
+        point,
+        PublicOutputView::new(
+            point,
+            AssetField::Explicit(abi.symbols().reserve_asset()),
+            ValueField::Explicit(held),
+            abi.symbols().sponsor_change_program().to_vec(),
+        ),
+    )))
+}
+
 /// Build one recipe's complete transaction and read its dimensions.
 fn measure_one(
     target: &ReviewedElementsTapscriptDefinition,
@@ -1035,6 +1070,10 @@ fn measure_one(
             program,
         ));
     }
+    let sponsor_coin = measured_sponsor_coin(abi, recipe).map_err(|_| not_final())?;
+    if let Some((_, stated)) = &sponsor_coin {
+        views.push(stated.clone());
+    }
     let view = PublicConstructionView::new(views).map_err(|_| not_final())?;
 
     let mut destinations = Vec::with_capacity(recipe.destinations.len());
@@ -1060,15 +1099,11 @@ fn measure_one(
     )
     .map_err(|_| not_final())?;
 
-    let envelope = match recipe.sponsor {
-        MeasuredSponsorRole::Absent => None,
-        role => Some(
-            MeasuredSponsorEnvelope::new(
-                measured_outpoint(recipe, 0x03, 0).map_err(|_| not_final())?,
-                role,
-            )
-            .map_err(|_| not_final())?,
-        ),
+    let envelope = match sponsor_coin {
+        None => None,
+        Some((point, _)) => {
+            Some(MeasuredSponsorEnvelope::new(point, recipe.sponsor).map_err(|_| not_final())?)
+        }
     };
     let sponsor: Option<&dyn SponsorCapability> = envelope
         .as_ref()

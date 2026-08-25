@@ -139,6 +139,7 @@ fn every_transaction_refusal_is_censused(refusal: &Refusal) {
         | Refusal::ReceiptInputIsNotALiveReceipt(..)
         | Refusal::ReceiptInputCarriesForeignAsset(..)
         | Refusal::ReceiptInputValueFormRefused(..)
+        | Refusal::MissingPublicSponsorView(..)
         | Refusal::LiveSponsorInputCarriesForeignAsset(..)
         | Refusal::DestinationTotalOutOfRange
         | Refusal::LiveConservationFailed { .. }

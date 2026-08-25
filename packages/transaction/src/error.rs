@@ -514,6 +514,16 @@ pub enum TransactionRefusal {
     /// A selected receipt's value field is not the form the requested
     /// representation reads.
     ReceiptInputValueFormRefused(Outpoint),
+    /// An offered sponsor input has no public view.
+    ///
+    /// Distinct from [`Self::LiveSponsorInputCarriesForeignAsset`] on
+    /// purpose. The compact-ASH lane folds the two together, answering
+    /// "foreign asset" for a coin whose asset it never saw; that reads
+    /// as a claim about the coin when it is a statement about the
+    /// caller's own view. This lane already keeps the pair apart for
+    /// receipts, and a sponsor input is offered by the same caller from
+    /// the same view.
+    MissingPublicSponsorView(Outpoint),
     /// A sponsor input carries an asset other than the reserve asset.
     LiveSponsorInputCarriesForeignAsset(Outpoint),
     /// The destinations' semantic total overflows the target's explicit

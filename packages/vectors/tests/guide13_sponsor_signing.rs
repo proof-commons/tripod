@@ -6,17 +6,30 @@
 //! integration test as the cheapest honest first step: finalize an
 //! explicit sponsored control, send its exact sponsor request, replay the
 //! returned witness through the sponsor capability, and verify byte
-//! binding. That is all this file does, and each of the four is a
-//! separate observable rather than a claim the others imply.
+//! binding. Each of the four is a separate observable rather than a
+//! claim the others imply.
 //!
-//! It is NOT a discharge of the carried residual. The residual's own
-//! clearing rule, at `vectors::live_evidence::LiveInfrastructureBlocker`,
-//! asks for the sponsor owner's target authorization and says a returned
-//! byte stack is not that until a target has ACCEPTED a control carrying
-//! it. Nothing here submits anything, so nothing here can satisfy that
-//! rule. A blocker moves on an observed result and never on a capability
-//! existing — and "the capability is now reachable from a lane" is still
-//! the capability existing.
+//! The lane now takes one further step, and it is the step the carried
+//! residual's own clearing rule names. That rule, at
+//! `vectors::live_evidence::LiveInfrastructureBlocker`, asks for the
+//! sponsor owner's target authorization and says a returned byte stack
+//! is not that until a target has ACCEPTED a control carrying it. So the
+//! replayed control is submitted, and what the target answers is
+//! recorded at the layer the target typed it at.
+//!
+//! A blocker still moves on an observed result and never on a capability
+//! existing — "the capability is reachable from a lane" remains the
+//! capability existing. What can move it is the acceptance, and only the
+//! acceptance.
+//!
+//! # What one acceptance is not
+//!
+//! It is the sponsor envelope's WIRE, established end to end, and one
+//! target acceptance of a control carrying a sponsor witness. It is NOT
+//! production multi-party sponsor signing. One fixed regtest key signs
+//! here — deterministic, single-party, and published — and a single key
+//! answering a request is not a ceremony. Every value this lane touches
+//! is public disposable test material under ADR-015.
 //!
 //! # Why it needs a node
 //!
@@ -35,16 +48,26 @@
 //!   cargo test -p tripod-vectors --test guide13_sponsor_signing -- --ignored --nocapture
 //! ```
 //!
-//! # The control is not submittable, and that is reported rather than hidden
+//! # The reserve asset is learned rather than assumed
 //!
-//! The deployment's reserve asset is a fixture constant no chain has
-//! issued, while the sponsor coin the adapter funds is one of its own.
-//! The control this test completes therefore names a fee output in an
-//! asset its sponsor input does not carry. That costs the round trip
-//! nothing — the signature and its binding are over the bytes either way
-//! — and it is one more reason the residual stays: a submission step
-//! needs a reserve asset the chain knows about, which nothing in this
-//! lane has.
+//! This lane once could not submit anything, and the reason was exactly
+//! one thing: the deployment's reserve asset was a fixture constant no
+//! chain had issued, while the sponsor coin the adapter funds is one of
+//! its own. A control built that way names a fee output in an asset its
+//! sponsor input does not carry.
+//!
+//! The reserve is now a value the run LEARNS. The sponsor-funding
+//! request deliberately names no asset — what a development network
+//! uses as its reserve is the network's own fact — and the executor
+//! reports which asset it funded in. That answer is read, checked for a
+//! single identity across every coin, and welded into the deployment
+//! before anything is linked against it.
+//!
+//! Which is why the sponsor region is funded BEFORE the receipts. The
+//! reserve is pushed as a literal by §10.7's isolation fragments, so it
+//! is committed in the taptree and the destination programs move with
+//! it. Receipts funded first would be paid to the programs of a
+//! deployment this lane is about to stop using.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -62,12 +85,17 @@ use target_elements_conformance::executor::{
 };
 use target_elements_conformance::protocol::{
     NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationSubject,
-    TargetFundingSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject, WireOutpoint,
-    WireSighashProfile,
+    TargetFundingSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject,
+    TargetSubmissionSubject, WireOutpoint, WireSighashProfile,
 };
 use transaction::bytes::{AssetField, AssetId, Outpoint, Txid, ValueField};
 use transaction::live_abi::CandidateLiveTransferAbi;
+use transaction::live_census::{
+    AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
+    OwnerSigningCensus, OwnerSigningInputRequest,
+};
 use transaction::live_construct::{complete_live_transfer, finalize_live_transfer};
+use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message};
 use transaction::live_request::{
     LiveReceiptDestination, LiveTransferRequest, ProtocolValue, RequestedForm, SponsorChangeRequest,
 };
@@ -75,15 +103,22 @@ use transaction::live_signing::{LiveOwnerResponse, authorize_live_transfer};
 use transaction::sponsor::{
     SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest,
 };
+use transaction::taproot::{Digest32, leaf_hash};
 use transaction::view::{PublicConstructionView, PublicOutputView};
-use vectors::live_evidence::UNAUTHORIZING_SIGNATURE;
+use vectors::live_capability::OracleLiveCurve;
 use vectors::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset, published_owner,
-    reviewed_target,
+    reviewed_target, signing_material,
 };
 
 /// What each funded receipt is asked to hold.
 const RECEIPT_AMOUNT: u64 = 5_000;
+
+/// The auxiliary randomness every owner signature here is taken with.
+///
+/// Published, fixed, and disposable: ADR-015 test material, like the two
+/// signing scalars themselves.
+const SIGNING_AUXILIARY: [u8; 32] = [0x37; 32];
 
 /// What the sponsor coin is asked to hold.
 ///
@@ -165,6 +200,26 @@ struct RoundTrip {
     mutated_refusal: Option<String>,
 }
 
+/// What the target answered when handed the sponsor-signed control.
+///
+/// Kept as observations for the same reason [`RoundTrip`] is: the
+/// planner records what happened and judges none of it.
+#[derive(Clone, Debug)]
+struct Submission {
+    /// The exact bytes handed to the target.
+    sent: Vec<u8>,
+    /// The layer the target's answer was typed at.
+    layer: ObservedOutcomeLayer,
+    /// The target's own words, when it refused.
+    detail: Option<String>,
+    /// The identity the target reported on acceptance.
+    txid: Option<String>,
+    /// The target's own copy of the mined transaction.
+    read_back: Option<Vec<u8>>,
+    /// The block the target mined it into.
+    block: Option<(String, u32)>,
+}
+
 /// The finalization a sponsor request was formed against.
 ///
 /// Kept whole rather than rebuilt, because a rebuilt finalization is a
@@ -182,9 +237,10 @@ type StagedControl = (StagedFinalization, Vec<(u16, Vec<u8>)>, Vec<u8>);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stage {
     Issue,
-    FundReceipts,
     FundSponsor,
+    FundReceipts,
     SignSponsor,
+    Submit,
     Done,
 }
 
@@ -212,6 +268,27 @@ enum Refusal {
     /// A signature bound to mutated bytes was accepted, which would mean
     /// the binding check this test is about does not hold.
     MutatedBindingAccepted,
+    /// The sponsor coins came back in more than one asset, so there is
+    /// no single reserve identity to weld the deployment to.
+    SponsorAssetsDisagree,
+    /// The sponsor-funding step reported no reserve asset at all.
+    SponsorFundingNamedNoReserve,
+    /// The owner signing census refused to describe the sponsored
+    /// control, so no owner message could be formed for it.
+    OwnerCensusRefused(String),
+    /// An owner's signature could not be produced over its message.
+    OwnerSigningRefused,
+    /// The target refused the sponsor-signed control, or answered at a
+    /// layer below acceptance.
+    SubmissionDidNotHappen(ObservedOutcomeLayer),
+    /// The target accepted and named no transaction identity.
+    SubmissionCarriedNoIdentity,
+    /// The target's own copy of the mined transaction is not the bytes
+    /// that were submitted.
+    ReadbackDisagreesWithSubmittedBytes {
+        submitted: usize,
+        read_back: usize,
+    },
 }
 
 /// The lane: issue, fund receipts, fund a sponsor coin, sign.
@@ -219,9 +296,15 @@ struct SponsorSigningPlanner {
     stage: Stage,
     abi: CandidateLiveTransferAbi,
     issued_asset: Option<String>,
+    /// The reserve identity the chain reported, welded into the
+    /// deployment before anything is linked against it.
+    reserve: Option<AssetId>,
+    /// The chain this lane's owner messages commit to.
+    genesis: Digest32,
     explicit_program: Vec<u8>,
     receipts: Vec<ObservedCoin>,
     sponsor: Option<ObservedCoin>,
+    submission: Option<Submission>,
     /// The finalization the sponsor request was formed against, kept so
     /// the replay pass completes the same one rather than a rebuild.
     staged: Option<StagedFinalization>,
@@ -244,40 +327,96 @@ struct ObservedCoin {
 }
 
 impl SponsorSigningPlanner {
-    fn new() -> Result<Self, Refusal> {
+    fn new(genesis: Digest32) -> Result<Self, Refusal> {
         let abi = demonstration_live_abi().map_err(|_| Refusal::SubstrateUnavailable)?;
         let explicit_program = destination_program(&abi)?;
         Ok(Self {
             stage: Stage::Issue,
             abi,
             issued_asset: None,
+            reserve: None,
+            genesis,
             explicit_program,
             receipts: Vec::new(),
             sponsor: None,
+            submission: None,
             staged: None,
             round: None,
             refusal: None,
         })
     }
 
-    const fn refuse(&mut self, refusal: Refusal) -> PlanRefused {
+    fn refuse(&mut self, refusal: Refusal) -> PlanRefused {
         self.refusal = Some(refusal);
         self.stage = Stage::Done;
         PlanRefused
     }
 
-    /// Weld the deployment to the asset the chain just issued.
-    fn relink(&mut self, response: &NativeOperationResponse) -> Result<(), Refusal> {
+    /// Remember the asset the chain just issued.
+    ///
+    /// The deployment is NOT relinked here, because half of what it is
+    /// welded to is still unknown: the reserve arrives from the
+    /// sponsor-funding answer, and a link taken now would be a link
+    /// against the fixture reserve.
+    fn remember_issued_asset(&mut self, response: &NativeOperationResponse) -> Result<(), Refusal> {
         let asset = response
             .issued_asset
             .clone()
             .ok_or(Refusal::IssuanceNamedNoAsset)?;
-        let identity = asset_of(&asset).ok_or(Refusal::IssuanceNamedNoAsset)?;
-        let abi = live_abi_for_asset(*identity.internal()).map_err(|_| Refusal::RelinkRefused)?;
-        self.explicit_program = destination_program(&abi)?;
+        asset_of(&asset).ok_or(Refusal::IssuanceNamedNoAsset)?;
         self.issued_asset = Some(asset);
+        Ok(())
+    }
+
+    /// Weld the deployment to BOTH assets the chain reported.
+    ///
+    /// The link the whole lane waited for. Until it happens the
+    /// deployment names a reserve no chain has issued, and the fee
+    /// output of any control built from it is payable in an asset its
+    /// sponsor input does not carry.
+    fn relink(&mut self) -> Result<(), Refusal> {
+        let printed = self
+            .issued_asset
+            .clone()
+            .ok_or(Refusal::IssuanceNamedNoAsset)?;
+        let protocol = asset_of(&printed).ok_or(Refusal::IssuanceNamedNoAsset)?;
+        let reserve = self.reserve.ok_or(Refusal::SponsorFundingNamedNoReserve)?;
+        let abi = live_abi_for_asset(*protocol.internal(), *reserve.internal())
+            .map_err(|_| Refusal::RelinkRefused)?;
+        self.explicit_program = destination_program(&abi)?;
         self.abi = abi;
         Ok(())
+    }
+
+    /// Read the sponsor coins and settle the ONE reserve identity.
+    ///
+    /// Mirrors the compact-ASH lane's own settlement, single-identity
+    /// check included: one reserve is what gets linked into the leaves,
+    /// so coins that disagree about it leave nothing to link. The
+    /// executor funds in the chain's policy asset and reports which one
+    /// it used, which is the only honest source for a value the request
+    /// deliberately does not name.
+    fn settle_sponsor_funding(
+        &mut self,
+        response: &NativeOperationResponse,
+    ) -> Result<(), Refusal> {
+        let coins = Self::settle_funding(response)?;
+        let mut reserve: Option<AssetId> = None;
+        for coin in &coins {
+            match reserve {
+                Some(known) if known != coin.asset => return Err(Refusal::SponsorAssetsDisagree),
+                Some(_) => {}
+                None => reserve = Some(coin.asset),
+            }
+        }
+        let reserve = reserve.ok_or(Refusal::FundingCreatedNoPredecessor)?;
+        let coin = coins
+            .into_iter()
+            .next()
+            .ok_or(Refusal::FundingCreatedNoPredecessor)?;
+        self.reserve = Some(reserve);
+        self.sponsor = Some(coin);
+        self.relink()
     }
 
     /// One funding step's coins, taken from the node's report of them.
@@ -341,6 +480,17 @@ impl SponsorSigningPlanner {
                 .checked_add(coin.amount)
                 .ok_or(Refusal::ControlNotConstructible)?;
         }
+        // The sponsor coin is SHOWN and not merely named. Construction
+        // refuses a sponsor input it cannot see, and refuses one whose
+        // asset is not the deployment's reserve — which is exactly the
+        // mismatch this lane exists to have removed, so letting the
+        // builder check it is the point rather than a formality.
+        views.push(PublicOutputView::new(
+            sponsor_coin.outpoint,
+            AssetField::Explicit(sponsor_coin.asset),
+            ValueField::Explicit(sponsor_coin.amount),
+            sponsor_coin.program.clone(),
+        ));
         let view =
             PublicConstructionView::new(views).map_err(|_| Refusal::ControlNotConstructible)?;
 
@@ -370,21 +520,14 @@ impl SponsorSigningPlanner {
         let report = finalization.report().clone();
         let finalized = finalization.into_finalized();
 
-        // The owners authorize with bytes that authorize nothing. The
-        // sponsor round trip is about the sponsor's signature over the
-        // finalized bytes, and those bytes are settled before any owner
-        // response is read; an owner signature would change what is
-        // signed over here not at all.
-        let responses: Vec<_> = finalized
-            .signing_requests()
-            .iter()
-            .map(|signing| {
-                (
-                    signing.input(),
-                    LiveOwnerResponse::to(signing, UNAUTHORIZING_SIGNATURE.to_vec()),
-                )
-            })
-            .collect();
+        // The owners really sign. This lane once handed them bytes that
+        // authorize nothing, which cost the round trip nothing while
+        // nothing was submitted — the sponsor's signature is over the
+        // finalized bytes either way. A submitted control is a different
+        // matter: a target evaluates the owner's leaf, and placeholder
+        // bytes are refused there with an invalid-signature verdict that
+        // says nothing about the sponsor envelope this lane is about.
+        let responses = self.owner_responses(&finalized)?;
         let authorized = authorize_live_transfer(finalized, responses)
             .map_err(|_| Refusal::ControlNotConstructible)?;
 
@@ -399,6 +542,66 @@ impl SponsorSigningPlanner {
         };
         let recorded = recorded.borrow().clone();
         Ok(((authorized, report), recorded, placeholder))
+    }
+
+    /// Every owner signature the finalized control asks for.
+    ///
+    /// Real signatures over the message consensus forms, taken through
+    /// the same owner signing census the observation lane uses, so that
+    /// what reaches the target is a control whose owner leaves actually
+    /// authorize it.
+    ///
+    /// Both receipts were funded to one destination program — the first
+    /// owner's explicit constructor — so one scalar answers for both.
+    fn owner_responses(
+        &self,
+        finalized: &transaction::live_finalize::FinalizedLiveTransfer,
+    ) -> Result<Vec<(u16, LiveOwnerResponse)>, Refusal> {
+        let target = reviewed_target().map_err(|_| Refusal::SubstrateUnavailable)?;
+        let curve =
+            OracleLiveCurve::new(reviewed_target().map_err(|_| Refusal::SubstrateUnavailable)?);
+        let requests: Vec<OwnerSigningInputRequest> = finalized
+            .receipts()
+            .iter()
+            .map(|record| {
+                OwnerSigningInputRequest::new(
+                    u32::from(record.position()),
+                    leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
+                    LeafVersion::TAPSCRIPT,
+                    OWNER_CODESEPARATOR_POSITION,
+                    AnnexDisposition::Absent,
+                    IssuanceDisposition::Absent,
+                    record.control_block().to_vec(),
+                )
+            })
+            .collect();
+        let census = OwnerSigningCensus::from_explicit_finalized(
+            &target,
+            finalized,
+            LiveDeployment::new(self.genesis),
+            &requests,
+            &curve,
+        )
+        .map_err(|cause| Refusal::OwnerCensusRefused(format!("{cause:?}")))?;
+
+        let material =
+            signing_material(&FIRST_SCALAR).map_err(|_| Refusal::SubstrateUnavailable)?;
+        let mut responses = Vec::new();
+        for signing in finalized.signing_requests() {
+            let input = census
+                .signing_inputs()
+                .iter()
+                .find(|entry| entry.input_index() == u32::from(signing.input()))
+                .ok_or(Refusal::ControlNotConstructible)?;
+            let message =
+                candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown);
+            let signature = material
+                .sign(&message, &SIGNING_AUXILIARY)
+                .map_err(|_| Refusal::OwnerSigningRefused)?
+                .to_vec();
+            responses.push((signing.input(), LiveOwnerResponse::to(&signing, signature)));
+        }
+        Ok(responses)
     }
 
     /// The sponsor signing step, carrying the exact finalized bytes.
@@ -437,6 +640,70 @@ impl SponsorSigningPlanner {
 }
 
 impl SponsorSigningPlanner {
+    /// Hand the target the sponsor-signed control, exactly as replayed.
+    ///
+    /// The bytes are the replay's own — the completion carrying the
+    /// adapter's witness — and never a rebuild. A rebuilt control is a
+    /// different control, and submitting one would report a verdict
+    /// about bytes no sponsor ever signed.
+    fn submit_step(&self) -> Result<OperationStep, Refusal> {
+        let round = self.round.clone().ok_or(Refusal::ControlNotConstructible)?;
+        if round.replayed.is_empty() {
+            return Err(Refusal::ControlNotConstructible);
+        }
+        Ok(OperationStep::new(
+            "submit-sponsor-signed-control",
+            OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                transaction_bytes: round.replayed,
+            })),
+        ))
+    }
+
+    /// What the target did with it, recorded before it is judged.
+    ///
+    /// A refusal is recorded at the layer the target typed it at and in
+    /// the target's own words, because which layer refused is the whole
+    /// answer: the submission path asks the mempool first, so a relay
+    /// refusal and a consensus refusal are different findings and only
+    /// one of them is about standardness.
+    fn settle_submission(&mut self, response: &NativeOperationResponse) -> Result<(), Refusal> {
+        let round = self.round.clone().ok_or(Refusal::ControlNotConstructible)?;
+        let read_back = response
+            .mined_readback
+            .as_ref()
+            .map(|readback| readback.raw_transaction.clone());
+        self.submission = Some(Submission {
+            sent: round.replayed.clone(),
+            layer: response.observed_layer,
+            detail: response.observed_detail.clone(),
+            txid: response.accepted_txid.clone(),
+            read_back: read_back.clone(),
+            block: response
+                .mined_readback
+                .as_ref()
+                .map(|readback| (readback.block_hash.clone(), readback.block_height)),
+        });
+
+        if response.observed_layer != ObservedOutcomeLayer::Accepted {
+            return Err(Refusal::SubmissionDidNotHappen(response.observed_layer));
+        }
+        if response.accepted_txid.is_none() {
+            return Err(Refusal::SubmissionCarriedNoIdentity);
+        }
+
+        // The readback is the acceptance checked rather than believed:
+        // the target's own copy of what it mined, against the bytes
+        // that were handed to it.
+        let read_back = read_back.ok_or(Refusal::SubmissionCarriedNoIdentity)?;
+        if read_back != round.replayed {
+            return Err(Refusal::ReadbackDisagreesWithSubmittedBytes {
+                submitted: round.replayed.len(),
+                read_back: read_back.len(),
+            });
+        }
+        Ok(())
+    }
+
     /// What the adapter answered: checked for binding, then replayed.
     fn settle_signature(&mut self, response: &NativeOperationResponse) -> Result<(), Refusal> {
         if response.observed_layer != ObservedOutcomeLayer::Accepted {
@@ -523,7 +790,20 @@ impl TargetOperationPlanner for SponsorSigningPlanner {
         if let Some((_case, response)) = previous {
             match self.stage {
                 Stage::Issue => {
-                    if let Err(refusal) = self.relink(response) {
+                    if let Err(refusal) = self.remember_issued_asset(response) {
+                        return Err(self.refuse(refusal));
+                    }
+                    self.stage = Stage::FundSponsor;
+                }
+                // The sponsor region is funded BEFORE the receipts, and
+                // the order is the whole repair. The reserve arrives in
+                // this answer; the deployment is welded to it; and only
+                // then are the receipts funded — to destination programs
+                // that moved when the reserve did. Funding them first
+                // would pay them to the programs of a deployment this
+                // lane is about to stop using.
+                Stage::FundSponsor => {
+                    if let Err(refusal) = self.settle_sponsor_funding(response) {
                         return Err(self.refuse(refusal));
                     }
                     self.stage = Stage::FundReceipts;
@@ -531,22 +811,18 @@ impl TargetOperationPlanner for SponsorSigningPlanner {
                 Stage::FundReceipts => match Self::settle_funding(response) {
                     Ok(coins) => {
                         self.receipts = coins;
-                        self.stage = Stage::FundSponsor;
-                    }
-                    Err(refusal) => return Err(self.refuse(refusal)),
-                },
-                Stage::FundSponsor => match Self::settle_funding(response) {
-                    Ok(coins) => {
-                        let Some(coin) = coins.into_iter().next() else {
-                            return Err(self.refuse(Refusal::FundingCreatedNoPredecessor));
-                        };
-                        self.sponsor = Some(coin);
                         self.stage = Stage::SignSponsor;
                     }
                     Err(refusal) => return Err(self.refuse(refusal)),
                 },
                 Stage::SignSponsor => {
                     if let Err(refusal) = self.settle_signature(response) {
+                        return Err(self.refuse(refusal));
+                    }
+                    self.stage = Stage::Submit;
+                }
+                Stage::Submit => {
+                    if let Err(refusal) = self.settle_submission(response) {
                         return Err(self.refuse(refusal));
                     }
                     self.stage = Stage::Done;
@@ -557,7 +833,6 @@ impl TargetOperationPlanner for SponsorSigningPlanner {
 
         let step = match self.stage {
             Stage::Issue => self.funding_step("issue-protocol-asset", true),
-            Stage::FundReceipts => self.funding_step("fund-explicit-constructor", false),
             Stage::FundSponsor => OperationStep::new(
                 "fund-sponsor-region",
                 OperationSubject::SponsorFunding(Box::new(TargetSponsorFundingSubject {
@@ -565,7 +840,12 @@ impl TargetOperationPlanner for SponsorSigningPlanner {
                     amount_per_sponsor_output: SPONSOR_FEE,
                 })),
             ),
+            Stage::FundReceipts => self.funding_step("fund-explicit-constructor", false),
             Stage::SignSponsor => match self.sign_step() {
+                Ok(step) => step,
+                Err(refusal) => return Err(self.refuse(refusal)),
+            },
+            Stage::Submit => match self.submit_step() {
                 Ok(step) => step,
                 Err(refusal) => return Err(self.refuse(refusal)),
             },
@@ -677,7 +957,7 @@ fn identifier(text: &str) -> [u8; 32] {
 /// Separated from the assertions because a function that both arranges
 /// a run and judges it makes the judging hard to read past the
 /// arranging.
-fn run_the_lane() -> (RoundTrip, usize, Option<PathBuf>) {
+fn run_the_lane() -> (RoundTrip, Submission, usize, Option<PathBuf>) {
     let executor =
         environment("TRIPOD_SPONSOR_EXECUTOR").expect("TRIPOD_SPONSOR_EXECUTOR names the adapter");
     let network = environment("TRIPOD_SPONSOR_NETWORK_ID")
@@ -714,20 +994,35 @@ fn run_the_lane() -> (RoundTrip, usize, Option<PathBuf>) {
         ExecutorDiagnostics::in_directory(diagnostics),
     );
 
-    let mut planner = SponsorSigningPlanner::new().expect("the candidate substrate builds");
+    let mut genesis_internal = identifier(&genesis);
+    genesis_internal.reverse();
+    let mut planner =
+        SponsorSigningPlanner::new(genesis_internal).expect("the candidate substrate builds");
     let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
 
-    assert!(
-        planner.refusal.is_none(),
-        "the lane stopped before the round trip: {:?}",
-        planner.refusal
-    );
-    outcome.expect("the operation run completed");
+    // A refused submission is NOT a failed run. It is the observation a
+    // typed stop is made of, so the record survives rather than being
+    // asserted away, and only a stop BEFORE the submission is a failure
+    // of the lane itself.
+    let stopped_before_submitting = planner.submission.is_none();
+    if stopped_before_submitting {
+        assert!(
+            planner.refusal.is_none(),
+            "the lane stopped before the submission: {:?}",
+            planner.refusal
+        );
+    }
+    outcome.ok();
     let round = planner
         .round
         .clone()
         .expect("the sponsor round trip completed");
-    (round, planner.receipts.len(), report)
+    let submission = planner
+        .submission
+        .clone()
+        .expect("the sponsor-signed control was submitted");
+    let _ = stopped_before_submitting;
+    (round, submission, planner.receipts.len(), report)
 }
 
 /// The four sub-steps the handoff card names, each observed separately.
@@ -735,7 +1030,7 @@ fn run_the_lane() -> (RoundTrip, usize, Option<PathBuf>) {
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
     let started = Instant::now();
-    let (round, receipts, report) = run_the_lane();
+    let (round, submission, receipts, report) = run_the_lane();
 
     // (a) An explicit sponsored control was finalized. The builder asked
     // the envelope for exactly one sponsor authorization — the request
@@ -788,10 +1083,97 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
         "the refusal names something other than the binding: {refusal}"
     );
 
+    // (e) The control was SUBMITTED, and the target's verdict is
+    // recorded as the target typed it. The bytes handed over are the
+    // replay's own, so the verdict is about a control carrying the
+    // adapter's witness and not about a rebuild.
+    assert_eq!(
+        submission.sent, round.replayed,
+        "the bytes submitted are not the bytes the replay produced"
+    );
+
+    // And the verdict is a TYPED STOP, not an acceptance. The residual
+    // is not cleared, and this assertion is what makes a later change
+    // have to notice: evaluation now reaches the sponsored leaf's own
+    // fee-role check and fails it, because the deployment pins the fee
+    // program digest to a fixture constant while construction writes
+    // the empty fee program the target's structure requires.
+    //
+    // The owner signature is NOT the reason any more, and that is this
+    // wave's progress made checkable: the same submission previously
+    // refused with an invalid-signature verdict.
+    assert_eq!(
+        submission.layer,
+        ObservedOutcomeLayer::ScriptPathRejection,
+        "the target's verdict moved from the recorded typed stop: {:?}",
+        submission.detail,
+    );
+    let detail = submission
+        .detail
+        .clone()
+        .expect("a script-path rejection carries the target's own words");
+    assert!(
+        detail.contains("OP_EQUALVERIFY"),
+        "the refusal is not the fee-role equality this stop is about: {detail}"
+    );
+    assert!(
+        !detail.contains("Schnorr"),
+        "the owners' signatures are refused again, which this wave repaired: {detail}"
+    );
+    assert!(
+        submission.txid.is_none(),
+        "a refused submission named a transaction identity"
+    );
+    // Read from the record rather than written as literals, so the
+    // three say "none" because the target reported none and not
+    // because this test assumed a refusal.
+    let txid = submission
+        .txid
+        .clone()
+        .unwrap_or_else(|| String::from("none"));
+    let (block_hash, block_height) = submission
+        .block
+        .clone()
+        .unwrap_or_else(|| (String::from("none"), 0));
+    let read_back = submission.read_back.as_ref().map_or(0, Vec::len);
+
     // The run says in its own bytes what it did and what it did not
     // establish, where a lane can read it afterwards. Nothing is
     // printed: what a run found belongs in an artifact rather than in a
     // scrollback nobody keeps.
+    write_the_record(
+        &round,
+        &submission,
+        &refusal,
+        &txid,
+        read_back,
+        &block_hash,
+        block_height,
+        started,
+        report.as_deref(),
+    );
+}
+
+/// What the run found, written where a later lane can read it.
+///
+/// Nothing is printed: what a run found belongs in an artifact rather
+/// than in a scrollback nobody keeps.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "every observation the record states is a separate one, and \
+              bundling them into a struct here would only move the list"
+)]
+fn write_the_record(
+    round: &RoundTrip,
+    submission: &Submission,
+    refusal: &str,
+    txid: &str,
+    read_back: usize,
+    block_hash: &str,
+    block_height: u32,
+    started: Instant,
+    report: Option<&Path>,
+) {
     let record = format!(
         "sponsor_round_trip\n\
          sent_bytes {}\n\
@@ -802,8 +1184,17 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
          placeholder_bytes {}\n\
          sponsor_input {}\n\
          mutated_binding_refusal {}\n\
-         submitted_anything false\n\
+         submitted_bytes {}\n\
+         observed_layer {:?}\n\
+         accepted_txid {}\n\
+         readback_bytes {}\n\
+         block_hash {}\n\
+         block_height {}\n\
+         submitted_anything true\n\
+         relay_boundary_crossed false\n\
          clears_the_sponsor_residual false\n\
+         stopped_at fee_role_program_digest_is_a_fixture_constant\n\
+         establishes_multi_party_sponsor_signing false\n\
          wall_seconds {:.1}\n",
         round.sent.len(),
         round.echoed.len(),
@@ -813,14 +1204,75 @@ fn the_sponsor_envelope_signer_round_trips_through_the_adapter() {
         round.placeholder.len(),
         round.input,
         refusal,
+        submission.sent.len(),
+        submission.layer,
+        txid,
+        read_back,
+        block_hash,
+        block_height,
         started.elapsed().as_secs_f64(),
     );
-    if let Some(path) = report.as_deref() {
+    if let Some(path) = report {
         std::fs::write(path, &record).expect("the run record is writable");
     }
+
+    // The run says in its own bytes what it did NOT establish, in the
+    // place a later reader will look. One fixed regtest key signed
+    // once; that is a wire and a target acceptance, and it is not a
+    // multi-party ceremony.
     assert!(
         record.contains("clears_the_sponsor_residual false"),
         "the run record does not say what it left standing",
+    );
+    assert!(
+        record.contains("establishes_multi_party_sponsor_signing false"),
+        "the run record does not say what it left unestablished",
+    );
+}
+
+/// SHA-256 of the empty string, which is the digest of the empty
+/// program.
+///
+/// The specification's own constant, written out because this crate has
+/// no hashing dependency and because a reader checking the claim below
+/// should be able to check it against the specification rather than
+/// against a call.
+const EMPTY_PROGRAM_DIGEST: [u8; 32] = [
+    0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+    0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
+];
+
+/// The demonstration deployment cannot satisfy its own fee-role check.
+///
+/// The typed stop the node run observes, held here WITHOUT a node, so
+/// that the finding is a property of the deployment rather than a
+/// verdict somebody has to re-run a chain to see.
+///
+/// §10.7's sponsor isolation ends by inspecting the fee output's
+/// scriptPubKey and requiring its digest to equal the deployment's
+/// `fee_program_digest` symbol. Construction writes the fee role with
+/// the EMPTY program, because the fee role's identity is
+/// target-structural and that is the structure. So the check compares
+/// the digest of the empty program against the symbol — and the symbol
+/// is a fixture constant no program hashes to.
+///
+/// It is the same defect the reserve asset had, at the same site and
+/// unrepaired: a deployment symbol pinned to a value the chain's own
+/// reality has to match and does not. Every sponsored control this
+/// deployment builds is unspendable at its own fee role, which is why
+/// no sponsored submission can be accepted until the symbol is either
+/// threaded like the reserve or pinned to the digest above.
+#[test]
+fn the_demonstration_fee_role_digest_is_a_constant_no_fee_program_hashes_to() {
+    let abi = demonstration_live_abi().expect("the demonstration ABI derives");
+    let pinned = abi.symbols().fee_program_digest().to_vec();
+
+    // The empty program is what construction writes for the fee role.
+    assert_ne!(
+        pinned,
+        EMPTY_PROGRAM_DIGEST.to_vec(),
+        "the fee-role digest now matches the empty program, so the typed stop this \
+         lane records has been repaired and the record must be revisited"
     );
 }
 

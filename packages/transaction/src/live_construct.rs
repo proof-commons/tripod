@@ -52,6 +52,7 @@ use crate::error::TransactionRefusal;
 use crate::live_abi::{CandidateLiveTransferAbi, LiveShapeAbi, LiveTransactionForm};
 use crate::live_finalize::{
     FinalizedLiveTransfer, FinalizedOutputCensus, FinalizedParts, ReceiptInputRecord,
+    SpentSponsorOutput,
 };
 use crate::live_materialize::{
     ConfidentialConstructionIntent, ConfidentialDestinationIntent, ConfidentialInputIntent,
@@ -258,6 +259,10 @@ impl CandidateLiveTransferTransaction {
 /// [`TransactionRefusal::ReceiptInputCarriesForeignAsset`] and
 /// [`TransactionRefusal::ReceiptInputValueFormRefused`] for a selected
 /// outpoint the deployment does not recognize;
+/// [`TransactionRefusal::MissingPublicSponsorView`] and
+/// [`TransactionRefusal::LiveSponsorInputCarriesForeignAsset`] for an
+/// offered sponsor input the caller cannot show, or shows holding an
+/// asset that is not the deployment's reserve;
 /// [`TransactionRefusal::DestinationOwnerHasNoConstructor`] for a
 /// destination owner nothing was linked for;
 /// [`TransactionRefusal::DestinationTotalOutOfRange`] and
@@ -317,11 +322,7 @@ pub fn finalize_live_transfer(
         .as_ref()
         .map(|offer| offer.inputs().iter().copied().collect())
         .unwrap_or_default();
-    for outpoint in &sponsor_inputs {
-        if request.receipts().contains(outpoint) {
-            return Err(TransactionRefusal::SponsorOverlapsReceiptFamily(*outpoint));
-        }
-    }
+    let sponsor_spent = recognize_sponsors(abi, request, view, &sponsor_inputs)?;
 
     // Stage 4: the shape, chosen by every count at once.
     let shape = select_shape(abi, request, sponsor_inputs.len())?;
@@ -412,6 +413,7 @@ pub fn finalize_live_transfer(
         ),
         receipts,
         sponsor_inputs,
+        sponsor_spent,
         required_dimensions: abi.sighash_profile().profile().required().collect(),
         protected_data: abi.protected_data().clone(),
     });
@@ -572,6 +574,59 @@ struct RecognizedReceipt {
     asset: AssetField,
     value: ValueField,
     program: Vec<u8>,
+}
+
+/// Check every offered sponsor input, before the sort (§12.1, §10.7).
+///
+/// Two rejections, in the order a caller can act on them. The regions
+/// must be disjoint, and each offered input must be a coin the caller
+/// can show holding the deployment's reserve asset.
+///
+/// # Why the asset is checked here rather than left to the target
+///
+/// §10.7 isolates the sponsor and fee roles in the reserve asset, and
+/// the fee output this build is about to write names that asset as a
+/// literal the deployment welded in. A sponsor input carrying anything
+/// else funds that output in an asset it does not hold, which is a
+/// transaction that cannot balance.
+///
+/// The compact-ASH lane has refused exactly this since it had a sponsor
+/// region, and the absence here was never a decision:
+/// [`TransactionRefusal::LiveSponsorInputCarriesForeignAsset`] was
+/// already minted for this check and nothing had ever raised it.
+/// Without it the mismatch stays invisible until a node reads the
+/// transaction — and a construction defect reported by a target is a
+/// defect reported at the wrong layer.
+fn recognize_sponsors(
+    abi: &CandidateLiveTransferAbi,
+    request: &LiveTransferRequest,
+    view: &PublicConstructionView,
+    sponsor_inputs: &[Outpoint],
+) -> Result<Vec<SpentSponsorOutput>, TransactionRefusal> {
+    let mut spent = Vec::with_capacity(sponsor_inputs.len());
+    for outpoint in sponsor_inputs {
+        if request.receipts().contains(outpoint) {
+            return Err(TransactionRefusal::SponsorOverlapsReceiptFamily(*outpoint));
+        }
+        let stated = view
+            .get(*outpoint)
+            .ok_or(TransactionRefusal::MissingPublicSponsorView(*outpoint))?;
+        if stated.asset() != AssetField::Explicit(abi.symbols().reserve_asset()) {
+            return Err(TransactionRefusal::LiveSponsorInputCarriesForeignAsset(
+                *outpoint,
+            ));
+        }
+
+        // Kept, not merely checked. The owner's signature commits to
+        // every spent output, and this is the last place that holds a
+        // view of the sponsor region.
+        spent.push(SpentSponsorOutput::new(
+            stated.asset(),
+            stated.value(),
+            stated.program().to_vec(),
+        ));
+    }
+    Ok(spent)
 }
 
 /// Recognize every selected outpoint as some owner's live receipt.
