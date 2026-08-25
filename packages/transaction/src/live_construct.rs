@@ -321,35 +321,7 @@ pub fn finalize_live_transfer(
         .as_ref()
         .map(|offer| offer.inputs().iter().copied().collect())
         .unwrap_or_default();
-    for outpoint in &sponsor_inputs {
-        if request.receipts().contains(outpoint) {
-            return Err(TransactionRefusal::SponsorOverlapsReceiptFamily(*outpoint));
-        }
-
-        // And the sponsor region's own asset, checked here rather than
-        // left to the target. §10.7 isolates the sponsor and fee roles
-        // in the reserve asset, and the fee output this build is about
-        // to write names that asset as a literal the deployment welded
-        // in; a sponsor input carrying anything else funds a fee in an
-        // asset it does not hold, which is a transaction that cannot
-        // balance.
-        //
-        // The compact-ASH lane has refused exactly this since it had a
-        // sponsor region, and the absence here was not a decision —
-        // `LiveSponsorInputCarriesForeignAsset` was already minted for
-        // this check and nothing had ever raised it. Without it the
-        // mismatch is invisible until a node reads the transaction, and
-        // a construction defect reported by a target is a defect
-        // reported at the wrong layer.
-        let stated = view
-            .get(*outpoint)
-            .ok_or(TransactionRefusal::MissingPublicSponsorView(*outpoint))?;
-        if stated.asset() != AssetField::Explicit(abi.symbols().reserve_asset()) {
-            return Err(TransactionRefusal::LiveSponsorInputCarriesForeignAsset(
-                *outpoint,
-            ));
-        }
-    }
+    recognize_sponsors(abi, request, view, &sponsor_inputs)?;
 
     // Stage 4: the shape, chosen by every count at once.
     let shape = select_shape(abi, request, sponsor_inputs.len())?;
@@ -600,6 +572,49 @@ struct RecognizedReceipt {
     asset: AssetField,
     value: ValueField,
     program: Vec<u8>,
+}
+
+/// Check every offered sponsor input, before the sort (§12.1, §10.7).
+///
+/// Two rejections, in the order a caller can act on them. The regions
+/// must be disjoint, and each offered input must be a coin the caller
+/// can show holding the deployment's reserve asset.
+///
+/// # Why the asset is checked here rather than left to the target
+///
+/// §10.7 isolates the sponsor and fee roles in the reserve asset, and
+/// the fee output this build is about to write names that asset as a
+/// literal the deployment welded in. A sponsor input carrying anything
+/// else funds that output in an asset it does not hold, which is a
+/// transaction that cannot balance.
+///
+/// The compact-ASH lane has refused exactly this since it had a sponsor
+/// region, and the absence here was never a decision:
+/// [`TransactionRefusal::LiveSponsorInputCarriesForeignAsset`] was
+/// already minted for this check and nothing had ever raised it.
+/// Without it the mismatch stays invisible until a node reads the
+/// transaction — and a construction defect reported by a target is a
+/// defect reported at the wrong layer.
+fn recognize_sponsors(
+    abi: &CandidateLiveTransferAbi,
+    request: &LiveTransferRequest,
+    view: &PublicConstructionView,
+    sponsor_inputs: &[Outpoint],
+) -> Result<(), TransactionRefusal> {
+    for outpoint in sponsor_inputs {
+        if request.receipts().contains(outpoint) {
+            return Err(TransactionRefusal::SponsorOverlapsReceiptFamily(*outpoint));
+        }
+        let stated = view
+            .get(*outpoint)
+            .ok_or(TransactionRefusal::MissingPublicSponsorView(*outpoint))?;
+        if stated.asset() != AssetField::Explicit(abi.symbols().reserve_asset()) {
+            return Err(TransactionRefusal::LiveSponsorInputCarriesForeignAsset(
+                *outpoint,
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Recognize every selected outpoint as some owner's live receipt.
