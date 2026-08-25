@@ -114,8 +114,8 @@ pub use shape::{
     SponsorChangePresence, UsefulCandidateCondition, demonstration_shape_set, dense_shape_set,
 };
 pub use stack::{
-    AbstractExecutionResult, AbstractLimits, AbstractStackState, SignatureSuccessForm,
-    resource_projection, validate_program,
+    AbstractExecutionResult, AbstractLimits, AbstractStackState, ProgramStackProfile,
+    SignatureSuccessForm, program_stack_profile, resource_projection, validate_program,
 };
 
 #[cfg(test)]
