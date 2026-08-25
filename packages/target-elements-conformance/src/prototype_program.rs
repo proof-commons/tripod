@@ -1156,9 +1156,9 @@ mod program_stack_profile_equivalence {
     //! The shared public analysis reads the same peak this package
     //! measures privately.
     //!
-    //! The private peak_main_stack wrapper validates each prefix of a
+    //! The private `peak_main_stack` wrapper validates each prefix of a
     //! program and takes the deepest main stack any of them reaches. The
-    //! public tapscript::program_stack_profile walks the same prefixes
+    //! public `tapscript::program_stack_profile` walks the same prefixes
     //! and returns that peak among its dimensions. These tests demonstrate
     //! the two agree over the prototypes this package builds; nothing here
     //! retires the wrapper, which a later slice does once the equivalence

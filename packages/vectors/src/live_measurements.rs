@@ -1491,13 +1491,13 @@ mod tests {
     /// The shared public analysis reads the same peaks this study measures
     /// privately.
     ///
-    /// The private walk_program validates each prefix of a linked live
+    /// The private `walk_program` validates each prefix of a linked live
     /// program and takes the deepest main and alternate stacks any of them
-    /// reaches. The public tapscript::program_stack_profile walks the same
+    /// reaches. The public `tapscript::program_stack_profile` walks the same
     /// prefixes from the same live precondition and returns those peaks, so
     /// this test demonstrates the two agree over every linked program the
     /// demonstration bundle carries. It relies on nothing shared yet:
-    /// walk_program stays, and a later slice retires it once the
+    /// `walk_program` stays, and a later slice retires it once the
     /// equivalence is depended upon rather than merely shown.
     #[test]
     fn the_public_profile_matches_the_private_walk_over_every_linked_live_program() {
