@@ -72,7 +72,6 @@ use std::collections::BTreeMap;
 use linker::OwnerParameter;
 use linker::live_backend::LiveTransferRepresentationPlan;
 use target_elements::LeafVersion;
-use target_elements_conformance::confidential_fixture::predecessor_handle;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::owner_key_oracle::verify_owner_signature;
 use target_elements_conformance::protocol::{
@@ -106,16 +105,15 @@ use transaction::{AnnexDisposition, IssuanceDisposition, LiveDeployment};
 use crate::confidential_materializer::{
     FirstPartyCommitmentCheck, ReferenceConfidentialMaterializer,
 };
-use crate::confidential_predecessor::{
-    FUND_STEP, ISSUE_STEP, PREDECESSOR_AMOUNTS, selected_profiles,
-};
+use crate::confidential_predecessor::{FUND_STEP, ISSUE_STEP, PredecessorShape, selected_profiles};
 use crate::error::VectorError;
 use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed_order};
 use crate::live_plan::{
     FEE_PROGRAM_DIGEST, FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, live_abi_for_asset,
     published_owner, reviewed_target, signing_material,
 };
-use crate::live_proof_bearing_observation::{materialization_profiles, register};
+use crate::live_proof_bearing_observation::{materialization_profiles, register, register_multi};
+use target_elements_conformance::confidential_fixture::ConfidentialFixtureOutput;
 
 /// The caller's own name for the one submission this ceremony makes.
 pub const CONTROL_STEP: &str = "submit-private-one-to-one-control";
@@ -475,7 +473,15 @@ pub(crate) struct LinkedDeployment {
     pub(crate) predecessor_view: transaction::live_materialize::ConfidentialFixtureView,
     successor_digest: [u8; 32],
     successor_view: transaction::live_materialize::ConfidentialFixtureView,
-    pub(crate) programs: [Vec<u8>; 2],
+    pub(crate) programs: Vec<Vec<u8>>,
+    /// Which predecessor this deployment funded.
+    ///
+    /// Carried rather than assumed, because two ceremonies now fund two
+    /// different predecessors through this one entry point and every
+    /// later step -- the funding step's handle, the coin count it
+    /// expects, the opening reference an input resolves against -- has to
+    /// ask which.
+    pub(crate) predecessor: PredecessorShape,
 }
 
 impl LinkedDeployment {
@@ -568,7 +574,7 @@ impl PrivateRestartPlanner {
     /// it. Registering before linking would bind a fixture to programs
     /// of a different deployment.
     fn settle_asset(&mut self, printed: &str) -> Result<(), PrivateRestartRefusal> {
-        let linked = link_and_register(self.consumed, printed)?;
+        let linked = link_and_register(PredecessorShape::DualParity, self.consumed, printed)?;
         self.record.issued_asset = Some(printed.to_owned());
         self.record.predecessor_digest = Some(linked.predecessor_digest);
         self.record.successor_digest = Some(linked.successor_digest);
@@ -708,6 +714,7 @@ impl PrivateRestartPlanner {
 /// [`PrivateRestartRefusal::FixtureNotRegistrable`] where either fixture
 /// is not one the registry admits.
 pub(crate) fn link_and_register(
+    predecessor: PredecessorShape,
     consumed: ConsumedReceipt,
     printed: &str,
 ) -> Result<LinkedDeployment, PrivateRestartRefusal> {
@@ -716,28 +723,45 @@ pub(crate) fn link_and_register(
     let abi = live_abi_for_asset(commit_order, RESERVE_ASSET, FEE_PROGRAM_DIGEST)
         .map_err(|_| PrivateRestartRefusal::RelinkRefused)?;
 
-    // The two predecessor outputs pay to the two owners' PRIVATE receipt
+    // The predecessor outputs pay to the published owners' PRIVATE receipt
     // constructors. That is the whole difference between this ceremony
     // and the proof-bearing one, and it is what makes the successor a
     // live-receipt transfer rather than a spend of some other program.
-    let programs = [
-        private_program(&abi, &FIRST_SCALAR)?,
-        private_program(&abi, &SECOND_SCALAR)?,
-    ];
+    let owners = [FIRST_SCALAR, SECOND_SCALAR];
+    let programs = predecessor
+        .owner_indices()
+        .iter()
+        .map(|index| private_program(&abi, &owners[*index]))
+        .collect::<Result<Vec<_>, _>>()?;
 
-    let (predecessor_digest, predecessor_view) = register(
-        predecessor_handle().as_str(),
+    let handle = predecessor.handle();
+    let outputs: Vec<ConfidentialFixtureOutput> = predecessor
+        .roles()
+        .iter()
+        .zip(predecessor.amounts())
+        .zip(&programs)
+        .map(|((role, amount), program)| ConfidentialFixtureOutput {
+            role: *role,
+            semantic_amount: *amount,
+            output_program: program.clone(),
+        })
+        .collect();
+    let (predecessor_digest, predecessor_view) = register_multi(
+        handle.as_str(),
         commit_order,
         // The funding input is explicit and contributes a zero value
         // blinder. The adapter's own catalogue entry says the same, and a
         // different figure would be refused there as a digest that
         // drifted.
+        //
+        // It is the SAME zero for both predecessors, and that is the
+        // point: what separates them is the output count and not how they
+        // are funded.
         [0_u8; 32],
-        PREDECESSOR_AMOUNTS,
-        programs.clone(),
+        outputs,
     )
     .map_err(|_| PrivateRestartRefusal::FixtureNotRegistrable {
-        handle: predecessor_handle().as_str().to_owned(),
+        handle: handle.as_str().to_owned(),
     })?;
 
     // The successor balances against the ONE consumed blinder, not
@@ -749,17 +773,25 @@ pub(crate) fn link_and_register(
         .outputs()
         .get(consumed.index())
         .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?
-        .value_blinder();
+        .value_blinder()
+        // A consumed predecessor output has an opening. A fee output has
+        // none, and is unspendable besides, so a receipt that resolved to
+        // one names no coin.
+        .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?;
 
+    let split = consumed.split();
     let (successor_digest, successor_view) = register(
         SUCCESSOR_HANDLE,
         commit_order,
         consumed_blinder,
-        consumed.split(),
+        split,
         // The recipient is the second owner and the change goes back to
         // the first, so the two programs are the two constructors in the
         // other order.
-        [programs[1].clone(), programs[0].clone()],
+        [
+            private_program(&abi, &SECOND_SCALAR)?,
+            private_program(&abi, &FIRST_SCALAR)?,
+        ],
     )
     .map_err(|_| PrivateRestartRefusal::FixtureNotRegistrable {
         handle: SUCCESSOR_HANDLE.to_owned(),
@@ -773,6 +805,7 @@ pub(crate) fn link_and_register(
         successor_digest: *successor_digest.bytes(),
         successor_view,
         programs,
+        predecessor,
     })
 }
 
@@ -815,7 +848,7 @@ pub(crate) fn confidential_funding_step(
                 })
                 .collect(),
             binding: ConfidentialFundingBinding {
-                fixture_handle: predecessor_handle(),
+                fixture_handle: linked.predecessor.handle(),
                 fixture_digest:
                     target_elements_conformance::protocol::ConfidentialFixtureDigest::new(
                         linked.predecessor_digest,
@@ -839,7 +872,7 @@ pub(crate) fn observe_funded_coins(
     linked: &LinkedDeployment,
     response: &NativeOperationResponse,
 ) -> Result<Vec<RestartConfidentialCoin>, PrivateRestartRefusal> {
-    if response.confidential_funded_outputs.len() != PREDECESSOR_AMOUNTS.len() {
+    if response.confidential_funded_outputs.len() != linked.predecessor.outputs() {
         return Err(PrivateRestartRefusal::FundingCreatedNoPredecessor);
     }
     let mut coins = Vec::with_capacity(response.confidential_funded_outputs.len());
@@ -880,7 +913,9 @@ fn observe_one_coin(
         .recompute(
             linked.asset,
             projected.semantic_amount(),
-            projected.value_blinder(),
+            projected
+                .value_blinder()
+                .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?,
         )
         .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
     let matches_expectation = asset == linked.asset
@@ -971,11 +1006,11 @@ fn finalize_control(
     let openings = PrivateLiveOpenings::new(
         vec![PrivateInputOpening {
             opening: FixtureOpeningReference::new(
-                predecessor_handle().as_str().to_owned(),
+                linked.predecessor.handle().as_str().to_owned(),
                 linked.predecessor_digest,
                 consumed.index(),
             ),
-            explicit_amount: PREDECESSOR_AMOUNTS[consumed.index()],
+            explicit_amount: linked.predecessor.amounts()[consumed.index()],
             zero_asset_blinder: [0_u8; SCALAR_BYTES],
         }],
         vec![
@@ -1002,7 +1037,7 @@ fn finalize_control(
 
     let fixtures = FrozenConfidentialFixtureView::new(BTreeMap::from([
         (
-            predecessor_handle().as_str().to_owned(),
+            linked.predecessor.handle().as_str().to_owned(),
             linked.predecessor_view.clone(),
         ),
         (SUCCESSOR_HANDLE.to_owned(), linked.successor_view.clone()),
@@ -1544,6 +1579,7 @@ mod tests {
 #[cfg(test)]
 mod byte_identity_tests {
     use super::{ConsumedReceipt, hex, link_and_register, run_of_record as run};
+    use crate::confidential_predecessor::PredecessorShape;
 
     /// The two fixtures of the run of record register under exactly the
     /// digests that run recorded.
@@ -1568,8 +1604,9 @@ mod byte_identity_tests {
     #[test]
     fn the_run_of_record_fixtures_register_under_the_digests_it_recorded() {
         for consumed in ConsumedReceipt::ALL {
-            let linked = link_and_register(consumed, run::ISSUED_ASSET)
-                .expect("the run of record's own fixtures register");
+            let linked =
+                link_and_register(PredecessorShape::DualParity, consumed, run::ISSUED_ASSET)
+                    .expect("the run of record's own fixtures register");
 
             // The predecessor is the same manifest for both runs, so both
             // must land on the one recorded digest.

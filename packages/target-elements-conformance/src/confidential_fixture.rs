@@ -160,7 +160,7 @@ pub enum FixtureOutputRole {
     /// outputs to subtract, so the solve returns the input blinder sum
     /// itself, and the bounded parity search — which searches over
     /// freely chosen blinders — has nothing to search and degenerates to
-    /// the well-formedness check [`prefixes_match`] describes.
+    /// the well-formedness check `prefixes_match` describes.
     ///
     /// # The degeneracy this member does not hide
     ///
@@ -1452,6 +1452,45 @@ pub fn solve_balancing_blinder(
     Some(scalar_bytes(&balancing))
 }
 
+/// The sum of a set of value blinders, in the group.
+///
+/// # Why a zero sum is a RESULT here and a refusal there
+///
+/// [`solve_balancing_blinder`] refuses a zero solution, and refusing it is
+/// correct: a solved balancing blinder of zero is a commitment of exactly
+/// the value times the value generator, which anybody recomputes from a
+/// guessed amount, and which therefore hides nothing while the tally still
+/// balances.
+///
+/// This function is the other half of the same arithmetic and must NOT
+/// refuse it. The sum of the blinders a transaction CONSUMES is an
+/// observation about coins that already exist; a ceremony whose only way
+/// to report a zero sum was to fail could not tell a caller what its own
+/// inputs were. Zero comes back as zero, and the refusal happens one layer
+/// later at the registry, where it can name the manifest it refused and
+/// arrive as `DegenerateBalancingScalar` rather than as an absence.
+///
+/// # Why it exists at all
+///
+/// A consuming ceremony used to STATE its input blinder sum from the
+/// structure of the one predecessor it had — a predecessor funded from an
+/// explicit input, whose two output blinders are therefore ordered
+/// additive inverses summing to zero. That was true of that predecessor
+/// and is a fact about no other. A ceremony that consumes two coins of a
+/// wider predecessor has a nonzero sum, and stating zero would have built
+/// a candidate whose value balance does not close.
+///
+/// `None` where a blinder is not a readable scalar.
+#[must_use]
+pub fn sum_blinders(blinders: &[[u8; DERIVED_BYTES]]) -> Option<[u8; DERIVED_BYTES]> {
+    let mut total = BigUint::zero();
+    for blinder in blinders {
+        let scalar = commitment::read_scalar(blinder).ok()?;
+        total = add_scalars(&total, &scalar);
+    }
+    Some(scalar_bytes(&total))
+}
+
 /// The prefix pair the search is looking for, in fixed order.
 ///
 /// Read from the reviewed target contract rather than written here
@@ -1826,6 +1865,33 @@ pub const PREDECESSOR_HANDLE: &str = "ctf-v1/predecessor-dual-parity";
 #[must_use]
 pub fn predecessor_handle() -> ConfidentialFixtureHandle {
     ConfidentialFixtureHandle::new(PREDECESSOR_HANDLE.to_owned())
+}
+
+/// The three-output predecessor's handle: the one that does NOT cancel.
+///
+/// # Why a second predecessor exists at all
+///
+/// The dual-parity predecessor is funded from an explicit input, so its
+/// input blinder sum is zero and its TWO output blinders come out ordered
+/// additive inverses. Merging both halves of it therefore forces a sole
+/// output's blinder to zero, and a zero blinder is a commitment of
+/// exactly the value times the value generator — a point anybody
+/// recomputes from a guessed amount. The registry refuses that, and
+/// refusing it is right.
+///
+/// Cancellation is a consequence of having TWO outputs, not of the
+/// explicit input. Three output blinders summing to zero cancel in no
+/// pair: any two of them sum to the negation of the third, and the third
+/// is never zero — a derived blinder is searched until it is nonzero and
+/// a solved one is refused when it is not. So a three-output predecessor
+/// funded exactly the way the dual one is offers a merge two coins whose
+/// blinders provably do not cancel.
+pub const TRIPLE_PREDECESSOR_HANDLE: &str = "ctf-v1/predecessor-triple-noncanceling";
+
+/// The three-output non-canceling predecessor's handle.
+#[must_use]
+pub fn triple_predecessor_handle() -> ConfidentialFixtureHandle {
+    ConfidentialFixtureHandle::new(TRIPLE_PREDECESSOR_HANDLE.to_owned())
 }
 
 /// The scalar width every derived value carries.

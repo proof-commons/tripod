@@ -523,19 +523,36 @@ impl ConfidentialMaterializationProfiles {
 /// a manifest's shape, and a declaration has done its work by the time
 /// the manifest is registered.
 ///
-/// The registry also has a FEE role, and this vocabulary has no member
-/// for it. That absence is load-bearing rather than pending: an output
-/// with an explicit value, no nonce and no range proof is not something
-/// the stages below can build, so a fee-bearing fixture is refused at the
-/// projection instead of arriving here wearing a role it does not have.
-/// Adding a member here without teaching those stages would turn a typed
-/// stop into a blinded fee output, which is not a fee at all.
+/// The registry's FEE role now has a member here too, and the order in
+/// which that happened is the point. The member was withheld while the
+/// stages below could not build an output with an explicit value, no
+/// nonce and no range proof, because a member without those stages would
+/// have mapped a fee onto the committed path and produced a BLINDED fee
+/// output — which the target does not recognize as a fee at all, and
+/// which would have been a silently wrong transaction rather than an
+/// honest stop. The member arrives with the stages, not before them.
+///
+/// What the member costs the vocabulary is the assumption that every
+/// output carries an opening. It does not: a fee output's blinder,
+/// nonce and range-proof seed are ABSENT rather than zero, which is why
+/// [`ConfidentialFixtureOutputView`]'s three scalar accessors return an
+/// option. Zero-filling them would have made a record of zeroes read
+/// like an opening, and an explicit output has none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ConfidentialOutputRole {
     /// An ordinary output whose blinder is derived.
     Primary,
     /// The one output per transaction whose blinder is solved.
     Balancing,
+    /// The mandatorily explicit fee output: explicit value, explicit
+    /// asset, empty program, no opening, and no witness.
+    ///
+    /// It is outside the blinder solve at a zero blinder, which is not a
+    /// convention here but the target's arithmetic: an explicit value is
+    /// committed with an all-zero blinder and joins the same Pedersen
+    /// tally, so a fee can never be the output that absorbs the input
+    /// blinder sum.
+    Fee,
 }
 
 /// Which derivation role a scalar was derived for.
@@ -577,13 +594,16 @@ pub struct ConfidentialFixtureOutputView {
     role: ConfidentialOutputRole,
     semantic_amount: u64,
     output_program: Vec<u8>,
-    value_blinder: [u8; SCALAR_BYTES],
-    nonce_input: [u8; SCALAR_BYTES],
-    rangeproof_seed: [u8; SCALAR_BYTES],
+    value_blinder: Option<[u8; SCALAR_BYTES]>,
+    nonce_input: Option<[u8; SCALAR_BYTES]>,
+    rangeproof_seed: Option<[u8; SCALAR_BYTES]>,
 }
 
 impl ConfidentialFixtureOutputView {
-    /// One projected fixture output.
+    /// One projected fixture output that carries an opening.
+    ///
+    /// Every committed role is built here. A fee output cannot be: it has
+    /// no opening to pass, which is what [`Self::fee`] exists to say.
     #[must_use]
     pub const fn new(
         role: ConfidentialOutputRole,
@@ -597,9 +617,28 @@ impl ConfidentialFixtureOutputView {
             role,
             semantic_amount,
             output_program,
-            value_blinder,
-            nonce_input,
-            rangeproof_seed,
+            value_blinder: Some(value_blinder),
+            nonce_input: Some(nonce_input),
+            rangeproof_seed: Some(rangeproof_seed),
+        }
+    }
+
+    /// One projected fee output.
+    ///
+    /// It takes an amount and nothing else. The empty program is not a
+    /// parameter because it is not a choice — an output with a program is
+    /// not a fee at the target — and the three opening scalars are absent
+    /// rather than zero, so nothing downstream can mistake a placeholder
+    /// for an opening.
+    #[must_use]
+    pub const fn fee(semantic_amount: u64) -> Self {
+        Self {
+            role: ConfidentialOutputRole::Fee,
+            semantic_amount,
+            output_program: Vec::new(),
+            value_blinder: None,
+            nonce_input: None,
+            rangeproof_seed: None,
         }
     }
 
@@ -621,22 +660,24 @@ impl ConfidentialFixtureOutputView {
         &self.output_program
     }
 
-    /// The value blinder.
+    /// The value blinder, where this output has one.
+    ///
+    /// Absent for a fee output, whose value is explicit.
     #[must_use]
-    pub const fn value_blinder(&self) -> &[u8; SCALAR_BYTES] {
-        &self.value_blinder
+    pub const fn value_blinder(&self) -> Option<&[u8; SCALAR_BYTES]> {
+        self.value_blinder.as_ref()
     }
 
-    /// The nonce input.
+    /// The nonce input, where this output has one.
     #[must_use]
-    pub const fn nonce_input(&self) -> &[u8; SCALAR_BYTES] {
-        &self.nonce_input
+    pub const fn nonce_input(&self) -> Option<&[u8; SCALAR_BYTES]> {
+        self.nonce_input.as_ref()
     }
 
-    /// The range-proof seed.
+    /// The range-proof seed, where this output has one.
     #[must_use]
-    pub const fn rangeproof_seed(&self) -> &[u8; SCALAR_BYTES] {
-        &self.rangeproof_seed
+    pub const fn rangeproof_seed(&self) -> Option<&[u8; SCALAR_BYTES]> {
+        self.rangeproof_seed.as_ref()
     }
 }
 
@@ -1263,6 +1304,49 @@ pub enum MaterializationRefusal {
     },
     /// The request selected the retired per-output role.
     PerOutputMaterializationRefused,
+    /// A fee output arrived carrying an output program.
+    ///
+    /// The target's own definition of a fee is an output with an EMPTY
+    /// scriptPubKey, so an output with a program is not a fee however it
+    /// is labelled. Refused rather than emptied, because emptying it
+    /// would silently discard a destination somebody stated.
+    FeeOutputProgramNotEmpty {
+        /// Which output.
+        output: usize,
+    },
+    /// A fee output arrived carrying an opening.
+    ///
+    /// A fee's value is explicit and an explicit value has no opening. A
+    /// projection that supplied one has mapped some other role onto this
+    /// one.
+    FeeOutputCarriesAnOpening {
+        /// Which output.
+        output: usize,
+    },
+    /// A fee output would carry no value.
+    ///
+    /// A zero-value explicit output is admitted by the target only where
+    /// its scriptPubKey is unspendable, and an empty script is not
+    /// unspendable — so a zero-value fee output is refused outright,
+    /// there rather than here. Refusing it here means the refusal names
+    /// the fee rather than arriving as a target verdict on a shape this
+    /// construction knew it could not build.
+    FeeOutputValueZero {
+        /// Which output.
+        output: usize,
+    },
+    /// The emitted fee output does not satisfy the target's own fee
+    /// predicate.
+    ///
+    /// The last clause of the fee stage, and the one that is not a
+    /// restatement of the ones before it: the output is built and then
+    /// asked whether it IS a fee, by the same three-conjunct predicate
+    /// the target applies. A construction that believed it had built a
+    /// fee and had not would stop here.
+    FeeOutputNotRecognizable {
+        /// Which output.
+        output: usize,
+    },
 }
 
 // --- The result ---------------------------------------------------------
@@ -1598,45 +1682,9 @@ pub fn materialize_confidential_candidate(
     let asset = protocol_asset(intent)?;
     let view = destination_view(intent, fixtures)?;
 
-    // Stage one: every output's derived value blinder except the
-    // balancing one, which is solved rather than derived.
-    let mut derived: Vec<Option<[u8; SCALAR_BYTES]>> = Vec::with_capacity(view.len());
-    let mut others: Vec<[u8; SCALAR_BYTES]> = Vec::new();
-    for projected in view {
-        match projected.role() {
-            ConfidentialOutputRole::Balancing => derived.push(None),
-            ConfidentialOutputRole::Primary => {
-                let blinder = *projected.value_blinder();
-                if blinder == [0_u8; SCALAR_BYTES] {
-                    return Err(MaterializationRefusal::InvalidScalar {
-                        role: DerivationRole::ValueBlinder,
-                    });
-                }
-                others.push(blinder);
-                derived.push(Some(blinder));
-            }
-        }
-    }
-
-    // Stage two: solve the balancing blinder, and refuse a degenerate
-    // solution rather than nudging it. The solve is the independent
-    // origin's arithmetic and the comparison is against what the fixture
-    // registered, so a disagreement is a blinder imbalance and not a
-    // rounding difference.
+    // Stages one and two: every output's value blinder, derived or solved.
     let input_blinder_sum = *fixture_of(intent, fixtures)?.input_blinder_sum();
-    let solved = checker
-        .solve_balancing_blinder(&input_blinder_sum, &others)
-        .ok_or(MaterializationRefusal::InvalidScalar {
-            role: DerivationRole::ValueBlinder,
-        })?;
-    for (index, projected) in view.iter().enumerate() {
-        if projected.role() == ConfidentialOutputRole::Balancing {
-            if *projected.value_blinder() != solved {
-                return Err(MaterializationRefusal::ValueBlinderImbalance);
-            }
-            derived[index] = Some(solved);
-        }
-    }
+    let derived = output_blinders(view, &input_blinder_sum, checker)?;
 
     // Stage three: the protocol asset is explicit, every protocol asset
     // blinder is zero, and a confidential asset result is refused
@@ -1649,18 +1697,27 @@ pub fn materialize_confidential_candidate(
     let mut outputs = Vec::with_capacity(view.len());
     let mut output_witnesses = Vec::with_capacity(view.len());
     for (index, projected) in view.iter().enumerate() {
-        let blinder = derived[index].ok_or(MaterializationRefusal::InvalidScalar {
-            role: DerivationRole::ValueBlinder,
-        })?;
-        let (output, witness) = materialize_one_output(
-            index,
-            projected,
-            asset,
-            asset_field,
-            &blinder,
-            crypto,
-            checker,
-        )?;
+        let (output, witness) = if projected.role() == ConfidentialOutputRole::Fee {
+            // The fee output takes none of stages four, five and six. It
+            // has no commitment to compare against an independent
+            // recomputation, no nonce to derive, and no range to prove,
+            // and running any of those over it is what a blinded fee
+            // output would have been.
+            materialize_fee_output(index, projected, asset)?
+        } else {
+            let blinder = derived[index].ok_or(MaterializationRefusal::InvalidScalar {
+                role: DerivationRole::ValueBlinder,
+            })?;
+            materialize_one_output(
+                index,
+                projected,
+                asset,
+                asset_field,
+                &blinder,
+                crypto,
+                checker,
+            )?
+        };
         outputs.push(output);
         output_witnesses.push(witness);
     }
@@ -1698,11 +1755,14 @@ pub fn materialize_confidential_candidate(
     .map_err(|_| MaterializationRefusal::OutputWitnessCensusMismatch)?;
     let proof_finalized = ProofFinalizedCandidate::freeze(protected)?;
 
+    // The opening scalars of the outputs that HAVE openings. A fee output
+    // contributes none, and contributing three zeroes on its behalf would
+    // have put a value in this census that no opening produced.
     let mut opening_scalars: Vec<[u8; SCALAR_BYTES]> = Vec::new();
     for projected in view {
-        opening_scalars.push(*projected.value_blinder());
-        opening_scalars.push(*projected.nonce_input());
-        opening_scalars.push(*projected.rangeproof_seed());
+        opening_scalars.extend(projected.value_blinder().copied());
+        opening_scalars.extend(projected.nonce_input().copied());
+        opening_scalars.extend(projected.rangeproof_seed().copied());
     }
     let signer_inputs = signer_inputs(
         intent,
@@ -1717,6 +1777,80 @@ pub fn materialize_confidential_candidate(
         opening_binding_census,
         signer_inputs,
     })
+}
+
+/// Stages one and two: every output's value blinder, derived or solved.
+///
+/// # What comes back, and what an absent entry means
+///
+/// One entry per output, in the view's order. `Some` for every output
+/// whose blinder the materializer will commit with; `None` only for the
+/// fee output, which has no blinder to commit with because its value is
+/// explicit. The balancing output's entry is filled by the solve before
+/// this returns, so an absent entry never means "not computed yet".
+///
+/// # Errors
+///
+/// [`MaterializationRefusal::InvalidScalar`] for an absent, zero or
+/// degenerate blinder, and
+/// [`MaterializationRefusal::ValueBlinderImbalance`] where the solve
+/// disagrees with what the fixture registered.
+fn output_blinders(
+    view: &[ConfidentialFixtureOutputView],
+    input_blinder_sum: &[u8; SCALAR_BYTES],
+    checker: &dyn IndependentCommitmentCheck,
+) -> Result<Vec<Option<[u8; SCALAR_BYTES]>>, MaterializationRefusal> {
+    // Stage one: every output's derived value blinder except the
+    // balancing one, which is solved rather than derived.
+    let mut derived: Vec<Option<[u8; SCALAR_BYTES]>> = Vec::with_capacity(view.len());
+    let mut others: Vec<[u8; SCALAR_BYTES]> = Vec::new();
+    for projected in view {
+        match projected.role() {
+            // Neither the balancing output nor the fee output brings a
+            // freely chosen blinder to `others`, and they reach that
+            // through opposite facts. The balancing one's blinder is
+            // SOLVED from the others and so cannot be one of them. The
+            // fee one has no blinder at all: an explicit value is
+            // committed with an all-zero blinder, so it contributes
+            // nothing to the sum the solve subtracts.
+            ConfidentialOutputRole::Balancing | ConfidentialOutputRole::Fee => derived.push(None),
+            ConfidentialOutputRole::Primary => {
+                let blinder =
+                    *projected
+                        .value_blinder()
+                        .ok_or(MaterializationRefusal::InvalidScalar {
+                            role: DerivationRole::ValueBlinder,
+                        })?;
+                if blinder == [0_u8; SCALAR_BYTES] {
+                    return Err(MaterializationRefusal::InvalidScalar {
+                        role: DerivationRole::ValueBlinder,
+                    });
+                }
+                others.push(blinder);
+                derived.push(Some(blinder));
+            }
+        }
+    }
+
+    // Stage two: solve the balancing blinder, and refuse a degenerate
+    // solution rather than nudging it. The solve is the independent
+    // origin's arithmetic and the comparison is against what the fixture
+    // registered, so a disagreement is a blinder imbalance and not a
+    // rounding difference.
+    let solved = checker
+        .solve_balancing_blinder(input_blinder_sum, &others)
+        .ok_or(MaterializationRefusal::InvalidScalar {
+            role: DerivationRole::ValueBlinder,
+        })?;
+    for (index, projected) in view.iter().enumerate() {
+        if projected.role() == ConfidentialOutputRole::Balancing {
+            if projected.value_blinder() != Some(&solved) {
+                return Err(MaterializationRefusal::ValueBlinderImbalance);
+            }
+            derived[index] = Some(solved);
+        }
+    }
+    Ok(derived)
 }
 
 /// One output's commitment, nonce, and proof, in the stages' own order.
@@ -1758,7 +1892,11 @@ fn materialize_one_output(
     // proof bound to this value's commitment, the unblinded asset
     // generator, and the output program.
     let nonce = crypto
-        .nonce_commitment(projected.nonce_input())
+        .nonce_commitment(
+            projected
+                .nonce_input()
+                .ok_or(MaterializationRefusal::NonceMaterializationFailed { output: index })?,
+        )
         .ok_or(MaterializationRefusal::NonceMaterializationFailed { output: index })?;
     let request = RangeproofRequest::new(
         index,
@@ -1766,7 +1904,9 @@ fn materialize_one_output(
         asset,
         projected.semantic_amount(),
         blinder,
-        projected.rangeproof_seed(),
+        projected
+            .rangeproof_seed()
+            .ok_or(MaterializationRefusal::RangeproofMaterializationFailed { output: index })?,
         projected.output_program(),
     );
     let proof = crypto
@@ -1794,6 +1934,74 @@ fn materialize_one_output(
         output,
         OutputWitness::range_proof_only(proof.proof().to_vec()),
     ))
+}
+
+/// The fee output, built as the target defines one.
+///
+/// # Why this is a separate stage rather than a branch inside the other
+///
+/// Every clause of [`materialize_one_output`] is about a commitment: an
+/// independent recomputation to compare against, a nonce to derive, a
+/// range to prove, a witness entry to carry the proof. A fee output has
+/// none of them, and a fee output routed through that function would
+/// come back BLINDED — which is not a fee at the target, and is the
+/// silently wrong transaction the projection used to refuse rather than
+/// build.
+///
+/// # What it emits, and why each part is not a choice
+///
+/// An explicit value, an explicit asset, a null nonce, an empty program,
+/// and an empty output-witness entry. That is `CTxOut::IsFee` read
+/// forwards: the target recognizes a fee by an empty scriptPubKey with
+/// an explicit value and an explicit asset, so a construction that
+/// wanted a fee has exactly one shape available to it. The output-witness
+/// entry is empty rather than absent because the census is one entry per
+/// output, and an output with nothing to prove still occupies its place.
+///
+/// The asset is the PROTOCOL asset, taken from the same place every
+/// other output takes it. A fee in some other asset would leave the
+/// protocol tally short by the fee, which the semantic conservation
+/// clause would refuse — correctly, and for a reason that would read
+/// like an arithmetic slip rather than like the asset choice it was.
+///
+/// # Errors
+///
+/// [`MaterializationRefusal::FeeOutputProgramNotEmpty`],
+/// [`MaterializationRefusal::FeeOutputCarriesAnOpening`],
+/// [`MaterializationRefusal::FeeOutputValueZero`], and
+/// [`MaterializationRefusal::FeeOutputNotRecognizable`] where the built
+/// output does not satisfy the target's own predicate.
+fn materialize_fee_output(
+    index: usize,
+    projected: &ConfidentialFixtureOutputView,
+    asset: AssetId,
+) -> Result<(TargetOutput, OutputWitness), MaterializationRefusal> {
+    if !projected.output_program().is_empty() {
+        return Err(MaterializationRefusal::FeeOutputProgramNotEmpty { output: index });
+    }
+    if projected.value_blinder().is_some()
+        || projected.nonce_input().is_some()
+        || projected.rangeproof_seed().is_some()
+    {
+        return Err(MaterializationRefusal::FeeOutputCarriesAnOpening { output: index });
+    }
+    if projected.semantic_amount() == 0 {
+        return Err(MaterializationRefusal::FeeOutputValueZero { output: index });
+    }
+
+    let output = TargetOutput::new(
+        AssetField::Explicit(asset),
+        ValueField::Explicit(projected.semantic_amount()),
+        NonceField::Null,
+        Vec::new(),
+    );
+    // Built, then asked. The predicate is the target's three conjuncts
+    // and not a restatement of the clauses above: those check what
+    // ARRIVED, this checks what LEFT.
+    if !output.is_fee() {
+        return Err(MaterializationRefusal::FeeOutputNotRecognizable { output: index });
+    }
+    Ok((output, OutputWitness::empty()))
 }
 
 /// Everything that happens before any cryptographic work.
@@ -1972,11 +2180,19 @@ fn verify_predecessor_openings(
                 });
             }
         };
+        // A consumed predecessor output must have an opening. A fee
+        // output has none and is unspendable besides, so an input that
+        // resolved to one is a reference that does not name a coin.
+        let consumed_blinder = projected.value_blinder().ok_or_else(|| {
+            MaterializationRefusal::PredecessorOpeningMismatch {
+                outpoint: input.outpoint(),
+            }
+        })?;
         let recomputed = checker
             .recompute(
                 fixture.explicit_asset(),
                 projected.semantic_amount(),
-                projected.value_blinder(),
+                consumed_blinder,
             )
             .ok_or_else(|| MaterializationRefusal::PredecessorOpeningMismatch {
                 outpoint: input.outpoint(),

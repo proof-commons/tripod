@@ -1341,6 +1341,64 @@ const fn step_of(refusal: ConfidentialFundingRefusal) -> FundingRecordRefusal {
     }
 }
 
+/// Whether one output's committed prefix is admitted at this arity.
+///
+/// # The rule, and why it is not a fixed pair
+///
+/// This is the record-side reading of the same rule the fixture
+/// registry's parity search states in `prefixes_match`. A record of
+/// exactly two committed outputs is held to the target's admitted prefix
+/// pair IN FIXED ORDER, so the dual-parity predecessor carries one of
+/// each and exercises both admitted forms rather than one of them twice.
+/// Every other width is held to membership: each output's commitment
+/// carries one of the two admitted prefixes, which is the whole of what
+/// the reviewed target contract states about a third output or a lone
+/// one. There is no reviewed fixed-order convention past the pair, and
+/// inventing one here would be this file deciding a question the
+/// contract does not answer.
+///
+/// # What it replaced
+///
+/// The prefix pair was read into a two-element array and indexed by
+/// output index, so a funded record of more than two outputs panicked on
+/// the third — and a one-output record silently demanded the FIRST
+/// prefix, which is not a rule anybody stated: a lone output's blinder
+/// is forced to the input blinder sum, so the prefix it carries is
+/// whichever that forced blinder yields and both are admitted.
+///
+/// The two-output case is unchanged in every byte. `admits_prefix` is
+/// still checked separately by the caller and is a weaker question — it
+/// admits the explicit prefix and the zero byte, neither of which is a
+/// committed prefix — so membership here reads on the committed pair
+/// and never on that.
+pub(crate) const fn prefix_admitted_at(
+    value_encoding: &target_elements::ConfidentialFieldEncoding,
+    prefix: u8,
+    index: usize,
+    outputs: usize,
+) -> bool {
+    let (first, second) = value_encoding.committed_prefixes();
+    if outputs == 2 {
+        return prefix == if index == 0 { first } else { second };
+    }
+    prefix == first || prefix == second
+}
+
+/// Whether a whole observed parity sequence satisfies the same rule.
+///
+/// The summary recomputes from the members, so this must agree with
+/// [`prefix_admitted_at`] output by output; it is written as the
+/// sequence-level statement of one rule rather than as a second rule.
+pub(crate) fn parities_admitted(
+    value_encoding: &target_elements::ConfidentialFieldEncoding,
+    parities: &[u8],
+) -> bool {
+    parities
+        .iter()
+        .enumerate()
+        .all(|(index, prefix)| prefix_admitted_at(value_encoding, *prefix, index, parities.len()))
+}
+
 /// Builds one validated record by recomputing every member in order.
 ///
 /// # The eight recomputations, each with its own refusal
@@ -1348,7 +1406,9 @@ const fn step_of(refusal: ConfidentialFundingRefusal) -> FundingRecordRefusal {
 /// The arms match and no fallback occurred; the handle, digest,
 /// profiles, request, response, and transaction all bind; the output
 /// order is the fixture's; each output is exactly the hybrid tuple; the
-/// commitment prefixes are the admitted pair; the proof shape comes from
+/// commitment prefixes satisfy the rule their arity states, the admitted
+/// pair in fixed order for two outputs and membership in that pair for
+/// every other width; the proof shape comes from
 /// the readback; submission, mining, readback, and outputs agree; and
 /// the summary recomputes from the members rather than being carried.
 /// The independent commitment comparison and the canonical boundary
@@ -1473,7 +1533,6 @@ pub fn validate_confidential_funding_record(
         })?;
 
     let value_encoding = target_elements::reviewed_confidential_review_facts().value();
-    let required_prefixes: [u8; 2] = value_encoding.committed_prefixes().into();
 
     let mut outputs = Vec::with_capacity(fixture_outputs.len());
     let mut agreement = Vec::with_capacity(fixture_outputs.len());
@@ -1493,14 +1552,20 @@ pub fn validate_confidential_funding_record(
             return Err(FundingRecordRefusal::Representation { output: index });
         }
 
-        // Step five: the admitted prefix pair, in fixed order, read from
-        // the reviewed target contract rather than from a literal.
+        // Step five: the admitted committed prefixes, under the rule the
+        // arity states — the pair in fixed order for a two-output record,
+        // membership for every other width.
         let observation_commitment =
             ReadBackCommitment::from_readback(observed).map_err(|ReadBackWidthRefused| {
                 FundingRecordRefusal::Representation { output: index }
             })?;
         if !value_encoding.admits_prefix(observation_commitment.prefix())
-            || observation_commitment.prefix() != required_prefixes[index]
+            || !prefix_admitted_at(
+                &value_encoding,
+                observation_commitment.prefix(),
+                index,
+                fixture_outputs.len(),
+            )
         {
             return Err(FundingRecordRefusal::PrefixMask { output: index });
         }
@@ -1595,7 +1660,7 @@ pub fn validate_confidential_funding_record(
     };
     if summary.agreeing_fields != outputs.len() * FundingAgreementField::ALL.len()
         || summary.agreeing_commitments != outputs.len()
-        || summary.observed_parities != required_prefixes[..outputs.len()]
+        || !parities_admitted(&value_encoding, &summary.observed_parities)
     {
         return Err(FundingRecordRefusal::Summary);
     }

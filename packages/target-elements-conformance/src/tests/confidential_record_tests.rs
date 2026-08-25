@@ -15,7 +15,7 @@ use crate::confidential_record::{
     AgreementOrigin, AgreementRefusal, CandidateFundingNonClaim, CanonicalFundingExclusion,
     FundingAgreementField, FundingOutputForm, FundingRegion, NonProtocolFundingRegion,
     OutputAgreementCensus, ReadBackCommitment, RecomputedCommitment, RegionClassificationRefusal,
-    classify_funding_members, compare_commitments,
+    classify_funding_members, compare_commitments, parities_admitted, prefix_admitted_at,
 };
 use crate::protocol::WireOutpoint;
 
@@ -236,4 +236,96 @@ fn the_form_census_and_the_two_exhaustive_vocabularies_are_complete() {
     assert_eq!(FundingAgreementField::ALL.len(), 8);
     assert_eq!(CanonicalFundingExclusion::ALL.len(), 9);
     assert_eq!(CandidateFundingNonClaim::ALL.len(), 10);
+}
+
+/// The reviewed value field, whose admitted committed prefixes the arity
+/// rule reads from rather than restating.
+fn value_encoding() -> target_elements::ConfidentialFieldEncoding {
+    target_elements::reviewed_confidential_review_facts().value()
+}
+
+#[test]
+fn a_two_output_record_still_demands_the_admitted_pair_in_fixed_order() {
+    let encoding = value_encoding();
+    let (first, second) = encoding.committed_prefixes();
+
+    // The dual-parity rule, unchanged: one of each, in the encoder's own
+    // order. This is the case the parity search was built to discriminate,
+    // and the arity generalization must not have weakened it.
+    assert!(parities_admitted(&encoding, &[first, second]));
+    assert!(!parities_admitted(&encoding, &[second, first]));
+    assert!(!parities_admitted(&encoding, &[first, first]));
+    assert!(!parities_admitted(&encoding, &[second, second]));
+}
+
+#[test]
+fn a_record_wider_than_two_outputs_is_read_and_not_panicked_on() {
+    let encoding = value_encoding();
+    let (first, second) = encoding.committed_prefixes();
+
+    // The regression. The rule used to be a two-element array indexed by
+    // output index, so reaching a third output was an out-of-bounds panic
+    // rather than a verdict — and a panic is not a refusal any caller can
+    // catch, report, or reason about. Every one of these calls indexes
+    // past the pair.
+    assert!(parities_admitted(&encoding, &[first, second, first]));
+    assert!(parities_admitted(&encoding, &[second, second, second]));
+    assert!(parities_admitted(
+        &encoding,
+        &[first, first, second, second, first]
+    ));
+
+    // Membership is still a rule and not an absence of one: a prefix
+    // outside the admitted pair is refused at any width.
+    let outside = first ^ 0x40;
+    assert!(outside != first && outside != second);
+    assert!(!parities_admitted(&encoding, &[first, second, outside]));
+
+    // And the per-output reading agrees with the sequence reading at the
+    // index that used to panic, which is what makes the summary check and
+    // the per-output check one rule rather than two.
+    assert!(prefix_admitted_at(&encoding, first, 2, 3));
+    assert!(prefix_admitted_at(&encoding, second, 2, 3));
+    assert!(!prefix_admitted_at(&encoding, outside, 2, 3));
+}
+
+#[test]
+fn a_single_output_record_admits_either_parity_because_its_blinder_is_forced() {
+    let encoding = value_encoding();
+    let (first, second) = encoding.committed_prefixes();
+
+    // A lone output's blinder is not chosen — it is forced to the input
+    // blinder sum — so the prefix it carries is whichever that forced
+    // blinder yields. Demanding the FIRST prefix, which is what indexing a
+    // fixed pair silently did, was a rule nobody had stated.
+    assert!(parities_admitted(&encoding, &[first]));
+    assert!(parities_admitted(&encoding, &[second]));
+
+    let outside = second ^ 0x40;
+    assert!(outside != first && outside != second);
+    assert!(!parities_admitted(&encoding, &[outside]));
+}
+
+#[test]
+fn the_records_arity_rule_agrees_with_the_registrys_parity_search() {
+    let encoding = value_encoding();
+    let (first, second) = encoding.committed_prefixes();
+
+    // The two halves of one rule live in two files — the registry decides
+    // which openings to derive, the record decides whether a mined
+    // readback satisfies the same contract — so the agreement is checked
+    // rather than assumed. Every width but two is membership on both
+    // sides; two is fixed order on both sides.
+    for width in [1_usize, 2, 3, 4] {
+        let fixed_order = width == 2;
+        assert_eq!(
+            fixed_order,
+            !prefix_admitted_at(&encoding, second, 0, width),
+            "width {width} disagrees about the first position"
+        );
+        assert!(
+            prefix_admitted_at(&encoding, first, 0, width),
+            "width {width} refuses the first prefix at the first position"
+        );
+    }
 }

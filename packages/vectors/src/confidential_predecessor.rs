@@ -66,6 +66,120 @@ pub const PREDECESSOR_PROGRAMS: [&[u8]; 2] = [&[0x51], &[0x51, 0x75, 0x51]];
 /// and the fixture digest is what detects the two drifting apart.
 pub const PREDECESSOR_AMOUNTS: [u64; 2] = [700_000_000, 300_000_000];
 
+/// The semantic amounts the THREE-output non-canceling predecessor's
+/// outputs carry, in fixed order.
+///
+/// They sum to the same total the dual-parity predecessor's do, so the
+/// issuing step funds exactly what it funded before and the two
+/// predecessors are alternatives rather than a larger ceremony.
+pub const TRIPLE_PREDECESSOR_AMOUNTS: [u64; 3] = [700_000_000, 200_000_000, 100_000_000];
+
+/// Which predecessor a ceremony funds.
+///
+/// # The whole difference, in one sentence
+///
+/// Two output blinders funded from an explicit input are ordered
+/// additive inverses and cancel; three are not and do not.
+///
+/// Both are funded identically — one explicit input, a zero input
+/// blinder sum, the same profiles, the same issuing step — and the
+/// arithmetic that separates them is a fact about the OUTPUT COUNT and
+/// nothing else. Three blinders summing to zero cancel in no pair: any
+/// two sum to the negation of the third, and no blinder here is ever
+/// zero, a derived one being searched until it is nonzero and a solved
+/// one being refused when it is not.
+///
+/// # Why this is not the chained precursor the register filed
+///
+/// The register's filed removal path was to chain a PRECURSOR
+/// SUBMISSION whose outputs do not cancel and merge two of those. The
+/// arithmetic it named is exactly the arithmetic here — "a three-output
+/// precursor's blinders sum to the coin it consumed, so any two of them
+/// sum to that total less the third" — and the difference is only which
+/// stage produces the coins.
+///
+/// It is a real difference and it is why this form was taken. A funding
+/// step's response carries the decoded coins WITH their openings, and a
+/// submission's response carries a transaction identity and mined bytes
+/// and no coin set at all; so reaching a non-canceling pair through a
+/// second submission stage would have meant building the coin-return
+/// path the ceremony does not have, while reaching it through a wider
+/// FUNDING stage needs nothing that does not already exist. The wall was
+/// the predecessor's arity, and the cheaper honest way through it is to
+/// fund a wider predecessor rather than to chain one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PredecessorShape {
+    /// Two outputs whose blinders are ordered additive inverses.
+    DualParity,
+    /// Three outputs whose blinders cancel in no pair.
+    TripleNonCanceling,
+}
+
+impl PredecessorShape {
+    /// The fixture handle this predecessor registers under.
+    #[must_use]
+    pub fn handle(self) -> target_elements_conformance::protocol::ConfidentialFixtureHandle {
+        match self {
+            Self::DualParity => predecessor_handle(),
+            Self::TripleNonCanceling => {
+                target_elements_conformance::confidential_fixture::triple_predecessor_handle()
+            }
+        }
+    }
+
+    /// The semantic amounts its outputs carry, in fixed order.
+    #[must_use]
+    pub const fn amounts(self) -> &'static [u64] {
+        match self {
+            Self::DualParity => &PREDECESSOR_AMOUNTS,
+            Self::TripleNonCanceling => &TRIPLE_PREDECESSOR_AMOUNTS,
+        }
+    }
+
+    /// The role each output declares, in fixed order.
+    ///
+    /// The triple's first two roles are the dual's, in the same order,
+    /// which is what lets a consumed-receipt name mean the same thing
+    /// against either: index zero is the primary output and index one is
+    /// the balancing one. The third output is another primary, and it is
+    /// the coin the merge does NOT spend — its blinder is what the
+    /// merged pair's sum is the negation of.
+    #[must_use]
+    pub const fn roles(self) -> &'static [FixtureOutputRole] {
+        match self {
+            Self::DualParity => &[FixtureOutputRole::Primary, FixtureOutputRole::Balancing],
+            Self::TripleNonCanceling => &[
+                FixtureOutputRole::Primary,
+                FixtureOutputRole::Balancing,
+                FixtureOutputRole::Primary,
+            ],
+        }
+    }
+
+    /// Which published owner each output pays, as an index into the two
+    /// owners the deployment publishes.
+    ///
+    /// The third output repeats the FIRST owner. Two outputs paying one
+    /// program is admissible here and is not admissible everywhere: the
+    /// dual-parity predecessor's own programs are distinct on purpose,
+    /// so that the funding record's binding census has an output to fail
+    /// on. This predecessor is not that fixture, its third coin is never
+    /// spent, and the deployment publishes two owners rather than three.
+    #[must_use]
+    pub const fn owner_indices(self) -> &'static [usize] {
+        match self {
+            Self::DualParity => &[0, 1],
+            Self::TripleNonCanceling => &[0, 1, 0],
+        }
+    }
+
+    /// How many outputs it funds.
+    #[must_use]
+    pub const fn outputs(self) -> usize {
+        self.amounts().len()
+    }
+}
+
 /// What the issuing step creates, so that the reserve the confidential
 /// step draws on exists at all.
 const ISSUE_OUTPUTS: u8 = 1;

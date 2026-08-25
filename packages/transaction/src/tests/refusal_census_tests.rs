@@ -204,7 +204,11 @@ fn every_materialization_refusal_is_censused(refusal: &Materialization) {
         | Materialization::OutputWitnessCensusMismatch
         | Materialization::OpeningBindingCensusMismatch
         | Materialization::SignerInputWouldExposeOpening { .. }
-        | Materialization::PerOutputMaterializationRefused => (),
+        | Materialization::PerOutputMaterializationRefused
+        | Materialization::FeeOutputProgramNotEmpty { .. }
+        | Materialization::FeeOutputCarriesAnOpening { .. }
+        | Materialization::FeeOutputValueZero { .. }
+        | Materialization::FeeOutputNotRecognizable { .. } => (),
     }
 }
 

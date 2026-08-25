@@ -64,7 +64,6 @@ use std::collections::BTreeMap;
 
 use linker::OwnerParameter;
 use linker::live_backend::LiveTransferRepresentationPlan;
-use target_elements_conformance::confidential_fixture::predecessor_handle;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
     NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationStepKind,
@@ -95,7 +94,7 @@ use target_elements_conformance::confidential_fixture::{
 use crate::confidential_materializer::{
     FirstPartyCommitmentCheck, ReferenceConfidentialMaterializer,
 };
-use crate::confidential_predecessor::PREDECESSOR_AMOUNTS;
+use crate::confidential_predecessor::{PredecessorShape, TRIPLE_PREDECESSOR_AMOUNTS};
 use crate::error::VectorError;
 use crate::live_owner_observation::printed_order;
 use crate::live_plan::{FIRST_SCALAR, SECOND_SCALAR, published_owner, reviewed_target};
@@ -129,6 +128,26 @@ struct Destination {
 /// moves is moved on an acceptance of THIS shape, and a representative is
 /// named as one rather than presented as a proof over every shape of its
 /// class.
+/// What the fee-bearing shape pays as its fee, in the protocol asset.
+///
+/// # Why this figure
+///
+/// It is the fee the sponsor arc's accepted control carried, so the two
+/// fee-bearing acceptances this workspace has recorded carry the same
+/// figure and a reader comparing them is comparing one number. That is
+/// the whole of the reason: nothing about the target requires this
+/// amount, and the asset is NOT the same one — the sponsor arc paid in
+/// the reserve asset and this shape pays in the disposable protocol asset
+/// its own consumed coin carries, because that is the only asset whose
+/// tally the fee can close.
+///
+/// It is nonzero, which is not a preference. A zero-value explicit output
+/// is admitted by the target only where its scriptPubKey is unspendable,
+/// and an empty script is not unspendable, so a zero fee output is
+/// refused outright — the fee-only row of the shape register records the
+/// same clause.
+const FEE_AMOUNT: u64 = 250;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrivateShape {
     /// One receipt in, three outputs: two recipients and one balancing
@@ -155,15 +174,51 @@ pub enum PrivateShape {
     /// inverse-pair predecessor would force a ZERO blinder, and that the
     /// registry refuses.
     StrictOneToOne,
+    /// ONE receipt in, one blinded output and one FEE output out.
+    ///
+    /// The first shape this lane builds that pays a fee at all. Every
+    /// identity the confidential lane has recorded was built sponsorless
+    /// and carries no fee output, so this one is the shape where the
+    /// target's fee rules are exercised rather than avoided.
+    ///
+    /// The blinded output is the BALANCING one and not the sole form: a
+    /// manifest of two outputs may not declare the sole form, and it does
+    /// not need to. The fee is held out of the solve at a zero blinder, so
+    /// the balancing output's blinder is solved over no others and comes
+    /// out as the consumed coin's own blinder -- nonzero, because a single
+    /// consumed coin's blinder is.
+    ///
+    /// The fee is in the PROTOCOL asset, which is the only asset that
+    /// makes the tally close. A fee in some other asset would leave the
+    /// protocol sum short by the fee.
+    OneToOneWithFee,
+    /// TWO receipts in and ONE output out: the private merge.
+    ///
+    /// The shape that met two walls. The first was the registry's
+    /// two-output floor, removed when the sole-balancing form landed; the
+    /// second was the zero blinder the only available predecessor forced,
+    /// its two output blinders being ordered additive inverses.
+    ///
+    /// This shape spends the THREE-output non-canceling predecessor
+    /// instead, and that is the whole of what makes it constructible.
+    /// Three blinders summing to zero cancel in no pair: consuming
+    /// outputs zero and one leaves a sum equal to the negation of output
+    /// two's blinder, which is a DERIVED blinder and therefore never
+    /// zero. The lone output's blinder is forced to that sum, so it is
+    /// nonzero for a reason that can be stated rather than hoped for --
+    /// and the registry would refuse a zero one by name if it were wrong.
+    PrivateMerge,
 }
 
 impl PrivateShape {
-    /// All four, in the order the restart runs them.
-    pub const ALL: [Self; 4] = [
+    /// All six, in the order the restart runs them.
+    pub const ALL: [Self; 6] = [
         Self::Split,
         Self::ManyToMany,
         Self::SeveralDistinctOwners,
         Self::StrictOneToOne,
+        Self::OneToOneWithFee,
+        Self::PrivateMerge,
     ];
 
     /// The ceremony's own name for the shape, used as the report
@@ -175,6 +230,8 @@ impl PrivateShape {
             Self::ManyToMany => "private-many-to-many",
             Self::SeveralDistinctOwners => "private-several-distinct-owners",
             Self::StrictOneToOne => "private-strict-one-to-one",
+            Self::OneToOneWithFee => "private-one-to-one-with-fee",
+            Self::PrivateMerge => "private-merge",
         }
     }
 
@@ -182,19 +239,29 @@ impl PrivateShape {
     /// it moves one.
     ///
     /// `None` is a real answer and not a missing entry. The strict
-    /// one-to-one is a shape of the CONSENSUS census, which enumerates
-    /// what the target's balance rule admits; the §15.2 positive private
-    /// table enumerates the guide's own classes and has no member for it.
-    /// An acceptance of it therefore moves a census entry and no row, and
-    /// naming a row here that the table does not carry would be inventing
-    /// one to have something to move.
+    /// one-to-one and the fee-bearing one-to-one are shapes of the
+    /// CONSENSUS census, which enumerates what the target's balance rule
+    /// admits; the §15.2 positive private table enumerates the guide's own
+    /// classes and has no member for either. An acceptance of one
+    /// therefore moves a census entry and no row, and naming a row here
+    /// that the table does not carry would be inventing one to have
+    /// something to move.
+    ///
+    /// The fee-bearing shape is emphatically NOT `private-sponsor-values`.
+    /// That row is about a sponsor paying another party's fee, whose
+    /// signer dependency this workspace does not close; this shape pays
+    /// its own fee out of its own consumed coin, and mapping it onto that
+    /// row would answer a question nobody asked it.
     #[must_use]
     pub const fn row_name(self) -> Option<&'static str> {
         match self {
             Self::Split => Some("private-split"),
             Self::ManyToMany => Some("private-many-to-many-representative"),
             Self::SeveralDistinctOwners => Some("private-several-distinct-owners"),
-            Self::StrictOneToOne => None,
+            Self::StrictOneToOne | Self::OneToOneWithFee => None,
+            // The merge DOES have a row, and it is the only shape this
+            // wave adds that has one.
+            Self::PrivateMerge => Some("private-merge"),
         }
     }
 
@@ -205,12 +272,60 @@ impl PrivateShape {
         format!("ctf-v1/wave-seven-{}-successor", self.name())
     }
 
+    /// Which predecessor this shape's ceremony funds.
+    ///
+    /// Every shape but the merge spends the dual-parity predecessor,
+    /// whose two coins are all any of them needs. The merge spends the
+    /// three-output non-canceling one, because the dual-parity coins are
+    /// an inverse pair and merging both halves of an inverse pair forces
+    /// a zero blinder -- a commitment that hides nothing while the tally
+    /// still balances, which the registry refuses and should.
+    #[must_use]
+    pub const fn predecessor(self) -> PredecessorShape {
+        match self {
+            Self::Split
+            | Self::ManyToMany
+            | Self::SeveralDistinctOwners
+            | Self::StrictOneToOne
+            | Self::OneToOneWithFee => PredecessorShape::DualParity,
+            Self::PrivateMerge => PredecessorShape::TripleNonCanceling,
+        }
+    }
+
+    /// How many of this shape's outputs are fee outputs.
+    ///
+    /// Read by a caller that needs to know which output-witness entries
+    /// are EXPECTED to be empty. A fee output carries an explicit value
+    /// and therefore no range proof, so a lane asserting a proof on every
+    /// entry would fail on the one shape that pays a fee — and loosening
+    /// that assertion to "some entries carry proofs" would stop it
+    /// catching a blinded output that lost its proof, which is the thing
+    /// it exists to catch.
+    #[must_use]
+    pub const fn fee_output_count(self) -> usize {
+        match self {
+            Self::Split
+            | Self::ManyToMany
+            | Self::SeveralDistinctOwners
+            | Self::StrictOneToOne
+            | Self::PrivateMerge => 0,
+            Self::OneToOneWithFee => 1,
+        }
+    }
+
     /// Which predecessor outputs this shape consumes, in fixed order.
     #[must_use]
     const fn consumed(self) -> &'static [ConsumedReceipt] {
         match self {
-            Self::Split | Self::StrictOneToOne => &[ConsumedReceipt::Primary],
-            Self::ManyToMany | Self::SeveralDistinctOwners => {
+            Self::Split | Self::StrictOneToOne | Self::OneToOneWithFee => {
+                &[ConsumedReceipt::Primary]
+            }
+            // The merge consumes the same two INDICES the two-input
+            // shapes do. Against the triple predecessor those indices
+            // carry the same two roles, and the difference that matters
+            // is the third output standing beside them: it is why the
+            // pair's blinders do not cancel.
+            Self::ManyToMany | Self::SeveralDistinctOwners | Self::PrivateMerge => {
                 &[ConsumedReceipt::Primary, ConsumedReceipt::Balancing]
             }
         }
@@ -269,7 +384,83 @@ impl PrivateShape {
                 amount: 700_000_000,
                 role: FixtureOutputRole::SoleBalancing,
             }],
+            // ONE receipt in, one blinded output and one fee. The fee's
+            // scalar is never read -- a fee output carries no program at
+            // all, which is most of what makes it a fee -- and it is
+            // written as the second owner's only so the destination
+            // literal has the shape its neighbours have.
+            Self::OneToOneWithFee => vec![
+                balancing(SECOND_SCALAR, 700_000_000 - FEE_AMOUNT),
+                Destination {
+                    scalar: SECOND_SCALAR,
+                    amount: FEE_AMOUNT,
+                    role: FixtureOutputRole::Fee,
+                },
+            ],
+            // 900_000_000 in across the triple predecessor's first two
+            // coins, ONE way out. The lone output declares the
+            // fully-solved form, exactly as the strict one-to-one's does;
+            // what is new is that the sum it is forced to comes from two
+            // coins rather than one, and does not cancel.
+            Self::PrivateMerge => vec![Destination {
+                scalar: SECOND_SCALAR,
+                amount: TRIPLE_PREDECESSOR_AMOUNTS[0] + TRIPLE_PREDECESSOR_AMOUNTS[1],
+                role: FixtureOutputRole::SoleBalancing,
+            }],
         }
+    }
+}
+
+/// What a sole-balancing output's FORCED blinder came out to be.
+///
+/// Four facts, none of them the blinder itself. A record that carried the
+/// scalar would be publishing an opening; what a reader needs is whether
+/// it is zero, and these say so alongside the arithmetic that makes the
+/// answer checkable.
+///
+/// `forced_blinder_is_the_consumed_sum` is the one that makes the other
+/// three mean anything. Without it a reader has the registry's word that
+/// the forced blinder is the consumed sum; with it the ceremony has
+/// summed the coins it is actually spending, independently of the
+/// registry's own solve, and compared.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ForcedBlinderCensus {
+    consumed_coins: usize,
+    consumed_sum_is_zero: bool,
+    forced_blinder_is_zero: bool,
+    forced_blinder_is_the_consumed_sum: bool,
+}
+
+impl ForcedBlinderCensus {
+    /// How many coins the sum was taken over.
+    #[must_use]
+    pub const fn consumed_coins(self) -> usize {
+        self.consumed_coins
+    }
+
+    /// Whether the consumed coins' blinders cancel.
+    ///
+    /// True for a merge of an inverse pair, which is exactly the case the
+    /// registry refuses.
+    #[must_use]
+    pub const fn consumed_sum_is_zero(self) -> bool {
+        self.consumed_sum_is_zero
+    }
+
+    /// Whether the forced blinder is the zero scalar.
+    ///
+    /// The question the whole census exists to answer. A blinded output
+    /// whose blinder is zero hides nothing, and nothing anywhere in this
+    /// workspace may claim hiding for one.
+    #[must_use]
+    pub const fn forced_blinder_is_zero(self) -> bool {
+        self.forced_blinder_is_zero
+    }
+
+    /// Whether the forced blinder is the sum the ceremony computed.
+    #[must_use]
+    pub const fn forced_blinder_is_the_consumed_sum(self) -> bool {
+        self.forced_blinder_is_the_consumed_sum
     }
 }
 
@@ -328,6 +519,7 @@ pub struct MultiShapeRecord {
     accepted_txid: Option<String>,
     reverification: Option<MultiShapeReverification>,
     refusal: Option<PrivateRestartRefusal>,
+    forced_blinder: Option<ForcedBlinderCensus>,
 }
 
 impl MultiShapeRecord {
@@ -347,6 +539,13 @@ impl MultiShapeRecord {
     #[must_use]
     pub const fn output_count(&self) -> usize {
         self.output_count
+    }
+
+    /// What the sole output's forced blinder came out to be, for a shape
+    /// that has one.
+    #[must_use]
+    pub const fn forced_blinder(&self) -> Option<ForcedBlinderCensus> {
+        self.forced_blinder
     }
 
     /// The disposable asset the run issued.
@@ -524,15 +723,80 @@ impl MultiShapePlanner {
         // receipt programs. Its own one-to-one successor is registered and
         // unused; this ceremony registers its own multi-output successor
         // against the same linked deployment.
-        let linked = link_and_register(ConsumedReceipt::Primary, printed)?;
+        let linked =
+            link_and_register(self.shape.predecessor(), ConsumedReceipt::Primary, printed)?;
         self.record.issued_asset = Some(printed.to_owned());
         self.record.predecessor_digest = Some(linked.predecessor_digest);
 
         let successor = self.register_successor(&linked)?;
         self.record.successor_digest = Some(successor.digest);
+        self.record.forced_blinder = self.census_the_forced_blinder(&linked, &successor)?;
         self.successor = Some(successor);
         self.linked = Some(linked);
         Ok(())
+    }
+
+    /// What the sole output's FORCED blinder is, as computed facts.
+    ///
+    /// # Why this is computed and not argued
+    ///
+    /// A sole-balancing output's blinder is not chosen; it is forced to
+    /// the sum of the consumed coins' blinders. When that sum is zero the
+    /// output commitment is exactly the value times the value generator
+    /// -- a point anybody recomputes from a guessed amount, carrying a
+    /// blinded output's form and none of its hiding -- so whether the sum
+    /// is zero is the difference between a merge worth building and one
+    /// that hides nothing.
+    ///
+    /// The argument that it is nonzero here is a good one: three blinders
+    /// summing to zero leave any two summing to the negation of the
+    /// third, and no blinder is ever zero. But an argument is not an
+    /// observation, and the whole discipline of this lane is that the
+    /// difference is stated rather than blurred. So the ceremony ASKS,
+    /// against the fixtures it actually registered, and writes the answer
+    /// into its own transcript where a reader can see it.
+    ///
+    /// `None` for a shape whose outputs are not a single solved one:
+    /// there is no forced blinder to census, which is a different fact
+    /// from a forced blinder that came out zero.
+    ///
+    /// # Errors
+    ///
+    /// [`PrivateRestartRefusal::PredecessorBlindersDoNotClose`] where a
+    /// consumed coin carries no opening or a blinder is not a readable
+    /// scalar.
+    fn census_the_forced_blinder(
+        &self,
+        linked: &LinkedDeployment,
+        successor: &Successor,
+    ) -> Result<Option<ForcedBlinderCensus>, PrivateRestartRefusal> {
+        let [sole] = successor.view.outputs() else {
+            return Ok(None);
+        };
+        let forced = sole
+            .value_blinder()
+            .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?;
+
+        let mut consumed = Vec::with_capacity(self.shape.consumed().len());
+        for receipt in self.shape.consumed() {
+            let blinder = linked
+                .predecessor_view
+                .outputs()
+                .get(receipt.index())
+                .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?
+                .value_blinder()
+                .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?;
+            consumed.push(*blinder);
+        }
+        let sum = target_elements_conformance::confidential_fixture::sum_blinders(&consumed)
+            .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?;
+
+        Ok(Some(ForcedBlinderCensus {
+            consumed_coins: consumed.len(),
+            consumed_sum_is_zero: sum == [0_u8; 32],
+            forced_blinder_is_zero: *forced == [0_u8; 32],
+            forced_blinder_is_the_consumed_sum: *forced == sum,
+        }))
     }
 
     /// Register this shape's successor: one output per destination, the
@@ -549,7 +813,16 @@ impl MultiShapePlanner {
                 Ok(ConfidentialFixtureOutput {
                     role: destination.role,
                     semantic_amount: destination.amount,
-                    output_program: private_program(&linked.abi, &destination.scalar)?,
+                    // A fee output's program is empty, and the registry
+                    // REQUIRES it empty of that role rather than merely
+                    // tolerating it. Deriving a receipt constructor here
+                    // and handing it over would be refused there, which is
+                    // the clause working.
+                    output_program: if destination.role == FixtureOutputRole::Fee {
+                        Vec::new()
+                    } else {
+                        private_program(&linked.abi, &destination.scalar)?
+                    },
                 })
             })
             .collect::<Result<_, PrivateRestartRefusal>>()?;
@@ -558,7 +831,7 @@ impl MultiShapePlanner {
         let (digest, view) = register_multi(
             &handle,
             *linked.asset.internal(),
-            self.input_blinder_sum(linked),
+            self.input_blinder_sum(linked)?,
             outputs,
         )
         .map_err(|_| PrivateRestartRefusal::FixtureNotRegistrable {
@@ -573,24 +846,48 @@ impl MultiShapePlanner {
     /// The successor's input blinder sum: the sum of the consumed
     /// predecessor coins' value blinders.
     ///
-    /// A one-input shape balances against that one coin's blinder. A
-    /// two-input shape consumes both predecessor outputs, whose blinders
-    /// are ordered additive inverses because the predecessor was
-    /// registered with a zero input blinder sum, so their sum is the zero
-    /// scalar. This is the term a two-input successor does not get for
-    /// free and a one-input successor does; it is stated from the
-    /// predecessor's structure rather than recomputed with a bignum this
-    /// crate does not carry.
-    #[must_use]
-    fn input_blinder_sum(&self, linked: &LinkedDeployment) -> [u8; 32] {
-        match self.shape.consumed() {
-            [single] => linked
+    /// # Summed over the coins, not stated from the fixture
+    ///
+    /// This used to answer a two-input shape with a literal zero, on the
+    /// ground that this ceremony's one predecessor is funded from an
+    /// explicit input and its two output blinders therefore come out
+    /// ordered additive inverses. That ground was sound and the answer was
+    /// right, for that predecessor. It was a statement about one manifest's
+    /// STRUCTURE standing in for a sum over the coins actually being spent,
+    /// and it was true of no other predecessor — a ceremony consuming two
+    /// coins of a wider one has a nonzero sum, and the stated zero would
+    /// have built a candidate whose value balance does not close, which is
+    /// a thing one learns from a chain.
+    ///
+    /// So the sum is computed, over exactly the coins the shape names as
+    /// consumed, through the conformance crate's own scalar arithmetic.
+    /// The inverse pair still sums to zero and the registry still refuses
+    /// that by name; what changed is that the zero is now an OBSERVATION
+    /// about two blinders rather than an assumption about one manifest.
+    ///
+    /// # Errors
+    ///
+    /// [`PrivateRestartRefusal::PredecessorBlindersDoNotClose`] where a
+    /// consumed index names no predecessor output, where that output
+    /// carries no opening, or where a blinder is not a readable scalar.
+    fn input_blinder_sum(
+        &self,
+        linked: &LinkedDeployment,
+    ) -> Result<[u8; 32], PrivateRestartRefusal> {
+        let mut blinders: Vec<[u8; 32]> = Vec::with_capacity(self.shape.consumed().len());
+        for consumed in self.shape.consumed() {
+            let output = linked
                 .predecessor_view
                 .outputs()
-                .get(single.index())
-                .map_or([0_u8; 32], |output| *output.value_blinder()),
-            _ => [0_u8; 32],
+                .get(consumed.index())
+                .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?;
+            let blinder = output
+                .value_blinder()
+                .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?;
+            blinders.push(*blinder);
         }
+        target_elements_conformance::confidential_fixture::sum_blinders(&blinders)
+            .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)
     }
 
     /// The confidential funding step, against the registered predecessor.
@@ -663,11 +960,11 @@ impl MultiShapePlanner {
             ));
             input_openings.push(PrivateInputOpening {
                 opening: FixtureOpeningReference::new(
-                    predecessor_handle().as_str().to_owned(),
+                    linked.predecessor.handle().as_str().to_owned(),
                     linked.predecessor_digest,
                     receipt.index(),
                 ),
-                explicit_amount: PREDECESSOR_AMOUNTS[receipt.index()],
+                explicit_amount: linked.predecessor.amounts()[receipt.index()],
                 zero_asset_blinder: [0_u8; SCALAR_BYTES],
             });
         }
@@ -712,6 +1009,12 @@ impl MultiShapePlanner {
                 ),
                 role: match destination.role {
                     FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
+                    // The fee role is stated rather than swept into the
+                    // catch-all. It used to fall through to `Balancing`,
+                    // which would have asked the materializer to solve a
+                    // blinder for an output that must not carry one — a
+                    // blinded fee, and not a fee.
+                    FixtureOutputRole::Fee => ConfidentialOutputRole::Fee,
                     // Both solving roles are the view's one solving role:
                     // the sole form is a solve over no others, which is
                     // the same instruction to the materializer.
@@ -729,7 +1032,7 @@ impl MultiShapePlanner {
 
         let fixtures = FrozenConfidentialFixtureView::new(BTreeMap::from([
             (
-                predecessor_handle().as_str().to_owned(),
+                linked.predecessor.handle().as_str().to_owned(),
                 linked.predecessor_view.clone(),
             ),
             (self.shape.successor_handle(), successor.view.clone()),
@@ -894,6 +1197,21 @@ pub fn render_multi_shape(record: &MultiShapeRecord) -> String {
             coin.matches_expectation(),
         );
     }
+    if let Some(census) = record.forced_blinder() {
+        // The forced blinder, as facts and never as bytes. A transcript
+        // carrying the scalar would be publishing an opening; what a
+        // reader needs is whether it is zero, and whether the ceremony
+        // checked that independently of the registry's own solve.
+        let _ = writeln!(
+            out,
+            "forced_blinder consumed_coins {} consumed_sum_is_zero {} \
+             forced_blinder_is_zero {} forced_blinder_is_the_consumed_sum {}",
+            census.consumed_coins(),
+            census.consumed_sum_is_zero(),
+            census.forced_blinder_is_zero(),
+            census.forced_blinder_is_the_consumed_sum(),
+        );
+    }
     let _ = writeln!(out, "receipt_leaves {}", record.receipt_leaves());
     let _ = writeln!(
         out,
@@ -954,6 +1272,112 @@ fn hex(bytes: [u8; 32]) -> String {
         let _ = write!(out, "{byte:02x}");
         out
     })
+}
+
+#[cfg(test)]
+mod byte_identity_tests {
+    use super::{MultiShapePlanner, PrivateShape, hex, run_of_record as run};
+
+    /// Every shape that ran BEFORE this wave still registers its
+    /// successor under the digest that run recorded.
+    ///
+    /// # What this is a check on
+    ///
+    /// This wave added two members to the shape vocabulary, a second
+    /// predecessor to the ceremony, a fee member to the materializer's
+    /// output roles, an optional opening to the projected view, and an
+    /// arity-general prefix rule on both sides of the executor wire. Any
+    /// one of those could have perturbed the derivation of a case that
+    /// already existed -- a transcript member emitted unconditionally, a
+    /// role code reassigned, a parity counter that settles one step
+    /// later -- and a perturbed derivation is a different fixture wearing
+    /// the same handle.
+    ///
+    /// The digests below were written down by ceremonies that ran against
+    /// a pinned node before any of it. Recomputing them re-derives every
+    /// blinder, every nonce input, every range-proof seed and every
+    /// commitment prefix of four fixtures whose successors a target
+    /// ACCEPTED, so the claim that nothing moved is a running check
+    /// rather than a sentence in a commit message.
+    ///
+    /// The predecessor half of the same claim is checked by the sibling
+    /// test in the private-restart module, which holds the dual-parity
+    /// predecessor and both one-to-one successors to their own recorded
+    /// digests.
+    #[test]
+    fn the_shapes_that_ran_before_this_wave_register_under_their_recorded_digests() {
+        // The genesis identity is not a term of any fixture digest, and
+        // this test would fail loudly if it became one.
+        let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
+        for (shape, expected) in [
+            (PrivateShape::Split, run::SPLIT_SUCCESSOR_DIGEST),
+            (PrivateShape::ManyToMany, run::MANY_TO_MANY_SUCCESSOR_DIGEST),
+            (
+                PrivateShape::SeveralDistinctOwners,
+                run::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
+            ),
+            (
+                PrivateShape::StrictOneToOne,
+                run::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST,
+            ),
+        ] {
+            let mut planner =
+                MultiShapePlanner::for_shape(shape, genesis).expect("the ceremony builds");
+            planner
+                .settle_asset(run::ISSUED_ASSET)
+                .expect("the run of record's own fixtures register");
+            assert_eq!(
+                planner
+                    .record()
+                    .successor_digest()
+                    .map(hex)
+                    .expect("the successor registered"),
+                expected,
+                "{}'s successor fixture drifted from the run of record",
+                shape.name(),
+            );
+        }
+    }
+
+    /// The two shapes this wave added record their own digests, and they
+    /// are not each other's and not anybody else's.
+    ///
+    /// A new fixture that happened to derive an existing case's digest
+    /// would mean the handle is not a term of the transcript, which is a
+    /// defect and not a coincidence.
+    #[test]
+    fn the_shapes_this_wave_added_carry_digests_of_their_own() {
+        let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
+        let mut digests = Vec::new();
+        for shape in PrivateShape::ALL {
+            let mut planner =
+                MultiShapePlanner::for_shape(shape, genesis).expect("the ceremony builds");
+            planner
+                .settle_asset(run::ISSUED_ASSET)
+                .expect("every shape's fixtures register");
+            digests.push(
+                planner
+                    .record()
+                    .successor_digest()
+                    .map(hex)
+                    .expect("the successor registered"),
+            );
+        }
+        assert_eq!(digests.len(), PrivateShape::ALL.len());
+
+        let mut distinct = digests.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(
+            distinct.len(),
+            digests.len(),
+            "two shapes registered the same successor fixture: {digests:?}",
+        );
+
+        // And the two new ones are the ones their runs recorded.
+        assert_eq!(digests[4], run::FEE_BEARING_SUCCESSOR_DIGEST);
+        assert_eq!(digests[5], run::MERGE_SUCCESSOR_DIGEST);
+    }
 }
 
 #[cfg(test)]
@@ -1097,7 +1521,7 @@ mod tests {
         assert_eq!(view.outputs().len(), 1);
         assert_eq!(
             view.outputs()[0].value_blinder(),
-            &NON_CANCELING_SUM,
+            Some(&NON_CANCELING_SUM),
             "the lone output's blinder is the input blinder sum itself",
         );
     }
@@ -1209,7 +1633,7 @@ mod tests {
 
         // A fee, and admitted. The blinded output balances; the fee is
         // held out of the solve at a zero blinder.
-        let projection = register_multi(
+        let (_, view) = register_multi(
             "ctf-v1/test-fee-role",
             ASSET,
             NON_CANCELING_SUM,
@@ -1218,21 +1642,42 @@ mod tests {
                 output(FixtureOutputRole::Fee, 100_000_000, Vec::new()),
             ],
         )
-        .expect_err("the fee-bearing manifest registers, and the PROJECTION stops");
+        .expect("the fee-bearing manifest registers AND projects");
 
-        // The typed stop, stated rather than worked around. The registry
-        // expresses the fee output; the materializer's own role vocabulary
-        // does not, so the projection refuses by name instead of mapping a
-        // fee onto the balancing role — which would have produced a
-        // BLINDED fee output, and a blinded fee is not a fee at all.
+        // This assertion used to read the other way. The projection
+        // refused `FeeRoleNotProjectable`, and the refusal was correct
+        // while the materializer had no fee stage: mapping a fee onto the
+        // balancing role to get past that line would have produced a
+        // BLINDED fee output, which is not a fee at the target. The stage
+        // exists now, so the refusal does not — the variant is gone from
+        // the vocabulary rather than left standing as a stopper nothing
+        // can return — and the test is updated to the new fact instead of
+        // being loosened to accept either.
+        assert_eq!(view.outputs().len(), 2);
+        let fee = &view.outputs()[1];
+        assert_eq!(
+            fee.role(),
+            transaction::live_materialize::ConfidentialOutputRole::Fee
+        );
+        assert_eq!(fee.semantic_amount(), 100_000_000);
         assert!(
-            matches!(
-                projection,
-                crate::live_proof_bearing_observation::ProofBearingRefusal::FeeRoleNotProjectable {
-                    output: 1
-                }
-            ),
-            "the fee-bearing shape stops at the projection, and the stop is typed: {projection:?}",
+            fee.output_program().is_empty(),
+            "a fee output's program is empty, which is most of what makes it one",
+        );
+
+        // The opening is ABSENT and not zero-filled. Three zeroed scalars
+        // would read like an opening, and an explicit output has none.
+        assert!(fee.value_blinder().is_none());
+        assert!(fee.nonce_input().is_none());
+        assert!(fee.rangeproof_seed().is_none());
+
+        // And the blinded output beside it still solves. The fee is held
+        // out of the solve at a zero blinder, so the sole balancing output
+        // takes the input blinder sum unchanged.
+        assert_eq!(
+            view.outputs()[0].value_blinder(),
+            Some(&NON_CANCELING_SUM),
+            "the fee contributes nothing to the solve",
         );
     }
 }
@@ -1392,8 +1837,125 @@ pub mod run_of_record {
     ///
     /// Recorded rather than assumed, so a shape whose cardinality drifted
     /// is readable here rather than inferred from a name.
-    pub const RECEIPT_LEAVES: [usize; 4] = [1, 2, 2, 1];
+    pub const RECEIPT_LEAVES: [usize; 6] = [1, 2, 2, 1, 1, 2];
 
     /// How many outputs each shape created, in the same order.
-    pub const OUTPUT_COUNTS: [usize; 4] = [3, 3, 2, 1];
+    pub const OUTPUT_COUNTS: [usize; 6] = [3, 3, 2, 1, 2, 1];
+
+    // --- The private merge: the row this wave moves --------------------
+
+    /// The merge's successor fixture digest.
+    pub const MERGE_SUCCESSOR_DIGEST: &str =
+        "e928537da63bae600cb1d8982dbd671b1c24ad4df71a697ba643492dad3c82fe";
+
+    /// The identity the target computed for the accepted private merge.
+    ///
+    /// TWO receipts consumed and ONE output created. The row
+    /// `private-merge` moves on THIS acceptance and cites it.
+    ///
+    /// It is the first acceptance of a shape that had met two walls: the
+    /// registry's two-output floor, and then the zero blinder its only
+    /// available predecessor forced. The floor was removed by the
+    /// sole-balancing form and the zero blinder by a predecessor whose
+    /// coins do not cancel, and neither removal was worth anything until
+    /// this identity existed.
+    pub const MERGE_ACCEPTED_TXID: &str =
+        "fe48b8c0feb8adeecc78fc78f91a2d24f43871672f3c083f06984383a2ff4a4d";
+
+    /// How many bytes the merge handed to the node.
+    pub const MERGE_SUBMITTED_BYTES: usize = 5_156;
+
+    /// The range-proof bytes its one output witness carried.
+    ///
+    /// One proof for one output, and two inputs' worth of witness beside
+    /// it -- which is why the merge is larger than the strict one-to-one
+    /// despite having the same output count.
+    pub const MERGE_PROOF_BYTES: [usize; 1] = [4_174];
+
+    /// The commitment prefixes the merge's three funded coins carried.
+    ///
+    /// NOT the admitted pair in fixed order, and that is the arity rule
+    /// working rather than a defect. A three-output fixture is held to
+    /// membership -- each commitment carries one of the two admitted
+    /// prefixes -- because the reviewed target contract states no
+    /// fixed-order convention for a third output. Two of these three are
+    /// the same prefix, which a fixed-order rule would have rejected and
+    /// which the contract does not.
+    pub const MERGE_PREDECESSOR_PREFIXES: [u8; 3] = [0x09, 0x08, 0x09];
+
+    /// Whether the merge's forced blinder came out ZERO.
+    ///
+    /// False, and observed rather than argued. The ceremony summed the
+    /// two coins it actually consumed, compared that sum with the blinder
+    /// the registry solved for the sole output, and wrote both answers
+    /// into its transcript. Nothing in this workspace claims hiding for a
+    /// zero-blinder commitment, so a merge that could not say this is
+    /// false would not be a merge worth recording.
+    pub const MERGE_FORCED_BLINDER_IS_ZERO: bool = false;
+
+    /// Whether the two consumed coins' blinders cancel.
+    ///
+    /// False. That is the whole difference between this merge and the one
+    /// the registry refuses: merging both halves of the dual-parity
+    /// predecessor's inverse pair gives a consumed sum of zero, and
+    /// merging two coins of a three-output predecessor does not, because
+    /// three blinders summing to zero cancel in no pair.
+    pub const MERGE_CONSUMED_PAIR_CANCELS: bool = false;
+
+    /// The merge's wall time, in seconds.
+    pub const MERGE_WALL_SECONDS: f64 = 10.9;
+
+    // --- The fee-bearing shape: a refusal, and NOT an acceptance -------
+
+    /// The fee-bearing one-to-one's successor fixture digest.
+    ///
+    /// The fixture registered, derived and PROJECTED. Recording the digest
+    /// is recording that much and no more.
+    pub const FEE_BEARING_SUCCESSOR_DIGEST: &str =
+        "d08a306819cc5ad713b393ecd956f2b5b38c7eb46de20069e8780620d79ed0cf";
+
+    /// No identity is minted for the fee-bearing shape, and this constant
+    /// exists to say so in the module acceptances are cited from.
+    ///
+    /// The target ACCEPTED NOTHING. Filing a non-acceptance among the
+    /// identities would be the one error a run of record exists to
+    /// prevent, so the shape's evidence is its own reproducible bytes and
+    /// the verdict the target returned, both recorded below.
+    pub const FEE_BEARING_ACCEPTED_IDENTITY: Option<&str> = None;
+
+    /// How many bytes the fee-bearing one-to-one handed to the node.
+    pub const FEE_BEARING_SUBMITTED_BYTES: usize = 4_870;
+
+    /// The output-witness entries the fee-bearing candidate carried.
+    ///
+    /// This array is the fee projection's own evidence, and it is the
+    /// reason the run is worth recording despite the refusal. The blinded
+    /// output carries a range proof of the usual size; the FEE output
+    /// carries an empty entry. A fee that had been mapped onto the
+    /// balancing role would read `[4_174, 4_174]` here — a blinded fee,
+    /// and not a fee at all.
+    pub const FEE_BEARING_PROOF_BYTES: [usize; 2] = [4_174, 0];
+
+    /// The verdict the target returned, verbatim and unmapped.
+    ///
+    /// A script-path rejection, at the workspace's OWN receipt covenant
+    /// rather than at any confidential rule. The candidate's value balance
+    /// was never reached and nothing here is a statement about the target's
+    /// fee rules: Elements admits a fee output in a non-policy asset at
+    /// consensus and at policy alike, and this node runs with a zero
+    /// minimum relay feerate, so the transaction did not fail for carrying
+    /// a fee.
+    ///
+    /// What it failed is the covenant the shape selection built for it.
+    /// The request states two destinations, the reviewed live-transfer
+    /// shape vocabulary reads a two-destination sponsorless shape as TWO
+    /// RECEIPT OUTPUTS, and the receipt covenant therefore requires the
+    /// second output to carry the second owner's private receipt
+    /// constructor program. The second output is the fee, whose program is
+    /// empty, so the comparison fails.
+    pub const FEE_BEARING_OBSERVED_DETAIL: &str =
+        "mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)";
+
+    /// The fee-bearing run's wall time, in seconds.
+    pub const FEE_BEARING_WALL_SECONDS: f64 = 12.4;
 }

@@ -74,7 +74,7 @@ use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message}
 use transaction::taproot::Digest32;
 
 use crate::confidential_materializer::FirstPartyCommitmentCheck;
-use crate::confidential_predecessor::FUND_STEP;
+use crate::confidential_predecessor::{FUND_STEP, PredecessorShape};
 use crate::error::VectorError;
 use crate::live_owner_observation::{asset_of, printed_order};
 use crate::live_plan::reviewed_target;
@@ -354,9 +354,10 @@ impl ConservationNegativePlanner {
 
     /// Link and register from the issued asset.
     fn settle_asset(&mut self, printed: &str) -> Result<(), ConservationNegativeRefusal> {
-        let linked = link_and_register(self.consumed, printed).map_err(|refusal| {
-            ConservationNegativeRefusal::LinkOrRegisterRefused(format!("{refusal:?}"))
-        })?;
+        let linked = link_and_register(PredecessorShape::DualParity, self.consumed, printed)
+            .map_err(|refusal| {
+                ConservationNegativeRefusal::LinkOrRegisterRefused(format!("{refusal:?}"))
+            })?;
         self.record.issued_asset = Some(printed.to_owned());
         self.record.predecessor_digest = Some(linked.predecessor_digest());
         self.record.successor_digest = Some(linked.successor_digest());

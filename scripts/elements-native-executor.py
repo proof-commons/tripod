@@ -811,7 +811,52 @@ CONFIDENTIAL_FIXTURE_CATALOGUE = {
             {"role": "balancing", "semantic_amount": 300_000_000},
         ),
     },
+    # The three-output predecessor whose coins do NOT cancel in any pair.
+    #
+    # Funded exactly as the dual-parity one is -- one explicit input, the
+    # same zero input blinder sum, the same profiles -- and different in
+    # its output count alone. That is the whole of the arithmetic: two
+    # blinders summing to zero are ordered additive inverses and cancel,
+    # while three summing to zero cancel in no pair, any two of them
+    # summing to the negation of the third.
+    #
+    # The amounts sum to the same total the dual-parity fixture's do, so
+    # the issuing step funds what it funded before and the two are
+    # alternatives rather than a larger ceremony.
+    "ctf-v1/predecessor-triple-noncanceling": {
+        "retry_limit": CONFIDENTIAL_MAX_PARITY_COUNTER,
+        "input_blinder_sum": bytes(32),
+        "outputs": (
+            {"role": "primary", "semantic_amount": 700_000_000},
+            {"role": "balancing", "semantic_amount": 200_000_000},
+            {"role": "primary", "semantic_amount": 100_000_000},
+        ),
+    },
 }
+
+
+def confidential_prefixes_admitted(prefixes: tuple) -> bool:
+    """Whether a case's serialized commitment prefixes satisfy the rule
+    its arity states.
+
+    Two outputs are held to the admitted pair IN FIXED ORDER, so the
+    dual-parity predecessor carries one of each and exercises both
+    admitted forms rather than one of them twice. Every other width is
+    held to membership: each commitment carries one of the two admitted
+    prefixes, which is the whole of what the reviewed target contract
+    states about a third output or a lone one. There is no reviewed
+    fixed-order convention past the pair, and inventing one here would be
+    this adapter deciding a question the contract does not answer.
+
+    This mirrors `prefixes_match` in the first-party fixture registry and
+    the same rule on the record side, deliberately: the two sides derive
+    independently and the digest is what detects them drifting apart, so
+    a rule held on one side alone would surface as a digest mismatch
+    rather than as the disagreement it is.
+    """
+    if len(prefixes) == 2:
+        return prefixes == CONFIDENTIAL_VALUE_PREFIXES
+    return all(prefix in CONFIDENTIAL_VALUE_PREFIXES for prefix in prefixes)
 
 
 def confidential_tagged_hash(tag: bytes, message: bytes) -> bytes:
@@ -2926,8 +2971,9 @@ class ConfidentialMaterializer:
         own digest.
 
         The parity search is the bounded deterministic one: upward from
-        zero until the fixed-order serialized commitment prefixes are
-        exactly the admitted pair, and a typed refusal at the bound.
+        zero until the serialized commitment prefixes satisfy the rule
+        their arity states, and a typed refusal at the bound. See
+        `confidential_prefixes_admitted` for the rule.
         """
         entry = CONFIDENTIAL_FIXTURE_CATALOGUE[handle]
         outputs = entry["outputs"]
@@ -2942,7 +2988,7 @@ class ConfidentialMaterializer:
         for parity in range(bound + 1):
             openings = self.derive_at(handle, outputs, programs, input_sum, generator, parity)
             prefixes = tuple(opening["value_commitment"][0] for opening in openings)
-            if prefixes == CONFIDENTIAL_VALUE_PREFIXES:
+            if confidential_prefixes_admitted(prefixes):
                 digest = confidential_tagged_hash(
                     CONFIDENTIAL_DIGEST_TAG,
                     confidential_digest_transcript(
