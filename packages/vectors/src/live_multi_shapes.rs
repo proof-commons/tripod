@@ -1366,6 +1366,27 @@ pub mod run_of_record {
     /// The strict one-to-one's wall time, in seconds.
     pub const STRICT_ONE_TO_ONE_WALL_SECONDS: f64 = 11.2;
 
+    /// The path the accepted strict one-to-one actually took, recorded
+    /// because a shape's acceptance is only as strong as the door it came
+    /// through.
+    ///
+    /// It crossed BOTH. The adapter offers a submission to
+    /// `testmempoolaccept` first and reports an acceptance only where that
+    /// answered allowed, then confirms it with `generateblock` so the
+    /// acceptance is one by block validation too. So this shape was
+    /// admitted by mempool policy and then included in a block, rather
+    /// than reaching a block as a package child or by consensus retry
+    /// after a policy refusal — the retry path the adapter keeps for a
+    /// transaction standardness turns away.
+    ///
+    /// What that does NOT establish is anything about relay on a network
+    /// this workspace does not run. The chain is a disposable development
+    /// one the run created and destroyed, carrying its own policy, and the
+    /// transaction pays no fee because it carries no fee output at all.
+    /// The claim is that this node's own mempool admitted it, which is
+    /// what was observed and the whole of what is recorded.
+    pub const STRICT_ONE_TO_ONE_CROSSED_RELAY_AND_BLOCK: bool = true;
+
     /// How many receipt inputs each shape consumed, in the order the
     /// restart runs them.
     ///
