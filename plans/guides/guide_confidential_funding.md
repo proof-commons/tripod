@@ -2,8 +2,8 @@
 
 > **Status:** Draft execution guide; not yet executed; working document outside the plans census until closeout
 > **Phase:** Phase 5 — Live Receipt Transfer; this guide completes the arc's private half
-> **Category:** INTERMEDIATE GUIDE — the unnumbered category the owner ruled; it must be CLOSED before Guide 14 is drafted
-> **Concept of record:** [the confidential test materialization and funding concept](plans/guides/guide_confidential_funding_concept.md); its three accepted owner rulings are carried verbatim below and are never reopened here
+> **Category:** INTERMEDIATE GUIDE — an unnumbered category of its own; it must be CLOSED before Guide 14 is drafted
+> **Concept of record:** [the confidential test materialization and funding concept](guide_confidential_funding_concept.md); its three accepted rulings are carried verbatim below and are never reopened here
 > **Entry:** the reproduced `NoConfidentialPredecessorCanBeFunded` blocker, the recorded Phase-5 stopped result, and the three accepted charter rulings
 > **Affected packages:** `target-elements-conformance`, `transaction`, `vectors`; the native Elements executor where it implements the first-party funding wire
 > **Supersedes as execution direction:** the confidential-funding concept draft, and scalar-only funding as the route to Guide-13 private evidence
@@ -529,7 +529,7 @@ Bounds are constants and are part of the contract: `MAX_PARITY_COUNTER: u16 = 40
 
 One output per transaction is marked `Balancing` by the fixture and the rest are derived. The balancing blinder is then solved as the confidential input blinder sum minus the other outputs' blinder sum, modulo the group order. For the first predecessor the input contributes zero, output zero is `Primary`, output one is `Balancing`, and the two blinders are ordered additive inverses — which is the concept's opposite-sum requirement expressed as an instance of the general rule rather than as a special case.
 
-The parity search runs the parity counter from zero until the fixed-order serialized commitment prefixes are exactly `[0x08, 0x09]`. `target_elements::ConfidentialFieldEncoding::admits_prefix` and `committed_prefixes` (both EXIST) are the target-side authority on which prefixes are admitted, and the search compares against them rather than against a literal written here twice.
+The parity search runs the parity counter from zero until the fixed-order serialized commitment prefixes are exactly `0x08` then `0x09`. `target_elements::ConfidentialFieldEncoding::admits_prefix` and `committed_prefixes` (both EXIST) are the target-side authority on which prefixes are admitted, and the search compares against them rather than against a literal written here twice.
 
 Order is fixed by the fixture. It is never fixed by a commitment prefix, an amount, or the order a retry happened to finish in.
 
