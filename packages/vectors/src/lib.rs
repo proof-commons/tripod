@@ -43,6 +43,7 @@ pub mod projection;
 pub mod render;
 pub mod report;
 pub mod resource_study;
+pub mod shape_census;
 pub mod subject;
 pub mod violation;
 
