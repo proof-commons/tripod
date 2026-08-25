@@ -135,23 +135,61 @@ const ISSUE_AMOUNT_PER_OUTPUT: u64 = 1;
 /// The program the issuing step pays into.
 const ISSUE_PROGRAM: [u8; 1] = [0x51];
 
-/// Which predecessor output the control spends.
+/// Which of the predecessor's two outputs one control consumes.
 ///
-/// The primary one, and only that one. A one-to-one control consumes one
-/// receipt, so the balancing predecessor output is funded and left
-/// alone.
-const SPENT_INDEX: usize = 0;
-
-/// The recipient's share of the consumed receipt.
-const RECIPIENT_AMOUNT: u64 = 500_000_000;
-
-/// What goes back to the sender as change, which is also the output that
-/// absorbs the blinder residue.
+/// # Why this is a parameter and not a constant
 ///
-/// The two sum to `PREDECESSOR_AMOUNTS[SPENT_INDEX]`, which is what
-/// conservation means on this lane and is checked by the target rather
-/// than asserted here.
-const CHANGE_AMOUNT: u64 = 200_000_000;
+/// Step two of the restart order asks for both predecessor commitment
+/// parities exercised in complete accepted successors, and the two
+/// parities are carried by the two predecessor outputs. So the ceremony
+/// runs once per output rather than once, and the parity a run
+/// exercised is read off the coin the node reported rather than
+/// inferred from which output was chosen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConsumedReceipt {
+    /// The predecessor's primary output.
+    Primary,
+    /// The predecessor's balancing output.
+    Balancing,
+}
+
+impl ConsumedReceipt {
+    /// Both, in the order the restart runs them.
+    pub const ALL: [Self; 2] = [Self::Primary, Self::Balancing];
+
+    /// Which predecessor output this is.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Primary => 0,
+            Self::Balancing => 1,
+        }
+    }
+
+    /// The ceremony's own name for the run.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Balancing => "balancing",
+        }
+    }
+
+    /// The recipient's share and the sender's change, in that order.
+    ///
+    /// The two sum to the consumed receipt's own semantic amount, which
+    /// is what conservation means on this lane. It is checked by the
+    /// target rather than asserted here, and a split that did not add up
+    /// would be refused by the target's commitment balance rather than
+    /// by this module.
+    #[must_use]
+    pub const fn split(self) -> [u64; 2] {
+        match self {
+            Self::Primary => [500_000_000, 200_000_000],
+            Self::Balancing => [200_000_000, 100_000_000],
+        }
+    }
+}
 
 /// The auxiliary value every signature here is taken with.
 ///
@@ -284,6 +322,8 @@ pub struct PrivateRestartRecord {
     predecessor_digest: Option<[u8; 32]>,
     successor_digest: Option<[u8; 32]>,
     coins: Vec<RestartConfidentialCoin>,
+    consumed_receipt: Option<&'static str>,
+    consumed_commitment_prefix: Option<u8>,
     receipt_leaves: usize,
     output_witness_proof_bytes: Vec<usize>,
     submitted_bytes: usize,
@@ -317,6 +357,24 @@ impl PrivateRestartRecord {
     #[must_use]
     pub fn coins(&self) -> &[RestartConfidentialCoin] {
         &self.coins
+    }
+
+    /// Which predecessor output this run consumed.
+    #[must_use]
+    pub const fn consumed_receipt(&self) -> Option<&'static str> {
+        self.consumed_receipt
+    }
+
+    /// The commitment prefix the consumed coin carried, as the NODE
+    /// reported it.
+    ///
+    /// The parity this run exercised. Read off the observed commitment
+    /// rather than inferred from which output was chosen, so a run whose
+    /// fixture and whose chain disagreed about parity would report the
+    /// chain's answer.
+    #[must_use]
+    pub const fn consumed_commitment_prefix(&self) -> Option<u8> {
+        self.consumed_commitment_prefix
     }
 
     /// How many receipt inputs the control consumed.
@@ -415,6 +473,7 @@ struct LinkedDeployment {
 /// The Wave-5 restart ceremony, step one.
 pub struct PrivateRestartPlanner {
     stage: Stage,
+    consumed: ConsumedReceipt,
     genesis_block_hash: Digest32,
     linked: Option<LinkedDeployment>,
     submitted: Option<Vec<u8>>,
@@ -431,9 +490,23 @@ impl PrivateRestartPlanner {
     /// [`VectorError::LiveSubstrateUnavailable`] where the reviewed
     /// target does not build.
     pub fn new(printed_genesis_identity: Digest32) -> Result<Self, VectorError> {
+        Self::spending(printed_genesis_identity, ConsumedReceipt::Primary)
+    }
+
+    /// The ceremony consuming one named predecessor output.
+    ///
+    /// # Errors
+    ///
+    /// [`VectorError::LiveSubstrateUnavailable`] where the reviewed
+    /// target does not build.
+    pub fn spending(
+        printed_genesis_identity: Digest32,
+        consumed: ConsumedReceipt,
+    ) -> Result<Self, VectorError> {
         reviewed_target()?;
         Ok(Self {
             stage: Stage::Issue,
+            consumed,
             genesis_block_hash: printed_order(printed_genesis_identity),
             linked: None,
             submitted: None,
@@ -512,7 +585,7 @@ impl PrivateRestartPlanner {
         // and this one does not.
         let consumed_blinder = *predecessor_view
             .outputs()
-            .get(SPENT_INDEX)
+            .get(self.consumed.index())
             .ok_or(PrivateRestartRefusal::PredecessorBlindersDoNotClose)?
             .value_blinder();
 
@@ -520,7 +593,7 @@ impl PrivateRestartPlanner {
             SUCCESSOR_HANDLE,
             commit_order,
             consumed_blinder,
-            [RECIPIENT_AMOUNT, CHANGE_AMOUNT],
+            self.consumed.split(),
             // The recipient is the second owner and the change goes back
             // to the first, so the two programs are the two
             // constructors in the other order.
@@ -595,6 +668,18 @@ impl PrivateRestartPlanner {
             coins.push(self.observed_coin(index, funded)?);
         }
         self.record.coins = coins;
+        self.record.consumed_receipt = Some(self.consumed.name());
+        self.record.consumed_commitment_prefix = self
+            .record
+            .coins
+            .get(self.consumed.index())
+            .and_then(|coin| match coin.value() {
+                ValueField::Commitment(commitment) => commitment.first().copied(),
+                // A confidential coin the node reported as explicit has
+                // no parity to read, and inventing one would be
+                // reporting a fact about the chain nobody observed.
+                _ => None,
+            });
         Ok(())
     }
 
@@ -656,7 +741,7 @@ impl PrivateRestartPlanner {
         let coin = self
             .record
             .coins
-            .get(SPENT_INDEX)
+            .get(self.consumed.index())
             .ok_or(PrivateRestartRefusal::FundingCreatedNoPredecessor)?;
 
         // The view is the node's report of the coin, not the ceremony's
@@ -681,8 +766,8 @@ impl PrivateRestartPlanner {
         let request = LiveTransferRequest::new(
             [coin.outpoint()],
             [
-                destination(recipient, RECIPIENT_AMOUNT)?,
-                destination(sender, CHANGE_AMOUNT)?,
+                destination(recipient, self.consumed.split()[0])?,
+                destination(sender, self.consumed.split()[1])?,
             ],
             LiveTransferRepresentationPlan::PrivateCommitted,
             RequestedForm::Sponsorless,
@@ -701,9 +786,9 @@ impl PrivateRestartPlanner {
                 opening: FixtureOpeningReference::new(
                     predecessor_handle().as_str().to_owned(),
                     linked.predecessor_digest,
-                    SPENT_INDEX,
+                    self.consumed.index(),
                 ),
-                explicit_amount: PREDECESSOR_AMOUNTS[SPENT_INDEX],
+                explicit_amount: PREDECESSOR_AMOUNTS[self.consumed.index()],
                 zero_asset_blinder: [0_u8; SCALAR_BYTES],
             }],
             vec![
@@ -1039,6 +1124,18 @@ pub fn render_private_restart(record: &PrivateRestartRecord) -> String {
             coin.matches_expectation(),
         );
     }
+    let _ = writeln!(
+        out,
+        "consumed_receipt {}",
+        record.consumed_receipt().unwrap_or("none"),
+    );
+    let _ = writeln!(
+        out,
+        "consumed_commitment_prefix {}",
+        record
+            .consumed_commitment_prefix()
+            .map_or_else(|| "none".to_owned(), |prefix| format!("{prefix:#04x}")),
+    );
     let _ = writeln!(out, "receipt_leaves {}", record.receipt_leaves());
     let _ = writeln!(
         out,
@@ -1092,6 +1189,59 @@ pub fn render_private_restart(record: &PrivateRestartRecord) -> String {
     out
 }
 
+/// The run of record: what one execution of step one observed.
+///
+/// # Why the observation is a constant and not a stored file
+///
+/// The evidence a run produces is the observation, and an observation
+/// nobody can name is not evidence. These constants are the identities
+/// and figures ONE run against a real node produced, written down so
+/// that a later reader can ask the chain the same question, and so that
+/// a claim made anywhere in this workspace about step one can be traced
+/// to a transaction identity rather than to a test having been written.
+///
+/// It re-runs nothing and proves nothing by existing. What it does is
+/// make the run's own answer quotable.
+///
+/// The target: Elements Core v28.99.0-b7fc5d080a7e, at the pinned tip
+/// the lane binds itself to, on a disposable development chain the run
+/// created and destroyed.
+pub mod run_of_record {
+    /// The disposable asset the run issued.
+    pub const ISSUED_ASSET: &str =
+        "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
+
+    /// The predecessor fixture's digest.
+    pub const PREDECESSOR_DIGEST: &str =
+        "1d5dc685de3ab2cd6d9baee7169993c0f7ab5df20a48a4bfb553ce9ec51f39fc";
+
+    /// The successor fixture's digest.
+    pub const SUCCESSOR_DIGEST: &str =
+        "f28590a2c927b62e356dd7f79bc450d51917135ecc99c6c4bba2053b06d48fcc";
+
+    /// The identity the target computed for the accepted control.
+    ///
+    /// The whole of step one's evidence, in one string. Every row this
+    /// wave moves is moved on THIS acceptance and cites it.
+    pub const ACCEPTED_TXID: &str =
+        "4571a077826d45f64402a5c83ac9c0454fe42cf53b75f7aac2c8d07b574ad152";
+
+    /// How many bytes were handed to the node.
+    pub const SUBMITTED_BYTES: usize = 9_136;
+
+    /// The range-proof bytes each of the candidate's outputs carried.
+    pub const OUTPUT_WITNESS_PROOF_BYTES: [usize; 2] = [4_174, 4_174];
+
+    /// How many receipt inputs the control consumed.
+    ///
+    /// One. It is a one-to-one control, and the figure is here so that a
+    /// later reader does not have to take the word "one-to-one" for it.
+    pub const RECEIPT_LEAVES: usize = 1;
+
+    /// The run's wall time, in seconds.
+    pub const WALL_SECONDS: f64 = 11.5;
+}
+
 /// One digest as its printed spelling.
 fn hex(bytes: [u8; 32]) -> String {
     use std::fmt::Write as _;
@@ -1104,10 +1254,7 @@ fn hex(bytes: [u8; 32]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        CHANGE_AMOUNT, PrivateRestartPlanner, PrivateRestartRecord, RECIPIENT_AMOUNT,
-        render_private_restart,
-    };
+    use super::{PrivateRestartPlanner, PrivateRestartRecord, render_private_restart};
     use crate::confidential_predecessor::PREDECESSOR_AMOUNTS;
     use transaction::taproot::Digest32;
 
@@ -1116,10 +1263,15 @@ mod tests {
         // Not a claim that the target agrees. A statement that the
         // amounts this ceremony asks for add up, so that a target
         // refusal cannot be attributed to arithmetic nobody did.
-        assert_eq!(
-            RECIPIENT_AMOUNT + CHANGE_AMOUNT,
-            PREDECESSOR_AMOUNTS[super::SPENT_INDEX],
-        );
+        for consumed in super::ConsumedReceipt::ALL {
+            let [recipient, change] = consumed.split();
+            assert_eq!(
+                recipient + change,
+                PREDECESSOR_AMOUNTS[consumed.index()],
+                "{} does not conserve",
+                consumed.name(),
+            );
+        }
     }
 
     #[test]
@@ -1132,6 +1284,28 @@ mod tests {
         assert!(rendered.contains("produced_an_accepted_control false"));
         assert!(rendered.contains("observed_layer none"));
         assert!(rendered.contains("moves_the_sponsor_row false"));
+    }
+
+    #[test]
+    fn the_run_of_record_names_one_acceptance_and_one_receipt() {
+        // The figures are the run's, and this checks their SHAPE rather
+        // than re-deriving them: an identity of the right width, one
+        // receipt consumed, and two outputs each carrying a real proof.
+        // A run of record whose numbers disagreed with its own claim
+        // would be the one thing it exists to prevent.
+        use super::run_of_record as run;
+
+        assert_eq!(run::ACCEPTED_TXID.len(), 64);
+        assert_eq!(run::PREDECESSOR_DIGEST.len(), 64);
+        assert_ne!(run::PREDECESSOR_DIGEST, run::SUCCESSOR_DIGEST);
+        assert_eq!(run::RECEIPT_LEAVES, 1);
+        assert_eq!(run::OUTPUT_WITNESS_PROOF_BYTES.len(), 2);
+        assert!(
+            run::OUTPUT_WITNESS_PROOF_BYTES
+                .iter()
+                .all(|bytes| *bytes > 2)
+        );
+        assert!(run::SUBMITTED_BYTES > run::OUTPUT_WITNESS_PROOF_BYTES.iter().sum::<usize>());
     }
 
     #[test]

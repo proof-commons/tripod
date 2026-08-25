@@ -827,6 +827,39 @@ fn check_proof_bearing_record(
 #[test]
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_private_one_to_one_control_is_submitted_to_a_real_target() {
+    use vectors::live_private_restart::ConsumedReceipt;
+
+    run_one_private_control(ConsumedReceipt::Primary, "private-restart-control");
+}
+
+/// The restart order's second step: the other predecessor commitment
+/// parity, in a complete accepted successor.
+///
+/// # What this run is for, and why it is a second run
+///
+/// Step two asks for both predecessor commitment parities exercised in
+/// complete accepted successors. The two parities are carried by the
+/// predecessor's two outputs, so the honest way to exercise both is to
+/// consume each of them in its own complete successor rather than to
+/// assert that a candidate touching both must have covered them.
+///
+/// Its entry condition is step one's observed acceptance, which is why
+/// it is a separate test and not a loop: a lane that ran both and
+/// reported one number could not say which of them the order was
+/// entitled to.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_other_commitment_parity_is_exercised_in_a_complete_successor() {
+    use vectors::live_private_restart::ConsumedReceipt;
+
+    run_one_private_control(ConsumedReceipt::Balancing, "private-restart-parity");
+}
+
+/// One private control, consuming one named predecessor output.
+fn run_one_private_control(
+    consumed: vectors::live_private_restart::ConsumedReceipt,
+    extension: &str,
+) {
     use vectors::live_private_restart::{PrivateRestartPlanner, render_private_restart};
 
     let executor =
@@ -838,7 +871,7 @@ fn one_private_one_to_one_control_is_submitted_to_a_real_target() {
     let base = environment("TRIPOD_LIVE_REPORT")
         .map(PathBuf::from)
         .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension("private-restart-control");
+    let report = base.with_extension(extension);
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -864,8 +897,8 @@ fn one_private_one_to_one_control_is_submitted_to_a_real_target() {
         ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
     );
 
-    let mut planner =
-        PrivateRestartPlanner::new(identifier(&genesis)).expect("the restart ceremony builds");
+    let mut planner = PrivateRestartPlanner::spending(identifier(&genesis), consumed)
+        .expect("the restart ceremony builds");
     let started = Instant::now();
     let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
@@ -932,6 +965,16 @@ fn one_private_one_to_one_control_is_submitted_to_a_real_target() {
             "the accepted witness does not verify against the recomputed message",
         );
     }
+
+    // The parity this run exercised is the node's answer about the coin
+    // it consumed, and it is one of the two the target admits.
+    let prefix = record
+        .consumed_commitment_prefix()
+        .expect("a consumed confidential coin carries a commitment prefix");
+    assert!(
+        prefix == 0x08 || prefix == 0x09,
+        "the node reported a commitment prefix outside the admitted pair: {prefix:#04x}",
+    );
 
     // The run says in its own bytes what it did not establish.
     assert!(rendered.contains("evidences_no_negative_case true"));
