@@ -479,9 +479,31 @@ fn cover(side: FieldSide, total: u16, ranges: &[LiveFamilyRange]) -> Vec<FamilyR
 ///
 /// The other half of §10.4 — that no output carrying the protocol asset
 /// lies outside this range — is not here either, and is not owed: it is
-/// [`live_sponsor_isolation_fragment`]'s, which requires the reserve
+/// [`live_sponsor_isolation_fragment`]'s, which states the admitted
 /// asset at every output position this range does not hold, and the
 /// exact output count, which leaves no third kind of position.
+///
+/// # The one position where that asset is the protocol asset
+///
+/// A sponsorless shape that pays its own fee carries the protocol asset
+/// at its fee position, and that position is outside this range. The
+/// closure argument survives, and it is worth saying exactly why rather
+/// than leaving it to be re-derived.
+///
+/// What §10.4 forbids is an *unaccounted* protocol-asset output — value
+/// leaving the covenant's census through a position no fragment speaks
+/// for. The fee position is not that. It is declared by the shape, it
+/// sits at an index the exact output count fixes, and the isolation
+/// fragment names both its asset and its form there, so it is spoken for
+/// as completely as any destination is. What it is not is a *receipt*,
+/// and that is why it is outside this range rather than inside it.
+///
+/// The amount is not bounded here and is not owed either: under the
+/// private plan the conservation is the target's own tally, which counts
+/// the fee like every other output, and §1.9 forbids this leaf reading
+/// an amount to bound it with. An owner who signs a transfer paying most
+/// of its value to fees has authorized exactly that, which is a
+/// different thing from value escaping unnoticed.
 ///
 /// # Errors
 ///
@@ -707,23 +729,40 @@ pub fn live_sponsor_isolation_fragment(
     }
 
     if shape.fee() == FeePresence::Present {
+        // WHICH ASSET THE FEE CARRIES FOLLOWS WHO FUNDED IT, and this is
+        // forced by the target's own tally rather than chosen here.
+        //
+        // A sponsored form's fee is paid out of the sponsor region, whose
+        // inputs carry the reserve asset, so the fee output carries the
+        // reserve asset and the protocol asset stays entirely inside the
+        // destination range. A SPONSORLESS form has no sponsor region to
+        // pay from: its only inputs are receipts, which carry the
+        // protocol asset. Elements balances per asset, so a reserve-asset
+        // fee beside no reserve-asset input cannot balance — the
+        // transaction would die at the tally with the protocol sum
+        // over-supplied and the reserve sum short. The protocol asset is
+        // the only asset a self-paying fee can be denominated in.
+        let fee_asset = if shape.sponsored() {
+            symbols.reserve_asset()
+        } else {
+            symbols.protocol_asset()
+        };
         instructions.extend(require_asset(
             target,
             OpcodeId::InspectOutputAsset,
             position,
-            symbols.reserve_asset(),
+            fee_asset,
         )?);
         // The fee role by form, never by amount: the reviewed target
         // replaces a program that is not a witness program by a digest of
         // it under a negative version marker, and that pair is the whole
         // discriminator.
         //
-        // Nothing in this clause reads the sponsor region, which is why
-        // it needed no widening to serve a sponsorless fee-bearing shape:
-        // it already recognized the fee by its reserve asset and its
-        // empty program, and a fee funded from the receipts wears exactly
-        // that form. Only the *decision to emit it* was tied to the
-        // sponsor count, and that is what moved.
+        // Nothing in THIS half of the clause reads the sponsor region,
+        // which is why the discriminator itself needed no widening: it
+        // recognized the fee by its empty program under the negative
+        // marker, and a fee funded from the receipts wears exactly that
+        // form.
         instructions.extend([
             number(target, position)?,
             op(OpcodeId::InspectOutputScriptPubKey),
