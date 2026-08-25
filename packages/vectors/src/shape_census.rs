@@ -738,11 +738,14 @@ mod tests {
                     // The role is STATED, the shared builder having
                     // stopped assigning it by position.
                     //
-                    // A shape whose only output is a blinded one declares
-                    // the single-output fully-solved form, because that is
-                    // what such a shape IS and a drive that withheld the
-                    // declaration would be recomputing the refusal for a
-                    // manifest nobody would write.
+                    // A shape of ONE output declares the single-output
+                    // fully-solved form, because that is what such a shape
+                    // IS and a drive that withheld the declaration would be
+                    // recomputing the refusal for a manifest nobody would
+                    // write. The test is the manifest's whole output count
+                    // and not its blinded count: the form is a statement
+                    // about the manifest, so a lone blinded output sitting
+                    // beside a fee output is not it.
                     //
                     // The fee output is cast as balancing, and that is not
                     // a modelling choice: the vocabulary has no fee member
@@ -750,7 +753,7 @@ mod tests {
                     // register records.
                     role: if is_fee {
                         FixtureOutputRole::Balancing
-                    } else if count - shape.fee_outputs() == 1 {
+                    } else if count == 1 {
                         FixtureOutputRole::SoleBalancing
                     } else if index + 1 == count {
                         FixtureOutputRole::Balancing
