@@ -80,7 +80,7 @@ use transaction::bytes::{AssetField, AssetId, Outpoint, TargetTransaction, Value
 use transaction::live_abi::CandidateLiveTransferAbi;
 use transaction::live_census::{
     AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
-    OwnerSigningCensus, OwnerSigningInputRequest,
+    OWNER_SIGNATURE_BYTES, OwnerSigningCensus, OwnerSigningInputRequest,
 };
 use transaction::live_construct::{
     LiveConstructionReport, complete_live_transfer, finalize_live_transfer,
@@ -556,6 +556,8 @@ pub struct NegativeObservation {
     detail: Option<String>,
     accepted_txid: Option<String>,
     differs_from_control_in_one_item: bool,
+    control_difference_bytes: usize,
+    mutant_difference_bytes: usize,
 }
 
 impl NegativeObservation {
@@ -583,13 +585,14 @@ impl NegativeObservation {
         self.detail.as_deref()
     }
 
-    /// Whether these bytes differ from the control's in exactly the
-    /// witness item the mutation replaced.
+    /// Whether these bytes differ from the control's, and do so only
+    /// within the witness item the mutation replaced.
     ///
-    /// Computed by comparing the two submissions rather than argued
-    /// from the code that built them, because the attributability of the
-    /// refusal is exactly this: one item moved and the node changed its
-    /// mind.
+    /// Computed by comparing the two submissions rather than argued from
+    /// the code that built them. The size bound is where the content is:
+    /// any two differing strings differ in one contiguous region, so
+    /// what has to be checked is that the region FITS inside one
+    /// signature item and its length prefix.
     #[must_use]
     pub const fn differs_from_control_in_one_item(&self) -> bool {
         self.differs_from_control_in_one_item
@@ -1174,7 +1177,10 @@ impl ExplicitShapePlanner {
             // attributable -- and it is measured against the control's
             // actual bytes rather than asserted from the code.
             let control = &self.record.control_bytes;
-            let one_item = differs_in_one_run(control, &submitted);
+            let (control_run, mutant_run) = difference_runs(control, &submitted);
+            let one_item = (control_run > 0 || mutant_run > 0)
+                && control_run <= WITNESS_ITEM_BOUND
+                && mutant_run <= WITNESS_ITEM_BOUND;
             self.record.negatives.push(NegativeObservation {
                 mutation,
                 submitted_bytes: submitted.len(),
@@ -1183,6 +1189,8 @@ impl ExplicitShapePlanner {
                 detail: response.observed_detail.clone(),
                 accepted_txid: response.accepted_txid.clone(),
                 differs_from_control_in_one_item: one_item,
+                control_difference_bytes: control_run,
+                mutant_difference_bytes: mutant_run,
             });
             return Ok(());
         }
@@ -1444,21 +1452,24 @@ fn observed_coin(
     })
 }
 
-/// Whether two submissions differ in exactly one contiguous run of
-/// bytes.
+/// How many bytes of each submission lie between their common prefix
+/// and their common suffix.
 ///
-/// The attributability measurement, computed rather than asserted. The
-/// control and a mutant are the same finalized candidate with one
-/// witness item replaced, so their serializations agree on a prefix,
-/// disagree over the replaced item, and agree again on the suffix. A
-/// length change moves the suffix, so the comparison is made from both
-/// ends: everything between the common prefix and the common suffix is
-/// the single run that moved.
+/// The pair is what the attributability measurement is actually made
+/// of, and saying so precisely matters because the obvious phrasing
+/// overclaims. ANY two distinct byte strings differ in exactly one
+/// contiguous region, since the region between the maximal common
+/// prefix and the maximal common suffix is contiguous by construction.
+/// So "they differ in one run" is not a property worth checking — it is
+/// true of every pair that differs at all.
 ///
-/// Two identical submissions differ in NO run, and that is reported as
-/// `false` rather than as a degenerate `true` -- a mutant that did not
-/// change the bytes would not be a mutant.
-fn differs_in_one_run(control: &[u8], mutant: &[u8]) -> bool {
+/// What has content is the region's SIZE. The control and a mutant are
+/// the same finalized candidate with one witness item replaced, so the
+/// difference must fit inside that item and its length prefix. A
+/// difference wider than that would mean something other than the
+/// signature position moved, and the refusal could no longer be
+/// attributed to what the witness offered.
+fn difference_runs(control: &[u8], mutant: &[u8]) -> (usize, usize) {
     let prefix = control
         .iter()
         .zip(mutant.iter())
@@ -1472,10 +1483,18 @@ fn differs_in_one_run(control: &[u8], mutant: &[u8]) -> bool {
         .take_while(|(left, right)| left == right)
         .count()
         .min(remaining);
-    let control_run = control.len() - prefix - suffix;
-    let mutant_run = mutant.len() - prefix - suffix;
-    control_run > 0 || mutant_run > 0
+    (
+        control.len() - prefix - suffix,
+        mutant.len() - prefix - suffix,
+    )
 }
+
+/// The widest a witness-content difference may be.
+///
+/// One selected signature plus the single byte that states its length.
+/// A difference within this bound sits inside the item the mutation
+/// replaced; one beyond it does not.
+const WITNESS_ITEM_BOUND: usize = OWNER_SIGNATURE_BYTES + 1;
 
 /// Hex, for the transcript.
 fn hex(bytes: &[u8]) -> String {
@@ -1519,12 +1538,15 @@ fn render_reverification(out: &mut String, record: &ExplicitShapeRecord) {
         let _ = writeln!(
             out,
             "negative {} row {} submitted_bytes {} offered_signature_bytes {} layer {:?} \
+             control_difference_bytes {} mutant_difference_bytes {} \
              differs_from_control_in_one_item {} accepted_txid {} detail {}",
             negative.mutation.case_name(),
             negative.mutation.row_name(),
             negative.submitted_bytes,
             negative.offered_signature_bytes,
             negative.layer,
+            negative.control_difference_bytes,
+            negative.mutant_difference_bytes,
             negative.differs_from_control_in_one_item,
             negative.accepted_txid.as_deref().unwrap_or("none"),
             negative.detail.as_deref().unwrap_or("none"),
