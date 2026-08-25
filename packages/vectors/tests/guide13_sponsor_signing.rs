@@ -1374,19 +1374,28 @@ fn a_deployment_linked_for_submission_carries_the_derived_fee_digest() {
     );
 }
 
-/// Wiring the signer does not clear the residual, and this says so where
-/// a change would have to notice.
+/// The residual is CLEARED, and this says so where a change would have
+/// to notice.
 ///
 /// It runs in the ordinary lane rather than behind the node gate, on
-/// purpose: the claim is about what this repository still carries, and a
-/// claim only a node can check is one nobody checks.
+/// purpose: the claim is about what this repository carries, and a claim
+/// only a node can check is one nobody checks. The acceptance that
+/// cleared it needed a node; the fact that the set no longer holds it
+/// does not.
+///
+/// The assertion is inverted from the one that stood here through three
+/// waves. It asserted the residual was still carried, because wiring a
+/// signer is not the same as a target accepting what the signer
+/// produced. A target has now accepted one, which is the condition the
+/// blocker's own defining site named, so the set is one member shorter
+/// and this test is what makes a regression say so.
 #[test]
-fn wiring_the_signer_leaves_the_carried_residual_standing() {
+fn the_sponsor_residual_is_no_longer_carried() {
     assert!(
-        vectors::live_evidence::carried_residuals().contains(
+        !vectors::live_evidence::carried_residuals().contains(
             &vectors::live_evidence::LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent
         ),
-        "the sponsor residual left the carried set, and no submitted and accepted \
-         control carrying a sponsor witness exists to have moved it"
+        "the sponsor residual is carried again, and an observed acceptance of a \
+         control carrying a sponsor witness cannot be un-observed"
     );
 }
