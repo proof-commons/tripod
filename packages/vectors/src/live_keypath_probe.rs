@@ -264,7 +264,7 @@ impl KeyPathAttempt {
     /// back out of what was built, so a builder that had grown a second
     /// item is visible here rather than only in the bytes.
     #[must_use]
-    pub fn is_the_one_item_shape(&self) -> bool {
+    pub const fn is_the_one_item_shape(&self) -> bool {
         self.witness_stack.len() == 1
     }
 
@@ -391,7 +391,7 @@ impl KeyPathProbeRecord {
     /// Carried rather than commented so the committed artifact states it
     /// in its own bytes, on the pattern the observation ceremonies set.
     #[must_use]
-    pub fn non_claims() -> &'static [&'static str] {
+    pub const fn non_claims() -> &'static [&'static str] {
         &[
             "a refusal discharges only that the attempt was observed and refused",
             "nothing here establishes who knows the internal key's discrete logarithm",
@@ -460,7 +460,7 @@ impl KeyPathProbePlanner {
     }
 
     /// Record one refusal and stop.
-    fn refuse(&mut self, refusal: KeyPathProbeRefusal) -> PlanRefused {
+    const fn refuse(&mut self, refusal: KeyPathProbeRefusal) -> PlanRefused {
         self.record.refusal = Some(refusal);
         self.stage = Stage::Done;
         PlanRefused
@@ -804,7 +804,40 @@ fn explicit_binding(abi: &CandidateLiveTransferAbi) -> Result<ProgramBinding, Ve
 pub fn render_keypath_probe(record: &KeyPathProbeRecord) -> String {
     let mut lines = vec!["role internal-key-unspendability-probe-phase-a".to_owned()];
 
-    let provenance = record.provenance();
+    lines.extend(provenance_lines(record.provenance()));
+    lines.push(format!(
+        "issued_asset {}",
+        record.issued_asset().unwrap_or("none")
+    ));
+    lines.push(format!("relinked {}", record.relinked()));
+    lines.extend(coin_lines(record));
+    if let Some(binding) = record.binding() {
+        lines.extend(binding_lines(binding));
+    }
+    if let Some(attempt) = record.attempt() {
+        lines.extend(attempt_lines(record, attempt));
+    }
+    if let Some(observation) = record.observation() {
+        lines.extend(observation_lines(observation));
+    }
+    if let Some(refusal) = record.refusal() {
+        lines.push(format!("ceremony_refusal {refusal:?}"));
+    }
+
+    for claim in KeyPathProbeRecord::non_claims() {
+        lines.push(format!("non_claim {claim}"));
+    }
+    lines.push("residual_internal_key_unspendability_stands true".to_owned());
+    lines.push("discharges_no_matrix_row true".to_owned());
+
+    let mut rendered = lines.join("\n");
+    let _ = writeln!(rendered);
+    rendered
+}
+
+/// Where the run's target came from.
+fn provenance_lines(provenance: &ProbeProvenance) -> Vec<String> {
+    let mut lines = Vec::with_capacity(5);
     lines.push(format!("provenance network_id {}", provenance.network_id));
     lines.push(format!("provenance genesis_id {}", provenance.genesis_id));
     lines.push(format!(
@@ -819,13 +852,12 @@ pub fn render_keypath_probe(record: &KeyPathProbeRecord) -> String {
         "provenance executor_trust {}",
         provenance.executor_trust
     ));
+    lines
+}
 
-    lines.push(format!(
-        "issued_asset {}",
-        record.issued_asset().unwrap_or("none")
-    ));
-    lines.push(format!("relinked {}", record.relinked()));
-
+/// Each funded coin, as the node reported it.
+fn coin_lines(record: &KeyPathProbeRecord) -> Vec<String> {
+    let mut lines = Vec::with_capacity(record.coins().len());
     for (index, coin) in record.coins().iter().enumerate() {
         lines.push(format!(
             "coin {index} value {} program_bytes {} node_fields_match_expectation {}",
@@ -838,92 +870,88 @@ pub fn render_keypath_probe(record: &KeyPathProbeRecord) -> String {
             coin.matches_expectation(),
         ));
     }
+    lines
+}
 
-    if let Some(binding) = record.binding() {
-        lines.push(format!("binding program {}", printed(binding.program())));
-        lines.push(format!(
-            "binding internal_key {}",
-            printed(binding.internal_key())
-        ));
-        lines.push(format!(
-            "binding internal_key_is_the_published_point {}",
-            binding.internal_key_is_the_published_point()
-        ));
-        lines.push(format!(
-            "binding output_key {}",
-            printed(binding.output_key())
-        ));
-        lines.push(format!(
-            "binding merkle_root {}",
-            printed(binding.merkle_root())
-        ));
+/// The program the funded coin pays to, and what it commits to.
+fn binding_lines(binding: &ProgramBinding) -> Vec<String> {
+    let mut lines = Vec::with_capacity(5);
+    lines.push(format!("binding program {}", printed(binding.program())));
+    lines.push(format!(
+        "binding internal_key {}",
+        printed(binding.internal_key())
+    ));
+    lines.push(format!(
+        "binding internal_key_is_the_published_point {}",
+        binding.internal_key_is_the_published_point()
+    ));
+    lines.push(format!(
+        "binding output_key {}",
+        printed(binding.output_key())
+    ));
+    lines.push(format!(
+        "binding merkle_root {}",
+        printed(binding.merkle_root())
+    ));
+    lines
+}
+
+/// Exactly what was offered to the target.
+fn attempt_lines(record: &KeyPathProbeRecord, attempt: &KeyPathAttempt) -> Vec<String> {
+    let mut lines = Vec::with_capacity(8 + attempt.witness_stack().len());
+    lines.push(format!(
+        "attempt submitted_bytes {}",
+        attempt.submitted_bytes().len()
+    ));
+    lines.push(format!(
+        "attempt submitted {}",
+        printed(attempt.submitted_bytes())
+    ));
+    lines.push(format!(
+        "attempt witness_items {}",
+        attempt.witness_stack().len()
+    ));
+    for (index, item) in attempt.witness_stack().iter().enumerate() {
+        lines.push(format!("attempt witness_item {index} {}", printed(item)));
     }
+    lines.push(format!(
+        "attempt spent_outpoint_index {}",
+        attempt.spent_outpoint().index()
+    ));
+    lines.push(format!(
+        "attempt candidate_key_path_message {}",
+        printed(attempt.candidate_key_path_message())
+    ));
+    lines.push(format!(
+        "attempt signing_public_key {}",
+        printed(attempt.signing_public_key())
+    ));
+    lines.push(format!(
+        "attempt signing_key_is_the_output_key {}",
+        record
+            .binding()
+            .is_some_and(|binding| binding.output_key() == attempt.signing_public_key()),
+    ));
+    lines
+}
 
-    if let Some(attempt) = record.attempt() {
-        lines.push(format!(
-            "attempt submitted_bytes {}",
-            attempt.submitted_bytes().len()
-        ));
-        lines.push(format!(
-            "attempt submitted {}",
-            printed(attempt.submitted_bytes())
-        ));
-        lines.push(format!(
-            "attempt witness_items {}",
-            attempt.witness_stack().len()
-        ));
-        for (index, item) in attempt.witness_stack().iter().enumerate() {
-            lines.push(format!("attempt witness_item {index} {}", printed(item)));
-        }
-        lines.push(format!(
-            "attempt spent_outpoint_index {}",
-            attempt.spent_outpoint().index()
-        ));
-        lines.push(format!(
-            "attempt candidate_key_path_message {}",
-            printed(attempt.candidate_key_path_message())
-        ));
-        lines.push(format!(
-            "attempt signing_public_key {}",
-            printed(attempt.signing_public_key())
-        ));
-        lines.push(format!(
-            "attempt signing_key_is_the_output_key {}",
-            record
-                .binding()
-                .is_some_and(|binding| binding.output_key() == attempt.signing_public_key()),
-        ));
-    }
-
-    if let Some(observation) = record.observation() {
-        lines.push(format!("observed layer {:?}", observation.layer()));
-        lines.push(format!(
-            "observed is_target_verdict {}",
-            observation.layer().is_target_verdict()
-        ));
-        lines.push(format!(
-            "observed accepted_txid {}",
-            observation.accepted_txid().unwrap_or("none")
-        ));
-        lines.push(format!(
-            "observed detail {}",
-            observation.detail().unwrap_or("none")
-        ));
-    }
-
-    if let Some(refusal) = record.refusal() {
-        lines.push(format!("ceremony_refusal {refusal:?}"));
-    }
-
-    for claim in KeyPathProbeRecord::non_claims() {
-        lines.push(format!("non_claim {claim}"));
-    }
-    lines.push("residual_internal_key_unspendability_stands true".to_owned());
-    lines.push("discharges_no_matrix_row true".to_owned());
-
-    let mut rendered = lines.join("\n");
-    let _ = writeln!(rendered);
-    rendered
+/// What the target did with the attempt.
+fn observation_lines(observation: &KeyPathObservation) -> Vec<String> {
+    let mut lines = Vec::with_capacity(4);
+    lines.push(format!("observed layer {:?}", observation.layer()));
+    lines.push(format!(
+        "observed is_target_verdict {}",
+        observation.layer().is_target_verdict()
+    ));
+    lines.push(format!(
+        "observed accepted_txid {}",
+        observation.accepted_txid().unwrap_or("none")
+    ));
+    lines.push(format!(
+        "observed detail {}",
+        observation.detail().unwrap_or("none")
+    ));
+    lines
 }
 
 #[cfg(test)]
