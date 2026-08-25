@@ -1492,11 +1492,20 @@ mod tests {
         // positive half has never run.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         assert!(!plan.census().every_required_row_is_answered());
-        // Three rows carry a blocker of their own, and those three do
-        // not move: a predecessor constructor, a sponsor envelope
-        // signer, and a raw path, none of which the owner message was
-        // ever in the way of.
-        assert_eq!(plan.census().infrastructure_blocked(), 3);
+        // TWO rows carry a blocker of their own, and it was three: a
+        // predecessor constructor and a raw path, neither of which the
+        // owner message was ever in the way of.
+        //
+        // The third was the sponsor envelope signer, and it left because
+        // its residual cleared on an observed acceptance. The row it
+        // blocked, missing-sponsor-authorization, is NOT answered by
+        // that: it is a negative asking that a control missing the
+        // sponsor's authorization be refused, and what was accepted is a
+        // positive sponsored control. The row moved from blocked to
+        // awaiting a run of its own shape, which is why the count above
+        // fell by one while the completeness assertion below did not
+        // change at all.
+        assert_eq!(plan.census().infrastructure_blocked(), 2);
     }
 
     #[test]
