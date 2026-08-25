@@ -469,13 +469,13 @@ enum Stage {
 /// identical control without re-deriving the registration.
 #[derive(Clone, Debug)]
 pub(crate) struct LinkedDeployment {
-    abi: CandidateLiveTransferAbi,
-    asset: AssetId,
-    predecessor_digest: [u8; 32],
-    predecessor_view: transaction::live_materialize::ConfidentialFixtureView,
+    pub(crate) abi: CandidateLiveTransferAbi,
+    pub(crate) asset: AssetId,
+    pub(crate) predecessor_digest: [u8; 32],
+    pub(crate) predecessor_view: transaction::live_materialize::ConfidentialFixtureView,
     successor_digest: [u8; 32],
     successor_view: transaction::live_materialize::ConfidentialFixtureView,
-    programs: [Vec<u8>; 2],
+    pub(crate) programs: [Vec<u8>; 2],
 }
 
 impl LinkedDeployment {
@@ -1040,6 +1040,27 @@ pub(crate) fn build_control(
     genesis_block_hash: Digest32,
 ) -> Result<BuiltControl, PrivateRestartRefusal> {
     let finalization = finalize_control(linked, coin, consumed)?;
+    assemble_control(&finalization, genesis_block_hash)
+}
+
+/// Census, sign, and assemble one finalized private candidate into its
+/// wire form, every owner's authorization in its own input's witness.
+///
+/// The shape-independent tail of [`build_control`]: it takes whatever the
+/// private finalization produced — one input or several, two outputs or
+/// more — and signs each receipt over the leaf that input executes. The
+/// one-to-one control and the multi-output and multi-input shapes of the
+/// restart order's fifth step all share it, so a change to how a
+/// candidate is signed and serialized is a change in one place.
+///
+/// # Errors
+///
+/// The census, signing, and serialization members of
+/// [`PrivateRestartRefusal`].
+pub(crate) fn assemble_control(
+    finalization: &PrivateLiveFinalization,
+    genesis_block_hash: Digest32,
+) -> Result<BuiltControl, PrivateRestartRefusal> {
     let materialized = finalization.materialized();
 
     // Each receipt's signing request is built from the leaf THAT INPUT
@@ -1136,7 +1157,7 @@ pub(crate) fn build_control(
 }
 
 /// The private receipt constructor's program for one published owner.
-fn private_program(
+pub(crate) fn private_program(
     abi: &CandidateLiveTransferAbi,
     scalar: &[u8; SCALAR_BYTES],
 ) -> Result<Vec<u8>, PrivateRestartRefusal> {

@@ -810,6 +810,32 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         "both-commitment-parity-forms" => {
             Some(crate::live_private_restart::run_of_record::PARITY_ACCEPTED_TXID)
         }
+        // The target's own commitment-balance rule accepting a conserving
+        // private transaction. The follow-up wave observed this and
+        // recorded it in its closeout delta, and this arm is the matrix
+        // catching up with that observation rather than a new claim: the
+        // identity is that wave's own run of record. Its absence here was
+        // a defect — the closeout said three rows had moved while the
+        // matrix classified two, and a row that has moved in one artifact
+        // and not the other is a row nobody is checking.
+        "target-ct-conservation" => {
+            Some(crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID)
+        }
+        // One receipt consumed and THREE outputs created: two recipients
+        // and the balancing change back to the sender.
+        "private-split" => Some(crate::live_multi_shapes::run_of_record::SPLIT_ACCEPTED_TXID),
+        // TWO receipts consumed and THREE outputs created. The
+        // representative case is named as representative: its input and
+        // output counts both exceed the one-to-one control's, and no
+        // claim is made here about any other cardinality.
+        "private-many-to-many-representative" => {
+            Some(crate::live_multi_shapes::run_of_record::MANY_TO_MANY_ACCEPTED_TXID)
+        }
+        // TWO receipts under two DISTINCT published owners, each input
+        // carrying the leaf its own position executes.
+        "private-several-distinct-owners" => {
+            Some(crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID)
+        }
         _ => None,
     }
 }
@@ -1280,10 +1306,10 @@ mod tests {
     #[test]
     fn exactly_the_positive_rows_a_run_answered_are_answered() {
         // The wave's delta, held as a test rather than written in a
-        // report. Twenty-six positive rows; one of them is answered,
-        // and it is answered because a real node accepted a transaction
+        // report. Twenty-six positive rows; six of them are answered,
+        // and each is answered because a real node accepted a transaction
         // of ITS OWN SHAPE and the standing carries the identity. The
-        // other twenty-five await the run that would answer them, and
+        // other twenty await the run that would answer them, and
         // awaiting a run is not an answer.
         //
         // The count is spelled rather than derived so that a row moved
@@ -1322,9 +1348,36 @@ mod tests {
         assert_eq!(positives, 26, "both positive tables together");
         assert_eq!(
             answered,
-            BTreeSet::from(["both-commitment-parity-forms", "private-one-to-one"]),
+            BTreeSet::from([
+                "both-commitment-parity-forms",
+                "private-many-to-many-representative",
+                "private-one-to-one",
+                "private-several-distinct-owners",
+                "private-split",
+                "target-ct-conservation",
+            ]),
         );
-        assert_eq!(plan.census().native_run_observed(), 2);
+        assert_eq!(plan.census().native_run_observed(), 6);
+
+        // The four positive private classes that did NOT move are named
+        // here rather than left to the count, because a matrix that only
+        // said how many rows moved could not say which. Private-merge is
+        // structurally unconstructible on this lane, private-sponsor-values
+        // is blocked by a residual this guide does not clear, the
+        // fixture-openings row asks for a determinism observation rather
+        // than a submission, and the projection-equality row needs both
+        // sides of its pair accepted.
+        for unmoved in [
+            "private-merge",
+            "private-sponsor-values",
+            "deterministic-public-fixture-openings",
+            "projection-equality-with-paired-explicit",
+        ] {
+            assert!(
+                !answered.contains(unmoved),
+                "{unmoved} claims an answer no run of its own shape produced",
+            );
+        }
     }
 
     #[test]

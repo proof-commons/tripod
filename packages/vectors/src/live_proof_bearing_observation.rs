@@ -1015,6 +1015,131 @@ pub(crate) fn register(
     Ok((digest, project(resolved)?))
 }
 
+/// One manifest of arbitrary output arity, built from its own parts.
+///
+/// The multi-output constructor the restart order's fifth step needs, and
+/// the whole of what `LiveInfrastructureBlocker::MultiOutputShapeConstructorAbsent`
+/// records as missing: [`manifest`] is fixed at the two outputs a
+/// one-to-one control has, while a split, a many-to-many, or a
+/// several-owner transfer has more. The last output is the balancing one
+/// and every earlier output is primary, which is the registry's own rule
+/// that exactly one output is balancing, expressed as a position rather
+/// than restated at each call.
+fn multi_manifest(
+    handle: &str,
+    explicit_asset: [u8; 32],
+    input_blinder_sum: [u8; 32],
+    amounts: &[u64],
+    programs: &[Vec<u8>],
+) -> ConfidentialFixtureManifest {
+    let last = amounts.len().saturating_sub(1);
+    let outputs = amounts
+        .iter()
+        .zip(programs)
+        .enumerate()
+        .map(|(index, (amount, program))| ConfidentialFixtureOutput {
+            role: if index == last {
+                FixtureOutputRole::Balancing
+            } else {
+                FixtureOutputRole::Primary
+            },
+            semantic_amount: *amount,
+            output_program: program.clone(),
+        })
+        .collect();
+    ConfidentialFixtureManifest {
+        handle: ConfidentialFixtureHandle::new(handle.to_owned()),
+        material_class: PublicDisposableTestMaterial::EXPECTED,
+        derivation_profile: FixtureDerivationProfile::GuideCtfV1,
+        profiles: selected_profiles(),
+        retry_limit: MAX_PARITY_COUNTER,
+        explicit_asset,
+        input_blinder_sum,
+        outputs,
+    }
+}
+
+/// One registered and frozen fixture of arbitrary output arity, resolved
+/// under its own digest.
+///
+/// The arity-general sibling of [`register`]: it registers a manifest of
+/// `amounts.len()` outputs rather than exactly two, and returns the same
+/// digest and projected view. The registry's floor of two outputs, its
+/// exactly-one-balancing rule, and its positive-amount and non-empty
+/// program checks all still apply, so a caller that offers one output or
+/// an unbalanced set is refused here rather than at the node.
+///
+/// # Errors
+///
+/// [`ProofBearingRefusal::FixtureNotRegistrable`] where the registry
+/// refuses the manifest, and [`ProofBearingRefusal::FixtureDidNotResolve`]
+/// where the frozen registry does not hold it.
+pub(crate) fn register_multi(
+    handle: &str,
+    explicit_asset: [u8; 32],
+    input_blinder_sum: [u8; 32],
+    amounts: &[u64],
+    programs: &[Vec<u8>],
+) -> Result<(ConfidentialFixtureDigest, ConfidentialFixtureView), ProofBearingRefusal> {
+    let mut registry = ConfidentialFixtureRegistry::new();
+    registry
+        .register(multi_manifest(
+            handle,
+            explicit_asset,
+            input_blinder_sum,
+            amounts,
+            programs,
+        ))
+        .map_err(|refusal| ProofBearingRefusal::FixtureNotRegistrable {
+            handle: handle.to_owned(),
+            refusal,
+        })?;
+    let frozen = registry.freeze();
+    let identity = ConfidentialFixtureHandle::new(handle.to_owned());
+    let digest = *frozen.registered_digest(&identity).ok_or_else(|| {
+        ProofBearingRefusal::FixtureDidNotResolve {
+            handle: handle.to_owned(),
+        }
+    })?;
+    let resolved = frozen.resolve(&identity, &digest).map_err(|_| {
+        ProofBearingRefusal::FixtureDidNotResolve {
+            handle: handle.to_owned(),
+        }
+    })?;
+
+    Ok((digest, project(resolved)?))
+}
+
+/// Whether the registry refuses a manifest of a given output arity, and
+/// with which refusal.
+///
+/// The one-output shapes of the fixture catalogue — private-merge, the
+/// strict one-to-one, and the fee-only case — are unconstructible on this
+/// lane, and this states the refusal the registry answers with rather than
+/// leaving it to be discovered at a node that never sees them. It builds
+/// no fixture and reaches no node. `None` is the answer where a manifest
+/// the caller expected to be refused was instead admitted.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn registry_refusal_for(
+    handle: &str,
+    explicit_asset: [u8; 32],
+    input_blinder_sum: [u8; 32],
+    amounts: &[u64],
+    programs: &[Vec<u8>],
+) -> Option<RegistrationRefusal> {
+    let mut registry = ConfidentialFixtureRegistry::new();
+    registry
+        .register(multi_manifest(
+            handle,
+            explicit_asset,
+            input_blinder_sum,
+            amounts,
+            programs,
+        ))
+        .err()
+}
+
 // --- The ceremony ------------------------------------------------------
 
 /// What the plan is doing next.

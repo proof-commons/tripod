@@ -1288,3 +1288,188 @@ fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
     assert!(rendered.contains("residual_internal_key_unspendability_stands true"));
     assert!(rendered.contains("discharges_no_matrix_row true"));
 }
+
+/// The restart order's fifth step, the split shape: one receipt in, three
+/// outputs, against a real node.
+///
+/// # What this run is for
+///
+/// Step five asks for the remaining positive private shapes, each where it
+/// accepts. This is the split: one confidential receipt consumed and split
+/// into two recipients and a balancing change output, the smallest of the
+/// remaining shapes and the one that needs only a three-output successor
+/// and one input. Its acceptance moves the `private-split` matrix row, and
+/// the move is the observed identity this run records, not the fact of the
+/// test existing.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_split_shape_is_submitted_to_a_real_target() {
+    use vectors::live_multi_shapes::PrivateShape;
+
+    run_one_multi_shape(PrivateShape::Split, "multi-split");
+}
+
+/// The restart order's fifth step, the many-to-many shape: two receipts in,
+/// three outputs, against a real node.
+///
+/// # Why this representative case
+///
+/// The matrix names a representative many-to-many, not a proof over every
+/// cardinality. The case chosen is the smallest whose input and output
+/// counts both exceed the one-to-one control's: two receipts consumed and
+/// three outputs created, so that "many to many" describes both halves and
+/// is not a one-to-many or many-to-one in disguise.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_many_to_many_shape_is_submitted_to_a_real_target() {
+    use vectors::live_multi_shapes::PrivateShape;
+
+    run_one_multi_shape(PrivateShape::ManyToMany, "multi-many-to-many");
+}
+
+/// The restart order's fifth step, the several-distinct-owners shape: two
+/// receipts under two distinct owners in, two outputs, against a real node.
+///
+/// # What distinguishes it from the many-to-many run
+///
+/// Its subject is the input owners rather than the cardinality: the two
+/// consumed receipts are owned by two distinct published owners, and each
+/// input carries the leaf its own position executes. The predecessor pays
+/// its two outputs to the two owners' private receipt constructors, so
+/// consuming both is a transfer whose inputs have several distinct owners.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_several_distinct_owners_shape_is_submitted_to_a_real_target() {
+    use vectors::live_multi_shapes::PrivateShape;
+
+    run_one_multi_shape(PrivateShape::SeveralDistinctOwners, "multi-several-owners");
+}
+
+/// One multi-output or multi-input private shape, against the node.
+///
+/// The same shape-only discipline the one-to-one control ran under: what
+/// the node decided is written into the artifact and asserted nowhere, so
+/// a lane that asserted an acceptance would fail rather than report on the
+/// day the honest answer changed. What is asserted is first-party
+/// construction facts — the shape's own input and output counts, that the
+/// candidate reached the node, and, where an acceptance was observed, the
+/// two-origin agreement.
+fn run_one_multi_shape(shape: vectors::live_multi_shapes::PrivateShape, extension: &str) {
+    use vectors::live_multi_shapes::{MultiShapePlanner, render_multi_shape};
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension(extension);
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner = MultiShapePlanner::for_shape(shape, identifier(&genesis))
+        .expect("the shape ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_multi_shape(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as one.
+    // It is never a target verdict, so it is reported and the test stops
+    // here rather than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the shape ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    // The predecessor is the confidential one the ceremony asked for.
+    assert_eq!(record.coins().len(), 2);
+    assert!(
+        record
+            .coins()
+            .iter()
+            .all(vectors::live_private_restart::RestartConfidentialCoin::matches_expectation),
+        "the node reported a confidential coin the ceremony did not ask for",
+    );
+
+    // The shape's own cardinalities, read off the record rather than the
+    // shape's name: the receipts it consumed and the outputs it created.
+    assert_eq!(
+        record.receipt_leaves(),
+        record.input_count(),
+        "the consumed receipt count is the shape's input count",
+    );
+    assert_eq!(
+        record.output_witness_proof_bytes().len(),
+        record.output_count(),
+        "one output-witness entry per created output",
+    );
+    assert!(
+        record
+            .output_witness_proof_bytes()
+            .iter()
+            .all(|bytes| *bytes > 2),
+        "an output-witness entry carried no range proof: {:?}",
+        record.output_witness_proof_bytes(),
+    );
+
+    // The candidate reached the node.
+    assert!(record.submitted_bytes() > 0);
+    assert!(record.observed_layer().is_some(), "no layer was observed");
+
+    // The two origins, where an acceptance was observed.
+    if let Some(check) = record.reverification() {
+        assert!(
+            check.readback_matches_submission(),
+            "the bytes the node reported are not the bytes it was handed",
+        );
+        assert!(
+            check.verified(),
+            "the accepted witness does not verify against the recomputed message",
+        );
+    }
+
+    // The run says in its own bytes what it did not establish.
+    assert!(rendered.contains("evidences_no_negative_case true"));
+    assert!(rendered.contains("moves_the_sponsor_row false"));
+}
