@@ -1445,8 +1445,11 @@ mod tests {
 
         assert_eq!(
             report.failures()[&MinimalityFailureMode::PrivateMaterializationRejects],
+            // Re-pointed with the standing itself. The digest blocker is
+            // cleared, so a failure mode still awaiting a run on it
+            // would be awaiting a run nothing is holding up.
             FailureModeStanding::AwaitsATargetRun(
-                LiveInfrastructureBlocker::OwnerSighashNotComputable
+                LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded
             ),
         );
         // §18's study filled this one. It is a conjunction, and no pair
