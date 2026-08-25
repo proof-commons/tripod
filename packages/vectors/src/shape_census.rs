@@ -28,7 +28,7 @@
 //! # What this module does not do
 //!
 //! It observes nothing. Every OBSERVED-ACCEPTED verdict cites a
-//! `run_of_record` identity some earlier wave produced; no verdict here
+//! `run_of_record` identity a ceremony produced; no verdict here
 //! is produced by running anything, and a shape consensus admits but
 //! nobody has submitted is recorded SOURCE-DERIVED and never "run".
 //! Nothing here moves a matrix row, a blocker or a residual: this is a
@@ -236,7 +236,7 @@ pub enum ConsensusVerdict {
     ///
     /// The strongest class, and the only one carrying a target-computed
     /// identity. The identity is not a literal here: it is the
-    /// `run_of_record` constant an earlier wave recorded, so a wave that
+    /// `run_of_record` constant a ceremony recorded, so a wave that
     /// re-ran and got different bytes would move this register too.
     ObservedAccepted {
         /// The identity the target computed for the accepted shape.
@@ -260,10 +260,16 @@ pub enum ConsensusVerdict {
 
 /// What this workspace's own fixture registry does with a shape.
 ///
-/// The second, independent verdict. Its three members are the three
-/// ways a first-party position can stand against the consensus one, and
-/// naming them apart is what stops a local convention being read as a
-/// protocol rule.
+/// The second, independent verdict. Its members are the distinct ways a
+/// first-party position can stand against the consensus one, and naming
+/// them apart is what stops a local convention being read as a protocol
+/// rule.
+///
+/// Two of them exist because limitations get REMOVED, and a removal is
+/// not one event but two facts that arrive separately: a vocabulary
+/// learns to express a shape, and a chain accepts one. The register
+/// carries a member for each rather than rounding the first up to the
+/// second.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FirstPartyStatus {
     /// The registry builds it and a run of record observed it accepted.
@@ -403,11 +409,17 @@ const ABSENT_FEE_ROLE_REMOVAL: LimitationRemoval = LimitationRemoval {
 
 /// A first-party convention that refuses a shape consensus admits.
 ///
-/// Each member names a rule of this repository's own fixture registry,
-/// the model that rule came out of, and the removal path that would end
-/// it. This is the "explicitly labeled, pinned and explained" half of
-/// the ruling the register implements; the removal is filed and NOT
-/// taken here.
+/// Each member names a convention of this repository's own, the model it
+/// came out of, and the removal path that would end it. Most are rules
+/// the fixture registry states; [`Self::CancelingPredecessorOnly`] is
+/// not, and the difference is worth keeping — it is a coin the ceremony
+/// happens to fund rather than a rule anybody wrote, which is a wall of a
+/// different kind and one no registry change would move.
+///
+/// This is the "explicitly labeled, pinned and explained" half of the
+/// ruling the register implements. [`Self::removal`] carries the fourth
+/// stage where it has been reached, and returns `None` where it has not,
+/// so a filed path can never read as a taken one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Limitation {
     /// The registry refuses any manifest of fewer than two outputs.
@@ -539,9 +551,14 @@ impl Limitation {
 
 /// A named structural removal for a limitation.
 ///
-/// FILED, not implemented. Each member is a design this register commits
-/// to naming and to nothing else; the work sits in the feature-request
-/// register, and no part of it is taken by this module.
+/// A path is a DESIGN this register commits to naming. Naming one says
+/// nothing about whether it has been taken: [`Limitation::removal`] is
+/// the only place that answers that, and it answers `None` by default.
+///
+/// Two of the paths below have since been taken and their descriptions
+/// are left exactly as they were written, because a path's description is
+/// what was proposed and the record of what was done belongs beside it
+/// rather than on top of it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RemovalPath {
     /// A manifest form whose single output is fully solved.
