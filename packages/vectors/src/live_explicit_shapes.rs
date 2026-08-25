@@ -1437,6 +1437,52 @@ fn hex(bytes: &[u8]) -> String {
     text
 }
 
+/// The read-back and per-input verification lines, and the negative
+/// cases' lines.
+///
+/// Split out of the renderer because the renderer had grown past what
+/// one function is allowed to be, and this is the seam: everything here
+/// is about what happened AFTER a submission was answered.
+fn render_reverification(out: &mut String, record: &ExplicitShapeRecord) {
+    if let Some(check) = &record.reverification {
+        let _ = writeln!(out, "readback_txid {}", check.accepted_txid);
+        let _ = writeln!(out, "readback_witness_txid {}", check.witness_txid);
+        let _ = writeln!(out, "readback_block_height {}", check.block_height);
+        let _ = writeln!(
+            out,
+            "readback_matches_submission {}",
+            check.readback_matches_submission
+        );
+        for input in &check.inputs {
+            let _ = writeln!(
+                out,
+                "input {} owner {} signature_bytes {} verified {} message {}",
+                input.input_index,
+                input.owner.name(),
+                input.signature_bytes,
+                input.verified,
+                hex(&input.recomputed_message)
+            );
+        }
+        let _ = writeln!(out, "every_input_verified {}", check.every_input_verified());
+    }
+    for negative in &record.negatives {
+        let _ = writeln!(
+            out,
+            "negative {} row {} submitted_bytes {} offered_signature_bytes {} layer {:?} \
+             differs_from_control_in_one_item {} accepted_txid {} detail {}",
+            negative.mutation.case_name(),
+            negative.mutation.row_name(),
+            negative.submitted_bytes,
+            negative.offered_signature_bytes,
+            negative.layer,
+            negative.differs_from_control_in_one_item,
+            negative.accepted_txid.as_deref().unwrap_or("none"),
+            negative.detail.as_deref().unwrap_or("none"),
+        );
+    }
+}
+
 /// One shape run's transcript.
 ///
 /// Lines rather than a structure, on the pattern every live lane here
@@ -1498,28 +1544,7 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
         "accepted_txid {}",
         record.accepted_txid.as_deref().unwrap_or("none")
     );
-    if let Some(check) = &record.reverification {
-        let _ = writeln!(out, "readback_txid {}", check.accepted_txid);
-        let _ = writeln!(out, "readback_witness_txid {}", check.witness_txid);
-        let _ = writeln!(out, "readback_block_height {}", check.block_height);
-        let _ = writeln!(
-            out,
-            "readback_matches_submission {}",
-            check.readback_matches_submission
-        );
-        for input in &check.inputs {
-            let _ = writeln!(
-                out,
-                "input {} owner {} signature_bytes {} verified {} message {}",
-                input.input_index,
-                input.owner.name(),
-                input.signature_bytes,
-                input.verified,
-                hex(&input.recomputed_message)
-            );
-        }
-        let _ = writeln!(out, "every_input_verified {}", check.every_input_verified());
-    }
+    render_reverification(&mut out, record);
     let _ = writeln!(
         out,
         "construction_refusal {}",
@@ -1527,21 +1552,6 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
             .refusal
             .map_or_else(|| "none".to_owned(), |refusal| format!("{refusal:?}"))
     );
-    for negative in &record.negatives {
-        let _ = writeln!(
-            out,
-            "negative {} row {} submitted_bytes {} offered_signature_bytes {} layer {:?} \
-             differs_from_control_in_one_item {} accepted_txid {} detail {}",
-            negative.mutation.case_name(),
-            negative.mutation.row_name(),
-            negative.submitted_bytes,
-            negative.offered_signature_bytes,
-            negative.layer,
-            negative.differs_from_control_in_one_item,
-            negative.accepted_txid.as_deref().unwrap_or("none"),
-            negative.detail.as_deref().unwrap_or("none"),
-        );
-    }
     let _ = writeln!(
         out,
         "evidences_no_negative_case {}",
