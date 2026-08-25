@@ -842,21 +842,26 @@ fn the_key_path_spend_type_is_the_composition_rule_at_a_zero_extension_flag() {
 }
 
 #[test]
-fn the_key_path_message_does_not_move_when_the_tapleaf_hash_moves() {
+fn the_key_path_message_does_not_move_when_a_tapscript_term_moves() {
     // The check that the tapscript tail is genuinely absent rather than
-    // merely differently spelled. A leaf hash change moves the reviewed
-    // message, because term 16 is that hash; it must leave the key-path
-    // message exactly where it was, because a key-path spend writes no
-    // leaf at all. Both halves are asserted, since a construction that
-    // ignored the census entirely would also pass the second one.
+    // merely differently spelled, isolated at the one term that can be
+    // moved on its own. The codeseparator position is written by the
+    // script path at term 18 and appears nowhere in the twelve terms
+    // both paths share, and the census carries it rather than fixing it
+    // — so a census differing in it alone is assemblable, which is not
+    // true of the leaf hash, whose every change moves the spent program
+    // the shared prefix already commits to.
+    //
+    // Both halves are asserted. A construction that ignored the census
+    // entirely would also pass the second one.
     let target = reviewed_target();
     let census = pinned_census(&target);
     let other = parts_census(&target, pinned_candidate(), |mut parts| {
         parts.requests = vec![OwnerSigningInputRequest::new(
             0,
-            [0x7e; 32],
+            LEAF_HASH,
             LeafVersion::TAPSCRIPT,
-            OWNER_CODESEPARATOR_POSITION,
+            OWNER_CODESEPARATOR_POSITION - 1,
             AnnexDisposition::Absent,
             IssuanceDisposition::Absent,
             control_block(),
@@ -866,17 +871,20 @@ fn the_key_path_message_does_not_move_when_the_tapleaf_hash_moves() {
 
     let input = &census.signing_inputs()[0];
     let moved = &other.signing_inputs()[0];
-    assert_ne!(input.tapleaf_hash(), moved.tapleaf_hash());
+    assert_ne!(
+        input.codeseparator_position(),
+        moved.codeseparator_position(),
+    );
 
     assert_ne!(
         candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown),
         candidate_owner_message(&other, moved, WitnessVectorTreatment::BothGrown),
-        "the reviewed message must commit to the leaf",
+        "the reviewed message must commit to the tapscript terms",
     );
     assert_eq!(
         candidate_key_path_message(&census, input, WitnessVectorTreatment::BothGrown),
         candidate_key_path_message(&other, moved, WitnessVectorTreatment::BothGrown),
-        "a key-path message must not commit to a leaf",
+        "a key-path message must write no tapscript term",
     );
 }
 

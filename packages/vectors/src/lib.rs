@@ -17,6 +17,7 @@ pub mod live_disclosure;
 pub mod live_evidence;
 pub mod live_fault_discharge;
 pub mod live_first_party;
+pub mod live_keypath_probe;
 pub mod live_measurements;
 pub mod live_minimality_report;
 pub mod live_native;
