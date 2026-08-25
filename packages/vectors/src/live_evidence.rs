@@ -285,7 +285,7 @@ pub enum LiveInfrastructureBlocker {
     /// carrying it. A blocker moves on an observed result and never on a
     /// capability existing.
     ///
-    /// # No longer carried
+    /// # It is no longer carried, and the observation that moved it
     ///
     /// That acceptance now exists, and this blocker is CLEARED. A
     /// sponsored explicit control — the sponsor region funded before the
@@ -308,11 +308,24 @@ pub enum LiveInfrastructureBlocker {
     /// requires. Threading that digest to the value the target itself
     /// computes for the empty program is what produced the acceptance.
     ///
-    /// The variant STAYS in this vocabulary, exactly as
-    /// [`Self::SighashProfileUnreviewed`] did when it cleared: it is
-    /// still the right name for the condition, and a lane that genuinely
-    /// has no sponsor signer must be able to say so. What changed is
-    /// that this plan no longer carries it.
+    /// The word stays in this vocabulary because it is still the right
+    /// name for the condition, and a lane that genuinely has no sponsor
+    /// signer wired into it must be able to say so. Several still do:
+    /// the pairs lane models an envelope that declines to sign, and the
+    /// transaction-wide private finalization lane has no signer either.
+    /// What changed is that this plan no longer CARRIES it.
+    ///
+    /// # What did not move with it
+    ///
+    /// No matrix row was answered. The row this blocker was the specific
+    /// blocker of, `missing-sponsor-authorization`, is a negative asking
+    /// that a control MISSING the sponsor's authorization be refused,
+    /// and what was accepted is a positive sponsored control; the row
+    /// moved from blocked to awaiting a run of its own shape, which is
+    /// not an answer. `private-sponsor-values` may not move at all and
+    /// did not: it asks for confidential sponsor values and the accepted
+    /// control is explicit. [`Self::PredecessorConstructorAbsent`] is
+    /// untouched. The pairs lane still completes no sponsored member.
     ///
     /// # What one acceptance is not
     ///
