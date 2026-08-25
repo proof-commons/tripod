@@ -970,8 +970,9 @@ impl PrivateLiveFinalization {
 /// [`TransactionRefusal::PrivateOpeningsDoNotCoverTheRequest`] where the
 /// openings and the request disagree about how many things there are;
 /// [`TransactionRefusal::PrivateMaterializationRefused`] carrying the
-/// materializer's own refusal; and any refusal of [`select_shape`] or of
-/// receipt recognition.
+/// materializer's own refusal; and any refusal of shape selection or of
+/// receipt recognition, both of which are the explicit lane's own and
+/// are called rather than reimplemented here.
 pub fn finalize_private_live_transfer(
     abi: &CandidateLiveTransferAbi,
     request: &LiveTransferRequest,
