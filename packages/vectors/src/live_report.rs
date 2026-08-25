@@ -987,21 +987,26 @@ mod tests {
         let total: usize = board.values().map(|(rows, _, _)| rows).sum();
         assert_eq!(total, crate::live_safety::row_count());
 
-        // The positive tables are wholly unanswered, which is the finding
-        // the scoreboard exists to make visible at a glance. What
-        // changed with the owner-sighash observation is why: they are no
-        // longer blocked on a component that does not exist, and they
-        // are still not answered — every one of them awaits the run that
-        // would answer it, and awaiting a run is not an answer.
-        for section in [
-            LiveSafetySection::PositiveExplicit,
-            LiveSafetySection::PositivePrivate,
-        ] {
-            let (rows, answered, blocked) = board[&section];
-            assert_eq!(answered, 0, "{section:?} claims an answer");
-            assert_eq!(blocked, 0, "{section:?} waits on a component that exists");
-            assert_ne!(rows, 0);
-        }
+        // The positive tables are almost wholly unanswered, and the
+        // scoreboard exists to make the "almost" visible at a glance
+        // rather than to round it away. Neither table waits on a
+        // component that does not exist any more. The explicit table is
+        // answered nowhere. The private table is answered in exactly one
+        // row, because a real node accepted a private transfer of that
+        // row's shape — and one is the number to assert, because a
+        // scoreboard that said "some" would let the next row in without
+        // a run.
+        let (explicit_rows, explicit_answered, explicit_blocked) =
+            board[&LiveSafetySection::PositiveExplicit];
+        assert_eq!(explicit_answered, 0, "the explicit table claims an answer");
+        assert_eq!(explicit_blocked, 0);
+        assert_ne!(explicit_rows, 0);
+
+        let (private_rows, private_answered, private_blocked) =
+            board[&LiveSafetySection::PositivePrivate];
+        assert_eq!(private_answered, 1, "the private table's answered count");
+        assert_eq!(private_blocked, 0);
+        assert_eq!(private_rows, 10);
         assert_eq!(LiveSafetyPolarity::ALL.len(), 2);
     }
 

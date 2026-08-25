@@ -20,10 +20,18 @@
 //!
 //! # The honest finding this plan carries
 //!
-//! No positive row of §15.1 or §15.2 is answered today. Every one of
-//! them stands at [`LiveRowStanding::NativeRunRequired`], which is a
-//! statement that a run would answer it and not a statement that
-//! nothing could.
+//! Twenty-five of the twenty-six positive rows of §15.1 and §15.2 are
+//! unanswered today, and they stand at
+//! [`LiveRowStanding::NativeRunRequired`] — a statement that a run
+//! would answer them and not a statement that nothing could.
+//!
+//! One is answered. `private-one-to-one` stands at
+//! [`LiveRowStanding::NativeRunObserved`], carrying the identity a real
+//! node computed for a sponsorless private receipt-covenant transfer of
+//! that row's own shape which it accepted, and whose witness was
+//! verified out of the node's own copy against an independently
+//! recomputed message. One row, one identity, and the standing carries
+//! it so the claim can be checked against a chain rather than believed.
 //!
 //! That is a narrower finding than this paragraph used to carry, and
 //! the narrowing is a repair rather than a softening. What it used to
@@ -1086,6 +1094,7 @@ mod tests {
             census.first_party_discharged()
                 + census.first_party_undischarged()
                 + census.native_run_required()
+                + census.native_run_observed()
                 + census.infrastructure_blocked()
                 + census.report_layer()
                 + census.vocabulary_closed()
@@ -1192,6 +1201,7 @@ mod tests {
             census.first_party_discharged()
                 + census.first_party_undischarged()
                 + census.native_run_required()
+                + census.native_run_observed()
                 + census.infrastructure_blocked()
                 + census.report_layer()
                 + census.vocabulary_closed()
@@ -1222,31 +1232,50 @@ mod tests {
     }
 
     #[test]
-    fn no_positive_row_is_answered_and_every_one_of_them_awaits_a_run() {
-        // What the observation converted, and what it did not. Every
-        // positive row stopped being infrastructure-blocked, because the
-        // component they were all waiting on exists; not one of them
-        // became answered, because a standing is not evidence and no run
-        // of any row has been filed.
+    fn exactly_the_positive_rows_a_run_answered_are_answered() {
+        // The wave's delta, held as a test rather than written in a
+        // report. Twenty-six positive rows; one of them is answered,
+        // and it is answered because a real node accepted a transaction
+        // of ITS OWN SHAPE and the standing carries the identity. The
+        // other twenty-five await the run that would answer them, and
+        // awaiting a run is not an answer.
+        //
+        // The count is spelled rather than derived so that a row moved
+        // by an edit and not by a run fails here. That is the whole
+        // point of the assertion: a delta that could grow quietly is a
+        // delta nobody is checking.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let mut positives = 0_usize;
+        let mut answered = BTreeSet::new();
         for row in plan.rows() {
             if row.row().polarity() != LiveSafetyPolarity::Positive {
                 continue;
             }
             positives += 1;
-            assert!(
-                matches!(row.standing(), LiveRowStanding::NativeRunRequired(_)),
-                "{} does not await the run that would answer it",
-                row.row(),
-            );
-            assert!(
-                !row.standing().is_answered(),
-                "{} claims an answer no run produced",
-                row.row(),
-            );
+            match row.standing() {
+                LiveRowStanding::NativeRunObserved { accepted_identity } => {
+                    assert_eq!(
+                        accepted_identity.len(),
+                        64,
+                        "{} is answered by something that is not a target identity",
+                        row.row(),
+                    );
+                    assert!(row.standing().is_answered());
+                    answered.insert(row.row().name());
+                }
+                LiveRowStanding::NativeRunRequired(_) => {
+                    assert!(
+                        !row.standing().is_answered(),
+                        "{} claims an answer no run produced",
+                        row.row(),
+                    );
+                }
+                other => panic!("{} stands at {other:?}", row.row()),
+            }
         }
         assert_eq!(positives, 26, "both positive tables together");
+        assert_eq!(answered, BTreeSet::from(["private-one-to-one"]));
+        assert_eq!(plan.census().native_run_observed(), 1);
     }
 
     #[test]
