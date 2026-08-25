@@ -389,6 +389,32 @@ pub enum LiveRowStanding {
     /// guide determines one, so a run's observation can be filed against
     /// a relation rather than against a name.
     NativeRunRequired(Option<CoverageRequirementId>),
+    /// A target-native run answered the row, and here is the identity.
+    ///
+    /// # Why this variant had to be minted
+    ///
+    /// Until this wave the matrix could say that a row NEEDED a run and
+    /// could not say that a run had ANSWERED one. Every positive row
+    /// therefore stood at [`Self::NativeRunRequired`] whatever happened
+    /// on a chain, and the only way to record an acceptance would have
+    /// been to move the row to a first-party discharge — which would be
+    /// filing a target's verdict under a validator's refusal, exactly
+    /// the layer blur §1.7 forbids.
+    ///
+    /// # What may occupy it
+    ///
+    /// An identity the TARGET computed for a transaction the target
+    /// ACCEPTED, of the row's own shape, whose witness was verified
+    /// against an independently recomputed message. Not a run that
+    /// happened; not a candidate that was constructible; not a
+    /// capability that exists. The identity is carried rather than a
+    /// boolean so that the claim can be checked against a chain by
+    /// somebody who does not trust this crate.
+    NativeRunObserved {
+        /// The identity the target computed for the accepted
+        /// transaction.
+        accepted_identity: &'static str,
+    },
     /// A component the row needs does not exist.
     InfrastructureBlocked(LiveInfrastructureBlocker),
     /// The row's boundary is this workspace's own report bytes.
@@ -429,7 +455,9 @@ impl LiveRowStanding {
     pub const fn is_answered(&self) -> bool {
         matches!(
             self,
-            Self::FirstPartyDischarged { .. } | Self::ReportLayerAnswerable
+            Self::FirstPartyDischarged { .. }
+                | Self::NativeRunObserved { .. }
+                | Self::ReportLayerAnswerable
         )
     }
 
@@ -468,6 +496,7 @@ pub struct LiveEvidenceCensus {
     first_party_discharged: usize,
     first_party_undischarged: usize,
     native_run_required: usize,
+    native_run_observed: usize,
     infrastructure_blocked: usize,
     report_layer: usize,
     vocabulary_closed: usize,
@@ -491,6 +520,16 @@ impl LiveEvidenceCensus {
     #[must_use]
     pub const fn first_party_undischarged(&self) -> usize {
         self.first_party_undischarged
+    }
+
+    /// How many rows a target-native run has answered.
+    ///
+    /// The wave's own delta, as a number. Every one of them is a row
+    /// whose standing carries the identity that answered it, so the
+    /// figure can be audited row by row rather than believed.
+    #[must_use]
+    pub const fn native_run_observed(&self) -> usize {
+        self.native_run_observed
     }
 
     /// How many rows are waiting on a target-native run.
@@ -697,6 +736,30 @@ fn specific_blocker(row: &LiveSafetyRow) -> Option<LiveInfrastructureBlocker> {
     }
 }
 
+/// The identity that answered one row, where a run answered it.
+///
+/// Beside [`specific_blocker`] and shaped like it, because the two
+/// answer the same kind of question from opposite directions: what
+/// stands in a row's way, and what has already got out of it.
+///
+/// Every entry cites a run of record, so a reader following the name
+/// arrives at the constants one execution against a real node produced
+/// rather than at a claim in this file.
+///
+/// A row is added here on an observed acceptance OF THAT ROW'S SHAPE
+/// and on nothing else. An acceptance of a different shape is evidence
+/// about the different shape.
+fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
+    match row.name() {
+        // One receipt consumed, one recipient created, the balancing
+        // output back to the sender as change, sponsorless, private,
+        // and spending a mined confidential predecessor at this
+        // deployment's own private receipt constructor.
+        "private-one-to-one" => Some(crate::live_private_restart::run_of_record::ACCEPTED_TXID),
+        _ => None,
+    }
+}
+
 /// Classify one row of the §15 matrix.
 fn classify(
     row: &'static LiveSafetyRow,
@@ -731,6 +794,12 @@ fn classify(
 
     if let Some(blocker) = specific_blocker(row) {
         return Ok(LiveRowStanding::InfrastructureBlocked(blocker));
+    }
+    // An answered row before a blocked one would let an observation
+    // paper over a component that is still missing, so this is asked
+    // AFTER the specific blocker and never before it.
+    if let Some(accepted_identity) = observed_row_acceptance(row) {
+        return Ok(LiveRowStanding::NativeRunObserved { accepted_identity });
     }
     if !a_positive_control_exists() {
         return Ok(LiveRowStanding::InfrastructureBlocked(
@@ -837,6 +906,7 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
             LiveRowStanding::FirstPartyDischarged { .. } => census.first_party_discharged += 1,
             LiveRowStanding::FirstPartyUndischarged(_) => census.first_party_undischarged += 1,
             LiveRowStanding::NativeRunRequired(_) => census.native_run_required += 1,
+            LiveRowStanding::NativeRunObserved { .. } => census.native_run_observed += 1,
             LiveRowStanding::InfrastructureBlocked(_) => census.infrastructure_blocked += 1,
             LiveRowStanding::ReportLayerAnswerable => census.report_layer += 1,
             LiveRowStanding::OperationVocabularyClosed => census.vocabulary_closed += 1,

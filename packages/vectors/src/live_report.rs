@@ -726,6 +726,10 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         LiveRowStanding::FirstPartyDischarged { .. } => "first-party-discharged",
         LiveRowStanding::FirstPartyUndischarged(_) => "first-party-undischarged",
         LiveRowStanding::NativeRunRequired(_) => "native-run-required",
+        // The identity is deliberately not printed here. It is the
+        // standing's own payload and belongs in the evidence plan, not
+        // in bytes whose job is to summarize.
+        LiveRowStanding::NativeRunObserved { .. } => "native-run-observed",
         LiveRowStanding::InfrastructureBlocked(_) => "infrastructure-blocked",
         LiveRowStanding::ReportLayerAnswerable => "report-layer-answerable",
         LiveRowStanding::OperationVocabularyClosed => "operation-vocabulary-closed",
