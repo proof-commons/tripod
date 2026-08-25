@@ -751,7 +751,7 @@ const OWNER_OBSERVATION: ObservationIdentity = ObservationIdentity::new(
 /// negative controls moved neither term.
 ///
 /// The consequence is the one the source review put on this arc's desk
-/// by name (`rule:sighash-review:census-consequence`): the census's
+/// by name (rule:sighash-review:census-consequence): the census's
 /// silence about the input side is a claim with a precondition, and the
 /// precondition is exactly the shape that would exercise this dimension.
 /// The repair is a candidate that bears an issuance together with the

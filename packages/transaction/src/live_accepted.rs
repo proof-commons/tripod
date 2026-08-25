@@ -6,10 +6,10 @@
 //! The accepted result is option B: protected bytes, the signing-input
 //! census, and opaque authorization bytes plus the returned hash-type
 //! byte, exact-byte bound to one candidate identity
-//! (`rule:guide-sighash:result-decision`). The confidential-funding
+//! (rule:guide-sighash:result-decision). The confidential-funding
 //! execution guide's own pending decision on the accepted-result type
-//! now cites that ruling rather than its own three options
-//! (`rule:guide-ctf-exec:pending-sighash-result`).
+//! now cites that selection rather than its own three options
+//! (rule:guide-ctf-exec:pending-sighash-result).
 //!
 //! The out half already existed: [`OwnerSigningCensus`] carries the
 //! protected bytes, the output-witness vector at its consensus length,
@@ -62,7 +62,7 @@
 //!
 //! The consuming guide's `ProfileNotAccepted` is the refusal that reads
 //! that recomputation, and it belongs to that guide's handoff rather than
-//! to this type (`def:guide-ctf-exec:handoff-states`). So what changed
+//! to this type (def:guide-ctf-exec:handoff-states). So what changed
 //! for a value of this type is nothing about the value: it was well
 //! formed and exact-byte bound before and it is now. Handing one across
 //! is still not entered here — that is this work's Wave 5, whose entry

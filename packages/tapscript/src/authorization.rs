@@ -213,7 +213,7 @@ pub enum OutsideMessageGround {
     ///
     /// This is the internal key's ground, and it is the source review's
     /// argument rather than a summary of it
-    /// (`rule:sighash-review:internal-key`). What the spent-scripts term
+    /// (rule:sighash-review:internal-key). What the spent-scripts term
     /// commits, at `src/script/interpreter.cpp:2465-2472` written at
     /// `:2736`, is each spent output's `scriptPubKey`; for a taproot
     /// output the 32 bytes inside that program are the **tweaked output
@@ -497,7 +497,7 @@ impl OwnerSighashProfile {
 /// [`SighashDimension::InternalKey`], is neither required nor refused.
 /// The source review read the message term by term and found no
 /// internal-key term in it at all
-/// (`rule:sighash-review:internal-key`), so the dimension is re-typed
+/// (rule:sighash-review:internal-key), so the dimension is re-typed
 /// rather than kept: its protection is recorded as carried by
 /// [`SighashDimension::SpentOutputs`], where the output key actually is,
 /// and the argument for saying so travels with the dimension at
