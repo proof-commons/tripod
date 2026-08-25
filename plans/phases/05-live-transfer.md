@@ -202,6 +202,7 @@ Phase 5 exits when:
 - all closed-asset-capable outputs are classified;
 - explicit transfer passes complete safety evidence;
 - confidential-value transfer passes where claimed;
+- confidential sponsor values pass on an observed acceptance of their own shape, the private-sponsor-values row moving with it;
 - safety and minimality reports remain distinct;
 - lifecycle incompleteness is explicit;
 - mixed-program vectors reject;
