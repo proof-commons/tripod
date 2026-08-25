@@ -479,3 +479,91 @@ fn the_constant_source_reaches_a_solve_refusal_and_not_an_identity_one() {
         "no choice of derived bytes puts a commitment on the identity",
     );
 }
+
+/// A fixture wider than two outputs derives at all.
+///
+/// # What was wrong, and what it cost
+///
+/// The bounded parity search compared the target's admitted prefix pair
+/// against the openings BY LENGTH, so a manifest of any width but two
+/// matched no counter and exhausted the search after four thousand and
+/// ninety-six attempts. Nothing in the target contract says a confidential
+/// transaction has two outputs; the cardinality was this file's own
+/// assumption, and it was the deepest layer of the absent multi-output
+/// shape constructor — deeper than the manifest builder, which had always
+/// accepted a wider output set and then could not derive it.
+#[test]
+fn a_fixture_wider_than_two_outputs_derives() {
+    let mut wide = manifest();
+    wide.handle = ConfidentialFixtureHandle::new("ctf-v1/three-output-probe".to_owned());
+    wide.outputs = vec![
+        ConfidentialFixtureOutput {
+            role: FixtureOutputRole::Primary,
+            semantic_amount: 400_000_000,
+            output_program: vec![0x51],
+        },
+        ConfidentialFixtureOutput {
+            role: FixtureOutputRole::Primary,
+            semantic_amount: 200_000_000,
+            output_program: vec![0x51, 0x75, 0x51],
+        },
+        ConfidentialFixtureOutput {
+            role: FixtureOutputRole::Balancing,
+            semantic_amount: 100_000_000,
+            output_program: vec![0x52, 0x20, 0xaa],
+        },
+    ];
+    let handle = wide.handle.clone();
+
+    let mut registry = ConfidentialFixtureRegistry::new();
+    registry
+        .register(wide)
+        .expect("a three-output fixture registers");
+    let registry = registry.freeze();
+    let digest = *registry.registered_digest(&handle).expect("the digest");
+    let resolved = registry.resolve(&handle, &digest).expect("it resolves");
+    let FixtureOpenings::Derived { openings, .. } = resolved.openings() else {
+        panic!("byte identity derives its openings");
+    };
+
+    // One opening per output, and every commitment carries an admitted
+    // prefix — which is the whole of what the target contract states about
+    // a set of this width.
+    assert_eq!(openings.len(), 3);
+    for opening in openings {
+        assert!(
+            opening.value_commitment[0] == 0x08 || opening.value_commitment[0] == 0x09,
+            "an output's commitment carries a prefix the target does not admit: {:#04x}",
+            opening.value_commitment[0],
+        );
+    }
+}
+
+/// The two-output rule is exactly what it was.
+///
+/// The generalization above must not have moved the case the search was
+/// built for. A two-output fixture is still held to the admitted pair in
+/// FIXED ORDER — first output at the first prefix, second at the second —
+/// which is what makes the dual-parity predecessor carry one of each
+/// parity rather than one of them twice. If this loosened to the wider
+/// rule, a predecessor whose outputs both carried the same parity would
+/// derive, and the parity evidence would be about one form claimed twice.
+#[test]
+fn the_two_output_prefix_pair_is_still_required_in_fixed_order() {
+    let registry = frozen();
+    let handle = predecessor_handle();
+    let digest = *registry.registered_digest(&handle).expect("the digest");
+    let resolved = registry.resolve(&handle, &digest).expect("it resolves");
+    let FixtureOpenings::Derived { openings, .. } = resolved.openings() else {
+        panic!("byte identity derives its openings");
+    };
+    assert_eq!(openings.len(), 2);
+    assert_eq!(
+        openings[0].value_commitment[0], 0x08,
+        "the first output carries the first admitted prefix",
+    );
+    assert_eq!(
+        openings[1].value_commitment[0], 0x09,
+        "the second output carries the second admitted prefix",
+    );
+}

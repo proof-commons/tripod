@@ -932,6 +932,42 @@ mod tests {
         );
     }
 
+    /// The deterministic-public-fixture-openings observation the §15.2 row
+    /// asks for, per the byte-identity contract (§6.7): recomputing a
+    /// fixture from its manifest yields the same digest and the same
+    /// per-output openings byte for byte. This is a first-party
+    /// determinism fact over fixture openings, not a target submission, so
+    /// it carries no target-computed identity and does not move the matrix
+    /// row through the acceptance-only delta.
+    #[test]
+    fn a_fixture_recomputes_byte_identically_from_its_manifest() {
+        let register = || {
+            register_multi(
+                "ctf-v1/test-determinism",
+                ASSET,
+                ZERO_SUM,
+                &[400_000_000, 200_000_000, 100_000_000],
+                &[vec![0x51], vec![0x52], vec![0x53]],
+            )
+            .expect("the successor registers")
+        };
+        let (first_digest, first_view) = register();
+        let (second_digest, second_view) = register();
+        assert_eq!(
+            first_digest.bytes(),
+            second_digest.bytes(),
+            "the fixture digest recomputes identically from the manifest",
+        );
+        assert_eq!(first_view.outputs().len(), second_view.outputs().len());
+        for (first, second) in first_view.outputs().iter().zip(second_view.outputs()) {
+            assert_eq!(
+                first.value_blinder(),
+                second.value_blinder(),
+                "an output's value blinder recomputes identically",
+            );
+        }
+    }
+
     /// The fee-only case is unconstructible a second, deeper way than the
     /// cardinality floor: a fee output carries an empty scriptPubKey, and
     /// the confidential fixture vocabulary has no fee role and refuses an

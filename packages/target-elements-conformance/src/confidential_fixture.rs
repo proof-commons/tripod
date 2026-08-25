@@ -1206,17 +1206,47 @@ fn required_prefixes() -> (u8, u8) {
         .committed_prefixes()
 }
 
-/// Whether one set of openings carries the required prefixes in fixed
-/// order.
+/// Whether one set of openings carries the required prefixes.
+///
+/// # Two outputs, and everything wider
+///
+/// A two-output fixture is held to the strong rule this search was built
+/// for: the target's admitted prefix pair, in fixed order, so that the
+/// dual-parity predecessor carries one of each parity and exercises both
+/// admitted forms rather than one of them twice. That rule is unchanged,
+/// and every two-output fixture derives exactly the openings it derived
+/// before at exactly the counter it derived them at.
+///
+/// A fixture with more than two outputs is held to the weaker rule that
+/// is all the target contract states about it: every output's value
+/// commitment carries one of the two admitted prefixes. There is no
+/// reviewed fixed-order convention for a third output to satisfy — the
+/// admitted set is a pair — and inventing one here would be this file
+/// deciding a question the target contract does not answer.
+///
+/// The consequence is stated rather than hidden: for a wider fixture the
+/// search is a well-formedness check the first counter satisfies, because
+/// a well-formed commitment carries an admitted prefix by construction.
+/// The search's discriminating power belongs to the two-output
+/// dual-parity case and is claimed for no other.
+///
+/// Before this, a fixture of any width but two could not derive at all.
+/// The required pair was compared by LENGTH, so a three-output manifest
+/// failed every counter and exhausted the bounded search after four
+/// thousand and ninety-six attempts. That is the deepest layer of the
+/// absent multi-output shape constructor, and it was a cardinality
+/// assumption in this file rather than a rule the target states.
 fn prefixes_match(openings: &[DerivedOpening]) -> bool {
-    let required: [u8; 2] = required_prefixes().into();
-    if openings.len() != required.len() {
-        return false;
+    let (first, second) = required_prefixes();
+    if openings.len() == 2 {
+        return openings
+            .iter()
+            .zip([first, second])
+            .all(|(opening, wanted)| opening.value_commitment[0] == wanted);
     }
-    openings
-        .iter()
-        .zip(required)
-        .all(|(opening, wanted)| opening.value_commitment[0] == wanted)
+    openings.iter().all(|opening| {
+        opening.value_commitment[0] == first || opening.value_commitment[0] == second
+    })
 }
 
 /// The bounded deterministic parity search.
