@@ -795,3 +795,145 @@ fn check_proof_bearing_record(
     assert!(rendered.contains("evidences_the_receipt_covenant false"));
     assert!(rendered.contains("discharges_no_matrix_row true"));
 }
+
+/// The restart order's first step, against a real node.
+///
+/// # What this run is for
+///
+/// One accepted sponsorless private one-to-one control, which is the
+/// entry condition for every later step of the mandatory restart order
+/// (task:guide-ctf-exec:restart-order). Nothing else runs here: no
+/// negative case, no mutation, no parity pair, because the order forbids
+/// them until this one accepts.
+///
+/// # What it asserts, and what it merely records
+///
+/// It asserts the shape of a completed ceremony — that the run reached
+/// the node, that the confidential funding step created the predecessor
+/// the ceremony asked for, and that a candidate was built and submitted.
+/// What the node decided is written into the artifact and asserted
+/// nowhere: a lane that asserted an acceptance would fail rather than
+/// report on the day the honest answer changed.
+///
+/// The one content assertion is the two-origin agreement, and only where
+/// an acceptance was observed. A run that accepted a candidate and could
+/// not verify the witness it read back against its own recomputed
+/// message has found something, and must say so by failing.
+///
+/// # It moves nothing by running
+///
+/// A row moves on an observed acceptance, and the observation is the
+/// artifact this produces rather than the existence of this test.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn one_private_one_to_one_control_is_submitted_to_a_real_target() {
+    use vectors::live_private_restart::{PrivateRestartPlanner, render_private_restart};
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension("private-restart-control");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner =
+        PrivateRestartPlanner::new(identifier(&genesis)).expect("the restart ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_private_restart(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as
+    // one. It is never a target verdict, so it is reported and the test
+    // stops here rather than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the restart ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    // The predecessor is confidential and is the one the ceremony asked
+    // for. A divergence is a finding about the funding boundary.
+    assert_eq!(record.coins().len(), 2);
+    assert!(
+        record
+            .coins()
+            .iter()
+            .all(vectors::live_private_restart::RestartConfidentialCoin::matches_expectation),
+        "the node reported a confidential coin the ceremony did not ask for",
+    );
+
+    // One receipt consumed, and its outputs carry real proofs.
+    assert_eq!(record.receipt_leaves(), 1);
+    assert_eq!(record.output_witness_proof_bytes().len(), 2);
+    assert!(
+        record
+            .output_witness_proof_bytes()
+            .iter()
+            .all(|bytes| *bytes > 2),
+        "an output-witness entry carried no range proof: {:?}",
+        record.output_witness_proof_bytes(),
+    );
+
+    // The candidate reached the node.
+    assert!(record.submitted_bytes() > 0);
+    assert!(record.observed_layer().is_some(), "no layer was observed");
+
+    // The two origins, where an acceptance was observed.
+    if let Some(check) = record.reverification() {
+        assert!(
+            check.readback_matches_submission(),
+            "the bytes the node reported are not the bytes it was handed",
+        );
+        assert!(
+            check.verified(),
+            "the accepted witness does not verify against the recomputed message",
+        );
+    }
+
+    // The run says in its own bytes what it did not establish.
+    assert!(rendered.contains("evidences_no_negative_case true"));
+    assert!(rendered.contains("moves_the_sponsor_row false"));
+}
