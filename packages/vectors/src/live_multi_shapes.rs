@@ -97,7 +97,9 @@ use crate::confidential_materializer::{
 use crate::confidential_predecessor::{PredecessorShape, TRIPLE_PREDECESSOR_AMOUNTS};
 use crate::error::VectorError;
 use crate::live_owner_observation::printed_order;
-use crate::live_plan::{FIRST_SCALAR, SECOND_SCALAR, published_owner, reviewed_target};
+use crate::live_plan::{
+    FIRST_SCALAR, LiveShapeVocabulary, SECOND_SCALAR, published_owner, reviewed_target,
+};
 use crate::live_private_restart::{
     ConsumedReceipt, LinkedDeployment, PrivateRestartRefusal, RestartConfidentialCoin,
     assemble_control, confidential_funding_step, issue_step, link_and_register,
@@ -289,6 +291,30 @@ impl PrivateShape {
             | Self::StrictOneToOne
             | Self::OneToOneWithFee => PredecessorShape::DualParity,
             Self::PrivateMerge => PredecessorShape::TripleNonCanceling,
+        }
+    }
+
+    /// Which shape vocabulary this shape's deployment emits programs
+    /// for.
+    ///
+    /// Only the fee-bearing shape asks for the fee-bearing candidate, and
+    /// the narrowness is the point rather than caution. A candidate's
+    /// shape set becomes one coordinator leaf per shape, the leaves tweak
+    /// the taproot output key, and that key is the destination program
+    /// each of these shapes' recorded successor digests was taken over --
+    /// so linking a shape against the wider vocabulary would move a
+    /// digest that a run against a pinned node already wrote down. Five
+    /// of the six keep the demonstration candidate and keep their
+    /// digests, byte for byte.
+    #[must_use]
+    pub const fn vocabulary(self) -> LiveShapeVocabulary {
+        match self {
+            Self::Split
+            | Self::ManyToMany
+            | Self::SeveralDistinctOwners
+            | Self::StrictOneToOne
+            | Self::PrivateMerge => LiveShapeVocabulary::Demonstration,
+            Self::OneToOneWithFee => LiveShapeVocabulary::FeeBearing,
         }
     }
 
@@ -723,8 +749,12 @@ impl MultiShapePlanner {
         // receipt programs. Its own one-to-one successor is registered and
         // unused; this ceremony registers its own multi-output successor
         // against the same linked deployment.
-        let linked =
-            link_and_register(self.shape.predecessor(), ConsumedReceipt::Primary, printed)?;
+        let linked = link_and_register(
+            self.shape.predecessor(),
+            ConsumedReceipt::Primary,
+            printed,
+            self.shape.vocabulary(),
+        )?;
         self.record.issued_asset = Some(printed.to_owned());
         self.record.predecessor_digest = Some(linked.predecessor_digest);
 

@@ -77,7 +77,7 @@ use crate::confidential_materializer::FirstPartyCommitmentCheck;
 use crate::confidential_predecessor::{FUND_STEP, PredecessorShape};
 use crate::error::VectorError;
 use crate::live_owner_observation::{asset_of, printed_order};
-use crate::live_plan::reviewed_target;
+use crate::live_plan::{LiveShapeVocabulary, reviewed_target};
 use crate::live_private_restart::{
     BuiltControl, ConsumedReceipt, LinkedDeployment, build_control, confidential_funding_step,
     issue_step, link_and_register, observe_funded_coins, verify_readback_signature,
@@ -354,10 +354,15 @@ impl ConservationNegativePlanner {
 
     /// Link and register from the issued asset.
     fn settle_asset(&mut self, printed: &str) -> Result<(), ConservationNegativeRefusal> {
-        let linked = link_and_register(PredecessorShape::DualParity, self.consumed, printed)
-            .map_err(|refusal| {
-                ConservationNegativeRefusal::LinkOrRegisterRefused(format!("{refusal:?}"))
-            })?;
+        let linked = link_and_register(
+            PredecessorShape::DualParity,
+            self.consumed,
+            printed,
+            LiveShapeVocabulary::Demonstration,
+        )
+        .map_err(|refusal| {
+            ConservationNegativeRefusal::LinkOrRegisterRefused(format!("{refusal:?}"))
+        })?;
         self.record.issued_asset = Some(printed.to_owned());
         self.record.predecessor_digest = Some(linked.predecessor_digest());
         self.record.successor_digest = Some(linked.successor_digest());
