@@ -1755,6 +1755,16 @@ mod tests {
         fs::write(&readme, index).expect("indexed archive");
     }
 
+    /// A document body comfortably larger than the load-bearing cap.
+    ///
+    /// Derived from `HARD_CAP_BYTES` rather than written as a figure.
+    /// The two exclusion tests below mean "bigger than the cap", and a
+    /// literal that merely happened to be bigger stopped being so the
+    /// day the cap was raised — which is how it was found.
+    fn over_the_load_bearing_cap() -> usize {
+        usize::try_from(HARD_CAP_BYTES).expect("cap fits in usize") + 1024
+    }
+
     #[test]
     fn archive_bytes_are_excluded_from_the_combined_budget() {
         // The point of the split: an archive directory can hold more
@@ -1765,7 +1775,7 @@ mod tests {
         let bare_combined = bare.report.combined_bytes;
         assert_eq!(bare.report.archive_bytes, 0);
 
-        write_archive(dir.path(), "guides", 900 * 1024);
+        write_archive(dir.path(), "guides", over_the_load_bearing_cap());
         let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
 
         assert!(outcome.report.valid, "{:#?}", outcome.failures);
@@ -1775,7 +1785,7 @@ mod tests {
             outcome.report.archive_bytes,
         );
         // The archive README and the plans README index line are the
-        // only load-bearing growth; the 900 KiB document is not.
+        // only load-bearing growth; the oversize document is not.
         assert!(
             outcome.report.combined_bytes < bare_combined + 1024,
             "combined {} grew from {bare_combined}",
@@ -1872,7 +1882,7 @@ mod tests {
         let bare = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
         let bare_combined = bare.report.combined_bytes;
 
-        write_root_adr(dir.path(), 900 * 1024);
+        write_root_adr(dir.path(), over_the_load_bearing_cap());
         let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
 
         assert!(outcome.report.valid, "{:#?}", outcome.failures);
