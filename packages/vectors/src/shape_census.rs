@@ -1162,6 +1162,10 @@ mod tests {
                 crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
             ),
             (
+                BlindedShape::OneToOneWithFee,
+                crate::live_multi_shapes::run_of_record::FEE_BEARING_SUCCESSOR_IDENTITY,
+            ),
+            (
                 BlindedShape::OneToTwo,
                 crate::live_private_restart::run_of_record::ACCEPTED_TXID,
             ),
@@ -1407,11 +1411,11 @@ mod tests {
             removed,
             vec![
                 Limitation::TwoOutputFloor,
-                Limitation::CancelingPredecessorOnly,
                 Limitation::SponsorlessShapeHasNoFeeMember,
+                Limitation::CancelingPredecessorOnly,
             ],
-            "three limitations have been removed AND run: the floor, the canceling predecessor, \
-             and the shape vocabulary with no sponsorless fee-bearing member",
+            "three limitations have been removed AND run: the floor, the shape vocabulary with \
+             no sponsorless fee-bearing member, and the canceling predecessor",
         );
 
         // Every removal recorded on an observed row is proven by a
