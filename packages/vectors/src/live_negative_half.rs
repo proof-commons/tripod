@@ -6,10 +6,12 @@
 //! [`crate::live_evidence`] classifies every row of the §15 matrix and
 //! counts how many stand at [`LiveRowStanding::NativeRunRequired`]. A
 //! count is enough to know the half is unfinished and not enough to work
-//! on: it says fifty rows are waiting and never says WHICH, so a wave
-//! reading it has to rediscover the list by re-deriving the classifier's
-//! fall-through every time, and two waves can disagree about the list
-//! while agreeing about the number.
+//! on: it says HOW MANY rows are waiting and never says WHICH, so a
+//! wave reading it has to rediscover the list by re-deriving the
+//! classifier's fall-through every time, and two waves can disagree
+//! about the list while agreeing about the number. The count is left to
+//! the census deliberately — a number repeated in prose here would be a
+//! second place for it to drift.
 //!
 //! This register is that list, written down once and held against the
 //! classifier by [`every_outstanding_row_is_registered`]. The test is
@@ -47,7 +49,7 @@ pub const STILL_REQUIRED: &[&str] = &[
     // waiting on a run whatever its polarity, and a register that held
     // only negatives would report the positive half complete.
     "projection-equality-with-paired-explicit",
-    // §15.4 — twelve class, asset and constructor faults.
+    // §15.4 — the class, asset and constructor faults still waiting.
     "ash-input-or-output",
     "vault-control-entitlement-or-bare-u-output",
     "wrong-owner-metadata",
@@ -60,13 +62,16 @@ pub const STILL_REQUIRED: &[&str] = &[
     "foreign-asset-under-receipt-shaped-program",
     "key-path-escape",
     "malformed-control-path",
-    // §15.5 — eighteen value and partition faults, the largest group.
+    // §15.5 — the value and partition faults still waiting. Two rows
+    // of this section have LEFT this register: `malformed-rangeproof`
+    // and `wrong-private-blinding-balance` are answered by the
+    // conservation ceremony's own run, each on its own mutant, and they
+    // are recorded there rather than here. `private-ct-imbalance` stays
+    // because no mutant of it was built.
     "output-total-one-below-input",
     "output-total-one-above-input",
     "amount-outside-semantic-domain",
     "private-ct-imbalance",
-    "wrong-private-blinding-balance",
-    "malformed-rangeproof",
     "malformed-surjection-proof",
     "copied-commitment",
     "private-output-omitted",
@@ -79,10 +84,10 @@ pub const STILL_REQUIRED: &[&str] = &[
     "destruction",
     "value-routed-into-ash-or-time-locked-receipt",
     "second-offsetting-u-flow",
-    // §15.6 — eight sponsor faults. The sponsor table's other five are
-    // answered: two are report-layer, two are pre-target first-party,
-    // and `missing-sponsor-authorization` is one of the three observed
-    // refusals this register's successors are modelled on.
+    // §15.6 — the sponsor faults still waiting. The sponsor table's
+    // other five are answered: two are report-layer, two are pre-target
+    // first-party, and `missing-sponsor-authorization` is one of the
+    // observed refusals this register's successors are modelled on.
     "sponsor-protocol-overlap",
     "two-sponsor-envelopes",
     "foreign-sponsor-asset",
@@ -91,8 +96,8 @@ pub const STILL_REQUIRED: &[&str] = &[
     "balanced-theft",
     "zero-valued-ordinary-sponsor-member",
     "confidential-sponsor-values",
-    // §15.7 — eleven root, event, ABI and linker faults. The twelfth
-    // unanswered one is NOT here:
+    // §15.7 — the root, event, ABI and linker faults still waiting.
+    // One unanswered row of this section is deliberately NOT here:
     // `raw-transaction-bypassing-safe-construction` stands at
     // `InfrastructureBlocked`, which is a different state from waiting
     // on a run, and listing it here would report a blocked row as a

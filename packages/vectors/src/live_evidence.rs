@@ -1274,6 +1274,43 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
             crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
             crate::live_sponsor_shapes::sponsored_run_of_record::MISSING_SPONSOR_AUTHORIZATION_REFUSAL,
         )),
+        // §15.5's two proof-negative rows, answered by the conservation
+        // ceremony's own run — which submitted THREE mutants before the
+        // control for a reason it states, all four spending one coin: a
+        // control accepted first would have spent it, and every mutant
+        // after it would have been refused for a missing input rather
+        // than for its mutation. That is the same ordering lesson the
+        // witness negatives learned as `txn-already-known`, met here in
+        // its other form.
+        //
+        // The target says ONE thing to all three mutants, so the layer
+        // cannot be what separates these rows and the FIELD is. Each row
+        // below cites the declared byte range its own mutant moved and
+        // stayed inside, checked by `attribute_proof_negative` rather
+        // than asserted: `RANGEPROOF_FIELD_RANGE` for this row and
+        // `WRONG_BLINDER_FIELD_RANGE` for the one under it. Two rows
+        // move here on ONE run because each drove its OWN mutant; a
+        // third case in the same run, `missing-rangeproof`, moves no §15
+        // row at all, the matrix having no member for it.
+        //
+        // `private-ct-imbalance` is NOT answered by this run and stays
+        // waiting, though it declares the same class and would draw the
+        // same words. Its mutation is the committed VALUES failing to
+        // balance, and no mutant of it was built; reading the wrong
+        // blinder's refusal onto it would count one observation for two
+        // rows, which is the rule this function exists to keep.
+        "malformed-rangeproof" => Some((
+            crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
+        )),
+        // The class this row declares is `AmountMismatch`, and the
+        // target's own words are what name it: `bad-txns-in-ne-out` is
+        // value in not equal to value out, which is that class stated by
+        // the node rather than inferred for it.
+        "wrong-private-blinding-balance" => Some((
+            crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
+        )),
         _ => None,
     }
 }
@@ -2118,11 +2155,13 @@ mod tests {
             answered,
             BTreeSet::from([
                 "empty-signature",
+                "malformed-rangeproof",
                 "malformed-signature",
                 "missing-sponsor-authorization",
+                "wrong-private-blinding-balance",
             ]),
         );
-        assert_eq!(plan.census().native_refusal_observed(), 3);
+        assert_eq!(plan.census().native_refusal_observed(), 5);
 
         // THE THIRD ROW COMES FROM A DIFFERENT LANE and is held to the
         // same rule. Its mutant was offered first and its control
