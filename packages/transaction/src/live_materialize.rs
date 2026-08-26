@@ -553,6 +553,64 @@ pub enum ConfidentialOutputRole {
     /// tally, so a fee can never be the output that absorbs the input
     /// blinder sum.
     Fee,
+    /// A sponsor's blinded change, returning the reserve asset the
+    /// sponsor's coin brought in and the fee did not consume.
+    ///
+    /// # It is a declared position and not a second region
+    ///
+    /// The transaction carries one non-protocol region and this is not
+    /// in it: the region's members are explicit by construction, and
+    /// this output's whole purpose is that its value is not. It is a
+    /// DECLARED DESTINATION POSITION, named by the role its opening
+    /// carries, and it takes the same stages every committed output
+    /// takes.
+    ///
+    /// # Why the change has to exist at all
+    ///
+    /// Arithmetic rather than preference. The target balances per asset,
+    /// so the reserve sub-equation of a sponsored transaction is
+    /// `sponsor_input == fee + change`. Without a change term that
+    /// forces the sponsor input's value equal to the fee, and a fee is
+    /// mandatorily explicit — so a commitment there would open to a
+    /// number anyone recomputes, carrying a blinded output's form and
+    /// none of its hiding.
+    ///
+    /// # What it does to the blinder solve
+    ///
+    /// Nothing that needs a second election. Its blinder is freely
+    /// chosen and derived, exactly as a [`Self::Primary`]'s is, and the
+    /// residue lands on the one balancing output the transaction already
+    /// elects. The `r·G` term does not depend on which asset an output
+    /// carries, so a reserve-asset output absorbs into a protocol-asset
+    /// election with no arithmetic added.
+    SponsorChange,
+}
+
+impl ConfidentialOutputRole {
+    /// Whether this role's output belongs to the protocol region.
+    ///
+    /// The sponsor's change does not, and §1.9 is the reason: the
+    /// sponsor region is held outside every protocol claim, so a
+    /// sponsored transaction's protocol balance is the same equation it
+    /// would be if the sponsor were not there. Stated once, here, so
+    /// that the semantic balance and the asset agreement read the same
+    /// answer rather than each deciding it.
+    #[must_use]
+    pub const fn is_a_protocol_member(self) -> bool {
+        match self {
+            Self::Primary | Self::Balancing | Self::Fee => true,
+            Self::SponsorChange => false,
+        }
+    }
+
+    /// Whether this role brings a freely chosen blinder to the solve.
+    #[must_use]
+    pub const fn brings_a_chosen_blinder(self) -> bool {
+        match self {
+            Self::Primary | Self::SponsorChange => true,
+            Self::Balancing | Self::Fee => false,
+        }
+    }
 }
 
 /// Which derivation role a scalar was derived for.
@@ -597,6 +655,7 @@ pub struct ConfidentialFixtureOutputView {
     value_blinder: Option<[u8; SCALAR_BYTES]>,
     nonce_input: Option<[u8; SCALAR_BYTES]>,
     rangeproof_seed: Option<[u8; SCALAR_BYTES]>,
+    reserve_asset: Option<AssetId>,
 }
 
 impl ConfidentialFixtureOutputView {
@@ -620,6 +679,39 @@ impl ConfidentialFixtureOutputView {
             value_blinder: Some(value_blinder),
             nonce_input: Some(nonce_input),
             rangeproof_seed: Some(rangeproof_seed),
+            // Absent, which is what says this output carries the
+            // transaction's protocol asset. A reserve asset is stated
+            // only where one is meant, by the constructor that means it.
+            reserve_asset: None,
+        }
+    }
+
+    /// One projected sponsor-change output.
+    ///
+    /// It takes an asset the others do not, and that is the whole of why
+    /// it is a separate constructor: every other projected output
+    /// carries the transaction's one protocol asset, and this one
+    /// carries the reserve asset the sponsor's coin brought in. Naming
+    /// the asset here rather than defaulting it means a sponsor change
+    /// built by accident would have to name a reserve asset to exist at
+    /// all.
+    #[must_use]
+    pub const fn sponsor_change(
+        semantic_amount: u64,
+        output_program: Vec<u8>,
+        reserve_asset: AssetId,
+        value_blinder: [u8; SCALAR_BYTES],
+        nonce_input: [u8; SCALAR_BYTES],
+        rangeproof_seed: [u8; SCALAR_BYTES],
+    ) -> Self {
+        Self {
+            role: ConfidentialOutputRole::SponsorChange,
+            semantic_amount,
+            output_program,
+            value_blinder: Some(value_blinder),
+            nonce_input: Some(nonce_input),
+            rangeproof_seed: Some(rangeproof_seed),
+            reserve_asset: Some(reserve_asset),
         }
     }
 
@@ -639,6 +731,7 @@ impl ConfidentialFixtureOutputView {
             value_blinder: None,
             nonce_input: None,
             rangeproof_seed: None,
+            reserve_asset: None,
         }
     }
 
@@ -678,6 +771,30 @@ impl ConfidentialFixtureOutputView {
     #[must_use]
     pub const fn rangeproof_seed(&self) -> Option<&[u8; SCALAR_BYTES]> {
         self.rangeproof_seed.as_ref()
+    }
+
+    /// The reserve asset this output carries instead of the protocol
+    /// asset, where it carries one.
+    ///
+    /// Absent for every output of the protocol region, which is every
+    /// output that is not a sponsor's change.
+    #[must_use]
+    pub const fn reserve_asset(&self) -> Option<AssetId> {
+        self.reserve_asset
+    }
+
+    /// The asset this output carries, given the transaction's protocol
+    /// asset.
+    ///
+    /// One place decides it, so that the commitment, the range proof and
+    /// the emitted asset field cannot be built over three different
+    /// answers.
+    #[must_use]
+    pub const fn asset_carried(&self, protocol_asset: AssetId) -> AssetId {
+        match self.reserve_asset {
+            Some(reserve) => reserve,
+            None => protocol_asset,
+        }
     }
 }
 
@@ -1686,24 +1803,29 @@ pub fn materialize_confidential_candidate(
     let input_blinder_sum = *fixture_of(intent, fixtures)?.input_blinder_sum();
     let derived = output_blinders(view, &input_blinder_sum, checker)?;
 
-    // Stage three: the protocol asset is explicit, every protocol asset
-    // blinder is zero, and a confidential asset result is refused
-    // outright. Both are settled in the preflight; what remains here is
-    // emitting the explicit field, which is the only asset field this
-    // construction can build.
-    let asset_field = AssetField::Explicit(asset);
+    // Stage three: every asset this construction emits is explicit,
+    // every asset blinder is zero, and a confidential asset result is
+    // refused outright. All of that is settled in the preflight; what
+    // remains here is emitting the explicit field.
+    //
+    // WHICH asset is a per-output question and not a transaction-wide
+    // one, because a sponsor's change carries the reserve asset while
+    // the protocol region carries the protocol asset. The output says
+    // which it carries, so the commitment, the range proof and the field
+    // cannot be built over three different answers.
 
     // Stages four, five, and six, per output and in order.
     let mut outputs = Vec::with_capacity(view.len());
     let mut output_witnesses = Vec::with_capacity(view.len());
     for (index, projected) in view.iter().enumerate() {
+        let carried = projected.asset_carried(asset);
         let (output, witness) = if projected.role() == ConfidentialOutputRole::Fee {
             // The fee output takes none of stages four, five and six. It
             // has no commitment to compare against an independent
             // recomputation, no nonce to derive, and no range to prove,
             // and running any of those over it is what a blinded fee
             // output would have been.
-            materialize_fee_output(index, projected, asset)?
+            materialize_fee_output(index, projected, carried)?
         } else {
             let blinder = derived[index].ok_or(MaterializationRefusal::InvalidScalar {
                 role: DerivationRole::ValueBlinder,
@@ -1711,8 +1833,8 @@ pub fn materialize_confidential_candidate(
             materialize_one_output(
                 index,
                 projected,
-                asset,
-                asset_field,
+                carried,
+                AssetField::Explicit(carried),
                 &blinder,
                 crypto,
                 checker,
@@ -1805,31 +1927,36 @@ fn output_blinders(
     let mut derived: Vec<Option<[u8; SCALAR_BYTES]>> = Vec::with_capacity(view.len());
     let mut others: Vec<[u8; SCALAR_BYTES]> = Vec::new();
     for projected in view {
-        match projected.role() {
-            // Neither the balancing output nor the fee output brings a
-            // freely chosen blinder to `others`, and they reach that
-            // through opposite facts. The balancing one's blinder is
-            // SOLVED from the others and so cannot be one of them. The
-            // fee one has no blinder at all: an explicit value is
-            // committed with an all-zero blinder, so it contributes
-            // nothing to the sum the solve subtracts.
-            ConfidentialOutputRole::Balancing | ConfidentialOutputRole::Fee => derived.push(None),
-            ConfidentialOutputRole::Primary => {
-                let blinder =
-                    *projected
-                        .value_blinder()
-                        .ok_or(MaterializationRefusal::InvalidScalar {
-                            role: DerivationRole::ValueBlinder,
-                        })?;
-                if blinder == [0_u8; SCALAR_BYTES] {
-                    return Err(MaterializationRefusal::InvalidScalar {
-                        role: DerivationRole::ValueBlinder,
-                    });
-                }
-                others.push(blinder);
-                derived.push(Some(blinder));
-            }
+        // Neither the balancing output nor the fee output brings a
+        // freely chosen blinder to `others`, and they reach that through
+        // opposite facts. The balancing one's blinder is SOLVED from the
+        // others and so cannot be one of them. The fee one has no
+        // blinder at all: an explicit value is committed with an
+        // all-zero blinder, so it contributes nothing to the sum the
+        // solve subtracts.
+        //
+        // A sponsor's change brings one for the same reason a primary
+        // does, and the fact that it carries the reserve asset rather
+        // than the protocol asset changes nothing here: the `r·G` term
+        // of a Pedersen commitment does not depend on which asset the
+        // `v·H_a` term used, so one election absorbs both regions'
+        // residue.
+        if !projected.role().brings_a_chosen_blinder() {
+            derived.push(None);
+            continue;
         }
+        let blinder = *projected
+            .value_blinder()
+            .ok_or(MaterializationRefusal::InvalidScalar {
+                role: DerivationRole::ValueBlinder,
+            })?;
+        if blinder == [0_u8; SCALAR_BYTES] {
+            return Err(MaterializationRefusal::InvalidScalar {
+                role: DerivationRole::ValueBlinder,
+            });
+        }
+        others.push(blinder);
+        derived.push(Some(blinder));
     }
 
     // Stage two: solve the balancing blinder, and refuse a degenerate
@@ -2079,9 +2206,16 @@ fn preflight(
     let consumed: Option<u64> = intent.inputs().iter().try_fold(0_u64, |total, input| {
         total.checked_add(input.explicit_amount())
     });
+    // The sponsor's change is held out of this equation, because §1.9
+    // holds the sponsor region outside every protocol claim: a sponsored
+    // transaction's protocol balance is the same equation it would be
+    // if the sponsor were not there. Counting a reserve-asset output in
+    // a protocol subtotal would not be a stricter check, it would be a
+    // check of two different assets added together.
     let created: Option<u64> = intent
         .destinations()
         .iter()
+        .filter(|destination| destination.role().is_a_protocol_member())
         .try_fold(0_u64, |total, destination| {
             total.checked_add(destination.semantic_amount())
         });
@@ -2257,15 +2391,27 @@ fn destination_view<'view>(
 }
 
 /// The one explicit protocol asset the whole protocol region carries.
+///
+/// A sponsor's change is not of that region and is not folded in. It
+/// carries the reserve asset by construction, so including it would make
+/// every sponsored transaction disagree with itself about what its
+/// protocol asset is — and excluding it is not a loophole, because the
+/// asset it does carry is checked against the reserve the sponsor's own
+/// coin brought in, where that fact is known.
 fn protocol_asset(
     intent: &ConfidentialConstructionIntent,
 ) -> Result<AssetId, MaterializationRefusal> {
-    let first = intent
+    let members = intent
         .destinations()
-        .first()
+        .iter()
+        .enumerate()
+        .filter(|(_, destination)| destination.role().is_a_protocol_member());
+    let (_, first) = members
+        .clone()
+        .next()
         .ok_or(MaterializationRefusal::IncompleteFamilyClassification)?;
     let asset = first.explicit_asset();
-    for (index, destination) in intent.destinations().iter().enumerate() {
+    for (index, destination) in members {
         if destination.explicit_asset() != asset {
             return Err(MaterializationRefusal::ProtocolAssetMismatch {
                 member: FamilyMember::ProtocolOutput(index),
