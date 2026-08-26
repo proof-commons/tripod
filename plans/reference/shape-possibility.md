@@ -92,6 +92,61 @@ Submitted and refused is nobody's status. It was the fee-bearing shape's, which 
 
 The one-to-two row carries the first of two identities the lane recorded for that shape; the second, is the same shape spending the opposite commitment parity, and the register cites one because a shape needs one acceptance and not because the other is doubted.
 
+## The form product, and how to look a form up · `rule:shapes:form-product`
+
+The index above answers eleven shapes. The ruling this section implements asks a different question, and asks it of every form rather than of eleven: we do not need to support everything, but we must know what we do not support explicitly. An index of eleven rows answers that question for eleven forms and returns silence for the rest, and silence is the one answer the ruling forbids.
+
+So the register also states the PRODUCT of the four axes those eleven shapes are points in. Its machine-checked form is the transfer-form half of the `shape_census` module, and it is a closure rule rather than a table: four hundred and eighty cells, about twenty written facts, and a derivation that computes the rest. The tests drive the live fixture registry and the live shape vocabulary for every cell and require the derived verdict to be the one those layers actually return, so an inherited claim is recomputed exactly as hard as a written one.
+
+**The four axes.** How many receipts the transfer consumes, one or two. How many receipt destinations it creates, none through three — destinations only, the fee and the sponsor's change being separate axes so that a count never means two different things in two cells. Whether it carries the mandatorily explicit fee output. What the sponsor region contributes. And which value form each SIDE is written in.
+
+**The sponsor axis has six members and that is the point.** It had no census vocabulary at all before this section, and the obvious repair — sponsored or not — would have been the second version of the error this whole register exists to prevent. Three facts about a sponsor region change a consensus verdict and they vary independently: whether the sponsor's coin carries a committed value, whether it takes change back, and whether that change is committed in turn. One member of the product is impossible on the tally and a node has said so in its own words; one has never been stated anywhere; three have been accepted into blocks. No sponsored-or-not axis could tell those apart.
+
+**The representation axis carries five members**, four of them pairings of the two plans §6.1 states exhaustively — explicit into explicit, private into private, explicit into private, private into explicit — plus the corner where a private consumed side meets a wholly explicit created side and nothing absorbs. The wholly explicit lane is a member so that a reader asking about an explicit form gets a status rather than silence; its sponsorless cells are answered by naming the register that owns them, because restating a verdict would create a second authored source for it.
+
+**The tally rule needed one sharpening and no second predicate.** A commitment is v\*H_asset + r\*G. The value coordinate rides a per-asset generator, produced from the asset id at src/confidential_validation.cpp:321-324 and used to commit at :347-349, so a value in one asset can never cancel a value in another and each asset conserves separately. The blinder coordinate rides the single generator G for every asset alike, so the blinder sum is ONE sum across the whole transaction. That asymmetry is what makes a sponsor region computable without a second rule: its reserve-asset value must balance against the fee and the change in its own asset, which the funding can always arrange and which therefore forbids no cell, while its blinder joins the same global sum as every receipt's and does not care which asset holds it.
+
+**Every unblinding cell states its own absorber.** This used to be recorded once, at the fully-unblinding corner, as the observation that an exit crossing without its absorber is impossible. Read at the corner it looks like a fact about one shape; it is the load-bearing structure of every unblinding cell in the product, and a reader deciding whether to build a two-explicit-output transfer needs the sentence attached to the cell they are reading. So each cell names the output that holds its consumed blinder sum, and a test recomputes the claim by taking the absorber away and requiring the counterpart cell's own verdict to change.
+
+**Writing that test refuted the plain reading, and the correction is worth more than the reading was.** An exit crossing BESIDE a committed sponsor change has two blinded outputs, so removing the absorber does not reach the corner at all — the sponsor's change still holds the sum and consensus still admits the form. What the stripped cell loses is not possibility but a SOLVING role, because the registry's balancing model asks which output is solved and a sponsor's change is not one. The target admits it and this workspace cannot state it, which is this register's central distinction turning up in a place nobody had looked.
+
+**What a reader gets back.** Every cell answers in one of eight words, and the answers a reader most needs are the unwelcome ones.
+
+| Status | What it means | Cells |
+|---|---|---|
+| Not a form of this space | The axes contradict, and the contradiction is named | 282 |
+| Expressible and unrun | Consensus admits it, this workspace states it, nothing has built one | 80 |
+| Impossible, derived | The tally forbids it | 49 |
+| Unsupported here | Consensus admits it and a named layer here refuses it | 36 |
+| Supported and run | A node accepted one, and the cell cites its identity | 12 |
+| Stated in another register | Answered by the register that owns it, rather than twice | 12 |
+| Refused to protect hiding | The tally is content and the one blinded output would hide nothing | 8 |
+| Impossible, observed | Built, offered to a node, and refused on the balance rule itself | 1 |
+
+Two hundred and eighty-two of the four hundred and eighty are combinations of axes that contradict, so the space this register answers about is the remaining one hundred and ninety-eight — and every one of them carries a verdict. The largest single contradiction is a sponsor region beside no fee output: a sponsor region is DEFINED by the fee it funds, the reviewed shape vocabulary derives the fee's presence from a nonzero sponsor-input count and refuses the combination by name, so a sponsored form paying no fee is not a form this space can state. Nothing about consensus forbids one. It is a definition, and the register says which.
+
+**The wider fee-bearing arities are expressible and unrun, and that is a proof rather than a hope.** The fixture registry places no cardinality rule on the fee role and no ceiling on the output count, so every fee-bearing manifest registers. The reviewed shape vocabulary carries a sponsorless fee-bearing member at every receipt-input and receipt-output count in its bounds. Both are LINKED and asked by the tests. What is missing is a ceremony: one fee-bearing arity has run and the other five have not, and the register names which.
+
+**One caveat every fee-bearing row depends on.** Those members live in the SECOND deployment. The demonstration deployment carries none of them, because admitting the member would move every taproot output key and therefore every recorded fixture digest, so the fee-bearing vocabulary was landed as a separate deployment. The same cell is expressible from one deployment and unreachable from the other. This is a limitation nobody wants removed — the workspace would choose it again — and it is recorded all the same, because a register able to record only walls it wanted torn down would quietly stop recording the other kind.
+
+**Crossing composed with a sponsor is stated everywhere and built nowhere.** Nothing refuses it: the isolation fragment that handles the sponsor region takes no representation and reads no value field, the coordinator appends that fragment and then matches on the composition, and the positional value-form leaf runs over the destination range alone, which the fee and the sponsor change sit outside of by construction. The crossing taptree already carries the sponsored coordinator leaves. What is missing is a caller — the composing finalization entry point takes a composition and a sponsor capability in the same parameter list, every sponsored caller here takes the homogeneous wrapper instead, and the one crossing ceremony pins sponsorlessness and passes no sponsor capability at all. Absence, not refusal, and the register says which.
+
+## Two vocabularies, and the row that reads broader than it is · `rule:shapes:two-vocabularies`
+
+This section exists because the owner read a census row as a claim it does not make, and the row was not at fault. Two registers in this workspace describe transfer shapes and they count DIFFERENT THINGS, so a sentence true in one is false in the other while both look like statements about the same transaction.
+
+**The census counts blinded outputs. The minimality pair registry counts roles.** A census row saying one receipt into two blinded outputs is a claim about the value forms of two outputs and about nothing else. The pair registry's split member is a claim about two RECIPIENTS — two outputs that pay somebody other than the sender — which is a different claim at the same cardinality.
+
+**The recorded one-to-two runs are one recipient plus one balancing change.** The private restart module states it in its own header and its request is built from a recipient and the sender's change in that order, with the conservation test destructuring the pair as recipient and change. The other recorded private one-in-two-out run is the fee-bearing shape, whose second output is a fee role rather than a receipt. So the pure two-recipient split has never run, and the pair registry pins it as awaiting a run of its own shape rather than borrowing the census row that sits at the same arity.
+
+**The census cannot see the difference, and this is not a defect in it.** Its output axes are the blinded count, the explicit destination count and the fee count, which partition the output set by VALUE FORM. A recipient and a balancing change are both blinded outputs. Recipient and balancing are not among the census's axes and could not be added without the census becoming a second pair registry.
+
+**The asymmetry is sharper than a difference of axes, and it is the part worth remembering.** The census's axes are typed, stated per member, and checked — a member whose axes disagree with its own output count fails a test rather than computing a wrong verdict. The pair registry's fixture type has NO role axis at all: it carries source and destination endpoints of an owner and an amount, and §14.3 forbids it carrying a position, a script, a key or a blinding factor, so role was swept out with them. The roles a pair claims therefore live in English, inside the strings that explain why a member has no run. One vocabulary is checkable and one is narrated, and a reader who takes them for two views of one model will believe the narrated one is enforced.
+
+**The trap has a second face inside the pair registry itself.** The split fixture's second destination pays the SOURCE owner, which is semantically change; the registry types it as an ordinary destination because the fixture type has nowhere to record a role. So even the pin's own two-recipient claim is one its type cannot express and only its prose asserts.
+
+**What this means for reading any row here.** A row of this register claims exactly what its axes say: how many inputs carry blinded values, how many outputs do, how many are explicit destinations, and whether there is a fee. It claims nothing about who is paid, nothing about which output is change, and nothing about whether a shape at the same cardinality but with different roles has ever run. When those questions matter, the pair registry is the register that answers them, and its unrun pins are the honest statement of what has not been done.
+
 ## The two-output floor · `rule:shapes:two-output-floor`
 
 **Refused.** The confidential fixture registry refuses any manifest stating fewer than two outputs, with the typed refusal OutputSetTooSmall carrying the count found. This refuses the strict one-to-one and the private merge, both of which consensus admits.
@@ -270,4 +325,8 @@ It does not claim that a removed limitation means the shapes it refused now run.
 
 The crossing removal is the exception that proves the rule rather than a counterexample to it: it freed two shapes and both ran, which is the first time that has happened. It is recorded as one removal with one proof and two rows citing it, not as two removals, because what was removed was one reading. Two of the five removals still carry no chain identity at all, and the register keeps that visible rather than letting a filed path read as a taken one.
 
-It does not extend to issuance, which is excluded (`rule:exclusions:issuance-bytes`), nor to sponsored shapes, whose signer dependency this workspace does not close.
+It does not extend to issuance, which is excluded (`rule:exclusions:issuance-bytes`).
+
+It DOES now extend to sponsored shapes, and the sentence that stood here — that it does not, the signer dependency being unclosed — was refuted by running. Three sponsored forms have been accepted into blocks and a fourth was refused by a node on the balance rule itself, so the axis had four facts and no register, which is why (`rule:shapes:form-product`) mints one. The correction is recorded rather than quietly applied, because a claim this register made and had to withdraw is worth as much to a later reader as one it kept.
+
+It does not claim the product's expressible-and-unrun cells would be accepted, for the reason the first non-claim gives, and it does not claim any of them is scheduled. Expressible and unrun is a status, not a plan.

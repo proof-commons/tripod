@@ -4008,24 +4008,60 @@ mod tests {
         let total: usize = census.values().sum();
         assert_eq!(total, TransferForm::CELLS, "every cell is counted once");
 
-        // The two that matter most to a reader, stated exactly.
+        // The whole map, pinned. A count that moved without this line
+        // moving would be a register that had changed its mind quietly,
+        // which is the failure mode a knowledge map exists to remove.
+        let expected: BTreeMap<&'static str, usize> = [
+            // The axes contradict. Overwhelmingly a sponsor region
+            // beside no fee output, which is five of the six sponsor
+            // members at half the fee axis, plus the destination-less
+            // arity that only the fee-only degenerate has a use for.
+            ("not-a-form-of-this-space", 282),
+            // Consensus admits it, this workspace states it, nothing has
+            // built one. The honest answer for most of the space, and by
+            // the ruling's own terms a complete one.
+            ("expressible-unrun", 80),
+            // The tally forbids it, derived.
+            ("impossible-derived", 49),
+            // Consensus admits it and a named layer here refuses it.
+            ("unsupported-here", 36),
+            // A node accepted one: the nine enumerated blinded shapes and
+            // the three sponsored forms, which had no census row anywhere
+            // before this one.
+            ("supported-and-run", 12),
+            // The wholly explicit sponsorless lane, answered by its own
+            // register rather than twice.
+            ("stated-in-another-register", 12),
+            // The tally is content and the one blinded output would hide
+            // nothing. Refused on purpose, with no path filed.
+            ("refused-to-protect-hiding", 8),
+            // BUILT, offered to a node, and refused on the balance rule
+            // itself.
+            ("impossible-observed", 1),
+        ]
+        .into_iter()
+        .collect();
         assert_eq!(
-            census.get("supported-and-run").copied().unwrap_or_default(),
-            12,
-            "twelve cells have been accepted by a node: the nine enumerated blinded shapes and \
-             the three sponsored forms, which had no census row anywhere before this one",
+            census, expected,
+            "the product census is what the register claims"
         );
-        assert_eq!(
-            census
-                .get("impossible-observed")
+
+        // The denominator a reader actually wants. Two hundred cells shy
+        // of the product are combinations of axes that contradict, so the
+        // space this register answers about is the rest -- and every one
+        // of them carries a verdict.
+        let in_the_space = TransferForm::CELLS
+            - census
+                .get("not-a-form-of-this-space")
                 .copied()
-                .unwrap_or_default(),
-            1,
-            "one cell was BUILT, offered to a node, and refused on the balance rule itself",
+                .unwrap_or_default();
+        assert_eq!(
+            in_the_space, 198,
+            "one hundred and ninety-eight forms are in the space, and each has an answer",
         );
 
         // And nothing is unanswered, which is the ruling in one line.
-        assert!(!census.contains_key(""), "no cell reports an empty status",);
+        assert!(!census.contains_key(""), "no cell reports an empty status");
     }
 
     /// The two-output floor guards the impossible shape only by
