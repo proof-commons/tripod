@@ -39,7 +39,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use linker::OwnerParameter;
-use linker::live_backend::{LiveTransferRepresentationPlan, LiveTransferShape};
+use linker::live_backend::{
+    LiveTransferComposition, LiveTransferRepresentationPlan, LiveTransferShape,
+};
 use target_elements::ReviewedElementsTapscriptDefinition;
 
 use crate::abi::TargetTransactionVersion;
@@ -1435,6 +1437,7 @@ fn private_destination_intents(
     target: &ReviewedElementsTapscriptDefinition,
     abi: &CandidateLiveTransferAbi,
     request: &LiveTransferRequest,
+    composition: LiveTransferComposition,
     openings: &PrivateLiveOpenings,
 ) -> Result<Vec<ConfidentialDestinationIntent>, TransactionRefusal> {
     let mut destinations = Vec::with_capacity(request.destinations().len());
@@ -1467,8 +1470,16 @@ fn private_destination_intents(
             }
             ConfidentialOutputRole::Primary | ConfidentialOutputRole::Balancing => (
                 abi.symbols().protocol_asset(),
+                // The CREATED side's plan, which is the whole of what a
+                // crossing changes here. A destination is a coin this
+                // transfer mints, and the constructor it must be paid
+                // to is the one that will RECOGNIZE it when somebody
+                // spends it next -- which is the created side's, not
+                // the side this transfer's own receipts were read
+                // under. While both sides were one plan the two
+                // questions had one answer.
                 abi.destinations()
-                    .get(destination.owner(), request.representation())
+                    .get(destination.owner(), composition.created())
                     .ok_or_else(|| TransactionRefusal::DestinationOwnerHasNoConstructor {
                         owner: destination.owner().clone(),
                     })?
@@ -1797,15 +1808,88 @@ pub fn finalize_private_live_transfer(
     crypto: &dyn ConfidentialProofMaterializer,
     checker: &dyn IndependentCommitmentCheck,
 ) -> Result<PrivateLiveFinalization, TransactionRefusal> {
-    if request.representation() != LiveTransferRepresentationPlan::PrivateCommitted {
+    finalize_private_live_transfer_composing(
+        target,
+        abi,
+        request,
+        LiveTransferComposition::HomogeneousPrivate,
+        view,
+        sponsor,
+        openings,
+        fixtures,
+        crypto,
+        checker,
+    )
+}
+
+/// One private-lane candidate under a stated COMPOSITION.
+///
+/// The general form, of which [`finalize_private_live_transfer`] is the
+/// wholly private case. The two are one pipeline rather than two, so a
+/// crossing candidate is not a parallel construction path that could
+/// drift from the one every homogeneous private shape uses.
+///
+/// # Why crossing is this lane's and not the explicit lane's
+///
+/// Because a lane is chosen by what it must BUILD, not by what it must
+/// read. Every composition but the wholly explicit one either consumes a
+/// commitment, whose blinder joins a sum somebody must close, or creates
+/// one, which needs a blinder, a range proof and a commitment nobody but
+/// this lane derives. The explicit lane builds none of those and would
+/// have to grow all of them to serve a crossing; this lane already has
+/// them and needs only to be told which side is which.
+///
+/// The request's own representation stays the CONSUMED side's plan, and
+/// that is not a convention either: `recognize_receipts` reads it to
+/// decide the value form a spent receipt must carry, which is a question
+/// about the side being consumed. A request naming the other side would
+/// be refusing its own inputs.
+///
+/// # Errors
+///
+/// As [`finalize_private_live_transfer`], and
+/// [`TransactionRefusal::PrivateFinalizationIsNotTheExplicitLane`] for a
+/// wholly explicit composition or for a request whose representation is
+/// not the composition's consumed side.
+pub fn finalize_private_live_transfer_composing(
+    target: &ReviewedElementsTapscriptDefinition,
+    abi: &CandidateLiveTransferAbi,
+    request: &LiveTransferRequest,
+    composition: LiveTransferComposition,
+    view: &PublicConstructionView,
+    sponsor: Option<&dyn SponsorCapability>,
+    openings: &PrivateLiveOpenings,
+    fixtures: &FrozenConfidentialFixtureView,
+    crypto: &dyn ConfidentialProofMaterializer,
+    checker: &dyn IndependentCommitmentCheck,
+) -> Result<PrivateLiveFinalization, TransactionRefusal> {
+    // A wholly explicit transfer builds no commitment and belongs to the
+    // other lane. Every other composition has at least one blinded field
+    // and belongs here.
+    if composition == LiveTransferComposition::HomogeneousExplicit {
+        return Err(
+            TransactionRefusal::PrivateFinalizationIsNotTheExplicitLane {
+                representation: composition.created(),
+            },
+        );
+    }
+    // The request names the side its own receipts are read under, and a
+    // request naming the other side would be refusing its own inputs.
+    if request.representation() != composition.consumed() {
         return Err(
             TransactionRefusal::PrivateFinalizationIsNotTheExplicitLane {
                 representation: request.representation(),
             },
         );
     }
-    if !abi.representations().contains(&request.representation()) {
-        return Err(TransactionRefusal::RepresentationNotLinked);
+    // BOTH sides must be linked into this deployment. The consumed side
+    // is what recognizes the receipts and the created side is what the
+    // destinations are paid to, so a deployment holding only one of them
+    // could build a candidate whose outputs nobody can spend.
+    for side in [composition.consumed(), composition.created()] {
+        if !abi.representations().contains(&side) {
+            return Err(TransactionRefusal::RepresentationNotLinked);
+        }
     }
 
     // §12.5's equivalence, both directions, before anything is built
@@ -1879,7 +1963,7 @@ pub fn finalize_private_live_transfer(
     // of reason: its program is the deployment's sponsor-change symbol
     // rather than any owner's constructor, because the output repays the
     // sponsor and not a live receipt holder.
-    let destinations = private_destination_intents(target, abi, request, openings)?;
+    let destinations = private_destination_intents(target, abi, request, composition, openings)?;
 
     let intent = ConfidentialConstructionIntent::new(
         inputs,

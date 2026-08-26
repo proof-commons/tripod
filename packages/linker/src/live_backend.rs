@@ -20,7 +20,8 @@
 //! through this crate's public API; this module only gives it a name.
 
 pub use tapscript::upstream::{
-    ExternalEvidenceRole, LiveTransferRepresentationPlan, ValidatedLiveTransferOperationPlan,
+    ExternalEvidenceRole, LiveTransferComposition, LiveTransferRepresentationPlan,
+    ValidatedLiveTransferOperationPlan,
 };
 pub use tapscript::{
     CandidateTransferLifecycle, CompleteFamilyRanges, LiveFamily, LiveFamilyRange, LiveInputFamily,
