@@ -2441,6 +2441,9 @@ pub mod run_of_record {
     /// predecessor for that reason.
     pub const EXIT_CROSSING_CONSUMED_PAIR_CANCELS: bool = false;
 
+    /// The weight the target reported for the exit crossing.
+    pub const EXIT_CROSSING_TARGET_WEIGHT: u64 = 6_561;
+
     /// The exit crossing's wall time, in seconds.
     pub const EXIT_CROSSING_WALL_SECONDS: f64 = 11.5;
 
@@ -2481,6 +2484,16 @@ pub mod run_of_record {
     /// blinder is the negation of a searched non-zero primary rather
     /// than a consumed sum.
     pub const ENTRY_CROSSING_CONSUMED_A_BLINDER: bool = false;
+
+    /// The weight the target reported for the entry crossing.
+    ///
+    /// Larger than the exit crossing's, and the reason is the crossing
+    /// itself rather than the arity: two blinded outputs carry two range
+    /// proofs where the exit crossing's one blinded absorber carries
+    /// one, and a range proof is most of what a confidential output
+    /// weighs. The exit direction is CHEAPER on the wire, which is the
+    /// same fact its shorter form obligation states in the covenant.
+    pub const ENTRY_CROSSING_TARGET_WEIGHT: u64 = 10_093;
 
     /// The entry crossing's wall time, in seconds.
     pub const ENTRY_CROSSING_WALL_SECONDS: f64 = 9.9;
