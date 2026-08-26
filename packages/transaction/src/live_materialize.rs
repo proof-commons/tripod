@@ -586,6 +586,41 @@ pub enum ConfidentialOutputRole {
     SponsorChange,
 }
 
+/// Which region one CONSUMED input belongs to.
+///
+/// Declared rather than inferred from the asset it carries. A sponsor's
+/// coin could be told from a receipt by comparing its asset with the
+/// transaction's protocol asset, and that would make the protocol
+/// balance depend on a comparison the balance itself is trying to
+/// decide. The caller knows which coin it offered as a sponsor's, so the
+/// caller says so.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ConfidentialInputRegion {
+    /// A live receipt being spent, inside both protocol equations.
+    Receipt,
+    /// A sponsor's reserve coin, outside both of them.
+    ///
+    /// §1.9 keeps individual sponsor amounts out of every protocol
+    /// claim, and the semantic subtotal of the protocol region is one.
+    /// Its blinder is NOT excluded in the same breath: the blinder
+    /// equation is transaction-wide and asset-agnostic, so the sponsor
+    /// coin's blinder is one addend of the input sum its successor
+    /// fixture registers, and the balancing election absorbs the
+    /// residue with no second election.
+    SponsorReserve,
+}
+
+impl ConfidentialInputRegion {
+    /// Whether this input counts toward the protocol semantic subtotal.
+    #[must_use]
+    pub const fn is_a_protocol_member(self) -> bool {
+        match self {
+            Self::Receipt => true,
+            Self::SponsorReserve => false,
+        }
+    }
+}
+
 impl ConfidentialOutputRole {
     /// Whether this role's output belongs to the protocol region.
     ///
@@ -944,6 +979,7 @@ pub struct ConfidentialInputIntent {
     opening: FixtureOpeningReference,
     explicit_amount: u64,
     zero_asset_blinder: [u8; SCALAR_BYTES],
+    region: ConfidentialInputRegion,
 }
 
 impl ConfidentialInputIntent {
@@ -969,7 +1005,47 @@ impl ConfidentialInputIntent {
             opening,
             explicit_amount,
             zero_asset_blinder,
+            region: ConfidentialInputRegion::Receipt,
         }
+    }
+
+    /// One consumed sponsor coin.
+    ///
+    /// Its own constructor rather than a parameter on the other, so that
+    /// an input becomes a sponsor's only where somebody meant it to be
+    /// one. It resolves against a registered predecessor exactly as a
+    /// receipt does -- the sponsor's coin is an output of its own funding
+    /// fixture, so its opening and its blinder are the registry's and not
+    /// a second kind of thing.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub const fn sponsor(
+        outpoint: Outpoint,
+        observed_asset: AssetField,
+        observed_value: ValueField,
+        observed_program: Vec<u8>,
+        sequence: u32,
+        opening: FixtureOpeningReference,
+        explicit_amount: u64,
+        zero_asset_blinder: [u8; SCALAR_BYTES],
+    ) -> Self {
+        Self {
+            outpoint,
+            observed_asset,
+            observed_value,
+            observed_program,
+            sequence,
+            opening,
+            explicit_amount,
+            zero_asset_blinder,
+            region: ConfidentialInputRegion::SponsorReserve,
+        }
+    }
+
+    /// Which region this input belongs to.
+    #[must_use]
+    pub const fn region(&self) -> ConfidentialInputRegion {
+        self.region
     }
 
     /// The outpoint spent.
@@ -2210,9 +2286,13 @@ fn preflight(
 
     // Three: semantic conservation closes across the protocol region,
     // with the non-protocol region excluded from both equations.
-    let consumed: Option<u64> = intent.inputs().iter().try_fold(0_u64, |total, input| {
-        total.checked_add(input.explicit_amount())
-    });
+    let consumed: Option<u64> = intent
+        .inputs()
+        .iter()
+        .filter(|input| input.region().is_a_protocol_member())
+        .try_fold(0_u64, |total, input| {
+            total.checked_add(input.explicit_amount())
+        });
     // The sponsor's change is held out of this equation, because §1.9
     // holds the sponsor region outside every protocol claim: a sponsored
     // transaction's protocol balance is the same equation it would be
