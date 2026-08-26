@@ -692,7 +692,14 @@ impl DeclaredDestinationRoles {
             match opening.role {
                 ConfidentialOutputRole::Fee => roles.fee += 1,
                 ConfidentialOutputRole::SponsorChange => roles.sponsor_change += 1,
-                ConfidentialOutputRole::Primary | ConfidentialOutputRole::Balancing => (),
+                // An explicit destination is a RECEIPT OUTPUT like the
+                // other two, and is counted with them rather than
+                // against them. What this census subtracts is positions
+                // that are not receipts, and an exit crossing's
+                // destinations all are.
+                ConfidentialOutputRole::Primary
+                | ConfidentialOutputRole::Balancing
+                | ConfidentialOutputRole::ExplicitDestination => (),
             }
         }
         roles
@@ -1468,7 +1475,13 @@ fn private_destination_intents(
                     witness_program_script(target, version, payload)?,
                 )
             }
-            ConfidentialOutputRole::Primary | ConfidentialOutputRole::Balancing => (
+            // Three roles, one answer, and the same one: every RECEIPT
+            // destination carries the protocol asset at its owner's
+            // constructor program, whatever its value form. The form is
+            // the materializer's business and the program is not.
+            ConfidentialOutputRole::Primary
+            | ConfidentialOutputRole::Balancing
+            | ConfidentialOutputRole::ExplicitDestination => (
                 abi.symbols().protocol_asset(),
                 // The CREATED side's plan, which is the whole of what a
                 // crossing changes here. A destination is a coin this
@@ -1659,7 +1672,9 @@ fn check_sponsor_region_amounts(
                 Some(_) => continue,
                 None => return Err(TransactionRefusal::SponsorChangeRequestedWithoutDestination),
             },
-            ConfidentialOutputRole::Primary | ConfidentialOutputRole::Balancing => continue,
+            ConfidentialOutputRole::Primary
+            | ConfidentialOutputRole::Balancing
+            | ConfidentialOutputRole::ExplicitDestination => continue,
         };
         let declared = destination.value().amount();
         if declared != offered {

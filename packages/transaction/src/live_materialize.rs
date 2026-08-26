@@ -584,6 +584,21 @@ pub enum ConfidentialOutputRole {
     /// carries, so a reserve-asset output absorbs into a protocol-asset
     /// election with no arithmetic added.
     SponsorChange,
+    /// A live receipt destination whose value is EXPLICIT.
+    ///
+    /// The output an EXIT crossing pays a receipt to when the transfer
+    /// unblinds. It carries a real program and a public amount, and it
+    /// is emphatically NOT a fee — a fee is defined by carrying no
+    /// program at all, and treating this as one would build the target's
+    /// paid-away value out of a spendable receipt.
+    ///
+    /// It brings no chosen blinder and it solves nothing. An exit
+    /// crossing's blinder sum is absorbed by an ordinary
+    /// [`Self::Balancing`] output at the declared absorber position, so
+    /// this role needs no second election and changes no arithmetic:
+    /// like a fee, it joins the sum at the all-zero blinder every
+    /// explicit value is committed with.
+    ExplicitDestination,
 }
 
 /// Which region one CONSUMED input belongs to.
@@ -633,7 +648,7 @@ impl ConfidentialOutputRole {
     #[must_use]
     pub const fn is_a_protocol_member(self) -> bool {
         match self {
-            Self::Primary | Self::Balancing | Self::Fee => true,
+            Self::Primary | Self::Balancing | Self::Fee | Self::ExplicitDestination => true,
             Self::SponsorChange => false,
         }
     }
@@ -643,7 +658,7 @@ impl ConfidentialOutputRole {
     pub const fn brings_a_chosen_blinder(self) -> bool {
         match self {
             Self::Primary | Self::SponsorChange => true,
-            Self::Balancing | Self::Fee => false,
+            Self::Balancing | Self::Fee | Self::ExplicitDestination => false,
         }
     }
 }
@@ -1540,6 +1555,29 @@ pub enum MaterializationRefusal {
         /// Which output.
         output: usize,
     },
+    /// An explicit receipt destination carries no program.
+    ///
+    /// A destination with no program is not a destination. The refusal
+    /// is named here rather than left to the target, whose only verdict
+    /// on such an output would be to treat it as a FEE — which is the
+    /// substitution this role exists to make impossible.
+    OutputProgramEmpty {
+        /// Which output.
+        output: usize,
+    },
+    /// An explicit receipt destination satisfies the target's fee
+    /// predicate.
+    ///
+    /// The mirror of [`Self::FeeOutputNotRecognizable`], and the last
+    /// clause of the explicit-destination stage for the same reason: the
+    /// output is built and then asked whether it is a fee, and this one
+    /// must not be. A destination the target would call a fee is a
+    /// receipt nobody can spend and value the chain treats as paid away,
+    /// which is a wrong transaction rather than a refused one.
+    ExplicitDestinationIsAFee {
+        /// Which output.
+        output: usize,
+    },
 }
 
 // --- The result ---------------------------------------------------------
@@ -1902,6 +1940,15 @@ pub fn materialize_confidential_candidate(
             // and running any of those over it is what a blinded fee
             // output would have been.
             materialize_fee_output(index, projected, carried)?
+        } else if projected.role() == ConfidentialOutputRole::ExplicitDestination {
+            // The same three stages skipped, for the same reason, and
+            // through a DIFFERENT builder. The two roles agree that
+            // there is no commitment to build and disagree about
+            // everything else: this one keeps its program, and the fee
+            // builder's own last act is to assert the target recognizes
+            // its output as a fee -- which this output must fail, and
+            // must not be asked.
+            materialize_explicit_destination(index, projected, carried)?
         } else {
             let blinder = derived[index].ok_or(MaterializationRefusal::InvalidScalar {
                 role: DerivationRole::ValueBlinder,
@@ -2204,6 +2251,60 @@ fn materialize_fee_output(
     if !output.is_fee() {
         return Err(MaterializationRefusal::FeeOutputNotRecognizable { output: index });
     }
+    Ok((output, OutputWitness::empty()))
+}
+
+/// One EXPLICIT receipt destination of an exit crossing.
+///
+/// The sibling of [`materialize_fee_output`], and deliberately a
+/// separate function rather than a flag on it. The two share exactly one
+/// fact — that no commitment is built — and the fee builder's own last
+/// act is to assert the target RECOGNIZES its output as a fee. This
+/// output must fail that assertion, because it carries a program, and a
+/// builder that could be asked either question would eventually be asked
+/// the wrong one.
+///
+/// # Errors
+///
+/// [`MaterializationRefusal::OutputProgramEmpty`] for a destination
+/// carrying no program, which is not a destination;
+/// [`MaterializationRefusal::FeeOutputCarriesAnOpening`] for an explicit
+/// output carrying opening material it has no use for; and
+/// [`MaterializationRefusal::FeeOutputValueZero`] for a zero amount,
+/// which the target refuses at a spendable program outright.
+fn materialize_explicit_destination(
+    index: usize,
+    projected: &ConfidentialFixtureOutputView,
+    asset: AssetId,
+) -> Result<(TargetOutput, OutputWitness), MaterializationRefusal> {
+    if projected.output_program().is_empty() {
+        return Err(MaterializationRefusal::OutputProgramEmpty { output: index });
+    }
+    if projected.value_blinder().is_some()
+        || projected.nonce_input().is_some()
+        || projected.rangeproof_seed().is_some()
+    {
+        return Err(MaterializationRefusal::FeeOutputCarriesAnOpening { output: index });
+    }
+    if projected.semantic_amount() == 0 {
+        return Err(MaterializationRefusal::FeeOutputValueZero { output: index });
+    }
+
+    let output = TargetOutput::new(
+        AssetField::Explicit(asset),
+        ValueField::Explicit(projected.semantic_amount()),
+        NonceField::Null,
+        projected.output_program().to_vec(),
+    );
+    // Built, then asked, and asked for the OPPOSITE answer the fee
+    // builder asks for. A destination the target would call a fee is a
+    // receipt nobody can spend and value the chain treats as paid away.
+    if output.is_fee() {
+        return Err(MaterializationRefusal::ExplicitDestinationIsAFee { output: index });
+    }
+    // The proofs an explicit value takes are BOTH empty, and that is
+    // consensus rather than an economy: an explicit value admits no
+    // range proof and an explicit asset admits no surjection proof.
     Ok((output, OutputWitness::empty()))
 }
 
