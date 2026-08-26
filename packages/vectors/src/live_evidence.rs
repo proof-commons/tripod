@@ -1283,31 +1283,34 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
         // witness negatives learned as `txn-already-known`, met here in
         // its other form.
         //
-        // The target says ONE thing to all three mutants, so the layer
-        // cannot be what separates these rows and the FIELD is. Each row
-        // below cites the declared byte range its own mutant moved and
-        // stayed inside, checked by `attribute_proof_negative` rather
-        // than asserted: `RANGEPROOF_FIELD_RANGE` for this row and
-        // `WRONG_BLINDER_FIELD_RANGE` for the one under it. Two rows
-        // move here on ONE run because each drove its OWN mutant; a
-        // third case in the same run, `missing-rangeproof`, moves no §15
-        // row at all, the matrix having no member for it.
+        // THE TWO ROWS SHARE ONE ARM BECAUSE THE TARGET SHARED ONE
+        // ANSWER, and that is the finding rather than a shortcut. The
+        // internal Pedersen-tally and range-proof codes are discarded
+        // inside the target's own `VerifyAmounts` and never leave it, so
+        // one verdict covers both mutations and the LAYER cannot be what
+        // separates these rows. The FIELD is: each row's mutant declared
+        // a byte range and was checked to have stayed inside it by
+        // `attribute_proof_negative` rather than by assertion —
+        // `RANGEPROOF_FIELD_RANGE` for `malformed-rangeproof` and
+        // `WRONG_BLINDER_FIELD_RANGE` for `wrong-private-blinding-balance`.
+        // Two rows move on ONE run because each drove its OWN mutant,
+        // which is the rule; a third case in the same run,
+        // `missing-rangeproof`, moves no §15 row at all, the matrix
+        // having no member for it.
         //
-        // `private-ct-imbalance` is NOT answered by this run and stays
-        // waiting, though it declares the same class and would draw the
-        // same words. Its mutation is the committed VALUES failing to
+        // For `wrong-private-blinding-balance` the declared class is
+        // `AmountMismatch`, and the target's own words name it:
+        // `bad-txns-in-ne-out` is value in not equal to value out.
+        // `malformed-rangeproof` declares no class and is attributed the
+        // way the witness-content rows are, by its field and its control.
+        //
+        // `private-ct-imbalance` is NOT answered here and stays waiting,
+        // though it declares the same class and would draw the same
+        // words. Its mutation is the committed VALUES failing to
         // balance, and no mutant of it was built; reading the wrong
         // blinder's refusal onto it would count one observation for two
         // rows, which is the rule this function exists to keep.
-        "malformed-rangeproof" => Some((
-            crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
-            crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
-        )),
-        // The class this row declares is `AmountMismatch`, and the
-        // target's own words are what name it: `bad-txns-in-ne-out` is
-        // value in not equal to value out, which is that class stated by
-        // the node rather than inferred for it.
-        "wrong-private-blinding-balance" => Some((
+        "malformed-rangeproof" | "wrong-private-blinding-balance" => Some((
             crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
             crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
         )),
