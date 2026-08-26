@@ -556,12 +556,42 @@ pub fn live_abi_for_vocabulary(
     reserve_asset: [u8; 32],
     fee_program_digest: [u8; 32],
 ) -> Result<CandidateLiveTransferAbi, VectorError> {
+    live_abi_composing(
+        vocabulary,
+        LiveTransferComposition::HomogeneousExplicit,
+        protocol_asset,
+        reserve_asset,
+        fee_program_digest,
+    )
+}
+
+/// The candidate ABI of one vocabulary and one seated composition.
+///
+/// A crossing composition seats its crossing constructor at the key its
+/// consumed side is recognized under, so this ABI's destination table
+/// holds the crossing constructor at one key and the ordinary
+/// homogeneous one at the other. Both are needed and for different
+/// reasons: the crossing key is what a spent receipt resolves through,
+/// and the other is what this transfer's own destinations are paid to.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when the link or the ABI
+/// derivation refuses.
+pub fn live_abi_composing(
+    vocabulary: LiveShapeVocabulary,
+    composition: LiveTransferComposition,
+    protocol_asset: [u8; 32],
+    reserve_asset: [u8; 32],
+    fee_program_digest: [u8; 32],
+) -> Result<CandidateLiveTransferAbi, VectorError> {
     let target = reviewed_target()?;
     let curve = OracleLiveCurve::new(reviewed_target()?);
     derive_live_transfer_abi(
         &target,
-        &link_live_bundle_for_vocabulary(
+        &link_live_bundle_composing(
             vocabulary,
+            composition,
             protocol_asset,
             reserve_asset,
             fee_program_digest,
