@@ -1762,6 +1762,81 @@ mod tests {
     use crate::live_restart::{RestartLedger, RestartStep, RestartStepResult};
     use std::collections::{BTreeMap, BTreeSet};
 
+    #[test]
+    fn the_minimality_wave_completes_the_order_and_leaves_wave_seven_untouched() {
+        // The two halves of this wave's claim, and the second is as
+        // important as the first. A ledger of record exists to stop an
+        // acceptance being backdated into a wave that did not have one,
+        // so the wave-seven ledger is asserted to still say what it
+        // said before this wave's own is looked at.
+        let seven = super::wave_seven_ledger().expect("wave seven's ledger builds");
+        assert_eq!(seven.stopped_at(), Some(RestartStep::SponsorCases));
+        let seven_entries = seven.entries();
+        assert_eq!(seven_entries.len(), RestartStep::ALL.len());
+        assert_eq!(
+            seven_entries[RestartStep::MinimalityPairs.number() as usize - 1].1,
+            RestartStepResult::NotReached,
+        );
+
+        // And the order carried to its end by a LATER wave, which is
+        // how a strict chain advances: step six discharged, so step
+        // seven is enterable.
+        let report = super::wave_eight_closeout().expect("the minimality closeout validates");
+        assert_eq!(report.parts().disposition, CloseoutDisposition::Completed);
+        assert_eq!(report.parts().ledger.stopped_at(), None);
+        for (step, result) in report.parts().ledger.entries() {
+            assert!(result.continues(), "step {} did not accept", step.number(),);
+        }
+
+        // Eight rows moved, each carrying a target-computed identity.
+        assert_eq!(report.moved_rows().len(), 8);
+        let moved: BTreeSet<_> = report
+            .moved_rows()
+            .iter()
+            .map(|row| row.class().name())
+            .collect();
+        assert!(moved.contains("private-merge"));
+        assert!(moved.contains("private-sponsor-values"));
+        for row in report.moved_rows() {
+            assert_eq!(row.accepted_identity().len(), 64, "{}", row.class().name());
+        }
+
+        // And the two that did not, each for a reason its own step
+        // states. The openings row is answered in the SAFETY MATRIX by
+        // a determinism observation and is absent here because this
+        // delta admits target-computed identities only; the
+        // projection-equality row is unmoved in both.
+        for unmoved in [
+            "deterministic-public-fixture-openings",
+            "projection-equality-with-paired-explicit",
+        ] {
+            assert!(!moved.contains(unmoved), "{unmoved} entered the delta");
+        }
+
+        // One carried residual, down from two, and the one that left
+        // did NOT move to the cleared set.
+        assert_eq!(
+            report.parts().blockers,
+            BTreeSet::from([LiveInfrastructureBlocker::PredecessorConstructorAbsent]),
+        );
+        assert_eq!(
+            report.parts().cleared_residuals,
+            BTreeSet::from([CLEARED_BY_FUNDING])
+        );
+
+        // The seventh step states its own shortfall rather than reading
+        // as five pairs of five.
+        let rendered = report.render();
+        assert!(rendered.contains("restart_step 7"));
+        let seventh = &report.parts().ledger.entries()[6].1;
+        let RestartStepResult::Accepted { established, .. } = seventh else {
+            panic!("the seventh step did not accept");
+        };
+        assert!(established.contains("three pairs of five, not five of five"));
+        assert!(established.contains("no member of any pair was SUBMITTED"));
+        assert!(established.contains("projection-equality-with-paired-explicit row does NOT move"));
+    }
+
     fn stopped_ledger() -> RestartLedger {
         let mut ledger = RestartLedger::new();
         ledger
