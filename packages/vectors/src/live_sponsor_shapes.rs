@@ -1108,8 +1108,12 @@ impl SponsorShapePlanner {
             .ok_or(SponsorShapeRefusal::ControlNotConstructible)?;
         self.record.submitted_bytes = round.replayed.len();
         self.record.observed_layer = Some(response.observed_layer);
-        self.record.observed_detail = response.observed_detail.clone();
-        self.record.accepted_txid = response.accepted_txid.clone();
+        self.record
+            .observed_detail
+            .clone_from(&response.observed_detail);
+        self.record
+            .accepted_txid
+            .clone_from(&response.accepted_txid);
         self.record.target_weight = response.resources.transaction_weight;
 
         if response.observed_layer != ObservedOutcomeLayer::Accepted {
