@@ -63,7 +63,7 @@
 use std::collections::BTreeMap;
 
 use linker::OwnerParameter;
-use linker::live_backend::LiveTransferRepresentationPlan;
+use linker::live_backend::LiveTransferComposition;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
     NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationStepKind,
@@ -73,7 +73,7 @@ use transaction::bytes::{Outpoint, ValueField};
 use transaction::live_census::OwnerSigningCensus;
 use transaction::live_construct::{
     PrivateDestinationOpening, PrivateInputOpening, PrivateLiveFinalization, PrivateLiveOpenings,
-    finalize_private_live_transfer,
+    finalize_private_live_transfer_composing,
 };
 use transaction::live_materialize::{
     ConfidentialInputRegion, ConfidentialOutputRole, FixtureOpeningReference,
@@ -103,8 +103,8 @@ use crate::live_plan::{
 };
 use crate::live_private_restart::{
     ConsumedReceipt, LinkedDeployment, PrivateRestartRefusal, RestartConfidentialCoin,
-    assemble_control, confidential_funding_step, issue_step, link_and_register,
-    observe_funded_coins, private_program, verify_readback_signature,
+    assemble_control, confidential_funding_step, issue_step, link_and_register_composing,
+    observe_funded_coins, owner_program, verify_readback_signature,
 };
 use crate::live_proof_bearing_observation::{materialization_profiles, register_multi};
 
@@ -211,17 +211,28 @@ pub enum PrivateShape {
     /// nonzero for a reason that can be stated rather than hoped for --
     /// and the registry would refuse a zero one by name if it were wrong.
     PrivateMerge,
+    /// Blinded receipts spent into EXPLICIT destinations beside the
+    /// blinded absorber a nonzero consumed blinder sum requires.
+    ///
+    /// The exit direction of representation crossing, and the one shape
+    /// here whose consumed and created sides are read under different
+    /// plans. It spends the triple predecessor's non-canceling pair for
+    /// the merge's reason said the other way round: the merge needs a
+    /// nonzero forced blinder so its lone output hides something, and
+    /// this shape needs one so its absorber has something to absorb.
+    ExitCrossing,
 }
 
 impl PrivateShape {
     /// All six, in the order the restart runs them.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Split,
         Self::ManyToMany,
         Self::SeveralDistinctOwners,
         Self::StrictOneToOne,
         Self::OneToOneWithFee,
         Self::PrivateMerge,
+        Self::ExitCrossing,
     ];
 
     /// The ceremony's own name for the shape, used as the report
@@ -235,6 +246,7 @@ impl PrivateShape {
             Self::StrictOneToOne => "private-strict-one-to-one",
             Self::OneToOneWithFee => "private-one-to-one-with-fee",
             Self::PrivateMerge => "private-merge",
+            Self::ExitCrossing => "private-exit-crossing",
         }
     }
 
@@ -265,6 +277,13 @@ impl PrivateShape {
             // The merge DOES have a row, and it is the only shape this
             // wave adds that has one.
             Self::PrivateMerge => Some("private-merge"),
+            // The exit crossing has no row either, and for the same
+            // reason the two above have none: §15.2's positive private
+            // table enumerates the guide's own classes and carries no
+            // member for a transfer whose two sides are read under
+            // different plans. Its evidence surface is the shape census
+            // and its own run of record.
+            Self::ExitCrossing => None,
         }
     }
 
@@ -291,7 +310,7 @@ impl PrivateShape {
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
             | Self::OneToOneWithFee => PredecessorShape::DualParity,
-            Self::PrivateMerge => PredecessorShape::TripleNonCanceling,
+            Self::PrivateMerge | Self::ExitCrossing => PredecessorShape::TripleNonCanceling,
         }
     }
 
@@ -314,8 +333,58 @@ impl PrivateShape {
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
-            | Self::PrivateMerge => LiveShapeVocabulary::Demonstration,
+            | Self::PrivateMerge
+            | Self::ExitCrossing => LiveShapeVocabulary::Demonstration,
             Self::OneToOneWithFee => LiveShapeVocabulary::FeeBearing,
+        }
+    }
+
+    /// How this shape pairs a representation plan to each of its sides.
+    ///
+    /// Six of the seven are wholly private and say so. The exit crossing
+    /// is the one that is not, and stating the composition per shape is
+    /// what lets one ceremony serve both -- the crossing is a private-lane
+    /// shape, because every composition but the wholly explicit one has a
+    /// blinded field somebody must build.
+    ///
+    /// A crossing composition also picks a different DEPLOYMENT, because
+    /// it seats its crossing constructor at the key its consumed side is
+    /// recognized under. That deployment's taptree is its own, exactly as
+    /// the fee-bearing vocabulary's is, so no digest any of the other six
+    /// recorded can move to buy it.
+    #[must_use]
+    pub const fn composition(self) -> LiveTransferComposition {
+        match self {
+            Self::Split
+            | Self::ManyToMany
+            | Self::SeveralDistinctOwners
+            | Self::StrictOneToOne
+            | Self::OneToOneWithFee
+            | Self::PrivateMerge => LiveTransferComposition::HomogeneousPrivate,
+            Self::ExitCrossing => LiveTransferComposition::ExitUnblinding,
+        }
+    }
+
+    /// How many of this shape's outputs are EXPLICIT receipt
+    /// destinations.
+    ///
+    /// Read by the same caller that reads [`Self::fee_output_count`] and
+    /// for the same reason: an explicit value carries no range proof, so
+    /// a lane asserting a proof on every output-witness entry would fail
+    /// on this shape. The two counts are separate because the outputs are
+    /// different things -- a fee has no program and these have real ones
+    /// -- and folding them into one number would let a ceremony that
+    /// built a fee where a destination belonged still pass.
+    #[must_use]
+    pub const fn explicit_destination_count(self) -> usize {
+        match self {
+            Self::Split
+            | Self::ManyToMany
+            | Self::SeveralDistinctOwners
+            | Self::StrictOneToOne
+            | Self::OneToOneWithFee
+            | Self::PrivateMerge => 0,
+            Self::ExitCrossing => 2,
         }
     }
 
@@ -335,7 +404,8 @@ impl PrivateShape {
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
-            | Self::PrivateMerge => 0,
+            | Self::PrivateMerge
+            | Self::ExitCrossing => 0,
             Self::OneToOneWithFee => 1,
         }
     }
@@ -352,9 +422,10 @@ impl PrivateShape {
             // carry the same two roles, and the difference that matters
             // is the third output standing beside them: it is why the
             // pair's blinders do not cancel.
-            Self::ManyToMany | Self::SeveralDistinctOwners | Self::PrivateMerge => {
-                &[ConsumedReceipt::Primary, ConsumedReceipt::Balancing]
-            }
+            Self::ManyToMany
+            | Self::SeveralDistinctOwners
+            | Self::PrivateMerge
+            | Self::ExitCrossing => &[ConsumedReceipt::Primary, ConsumedReceipt::Balancing],
         }
     }
 
@@ -379,6 +450,15 @@ impl PrivateShape {
             scalar,
             amount,
             role: FixtureOutputRole::Balancing,
+        };
+        // An EXPLICIT receipt destination: a real program and a public
+        // amount, carrying no opening at all. It brings no blinder to the
+        // solve and joins the sum at the all-zero one every explicit
+        // value is committed with.
+        let explicit = |scalar, amount| Destination {
+            scalar,
+            amount,
+            role: FixtureOutputRole::ExplicitDestination,
         };
         match self {
             // 700_000_000 in, split three ways back to the two owners.
@@ -434,6 +514,30 @@ impl PrivateShape {
                 amount: TRIPLE_PREDECESSOR_AMOUNTS[0] + TRIPLE_PREDECESSOR_AMOUNTS[1],
                 role: FixtureOutputRole::SoleBalancing,
             }],
+            // 900_000_000 in across the triple predecessor's non-canceling
+            // pair, out as two EXPLICIT destinations and one blinded
+            // absorber. The absorber is LAST, and that is not a layout
+            // choice: the covenant's positional leaf declares the last
+            // destination as the absorber and checks that position and no
+            // other, so a set that put it anywhere else would build a
+            // candidate the covenant refuses.
+            //
+            // The absorber's blinder is not stated here and is not
+            // chosen. With no output deriving one there is nothing to
+            // subtract, so the registry's solve returns the consumed
+            // blinder sum ITSELF -- which is why the pair must not cancel
+            // and why this shape spends the same predecessor the merge
+            // does.
+            Self::ExitCrossing => vec![
+                explicit(SECOND_SCALAR, 500_000_000),
+                explicit(FIRST_SCALAR, 300_000_000),
+                balancing(
+                    SECOND_SCALAR,
+                    TRIPLE_PREDECESSOR_AMOUNTS[0] + TRIPLE_PREDECESSOR_AMOUNTS[1]
+                        - 500_000_000
+                        - 300_000_000,
+                ),
+            ],
         }
     }
 }
@@ -750,11 +854,12 @@ impl MultiShapePlanner {
         // receipt programs. Its own one-to-one successor is registered and
         // unused; this ceremony registers its own multi-output successor
         // against the same linked deployment.
-        let linked = link_and_register(
+        let linked = link_and_register_composing(
             self.shape.predecessor(),
             ConsumedReceipt::Primary,
             printed,
             self.shape.vocabulary(),
+            self.shape.composition(),
             RESERVE_ASSET,
         )?;
         self.record.issued_asset = Some(printed.to_owned());
@@ -850,10 +955,22 @@ impl MultiShapePlanner {
                     // tolerating it. Deriving a receipt constructor here
                     // and handing it over would be refused there, which is
                     // the clause working.
+                    // Under the CREATED side's plan. A destination is a
+                    // coin this transfer mints, and the constructor it
+                    // must be paid to is the one that will RECOGNIZE it
+                    // when somebody spends it next -- which for a
+                    // crossing is not the side this transfer's own
+                    // receipts were read under. Resolving these under the
+                    // consumed plan would register a fixture whose
+                    // outputs the construction does not pay to.
                     output_program: if destination.role == FixtureOutputRole::Fee {
                         Vec::new()
                     } else {
-                        private_program(&linked.abi, &destination.scalar)?
+                        owner_program(
+                            &linked.abi,
+                            &destination.scalar,
+                            self.shape.composition().created(),
+                        )?
                     },
                 })
             })
@@ -1016,7 +1133,11 @@ impl MultiShapePlanner {
         let request = LiveTransferRequest::new(
             receipts,
             live_destinations,
-            LiveTransferRepresentationPlan::PrivateCommitted,
+            // The CONSUMED side, which is what `recognize_receipts`
+            // reads to decide the value form a spent receipt must carry.
+            // A request naming the other side would be refusing its own
+            // inputs.
+            self.shape.composition().consumed(),
             RequestedForm::Sponsorless,
             SponsorChangeRequest::NotRequested,
             // Present because the private request vocabulary requires it;
@@ -1059,6 +1180,15 @@ impl MultiShapePlanner {
                     FixtureOutputRole::SponsorChange { .. } => {
                         ConfidentialOutputRole::SponsorChange
                     }
+                    // And the explicit destination is stated for the
+                    // third time for the same reason. Swept into the
+                    // catch-all it would ask the materializer to SOLVE a
+                    // blinder for an output that carries none, and the
+                    // manifest would then declare two solving outputs
+                    // where the registry admits exactly one.
+                    FixtureOutputRole::ExplicitDestination => {
+                        ConfidentialOutputRole::ExplicitDestination
+                    }
                     // Both solving roles are the view's one solving role:
                     // the sole form is a solve over no others, which is
                     // the same instruction to the materializer.
@@ -1082,10 +1212,11 @@ impl MultiShapePlanner {
             (self.shape.successor_handle(), successor.view.clone()),
         ]));
 
-        finalize_private_live_transfer(
+        finalize_private_live_transfer_composing(
             &reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?,
             &linked.abi,
             &request,
+            self.shape.composition(),
             &view,
             None,
             &openings,
