@@ -1558,6 +1558,7 @@ mod byte_identity_tests {
         // And the two new ones are the ones their runs recorded.
         assert_eq!(digests[4], run::FEE_BEARING_SUCCESSOR_DIGEST);
         assert_eq!(digests[5], run::MERGE_SUCCESSOR_DIGEST);
+        assert_eq!(digests[6], run::EXIT_CROSSING_SUCCESSOR_DIGEST);
     }
 
     /// The fee-bearing digest now carries an acceptance, and the two are
@@ -2248,4 +2249,52 @@ pub mod run_of_record {
 
     /// The fee-bearing run's wall time, in seconds.
     pub const FEE_BEARING_WALL_SECONDS: f64 = 12.4;
+
+    // --- The exit crossing: representation crossed at a real node -------
+
+    /// The exit crossing's successor fixture digest.
+    pub const EXIT_CROSSING_SUCCESSOR_DIGEST: &str =
+        "078d250e44da69d659c5351e5e77ccbf6497526e83bb709901480c00232efd07";
+
+    /// The identity the target computed for the accepted exit crossing.
+    ///
+    /// TWO blinded receipts consumed, TWO EXPLICIT destinations created,
+    /// and ONE blinded absorber beside them. It is the first transaction
+    /// this workspace has built whose consumed and created sides are read
+    /// under DIFFERENT representation plans, and the first evidence that
+    /// the target admits one -- which it always did, upstream having
+    /// tested the shape directly; what did not exist was a vocabulary in
+    /// which the candidate could be stated.
+    pub const EXIT_CROSSING_ACCEPTED_TXID: &str =
+        "b382a7c3a6057e49d9b2c11cead5d1864c53e238176480c9709b21ebd1b7d656";
+
+    /// How many bytes the exit crossing handed to the node.
+    pub const EXIT_CROSSING_SUBMITTED_BYTES: usize = 5_412;
+
+    /// The output-witness proof bytes the exit crossing carried.
+    ///
+    /// THE CENSUS THAT MAKES THE CROSSING VISIBLE IN THE BYTES, and it
+    /// is read off the candidate rather than predicted: two entries
+    /// EMPTY and one carrying a range proof. An explicit value admits no
+    /// range proof and an explicit asset no surjection proof, so the two
+    /// explicit destinations carry neither, and the single blinded
+    /// absorber carries the one proof the transaction has.
+    ///
+    /// A wholly private shape of this arity would carry three proofs and
+    /// a wholly explicit one none, so this vector is a shape no
+    /// homogeneous transfer can produce.
+    pub const EXIT_CROSSING_PROOF_BYTES: [usize; 3] = [0, 0, 4_174];
+
+    /// Whether the exit crossing's consumed pair cancels.
+    ///
+    /// FALSE, and it is load-bearing rather than incidental. A canceling
+    /// pair presents a zero blinder sum, the absorber's solved blinder
+    /// would be zero, and an absorber that hides nothing is not an
+    /// absorber -- the registry refuses exactly that as a degenerate
+    /// balancing scalar. This shape spends the merge's own non-canceling
+    /// predecessor for that reason.
+    pub const EXIT_CROSSING_CONSUMED_PAIR_CANCELS: bool = false;
+
+    /// The exit crossing's wall time, in seconds.
+    pub const EXIT_CROSSING_WALL_SECONDS: f64 = 11.5;
 }
