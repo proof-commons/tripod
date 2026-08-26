@@ -507,6 +507,25 @@ pub enum PairTargetVerdict {
     /// No transaction was submitted, and the component that stops one
     /// from being witnessed.
     NotSubmitted(LiveInfrastructureBlocker),
+    /// This member was not submitted, and a recorded run of ITS OWN
+    /// SHAPE was accepted at this identity.
+    ///
+    /// The first half of that sentence is the load-bearing one. This
+    /// variant exists so that a member with shape evidence behind it
+    /// stops carrying a blocker that has been cleared, WITHOUT the
+    /// registry acquiring a way to say a member was accepted. There is
+    /// no such variant, and there is none because no member was.
+    NotSubmittedShapeAcceptedElsewhere {
+        /// The accepted run's case name.
+        case: &'static str,
+        /// The identity the target computed for that run.
+        accepted_identity: &'static str,
+    },
+    /// This member was not submitted and no recorded run has its shape.
+    NotSubmittedNoRunOfThisShape {
+        /// How the nearest recorded run differs.
+        because: &'static str,
+    },
 }
 
 impl PairTargetVerdict {
@@ -515,6 +534,15 @@ impl PairTargetVerdict {
     pub const fn name(self) -> &'static str {
         match self {
             Self::NotSubmitted(_) => "not-submitted",
+            // Three spellings and not one, because a reader of the
+            // rendered word has to be able to tell a member with shape
+            // evidence behind it from a member with none. All three
+            // begin `not-submitted`, which is the half that is equally
+            // true of every member.
+            Self::NotSubmittedShapeAcceptedElsewhere { .. } => {
+                "not-submitted-shape-accepted-elsewhere"
+            }
+            Self::NotSubmittedNoRunOfThisShape { .. } => "not-submitted-no-run-of-this-shape",
         }
     }
 }
@@ -752,6 +780,172 @@ impl PairMaterialization {
     }
 }
 
+/// Whether a recorded run accepted a transaction of one member's own
+/// shape.
+///
+/// # This is a narrower fact than §16.2's second condition asks for
+///
+/// §16.2 asks that both target transactions accept, and NO member of
+/// this registry has ever been submitted to a target. §1.7 leaves the
+/// owner digest to the target, this pipeline offers nothing to one, and
+/// [`PairMaterialization::verdict`] says so for every member.
+///
+/// What the campaign has instead is an acceptance per SHAPE: real
+/// transactions of each shape, submitted to a real node, accepted,
+/// mined, and recorded at the identity the target itself computed. That
+/// is also the repo's own standard for moving a row — an observed
+/// acceptance of the row's own shape and nothing else — so it is the
+/// standard applied here.
+///
+/// The type is spelled to keep the two apart and the distinction is the
+/// point: a member whose SHAPE was accepted is not a member that was
+/// accepted, and no reader of this registry should be able to slide
+/// from one to the other.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PairShapeAcceptance {
+    /// A recorded run of this member's exact shape was accepted.
+    ObservedForThisShape {
+        /// The run's own case name, so a reader can check the citation
+        /// against the module that recorded it.
+        case: &'static str,
+        /// The identity the target computed for that run.
+        accepted_identity: &'static str,
+    },
+    /// No recorded run has this member's shape.
+    NoRunOfThisShape {
+        /// The nearest recorded run and how its shape differs, so the
+        /// absence is a statement rather than a silence.
+        because: &'static str,
+    },
+}
+
+impl PairShapeAcceptance {
+    /// Whether a run of this shape was accepted.
+    #[must_use]
+    pub const fn is_observed(self) -> bool {
+        matches!(self, Self::ObservedForThisShape { .. })
+    }
+
+    /// The identity, where there is one.
+    #[must_use]
+    pub const fn accepted_identity(self) -> Option<&'static str> {
+        match self {
+            Self::ObservedForThisShape {
+                accepted_identity, ..
+            } => Some(accepted_identity),
+            Self::NoRunOfThisShape { .. } => None,
+        }
+    }
+}
+
+/// The recorded acceptance of one member's shape, or its absence.
+///
+/// A table over the two lanes' runs of record. Every arm cites the
+/// constant the run wrote rather than repeating a digest, so a reader
+/// following a name arrives at the module that observed the run.
+///
+/// Shapes are compared on what a target can see: how many receipts are
+/// consumed, how many receipt outputs are created, which non-receipt
+/// roles are present, and — where a pair's subject is the owners —
+/// whether the consumed receipts stand under distinct owners.
+#[must_use]
+pub const fn recorded_acceptance(
+    pair: MinimalityPair,
+    representation: LiveTransferRepresentationPlan,
+) -> PairShapeAcceptance {
+    use LiveTransferRepresentationPlan as Plan;
+    use MinimalityPair as P;
+    use PairShapeAcceptance as A;
+
+    match (pair, representation) {
+        // 1 -> 1, sponsorless.
+        (P::OneToOne, Plan::Explicit) => A::ObservedForThisShape {
+            case: "explicit-one-to-one",
+            accepted_identity: crate::live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID,
+        },
+        (P::OneToOne, Plan::PrivateCommitted) => A::ObservedForThisShape {
+            case: "private-strict-one-to-one",
+            accepted_identity:
+                crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
+        },
+        // 1 -> 2, both created outputs being RECEIPTS.
+        (P::Split, Plan::Explicit) => A::ObservedForThisShape {
+            case: "explicit-split",
+            accepted_identity: crate::live_explicit_shapes::run_of_record::SPLIT_ACCEPTED_TXID,
+        },
+        // The private lane has run two shapes near this one and neither
+        // is it. Its split creates THREE outputs — two recipients and a
+        // balancing change — and this member creates two; its only
+        // recorded one-in-two-out run is the fee-bearing shape, whose
+        // second output is a FEE and not a receipt. A pair member is
+        // not answered by a run of a different cardinality, and it is
+        // not answered by a run whose second output is a different
+        // ROLE, so the honest answer is that this shape has not run.
+        (P::Split, Plan::PrivateCommitted) => A::NoRunOfThisShape {
+            because: "the recorded private split creates three outputs (two recipients and a \
+                      balancing change) and this member creates two; the only recorded private \
+                      one-in-two-out run is the fee-bearing shape, whose second output is a fee \
+                      role rather than a receipt",
+        },
+        // 2 -> 1.
+        (P::Merge, Plan::Explicit) => A::ObservedForThisShape {
+            case: "explicit-merge",
+            accepted_identity: crate::live_explicit_shapes::run_of_record::MERGE_ACCEPTED_TXID,
+        },
+        (P::Merge, Plan::PrivateCommitted) => A::ObservedForThisShape {
+            case: "private-merge",
+            accepted_identity: crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID,
+        },
+        // 2 -> 2, and this fixture's two consumed receipts stand under
+        // two DISTINCT published owners. On the private lane the run of
+        // exactly that shape is the one filed under the owners rather
+        // than under the cardinality; the run the private lane files as
+        // `many-to-many` creates three outputs and is a different shape
+        // from this member. Citing the matching run under a name that
+        // does not match the pair's is the honest way round, and it is
+        // stated here rather than left for a reader to notice.
+        (P::ManyToMany, Plan::Explicit) => A::ObservedForThisShape {
+            case: "explicit-several-to-several",
+            accepted_identity:
+                crate::live_explicit_shapes::run_of_record::SEVERAL_TO_SEVERAL_ACCEPTED_TXID,
+        },
+        (P::ManyToMany, Plan::PrivateCommitted) => A::ObservedForThisShape {
+            case: "private-several-distinct-owners",
+            accepted_identity:
+                crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID,
+        },
+        // The sponsored pair. Its explicit half is exactly the sponsor
+        // lane's change-absent control: a sponsor coin funded to the fee
+        // and no change role, which is what this registry's request
+        // states with `SponsorChangeRequest::NotRequested`.
+        (P::Sponsor, Plan::Explicit) => A::ObservedForThisShape {
+            case: "sponsored-change-absent",
+            accepted_identity:
+                crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+        },
+        // Its private half has no run, and the differences are stated
+        // rather than summarized. The one recorded sponsored private
+        // successor carries a BLINDED sponsor coin, a COMMITTED sponsor
+        // change, and two blinded destinations; this member states an
+        // explicit sponsor coin funded exactly to the fee, no change
+        // role, and one destination.
+        //
+        // Nothing is claimed here about what a target would do with
+        // this member's shape. The sponsor arc observed that a
+        // COMMITTED sponsor value requires committed change, and this
+        // member's sponsor value is explicit, so that observation does
+        // not reach it either way. What is recorded is that the shape
+        // has not been run, which is the whole of what is known.
+        (P::Sponsor, Plan::PrivateCommitted) => A::NoRunOfThisShape {
+            because: "the one recorded sponsored private successor carries a blinded sponsor \
+                      coin, a committed sponsor change, and two blinded destinations, and this \
+                      member states an explicit sponsor coin funded exactly to the fee, no \
+                      change role, and one destination; what a target would make of this shape \
+                      is unobserved and nothing is claimed about it",
+        },
+    }
+}
+
 /// One of §16.2's ten pair-acceptance conditions.
 ///
 /// Transcribed in the guide's own order, so a reader can check the list
@@ -835,13 +1029,66 @@ pub enum MinimalityConditionStanding {
     Blocked(LiveInfrastructureBlocker),
     /// The condition is about accepted transactions, and there are none.
     AwaitsBothTargetVerdicts,
+    /// Both members' SHAPES were run against a real target and accepted,
+    /// at these identities.
+    ///
+    /// The satisfied standing for the one condition whose subject is a
+    /// target verdict. It is a separate member from
+    /// [`Self::HoldsFirstParty`] and not a special case of it, because
+    /// what stands behind it is not a check this crate performed: it is
+    /// two transactions a real node accepted and mined, recorded at the
+    /// identities the node itself computed.
+    ///
+    /// # What it does not say
+    ///
+    /// That either member was submitted. Neither was, and
+    /// [`PairTargetVerdict`] says so per member. This standing is the
+    /// repo's own row rule applied to a pair — an observed acceptance
+    /// of the shape, and nothing else — and a reader who needs the
+    /// stronger claim will not find it here.
+    HoldsOnObservedShapeAcceptances {
+        /// The identity of the accepted run of the explicit member's
+        /// shape.
+        explicit_identity: &'static str,
+        /// The identity of the accepted run of the private member's
+        /// shape.
+        private_identity: &'static str,
+    },
+    /// One lane has no recorded run of this pair's shape.
+    ///
+    /// Distinct from [`Self::AwaitsBothTargetVerdicts`], which says
+    /// there are no verdicts at all. This says a verdict exists on one
+    /// side and not the other, and names the side — which is the
+    /// difference between a pair waiting on a pipeline and a pair
+    /// waiting on ONE run.
+    AwaitsARunOfThisShape {
+        /// Which lane lacks it, in the plan's own spelling.
+        lane: &'static str,
+        /// Why no recorded run has the shape.
+        because: &'static str,
+    },
 }
 
 impl MinimalityConditionStanding {
     /// Whether the condition is satisfied.
     #[must_use]
     pub const fn is_satisfied(self) -> bool {
-        matches!(self, Self::HoldsFirstParty)
+        matches!(
+            self,
+            Self::HoldsFirstParty | Self::HoldsOnObservedShapeAcceptances { .. }
+        )
+    }
+
+    /// Whether what satisfies this standing is a target's verdict rather
+    /// than a check this crate ran.
+    ///
+    /// Asked separately from [`Self::is_satisfied`] so that a report can
+    /// say how much of §16.2 rests on observation and how much on
+    /// first-party recomputation, which are different kinds of evidence
+    /// and are never summed here.
+    #[must_use]
+    pub const fn rests_on_observation(self) -> bool {
+        matches!(self, Self::HoldsOnObservedShapeAcceptances { .. })
     }
 
     /// The standing's wire spelling.
@@ -851,6 +1098,8 @@ impl MinimalityConditionStanding {
             Self::HoldsFirstParty => "holds-first-party",
             Self::Blocked(_) => "blocked",
             Self::AwaitsBothTargetVerdicts => "awaits-both-target-verdicts",
+            Self::HoldsOnObservedShapeAcceptances { .. } => "holds-on-observed-shape-acceptances",
+            Self::AwaitsARunOfThisShape { .. } => "awaits-a-run-of-this-shape",
         }
     }
 }
@@ -958,7 +1207,13 @@ impl MinimalityPairRow {
             .values()
             .filter_map(|standing| match standing {
                 MinimalityConditionStanding::Blocked(blocker) => Some(*blocker),
+                // A pair awaiting a run of its shape names NO blocker,
+                // and that is the honest answer rather than an omission:
+                // what it lacks is a run, and a run that has not been
+                // attempted is not a component that does not exist.
                 MinimalityConditionStanding::HoldsFirstParty
+                | MinimalityConditionStanding::HoldsOnObservedShapeAcceptances { .. }
+                | MinimalityConditionStanding::AwaitsARunOfThisShape { .. }
                 | MinimalityConditionStanding::AwaitsBothTargetVerdicts => None,
             })
             .collect()
@@ -1209,11 +1464,34 @@ fn materialize_member(
         report,
         complete_weight,
         predecessor: PredecessorAssumption::of(representation),
-        // §1.7: nothing computes the digest an owner must sign, so no
-        // member of any pair has ever been offered to a target.
-        verdict: PairTargetVerdict::NotSubmitted(
-            LiveInfrastructureBlocker::OwnerSighashNotComputable,
-        ),
+        // §1.7: this pipeline computes no owner digest and submits
+        // nothing, so no member of any pair has ever been offered to a
+        // target. That has not changed and this field keeps saying so.
+        //
+        // What changed is the second half of the sentence. It used to
+        // name `OwnerSighashNotComputable` as the component in the way,
+        // and that blocker is carried by zero rows of the census: the
+        // digest IS computed and both lanes carry acceptances. A field
+        // naming a cleared residual reads as a pipeline one repair from
+        // a run when the repair in question was made waves ago.
+        //
+        // So the member now records what is actually known about its
+        // shape — a run of it was accepted, or none has been — while
+        // the variant names keep the member's own status unambiguous.
+        // Every one of them begins `NotSubmitted`, and there is no
+        // variant that says otherwise.
+        verdict: match recorded_acceptance(fixture.pair, representation) {
+            PairShapeAcceptance::ObservedForThisShape {
+                case,
+                accepted_identity,
+            } => PairTargetVerdict::NotSubmittedShapeAcceptedElsewhere {
+                case,
+                accepted_identity,
+            },
+            PairShapeAcceptance::NoRunOfThisShape { because } => {
+                PairTargetVerdict::NotSubmittedNoRunOfThisShape { because }
+            }
+        },
     })
 }
 
@@ -1339,12 +1617,21 @@ fn resolve_claim(
 
 /// Resolve §16.2's ten conditions for one pair.
 ///
-/// Seven of them are properties of the two built members and are checked
-/// here. Two name a component that does not exist. One is about accepted
-/// transactions, which is downstream of the second rather than a third
-/// missing thing.
+/// Nine of them are properties of the two built members and are
+/// recomputed here. The tenth is about accepted transactions, and it is
+/// answered from the two lanes' runs of record — per pair, because the
+/// answer differs per pair.
+///
+/// It read "seven checked, two blocked, one downstream" for as long as
+/// the two blockers stood, and both had gone stale where they stood:
+/// one named a residual the guide's own closeout lists as CLEARED, and
+/// the other borrowed it to hold a second condition shut. Nothing about
+/// the members changed to make the count nine; what changed is that the
+/// standings were recomputed against what the campaign had observed
+/// instead of being carried forward.
 fn resolve_conditions(
     abi: &CandidateLiveTransferAbi,
+    pair: MinimalityPair,
     row_lifecycle: &LiveLifecycleStatus,
     explicit: &PairMaterialization,
     private: &PairMaterialization,
@@ -1399,57 +1686,108 @@ fn resolve_conditions(
         .is_some_and(|model| model.non_claims().len() == 4)
         && explicit.construction_model().is_none();
 
+    // §16.2's second condition, recomputed from the two lanes' runs of
+    // record rather than declared. Both members' shapes must have been
+    // accepted; a pair with one side unrun names the side.
+    let explicit_shape = recorded_acceptance(pair, LiveTransferRepresentationPlan::Explicit);
+    let private_shape = recorded_acceptance(pair, LiveTransferRepresentationPlan::PrivateCommitted);
+    let acceptance = match (explicit_shape, private_shape) {
+        (
+            PairShapeAcceptance::ObservedForThisShape {
+                accepted_identity: explicit_identity,
+                ..
+            },
+            PairShapeAcceptance::ObservedForThisShape {
+                accepted_identity: private_identity,
+                ..
+            },
+        ) => Standing::HoldsOnObservedShapeAcceptances {
+            explicit_identity,
+            private_identity,
+        },
+        (PairShapeAcceptance::NoRunOfThisShape { because }, _) => Standing::AwaitsARunOfThisShape {
+            lane: "explicit",
+            because,
+        },
+        (_, PairShapeAcceptance::NoRunOfThisShape { because }) => Standing::AwaitsARunOfThisShape {
+            lane: "private-committed",
+            because,
+        },
+    };
+
     BTreeMap::from([
-        // The private member rests on a predecessor this pipeline does
-        // not consume, and the blocker's word has been narrower than the
-        // condition for two waves now: a confidential predecessor IS
-        // fundable through the confidential arm and one has been mined.
-        // What kept the condition blocked was that this pipeline's
-        // private materialization did not take the transaction-wide
-        // path.
+        // Both members finalize. That is not an assumption here: the
+        // registry refuses to exist otherwise —
+        // `MinimalityPairRefusal::MemberNotConstructible` is returned
+        // the moment either half fails to build — so a row that can be
+        // read at all is a row whose two materializations were both
+        // constructed.
         //
-        // That last sentence has stopped being true. The path exists —
-        // `transaction::live_construct::finalize_private_live_transfer`
-        // is the private lane's own entry point and it consumes an
-        // opening — and what remains is that THIS pipeline does not call
-        // it yet.
+        // What kept this blocked was never the construction. It was the
+        // predecessor the private member rests on: a fixture view of a
+        // confidential receipt, carried under a blocker whose own name
+        // asserted that no such predecessor could be funded. That
+        // assertion is now FALSE by observation, and observed is the
+        // word that matters. A confidential predecessor has been
+        // funded, mined, and read back raw; the private lane has spent
+        // confidential predecessors in six accepted shapes; and the
+        // guide's own closeout records
+        // `NoConfidentialPredecessorCanBeFunded` in its cleared set
+        // rather than its carried one.
         //
-        // So the standing stays blocked and the blocker's name stays
-        // where it is, and the reason for both is now a vocabulary rule
-        // rather than an absence of options. Every arm of
-        // `LiveInfrastructureBlocker` names a component that does not
-        // exist, and an unwired call site is not a missing component; it
-        // is an attempt not yet made. Minting an arm for it would put a
-        // member in that vocabulary that the vocabulary's own rule
-        // forbids, and the honest report is that the remaining gap has
-        // no name here BECAUSE it does not qualify for one. The word
-        // retained is the closest true one and it is documented as
-        // wider than its ground, which is the same disclosure the
-        // previous wave made and is not a new claim.
+        // So the blocker cannot stand here. It was the last artifact in
+        // this workspace still naming a residual the closeout had
+        // cleared, which is a row moving in one artifact and not the
+        // other — the exact condition this crate elsewhere calls a
+        // defect.
+        //
+        // The residual that IS true is smaller and is not a blocker:
+        // this pipeline does not call the private lane's own entry
+        // point, so its private member is built through the declared
+        // test construction model rather than through
+        // `finalize_private_live_transfer`. That is an attempt not yet
+        // made rather than a component that does not exist, it is what
+        // §16.2's ninth condition is FOR, and that condition is
+        // resolved on its own below rather than borrowed to hold this
+        // one shut.
         (
             Condition::BothMaterializationsConstructible,
-            Standing::Blocked(LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded),
+            Standing::HoldsFirstParty,
         ),
-        // Re-pointed. This named `OwnerSighashNotComputable`, and that
-        // was stale: the digest is computed, the selected profile is
-        // established over its required set, and both lanes carry an
-        // observed acceptance — the census records the blocker as
-        // carried by zero rows.
+        // Recomputed from the two lanes' runs of record. This named
+        // `OwnerSighashNotComputable` and then
+        // `NoConfidentialPredecessorCanBeFunded`, and both were stale
+        // by the time they were read: the digest is computed, the
+        // profile is established, the predecessor is funded, and both
+        // lanes carry observed acceptances.
         //
-        // The true current gate is the condition immediately above.
-        // This function's own header says so in as many words: the
-        // acceptance condition "is downstream of the second rather than
-        // a third missing thing". A pair whose private half cannot be
-        // built cannot have both halves accepted, and naming a cleared
-        // blocker here would have made the pair look one repair away
-        // from a run when it is two.
-        (
-            Condition::BothTargetTransactionsAccept,
-            Standing::Blocked(LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded),
-        ),
+        // What replaces them is not a better blocker but an ANSWER,
+        // and the answer differs per pair. Three pairs have a recorded
+        // acceptance of each member's shape and stand at
+        // `HoldsOnObservedShapeAcceptances` carrying both identities.
+        // Two do not, and they stand at `AwaitsARunOfThisShape` naming
+        // the lane and the difference. Neither standing claims a member
+        // was submitted; `PairTargetVerdict` is where that is said, and
+        // it says no for all ten members.
+        (Condition::BothTargetTransactionsAccept, acceptance),
+        // Recomputed, and it was always recomputable. Both members are
+        // projected back to `ExpectedTransferSemantics` and compared
+        // with the fixture's own expectation in
+        // `derive_minimality_pairs`, and a pair whose halves moved
+        // different value is REFUSED rather than returned — so every
+        // row that exists has had this conjunct checked against both of
+        // its members before anything else was asked.
+        //
+        // It stood at `AwaitsBothTargetVerdicts` on the reading that a
+        // projection is a projection OF an accepted transaction. That
+        // reading double-counts: §16.2 lists "both target transactions
+        // accept" as a separate conjunct immediately above this one, so
+        // holding this one shut on the same fact made one missing
+        // acceptance close two conditions and made the scoreboard say
+        // the deficit was wider than it was.
         (
             Condition::BothProjectionsEqualTheExpectedTransfer,
-            Standing::AwaitsBothTargetVerdicts,
+            Standing::HoldsFirstParty,
         ),
         (Condition::OwnerAndLiveClassAgree, held(owners_agree)),
         (Condition::ExplicitAssetAgrees, held(asset_agrees)),
@@ -1486,7 +1824,14 @@ fn resolve_conditions(
 /// One row per §16.1 pair, each from one fixture, each with both members
 /// built and §16.2 resolved against them. Nothing here concludes anything
 /// about minimality: [`MinimalityPairRow::supports_minimality`] is what
-/// answers that, and today it answers `false` for every row.
+/// answers that, and it answers per row.
+///
+/// Today it answers `true` for the three pairs whose two shapes were
+/// both run against a real target and accepted — one-to-one, merge, and
+/// many-to-many — and `false` for split and sponsor, each of which is
+/// missing a run of its PRIVATE member's shape and says so through the
+/// standing on §16.2's second condition. It answered `false` for all
+/// five until the runs existed.
 ///
 /// # Errors
 ///
@@ -1548,7 +1893,7 @@ fn derive_minimality_pairs() -> Result<Vec<MinimalityPairRow>, MinimalityPairRef
             }
         }
 
-        let conditions = resolve_conditions(&abi, &lifecycle, &explicit, &private);
+        let conditions = resolve_conditions(&abi, fixture.pair, &lifecycle, &explicit, &private);
         let resources = resolve_resources(&explicit, &private);
         rows.push(MinimalityPairRow {
             pair: fixture.pair,
