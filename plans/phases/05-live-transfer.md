@@ -208,6 +208,7 @@ Phase 5 exits when:
 - confidential sponsor values pass on an observed acceptance of their own shape, the private-sponsor-values row moving with it;
 - fee-bearing transfer is supported in all four forms — sponsored and sponsorless, explicit and confidential — each passing on an observed acceptance of its own shape, with every fee output explicit as consensus requires;
 - representation-crossing transfer is supported in both directions — explicit inputs to confidential outputs, and confidential inputs to explicit outputs with the blinded absorber output consensus requires of a nonzero input blinder sum — each direction passing on an observed acceptance of its own shape, and the confidential-to-fee-only corner staying labeled consensus-impossible rather than attempted;
+- the form register's remaining unsupported-here cells are honestly removed — each of the two walls that ask removal, the registry's sole committed sponsor-change role and the solving role confined to the destinations, taken down along its own recorded removal path, every recorded digest re-deriving, and the freed cells re-verdicted by the unchanged cascade rather than relabeled;
 - safety and minimality reports remain distinct;
 - lifecycle incompleteness is explicit;
 - mixed-program vectors reject;
