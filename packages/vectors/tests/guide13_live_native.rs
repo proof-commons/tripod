@@ -1984,3 +1984,178 @@ fn the_witness_content_negatives_are_offered_beside_their_control() {
         assert!(check.every_input_verified());
     }
 }
+
+// --- §15.1: the sponsored pair, one run per row ---
+
+/// One sponsored shape, funded, signed, submitted, mined and read back.
+///
+/// The sponsored sibling of [`run_one_explicit_shape`] and deliberately
+/// the same shape of function. What it asserts is that a run completed,
+/// that the sponsor round trip bound to the exact finalized bytes, and —
+/// where an acceptance happened — that the node's own copy agrees with
+/// what was handed to it and carries the shape that was asked for.
+///
+/// It asserts nothing about what the node decided. A refusal is written
+/// down as the target typed it and the run stops, which is what a typed
+/// stop is made of.
+fn run_one_sponsor_shape(shape: vectors::live_sponsor_shapes::SponsorShape, extension: &str) {
+    use vectors::live_sponsor_shapes::{SponsorShapePlanner, render_sponsor_shape};
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension(extension);
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner = SponsorShapePlanner::for_shape(shape, identifier(&genesis))
+        .expect("the sponsored ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_sponsor_shape(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    if let Some(refusal) = record.refusal() {
+        panic!("the sponsored ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    // The sponsor round trip happened, and it bound to the exact bytes.
+    let round = record.round().expect("the sponsor round trip completed");
+    assert!(
+        round.echo_matches(),
+        "the adapter signed bytes other than the ones it was sent",
+    );
+    assert!(
+        round.replay_changed_the_control(),
+        "the replay changed nothing, so no returned witness reached the control",
+    );
+    assert!(
+        round.witness_reached_the_control(),
+        "a returned witness item is absent from the replayed control",
+    );
+
+    // The binding is enforced rather than announced: the same witness,
+    // bound to one mutated byte, is refused.
+    let mutated = round
+        .mutated_refusal()
+        .expect("a signature bound to mutated bytes was refused");
+    assert!(
+        mutated.contains("SponsorSignatureBindingMismatch"),
+        "the refusal names something other than the binding: {mutated}",
+    );
+
+    // The candidate reached the node.
+    assert!(record.submitted_bytes() > 0);
+    assert!(record.observed_layer().is_some(), "no layer was observed");
+
+    // The origins, where an acceptance was observed. Every one is a
+    // condition ON an acceptance rather than an assertion that one
+    // happened.
+    if let Some(check) = record.reverification() {
+        assert!(
+            check.readback_matches_submission(),
+            "the bytes the node reported are not the bytes it was handed",
+        );
+        assert!(
+            check.every_owner_verified(),
+            "an accepted owner signature does not verify against its recomputed message",
+        );
+        assert!(
+            check.sponsor_witness_in_readback(),
+            "the adapter's witness is absent from the node's own copy",
+        );
+
+        // The change role, read out of the node's copy rather than off
+        // the request. A with-change run that reached a node carrying no
+        // change output is already a hard stop in the ceremony; this
+        // states the positive half where a reader of the test sees it.
+        match shape.change() {
+            None => assert!(
+                check.change().is_none(),
+                "a without-change run carries a change output",
+            ),
+            Some(offered) => {
+                let change = check.change().expect("a with-change run carries change");
+                assert!(
+                    change.is_the_declared_change(offered),
+                    "the change output is not the one the deployment declares",
+                );
+            }
+        }
+    }
+
+    // The run says in its own bytes what it did not establish.
+    assert!(rendered.contains("evidences_no_negative_case true"));
+    assert!(rendered.contains("does_not_establish confidential-sponsor-values"));
+}
+
+/// §15.1 `sponsor-change-absent`: the sponsor funds the fee exactly.
+///
+/// The ceremony the sponsor wave ran, now driven from a lane rather than
+/// from inside a test. It is kept because it is the lift's own control:
+/// what it builds did not move, so its recorded identity must not
+/// either.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_sponsored_change_absent_shape_is_submitted_to_a_real_target() {
+    use vectors::live_sponsor_shapes::SponsorShape;
+
+    run_one_sponsor_shape(SponsorShape::ChangeAbsent, "sponsored-change-absent");
+}
+
+/// §15.1 `sponsor-change-present`: the sponsor takes change back.
+///
+/// The first sponsored control in this workspace that takes change. The
+/// sponsor coin is funded ABOVE the offer and the offer states the
+/// residue, which is the whole of what was missing.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_sponsored_change_present_shape_is_submitted_to_a_real_target() {
+    use vectors::live_sponsor_shapes::SponsorShape;
+
+    run_one_sponsor_shape(SponsorShape::ChangePresent, "sponsored-change-present");
+}
