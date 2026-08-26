@@ -1600,8 +1600,8 @@ pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 ///
 /// # Why that observation may not be filed against this row
 ///
-/// The row declares [`crate::live_safety::EvidenceBoundary`]'s
-/// script-path member, and
+/// The row declares [`crate::matrix::EvidenceBoundary`]'s script-path
+/// member, and
 /// [`target_elements_conformance::protocol::ObservedOutcomeLayer::ScriptPathRejection`]
 /// is documented as the target having RUN the script path and failed.
 /// No script path runs here. Filing a pre-execution commitment failure
@@ -1656,8 +1656,8 @@ pub const THE_TIME_LOCKED_INPUT_ROW_IS_REACHABLE_AS_TYPED: bool = false;
 /// record that a run of a member's OWN SHAPE was accepted while denying
 /// that the member was. So a comparison over those two identities would
 /// compare two UNPAIRED transactions, which is the substitution
-/// [`observed_row_acceptance`] forbids when it refuses an acceptance of
-/// a different shape in place of the row's own.
+/// `observed_row_acceptance` forbids when it refuses an acceptance of a
+/// different shape in place of the row's own.
 ///
 /// # The second gap: no standing can hold the observation
 ///

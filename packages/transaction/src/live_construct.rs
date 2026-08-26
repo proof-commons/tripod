@@ -1828,7 +1828,7 @@ fn private_input_intents(
 /// sponsor region outside every protocol claim, so the representation
 /// plan has nothing to say about the sponsor's value form and a private
 /// transfer sponsored by an EXPLICIT coin stays exactly as buildable as
-/// it was — see [`recognize_sponsors`], which declines to mirror the
+/// it was — see `recognize_sponsors`, which declines to mirror the
 /// receipt clause for that reason.
 ///
 /// # Errors
