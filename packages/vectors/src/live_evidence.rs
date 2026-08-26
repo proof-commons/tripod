@@ -1917,16 +1917,15 @@ mod tests {
         // a member able to hold it. The row is asserted below at that
         // member, and it is asserted NOT to be in `answered` — because
         // no run of its shape produced anything, and that remains true.
-        for unmoved in ["projection-equality-with-paired-explicit"] {
-            assert!(
-                !answered.contains(unmoved),
-                "{unmoved} claims an answer no run of its own shape produced",
-            );
-            assert!(
-                !by_determinism.contains(unmoved),
-                "{unmoved} claims a determinism answer nothing recomputed",
-            );
-        }
+        let unmoved = "projection-equality-with-paired-explicit";
+        assert!(
+            !answered.contains(unmoved),
+            "{unmoved} claims an answer no run of its own shape produced",
+        );
+        assert!(
+            !by_determinism.contains(unmoved),
+            "{unmoved} claims a determinism answer nothing recomputed",
+        );
         assert_eq!(
             by_determinism,
             BTreeSet::from(["deterministic-public-fixture-openings"]),
