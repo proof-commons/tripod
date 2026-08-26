@@ -1702,12 +1702,30 @@ impl TransferForm {
             return None;
         }
         match (self.representation, self.sponsor.change_is_committed()) {
-            (RepresentationAxis::ExitCrossing, _) => Some(
+            (RepresentationAxis::ExitCrossing, false) => Some(
                 "The declared absorber, which is the LAST destination position and an ordinary \
                  blinded destination. Every other destination of this cell is explicit and \
                  contributes a zero blinder, so the absorber is the only output the consumed sum \
                  can land on. Remove it and the cell IS the fully-unblinding corner: the sum is \
                  nonzero, every output contributes zero, and the tally fails.",
+            ),
+            // The caveat a test refuted the plain reading with, and it is
+            // worth more than the reading it replaced. An exit crossing
+            // BESIDE a committed sponsor change has TWO blinded outputs,
+            // so removing the absorber does not reach the corner: the
+            // sponsor's change is still there and the tally still
+            // balances on it. What the cell loses is not possibility but
+            // a SOLVING role, because the change is not one -- so the
+            // stripped cell is admitted by the target and refused here,
+            // which is the register's central distinction appearing in a
+            // place nobody had looked.
+            (RepresentationAxis::ExitCrossing, true) => Some(
+                "The declared absorber, and BESIDE it the sponsor's committed change, which is a \
+                 blinded output the tally counts like any other. So this cell does not reach the \
+                 fully-unblinding corner when the absorber is taken away -- the change still holds \
+                 the sum and consensus still admits the form. What the stripped cell loses is a \
+                 SOLVING role, which is this workspace's model rather than the target's, and the \
+                 register records the two separately.",
             ),
             (RepresentationAxis::FullUnblinding, true) => Some(
                 "The sponsor's COMMITTED change, and nothing else in the transaction. This is the \
@@ -3379,11 +3397,58 @@ mod tests {
             NONZERO_CONSUMED_SUM
         };
         Some(registry_refusal_for(
-            &format!("ctf-v1/form-{}", form.handle().replace('/', "-")),
+            &drive_handle(form),
             CENSUS_ASSET,
             sum,
             outputs,
         ))
+    }
+
+    /// A registry handle for the cell, in the grammar the registry
+    /// admits.
+    ///
+    /// Compact on purpose and not for tidiness. The handle grammar
+    /// admits lowercase letters and hyphens alone, with a length bound,
+    /// and the prose handle a reader wants — five words joined by
+    /// slashes — is neither. So the drive spells each axis as a code,
+    /// and a test holds the coding injective, because two cells sharing
+    /// a handle would collide on the duplicate-handle clause and one of
+    /// them would be recorded refused for a reason that has nothing to
+    /// do with its own form.
+    fn drive_handle(form: TransferForm) -> String {
+        let representation = match form.representation {
+            RepresentationAxis::HomogeneousExplicit => "he",
+            RepresentationAxis::HomogeneousPrivate => "hp",
+            RepresentationAxis::EntryCrossing => "eb",
+            RepresentationAxis::ExitCrossing => "eu",
+            RepresentationAxis::FullUnblinding => "fu",
+        };
+        let consumed = match form.consumed {
+            ConsumedArity::One => "a",
+            ConsumedArity::Two => "b",
+        };
+        let created = match form.created {
+            CreatedArity::None => "z",
+            CreatedArity::One => "a",
+            CreatedArity::Two => "b",
+            CreatedArity::Three => "c",
+        };
+        let fee = match form.fee {
+            FeeAxis::Absent => "nf",
+            FeeAxis::Present => "wf",
+        };
+        let sponsor = match form.sponsor {
+            SponsorAxis::Sponsorless => "sa",
+            SponsorAxis::ExplicitValueNoChange => "sb",
+            SponsorAxis::ExplicitValueExplicitChange => "sc",
+            SponsorAxis::CommittedValueNoChange => "sd",
+            SponsorAxis::CommittedValueExplicitChange => "se",
+            SponsorAxis::CommittedValueCommittedChange => "sf",
+        };
+        format!(
+            "{}form-{representation}-{consumed}-{created}-{fee}-{sponsor}",
+            target_elements_conformance::confidential_fixture::HANDLE_PREFIX,
+        )
     }
 
     /// The product is total: every cell has a verdict and no cell has two.
@@ -3477,26 +3542,58 @@ mod tests {
                 continue;
             }
 
-            // And removing it costs the cell its possibility. This is the
-            // derivation the ruling asks to be visible per cell: the
-            // counterpart's OWN verdict is what says so, recomputed
-            // rather than restated.
-            assert!(
-                !stripped.blinder_sum_is_absorbable(),
-                "{} keeps a place for its blinder sum after the absorber is removed",
-                form.handle(),
-            );
+            // And removing it costs the cell something. WHAT it costs is
+            // the finding: this test was first written asserting that the
+            // stripped cell is always impossible, and it failed, which is
+            // the register working rather than the test being wrong.
             let counterpart = form_verdict(stripped);
-            assert!(
-                matches!(
+            if stripped.blinded_outputs() == 0 {
+                // The plain case, and the one the corner row states. The
+                // sum is nonzero, every output contributes zero, the
+                // tally fails.
+                assert!(
+                    !stripped.blinder_sum_is_absorbable(),
+                    "{} keeps a place for its blinder sum after the absorber is removed",
+                    form.handle(),
+                );
+                assert!(
+                    matches!(
+                        counterpart,
+                        FormVerdict::ConsensusRefuses { .. }
+                            | FormVerdict::ObservedRefusedOnBalance { .. }
+                    ),
+                    "{} loses its absorber and the counterpart {} is not refused: {counterpart:?}",
+                    form.handle(),
+                    stripped.handle(),
+                );
+            } else {
+                // The case the test discovered. Exactly one thing can
+                // survive an absorber's removal and still hold the sum,
+                // and it is the sponsor's committed change -- a blinded
+                // output the tally counts and the registry will not
+                // solve for. So the cell stays POSSIBLE and becomes
+                // unstateable here, which is a different wall from the
+                // corner's and belongs to a different party.
+                assert!(
+                    stripped.sponsor.change_is_committed(),
+                    "{} survives its absorber's removal on something other than a committed \
+                     sponsor change, which the register does not know about",
+                    stripped.handle(),
+                );
+                assert!(
+                    stripped.blinder_sum_is_absorbable(),
+                    "{} still has the sponsor's change to land on",
+                    stripped.handle(),
+                );
+                assert_eq!(
                     counterpart,
-                    FormVerdict::ConsensusRefuses { .. }
-                        | FormVerdict::ObservedRefusedOnBalance { .. }
-                ),
-                "{} loses its absorber and the counterpart {} is not refused: {counterpart:?}",
-                form.handle(),
-                stripped.handle(),
-            );
+                    FormVerdict::UnsupportedHere {
+                        limitation: FormLimitation::NoSolvingRoleOutsideTheDestinations,
+                    },
+                    "{} is admitted by the tally and refused by our own model",
+                    stripped.handle(),
+                );
+            }
             checked += 1;
         }
         assert!(
