@@ -1553,30 +1553,7 @@ pub fn render_sponsor_shape(record: &SponsorShapeRecord) -> String {
             .map_or_else(|| "none".to_owned(), |amount| amount.to_string())
     );
     let _ = writeln!(out, "expected_output_count {}", record.shape.output_count());
-    if let Some(round) = &record.round {
-        let _ = writeln!(out, "sponsor_input_position {}", round.input);
-        let _ = writeln!(out, "finalized_bytes {}", round.sent.len());
-        let _ = writeln!(out, "adapter_echo_matches {}", round.echo_matches());
-        let _ = writeln!(out, "sponsor_witness_items {}", round.witness.len());
-        for item in &round.witness {
-            let _ = writeln!(out, "sponsor_witness_item_bytes {}", item.len());
-        }
-        let _ = writeln!(
-            out,
-            "replay_changed_the_control {}",
-            round.replay_changed_the_control()
-        );
-        let _ = writeln!(
-            out,
-            "witness_reached_the_control {}",
-            round.witness_reached_the_control()
-        );
-        let _ = writeln!(
-            out,
-            "mutated_binding_refusal {}",
-            round.mutated_refusal.as_deref().unwrap_or("none")
-        );
-    }
+    render_sponsor_round_trip(&mut out, record);
     let _ = writeln!(out, "submitted_bytes {}", record.submitted_bytes);
     let _ = writeln!(
         out,
@@ -1633,6 +1610,40 @@ pub fn render_sponsor_shape(record: &SponsorShapeRecord) -> String {
         let _ = writeln!(out, "does_not_establish {claim}");
     }
     out
+}
+
+/// The round-trip lines, where a round trip completed.
+///
+/// Split out of the renderer for the reason the read-back lines are:
+/// the renderer had grown past what one function is allowed to be, and
+/// this is a seam — everything here is about what the ADAPTER did,
+/// before any of it reached a node.
+fn render_sponsor_round_trip(out: &mut String, record: &SponsorShapeRecord) {
+    let Some(round) = &record.round else {
+        return;
+    };
+    let _ = writeln!(out, "sponsor_input_position {}", round.input);
+    let _ = writeln!(out, "finalized_bytes {}", round.sent.len());
+    let _ = writeln!(out, "adapter_echo_matches {}", round.echo_matches());
+    let _ = writeln!(out, "sponsor_witness_items {}", round.witness.len());
+    for item in &round.witness {
+        let _ = writeln!(out, "sponsor_witness_item_bytes {}", item.len());
+    }
+    let _ = writeln!(
+        out,
+        "replay_changed_the_control {}",
+        round.replay_changed_the_control()
+    );
+    let _ = writeln!(
+        out,
+        "witness_reached_the_control {}",
+        round.witness_reached_the_control()
+    );
+    let _ = writeln!(
+        out,
+        "mutated_binding_refusal {}",
+        round.mutated_refusal.as_deref().unwrap_or("none")
+    );
 }
 
 /// The read-back lines, where an acceptance produced any.
