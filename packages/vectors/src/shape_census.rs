@@ -1142,12 +1142,19 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
         // the registry already performs -- with nothing derived to
         // subtract it returns the input blinder sum ITSELF, which is
         // recomputed at the registry rather than predicted here.
+        // RUN, and the row moved on the acceptance rather than on the
+        // vocabulary. A real node took two blinded receipts into two
+        // explicit destinations beside one blinded absorber, and the
+        // proof census in the mined bytes is a vector no homogeneous
+        // shape of this arity can produce: two entries empty and one
+        // carrying the transaction's only range proof.
         BlindedShape::ExitCrossing => (
-            ConsensusVerdict::SourceDerivedPossible,
-            FirstPartyStatus::ExpressibleAndUnrun {
+            ConsensusVerdict::ObservedAccepted {
+                identity: crate::live_multi_shapes::run_of_record::EXIT_CROSSING_ACCEPTED_TXID,
+            },
+            FirstPartyStatus::ConstructibleAfterRemoval {
                 removed: Limitation::HomogeneousRepresentationOnly,
                 removal: PER_SIDE_REPRESENTATION_REMOVAL,
-                stops_at: "packages/vectors, which has no ceremony that funds the non-canceling                            predecessor at an exit-crossing constructor's programs and drives the                            candidate to a node. Every layer beneath it is open: the registry                            registers the manifest, the materializer builds the explicit                            destinations, and the covenant leaf checks the declared absorber                            position.",
             },
         ),
         // THE CORNER THIS REGISTER EXISTS TO KEEP APART, and the one
