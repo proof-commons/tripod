@@ -517,8 +517,63 @@ enum Stage {
     FundSponsor,
     FundReceipts,
     SignSponsor,
+    /// The §15.6 mutant, offered BEFORE its control.
+    ///
+    /// The order is not a preference. A sponsor-witness mutation changes
+    /// the WITNESS, and a witness is not part of a transaction's
+    /// identity, so the mutant and its control carry the SAME identity.
+    /// With the control submitted and mined first, the mutant comes back
+    /// refused `txn-already-known` at a layer before script evaluation
+    /// — a true refusal about an identity already on the chain, and
+    /// attributable to the submission order rather than to anything the
+    /// witness offered. Counting that would be the exact error the
+    /// attributability rule exists to prevent.
+    SubmitMutant,
     Submit,
     Done,
+}
+
+/// What one §15.6 mutant offering observed.
+#[derive(Clone, Debug)]
+pub struct SponsorNegativeObservation {
+    submitted_bytes: usize,
+    layer: ObservedOutcomeLayer,
+    detail: Option<String>,
+    sponsor_witness_item_bytes: Vec<usize>,
+    differs_from_control_in_the_sponsor_witness: bool,
+}
+
+impl SponsorNegativeObservation {
+    /// The target's own words.
+    #[must_use]
+    pub fn detail(&self) -> Option<&str> {
+        self.detail.as_deref()
+    }
+
+    /// The layer the target typed its answer at.
+    #[must_use]
+    pub const fn layer(&self) -> ObservedOutcomeLayer {
+        self.layer
+    }
+
+    /// Whether the mutant differs from its control in the sponsor
+    /// witness and in nothing else.
+    ///
+    /// Measured by comparing the two submissions rather than argued from
+    /// the code that built them: both come from ONE finalization, and
+    /// the only value that moved is what the sponsor capability
+    /// returned. The two carry the same identity for the same reason,
+    /// which is why the mutant is offered first.
+    #[must_use]
+    pub const fn differs_from_control_in_the_sponsor_witness(&self) -> bool {
+        self.differs_from_control_in_the_sponsor_witness
+    }
+
+    /// How many bytes the mutant handed the node.
+    #[must_use]
+    pub const fn submitted_bytes(&self) -> usize {
+        self.submitted_bytes
+    }
 }
 
 /// The finalization a sponsor request was formed against.
@@ -551,6 +606,7 @@ pub struct SponsorShapeRecord {
     accepted_txid: Option<String>,
     target_weight: Option<u64>,
     reverification: Option<SponsorReverification>,
+    negatives: Vec<SponsorNegativeObservation>,
     refusal: Option<SponsorShapeRefusal>,
 }
 
@@ -603,6 +659,12 @@ impl SponsorShapeRecord {
         self.refusal.as_ref()
     }
 
+    /// The §15.6 mutant offerings this run made, where it made any.
+    #[must_use]
+    pub fn negatives(&self) -> &[SponsorNegativeObservation] {
+        &self.negatives
+    }
+
     /// How much the sponsor coin was funded to.
     #[must_use]
     pub const fn sponsor_funded(&self) -> Option<u64> {
@@ -624,6 +686,8 @@ impl SponsorShapeRecord {
 pub struct SponsorShapePlanner {
     stage: Stage,
     shape: SponsorShape,
+    /// Whether this run offers the §15.6 mutant before its control.
+    offers_the_mutant: bool,
     abi: CandidateLiveTransferAbi,
     genesis: Digest32,
     explicit_program: Vec<u8>,
@@ -656,6 +720,7 @@ impl SponsorShapePlanner {
         Ok(Self {
             stage: Stage::Issue,
             shape,
+            offers_the_mutant: false,
             abi,
             genesis: printed_order(printed_genesis_identity),
             explicit_program,
@@ -677,9 +742,37 @@ impl SponsorShapePlanner {
                 accepted_txid: None,
                 target_weight: None,
                 reverification: None,
+                negatives: Vec::new(),
                 refusal: None,
             },
         })
+    }
+
+    /// The same ceremony, offering the §15.6 mutant before its control.
+    ///
+    /// The mutant is the completion the RECORDING pass already produced:
+    /// one finalization, every owner really signing, and the sponsor
+    /// capability answering with an empty stack instead of the adapter's
+    /// witness. So it is a sponsored control whose sponsor input carries
+    /// no authorization, and it differs from the control that follows it
+    /// in the sponsor witness and in nothing else.
+    ///
+    /// It is not a second ceremony and it must not become one. A mutant
+    /// built by a second finalization would differ from its control in
+    /// whatever else the second build chose, and the refusal would then
+    /// be attributable to nothing in particular.
+    ///
+    /// # Errors
+    ///
+    /// [`SponsorShapeRefusal::SubstrateUnavailable`] when the reviewed
+    /// candidate substrate does not build.
+    pub fn for_missing_authorization_negative(
+        shape: SponsorShape,
+        printed_genesis_identity: Digest32,
+    ) -> Result<Self, SponsorShapeRefusal> {
+        let mut planner = Self::for_shape(shape, printed_genesis_identity)?;
+        planner.offers_the_mutant = true;
+        Ok(planner)
     }
 
     /// What the run observed.
@@ -1078,6 +1171,51 @@ impl SponsorShapePlanner {
         Ok(())
     }
 
+    /// Hand the target the §15.6 mutant: the same control, the sponsor
+    /// input carrying no authorization.
+    fn mutant_step(&self) -> Result<OperationStep, SponsorShapeRefusal> {
+        let round = self
+            .record
+            .round
+            .clone()
+            .ok_or(SponsorShapeRefusal::ControlNotConstructible)?;
+        if round.placeholder.is_empty() {
+            return Err(SponsorShapeRefusal::ControlNotConstructible);
+        }
+        Ok(OperationStep::new(
+            "submit-unauthorized-sponsor-control",
+            OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                transaction_bytes: round.placeholder,
+            })),
+        ))
+    }
+
+    /// What the target said to the mutant, recorded before it is judged.
+    ///
+    /// A refusal is the expected outcome and is not treated as one: the
+    /// layer and the target's own words are kept, and the run carries
+    /// on to its control. An ACCEPTANCE here would be the finding, and
+    /// the test that reads this record is where that is judged.
+    fn settle_mutant(&mut self, response: &NativeOperationResponse) {
+        let Some(round) = self.record.round.clone() else {
+            return;
+        };
+        // Attributability, MEASURED rather than argued: the mutant and
+        // its control come from one finalization and differ only in what
+        // the sponsor capability returned, so the two byte strings agree
+        // everywhere the sponsor witness is not.
+        let differs = round.placeholder.len() + round.witness.iter().map(Vec::len).sum::<usize>()
+            == round.replayed.len()
+            && round.placeholder != round.replayed;
+        self.record.negatives.push(SponsorNegativeObservation {
+            submitted_bytes: round.placeholder.len(),
+            layer: response.observed_layer,
+            detail: response.observed_detail.clone(),
+            sponsor_witness_item_bytes: round.witness.iter().map(Vec::len).collect(),
+            differs_from_control_in_the_sponsor_witness: differs,
+        });
+    }
+
     /// Hand the target the sponsor-signed control, exactly as replayed.
     fn submit_step(&self) -> Result<OperationStep, SponsorShapeRefusal> {
         let round = self
@@ -1279,6 +1417,14 @@ impl TargetOperationPlanner for SponsorShapePlanner {
                     if let Err(refusal) = self.settle_signature(response) {
                         return Err(self.refuse(refusal));
                     }
+                    self.stage = if self.offers_the_mutant {
+                        Stage::SubmitMutant
+                    } else {
+                        Stage::Submit
+                    };
+                }
+                Stage::SubmitMutant => {
+                    self.settle_mutant(response);
                     self.stage = Stage::Submit;
                 }
                 Stage::Submit => {
@@ -1302,6 +1448,10 @@ impl TargetOperationPlanner for SponsorShapePlanner {
             ),
             Stage::FundReceipts => self.funding_step("fund-explicit-constructor", false),
             Stage::SignSponsor => match self.sign_step() {
+                Ok(step) => step,
+                Err(refusal) => return Err(self.refuse(refusal)),
+            },
+            Stage::SubmitMutant => match self.mutant_step() {
                 Ok(step) => step,
                 Err(refusal) => return Err(self.refuse(refusal)),
             },
@@ -1461,7 +1611,24 @@ pub fn render_sponsor_shape(record: &SponsorShapeRecord) -> String {
             .as_ref()
             .map_or_else(|| "none".to_owned(), |refusal| format!("{refusal:?}"))
     );
-    let _ = writeln!(out, "evidences_no_negative_case true");
+    let _ = writeln!(
+        out,
+        "evidences_no_negative_case {}",
+        record.negatives.is_empty()
+    );
+    for negative in &record.negatives {
+        let _ = writeln!(
+            out,
+            "negative missing-sponsor-authorization submitted_bytes {} layer {:?} \
+             sponsor_witness_item_bytes {:?} \
+             differs_from_control_in_the_sponsor_witness {} detail {}",
+            negative.submitted_bytes,
+            negative.layer,
+            negative.sponsor_witness_item_bytes,
+            negative.differs_from_control_in_the_sponsor_witness,
+            negative.detail.as_deref().unwrap_or("none"),
+        );
+    }
     for claim in SponsorShapeRecord::non_claims() {
         let _ = writeln!(out, "does_not_establish {claim}");
     }

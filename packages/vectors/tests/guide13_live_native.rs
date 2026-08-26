@@ -2172,3 +2172,113 @@ fn the_sponsored_change_present_shape_is_submitted_to_a_real_target() {
 
     run_one_sponsor_shape(SponsorShape::ChangePresent, "sponsored-change-present");
 }
+
+/// §15.6 `missing-sponsor-authorization`, the mutant offered FIRST.
+///
+/// One run, one chain, two submissions: a sponsored control whose sponsor
+/// input carries no authorization, and then the unmutated control. The
+/// order is the evidence — a sponsor-witness mutation leaves the identity
+/// alone, so a control submitted first would make its own mutant come
+/// back `txn-already-known` at a layer before script evaluation.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_missing_sponsor_authorization_negative_is_refused_behind_its_control() {
+    use vectors::live_sponsor_shapes::{SponsorShape, SponsorShapePlanner, render_sponsor_shape};
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension("sponsored-missing-authorization");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner = SponsorShapePlanner::for_missing_authorization_negative(
+        SponsorShape::ChangeAbsent,
+        identifier(&genesis),
+    )
+    .expect("the sponsored ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_sponsor_shape(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+
+    if let Some(refusal) = record.refusal() {
+        panic!("the sponsored ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    // The mutant was offered and answered.
+    assert_eq!(
+        record.negatives().len(),
+        1,
+        "one observation per mutant offering",
+    );
+    let negative = &record.negatives()[0];
+
+    // Attributability, measured rather than argued: the mutant and its
+    // control come from ONE finalization and differ in the sponsor
+    // witness and in nothing else.
+    assert!(
+        negative.differs_from_control_in_the_sponsor_witness(),
+        "the mutant differs from its control somewhere other than the sponsor witness",
+    );
+
+    // A sponsored control whose sponsor input authorizes nothing must
+    // not be accepted. This is the finding if it fires.
+    assert_ne!(
+        negative.layer(),
+        target_elements_conformance::protocol::ObservedOutcomeLayer::Accepted,
+        "a sponsor input carrying no authorization was ACCEPTED",
+    );
+    assert!(
+        negative.detail().is_some_and(|detail| !detail.is_empty()),
+        "the target refused and said nothing, so the row has no verdict to cite",
+    );
+
+    // And the CONTROL that followed was accepted, which is the whole of
+    // what makes the refusal attributable rather than merely recorded.
+    let check = record
+        .reverification()
+        .expect("the unmutated control was accepted behind the mutant");
+    assert!(check.readback_matches_submission());
+    assert!(check.every_owner_verified());
+    assert!(check.sponsor_witness_in_readback());
+
+    assert!(rendered.contains("evidences_no_negative_case false"));
+}
