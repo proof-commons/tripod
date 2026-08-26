@@ -151,6 +151,7 @@ fn every_transaction_refusal_is_censused(refusal: &Refusal) {
         | Refusal::PrivateFinalizationIsNotTheExplicitLane { .. }
         | Refusal::PrivateOpeningsDoNotCoverTheRequest { .. }
         | Refusal::PrivateOpeningRegionDisagreesWithPosition { .. }
+        | Refusal::PrivateSponsorRegionAmountDisagreesWithOffer { .. }
         | Refusal::PrivateMaterializationRefused(..)
         | Refusal::OwnerResponseMissing { .. }
         | Refusal::OwnerResponseDuplicated { .. }

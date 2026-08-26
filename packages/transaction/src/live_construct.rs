@@ -1398,6 +1398,68 @@ fn check_opening_regions(
     Ok(())
 }
 
+/// Hold the declared sponsor-region outputs to the sponsor's own offer.
+///
+/// The private lane declares its fee and its sponsor change as
+/// destination positions, so their amounts arrive from the REQUEST,
+/// while the sponsor states the same two numbers in its OFFER. Two
+/// sources for one number is a disagreement waiting to happen, and the
+/// explicit lane never had it: there the offer is the only source,
+/// because construction places both outputs itself.
+///
+/// Only a SPONSORED request is checked, and that is the scope rather
+/// than a shortcut. A sponsorless fee-bearing candidate funds its fee
+/// out of the receipts and has no offer to disagree with, so its fee
+/// position has exactly one source already.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::PrivateSponsorRegionAmountDisagreesWithOffer`]
+/// at the first role whose declared amount is not the offered one.
+fn check_sponsor_region_amounts(
+    request: &LiveTransferRequest,
+    openings: &PrivateLiveOpenings,
+    offer: Option<&crate::sponsor::SponsorOffer>,
+) -> Result<(), TransactionRefusal> {
+    let Some(offer) = offer else {
+        return Ok(());
+    };
+    for (destination, opening) in request.destinations().iter().zip(openings.destinations()) {
+        let offered = match opening.role {
+            ConfidentialOutputRole::Fee => offer.fee(),
+            // A change position with no offered change was already
+            // refused by form exactness, so the absent case here is the
+            // impossible one rather than a second policy.
+            //
+            // An offer stating its change as a COMMITMENT is skipped
+            // rather than refused, and the skip is the honest answer
+            // instead of a comparison invented to have one: there is no
+            // number in a commitment to compare a declared amount with.
+            // Nothing is lost by passing here, because the materializer
+            // closes the balance over both outputs either way; what this
+            // check adds is attribution for the case where two plain
+            // numbers disagree.
+            ConfidentialOutputRole::SponsorChange => match offer.change() {
+                Some(ValueField::Explicit(change)) => change,
+                Some(_) => continue,
+                None => return Err(TransactionRefusal::SponsorChangeRequestedWithoutDestination),
+            },
+            ConfidentialOutputRole::Primary | ConfidentialOutputRole::Balancing => continue,
+        };
+        let declared = destination.value().amount();
+        if declared != offered {
+            return Err(
+                TransactionRefusal::PrivateSponsorRegionAmountDisagreesWithOffer {
+                    role: opening.role,
+                    declared,
+                    offered,
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Every consumed input the materializer sees, in canonical order.
 ///
 /// The three fields of each spent output are the ones the node reported,
@@ -1575,6 +1637,7 @@ pub fn finalize_private_live_transfer(
     }
 
     check_opening_regions(openings, request.receipts().len())?;
+    check_sponsor_region_amounts(request, openings, offer.as_ref())?;
 
     // The explicit lane's own stages, called and not reimplemented. The
     // non-receipt positions are counted off the openings' roles, which is

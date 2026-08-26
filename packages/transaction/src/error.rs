@@ -25,7 +25,7 @@ use linker::live_backend::{
 use target_elements::ResourceDimension;
 
 use crate::bytes::Outpoint;
-use crate::live_materialize::ConfidentialInputRegion;
+use crate::live_materialize::{ConfidentialInputRegion, ConfidentialOutputRole};
 
 /// Why the transaction layer refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -608,6 +608,31 @@ pub enum TransactionRefusal {
         stated: ConfidentialInputRegion,
         /// The region that position holds.
         expected: ConfidentialInputRegion,
+    },
+    /// A declared sponsor-region output states an amount the sponsor's
+    /// offer does not.
+    ///
+    /// The private lane declares its fee and its sponsor change as
+    /// destination positions, so their amounts arrive from the REQUEST.
+    /// The sponsor states the same two numbers in its OFFER, which is
+    /// where the explicit lane reads them from. Two sources for one
+    /// number is a disagreement waiting to happen, and it is refused
+    /// here rather than left to a node.
+    ///
+    /// What a node would say instead is worth naming, because it is why
+    /// this is not merely tidy. The reserve sub-equation is the sponsor
+    /// input against the fee and the change, so a declared change that
+    /// is not the offered one produces a transaction that does not
+    /// balance — and the node answers with its balance check, a true
+    /// sentence about arithmetic that says nothing about the request
+    /// having asked for two different numbers.
+    PrivateSponsorRegionAmountDisagreesWithOffer {
+        /// Which of the two sponsor-region roles disagreed.
+        role: ConfidentialOutputRole,
+        /// What the request's destination declared.
+        declared: u64,
+        /// What the sponsor's offer stated.
+        offered: u64,
     },
     /// The transaction-wide materializer refused the private candidate.
     ///
