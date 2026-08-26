@@ -277,9 +277,17 @@ pub enum PrivateShape {
 
 impl PrivateShape {
     /// All nine, in the order the restart runs them.
+    ///
+    /// The pure split is LAST rather than beside the split it is a
+    /// sibling of, and the position is load-bearing. This array's order
+    /// is read positionally by the byte-identity tests, which pin each
+    /// recorded successor digest at its index; inserting a shape in the
+    /// middle would renumber every digest after it and make a test that
+    /// exists to catch drift report drift that did not happen. A shape
+    /// added after a run is appended, so the indices a run wrote down
+    /// keep meaning what they meant.
     pub const ALL: [Self; 9] = [
         Self::Split,
-        Self::PureSplit,
         Self::ManyToMany,
         Self::SeveralDistinctOwners,
         Self::StrictOneToOne,
@@ -287,6 +295,7 @@ impl PrivateShape {
         Self::PrivateMerge,
         Self::ExitCrossing,
         Self::EntryCrossing,
+        Self::PureSplit,
     ];
 
     /// The ceremony's own name for the shape, used as the report
