@@ -1541,13 +1541,20 @@ fn self_paying_fixture(
     fee: u64,
 ) -> (LiveTransferRequest, PublicConstructionView) {
     let coin = outpoint(0xa1, 0);
-    let view = view([receipt_view(
-        abi,
-        coin,
-        &owner(&FIRST_OWNER),
-        LiveTransferRepresentationPlan::Explicit,
-        ValueField::Explicit(1_000),
-    )]);
+    let view = view([
+        receipt_view(
+            abi,
+            coin,
+            &owner(&FIRST_OWNER),
+            LiveTransferRepresentationPlan::Explicit,
+            ValueField::Explicit(1_000),
+        ),
+        // Shown so that the SPONSORED refusal below is reached at the
+        // declaration rather than three stages earlier at a sponsor coin
+        // the view could not show. A refusal has to be the one the case
+        // is about.
+        sponsor_view(sponsor_coin(), 130),
+    ]);
     let request = LiveTransferRequest::new(
         [coin],
         [
