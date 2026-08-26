@@ -600,13 +600,12 @@ mod tests {
     /// easy half is finished, not that the test is stale.
     #[test]
     fn the_workable_rows_are_separable_from_the_walls() {
-        let workable: Vec<&str> = STILL_REQUIRED
+        let workable = STILL_REQUIRED
             .iter()
             .filter(|entry| entry.gap() == NegativeHalfGap::MutantBuilderOwed)
-            .map(NegativeHalfEntry::row)
-            .collect();
+            .count();
         assert!(
-            workable.len() < STILL_REQUIRED.len(),
+            workable < STILL_REQUIRED.len(),
             "every row cannot be merely unwritten work",
         );
     }
