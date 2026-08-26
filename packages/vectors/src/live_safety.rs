@@ -1331,6 +1331,35 @@ pub const SPONSOR_FAULTS: &[LiveSafetyRow] = &[
         amount_mismatch,
         "AmountMismatch",
     ),
+    // THE ONE ROW OF THIS MATRIX WHOSE PREDICTION THE SOURCES REFUSE.
+    //
+    // Its declaration below says a script path rejects a zero-valued
+    // ordinary sponsor member. Nothing does, and the guide series had
+    // already said so twice before this row was written: Guide 8 §22.6
+    // rules the shape a SEMANTIC ACCEPTANCE under exact role structure
+    // and instructs in the next line that no generic domain-failure
+    // vector for it be preserved, and Guide 12 gives the layered
+    // reading — semantic relation may accept, first-party builder omits
+    // known zero change, deployment may reject as nonstandard. The
+    // transcription faithfully carried a §15.6 fault-table ENTRY across
+    // and did not carry the ruling that governs it.
+    //
+    // The declaration is left standing and the row's STANDING is
+    // corrected instead, which is a deliberate division of ownership
+    // rather than a half-measure. Two things prevent the honest repair
+    // here: this matrix's tables are polarity-HOMOGENEOUS by
+    // construction — `a_positive_row_mutates_nothing_and_expects_acceptance`
+    // requires a row's polarity to equal its section's — so a
+    // fault-table row cannot be flipped positive without moving it to
+    // another table, and WHICH TABLE §15.6 LISTS IS THE GUIDE'S to say.
+    // Deleting or moving the row here would be this workspace editing a
+    // published matrix to agree with itself.
+    //
+    // So the erratum is filed with the guide, and the row is answered
+    // at `LiveRowStanding::FirstPartyFactObserved` by the fact the
+    // sources state, cited at that site to its deciding test. A reader
+    // finding this declaration and that standing in disagreement is
+    // seeing the erratum, not a row nobody checked.
     ambiguous(
         S::SponsorFault,
         "zero-valued-ordinary-sponsor-member",

@@ -1495,6 +1495,52 @@ fn observed_row_first_party_fact(row: &LiveSafetyRow) -> Option<(&'static str, &
              lanes rebuild finalized bytes through it and submit them to a real node",
             "crate::live_conservation_negatives::run_of_record",
         )),
+        // §15.6's zero-valued sponsor row, on the ruling that the
+        // realization's reading GOVERNS. THE MATRIX PREDICTS A REFUSAL
+        // THE REALIZATION REFUSES TO MAKE, and that is not a close
+        // call: revision 13d removed an accidental positivity
+        // requirement from ordinary sponsor value, and the projection
+        // does not carry a sponsor amount AT ALL — a sponsor-role
+        // `PLAIN_LBTC` member must be `ObservedValue::SponsorOpaque`,
+        // so there is no amount for any relation to compare with zero
+        // (`realization::evaluate`, the `ObjectId::PlainLbtc` arm,
+        // whose own comment says a zero-valued sponsor member is an
+        // ordinary member like any other).
+        //
+        // The guide had already ruled it, twice, and the transcription
+        // did not carry the ruling across. Guide 8 §22.6 corrects this
+        // exact contradiction by name — "zero-valued ordinary sponsor
+        // member with exact role structure: semantic acceptance", and
+        // then "Do not preserve a generic domain-failure vector for
+        // zero-valued ordinary sponsor output". The §15.6 row IS a
+        // preserved generic domain-failure vector. Guide 12 gives the
+        // three-layer reading the row flattens: the semantic relation
+        // MAY ACCEPT exact role structure, the first-party builder
+        // OMITS known zero change as construction policy, and a
+        // deployment MAY reject it as nonstandard.
+        //
+        // All three layers are in this workspace and none of them
+        // yields a refusal this row could carry. The builder does not
+        // refuse a zero residual, it declines to emit one —
+        // `transaction::construct::is_known_zero`, whose site says the
+        // target refuses a spendable zero-valued output so emitting one
+        // would produce a transaction consensus rejects. So no
+        // candidate carrying this row's fault can be built here, and
+        // the fault is not a fault in the first place.
+        //
+        // What is filed is therefore the fact the sources state, and
+        // the site is the relation's own deciding test, driven twice —
+        // once on a fully zero sidecar and once on a mixed one.
+        //
+        // WHAT THIS DOES NOT CLAIM is that any target accepted such a
+        // transfer. None was offered, and the safe constructor cannot
+        // build one to offer. The row's declaration is corrected only
+        // as far as this workspace owns it; the erratum against the
+        // §15.6 table is filed with the guide.
+        "zero-valued-ordinary-sponsor-member" => Some((
+            "the semantic relation admits a zero-valued ordinary sponsor member under exact              role structure: sponsor-value opacity leaves no amount for any relation to              compare with zero, so no layer of this workspace refuses the shape",
+            "realization::tests::live_transfer_tests::zero_sponsor_sidecar_is_accepted",
+        )),
         _ => None,
     }
 }

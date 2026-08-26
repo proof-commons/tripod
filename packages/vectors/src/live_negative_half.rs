@@ -408,11 +408,6 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         "the conservation fragment folds destinations into one sum, so a balanced swap passes it",
     ),
     entry(
-        "zero-valued-ordinary-sponsor-member",
-        G::RowTypingInQuestion,
-        "the realization accepts this shape outright, so the row's negative polarity is in question",
-    ),
-    entry(
         "confidential-sponsor-values",
         G::RowClassUnderdetermined,
         "committed sponsor values are an accepted positive shape and the negative is unstated",
