@@ -337,6 +337,17 @@ pub enum FundingRegion {
 /// an argument about whether the two-output equation closed. A
 /// transaction whose balance depends on which region a member was put in
 /// has been classified wrongly, not balanced cleverly.
+///
+/// # Why one member of it is blinded and the other two are not
+///
+/// Being outside the protocol equations is a statement about which
+/// balance a member belongs to, not about which form its value field
+/// takes. The fee and the funding party's change are explicit because a
+/// fee is explicit by the target's own definition and change beside it
+/// has nothing to hide. A sponsor's reserve coin is outside the same
+/// equations for the same reason and is blinded for a reason of its own:
+/// its value is the number §15.2 asks to be private, and a coin whose
+/// value field is explicit hides it from nobody.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum NonProtocolFundingRegion {
@@ -344,6 +355,18 @@ pub enum NonProtocolFundingRegion {
     PolicyFee,
     /// Policy-asset change returning to the funding party.
     PolicyChange,
+    /// The reserve-asset coin a sponsor spends, whose VALUE is committed
+    /// and whose ASSET is not.
+    ///
+    /// The asymmetry is the design and not a compromise. §10.7's
+    /// isolation fragment introspects the sponsor input's asset and no
+    /// value field at all, so the asset has to stay readable for the
+    /// covenant to read it while the value is free to hide. A member of
+    /// this region therefore carries a value commitment and the range
+    /// proof that a committed value requires, and carries an explicit
+    /// asset and the EMPTY surjection proof that an explicit asset
+    /// requires.
+    SponsorReserve,
 }
 
 impl std::fmt::Display for NonProtocolFundingRegion {
@@ -351,8 +374,24 @@ impl std::fmt::Display for NonProtocolFundingRegion {
         let text = match self {
             Self::PolicyFee => "the policy-asset fee",
             Self::PolicyChange => "policy-asset change",
+            Self::SponsorReserve => "the sponsor's reserve-asset coin",
         };
         formatter.write_str(text)
+    }
+}
+
+impl NonProtocolFundingRegion {
+    /// Whether this region's members carry an explicit value field.
+    ///
+    /// The one place the explicit-only property is stated, so that a
+    /// region added later chooses its answer here rather than by being
+    /// forgotten in a branch somewhere.
+    #[must_use]
+    pub const fn requires_an_explicit_value(self) -> bool {
+        match self {
+            Self::PolicyFee | Self::PolicyChange => true,
+            Self::SponsorReserve => false,
+        }
     }
 }
 
@@ -398,6 +437,32 @@ pub enum RegionClassificationRefusal {
         /// Which member.
         index: usize,
     },
+    /// A sponsor's reserve coin carries an explicit value, which is the
+    /// degeneracy the region exists to refuse: the number §15.2 asks to
+    /// be private, written where anyone reads it.
+    SponsorMemberNotCommitted {
+        /// Which member.
+        index: usize,
+    },
+    /// A sponsor's reserve coin carries a committed value and no range
+    /// proof, which the target requires of every committed value.
+    SponsorMemberProofAbsent {
+        /// Which member.
+        index: usize,
+    },
+    /// A sponsor's reserve coin carries a committed asset, which the
+    /// isolation fragment would then be unable to introspect.
+    SponsorMemberAssetNotExplicit {
+        /// Which member.
+        index: usize,
+    },
+    /// A sponsor's reserve coin carries a surjection proof, which the
+    /// target requires exactly when the asset is committed and this
+    /// member's asset is not.
+    SponsorMemberCarriesSurjectionProof {
+        /// Which member.
+        index: usize,
+    },
 }
 
 impl std::fmt::Display for RegionClassificationRefusal {
@@ -431,6 +496,22 @@ impl std::fmt::Display for RegionClassificationRefusal {
                     "member {index} carries a commitment outside the protocol region"
                 )
             }
+            Self::SponsorMemberNotCommitted { index } => write!(
+                formatter,
+                "sponsor member {index} carries an explicit value and hides nothing",
+            ),
+            Self::SponsorMemberProofAbsent { index } => write!(
+                formatter,
+                "sponsor member {index} carries a committed value and no range proof",
+            ),
+            Self::SponsorMemberAssetNotExplicit { index } => write!(
+                formatter,
+                "sponsor member {index} carries a committed asset the covenant cannot read",
+            ),
+            Self::SponsorMemberCarriesSurjectionProof { index } => write!(
+                formatter,
+                "sponsor member {index} carries a surjection proof beside an explicit asset",
+            ),
         }
     }
 }
@@ -441,15 +522,40 @@ impl std::fmt::Display for RegionClassificationRefusal {
 /// decoded output, in the transaction's own order, and there is no
 /// member the classifier may decline to place.
 ///
+/// # A member's region is decided BEFORE the clauses that guard it
+///
+/// This order is the repair of an observed defect and not a preference.
+/// The clauses used to run first and the region was decided last, which
+/// meant every non-protocol member met one explicit-only rule whatever
+/// region it actually belonged to. A blinded sponsor coin therefore
+/// tripped the explicitness clause, and tripped it FIRST, which MASKED
+/// the proof clause it also tripped: a reader who repaired the refusal
+/// they saw would fix the commitment and be met at once by the range
+/// proof, with no way to tell from either refusal that a second one was
+/// waiting.
+///
+/// Deciding the region first makes each clause a rule of the region that
+/// owns it, so every refusal below is attributable to its own cause: a
+/// commitment in an explicit-only region is refused for being a
+/// commitment there, and a proof beside an explicit value is refused for
+/// being a proof, and neither refusal stands in front of the other.
+///
+/// `sponsor_reserve_program` is what tells a sponsor's reserve coin from
+/// the funding party's change, both of which carry a non-protocol asset
+/// and a non-empty program. It is passed in rather than guessed because
+/// the alternative is to infer the region from the value form, which is
+/// the very property the region then decides the rules for.
+///
 /// # Errors
 ///
 /// [`RegionClassificationRefusal`] where a member is unclassifiable, or
-/// carries the protocol asset, a commitment, or a proof outside the
-/// protocol region.
+/// carries the protocol asset outside the protocol region, or breaks a
+/// rule of the region it was placed in.
 pub fn classify_funding_members(
     decoded: &DecodedFundingTransaction,
     protocol_asset: &str,
     protocol_members: usize,
+    sponsor_reserve_program: Option<&[u8]>,
 ) -> Result<Vec<FundingRegion>, RegionClassificationRefusal> {
     if decoded.outputs.len() < protocol_members {
         return Err(RegionClassificationRefusal::ProtocolCountShort {
@@ -476,20 +582,51 @@ pub fn classify_funding_members(
             regions.push(FundingRegion::Protocol { position: index });
             continue;
         }
+        // Belonging to the protocol asset is wrong in EVERY non-protocol
+        // region, so it is judged before the region is chosen rather than
+        // restated once per region below.
         if matches!(&output.asset, DecodedAssetField::Explicit(asset) if asset == protocol_asset) {
             return Err(RegionClassificationRefusal::ProtocolAssetOutsideRegion { index });
         }
-        if !matches!(output.value, DecodedValueField::Explicit(_)) {
-            return Err(RegionClassificationRefusal::NonProtocolMemberNotExplicit { index });
-        }
-        if !output.rangeproof.is_empty() || !output.surjection_proof.is_empty() {
-            return Err(RegionClassificationRefusal::NonProtocolMemberCarriesProof { index });
-        }
+
+        // The region, decided on the program alone — the one property of
+        // a member that none of the clauses below judge, which is what
+        // keeps the decision from depending on its own outcome.
         let region = if output.program.is_empty() {
             NonProtocolFundingRegion::PolicyFee
+        } else if sponsor_reserve_program == Some(output.program.as_slice()) {
+            NonProtocolFundingRegion::SponsorReserve
         } else {
             NonProtocolFundingRegion::PolicyChange
         };
+
+        if region.requires_an_explicit_value() {
+            if !matches!(output.value, DecodedValueField::Explicit(_)) {
+                return Err(RegionClassificationRefusal::NonProtocolMemberNotExplicit { index });
+            }
+            if !output.rangeproof.is_empty() || !output.surjection_proof.is_empty() {
+                return Err(RegionClassificationRefusal::NonProtocolMemberCarriesProof { index });
+            }
+        } else {
+            // The sponsor's reserve coin, whose four rules are the two
+            // field forms and the proof each form entails. Each is
+            // separately refusable, so a coin that breaks one is refused
+            // for breaking that one.
+            if !matches!(output.value, DecodedValueField::Commitment(_)) {
+                return Err(RegionClassificationRefusal::SponsorMemberNotCommitted { index });
+            }
+            if output.rangeproof.is_empty() {
+                return Err(RegionClassificationRefusal::SponsorMemberProofAbsent { index });
+            }
+            if !matches!(output.asset, DecodedAssetField::Explicit(_)) {
+                return Err(RegionClassificationRefusal::SponsorMemberAssetNotExplicit { index });
+            }
+            if !output.surjection_proof.is_empty() {
+                return Err(
+                    RegionClassificationRefusal::SponsorMemberCarriesSurjectionProof { index },
+                );
+            }
+        }
         regions.push(FundingRegion::NonProtocol(region));
     }
     Ok(regions)
@@ -1254,6 +1391,17 @@ pub struct ConfidentialFundingEvidence<'a> {
     pub fixture: &'a ResolvedFixture,
     /// The decoded mined transaction, whole, for region classification.
     pub decoded: &'a DecodedFundingTransaction,
+    /// The program of the sponsor's reserve coin, where this funding
+    /// created one.
+    ///
+    /// Absent for every funding that creates no sponsor coin, which is
+    /// every one that existed before the sponsor's region did. It is
+    /// stated rather than inferred because a sponsor's reserve coin and
+    /// the funding party's change are alike in both properties the
+    /// classifier could otherwise use — a non-protocol asset and a
+    /// non-empty program — and telling them apart by value form would
+    /// decide the region from the very field the region governs.
+    pub sponsor_reserve_program: Option<&'a [u8]>,
     /// Whether a byte-identity rerun comparison was performed.
     ///
     /// Absent unless a second run compared bytes. A record under
@@ -1499,9 +1647,13 @@ pub fn validate_confidential_funding_record(
         .first()
         .map(|output| output.explicit_asset.clone())
         .ok_or(FundingRecordRefusal::Order)?;
-    let regions =
-        classify_funding_members(evidence.decoded, &protocol_asset, fixture_outputs.len())
-            .map_err(|refusal| FundingRecordRefusal::Region { refusal })?;
+    let regions = classify_funding_members(
+        evidence.decoded,
+        &protocol_asset,
+        fixture_outputs.len(),
+        evidence.sponsor_reserve_program,
+    )
+    .map_err(|refusal| FundingRecordRefusal::Region { refusal })?;
 
     let openings = match evidence.fixture.openings() {
         FixtureOpenings::Derived { openings, .. } => openings,

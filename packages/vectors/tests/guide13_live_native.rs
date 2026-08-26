@@ -331,6 +331,11 @@ fn fund_one_confidential_predecessor(
         response,
         fixture,
         decoded: &mined,
+        // Absent, because this funding creates no sponsor coin. A
+        // program stated here would name a member the transaction does
+        // not carry, and the classifier would place nothing differently
+        // for it.
+        sponsor_reserve_program: None,
         // Never stated here. A byte comparison is the other contract's
         // own claim, and this function has seen one run.
         materialized_bytes_compared: false,

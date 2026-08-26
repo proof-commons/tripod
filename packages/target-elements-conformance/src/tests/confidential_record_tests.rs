@@ -75,7 +75,7 @@ fn transaction(policy: &str) -> DecodedFundingTransaction {
 #[test]
 fn every_member_is_placed_in_a_region_and_the_fee_is_named() {
     let policy = "bb".repeat(32);
-    let regions = classify_funding_members(&transaction(&policy), protocol().as_str(), 2)
+    let regions = classify_funding_members(&transaction(&policy), protocol().as_str(), 2, None)
         .expect("every member places");
     // Exhaustive by construction: one entry per member, in the
     // transaction's own order.
@@ -100,7 +100,7 @@ fn a_member_outside_the_protocol_region_may_not_carry_the_protocol_asset() {
     let mut subject = transaction(protocol().as_str());
     subject.outputs[2] = policy_member(protocol().as_str(), &[0x51]);
     assert_eq!(
-        classify_funding_members(&subject, protocol().as_str(), 2).expect_err("it refuses"),
+        classify_funding_members(&subject, protocol().as_str(), 2, None).expect_err("it refuses"),
         RegionClassificationRefusal::ProtocolAssetOutsideRegion { index: 2 }
     );
 }
@@ -111,75 +111,184 @@ fn a_non_protocol_member_may_carry_neither_a_commitment_nor_a_proof() {
     let mut committed = transaction(&policy);
     committed.outputs[2].value = DecodedValueField::Commitment(commitment(8));
     assert_eq!(
-        classify_funding_members(&committed, protocol().as_str(), 2).expect_err("it refuses"),
+        classify_funding_members(&committed, protocol().as_str(), 2, None).expect_err("it refuses"),
         RegionClassificationRefusal::NonProtocolMemberNotExplicit { index: 2 }
     );
     let mut proved = transaction(&policy);
     proved.outputs[3].rangeproof = vec![0x01];
     assert_eq!(
-        classify_funding_members(&proved, protocol().as_str(), 2).expect_err("it refuses"),
+        classify_funding_members(&proved, protocol().as_str(), 2, None).expect_err("it refuses"),
         RegionClassificationRefusal::NonProtocolMemberCarriesProof { index: 3 }
     );
 }
 
-#[test]
-fn a_blinded_sponsor_coin_trips_the_explicitness_clause_before_the_proof_clause() {
-    // A BLINDED SPONSOR COIN is the shape a confidential sponsor value
-    // needs its funding transaction to create: the reserve asset
-    // explicit, because the isolation fragment introspects it, and the
-    // value committed with the range proof that a committed value
-    // requires. It is non-protocol by asset, so it lands outside the
-    // protocol region and meets the two clauses that guard it.
-    //
-    // It trips BOTH, and which one fires first is the finding. The
-    // explicitness clause is checked before the proof clause, so a
-    // reader who repaired only the refusal they saw would fix the
-    // commitment and be met immediately by the proof — the second
-    // refusal being MASKED by the first rather than absent.
-    //
-    // Recorded as a run rather than as a reading of the branch order,
-    // because the order is what a repair has to plan around and a
-    // reordering of these two clauses would otherwise change the
-    // finding silently.
-    let policy = "bb".repeat(32);
-    let mut blinded = transaction(&policy);
-    blinded.outputs[2] = DecodedFundingOutput {
-        asset: DecodedAssetField::Explicit(policy),
+/// One blinded sponsor coin, as its funding transaction creates it.
+///
+/// The reserve asset EXPLICIT, because §10.7's isolation fragment
+/// introspects it, and the value COMMITTED with the range proof a
+/// committed value requires. The surjection proof is empty, as it must
+/// be: the target requires one exactly when the ASSET is committed.
+fn sponsor_coin(asset: &str, program: &[u8]) -> DecodedFundingOutput {
+    DecodedFundingOutput {
+        asset: DecodedAssetField::Explicit(asset.to_owned()),
         value: DecodedValueField::Commitment(commitment(8)),
         nonce: vec![0x02; 33],
-        program: vec![0x51],
-        // Empty, as it must be: a surjection proof is required exactly
-        // when the ASSET is committed, and this one is not.
+        program: program.to_vec(),
         surjection_proof: Vec::new(),
         rangeproof: vec![0x7a; 64],
-    };
+    }
+}
+
+#[test]
+fn a_blinded_sponsor_coin_is_placed_in_its_own_region_once_its_program_is_declared() {
+    // The repair of an observed defect, held here so that a reordering
+    // of the classifier would fail rather than change the finding
+    // silently.
+    //
+    // Before it, a blinded sponsor coin met one explicit-only rule that
+    // every non-protocol member met, tripped it, and tripped it FIRST —
+    // which MASKED the proof clause it also tripped. A reader who
+    // repaired the refusal they saw would fix the commitment and be met
+    // at once by the range proof, with neither refusal saying a second
+    // one was waiting.
+    //
+    // The region is now decided before the clauses that guard it, so the
+    // coin is judged by its own region's rules and never meets the
+    // explicit-only ones at all.
+    let policy = "bb".repeat(32);
+    let mut blinded = transaction(&policy);
+    blinded.outputs[2] = sponsor_coin(&policy, &[0x51]);
+
+    let regions = classify_funding_members(&blinded, protocol().as_str(), 2, Some(&[0x51]))
+        .expect("the sponsor coin places");
     assert_eq!(
-        classify_funding_members(&blinded, protocol().as_str(), 2).expect_err("it refuses"),
+        regions[2],
+        FundingRegion::NonProtocol(NonProtocolFundingRegion::SponsorReserve),
+        "a declared sponsor coin is still being read as somebody else's member",
+    );
+    // Its neighbours are untouched: the declaration moves ONE member.
+    assert_eq!(
+        regions[3],
+        FundingRegion::NonProtocol(NonProtocolFundingRegion::PolicyFee)
+    );
+
+    // The declaration is what does it, and nothing about the bytes. The
+    // SAME transaction with no program declared is read as policy change
+    // and refused by that region's rule — which is why the program is
+    // passed in rather than inferred from the value form.
+    assert_eq!(
+        classify_funding_members(&blinded, protocol().as_str(), 2, None).expect_err("it refuses"),
         RegionClassificationRefusal::NonProtocolMemberNotExplicit { index: 2 },
-        "the explicitness clause is no longer the first one a blinded sponsor coin meets",
     );
 
-    // The masked one, shown by removing only what the first clause
-    // objects to. Nothing else about the member moves, so the second
-    // refusal is attributable to the proof and to nothing else.
-    let mut without_commitment = blinded;
-    without_commitment.outputs[2].value = DecodedValueField::Explicit(1_250);
+    // And the region says which region it is, in words.
     assert_eq!(
-        classify_funding_members(&without_commitment, protocol().as_str(), 2)
-            .expect_err("it refuses"),
+        NonProtocolFundingRegion::SponsorReserve.to_string(),
+        "the sponsor's reserve-asset coin",
+    );
+    assert!(!NonProtocolFundingRegion::SponsorReserve.requires_an_explicit_value());
+    assert!(NonProtocolFundingRegion::PolicyChange.requires_an_explicit_value());
+    assert!(NonProtocolFundingRegion::PolicyFee.requires_an_explicit_value());
+}
+
+#[test]
+fn neither_explicit_only_refusal_stands_in_front_of_the_other() {
+    // The masking, shown to be gone at the two members that still carry
+    // the explicit-only rules. Each mutant breaks exactly ONE rule, so
+    // each refusal is attributable to its own cause and neither is
+    // reachable only by repairing the other first.
+    let policy = "bb".repeat(32);
+
+    // A commitment where the region requires an explicit value, with NO
+    // proof beside it — so the proof clause has nothing to object to and
+    // the refusal names the commitment alone.
+    let mut committed = transaction(&policy);
+    committed.outputs[2].value = DecodedValueField::Commitment(commitment(8));
+    assert_eq!(
+        classify_funding_members(&committed, protocol().as_str(), 2, None).expect_err("it refuses"),
+        RegionClassificationRefusal::NonProtocolMemberNotExplicit { index: 2 },
+    );
+
+    // A proof beside a value that stays EXPLICIT — so the explicitness
+    // clause has nothing to object to and the refusal names the proof
+    // alone.
+    let mut proved = transaction(&policy);
+    proved.outputs[2].rangeproof = vec![0x01];
+    assert_eq!(
+        classify_funding_members(&proved, protocol().as_str(), 2, None).expect_err("it refuses"),
         RegionClassificationRefusal::NonProtocolMemberCarriesProof { index: 2 },
-        "the proof clause was not the second obstacle after all",
+    );
+}
+
+#[test]
+fn the_sponsor_region_refuses_each_of_its_four_rules_separately() {
+    // Mutants first, one rule each. A sponsor coin's region admits what
+    // the explicit-only regions forbid, which is exactly why its own
+    // rules have to be checked rather than assumed: an admitted region
+    // with no rules would let anything through that carried the right
+    // program.
+    let policy = "bb".repeat(32);
+    let declared: Option<&[u8]> = Some(&[0x51]);
+    let subject = |mutate: &dyn Fn(&mut DecodedFundingOutput)| {
+        let mut transaction = transaction(&policy);
+        let mut member = sponsor_coin(&policy, &[0x51]);
+        mutate(&mut member);
+        transaction.outputs[2] = member;
+        transaction
+    };
+
+    // An explicit value is the degeneracy the region exists to refuse:
+    // the number §15.2 asks to be private, written where anyone reads
+    // it.
+    assert_eq!(
+        classify_funding_members(
+            &subject(&|member| member.value = DecodedValueField::Explicit(1_250)),
+            protocol().as_str(),
+            2,
+            declared,
+        )
+        .expect_err("it refuses"),
+        RegionClassificationRefusal::SponsorMemberNotCommitted { index: 2 },
     );
 
-    // And the region vocabulary has no member for it either way: the
-    // classifier decides a non-protocol member's region by whether its
-    // program is empty, so a sponsor coin can only ever be read as
-    // policy change. Admitting a blinded sponsor coin therefore needs a
-    // region member as well as the two clauses, which is why this is a
-    // vocabulary change rather than a relaxation.
+    // A committed value with no range proof is refused by the target
+    // itself, so it is refused here rather than carried to one.
     assert_eq!(
-        NonProtocolFundingRegion::PolicyChange.to_string(),
-        "policy-asset change",
+        classify_funding_members(
+            &subject(&|member| member.rangeproof = Vec::new()),
+            protocol().as_str(),
+            2,
+            declared,
+        )
+        .expect_err("it refuses"),
+        RegionClassificationRefusal::SponsorMemberProofAbsent { index: 2 },
+    );
+
+    // A committed asset is the one thing this region may not hide: the
+    // isolation fragment introspects it, and an introspection reads an
+    // explicit field.
+    assert_eq!(
+        classify_funding_members(
+            &subject(&|member| member.asset = DecodedAssetField::Commitment(commitment(10))),
+            protocol().as_str(),
+            2,
+            declared,
+        )
+        .expect_err("it refuses"),
+        RegionClassificationRefusal::SponsorMemberAssetNotExplicit { index: 2 },
+    );
+
+    // And a surjection proof beside an explicit asset, which the target
+    // requires to be empty exactly because the asset is not committed.
+    assert_eq!(
+        classify_funding_members(
+            &subject(&|member| member.surjection_proof = vec![0x03]),
+            protocol().as_str(),
+            2,
+            declared,
+        )
+        .expect_err("it refuses"),
+        RegionClassificationRefusal::SponsorMemberCarriesSurjectionProof { index: 2 },
     );
 }
 
@@ -189,19 +298,20 @@ fn a_protocol_position_must_carry_the_asset_and_a_committed_value() {
     let mut wrong_asset = transaction(&policy);
     wrong_asset.outputs[1] = protocol_output(&policy, &[0x52]);
     assert_eq!(
-        classify_funding_members(&wrong_asset, protocol().as_str(), 2).expect_err("it refuses"),
+        classify_funding_members(&wrong_asset, protocol().as_str(), 2, None)
+            .expect_err("it refuses"),
         RegionClassificationRefusal::ProtocolAssetAbsent { position: 1 }
     );
     let mut explicit = transaction(&policy);
     explicit.outputs[0].value = DecodedValueField::Explicit(7);
     assert_eq!(
-        classify_funding_members(&explicit, protocol().as_str(), 2).expect_err("it refuses"),
+        classify_funding_members(&explicit, protocol().as_str(), 2, None).expect_err("it refuses"),
         RegionClassificationRefusal::ProtocolValueNotCommitted { position: 0 }
     );
     let mut short = transaction(&policy);
     short.outputs.truncate(1);
     assert_eq!(
-        classify_funding_members(&short, protocol().as_str(), 2).expect_err("it refuses"),
+        classify_funding_members(&short, protocol().as_str(), 2, None).expect_err("it refuses"),
         RegionClassificationRefusal::ProtocolCountShort {
             required: 2,
             observed: 1
