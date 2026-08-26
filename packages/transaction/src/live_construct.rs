@@ -1851,6 +1851,7 @@ pub fn finalize_private_live_transfer(
 /// [`TransactionRefusal::PrivateFinalizationIsNotTheExplicitLane`] for a
 /// wholly explicit composition or for a request whose representation is
 /// not the composition's consumed side.
+#[allow(clippy::too_many_arguments)]
 pub fn finalize_private_live_transfer_composing(
     target: &ReviewedElementsTapscriptDefinition,
     abi: &CandidateLiveTransferAbi,
