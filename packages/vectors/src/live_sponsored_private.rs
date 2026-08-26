@@ -88,7 +88,7 @@ use crate::confidential_sponsor_reserve::{
     sponsor_reserve_subject,
 };
 use crate::error::VectorError;
-use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
+use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed_order};
 use crate::live_plan::{
     FIRST_SCALAR, LiveShapeVocabulary, SECOND_SCALAR, published_owner, reviewed_target,
 };
@@ -495,7 +495,13 @@ impl SponsoredPrivatePlanner {
         reviewed_target()?;
         Ok(Self {
             stage: Stage::Issue,
-            genesis_block_hash: printed_genesis_identity,
+            // The seed in the order a target HASHES a block identity,
+            // not the order it prints one. The owner message writes this
+            // hash twice, so a printed-order seed is a message over the
+            // wrong preimage -- every balance check still passes and the
+            // signature alone fails, which is exactly the recorded
+            // `DeploymentSeedInPrintedOrder` negative control.
+            genesis_block_hash: printed_order(printed_genesis_identity),
             linked: None,
             receipt: None,
             sponsor: None,
