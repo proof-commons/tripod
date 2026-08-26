@@ -64,7 +64,7 @@ use crate::live_materialize::{
 use crate::live_private::{
     ConfidentialConstructionModel, PrivateValueCapability, SelectedConstructionModel,
 };
-use crate::live_request::{LiveTransferRequest, RequestedForm};
+use crate::live_request::{LiveReceiptDestination, LiveTransferRequest, RequestedForm};
 use crate::live_signing::AuthorizedLiveTransfer;
 use crate::sponsor::{SighashProfile, SignerRole, SponsorCapability, SponsorSigningRequest};
 use crate::taproot::witness_program_script;
@@ -421,10 +421,12 @@ pub fn finalize_live_transfer_declaring(
         abi,
         shape,
         request,
-        offer.as_ref(),
-        sponsor,
-        private,
-        declared,
+        &OutputDeclarations {
+            offer: offer.as_ref(),
+            sponsor,
+            private,
+            declared,
+        },
     )?;
 
     // Stage 9: the protected transaction. Null witnesses, because the
@@ -969,54 +971,91 @@ fn explicit_total(recognized: &[RecognizedReceipt]) -> Result<Option<u64>, Trans
     Ok(Some(total))
 }
 
+/// What construction was handed beyond the request and the shape.
+///
+/// One bundle rather than four parallel arguments, because all four are
+/// the caller's optional declarations about the same output census and
+/// a reader meeting them one at a time cannot see that.
+struct OutputDeclarations<'a> {
+    /// The sponsor's offer, where a sponsor funds this transaction.
+    offer: Option<&'a crate::sponsor::SponsorOffer>,
+    /// The sponsor's own capability, which names its change destination.
+    sponsor: Option<&'a dyn SponsorCapability>,
+    /// The confidential capability, where values are commitments.
+    private: Option<&'a dyn PrivateValueCapability>,
+    /// The explicit lane's per-entry roles; empty means all receipts.
+    declared: &'a [ExplicitDestinationRole],
+}
+
+/// The self-paid fee output one declared destination entry becomes.
+///
+/// Placed at the position the SHAPE names rather than at the entry's own
+/// index, and the two are then required to agree. Placing it by index
+/// would work on every shape whose fee entry is written last and
+/// silently misplace it on the first one that is not.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::SelfPaidFeeHasNoShapePosition`] where the
+/// selected shape carries no fee position, and
+/// [`TransactionRefusal::SelfPaidFeePositionDisagreesWithShape`] where
+/// it names a different one.
+fn self_paid_fee_output(
+    abi: &CandidateLiveTransferAbi,
+    shape: &LiveShapeAbi,
+    destination: &LiveReceiptDestination,
+    position: u16,
+) -> Result<(u16, TargetOutput), TransactionRefusal> {
+    let Some(fee_position) = shape.fee_position() else {
+        return Err(TransactionRefusal::SelfPaidFeeHasNoShapePosition);
+    };
+    if fee_position != position {
+        return Err(TransactionRefusal::SelfPaidFeePositionDisagreesWithShape {
+            declared: position,
+            shaped: fee_position,
+        });
+    }
+    Ok((
+        fee_position,
+        TargetOutput::new(
+            // The PROTOCOL asset, because this fee is funded out of the
+            // receipts and Elements balances per asset: a reserve-asset
+            // fee beside no reserve-asset input dies at the tally. The
+            // sponsored fee reads the reserve for the mirror-image
+            // reason, its fee having been funded from the sponsor region.
+            AssetField::Explicit(abi.symbols().protocol_asset()),
+            ValueField::Explicit(destination.value().amount()),
+            NonceField::Null,
+            // The empty program: the fee role's whole identity is
+            // target-structural, and this is the structure.
+            Vec::new(),
+        ),
+    ))
+}
+
 /// The destinations, then the sponsor change, then the fee role.
 fn assemble_outputs(
     target: &ReviewedElementsTapscriptDefinition,
     abi: &CandidateLiveTransferAbi,
     shape: &LiveShapeAbi,
     request: &LiveTransferRequest,
-    offer: Option<&crate::sponsor::SponsorOffer>,
-    sponsor: Option<&dyn SponsorCapability>,
-    private: Option<&dyn PrivateValueCapability>,
-    declared: &[ExplicitDestinationRole],
+    declarations: &OutputDeclarations<'_>,
 ) -> Result<Vec<TargetOutput>, TransactionRefusal> {
+    let OutputDeclarations {
+        offer,
+        sponsor,
+        private,
+        declared,
+    } = *declarations;
     let mut placed: BTreeMap<u16, TargetOutput> = BTreeMap::new();
     let (first, _) = shape.destination_range();
 
     for (index, destination) in request.destinations().iter().enumerate() {
         let position = first.saturating_add(u16::try_from(index).unwrap_or(u16::MAX));
 
-        // A declared fee entry is placed at the position the SHAPE names
-        // rather than at its own index, and the two are then required to
-        // agree. Placing it by index would work on every shape whose fee
-        // entry is written last and silently misplace it on the first
-        // one that is not.
         if declared.get(index) == Some(&ExplicitDestinationRole::Fee) {
-            let Some(fee_position) = shape.fee_position() else {
-                return Err(TransactionRefusal::SelfPaidFeeHasNoShapePosition);
-            };
-            if fee_position != position {
-                return Err(TransactionRefusal::SelfPaidFeePositionDisagreesWithShape {
-                    declared: position,
-                    shaped: fee_position,
-                });
-            }
-            placed.insert(
-                fee_position,
-                TargetOutput::new(
-                    // The PROTOCOL asset, because this fee is funded out
-                    // of the receipts and Elements balances per asset: a
-                    // reserve-asset fee beside no reserve-asset input
-                    // dies at the tally. The sponsored fee below reads
-                    // the reserve for the mirror-image reason.
-                    AssetField::Explicit(abi.symbols().protocol_asset()),
-                    ValueField::Explicit(destination.value().amount()),
-                    NonceField::Null,
-                    // The empty program: the fee role's whole identity is
-                    // target-structural, and this is the structure.
-                    Vec::new(),
-                ),
-            );
+            let (fee_position, output) = self_paid_fee_output(abi, shape, destination, position)?;
+            placed.insert(fee_position, output);
             continue;
         }
 
