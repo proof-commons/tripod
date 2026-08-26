@@ -2644,10 +2644,12 @@ mod tests {
     /// third would be a row moved on somebody's expectation.
     #[test]
     fn the_sponsored_private_successor_is_unregistrable_and_its_row_is_unmoved() {
-        assert!(
-            !sponsored_run_of_record::A_SPONSORED_PRIVATE_SUCCESSOR_IS_REGISTRABLE,
-            "the registry learned to state a two-asset case and the stop was not revisited",
-        );
+        const {
+            assert!(
+                !sponsored_run_of_record::A_SPONSORED_PRIVATE_SUCCESSOR_IS_REGISTRABLE,
+                "the registry learned to state a two-asset case and the stop was not revisited",
+            );
+        }
         assert!(
             !crate::live_closeout::PositivePrivateClass::PrivateSponsorValues.may_enter_the_delta(),
             "the sponsor row opened while its own shape is still unregistrable",
