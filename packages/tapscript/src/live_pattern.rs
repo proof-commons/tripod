@@ -77,7 +77,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
+use compiler::live_transfer_plan::{LiveTransferComposition, LiveTransferRepresentationPlan};
 use compiler::operation_plan::RequiredSourceKind;
 use compiler::target::ExternalEvidenceRole;
 use target_elements::{
@@ -97,7 +97,9 @@ use crate::live_plan::{
     destination_closure_fragment, emits_isolation_fragment, explicit_conservation_fragment,
     has_sponsor_region, issuance_absence_fragment, live_sponsor_isolation_fragment,
 };
-use crate::live_private::{private_destination_form_fragment, require_value_form};
+use crate::live_private::{
+    crossing_destination_form_fragment, private_destination_form_fragment, require_value_form,
+};
 use crate::live_shape::LiveTransferShape;
 use crate::pattern::{
     coordinator_role_fragment, final_truth_fragment, fragment_prerequisites, member_range_fragment,
@@ -772,18 +774,39 @@ pub fn live_coordinator_program(
     instructions
         .extend_from_slice(live_sponsor_isolation_fragment(target, symbols, shape)?.instructions());
     instructions.extend_from_slice(issuance_absence_fragment(target, shape)?.instructions());
-    // Exhaustive rather than an `if`: a representation added to §6.1
-    // stops this compiling until its value obligation is decided, which
-    // is the only mechanism that keeps a coordinator from being emitted
-    // with the slot silently empty.
-    match constructor.representation() {
-        LiveTransferRepresentationPlan::Explicit => {
+    // Exhaustive rather than an `if`: a composition added to §6.5 stops
+    // this compiling until its value obligation is decided, which is the
+    // only mechanism that keeps a coordinator from being emitted with
+    // the slot silently empty.
+    //
+    // Dispatched on the COMPOSITION and not on the consumed plan, and
+    // that is the whole of what crossing changes here. The obligation
+    // this slot carries has always been about the side the transfer
+    // CREATES -- the consumed side's form is `local_pair`'s, at the
+    // input this leaf is running under -- and while both sides were one
+    // plan the two questions had one answer.
+    match constructor.composition() {
+        LiveTransferComposition::HomogeneousExplicit => {
             instructions
                 .extend_from_slice(explicit_conservation_fragment(target, shape)?.instructions());
         }
-        LiveTransferRepresentationPlan::PrivateCommitted => {
+        // Both compositions whose created side is wholly confidential
+        // owe the same obligation, and neither may owe more. A
+        // conservation fragment reads created amounts, and under either
+        // of these every created amount is a commitment.
+        LiveTransferComposition::HomogeneousPrivate | LiveTransferComposition::EntryBlinding => {
             instructions.extend_from_slice(
                 private_destination_form_fragment(target, shape)?.instructions(),
+            );
+        }
+        // The created side is explicit at every position but the
+        // declared absorber, so the obligation is positional. It is
+        // still a FORM obligation and not a conservation one: the
+        // consumed amounts are commitments, so no fragment may read
+        // them and no equality may be claimed over them.
+        LiveTransferComposition::ExitUnblinding => {
+            instructions.extend_from_slice(
+                crossing_destination_form_fragment(target, shape)?.instructions(),
             );
         }
     }
