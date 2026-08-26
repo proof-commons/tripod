@@ -102,6 +102,30 @@ pub enum BlindedShape {
     TwoToThree,
     /// One blinded input to a fee output and nothing else.
     FeeOnly,
+    /// No blinded input at all, to two blinded outputs.
+    ///
+    /// Blinding on ENTRY: explicit receipts spent into confidential
+    /// ones. It sits at the domain's edge rather than inside it — every
+    /// other member consumes at least one blinded input and this member
+    /// consumes none — which is why admitting it widened the closure
+    /// rule rather than adding a row under it.
+    EntryCrossing,
+    /// Two blinded inputs to two EXPLICIT outputs and one blinded
+    /// absorber.
+    ///
+    /// Unblinding on EXIT. The absorber is an ordinary blinded
+    /// destination at a declared position, and it is the whole reason
+    /// the shape is possible: the consumed blinder sum is nonzero and
+    /// explicit outputs contribute zero to it, so without the absorber
+    /// there is nothing for it to land on.
+    ExitCrossing,
+    /// Two blinded inputs to nothing but EXPLICIT outputs.
+    ///
+    /// The exit crossing with its absorber removed, and the corner where
+    /// consensus and this workspace's registry refuse the same shape for
+    /// DIFFERENT reasons — which is the case this register exists to
+    /// keep apart. It is filed and never attempted.
+    FullyUnblinding,
 }
 
 impl BlindedShape {
@@ -115,20 +139,38 @@ impl BlindedShape {
     ///
     /// It is closed, and a reader can see nothing is missing, because
     /// of what [`Self::blinder_sum_is_absorbable`] shows: the consensus
-    /// verdict depends on NOTHING but whether at least one output is
-    /// blinded. It does not depend on the input count, and it does not
-    /// depend on the output count beyond the difference between "some
-    /// blinded output" and "none". Both of those cases already appear
-    /// in the window — every member but [`Self::FeeOnly`] is the first,
-    /// and `FeeOnly` is the second — so every shape OUTSIDE the window
-    /// inherits the verdict of whichever case it falls into, and adding
-    /// it would restate a row rather than add one.
+    /// verdict depends on NOTHING but whether the consumed blinder sum
+    /// has somewhere to land. Two facts decide that and no third does —
+    /// whether any input is blinded, and whether any output is. Every
+    /// combination of those two appears in the window, so every shape
+    /// OUTSIDE it inherits the verdict of whichever case it falls into,
+    /// and adding one would restate a row rather than add one.
     ///
-    /// The window is therefore chosen for the first-party half, where
+    /// # The domain the crossing wave widened
+    ///
+    /// The rule used to open "at least one blinded input", and that was
+    /// not a simplification: it was the whole reason the register could
+    /// derive [`Self::blinded_outputs`] from the output count instead of
+    /// stating it. A lane on which every input is blinded and every
+    /// non-fee output with it has exactly two kinds of output, so the
+    /// fee count determines the rest.
+    ///
+    /// Representation crossing breaks BOTH halves of that, in opposite
+    /// directions, and the register had to learn both. An ENTRY crossing
+    /// consumes no blinded input at all, which is outside the old domain
+    /// rather than unlisted within it. An EXIT crossing carries explicit
+    /// NON-fee outputs, which the derived blinded-output count would
+    /// have counted as blinded — and it would then have computed
+    /// `absorbable` for a shape by counting outputs that absorb nothing.
+    /// That is why [`Self::blinded_outputs`] is now an axis each member
+    /// states rather than a subtraction, and why the tally predicate
+    /// asks about the INPUT side too.
+    ///
+    /// The window is otherwise chosen for the first-party half, where
     /// the counts DO matter: the registry's own clauses are cardinality
     /// clauses, and every shape this lane has built or been refused
     /// falls inside it.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 11] = [
         Self::OneToOne,
         Self::OneToOneWithFee,
         Self::OneToTwo,
@@ -137,6 +179,9 @@ impl BlindedShape {
         Self::TwoToTwo,
         Self::TwoToThree,
         Self::FeeOnly,
+        Self::EntryCrossing,
+        Self::ExitCrossing,
+        Self::FullyUnblinding,
     ];
 
     /// How many blinded inputs the shape consumes.
@@ -148,7 +193,14 @@ impl BlindedShape {
             | Self::OneToTwo
             | Self::OneToThree
             | Self::FeeOnly => 1,
-            Self::TwoToOne | Self::TwoToTwo | Self::TwoToThree => 2,
+            Self::TwoToOne
+            | Self::TwoToTwo
+            | Self::TwoToThree
+            | Self::ExitCrossing
+            | Self::FullyUnblinding => 2,
+            // The one member that consumes none, and the reason the
+            // domain has an edge rather than a floor.
+            Self::EntryCrossing => 0,
         }
     }
 
@@ -157,8 +209,12 @@ impl BlindedShape {
     pub const fn outputs(self) -> usize {
         match self {
             Self::OneToOne | Self::TwoToOne | Self::FeeOnly => 1,
-            Self::OneToOneWithFee | Self::OneToTwo | Self::TwoToTwo => 2,
-            Self::OneToThree | Self::TwoToThree => 3,
+            Self::OneToOneWithFee
+            | Self::OneToTwo
+            | Self::TwoToTwo
+            | Self::EntryCrossing
+            | Self::FullyUnblinding => 2,
+            Self::OneToThree | Self::TwoToThree | Self::ExitCrossing => 3,
         }
     }
 
@@ -175,17 +231,48 @@ impl BlindedShape {
             | Self::OneToThree
             | Self::TwoToOne
             | Self::TwoToTwo
-            | Self::TwoToThree => 0,
+            | Self::TwoToThree
+            | Self::EntryCrossing
+            | Self::ExitCrossing
+            | Self::FullyUnblinding => 0,
         }
     }
 
     /// How many outputs carry a blinded value.
     ///
-    /// Every non-fee output on this lane is blinded, so this is the
-    /// output count less the fee output.
+    /// STATED per member, not derived. It used to be the output count
+    /// less the fee output, on the premise that every non-fee output on
+    /// this lane is blinded — true of every homogeneous shape and false
+    /// of an exit crossing, whose whole point is explicit non-fee
+    /// outputs. Left derived, the subtraction would have counted those
+    /// as blinded and [`Self::blinder_sum_is_absorbable`] would have
+    /// reported a shape absorbable by outputs that absorb nothing.
+    ///
+    /// A stated axis cannot make that mistake, and it cannot be made
+    /// silently either: [`Self::explicit_destinations`] is the leftover,
+    /// and a test requires the three counts to partition the output set,
+    /// so a member whose axes disagreed with its own output count fails
+    /// rather than computing a wrong verdict.
     #[must_use]
     pub const fn blinded_outputs(self) -> usize {
-        self.outputs() - self.fee_outputs()
+        match self {
+            Self::OneToOne | Self::OneToOneWithFee | Self::TwoToOne | Self::ExitCrossing => 1,
+            Self::OneToTwo | Self::TwoToTwo | Self::EntryCrossing => 2,
+            Self::OneToThree | Self::TwoToThree => 3,
+            Self::FeeOnly | Self::FullyUnblinding => 0,
+        }
+    }
+
+    /// How many outputs are EXPLICIT receipt destinations.
+    ///
+    /// The outputs that are neither blinded nor the fee: real programs,
+    /// real owners, public amounts. Zero for every shape but the two
+    /// exit-side ones, and derived as the leftover rather than stated,
+    /// because it is the count that must close the partition rather than
+    /// a third independent fact.
+    #[must_use]
+    pub const fn explicit_destinations(self) -> usize {
+        self.outputs() - self.fee_outputs() - self.blinded_outputs()
     }
 
     /// Whether the output set can absorb the input blinder sum.
@@ -197,13 +284,23 @@ impl BlindedShape {
     /// blinded output to land on, and every shape that has one is
     /// possible.
     ///
+    /// # The second way a sum lands
+    ///
+    /// A shape with NO blinded input presents a sum that is already
+    /// zero, and zero is absorbed by an all-explicit output set without
+    /// anything having to hold it. So the correct statement of the rule
+    /// is not "a blinded input forces a blinded output" but "the input
+    /// blinder sum must equal the output blinder sum, and explicit
+    /// outputs contribute zero" — and the entry crossing is the member
+    /// that makes the difference between those two readings visible.
+    ///
     /// The answer is derived from the shape alone and is compared
     /// against the entry's recorded [`ConsensusVerdict`] by
     /// `the_recorded_verdicts_agree_with_the_tally_predicate`, so the
     /// register cannot record a verdict its own arithmetic denies.
     #[must_use]
     pub const fn blinder_sum_is_absorbable(self) -> bool {
-        self.blinded_outputs() > 0
+        self.blinded_inputs() == 0 || self.blinded_outputs() > 0
     }
 
     /// The handle the register's prose section uses for the shape.
@@ -218,6 +315,9 @@ impl BlindedShape {
             Self::TwoToTwo => "two-to-two",
             Self::TwoToThree => "two-to-three",
             Self::FeeOnly => "fee-only",
+            Self::EntryCrossing => "entry-crossing",
+            Self::ExitCrossing => "exit-crossing",
+            Self::FullyUnblinding => "fully-unblinding",
         }
     }
 }
@@ -493,6 +593,24 @@ const SPONSORLESS_FEE_REMOVAL: LimitationRemoval = LimitationRemoval {
     proven_by: Some(crate::live_multi_shapes::run_of_record::FEE_BEARING_SUCCESSOR_IDENTITY),
 };
 
+/// The homogeneous-representation limitation's removal, recorded once.
+///
+/// `proven_by` is `None`, and that absence is the whole honest half of
+/// this record. The vocabulary really does express both crossing
+/// directions now — a composition pairs a plan to each side, the
+/// coordinator dispatches its value obligation on the pairing, the exit
+/// crossing has a positional value-form leaf naming its declared
+/// absorber, the registry has an explicit receipt destination role and
+/// the materializer builds one — and NO node has been offered either
+/// shape. A vocabulary that can express a shape and a chain that has
+/// accepted one are different facts, and this register's whole reason
+/// for existing is not collapsing them into one word.
+const PER_SIDE_REPRESENTATION_REMOVAL: LimitationRemoval = LimitationRemoval {
+    row: "T5-054",
+    change: "A composition pairs one admitted representation plan to each SIDE of a transfer,              taking §6.5's own \"unless separately admitted\" clause rather than widening the              guide, and leaving the plan census at the two members §6.1 states exhaustively. The              constructor carries the composition and derives its representation from the CONSUMED              side, so a crossing deployment seats its crossing constructor at exactly the key a              coin is recognized under and no destination table widens. The coordinator's value              obligation dispatches on the composition rather than on one plan, which is what the              obligation was always about -- the side a transfer CREATES -- and the exit direction              gains a POSITIONAL value-form fragment requiring the explicit form at every              destination but the declared absorber and the confidential form at that one. The              absorber is a declared destination position inside the destination range, so it adds              no output family and the §10.4 closure argument is untouched. The registry gained an              explicit receipt destination role at a new transcript code, the opposite corner of              the three predicates from the fee, and the materializer builds one through its own              stage that asks the target for the OPPOSITE answer the fee stage asks for. Every              recorded digest re-derives bit-for-bit through all of it.",
+    proven_by: None,
+};
+
 /// A first-party convention that refuses a shape consensus admits.
 ///
 /// Each member names a convention of this repository's own, the model it
@@ -551,6 +669,26 @@ pub enum Limitation {
     /// workspace wrote. Argued at
     /// `(´[PLAN-rule:shapes:absent-fee-role]´)`.
     SponsorlessShapeHasNoFeeMember,
+    /// A live transfer's representation is ONE variable for the whole
+    /// transaction, so no transfer may cross.
+    ///
+    /// Not a registry rule and not a target rule: a rule of this
+    /// workspace's own construction vocabulary, and the last of the
+    /// three kinds this census keeps apart. The guide admitted mixed
+    /// representation "unless separately admitted" from the beginning,
+    /// and nothing was ever separately admitted, so the compiler carried
+    /// one plan per transfer, the constructor was built for one plan,
+    /// the coordinator's value obligation was dispatched on one plan,
+    /// and the construction lane read one plan for both the receipts it
+    /// recognized and the destinations it paid.
+    ///
+    /// It refused BOTH crossing shapes and it refused them before any
+    /// arithmetic: not because a blinder failed to solve or a proof
+    /// failed to build, but because no vocabulary existed in which the
+    /// candidate could be stated. That is what makes it a limitation of
+    /// this repository rather than an observation about consensus, which
+    /// admits both directions and is upstream-tested doing so.
+    HomogeneousRepresentationOnly,
 }
 
 impl Limitation {
@@ -583,6 +721,9 @@ impl Limitation {
                  packages/transaction/src/live_construct.rs `select_shape`, which matches a \
                  shape on `receipt_outputs() == destinations` and therefore reads a fee \
                  destination as a receipt output"
+            }
+            Self::HomogeneousRepresentationOnly => {
+                "packages/compiler/src/live_transfer_plan.rs, whose                  `LiveTransferRepresentationPlan` is ONE value per transfer, read at every site                  that decides a form: packages/tapscript/src/live_pattern.rs, whose recognition                  fragment pins the spent value's form to that one plan and whose coordinator                  dispatches the destinations' obligation on it, and                  packages/transaction/src/live_construct.rs, which reads it for both the receipts                  it recognizes and the destinations it pays"
             }
         }
     }
@@ -641,6 +782,9 @@ impl Limitation {
                  Nothing here decided against the shape; no decision was recorded because none \
                  was made."
             }
+            Self::HomogeneousRepresentationOnly => {
+                "One transfer, one representation. Guide §6.5 states the initial scope as                  homogeneous explicit REQUIRED and homogeneous private committed REQUIRED, with                  mixed 'unsupported unless separately admitted' -- so mixed was never forbidden                  and never built, and the vocabulary took the scope literally. The clause that                  kept it that way is the guide's next sentence rather than the scope: an ad hoc                  mixed transaction accepted by the target does not widen the ABI, so no run could                  ever have produced the admission and only a ruling could. None was made, so the                  single variable stood."
+            }
         }
     }
 
@@ -653,6 +797,7 @@ impl Limitation {
             Self::CancelingPredecessorOnly => RemovalPath::NonCancelingPrecursor,
             Self::AbsentFeeProjection => RemovalPath::FeeRoleProjection,
             Self::SponsorlessShapeHasNoFeeMember => RemovalPath::SponsorlessFeeBearingShape,
+            Self::HomogeneousRepresentationOnly => RemovalPath::PerSideRepresentationPlan,
         }
     }
 
@@ -670,6 +815,7 @@ impl Limitation {
             Self::CancelingPredecessorOnly => Some(CANCELING_PREDECESSOR_REMOVAL),
             Self::AbsentFeeProjection => Some(FEE_ROLE_PROJECTION_REMOVAL),
             Self::SponsorlessShapeHasNoFeeMember => Some(SPONSORLESS_FEE_REMOVAL),
+            Self::HomogeneousRepresentationOnly => Some(PER_SIDE_REPRESENTATION_REMOVAL),
         }
     }
 
@@ -689,7 +835,8 @@ impl Limitation {
             Self::AbsentFeeRole
             | Self::CancelingPredecessorOnly
             | Self::AbsentFeeProjection
-            | Self::SponsorlessShapeHasNoFeeMember => false,
+            | Self::SponsorlessShapeHasNoFeeMember
+            | Self::HomogeneousRepresentationOnly => false,
         }
     }
 }
@@ -716,6 +863,23 @@ pub enum RemovalPath {
     FeeRoleProjection,
     /// A sponsorless shape that pays its own fee.
     SponsorlessFeeBearingShape,
+    /// Pair an admitted representation plan to each SIDE of a transfer.
+    ///
+    /// The guide's own escape clause taken rather than a widening of the
+    /// guide: §6.5 admits mixed representation "unless separately
+    /// admitted", so what a crossing needs is an admission, and what an
+    /// admission needs is a vocabulary in which the admitted thing can
+    /// be said. The vocabulary is a PAIRING of the two plans §6.1
+    /// already states exhaustively — one for the side a transfer
+    /// consumes and one for the side it creates — which is why the plan
+    /// census stays at two members and crossing introduces no third
+    /// representation.
+    ///
+    /// A per-REFERENCE variable would be the other thing, and it stays
+    /// deferred on a ground this path leaves literally true: the
+    /// representation decision is one variable per object family, and a
+    /// side is not a reference.
+    PerSideRepresentationPlan,
 }
 
 impl RemovalPath {
@@ -757,6 +921,22 @@ impl RemovalPath {
                  view carries the fee's ABSENT opening rather than a zero-filled one; and every \
                  role match states the fee arm instead of letting a catch-all solve a blinder for \
                  it."
+            }
+            Self::PerSideRepresentationPlan => {
+                "Admit a PAIRING of the two representation plans, one per side of a transfer, \
+                 rather than a third representation or a per-reference variable. §6.5 already \
+                 wrote the escape clause -- mixed is unsupported UNLESS SEPARATELY ADMITTED -- so \
+                 what the path needs is a ruling and a vocabulary, not a guide amendment, and the \
+                 guide's next sentence is why no run could ever have supplied the admission: an \
+                 ad hoc mixed transaction accepted by the target does not widen the ABI. The \
+                 pairing threads to four decisions that each used to read the single variable: \
+                 which value form the recognition fragment pins a spent receipt to, which \
+                 obligation the coordinator emits over the destinations, which constructor a \
+                 destination is paid to, and which key a deployment seats a constructor at. The \
+                 exit direction additionally needs a POSITIONAL value-form leaf, because its \
+                 created side is per-position heterogeneous -- explicit everywhere but the one \
+                 declared absorber -- and no fragment that speaks about a whole range can say \
+                 that."
             }
             Self::SponsorlessFeeBearingShape => {
                 "Give the reviewed live-transfer shape vocabulary a sponsorless member that pays \
@@ -807,6 +987,27 @@ impl RemovalPath {
             | Self::NonCancelingPrecursor
             | Self::FeeRoleProjection
             | Self::SponsorlessFeeBearingShape => None,
+            // The entry direction has one, and it is the SAME degeneracy
+            // the single-output form carries, met from the other side.
+            // An entry crossing consumes explicit coins, so its input
+            // blinder sum is zero; a single blinded output would have to
+            // declare the sole-balancing form, the solve would return
+            // that zero unchanged, and the commitment would be exactly
+            // `v*H` -- a blinded output's form with none of its hiding.
+            // TWO blinded outputs avoid it, the balancing one solving to
+            // the negation of a primary blinder that is searched and
+            // refused if zero. So the floor is the registry's own
+            // arithmetic rather than a preference, and Elements' wallet
+            // refuses the same shape for the same reason.
+            Self::PerSideRepresentationPlan => Some(
+                "An entry crossing spends EXPLICIT coins, whose blinders are zero, so the \
+                 input blinder sum a single blinded output would be forced to is zero and the \
+                 commitment hides nothing. The removal must therefore require TWO OR MORE \
+                 blinded outputs on entry, where the balancing blinder is the negation of a \
+                 searched non-zero primary. This is the same degeneracy the single-output form \
+                 carries, reached from the opposite side, and the registry's existing \
+                 `DegenerateBalancingScalar` refusal is what catches it either way.",
+            ),
         }
     }
 }
@@ -913,6 +1114,63 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
             ConsensusVerdict::SourceDerivedImpossible,
             FirstPartyStatus::RefusalGuardsConsensus {
                 refusal: RegistrationRefusal::OutputSetTooSmall { found: 1 },
+            },
+        ),
+        // BLINDING ON ENTRY, expressible and unrun. Consensus admits it
+        // for a reason the other rows never needed: with no blinded
+        // input the sum to absorb is already zero, so nothing has to
+        // hold it and the two blinded outputs are this workspace's
+        // convention rather than the target's rule. The floor of two is
+        // the registry's own arithmetic -- a single blinded output would
+        // have to declare the sole-balancing form, the solve would
+        // return the zero input sum unchanged, and
+        // `DegenerateBalancingScalar` would fire -- and Elements' own
+        // wallet refuses the same thing for the same reason. Both are
+        // conventions about confidentiality; neither is a protocol rule
+        // and this row claims neither as one.
+        BlindedShape::EntryCrossing => (
+            ConsensusVerdict::SourceDerivedPossible,
+            FirstPartyStatus::ExpressibleAndUnrun {
+                removed: Limitation::HomogeneousRepresentationOnly,
+                removal: PER_SIDE_REPRESENTATION_REMOVAL,
+                stops_at: "packages/transaction/src/live_construct.rs `PrivateInputOpening`,                            which requires every consumed input to name a registered confidential                            fixture output. An entry crossing's inputs are EXPLICIT coins carrying                            no opening at all, so the private lane cannot yet be handed the input                            set this shape spends -- the blinder each contributes is the zero one,                            and the vocabulary has no way to say so.",
+            },
+        ),
+        // UNBLINDING ON EXIT, expressible and unrun. The absorber is
+        // what makes it possible and it is an ordinary blinded
+        // destination at a declared position, so the solve is the one
+        // the registry already performs -- with nothing derived to
+        // subtract it returns the input blinder sum ITSELF, which is
+        // recomputed at the registry rather than predicted here.
+        BlindedShape::ExitCrossing => (
+            ConsensusVerdict::SourceDerivedPossible,
+            FirstPartyStatus::ExpressibleAndUnrun {
+                removed: Limitation::HomogeneousRepresentationOnly,
+                removal: PER_SIDE_REPRESENTATION_REMOVAL,
+                stops_at: "packages/vectors, which has no ceremony that funds the non-canceling                            predecessor at an exit-crossing constructor's programs and drives the                            candidate to a node. Every layer beneath it is open: the registry                            registers the manifest, the materializer builds the explicit                            destinations, and the covenant leaf checks the declared absorber                            position.",
+            },
+        ),
+        // THE CORNER THIS REGISTER EXISTS TO KEEP APART, and the one
+        // shape here refused by BOTH sides for DIFFERENT reasons.
+        // Consensus refuses it because a nonzero consumed blinder sum
+        // has nowhere to land once the absorber is gone -- the same
+        // arithmetic that makes the fee-only shape impossible. The
+        // registry refuses it independently, and not on cardinality:
+        // a manifest with no solving role has no output to solve, which
+        // is a first-party rule about manifests rather than a reading of
+        // the tally. Two grounds, one shape, and the register would be
+        // worth less if it recorded either one alone.
+        //
+        // The escape is real and is the enabling condition for another
+        // row rather than a way to take this one: a predecessor whose
+        // consumed blinders CANCEL presents a zero sum, and over such a
+        // set consensus admits full unblinding. That is a property of
+        // the coins spent and not of the shape, so it does not move this
+        // verdict. It is filed and never attempted.
+        BlindedShape::FullyUnblinding => (
+            ConsensusVerdict::SourceDerivedImpossible,
+            FirstPartyStatus::RefusalGuardsConsensus {
+                refusal: RegistrationRefusal::BalancingRoleNotUnique { found: 0 },
             },
         ),
     };
@@ -1022,8 +1280,18 @@ mod tests {
                     // The balancing output is therefore the last NON-fee
                     // output rather than the last output, which is the
                     // same correction said a second way.
+                    //
+                    // The EXPLICIT destinations of a crossing row come
+                    // first and the blinded absorber last, which is the
+                    // order the covenant's own positional leaf declares
+                    // rather than a convenience: the absorber is the
+                    // LAST destination, so a drive that put it anywhere
+                    // else would be recomputing the refusal for a
+                    // manifest no candidate would present.
                     role: if is_fee {
                         FixtureOutputRole::Fee
+                    } else if index < shape.explicit_destinations() {
+                        FixtureOutputRole::ExplicitDestination
                     } else if count == 1 {
                         FixtureOutputRole::SoleBalancing
                     } else if index + 1 == count - shape.fee_outputs() {
@@ -1052,7 +1320,7 @@ mod tests {
     /// of it has a row.
     #[test]
     fn the_register_is_total_over_the_enumeration() {
-        assert_eq!(BlindedShape::ALL.len(), 8);
+        assert_eq!(BlindedShape::ALL.len(), 11);
         let mut handles: Vec<&str> = BlindedShape::ALL
             .iter()
             .map(|shape| {
@@ -1068,6 +1336,44 @@ mod tests {
         let censused = handles.len();
         handles.dedup();
         assert_eq!(handles.len(), censused, "no shape is censused twice");
+    }
+
+    /// The three output axes partition the output set.
+    ///
+    /// The guard that makes a STATED blinded-output count safe. While
+    /// the count was derived it could not disagree with the output
+    /// count; stated, it can, and a member whose axes did not add up
+    /// would compute a wrong consensus verdict rather than fail. This
+    /// is what makes that impossible.
+    #[test]
+    fn every_shape_partitions_its_outputs_into_blinded_explicit_and_fee() {
+        for shape in BlindedShape::ALL {
+            assert_eq!(
+                shape.blinded_outputs() + shape.explicit_destinations() + shape.fee_outputs(),
+                shape.outputs(),
+                "{} states axes that do not add up to its own output count",
+                shape.handle(),
+            );
+            assert!(
+                shape.fee_outputs() <= 1,
+                "{} carries more than one fee output",
+                shape.handle(),
+            );
+        }
+
+        // And the axis earns its keep: exactly the two exit-side shapes
+        // carry an explicit NON-fee output, which is the premise the
+        // derivation used to assume away for every member.
+        let explicit: Vec<&str> = BlindedShape::ALL
+            .iter()
+            .filter(|shape| shape.explicit_destinations() > 0)
+            .map(|shape| shape.handle())
+            .collect();
+        assert_eq!(
+            explicit,
+            vec!["exit-crossing", "fully-unblinding"],
+            "only the exit side creates explicit receipt destinations",
+        );
     }
 
     /// The recorded consensus verdicts agree with the tally arithmetic.
