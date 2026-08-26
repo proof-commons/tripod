@@ -1161,13 +1161,6 @@ impl FramedTranscript {
     }
 }
 
-/// The digest transcript of one manifest under one set of openings.
-///
-/// The contract tag sits INSIDE the transcript rather than beside it,
-/// which is what makes a semantic-only recorded-randomness digest
-/// impossible to mistake for a byte-identity one, and it is why the
-/// accepted semantic-only ruling costs one field rather than a second
-/// digest.
 /// The asset one output carries.
 ///
 /// The manifest's single explicit asset, unless the output's ROLE names
@@ -1182,6 +1175,13 @@ fn output_asset(
     output.role.own_asset().unwrap_or(manifest.explicit_asset)
 }
 
+/// The digest transcript of one manifest under one set of openings.
+///
+/// The contract tag sits INSIDE the transcript rather than beside it,
+/// which is what makes a semantic-only recorded-randomness digest
+/// impossible to mistake for a byte-identity one, and it is why the
+/// accepted semantic-only ruling costs one field rather than a second
+/// digest.
 fn digest_transcript(
     manifest: &ConfidentialFixtureManifest,
     openings: &FixtureOpenings,

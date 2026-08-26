@@ -1048,6 +1048,17 @@ impl MultiShapePlanner {
                     // blinder for an output that must not carry one — a
                     // blinded fee, and not a fee.
                     FixtureOutputRole::Fee => ConfidentialOutputRole::Fee,
+                    // The sponsor change is stated for exactly the reason
+                    // the fee is, and the catch-all below is why it has
+                    // to be: falling through to `Balancing` would ask the
+                    // materializer to SOLVE a blinder for the sponsor's
+                    // remainder, and a solved blinder absorbs the input
+                    // sum. The remainder would stop being the sponsor's
+                    // and the protocol receipts would stop balancing —
+                    // one substitution producing two wrong outputs.
+                    FixtureOutputRole::SponsorChange { .. } => {
+                        ConfidentialOutputRole::SponsorChange
+                    }
                     // Both solving roles are the view's one solving role:
                     // the sole form is a solve over no others, which is
                     // the same instruction to the materializer.
