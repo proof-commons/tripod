@@ -735,6 +735,12 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         // that quoted a verdict would be carrying evidence in bytes
         // whose job is to count.
         LiveRowStanding::NativeRefusalObserved { .. } => "native-refusal-observed",
+        // Withheld for the first reason and not the second: there is no
+        // target sentence here to carry, and what the payload names is
+        // the first-party test that recomputed the fixture, which
+        // belongs in the evidence plan beside the row rather than in
+        // bytes whose job is to count.
+        LiveRowStanding::DeterminismObserved { .. } => "determinism-observed",
         LiveRowStanding::InfrastructureBlocked(_) => "infrastructure-blocked",
         LiveRowStanding::ReportLayerAnswerable => "report-layer-answerable",
         LiveRowStanding::OperationVocabularyClosed => "operation-vocabulary-closed",
@@ -1023,7 +1029,14 @@ mod tests {
 
         let (private_rows, private_answered, private_blocked) =
             board[&LiveSafetySection::PositivePrivate];
-        assert_eq!(private_answered, 7, "the private table's answered count");
+        // Nine of ten. Eight moved on acceptances of their own shapes,
+        // the last of those being the sponsored PRIVATE successor; the
+        // ninth is the openings row, answered by the determinism
+        // observation its own §11.2 gate asks for rather than by a
+        // target verdict. The tenth is projection-equality, which needs
+        // an observation comparing two accepted transactions'
+        // projections and has none.
+        assert_eq!(private_answered, 9, "the private table's answered count");
         assert_eq!(private_blocked, 0);
         assert_eq!(private_rows, 10);
         assert_eq!(LiveSafetyPolarity::ALL.len(), 2);

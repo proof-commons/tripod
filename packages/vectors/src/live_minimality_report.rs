@@ -164,6 +164,16 @@ impl MinimalityFailureMode {
 pub enum FailureModeStanding {
     /// Checked against the built pair registry, and it does not occur.
     NotObservedFirstParty,
+    /// Every run of a pair member's shape that a target was asked about
+    /// was accepted, and the shapes with no run are named in the
+    /// registry rather than counted as rejections here.
+    ///
+    /// Distinct from [`Self::NotObservedFirstParty`], which is a check
+    /// this crate ran, and from [`Self::AwaitsATargetRun`], which says
+    /// no target was asked. A target WAS asked, repeatedly, and said
+    /// yes every time — while some shapes remain unasked. Collapsing
+    /// that into either neighbour would lose the half a reader needs.
+    NotRejectedOnAnyObservedRun,
     /// The mode is about what a target does, and none was asked.
     AwaitsATargetRun(LiveInfrastructureBlocker),
     /// §18's study measured it, and the private plan stays inside the
@@ -186,6 +196,7 @@ impl FailureModeStanding {
     pub const fn name(self) -> &'static str {
         match self {
             Self::NotObservedFirstParty => "not-observed-first-party",
+            Self::NotRejectedOnAnyObservedRun => "not-rejected-on-any-observed-run",
             Self::AwaitsATargetRun(_) => "awaits-a-target-run",
             Self::MeasuredWithinTheDeclaredLimits => "measured-within-the-declared-limits",
         }
@@ -285,6 +296,33 @@ impl LifecycleConclusion {
 pub enum MinimalityStanding {
     /// No pair satisfies §16.2 and the reason is a missing component.
     Unanswered,
+    /// Some claimed pairs satisfy every §16.2 condition and some do not.
+    ///
+    /// # Why a third state had to exist
+    ///
+    /// The token was binary — every claimed pair or none — and that was
+    /// adequate for exactly as long as the answer was none. It stopped
+    /// being adequate the moment one pair's two shapes were both run
+    /// and accepted, because both remaining tokens would then have been
+    /// false: `Unanswered` says NO pair satisfies §16.2, and
+    /// `SupportedForEveryClaimedPair` says every one does.
+    ///
+    /// A report forced to choose between two false tokens picks the
+    /// conservative one and reads as a smaller claim, which sounds
+    /// harmless and is not: `Unanswered`'s own words would have denied
+    /// the observations, and a reader checking the sentence against the
+    /// registry would find it contradicted by three pairs.
+    ///
+    /// # What it claims, and for which pairs
+    ///
+    /// That §16.2 is satisfied for the pairs the registry marks
+    /// supporting and for NO others. §16.2 is a conjunction of ten per
+    /// pair, so this token distributes over pairs and never over the
+    /// matrix: it is not "minimality is partly established", which
+    /// would be a claim about a whole nobody stated. The pairs are named
+    /// in the registry and each unsupported one names its failing
+    /// conjunct.
+    SupportedForSomeClaimedPairsOnly,
     /// Every claimed pair satisfies every §16.2 condition.
     SupportedForEveryClaimedPair,
     /// Some pair exhibits a §16.4 failure mode.
@@ -297,6 +335,7 @@ impl MinimalityStanding {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Unanswered => "unanswered",
+            Self::SupportedForSomeClaimedPairsOnly => "supported-for-some-claimed-pairs-only",
             Self::SupportedForEveryClaimedPair => "supported-for-every-claimed-pair",
             Self::Failed => "failed",
         }
@@ -387,8 +426,14 @@ impl MinimalityPairCensus {
     /// with.
     #[must_use]
     pub const fn standing(&self) -> MinimalityStanding {
-        if self.supporting == self.claimed && self.claimed != 0 {
+        if self.claimed != 0 && self.supporting == self.claimed {
             MinimalityStanding::SupportedForEveryClaimedPair
+        } else if self.supporting != 0 {
+            // The partial state, and it is reached by counting rather
+            // than by an author's judgement — which is the property that
+            // lets `validate_live_minimality_report` disagree with a
+            // token somebody wrote by hand.
+            MinimalityStanding::SupportedForSomeClaimedPairsOnly
         } else {
             MinimalityStanding::Unanswered
         }
@@ -662,11 +707,22 @@ pub fn resolve_failure_modes(
         // acceptances. What actually keeps the private member off a
         // target is that this pipeline does not build one, which is the
         // blocker the pair conditions carry.
+        //
+        // Re-pointed a second time, and this time onto an observation
+        // rather than onto another blocker. The blocker named here was
+        // `NoConfidentialPredecessorCanBeFunded`, which the guide's own
+        // closeout carries in its CLEARED set — so the mode was
+        // awaiting a run behind a component that already exists.
+        //
+        // What is known is stronger than "awaiting" and weaker than
+        // "never rejects": every run of a pair member's shape that a
+        // target has been asked about was ACCEPTED, and two pairs'
+        // private shapes have not been run at all. The pairs that have
+        // not are named in the registry, each on §16.2's acceptance
+        // conjunct, so the standing does not have to carry them here.
         (
             Mode::PrivateMaterializationRejects,
-            Standing::AwaitsATargetRun(
-                LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
-            ),
+            Standing::NotRejectedOnAnyObservedRun,
         ),
         (
             Mode::ExactReceiptValuesEnterProtocolPredicates,
@@ -1195,7 +1251,6 @@ mod tests {
         render_live_minimality_report, validate_live_minimality_report,
     };
     use crate::live_disclosure::{DisclosedItem, DisclosureStanding};
-    use crate::live_evidence::LiveInfrastructureBlocker;
     use crate::live_pairs::MinimalityPair;
     use crate::live_plan::reviewed_target;
     use crate::live_report::{RecomputedItem, VolatileField};
@@ -1224,39 +1279,56 @@ mod tests {
     }
 
     #[test]
-    fn the_report_says_minimality_is_unanswered_and_names_the_blockers() {
-        // The wave's whole finding, in the document that carries it. A
-        // report claiming a minimality result today would be claiming one
-        // for pairs neither of whose halves has ever reached a target.
+    fn the_report_says_which_pairs_minimality_is_supported_for() {
+        // The wave's whole finding, in the document that carries it.
+        // The token read `unanswered` for as long as no pair satisfied
+        // the ten conjuncts, and a report claiming a minimality result
+        // then would have been claiming one for pairs neither of whose
+        // halves had ever reached a target.
+        //
+        // Both halves of three pairs have now reached one. The token
+        // moves to exactly what the census supports and no further:
+        // supported for the pairs that satisfy every conjunct, and for
+        // no others.
         let target = projection();
         let report = assemble_live_minimality_report(target.clone()).expect("the report assembles");
-        assert_eq!(report.standing(), MinimalityStanding::Unanswered);
+        assert_eq!(
+            report.standing(),
+            MinimalityStanding::SupportedForSomeClaimedPairsOnly,
+        );
         assert_eq!(report.census().pairs(), MinimalityPair::ALL.len());
         assert_eq!(report.census().claimed(), MinimalityPair::ALL.len());
-        assert_eq!(report.census().supporting(), 0);
+        assert_eq!(report.census().supporting(), 3);
+        // Not the stronger token, and the assertion is spelled because
+        // three of five reaching every conjunct is precisely the state
+        // in which a report is most tempting to over-read.
+        assert_ne!(
+            report.standing(),
+            MinimalityStanding::SupportedForEveryClaimedPair,
+        );
 
         let validated =
             validate_live_minimality_report(report, &target).expect("the report validates");
+        // NO named component, and it used to be one. Every blocker this
+        // report ever carried named something that does not exist, and
+        // the last of them is in the guide closeout's CLEARED set. What
+        // the two unsupported pairs lack is a run of one shape each,
+        // which the registry names on the acceptance conjunct — a run
+        // not yet attempted is not a missing component, and a report
+        // naming one would be counting a cleared blocker as a deficit.
         assert_eq!(
             validated
                 .blockers()
                 .keys()
                 .copied()
                 .collect::<BTreeSet<_>>(),
-            // ONE named component, and it used to be two. The digest
-            // blocker left because it is cleared, not because the
-            // deficit shrank: what every blocked condition and every
-            // blocked failure mode now names is the same single gap,
-            // that this pipeline builds no private member. A report
-            // still naming two would be counting a cleared blocker
-            // towards its own deficit.
-            BTreeSet::from([LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded]),
+            BTreeSet::new(),
         );
         let standings = pair_standings(&validated);
         assert_eq!(standings.len(), MinimalityPair::ALL.len());
         for (pair, (claimed, blockers)) in &standings {
             assert!(*claimed, "{} is unclaimed", pair.name());
-            assert_ne!(blockers.len(), 0, "{} names no blocker", pair.name());
+            assert_eq!(blockers.len(), 0, "{} names a blocker", pair.name());
         }
     }
 
@@ -1272,7 +1344,7 @@ mod tests {
             validate_live_minimality_report(report, &target),
             Err(LiveMinimalityReportRefusal::StandingDiffers {
                 reported: MinimalityStanding::SupportedForEveryClaimedPair,
-                recomputed: MinimalityStanding::Unanswered,
+                recomputed: MinimalityStanding::SupportedForSomeClaimedPairsOnly,
             }),
         );
     }
@@ -1445,12 +1517,12 @@ mod tests {
 
         assert_eq!(
             report.failures()[&MinimalityFailureMode::PrivateMaterializationRejects],
-            // Re-pointed with the standing itself. The digest blocker is
-            // cleared, so a failure mode still awaiting a run on it
-            // would be awaiting a run nothing is holding up.
-            FailureModeStanding::AwaitsATargetRun(
-                LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded
-            ),
+            // Re-pointed onto an observation. It awaited a run behind a
+            // blocker the guide's own closeout carries as CLEARED, so
+            // it was awaiting a run nothing was holding up; and what a
+            // target has actually said about these shapes is stronger
+            // than "awaiting" and weaker than "never rejects".
+            FailureModeStanding::NotRejectedOnAnyObservedRun,
         );
         // §18's study filled this one. It is a conjunction, and no pair
         // has an explicit member that completes while its private member

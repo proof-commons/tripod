@@ -36,11 +36,18 @@ because Guide-13 §13.6 forbids either satisfying the other:
   tabulated anywhere. The whole first-party half is discharged: each row
   had its owning validator driven twice, once on an honest input and
   once with one stated change, and the refusal had to name the row's own
-  class. The rest is blocked, and the plan says on what.
+  class. Of the target half, most rows are answered by an acceptance of
+  the row's own shape; one is answered by a determinism observation,
+  which is counted in its own bucket and never added to the acceptance
+  figure; and the rest are waiting on a run, with the plan saying which.
 - **Disclosure minimality.** Five pairs, each grown from one semantic
   fixture with both members built by the same function, scored one §16.2
-  condition at a time. It reports its verdict unanswered and carries the
-  blockers that make it so.
+  condition at a time. Its verdict is per pair rather than one token for
+  the matrix: three pairs satisfy all ten conjuncts on recorded
+  acceptances of both members' shapes, and the two that do not name the
+  conjunct they fail and the lane whose run is missing. No member of any
+  pair was itself submitted, and the report says so at every identity it
+  cites.
 - **Resources.** Prediction and observation as separate figures over the
   same exact bytes, never one constant used twice.
 
@@ -48,8 +55,13 @@ The run of record is a transcription and not evidence. It records what
 one real node did once, so that a reader without a node can see the
 target's own words, and it discharges no row.
 
-Two rows of §15 are answered by neither a validator nor a target. The
+Three rows of §15 are answered by neither a validator nor a target. The
 two sponsor-report rows ask what this workspace's own canonical bytes
 publish, and one row asks for a program mixing operations — an input the
 architecture admits no value of, recorded as a closure of the operation
-vocabulary rather than counted as an unanswered refusal.
+vocabulary rather than counted as an unanswered refusal. The third is
+the deterministic-public-fixture-openings row, whose own gate is the
+byte-identity contract: it is answered by a first-party recomputation
+that reproduced a fixture's openings byte for byte, filed under a
+standing minted for determinism observations so that it can never be
+read as an acceptance.

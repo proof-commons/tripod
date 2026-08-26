@@ -2279,9 +2279,10 @@ fn render_sponsor_reverification(out: &mut String, record: &SponsorShapeRecord) 
 ///
 /// # The without-change run is the lift's own control
 ///
-/// It reproduced [`SPONSORED_ACCEPTED_TXID`] — the identity the sponsor
-/// wave first observed and the explicit-runs wave observed again —
-/// after the ceremony had been moved out of the test it lived in. A lift
+/// It reproduced [`sponsored_run_of_record::SPONSORED_ACCEPTED_TXID`] —
+/// the identity the sponsor wave first observed and the explicit-runs
+/// wave observed again — after the ceremony had been moved out of the
+/// test it lived in. A lift
 /// that changed what the ceremony builds would have produced a different
 /// identity, and this one did not move.
 ///
