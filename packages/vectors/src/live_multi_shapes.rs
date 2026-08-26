@@ -337,21 +337,23 @@ impl PrivateShape {
             // moves a census entry instead, and naming a row here that
             // the table does not carry would be inventing one to have
             // something to move.
+            //
+            // The pure split shares the arm for a DIFFERENT reason, and
+            // the reason is written here because a shared `None` hides
+            // it. §15.2 DOES carry a `private-split` row, and
+            // [`Self::Split`] already moved it on an acceptance of its
+            // own three-output shape. This shape exists for §16.1's
+            // split PAIR, whose private member states two created
+            // outputs, and a pair member is not a matrix row. Pointing
+            // it at `private-split` would move a row that has already
+            // moved, and would claim the three-output run and this one
+            // are the same shape -- which is the very fact the pair's
+            // failing conjunct records.
             Self::StrictOneToOne
             | Self::OneToOneWithFee
             | Self::ExitCrossing
-            | Self::EntryCrossing => None,
-            // The pure split names no row EITHER, and for a different
-            // reason worth keeping separate from theirs. §15.2 does
-            // carry a `private-split` row -- and [`Self::Split`] already
-            // moved it, on an acceptance of its own three-output shape.
-            // This shape exists for §16.1's split PAIR, whose private
-            // member states two created outputs, and a pair member is
-            // not a matrix row. Pointing it at `private-split` would
-            // move a row that has already moved and would claim the
-            // three-output run and this one are the same shape, which is
-            // the whole fact the pair's failing conjunct records.
-            Self::PureSplit => None,
+            | Self::EntryCrossing
+            | Self::PureSplit => None,
             // The merge DOES have a row, and it is the only shape of
             // these that has one.
             Self::PrivateMerge => Some("private-merge"),
