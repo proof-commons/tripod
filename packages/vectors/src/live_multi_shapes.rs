@@ -165,6 +165,33 @@ pub enum PrivateShape {
     /// One receipt in, three outputs: two recipients and one balancing
     /// change output back to the sender.
     Split,
+    /// ONE receipt in and TWO blinded receipts out, with no change and no
+    /// fee: the PURE split.
+    ///
+    /// The shape §16.1's split pair states for its private member, which
+    /// is not the shape [`Self::Split`] runs. That one creates three
+    /// outputs because it keeps a balancing change back for the sender;
+    /// this one creates exactly the two the pair's fixture names, and the
+    /// second of them is a RECEIPT rather than the fee role the only
+    /// other recorded one-in-two-out private run carries. A pair member
+    /// is not answered by a run of a different cardinality nor by one
+    /// whose second output is a different role, so neither recorded run
+    /// reaches it and this shape exists to be run.
+    ///
+    /// It is constructible for the same arithmetic that makes the entry
+    /// crossing constructible at two outputs: the first output's blinder
+    /// is DERIVED and the second is solved from the consumed sum less
+    /// that one. What differs is the input side -- a single confidential
+    /// coin's blinder rather than an explicit input's zero -- so the
+    /// solved blinder is a nonzero sum less a derived value, and the
+    /// registry refuses a zero one by name if that ever comes out wrong.
+    ///
+    /// It pays NO fee, which is the pair fixture's own statement: its two
+    /// destinations consume the whole source. Every identity the
+    /// confidential lane has recorded was built sponsorless and carries
+    /// no fee output, so this is the lane's ordinary case rather than a
+    /// concession made to reach the pair.
+    PureSplit,
     /// Two receipts in, three outputs: the representative many-to-many
     /// case, chosen as the smallest transfer whose input and output
     /// cardinalities both exceed the one-to-one control's.
@@ -249,9 +276,10 @@ pub enum PrivateShape {
 }
 
 impl PrivateShape {
-    /// All six, in the order the restart runs them.
-    pub const ALL: [Self; 8] = [
+    /// All nine, in the order the restart runs them.
+    pub const ALL: [Self; 9] = [
         Self::Split,
+        Self::PureSplit,
         Self::ManyToMany,
         Self::SeveralDistinctOwners,
         Self::StrictOneToOne,
@@ -267,6 +295,7 @@ impl PrivateShape {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Split => "private-split",
+            Self::PureSplit => "private-pure-split",
             Self::ManyToMany => "private-many-to-many",
             Self::SeveralDistinctOwners => "private-several-distinct-owners",
             Self::StrictOneToOne => "private-strict-one-to-one",
@@ -300,8 +329,8 @@ impl PrivateShape {
             Self::Split => Some("private-split"),
             Self::ManyToMany => Some("private-many-to-many-representative"),
             Self::SeveralDistinctOwners => Some("private-several-distinct-owners"),
-            // Three shapes name no row, and for ONE reason rather than
-            // three: §15.2's positive private table enumerates the
+            // Four shapes name no row, and for ONE reason rather than
+            // four: §15.2's positive private table enumerates the
             // guide's own classes, and it has no member for a strict
             // one-to-one, for a transfer that pays its own fee, or for
             // one whose two sides are read under different plans. Each
@@ -312,6 +341,17 @@ impl PrivateShape {
             | Self::OneToOneWithFee
             | Self::ExitCrossing
             | Self::EntryCrossing => None,
+            // The pure split names no row EITHER, and for a different
+            // reason worth keeping separate from theirs. §15.2 does
+            // carry a `private-split` row -- and [`Self::Split`] already
+            // moved it, on an acceptance of its own three-output shape.
+            // This shape exists for §16.1's split PAIR, whose private
+            // member states two created outputs, and a pair member is
+            // not a matrix row. Pointing it at `private-split` would
+            // move a row that has already moved and would claim the
+            // three-output run and this one are the same shape, which is
+            // the whole fact the pair's failing conjunct records.
+            Self::PureSplit => None,
             // The merge DOES have a row, and it is the only shape of
             // these that has one.
             Self::PrivateMerge => Some("private-merge"),
@@ -337,6 +377,7 @@ impl PrivateShape {
     pub const fn predecessor(self) -> PredecessorShape {
         match self {
             Self::Split
+            | Self::PureSplit
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
@@ -368,6 +409,7 @@ impl PrivateShape {
     pub const fn vocabulary(self) -> LiveShapeVocabulary {
         match self {
             Self::Split
+            | Self::PureSplit
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
@@ -395,6 +437,7 @@ impl PrivateShape {
     pub const fn composition(self) -> LiveTransferComposition {
         match self {
             Self::Split
+            | Self::PureSplit
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
@@ -441,6 +484,7 @@ impl PrivateShape {
     pub const fn explicit_destination_count(self) -> usize {
         match self {
             Self::Split
+            | Self::PureSplit
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
@@ -464,6 +508,7 @@ impl PrivateShape {
     pub const fn fee_output_count(self) -> usize {
         match self {
             Self::Split
+            | Self::PureSplit
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
@@ -478,9 +523,11 @@ impl PrivateShape {
     #[must_use]
     const fn consumed(self) -> &'static [ConsumedReceipt] {
         match self {
-            Self::Split | Self::StrictOneToOne | Self::OneToOneWithFee | Self::EntryCrossing => {
-                &[ConsumedReceipt::Primary]
-            }
+            Self::Split
+            | Self::PureSplit
+            | Self::StrictOneToOne
+            | Self::OneToOneWithFee
+            | Self::EntryCrossing => &[ConsumedReceipt::Primary],
             // The merge consumes the same two INDICES the two-input
             // shapes do. Against the triple predecessor those indices
             // carry the same two roles, and the difference that matters
@@ -530,6 +577,15 @@ impl PrivateShape {
                 primary(SECOND_SCALAR, 400_000_000),
                 primary(FIRST_SCALAR, 200_000_000),
                 balancing(FIRST_SCALAR, 100_000_000),
+            ],
+            // 700_000_000 in, split TWO ways between the two owners and
+            // nothing held back. The whole consumed amount travels, so
+            // there is no change output and no fee, which is exactly the
+            // difference between this shape and the three-output split
+            // above it.
+            Self::PureSplit => vec![
+                primary(SECOND_SCALAR, 400_000_000),
+                balancing(FIRST_SCALAR, 300_000_000),
             ],
             // 1_000_000_000 in across two receipts, three ways out.
             Self::ManyToMany => vec![
