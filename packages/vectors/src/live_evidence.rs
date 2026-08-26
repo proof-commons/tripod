@@ -484,6 +484,37 @@ pub enum LiveInfrastructureBlocker {
     /// *exists*, and the safe constructor refusing establishes nothing
     /// about it — a refusal from something that could not have built the
     /// offending transaction anyway is not evidence that nothing can.
+    ///
+    /// # The premise has expired, and the row is NOT moved on it
+    ///
+    /// This is recorded here, at the blocker's own site, because the
+    /// alternative is two artifacts disagreeing about one row — the
+    /// failure a previous wave found between a closeout and the matrix
+    /// and had to repair, and which is cheaper to prevent than to fix.
+    ///
+    /// The sentence above says the row needs a raw path that does not
+    /// exist. One does. `TargetTransaction::with_output_witnesses` is
+    /// public and checks census ARITY only — no amount, asset, program,
+    /// position or role — and three lanes already rebuild finalized
+    /// bytes through it and hand the result to a real node: the
+    /// conservation negatives, the key-path probe, and the proof-bearing
+    /// observation. So the answer to the question this row asks is
+    /// visibly yes, and the blocker is describing a workspace that no
+    /// longer exists.
+    ///
+    /// The row is left where it stands anyway, and deliberately. What
+    /// would move it is undetermined rather than merely unwritten: the
+    /// row's evidence is that a bypass EXISTS, which is a first-party
+    /// fact about this workspace and not a verdict any target gave, and
+    /// no standing here carries such a fact — the observation members
+    /// all carry target identities. Moving it would therefore mean
+    /// choosing a standing for it, and that is the kind of choice the
+    /// determinism member was minted by DIRECTION rather than taken
+    /// unilaterally. A ruling is owed on which of two repairs the row
+    /// wants: a standing for an existence fact this workspace
+    /// establishes about itself, or a retyping of the row as first-party
+    /// beside the other §4.3 distinctions. Recorded, escalated, and not
+    /// decided here.
     RawSurgeryPathAbsent,
 }
 
@@ -1273,6 +1304,46 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
         "missing-sponsor-authorization" => Some((
             crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
             crate::live_sponsor_shapes::sponsored_run_of_record::MISSING_SPONSOR_AUTHORIZATION_REFUSAL,
+        )),
+        // §15.5's two proof-negative rows, answered by the conservation
+        // ceremony's own run — which submitted THREE mutants before the
+        // control for a reason it states, all four spending one coin: a
+        // control accepted first would have spent it, and every mutant
+        // after it would have been refused for a missing input rather
+        // than for its mutation. That is the same ordering lesson the
+        // witness negatives learned as `txn-already-known`, met here in
+        // its other form.
+        //
+        // THE TWO ROWS SHARE ONE ARM BECAUSE THE TARGET SHARED ONE
+        // ANSWER, and that is the finding rather than a shortcut. The
+        // internal Pedersen-tally and range-proof codes are discarded
+        // inside the target's own `VerifyAmounts` and never leave it, so
+        // one verdict covers both mutations and the LAYER cannot be what
+        // separates these rows. The FIELD is: each row's mutant declared
+        // a byte range and was checked to have stayed inside it by
+        // `attribute_proof_negative` rather than by assertion —
+        // `RANGEPROOF_FIELD_RANGE` for `malformed-rangeproof` and
+        // `WRONG_BLINDER_FIELD_RANGE` for `wrong-private-blinding-balance`.
+        // Two rows move on ONE run because each drove its OWN mutant,
+        // which is the rule; a third case in the same run,
+        // `missing-rangeproof`, moves no §15 row at all, the matrix
+        // having no member for it.
+        //
+        // For `wrong-private-blinding-balance` the declared class is
+        // `AmountMismatch`, and the target's own words name it:
+        // `bad-txns-in-ne-out` is value in not equal to value out.
+        // `malformed-rangeproof` declares no class and is attributed the
+        // way the witness-content rows are, by its field and its control.
+        //
+        // `private-ct-imbalance` is NOT answered here and stays waiting,
+        // though it declares the same class and would draw the same
+        // words. Its mutation is the committed VALUES failing to
+        // balance, and no mutant of it was built; reading the wrong
+        // blinder's refusal onto it would count one observation for two
+        // rows, which is the rule this function exists to keep.
+        "malformed-rangeproof" | "wrong-private-blinding-balance" => Some((
+            crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
         )),
         _ => None,
     }
@@ -2118,11 +2189,13 @@ mod tests {
             answered,
             BTreeSet::from([
                 "empty-signature",
+                "malformed-rangeproof",
                 "malformed-signature",
                 "missing-sponsor-authorization",
+                "wrong-private-blinding-balance",
             ]),
         );
-        assert_eq!(plan.census().native_refusal_observed(), 3);
+        assert_eq!(plan.census().native_refusal_observed(), 5);
 
         // THE THIRD ROW COMES FROM A DIFFERENT LANE and is held to the
         // same rule. Its mutant was offered first and its control

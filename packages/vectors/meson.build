@@ -28,6 +28,7 @@ vectors_source_files = files(
   'src/live_minimality_report.rs',
   'src/live_multi_shapes.rs',
   'src/live_native.rs',
+  'src/live_negative_half.rs',
   'src/live_owner_observation.rs',
   'src/live_pairs.rs',
   'src/live_plan.rs',

@@ -25,6 +25,7 @@ pub mod live_measurements;
 pub mod live_minimality_report;
 pub mod live_multi_shapes;
 pub mod live_native;
+pub mod live_negative_half;
 pub mod live_owner_observation;
 pub mod live_pairs;
 pub mod live_plan;
