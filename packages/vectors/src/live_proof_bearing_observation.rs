@@ -77,8 +77,9 @@ use std::collections::BTreeMap;
 use target_elements::{LeafVersion, ObservationIdentity};
 use target_elements_conformance::confidential_fixture::{
     ConfidentialFixtureManifest, ConfidentialFixtureOutput, ConfidentialFixtureRegistry,
-    FixtureDerivationProfile, FixtureOpenings, FixtureOutputRole, MAX_PARITY_COUNTER,
-    PublicDisposableTestMaterial, RegistrationRefusal, ResolvedFixture, predecessor_handle,
+    FixtureDerivationProfile, FixtureOpenings, FixtureOutputRole,
+    FrozenConfidentialFixtureRegistry, MAX_PARITY_COUNTER, PublicDisposableTestMaterial,
+    RegistrationRefusal, ResolvedFixture, predecessor_handle,
 };
 use target_elements_conformance::constructor::curve::FIELD_ELEMENT_BYTES;
 use target_elements_conformance::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
@@ -1043,6 +1044,34 @@ fn project(fixture: &ResolvedFixture) -> Result<ConfidentialFixtureView, ProofBe
         },
         outputs,
     ))
+}
+
+/// One already-frozen registry's case, resolved and projected.
+///
+/// The seam a ceremony needs when the manifest is somebody else's. The
+/// sponsor reserve case is registered by its own module, because the
+/// digest the EXECUTOR funds against comes from that manifest and a
+/// second spelling of it here would resolve to a different digest and
+/// refuse. So the case is registered once, there, and this projects the
+/// frozen result rather than re-registering it.
+///
+/// # Errors
+///
+/// [`ProofBearingRefusal::FixtureDidNotResolve`] where the frozen
+/// registry does not hold the handle at that digest, and the projection's
+/// own refusals otherwise.
+pub(crate) fn project_frozen(
+    frozen: &FrozenConfidentialFixtureRegistry,
+    handle: &ConfidentialFixtureHandle,
+    digest: &ConfidentialFixtureDigest,
+) -> Result<ConfidentialFixtureView, ProofBearingRefusal> {
+    let resolved =
+        frozen
+            .resolve(handle, digest)
+            .map_err(|_| ProofBearingRefusal::FixtureDidNotResolve {
+                handle: handle.as_str().to_owned(),
+            })?;
+    project(resolved)
 }
 
 /// One registered and frozen fixture, resolved under its own digest.

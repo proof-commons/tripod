@@ -1,0 +1,1249 @@
+//! The sponsored CONFIDENTIAL with-change shape, driven through the
+//! private construction lane.
+//!
+//! The shape the sponsor arc has been walking toward, and the one the
+//! section 15.2 `private-sponsor-values` row moves on. A sponsor whose
+//! coin's VALUE is a commitment funds another party's private transfer,
+//! pays an explicit fee in the reserve asset, and takes its remainder
+//! back as a COMMITTED change output.
+//!
+//! # Why every one of those words is forced rather than chosen
+//!
+//! The sponsor coin's value is committed because that is the shape the
+//! arc funded and pinned; its ASSET stays explicit because the covenant
+//! introspects the asset and an introspection reads an explicit field.
+//! The change is committed because a committed sponsor value REQUIRES
+//! it: a target refuses `bad-txns-in-ne-out` for an asset whose inputs
+//! carry blinders and whose outputs carry none, there being nothing to
+//! absorb the input blinder. The fee is explicit because consensus
+//! defines a fee by its explicitness.
+//!
+//! # Where the fee sits, and why it is not a destination
+//!
+//! In the NON-PROTOCOL FUNDING REGION, whose members are emitted as
+//! explicit outputs and held outside both balance equations. The private
+//! lane's destination vocabulary has a fee role, and using it here would
+//! not work: a fixture's fee output projects with no reserve asset, so
+//! the preflight asset comparison would refuse a reserve-asset fee
+//! destination against the case's protocol asset, and the same output
+//! would be summed into the protocol subtotal because the fee role
+//! answers `is_a_protocol_member` with true. The fee role keeps the
+//! meaning it has -- the SPONSORLESS fee funded from the receipts, in
+//! the protocol asset -- and the sponsored fee rides in the region.
+//!
+//! # The two passes, and why a ceremony cannot skip one
+//!
+//! The bytes a sponsor must authorize exist only as a side effect of
+//! running the builder: a signing request names the exact finalized
+//! transaction, and the transaction crate keeps that constructor to
+//! itself so no caller can ask a sponsor to authorize bytes that are not
+//! the candidate's. So the control is assembled TWICE against ONE
+//! finalization -- once with a recording envelope, purely to observe the
+//! bytes, and once with the adapter's real witness replayed into it. The
+//! placeholder-authorized control of the first pass is discarded and is
+//! never evidence of anything.
+
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+
+use linker::OwnerParameter;
+use linker::live_backend::LiveTransferRepresentationPlan;
+use target_elements_conformance::confidential_fixture::{
+    ConfidentialFixtureOutput, FixtureOutputRole, FrozenConfidentialFixtureRegistry,
+    sponsor_reserve_handle,
+};
+use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
+use target_elements_conformance::protocol::{
+    NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationSubject,
+    TargetSponsorSigningSubject, TargetSubmissionSubject, WireOutpoint, WireSighashProfile,
+};
+use transaction::bytes::{AssetId, COMMITMENT_BYTES, EXPLICIT_PREFIX, Outpoint, Txid, ValueField};
+use transaction::live_census::OwnerSigningCensus;
+use transaction::live_construct::{
+    PrivateDestinationOpening, PrivateInputOpening, PrivateLiveFinalization, PrivateLiveOpenings,
+    finalize_private_live_transfer,
+};
+use transaction::live_materialize::{
+    ConfidentialInputRegion, ConfidentialOutputRole, FixtureOpeningReference,
+    FrozenConfidentialFixtureView, NonProtocolFundingRegion, NonProtocolMember, SCALAR_BYTES,
+};
+use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message};
+use transaction::live_request::{
+    LiveReceiptDestination, LiveTransferRequest, ProtocolValue, PublicTestRandomness,
+    RequestedForm, SponsorChangeRequest,
+};
+use transaction::sponsor::{
+    SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest,
+};
+use transaction::taproot::Digest32;
+use transaction::view::{PublicConstructionView, PublicOutputView};
+
+use crate::confidential_materializer::{
+    FirstPartyCommitmentCheck, ReferenceConfidentialMaterializer,
+};
+use crate::confidential_predecessor::PredecessorShape;
+use crate::confidential_sponsor_reserve::{
+    SPONSOR_RESERVE_OUTPUTS, frozen_sponsor_reserve_registry, sponsor_reserve_subject,
+};
+use crate::error::VectorError;
+use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
+use crate::live_plan::{
+    FIRST_SCALAR, LiveShapeVocabulary, RESERVE_ASSET, SECOND_SCALAR, published_owner,
+    reviewed_target,
+};
+use crate::live_private_restart::{
+    ConsumedReceipt, LinkedDeployment, PrivateRestartRefusal, RestartConfidentialCoin,
+    assemble_control, confidential_funding_step, issue_step, link_and_register,
+    observe_funded_coins, private_program, verify_readback_signature,
+};
+use crate::live_proof_bearing_observation::{
+    materialization_profiles, project_frozen, register_multi,
+};
+
+/// The successor case this ceremony registers.
+const SUCCESSOR_HANDLE: &str = "ctf-v1/sponsored-private-successor";
+
+/// What the sponsor pays as the fee, in the reserve asset.
+///
+/// The figure the sponsor arc's accepted explicit control carried, kept
+/// so that a reader comparing the explicit and confidential sponsored
+/// acceptances is comparing one number.
+const SPONSOR_FEE: u64 = 250;
+
+/// What the sponsor takes back, in the reserve asset.
+const SPONSOR_CHANGE: u64 = 1_000;
+
+/// The first receipt output's amount.
+const PRIMARY_RECEIPT: u64 = 400_000_000;
+
+/// The second receipt output's amount, which is the balancing one.
+const BALANCING_RECEIPT: u64 = 300_000_000;
+
+/// Which coin of the sponsor reserve case this ceremony spends.
+///
+/// The first, whose blinder is DERIVED. The second solves that case's
+/// own balance, and spending a solved output would tie this ceremony's
+/// input blinder sum to an arithmetic accident of the funding case.
+const SPONSOR_COIN: usize = 0;
+
+/// Why a sponsored private run could not be built or did not hold.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SponsoredPrivateRefusal {
+    /// A construction step of the private lane refused.
+    Private(PrivateRestartRefusal),
+    /// The reserve case would not register, or its digest is absent.
+    SponsorReserveUnavailable,
+    /// The sponsor funding step created something other than the case.
+    SponsorFundingCreatedNothing,
+    /// A reported sponsor coin did not decode.
+    MalformedSponsorCoin,
+    /// The coin the chain reported is not the one the registry derived.
+    SponsorCoinIsNotTheRegistrysOwn,
+    /// The staging pass asked for a number of signatures that is not one.
+    UnexpectedSponsorRequestCount(usize),
+    /// The adapter declined, or echoed bytes that are not what it was
+    /// handed.
+    SponsorSignatureUnusable,
+    /// The control was never staged, so there is nothing to submit.
+    ControlNotStaged,
+}
+
+/// How the staged envelope answers a signing request.
+enum Answers {
+    /// Record what was asked and answer with a placeholder, so the
+    /// request the adapter must be handed can be collected at all.
+    ///
+    /// The control this arm completes is DISCARDED. A
+    /// placeholder-authorized control is not evidence and must never be
+    /// able to become any.
+    Recording(RefCell<Vec<(u16, Vec<u8>)>>),
+    /// Answer with what the adapter returned, keyed by input position.
+    Replaying(BTreeMap<u16, SponsorSignature>),
+}
+
+/// The sponsor envelope this lane stages, in both of its passes.
+///
+/// One type rather than two, because the offer must be identical across
+/// the passes: a second spelling of it could disagree with the first
+/// about what was finalized, and then the bytes the adapter signed would
+/// not be the bytes replayed into.
+struct StagedEnvelope {
+    offer: SponsorOffer,
+    answers: Answers,
+}
+
+impl SponsorCapability for StagedEnvelope {
+    fn offer(&self) -> SponsorOffer {
+        self.offer.clone()
+    }
+
+    /// No change destination is named here.
+    ///
+    /// Construction writes the sponsor's change to the deployment's own
+    /// sponsor-change program and refuses any other, so naming one would
+    /// either agree redundantly or disagree and be refused.
+    fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
+        None
+    }
+
+    fn sign(&self, request: &SponsorSigningRequest) -> Option<SponsorSignature> {
+        match &self.answers {
+            Answers::Recording(seen) => {
+                seen.borrow_mut()
+                    .push((request.input(), request.transaction().to_vec()));
+                // The admitted stack width, carrying nothing. It exists
+                // so the builder completes and the request can be
+                // observed; the control it produces is thrown away.
+                Some(SponsorSignature::new(
+                    request.transaction().to_vec(),
+                    vec![Vec::new(), Vec::new()],
+                ))
+            }
+            Answers::Replaying(answers) => answers.get(&request.input()).cloned(),
+        }
+    }
+}
+
+/// One coin the node reported, in the form it reported it.
+#[derive(Clone, Debug)]
+struct ObservedSponsorCoin {
+    outpoint: Outpoint,
+    asset: AssetId,
+    /// The value FIELD and not a number: a committed coin has no number
+    /// here, and the owner's signature commits to the field verbatim.
+    value: ValueField,
+    program: Vec<u8>,
+}
+
+/// What was established about the blinded sponsor coin, in booleans.
+///
+/// Booleans and never a scalar. A record carrying the opening would be
+/// publishing one; what a reader needs is whether each claim held, and
+/// the claims are each recomputed from the node's report against values
+/// this workspace derived from published constants.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SponsoredSolveCensus {
+    chain_reported_a_commitment: bool,
+    commitment_is_the_registrys_own: bool,
+    asset_stayed_explicit: bool,
+    rangeproof_present: bool,
+}
+
+impl SponsoredSolveCensus {
+    /// Whether the value the chain reported is a commitment rather than
+    /// an explicit amount, which its prefix is what says.
+    #[must_use]
+    pub const fn chain_reported_a_commitment(self) -> bool {
+        self.chain_reported_a_commitment
+    }
+
+    /// Whether that commitment is the one this workspace derives from
+    /// published constants and no chain at all.
+    #[must_use]
+    pub const fn commitment_is_the_registrys_own(self) -> bool {
+        self.commitment_is_the_registrys_own
+    }
+
+    /// Whether the asset stayed explicit while the value was committed.
+    #[must_use]
+    pub const fn asset_stayed_explicit(self) -> bool {
+        self.asset_stayed_explicit
+    }
+
+    /// Whether every funded output carried a range proof.
+    #[must_use]
+    pub const fn rangeproof_present(self) -> bool {
+        self.rangeproof_present
+    }
+
+    /// Whether every claim held.
+    #[must_use]
+    pub const fn holds(self) -> bool {
+        self.chain_reported_a_commitment
+            && self.commitment_is_the_registrys_own
+            && self.asset_stayed_explicit
+            && self.rangeproof_present
+    }
+}
+
+/// The sponsor's round trip through the adapter.
+#[derive(Clone, Debug, Default)]
+pub struct SponsoredRoundTrip {
+    input: u16,
+    sent: Vec<u8>,
+    echo_matches_what_was_sent: bool,
+    witness_items: usize,
+}
+
+impl SponsoredRoundTrip {
+    /// Which input position the sponsor authorized.
+    #[must_use]
+    pub const fn input(&self) -> u16 {
+        self.input
+    }
+
+    /// Whether the adapter echoed back exactly the bytes it was handed.
+    #[must_use]
+    pub const fn echo_matches_what_was_sent(&self) -> bool {
+        self.echo_matches_what_was_sent
+    }
+
+    /// How many items the sponsor's witness carried.
+    #[must_use]
+    pub const fn witness_items(&self) -> usize {
+        self.witness_items
+    }
+}
+
+/// What the target did with the sponsored private control.
+#[derive(Clone, Debug, Default)]
+pub struct SponsoredPrivateReverification {
+    accepted_txid: String,
+    readback_matches_submission: bool,
+    owner_signature_verified: bool,
+    sponsor_change_located: bool,
+}
+
+impl SponsoredPrivateReverification {
+    /// The identity the node printed for the mined transaction.
+    #[must_use]
+    pub fn accepted_txid(&self) -> &str {
+        &self.accepted_txid
+    }
+
+    /// Whether the bytes the node reported are the bytes it was handed.
+    #[must_use]
+    pub const fn readback_matches_submission(&self) -> bool {
+        self.readback_matches_submission
+    }
+
+    /// Whether an owner's signature verified against a message this
+    /// ceremony recomputed independently of the candidate it submitted.
+    #[must_use]
+    pub const fn owner_signature_verified(&self) -> bool {
+        self.owner_signature_verified
+    }
+
+    /// Whether the sponsor's committed change was found in the MINED
+    /// bytes, at the reserve asset and carrying a commitment.
+    #[must_use]
+    pub const fn sponsor_change_located(&self) -> bool {
+        self.sponsor_change_located
+    }
+}
+
+/// One sponsored private run's transcript material.
+#[derive(Clone, Debug, Default)]
+pub struct SponsoredPrivateRecord {
+    issued_asset: Option<String>,
+    coins: Vec<RestartConfidentialCoin>,
+    solve: Option<SponsoredSolveCensus>,
+    sponsor_funding_txid: Option<String>,
+    round: Option<SponsoredRoundTrip>,
+    submitted_bytes: usize,
+    observed_layer: Option<ObservedOutcomeLayer>,
+    observed_detail: Option<String>,
+    accepted_txid: Option<String>,
+    target_weight: Option<u64>,
+    reverification: Option<SponsoredPrivateReverification>,
+    refusal: Option<SponsoredPrivateRefusal>,
+}
+
+impl SponsoredPrivateRecord {
+    /// The predecessor coins the node funded.
+    #[must_use]
+    pub fn coins(&self) -> &[RestartConfidentialCoin] {
+        &self.coins
+    }
+
+    /// What was established about the blinded sponsor coin.
+    #[must_use]
+    pub const fn solve(&self) -> Option<SponsoredSolveCensus> {
+        self.solve
+    }
+
+    /// The sponsor's round trip through the adapter.
+    #[must_use]
+    pub const fn round(&self) -> Option<&SponsoredRoundTrip> {
+        self.round.as_ref()
+    }
+
+    /// How many bytes reached the node.
+    #[must_use]
+    pub const fn submitted_bytes(&self) -> usize {
+        self.submitted_bytes
+    }
+
+    /// Which layer the target's answer came from.
+    #[must_use]
+    pub const fn observed_layer(&self) -> Option<ObservedOutcomeLayer> {
+        self.observed_layer
+    }
+
+    /// The weight the target computed.
+    #[must_use]
+    pub const fn target_weight(&self) -> Option<u64> {
+        self.target_weight
+    }
+
+    /// The checks made against the mined bytes.
+    #[must_use]
+    pub const fn reverification(&self) -> Option<&SponsoredPrivateReverification> {
+        self.reverification.as_ref()
+    }
+
+    /// The refusal that stopped the run, where one did.
+    #[must_use]
+    pub const fn refusal(&self) -> Option<&SponsoredPrivateRefusal> {
+        self.refusal.as_ref()
+    }
+}
+
+/// Where the ceremony is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stage {
+    Issue,
+    FundReceipts,
+    FundSponsor,
+    SignSponsor,
+    Submit,
+    Done,
+}
+
+/// The sponsored private ceremony.
+pub struct SponsoredPrivatePlanner {
+    stage: Stage,
+    genesis_block_hash: Digest32,
+    linked: Option<LinkedDeployment>,
+    receipt: Option<RestartConfidentialCoin>,
+    sponsor: Option<ObservedSponsorCoin>,
+    sponsor_registry: Option<FrozenConfidentialFixtureRegistry>,
+    successor: Option<(
+        [u8; 32],
+        transaction::live_materialize::ConfidentialFixtureView,
+    )>,
+    staged: Option<PrivateLiveFinalization>,
+    submitted: Option<Vec<u8>>,
+    census: Option<OwnerSigningCensus>,
+    spent_owner_bytes: Option<Vec<u8>>,
+    record: SponsoredPrivateRecord,
+}
+
+impl SponsoredPrivatePlanner {
+    /// The ceremony, bound to a deployment's printed genesis identity.
+    ///
+    /// # Errors
+    ///
+    /// [`VectorError::LiveSubstrateUnavailable`] where the reviewed
+    /// target does not build.
+    pub fn new(printed_genesis_identity: Digest32) -> Result<Self, VectorError> {
+        reviewed_target()?;
+        Ok(Self {
+            stage: Stage::Issue,
+            genesis_block_hash: printed_genesis_identity,
+            linked: None,
+            receipt: None,
+            sponsor: None,
+            sponsor_registry: None,
+            successor: None,
+            staged: None,
+            submitted: None,
+            census: None,
+            spent_owner_bytes: None,
+            record: SponsoredPrivateRecord::default(),
+        })
+    }
+
+    /// The run's transcript material.
+    #[must_use]
+    pub const fn record(&self) -> &SponsoredPrivateRecord {
+        &self.record
+    }
+
+    fn refuse(&mut self, refusal: SponsoredPrivateRefusal) -> PlanRefused {
+        self.record.refusal = Some(refusal);
+        self.stage = Stage::Done;
+        PlanRefused
+    }
+
+    /// Link the deployment against the asset the node issued.
+    fn settle_asset(&mut self, printed: &str) -> Result<(), SponsoredPrivateRefusal> {
+        self.record.issued_asset = Some(printed.to_owned());
+        let linked = link_and_register(
+            PredecessorShape::DualParity,
+            ConsumedReceipt::Primary,
+            printed,
+            LiveShapeVocabulary::Demonstration,
+            RESERVE_ASSET,
+        )
+        .map_err(SponsoredPrivateRefusal::Private)?;
+        self.linked = Some(linked);
+        Ok(())
+    }
+
+    /// Take the funded predecessor coins from the node's report.
+    fn settle_receipts(
+        &mut self,
+        response: &NativeOperationResponse,
+    ) -> Result<(), SponsoredPrivateRefusal> {
+        let linked = self
+            .linked
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        let coins =
+            observe_funded_coins(linked, response).map_err(SponsoredPrivateRefusal::Private)?;
+        self.receipt = coins.get(ConsumedReceipt::Primary.index()).cloned();
+        self.record.coins = coins;
+        Ok(())
+    }
+
+    /// The step that funds the blinded sponsor coin.
+    fn sponsor_funding_step(&mut self) -> Result<OperationStep, SponsoredPrivateRefusal> {
+        let linked = self
+            .linked
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        // The sponsor's coin pays the program the deployment names for a
+        // sponsor's change, which is the one the adapter can authorize a
+        // spend of.
+        let program = sponsor_program(linked)?;
+        let registry = frozen_sponsor_reserve_registry(RESERVE_ASSET, &program)
+            .map_err(|_| SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
+        let digest = *registry
+            .registered_digest(&sponsor_reserve_handle())
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
+        self.sponsor_registry = Some(registry);
+        Ok(OperationStep::new(
+            "fund-confidential-sponsor",
+            OperationSubject::ConfidentialSponsorFunding(Box::new(sponsor_reserve_subject(
+                digest, &program,
+            ))),
+        ))
+    }
+
+    /// Take the blinded sponsor coin, and census what it is.
+    fn settle_sponsor(
+        &mut self,
+        response: &NativeOperationResponse,
+    ) -> Result<(), SponsoredPrivateRefusal> {
+        let reported = &response.confidential_funded_outputs;
+        if reported.len() != SPONSOR_RESERVE_OUTPUTS {
+            return Err(SponsoredPrivateRefusal::SponsorFundingCreatedNothing);
+        }
+        let registry = self
+            .sponsor_registry
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
+        let handle = sponsor_reserve_handle();
+        let digest = *registry
+            .registered_digest(&handle)
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
+        let derived = registry
+            .resolve(&handle, &digest)
+            .map_err(|_| SponsoredPrivateRefusal::SponsorReserveUnavailable)?
+            .value_commitments()
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
+
+        let mut fields = Vec::with_capacity(reported.len());
+        for output in reported {
+            let field: [u8; COMMITMENT_BYTES] = output
+                .value_commitment
+                .clone()
+                .try_into()
+                .map_err(|_| SponsoredPrivateRefusal::MalformedSponsorCoin)?;
+            fields.push(field);
+        }
+        let first = &reported[SPONSOR_COIN];
+        let outpoint =
+            outpoint_of(&first.outpoint).ok_or(SponsoredPrivateRefusal::MalformedSponsorCoin)?;
+        let asset =
+            asset_of(&first.explicit_asset).ok_or(SponsoredPrivateRefusal::MalformedSponsorCoin)?;
+        let program =
+            decode_hex(&first.script).ok_or(SponsoredPrivateRefusal::MalformedSponsorCoin)?;
+
+        let census = SponsoredSolveCensus {
+            chain_reported_a_commitment: fields.iter().all(|field| field[0] != EXPLICIT_PREFIX),
+            commitment_is_the_registrys_own: fields == derived,
+            asset_stayed_explicit: reported
+                .iter()
+                .all(|output| asset_of(&output.explicit_asset) == Some(asset)),
+            rangeproof_present: reported.iter().all(|output| !output.rangeproof.is_empty()),
+        };
+        if !census.commitment_is_the_registrys_own {
+            return Err(SponsoredPrivateRefusal::SponsorCoinIsNotTheRegistrysOwn);
+        }
+        self.record.solve = Some(census);
+        if let Some(readback) = response.mined_readback.as_ref() {
+            self.record.sponsor_funding_txid = Some(readback.transaction_id.clone());
+        }
+        self.sponsor = Some(ObservedSponsorCoin {
+            outpoint,
+            asset,
+            value: ValueField::Commitment(fields[SPONSOR_COIN]),
+            program,
+        });
+        Ok(())
+    }
+
+    /// The successor case: two protocol receipts and the sponsor's
+    /// committed remainder, from ONE registered case declaring two
+    /// assets across its positions.
+    fn register_successor(&mut self) -> Result<(), SponsoredPrivateRefusal> {
+        let linked = self
+            .linked
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        let recipient = private_program(&linked.abi, &SECOND_SCALAR)
+            .map_err(SponsoredPrivateRefusal::Private)?;
+        let sender = private_program(&linked.abi, &FIRST_SCALAR)
+            .map_err(SponsoredPrivateRefusal::Private)?;
+        let change = sponsor_program(linked)?;
+
+        let (digest, view) = register_multi(
+            SUCCESSOR_HANDLE,
+            *linked.asset.internal(),
+            self.input_blinder_sum()?,
+            vec![
+                ConfidentialFixtureOutput {
+                    role: FixtureOutputRole::Primary,
+                    semantic_amount: PRIMARY_RECEIPT,
+                    output_program: recipient,
+                },
+                ConfidentialFixtureOutput {
+                    role: FixtureOutputRole::Balancing,
+                    semantic_amount: BALANCING_RECEIPT,
+                    output_program: sender,
+                },
+                ConfidentialFixtureOutput {
+                    role: FixtureOutputRole::SponsorChange {
+                        asset: RESERVE_ASSET,
+                    },
+                    semantic_amount: SPONSOR_CHANGE,
+                    output_program: change,
+                },
+            ],
+        )
+        .map_err(|_| {
+            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::FixtureNotRegistrable {
+                handle: SUCCESSOR_HANDLE.to_owned(),
+            })
+        })?;
+        self.successor = Some((*digest.bytes(), view));
+        Ok(())
+    }
+
+    /// The successor's input blinder sum: the consumed receipt's blinder
+    /// AND the sponsor coin's.
+    ///
+    /// The sponsor's blinder is an addend and its amount is not. The
+    /// target's excess is a sum over every input alike whatever asset
+    /// generator each was built against, so a sum that left the sponsor
+    /// coin out would build a candidate whose commitments do not close
+    /// -- and the protocol subtotal, which the sponsor really is outside
+    /// of, is a different equation entirely.
+    fn input_blinder_sum(&self) -> Result<[u8; 32], SponsoredPrivateRefusal> {
+        let linked = self
+            .linked
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        let receipt = linked
+            .predecessor_view
+            .outputs()
+            .get(ConsumedReceipt::Primary.index())
+            .and_then(|output| output.value_blinder().copied())
+            .ok_or(SponsoredPrivateRefusal::Private(
+                PrivateRestartRefusal::PredecessorBlindersDoNotClose,
+            ))?;
+        let sponsor = self
+            .sponsor_view()?
+            .outputs()
+            .get(SPONSOR_COIN)
+            .and_then(|output| output.value_blinder().copied())
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
+        target_elements_conformance::confidential_fixture::sum_blinders(&[receipt, sponsor])
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)
+    }
+
+    /// The sponsor reserve case, projected.
+    fn sponsor_view(
+        &self,
+    ) -> Result<transaction::live_materialize::ConfidentialFixtureView, SponsoredPrivateRefusal>
+    {
+        let registry = self
+            .sponsor_registry
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
+        let handle = sponsor_reserve_handle();
+        let digest = *registry
+            .registered_digest(&handle)
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
+        project_frozen(registry, &handle, &digest)
+            .map_err(|_| SponsoredPrivateRefusal::SponsorReserveUnavailable)
+    }
+
+    /// The sponsor's offer: the coin it brings, the fee it pays, and the
+    /// remainder it asks back.
+    fn offer(&self) -> Result<SponsorOffer, SponsoredPrivateRefusal> {
+        let sponsor = self
+            .sponsor
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        SponsorOffer::new(
+            [sponsor.outpoint],
+            SPONSOR_FEE,
+            // Stated EXPLICITLY even though the output is committed. The
+            // offer's number is what construction reconciles a declared
+            // change position against; the output's value form is the
+            // materializer's business and is committed because the
+            // fixture says so.
+            Some(ValueField::Explicit(SPONSOR_CHANGE)),
+        )
+        .map_err(|_| SponsoredPrivateRefusal::ControlNotStaged)
+    }
+
+    /// The finalization both passes are assembled against.
+    fn finalize(&self) -> Result<PrivateLiveFinalization, SponsoredPrivateRefusal> {
+        let linked = self
+            .linked
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        let receipt = self
+            .receipt
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        let sponsor = self
+            .sponsor
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        let (successor_digest, successor_view) = self
+            .successor
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+
+        // The view is the node's report of both coins, never the
+        // ceremony's expectation of them.
+        let view = PublicConstructionView::new([
+            PublicOutputView::new(
+                receipt.outpoint(),
+                receipt.asset(),
+                receipt.value(),
+                receipt.program().to_vec(),
+            ),
+            PublicOutputView::new(
+                sponsor.outpoint,
+                transaction::bytes::AssetField::Explicit(sponsor.asset),
+                sponsor.value.clone(),
+                sponsor.program.clone(),
+            ),
+        ])
+        .map_err(|_| {
+            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::ControlNotRequestable)
+        })?;
+
+        let recipient = published_owner(&SECOND_SCALAR).map_err(|_| {
+            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::SubstrateUnavailable)
+        })?;
+        let sender = published_owner(&FIRST_SCALAR).map_err(|_| {
+            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::SubstrateUnavailable)
+        })?;
+        let destination = |owner, amount| {
+            ProtocolValue::new(amount)
+                .map(|value| LiveReceiptDestination::new(OwnerParameter::new(owner), value))
+                .map_err(|_| {
+                    SponsoredPrivateRefusal::Private(PrivateRestartRefusal::ControlNotRequestable)
+                })
+        };
+
+        let request = LiveTransferRequest::new(
+            [receipt.outpoint()],
+            [
+                destination(recipient, PRIMARY_RECEIPT)?,
+                destination(sender.clone(), BALANCING_RECEIPT)?,
+                // The sponsor-change position. Its OWNER is never read:
+                // construction pays the deployment's own sponsor-change
+                // program, because returning a sponsor's reserve to a
+                // live receipt constructor would be a receipt nobody can
+                // spend and a sponsor who is not repaid.
+                destination(sender, SPONSOR_CHANGE)?,
+            ],
+            LiveTransferRepresentationPlan::PrivateCommitted,
+            RequestedForm::Sponsored,
+            SponsorChangeRequest::Requested,
+            Some(PublicTestRandomness::from_published_bytes([0x7e; 32])),
+        )
+        .map_err(|_| {
+            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::ControlNotRequestable)
+        })?;
+
+        let openings = PrivateLiveOpenings::new(
+            vec![
+                PrivateInputOpening {
+                    region: ConfidentialInputRegion::Receipt,
+                    opening: FixtureOpeningReference::new(
+                        linked.predecessor.handle().as_str().to_owned(),
+                        linked.predecessor_digest(),
+                        ConsumedReceipt::Primary.index(),
+                    ),
+                    explicit_amount: linked.predecessor.amounts()[ConsumedReceipt::Primary.index()],
+                    zero_asset_blinder: [0_u8; SCALAR_BYTES],
+                },
+                PrivateInputOpening {
+                    region: ConfidentialInputRegion::SponsorReserve,
+                    opening: FixtureOpeningReference::new(
+                        sponsor_reserve_handle().as_str().to_owned(),
+                        *self.sponsor_digest()?.bytes(),
+                        SPONSOR_COIN,
+                    ),
+                    explicit_amount: SPONSOR_FEE + SPONSOR_CHANGE,
+                    zero_asset_blinder: [0_u8; SCALAR_BYTES],
+                },
+            ],
+            vec![
+                PrivateDestinationOpening {
+                    fixture: FixtureOpeningReference::new(
+                        SUCCESSOR_HANDLE.to_owned(),
+                        *successor_digest,
+                        0,
+                    ),
+                    role: ConfidentialOutputRole::Primary,
+                },
+                PrivateDestinationOpening {
+                    fixture: FixtureOpeningReference::new(
+                        SUCCESSOR_HANDLE.to_owned(),
+                        *successor_digest,
+                        1,
+                    ),
+                    role: ConfidentialOutputRole::Balancing,
+                },
+                PrivateDestinationOpening {
+                    fixture: FixtureOpeningReference::new(
+                        SUCCESSOR_HANDLE.to_owned(),
+                        *successor_digest,
+                        2,
+                    ),
+                    role: ConfidentialOutputRole::SponsorChange,
+                },
+            ],
+            // The fee, outside both balance equations. Explicit, in the
+            // reserve asset, and carrying the EMPTY program that is a
+            // fee's whole identity at the target.
+            NonProtocolFundingRegion::new(vec![NonProtocolMember::new(
+                AssetId::from_internal(RESERVE_ASSET),
+                SPONSOR_FEE,
+                Vec::new(),
+            )]),
+            materialization_profiles(),
+        );
+
+        let fixtures = FrozenConfidentialFixtureView::new(BTreeMap::from([
+            (
+                linked.predecessor.handle().as_str().to_owned(),
+                linked.predecessor_view.clone(),
+            ),
+            (
+                sponsor_reserve_handle().as_str().to_owned(),
+                self.sponsor_view()?,
+            ),
+            (SUCCESSOR_HANDLE.to_owned(), successor_view.clone()),
+        ]));
+
+        let envelope = StagedEnvelope {
+            offer: self.offer()?,
+            answers: Answers::Recording(RefCell::new(Vec::new())),
+        };
+
+        finalize_private_live_transfer(
+            &reviewed_target().map_err(|_| {
+                SponsoredPrivateRefusal::Private(PrivateRestartRefusal::SubstrateUnavailable)
+            })?,
+            &linked.abi,
+            &request,
+            &view,
+            Some(&envelope),
+            &openings,
+            &fixtures,
+            &ReferenceConfidentialMaterializer::new(),
+            &FirstPartyCommitmentCheck::new(),
+        )
+        .map_err(|refusal| {
+            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::FinalizationRefused(format!(
+                "{refusal:?}"
+            )))
+        })
+    }
+
+    /// The sponsor reserve case's digest.
+    fn sponsor_digest(
+        &self,
+    ) -> Result<
+        target_elements_conformance::protocol::ConfidentialFixtureDigest,
+        SponsoredPrivateRefusal,
+    > {
+        let registry = self
+            .sponsor_registry
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
+        registry
+            .registered_digest(&sponsor_reserve_handle())
+            .copied()
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)
+    }
+
+    /// Pass one: assemble the control against a recording envelope,
+    /// purely to observe the bytes the sponsor must authorize.
+    fn sign_step(&mut self) -> Result<OperationStep, SponsoredPrivateRefusal> {
+        self.register_successor()?;
+        let finalization = self.finalize()?;
+
+        let seen = RefCell::new(Vec::new());
+        let recording = StagedEnvelope {
+            offer: self.offer()?,
+            answers: Answers::Recording(seen),
+        };
+        // The control this produces is discarded; only what the envelope
+        // recorded survives the call.
+        let discarded = assemble_control(&finalization, self.genesis_block_hash, Some(&recording))
+            .map_err(SponsoredPrivateRefusal::Private)?;
+        drop(discarded);
+        let Answers::Recording(seen) = recording.answers else {
+            return Err(SponsoredPrivateRefusal::ControlNotStaged);
+        };
+        let recorded = seen.into_inner();
+        if recorded.len() != 1 {
+            return Err(SponsoredPrivateRefusal::UnexpectedSponsorRequestCount(
+                recorded.len(),
+            ));
+        }
+        let (input, sent) = recorded[0].clone();
+        let sponsor = self
+            .sponsor
+            .clone()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+
+        self.record.round = Some(SponsoredRoundTrip {
+            input,
+            sent: sent.clone(),
+            ..SponsoredRoundTrip::default()
+        });
+        self.staged = Some(finalization);
+
+        Ok(OperationStep::new(
+            "authorize-sponsor-input",
+            OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                finalized_transaction: sent,
+                sponsor_input_index: input,
+                sponsor_outpoint: WireOutpoint {
+                    txid: printed_txid(&sponsor.outpoint.txid()),
+                    vout: sponsor.outpoint.index(),
+                },
+                sighash_profile: WireSighashProfile::AllInputsAllOutputs,
+            })),
+        ))
+    }
+
+    /// Pass two: replay the adapter's own witness into the SAME
+    /// finalization the request was formed against.
+    fn settle_signature(
+        &mut self,
+        response: &NativeOperationResponse,
+    ) -> Result<Vec<u8>, SponsoredPrivateRefusal> {
+        let mut round = self
+            .record
+            .round
+            .clone()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        let finalization = self
+            .staged
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        let echoed = response
+            .signature_bound_to
+            .clone()
+            .ok_or(SponsoredPrivateRefusal::SponsorSignatureUnusable)?;
+        if response.sponsor_witness.is_empty() {
+            return Err(SponsoredPrivateRefusal::SponsorSignatureUnusable);
+        }
+        // The adapter must have signed the bytes it was handed. A signer
+        // that echoed something else authorized a different transaction,
+        // and the binding check downstream would refuse it -- attributed
+        // to the candidate rather than to the signer.
+        round.echo_matches_what_was_sent = echoed == round.sent;
+        round.witness_items = response.sponsor_witness.len();
+        if !round.echo_matches_what_was_sent {
+            self.record.round = Some(round);
+            return Err(SponsoredPrivateRefusal::SponsorSignatureUnusable);
+        }
+
+        let replaying = StagedEnvelope {
+            offer: self.offer()?,
+            answers: Answers::Replaying(BTreeMap::from([(
+                round.input,
+                SponsorSignature::new(echoed, response.sponsor_witness.clone()),
+            )])),
+        };
+        let built = assemble_control(finalization, self.genesis_block_hash, Some(&replaying))
+            .map_err(SponsoredPrivateRefusal::Private)?;
+
+        self.record.round = Some(round);
+        self.census = Some(built.census);
+        self.spent_owner_bytes.clone_from(&built.spent_owner_bytes);
+        Ok(built.transaction.encode())
+    }
+
+    /// Record what the target did with the sponsored control.
+    fn settle_control(&mut self, response: &NativeOperationResponse) {
+        self.record.observed_layer = Some(response.observed_layer);
+        self.record
+            .observed_detail
+            .clone_from(&response.observed_detail);
+        self.record
+            .accepted_txid
+            .clone_from(&response.accepted_txid);
+        self.record.target_weight = response.resources.transaction_weight;
+
+        if response.observed_layer != ObservedOutcomeLayer::Accepted {
+            return;
+        }
+        let (Some(readback), Some(submitted), Some(census)) = (
+            response.mined_readback.as_ref(),
+            self.submitted.as_ref(),
+            self.census.as_ref(),
+        ) else {
+            return;
+        };
+
+        let readback_matches_submission = readback.raw_transaction == *submitted;
+        let owner_signature_verified = census
+            .signing_inputs()
+            .first()
+            .map(|input| candidate_owner_message(census, input, WitnessVectorTreatment::BothGrown))
+            .zip(self.spent_owner_bytes.as_ref())
+            .is_some_and(|(message, owner)| {
+                verify_readback_signature(&readback.raw_transaction, &message, owner)
+            });
+
+        // The sponsor's change, found in the MINED bytes rather than
+        // assumed from what was sent: a reserve-asset output whose value
+        // is a commitment.
+        let sponsor_change_located = self
+            .successor
+            .as_ref()
+            .and_then(|(_, view)| view.outputs().get(2))
+            .and_then(|output| output.value_blinder())
+            .is_some_and(|_| contains_run(&readback.raw_transaction, &RESERVE_ASSET));
+
+        self.record.reverification = Some(SponsoredPrivateReverification {
+            accepted_txid: readback.transaction_id.clone(),
+            readback_matches_submission,
+            owner_signature_verified,
+            sponsor_change_located,
+        });
+    }
+}
+
+impl TargetOperationPlanner for SponsoredPrivatePlanner {
+    fn next_step(
+        &mut self,
+        previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+    ) -> Result<Option<OperationStep>, PlanRefused> {
+        if let Some((_case, response)) = previous {
+            match self.stage {
+                Stage::Issue => {
+                    let Some(printed) = response.issued_asset.clone() else {
+                        return Err(self.refuse(SponsoredPrivateRefusal::Private(
+                            PrivateRestartRefusal::IssuanceNamedNoAsset,
+                        )));
+                    };
+                    if let Err(refusal) = self.settle_asset(&printed) {
+                        return Err(self.refuse(refusal));
+                    }
+                    self.stage = Stage::FundReceipts;
+                }
+                Stage::FundReceipts => {
+                    if let Err(refusal) = self.settle_receipts(response) {
+                        return Err(self.refuse(refusal));
+                    }
+                    self.stage = Stage::FundSponsor;
+                }
+                Stage::FundSponsor => {
+                    if let Err(refusal) = self.settle_sponsor(response) {
+                        return Err(self.refuse(refusal));
+                    }
+                    self.stage = Stage::SignSponsor;
+                }
+                Stage::SignSponsor => {
+                    match self.settle_signature(response) {
+                        Ok(bytes) => self.submitted = Some(bytes),
+                        Err(refusal) => return Err(self.refuse(refusal)),
+                    }
+                    self.stage = Stage::Submit;
+                }
+                Stage::Submit => {
+                    self.settle_control(response);
+                    self.stage = Stage::Done;
+                }
+                Stage::Done => {}
+            }
+        }
+
+        match self.stage {
+            Stage::Issue => Ok(Some(issue_step())),
+            Stage::FundReceipts => {
+                let Some(linked) = self.linked.as_ref() else {
+                    return Err(self.refuse(SponsoredPrivateRefusal::ControlNotStaged));
+                };
+                let Some(printed) = self.record.issued_asset.clone() else {
+                    return Err(self.refuse(SponsoredPrivateRefusal::Private(
+                        PrivateRestartRefusal::IssuanceNamedNoAsset,
+                    )));
+                };
+                Ok(Some(confidential_funding_step(linked, printed)))
+            }
+            Stage::FundSponsor => match self.sponsor_funding_step() {
+                Ok(step) => Ok(Some(step)),
+                Err(refusal) => Err(self.refuse(refusal)),
+            },
+            Stage::SignSponsor => match self.sign_step() {
+                Ok(step) => Ok(Some(step)),
+                Err(refusal) => Err(self.refuse(refusal)),
+            },
+            Stage::Submit => {
+                let Some(bytes) = self.submitted.clone() else {
+                    return Err(self.refuse(SponsoredPrivateRefusal::ControlNotStaged));
+                };
+                self.record.submitted_bytes = bytes.len();
+                Ok(Some(OperationStep::new(
+                    "sponsored-private-with-change",
+                    OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                        transaction_bytes: bytes,
+                    })),
+                )))
+            }
+            Stage::Done => Ok(None),
+        }
+    }
+}
+
+/// The deployment's own sponsor-change program.
+fn sponsor_program(linked: &LinkedDeployment) -> Result<Vec<u8>, SponsoredPrivateRefusal> {
+    let symbols = linked.abi.symbols();
+    let version = symbols.sponsor_change_version();
+    let payload = symbols.sponsor_change_program();
+    transaction::taproot::witness_program_script(
+        &reviewed_target().map_err(|_| {
+            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::SubstrateUnavailable)
+        })?,
+        version,
+        payload,
+    )
+    .map_err(|_| SponsoredPrivateRefusal::Private(PrivateRestartRefusal::SubstrateUnavailable))
+}
+
+/// One transaction identity, in the spelling a target prints.
+fn printed_txid(txid: &Txid) -> String {
+    let mut bytes = *txid.internal();
+    bytes.reverse();
+    hex(&bytes)
+}
+
+/// Whether `needle` occurs in `haystack` as a contiguous run.
+fn contains_run(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
+}
+
+/// Hex, for the transcript.
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut text = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(text, "{byte:02x}");
+    }
+    text
+}
+
+/// One sponsored private run's transcript.
+///
+/// Lines rather than a structure, on the pattern every live lane here
+/// sets. Every line is a fact the run observed or a value it computed,
+/// and no line is a verdict about whether the run went well.
+#[must_use]
+pub fn render_sponsored_private(record: &SponsoredPrivateRecord) -> String {
+    use std::fmt::Write as _;
+
+    let mut out = String::new();
+    let _ = writeln!(out, "case sponsored-private-with-change");
+    if let Some(asset) = record.issued_asset.as_ref() {
+        let _ = writeln!(out, "issued_asset {asset}");
+    }
+    let _ = writeln!(out, "predecessor_coins {}", record.coins.len());
+    if let Some(solve) = record.solve {
+        let _ = writeln!(
+            out,
+            "sponsor_chain_reported_a_commitment {}",
+            solve.chain_reported_a_commitment(),
+        );
+        let _ = writeln!(
+            out,
+            "sponsor_commitment_is_the_registrys_own {}",
+            solve.commitment_is_the_registrys_own(),
+        );
+        let _ = writeln!(
+            out,
+            "sponsor_asset_stayed_explicit {}",
+            solve.asset_stayed_explicit(),
+        );
+        let _ = writeln!(
+            out,
+            "sponsor_rangeproof_present {}",
+            solve.rangeproof_present()
+        );
+    }
+    if let Some(txid) = record.sponsor_funding_txid.as_ref() {
+        let _ = writeln!(out, "sponsor_funding_txid {txid}");
+    }
+    if let Some(round) = record.round.as_ref() {
+        let _ = writeln!(out, "sponsor_input_position {}", round.input());
+        let _ = writeln!(
+            out,
+            "sponsor_echo_matches_what_was_sent {}",
+            round.echo_matches_what_was_sent(),
+        );
+        let _ = writeln!(out, "sponsor_witness_items {}", round.witness_items());
+    }
+    let _ = writeln!(out, "submitted_bytes {}", record.submitted_bytes);
+    if let Some(layer) = record.observed_layer {
+        let _ = writeln!(out, "observed_layer {layer:?}");
+    }
+    if let Some(detail) = record.observed_detail.as_ref() {
+        let _ = writeln!(out, "observed_detail {detail}");
+    }
+    if let Some(weight) = record.target_weight {
+        let _ = writeln!(out, "target_weight {weight}");
+    }
+    if let Some(check) = record.reverification.as_ref() {
+        let _ = writeln!(out, "accepted_txid {}", check.accepted_txid());
+        let _ = writeln!(
+            out,
+            "readback_matches_submission {}",
+            check.readback_matches_submission(),
+        );
+        let _ = writeln!(
+            out,
+            "owner_signature_verified {}",
+            check.owner_signature_verified(),
+        );
+        let _ = writeln!(
+            out,
+            "sponsor_change_located {}",
+            check.sponsor_change_located(),
+        );
+    }
+    if let Some(refusal) = record.refusal.as_ref() {
+        let _ = writeln!(out, "refusal {refusal:?}");
+    }
+    out
+}
