@@ -292,6 +292,33 @@ pub struct RestartConfidentialCoin {
 }
 
 impl RestartConfidentialCoin {
+    /// One coin the node created whose VALUE is EXPLICIT.
+    ///
+    /// The predecessor of an ENTRY crossing. It carries no commitment
+    /// and no range proof, so the two facts a confidential coin is
+    /// censused on are stated as what they are rather than as zeroes
+    /// standing in for something: the proof byte count is genuinely
+    /// zero, and `matches_expectation` is true because the expectation
+    /// for an explicit coin IS the amount, which the caller compares
+    /// before building this.
+    #[must_use]
+    pub const fn explicit(
+        outpoint: Outpoint,
+        asset: AssetField,
+        value: ValueField,
+        program: Vec<u8>,
+        matches_expectation: bool,
+    ) -> Self {
+        Self {
+            outpoint,
+            asset,
+            value,
+            program,
+            rangeproof_bytes: 0,
+            matches_expectation,
+        }
+    }
+
     /// The outpoint the node created.
     #[must_use]
     pub const fn outpoint(&self) -> Outpoint {
