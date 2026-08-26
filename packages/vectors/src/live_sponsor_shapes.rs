@@ -2533,6 +2533,49 @@ pub mod sponsored_run_of_record {
     /// The bytes that reached the node for it.
     pub const SPONSORED_PRIVATE_SUBMITTED_BYTES: usize = 13_873;
 
+    /// The identity of the accepted sponsored private control whose
+    /// sponsor value is EXPLICIT and whose offer asks no change back.
+    ///
+    /// §16.1's sponsor pair's private member, run as its own shape. Its
+    /// shape: an explicit sponsor coin funded to EXACTLY the fee, ONE
+    /// blinded receipt destination declaring the fully-solved form, no
+    /// change role anywhere, and an explicit reserve fee in the
+    /// non-protocol funding region.
+    ///
+    /// # It does not contradict the committed run beside it
+    ///
+    /// The sponsor arc observed that a COMMITTED sponsor value requires
+    /// committed change, and that observation is about a blinded
+    /// input's blinder needing a term to absorb it. An explicit sponsor
+    /// coin brings the all-zero blinder, so there is nothing to absorb
+    /// and no change is owed. The two runs are the two halves of that
+    /// rule rather than a rule and an exception to it.
+    ///
+    /// # What the acceptance rules out
+    ///
+    /// A change output. The target balances per asset, so the reserve
+    /// sub-equation is `sponsor_input == fee + change`; this coin was
+    /// funded to exactly the fee, so any change term at all would leave
+    /// it short and this candidate would have been refused. It was
+    /// accepted, so the change term is zero -- which is a stronger
+    /// statement than a byte scan for the reserve asset could make,
+    /// the fee carrying that asset too.
+    pub const SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_TXID: &str =
+        "906f077960ebf83bae41e4f069127ce81b733309d9a2843231ea95badff62f37";
+
+    /// The bytes that reached the node for the explicit no-change run.
+    ///
+    /// A THIRD of the committed run's, and the ratio is the shape: one
+    /// blinded output carries one range proof where three blinded
+    /// outputs carry three.
+    pub const SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_SUBMITTED_BYTES: usize = 5_122;
+
+    /// The weight the target computed for the explicit no-change run.
+    pub const SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_TARGET_WEIGHT: u64 = 5_935;
+
+    /// The explicit no-change run's wall time, in seconds.
+    pub const SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_WALL_SECONDS: f64 = 14.2;
+
     /// The weight the target computed for it.
     pub const SPONSORED_PRIVATE_TARGET_WEIGHT: u64 = 15_490;
 

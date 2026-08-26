@@ -1314,6 +1314,31 @@ fn the_split_shape_is_submitted_to_a_real_target() {
     run_one_multi_shape(PrivateShape::Split, "multi-split");
 }
 
+/// The split PAIR's private member: one receipt in, TWO blinded receipts
+/// out, no change and no fee, against a real node.
+///
+/// # Why the split run above does not answer this
+///
+/// §16.1's split pair states one semantic fixture and materializes it
+/// twice. Its explicit member ran and was accepted; its private member
+/// creates exactly two outputs, and neither private run this lane has
+/// recorded is that shape. The split above creates THREE outputs, keeping
+/// a balancing change back for the sender, and the only other recorded
+/// one-in-two-out private run is the fee-bearing shape, whose second
+/// output is a fee role rather than a receipt. A pair member is not
+/// answered by a run of a different cardinality, and it is not answered
+/// by a run whose second output is a different role.
+///
+/// So this run exists to be the pair member's own shape, and the pair's
+/// acceptance conjunct moves on it or on nothing.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_pure_split_shape_is_submitted_to_a_real_target() {
+    use vectors::live_multi_shapes::PrivateShape;
+
+    run_one_multi_shape(PrivateShape::PureSplit, "multi-pure-split");
+}
+
 /// The restart order's fifth step, the many-to-many shape: two receipts in,
 /// three outputs, against a real node.
 ///
@@ -1570,9 +1595,162 @@ fn the_sponsored_confidential_with_change_shape_is_submitted_to_a_real_target() 
         check.owner_signature_verified(),
         "an owner's signature did not verify against an independently recomputed message",
     );
-    assert!(
+    assert_eq!(
         check.sponsor_change_located(),
+        Some(true),
         "the sponsor's committed change was not found in the mined bytes",
+    );
+}
+
+/// The sponsor PAIR's private member: an EXPLICIT sponsor coin funded
+/// exactly to the fee, no change role, one blinded destination.
+///
+/// # Why the with-change run above does not answer this
+///
+/// §16.1's sponsor pair states one semantic fixture and materializes it
+/// twice. Its explicit member ran and was accepted; its private member
+/// states an explicit sponsor coin funded exactly to the fee, no change
+/// role, and ONE destination, and the run above is none of those three:
+/// it carries a blinded sponsor coin, a committed sponsor change, and two
+/// blinded destinations.
+///
+/// # The arithmetic that lets this shape exist
+///
+/// The sponsor arc observed that a COMMITTED sponsor value REQUIRES
+/// committed change -- a blinded input's blinder must be absorbed by
+/// something, a fee is mandatorily explicit, and the change is the only
+/// remaining term. That observation does not reach this shape and does
+/// not forbid it. An explicit sponsor coin is committed with the all-zero
+/// blinder, so there is nothing to absorb and no change is owed: the
+/// sponsor input equals the fee output in the reserve asset, and the
+/// protocol asset closes over the receipts alone.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_sponsored_explicit_no_change_shape_is_submitted_to_a_real_target() {
+    use vectors::live_sponsored_private::{
+        SponsoredPrivatePlanner, SponsoredPrivateShape, render_sponsored_private,
+    };
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension("sponsored-private-explicit-no-change");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner = SponsoredPrivatePlanner::for_shape(
+        SponsoredPrivateShape::ExplicitWithoutChange,
+        identifier(&genesis),
+    )
+    .expect("the ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    std::fs::write(&report, render_sponsored_private(record)).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    if let Some(refusal) = record.refusal() {
+        panic!("the sponsored private ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    // NO solve census, and its absence is asserted rather than left
+    // unmentioned. The census is a statement about a BLINDED sponsor
+    // coin -- that the chain reported a commitment, and that the
+    // commitment is the one the registry derives -- and this shape funds
+    // no such coin. A census present here would mean the committed
+    // funding stage had run, which is the one thing this shape's step
+    // plan removes.
+    assert!(
+        record.solve().is_none(),
+        "an explicit sponsor coin produced a committed-coin census",
+    );
+
+    // The sponsor's round trip still happens: an explicit coin is still
+    // somebody else's coin, and spending it still needs its owner's
+    // authorization over the exact finalized bytes.
+    let round = record
+        .round()
+        .expect("the staging pass recorded a signing request");
+    assert!(
+        round.echo_matches_what_was_sent(),
+        "the adapter authorized bytes that are not the ones it was handed",
+    );
+    assert!(round.witness_items() > 0, "the sponsor returned no witness");
+
+    assert!(record.submitted_bytes() > 0);
+    assert!(record.observed_layer().is_some(), "no layer was observed");
+
+    let check = record
+        .reverification()
+        .expect("an acceptance was observed and read back");
+    assert!(
+        check.readback_matches_submission(),
+        "the bytes the node reported are not the bytes it was handed",
+    );
+    assert!(
+        check.owner_signature_verified(),
+        "an owner's signature did not verify against an independently recomputed message",
+    );
+    // The change question is NOT ASKED of this shape, and that is
+    // asserted rather than left implicit. The located-check is a byte
+    // scan for the reserve asset and a sponsored transaction's FEE
+    // carries the reserve asset too, so on a no-change shape the scan
+    // answers about the fee and a reader would take it for a change
+    // output that is not there.
+    //
+    // What rules the change out is arithmetic over the acceptance just
+    // asserted, and it is the stronger statement. The target balances
+    // per asset, so the reserve sub-equation is
+    // `sponsor_input == fee + change`; this sponsor's coin was funded to
+    // EXACTLY the fee, so any change output at all would leave that
+    // equation short and the node would have refused the candidate. It
+    // accepted it.
+    assert_eq!(
+        check.sponsor_change_located(),
+        None,
+        "a shape with no change role was asked whether its change was located",
     );
 }
 
