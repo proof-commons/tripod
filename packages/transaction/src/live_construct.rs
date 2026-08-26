@@ -64,7 +64,7 @@ use crate::live_materialize::{
 use crate::live_private::{
     ConfidentialConstructionModel, PrivateValueCapability, SelectedConstructionModel,
 };
-use crate::live_request::{LiveTransferRequest, RequestedForm};
+use crate::live_request::{LiveReceiptDestination, LiveTransferRequest, RequestedForm};
 use crate::live_signing::AuthorizedLiveTransfer;
 use crate::sponsor::{SighashProfile, SignerRole, SponsorCapability, SponsorSigningRequest};
 use crate::taproot::witness_program_script;
@@ -278,6 +278,42 @@ pub fn finalize_live_transfer(
     sponsor: Option<&dyn SponsorCapability>,
     private: Option<&dyn PrivateValueCapability>,
 ) -> Result<LiveFinalization, TransactionRefusal> {
+    finalize_live_transfer_declaring(target, abi, request, view, sponsor, private, &[])
+}
+
+/// The explicit finalization, with each destination's ROLE declared.
+///
+/// [`finalize_live_transfer`] is this function with every destination
+/// declared a receipt output, which is what an empty slice means here.
+/// The two are one pipeline rather than two, so a self-paying candidate
+/// is not a parallel construction path that could come to disagree with
+/// the one every other explicit shape uses.
+///
+/// The roles are the caller's declaration, not an inference. Reading the
+/// fee position off the amounts, the programs, or the shape would make
+/// the lane guess at a fact the caller already knows, and a guess that
+/// is right on every shape built today is exactly the kind that stops
+/// being right without looking different.
+///
+/// # Errors
+///
+/// Every refusal [`finalize_live_transfer`] answers, and additionally:
+/// [`TransactionRefusal::DeclaredRolesDoNotCoverDestinations`] when the
+/// declaration is neither empty nor one role per destination entry;
+/// [`TransactionRefusal::SelfPaidFeeUnderSponsoredForm`] when a
+/// sponsored request declares a fee entry, its fee being the sponsor's
+/// to place from the offer; and
+/// [`TransactionRefusal::SelfPaidFeeDeclaredMoreThanOnce`] for a second
+/// declared fee entry, the target admitting one fee position.
+pub fn finalize_live_transfer_declaring(
+    target: &ReviewedElementsTapscriptDefinition,
+    abi: &CandidateLiveTransferAbi,
+    request: &LiveTransferRequest,
+    view: &PublicConstructionView,
+    sponsor: Option<&dyn SponsorCapability>,
+    private: Option<&dyn PrivateValueCapability>,
+    declared: &[ExplicitDestinationRole],
+) -> Result<LiveFinalization, TransactionRefusal> {
     // Before §12.6's ten items: the ABI has to carry the plan the
     // request selected. A linked candidate legitimately carries one
     // representation — an explicit-only link is a link, not a defect —
@@ -324,17 +360,13 @@ pub fn finalize_live_transfer(
         .unwrap_or_default();
     let sponsor_spent = recognize_sponsors(abi, request, view, &sponsor_inputs)?;
 
-    // Stage 4: the shape, chosen by every count at once. The explicit
-    // lane declares no fee destination: a sponsored form's fee is funded
-    // from the sponsor region and construction places it, and the
-    // explicit sponsorless form that pays its own fee is not built here
-    // yet.
-    let shape = select_shape(
-        abi,
-        request,
-        sponsor_inputs.len(),
-        DeclaredDestinationRoles::NONE,
-    )?;
+    // Stage 4: the shape, chosen by every count at once. A SPONSORED
+    // form's fee is funded from the sponsor region and construction
+    // places it from the offer, so it declares nothing here. A
+    // sponsorless form that pays its OWN fee funds the fee out of the
+    // receipts, and says which destination entry is the fee.
+    let roles = admit_declared_roles(request, declared)?;
+    let shape = select_shape(abi, request, sponsor_inputs.len(), roles)?;
 
     // Stage 5: recognize each consumed receipt.
     let recognized = recognize_receipts(abi, request, view)?;
@@ -370,9 +402,12 @@ pub fn finalize_live_transfer(
         abi,
         shape,
         request,
-        offer.as_ref(),
-        sponsor,
-        private,
+        &OutputDeclarations {
+            offer: offer.as_ref(),
+            sponsor,
+            private,
+            declared,
+        },
     )?;
 
     // Stage 9: the protected transaction. Null witnesses, because the
@@ -531,6 +566,74 @@ fn check_form_exactness(
     }
 }
 
+/// The explicit lane's declared roles, censused once and checked.
+///
+/// An EMPTY declaration is every entry a receipt output, which is what
+/// every explicit caller but the self-paying one says, and it is
+/// admitted without further question so that those callers are
+/// unaffected by this stage existing at all.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::DeclaredRolesDoNotCoverDestinations`] for a
+/// non-empty declaration that is not one role per destination entry;
+/// [`TransactionRefusal::SelfPaidFeeUnderSponsoredForm`] where a
+/// sponsored request declares a fee entry; and
+/// [`TransactionRefusal::SelfPaidFeeDeclaredMoreThanOnce`] for a second
+/// declared fee entry.
+fn admit_declared_roles(
+    request: &LiveTransferRequest,
+    declared: &[ExplicitDestinationRole],
+) -> Result<DeclaredDestinationRoles, TransactionRefusal> {
+    if declared.is_empty() {
+        return Ok(DeclaredDestinationRoles::NONE);
+    }
+    if declared.len() != request.destinations().len() {
+        return Err(TransactionRefusal::DeclaredRolesDoNotCoverDestinations {
+            declared: declared.len(),
+            destinations: request.destinations().len(),
+        });
+    }
+    let census = DeclaredDestinationRoles::declared_explicitly(declared);
+    if census.fee > 0 && request.form().sponsored() {
+        return Err(TransactionRefusal::SelfPaidFeeUnderSponsoredForm);
+    }
+    if census.fee > 1 {
+        return Err(TransactionRefusal::SelfPaidFeeDeclaredMoreThanOnce {
+            declared: census.fee,
+        });
+    }
+    Ok(census)
+}
+
+/// What one EXPLICIT destination entry is for.
+///
+/// The explicit counterpart of [`PrivateDestinationOpening::role`], and
+/// deliberately a separate two-member vocabulary rather than a reuse of
+/// [`ConfidentialOutputRole`]. That enum's members are distinctions the
+/// confidential materializer draws — which output derives a blinder and
+/// which absorbs the residue — and an explicit destination draws none of
+/// them. Reusing it here would oblige every explicit caller to answer a
+/// question about blinding that the explicit lane does not ask.
+///
+/// The role is stated BESIDE the destination rather than inside it.
+/// §12.4 fixes a destination at an owner and a value, and §12.3's
+/// may-not-select list names the target fee role, so a request cannot
+/// carry this and does not: the declaration is a construction-time
+/// argument, exactly as the private lane's openings are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ExplicitDestinationRole {
+    /// A live receipt output, paying a destination owner's constructor.
+    ReceiptOutput,
+    /// The transaction's own fee, funded out of the consumed receipts.
+    ///
+    /// Its entry's OWNER is never consulted — a fee output carries no
+    /// program at all, which is most of what makes it a fee — and its
+    /// entry's VALUE is the fee. The entry still names an owner because
+    /// §12.4 gives a destination no way not to.
+    Fee,
+}
+
 /// How many declared destination positions are NOT live receipt outputs.
 ///
 /// A census of the request's own destinations by the role their openings
@@ -549,11 +652,22 @@ fn check_form_exactness(
 /// change position, which is precisely the kind of agreement that stops
 /// holding without anything looking different.
 ///
-/// The explicit lane declares NEITHER: it appends its sponsor change and
-/// its fee itself, from the offer, at the positions the shape names, and
-/// its request's destinations are receipt outputs to a one. So it passes
-/// [`Self::NONE`] and the discount is a private-lane fact stated where
-/// the private lane states every other one — the opening's role.
+/// The explicit lane declares NEITHER when a SPONSOR funds the fee: it
+/// appends its sponsor change and its fee itself, from the offer, at the
+/// positions the shape names, and its request's destinations are receipt
+/// outputs to a one. So it passes [`Self::NONE`] and the discount is a
+/// fact stated where the private lane states every other one — the
+/// opening's role.
+///
+/// The explicit lane that pays its OWN fee declares the fee, and
+/// declares it the same way the private lane does: the fee is a
+/// destination ENTRY and its role is stated beside the entry rather than
+/// inside it, because §12.4 fixes a destination at an owner and a value
+/// and §12.3 does not let a request select the target fee role. What the
+/// explicit lane lacks is openings to carry the role, so it carries an
+/// [`ExplicitDestinationRole`] per entry instead — the same declaration
+/// with the confidential half removed, rather than a second way of
+/// deciding that a destination is a fee.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct DeclaredDestinationRoles {
     /// Declared positions whose role is a fee.
@@ -580,6 +694,23 @@ impl DeclaredDestinationRoles {
             }
         }
         roles
+    }
+
+    /// Census the explicit lane's declared roles.
+    ///
+    /// No sponsor-change arm, and the absence is the scope rather than an
+    /// omission: an explicit sponsor's change is placed from the OFFER at
+    /// the position the shape names, never declared as a destination
+    /// entry, so nothing on this lane can raise that count.
+    fn declared_explicitly(roles: &[ExplicitDestinationRole]) -> Self {
+        let mut census = Self::NONE;
+        for role in roles {
+            match role {
+                ExplicitDestinationRole::Fee => census.fee += 1,
+                ExplicitDestinationRole::ReceiptOutput => (),
+            }
+        }
+        census
     }
 
     /// How many declared positions are discounted altogether.
@@ -861,21 +992,94 @@ fn explicit_total(recognized: &[RecognizedReceipt]) -> Result<Option<u64>, Trans
     Ok(Some(total))
 }
 
+/// What construction was handed beyond the request and the shape.
+///
+/// One bundle rather than four parallel arguments, because all four are
+/// the caller's optional declarations about the same output census and
+/// a reader meeting them one at a time cannot see that.
+struct OutputDeclarations<'a> {
+    /// The sponsor's offer, where a sponsor funds this transaction.
+    offer: Option<&'a crate::sponsor::SponsorOffer>,
+    /// The sponsor's own capability, which names its change destination.
+    sponsor: Option<&'a dyn SponsorCapability>,
+    /// The confidential capability, where values are commitments.
+    private: Option<&'a dyn PrivateValueCapability>,
+    /// The explicit lane's per-entry roles; empty means all receipts.
+    declared: &'a [ExplicitDestinationRole],
+}
+
+/// The self-paid fee output one declared destination entry becomes.
+///
+/// Placed at the position the SHAPE names rather than at the entry's own
+/// index, and the two are then required to agree. Placing it by index
+/// would work on every shape whose fee entry is written last and
+/// silently misplace it on the first one that is not.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::SelfPaidFeeHasNoShapePosition`] where the
+/// selected shape carries no fee position, and
+/// [`TransactionRefusal::SelfPaidFeePositionDisagreesWithShape`] where
+/// it names a different one.
+const fn self_paid_fee_output(
+    abi: &CandidateLiveTransferAbi,
+    shape: &LiveShapeAbi,
+    destination: &LiveReceiptDestination,
+    position: u16,
+) -> Result<(u16, TargetOutput), TransactionRefusal> {
+    let Some(fee_position) = shape.fee_position() else {
+        return Err(TransactionRefusal::SelfPaidFeeHasNoShapePosition);
+    };
+    if fee_position != position {
+        return Err(TransactionRefusal::SelfPaidFeePositionDisagreesWithShape {
+            declared: position,
+            shaped: fee_position,
+        });
+    }
+    Ok((
+        fee_position,
+        TargetOutput::new(
+            // The PROTOCOL asset, because this fee is funded out of the
+            // receipts and Elements balances per asset: a reserve-asset
+            // fee beside no reserve-asset input dies at the tally. The
+            // sponsored fee reads the reserve for the mirror-image
+            // reason, its fee having been funded from the sponsor region.
+            AssetField::Explicit(abi.symbols().protocol_asset()),
+            ValueField::Explicit(destination.value().amount()),
+            NonceField::Null,
+            // The empty program: the fee role's whole identity is
+            // target-structural, and this is the structure.
+            Vec::new(),
+        ),
+    ))
+}
+
 /// The destinations, then the sponsor change, then the fee role.
 fn assemble_outputs(
     target: &ReviewedElementsTapscriptDefinition,
     abi: &CandidateLiveTransferAbi,
     shape: &LiveShapeAbi,
     request: &LiveTransferRequest,
-    offer: Option<&crate::sponsor::SponsorOffer>,
-    sponsor: Option<&dyn SponsorCapability>,
-    private: Option<&dyn PrivateValueCapability>,
+    declarations: &OutputDeclarations<'_>,
 ) -> Result<Vec<TargetOutput>, TransactionRefusal> {
+    let OutputDeclarations {
+        offer,
+        sponsor,
+        private,
+        declared,
+    } = *declarations;
     let mut placed: BTreeMap<u16, TargetOutput> = BTreeMap::new();
     let (first, _) = shape.destination_range();
 
     for (index, destination) in request.destinations().iter().enumerate() {
         let position = first.saturating_add(u16::try_from(index).unwrap_or(u16::MAX));
+
+        if declared.get(index) == Some(&ExplicitDestinationRole::Fee) {
+            let (fee_position, output) = self_paid_fee_output(abi, shape, destination, position)?;
+            placed.insert(fee_position, output);
+            continue;
+        }
+
         let constructor = abi
             .destinations()
             .get(destination.owner(), request.representation())

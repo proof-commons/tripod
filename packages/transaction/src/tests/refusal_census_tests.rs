@@ -123,6 +123,11 @@ fn every_transaction_refusal_is_censused(refusal: &Refusal) {
         | Refusal::DuplicateReceiptOutpoint(..)
         | Refusal::EmptyDestinationCensus
         | Refusal::SponsorChangeWithoutSponsoredForm
+        | Refusal::DeclaredRolesDoNotCoverDestinations { .. }
+        | Refusal::SelfPaidFeeUnderSponsoredForm
+        | Refusal::SelfPaidFeeDeclaredMoreThanOnce { .. }
+        | Refusal::SelfPaidFeeHasNoShapePosition
+        | Refusal::SelfPaidFeePositionDisagreesWithShape { .. }
         | Refusal::PublicTestRandomnessWithoutPrivateForm
         | Refusal::PrivateFormWithoutPublicTestRandomness
         | Refusal::DestinationOwnerHasNoConstructor { .. }

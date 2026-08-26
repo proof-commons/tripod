@@ -4,17 +4,22 @@
 use std::collections::BTreeSet;
 
 use linker::live_backend::LiveTransferRepresentationPlan;
+use tapscript::FeePresence;
 
 use super::live_support::{
     FIRST_OWNER, FixturePrivateValue, LIVE_PROTOCOL_ASSET, LIVE_RESERVE_ASSET,
-    LIVE_SPONSOR_CHANGE_PROGRAM, PUBLISHED_RANDOMNESS, SECOND_OWNER, live_abi, owner, receipt_view,
-    single_representation_live_abi, sponsor_view,
+    LIVE_SPONSOR_CHANGE_PROGRAM, PUBLISHED_RANDOMNESS, SECOND_OWNER, fee_bearing_live_abi,
+    live_abi, owner, receipt_view, single_representation_live_abi, sponsor_view,
 };
 use super::{outpoint, reviewed_target, view};
+use crate::abi::TargetTransactionVersion;
 use crate::bytes::{AssetField, AssetId, Outpoint, ValueField};
 use crate::error::TransactionRefusal;
 use crate::live_abi::{CandidateLiveTransferAbi, LiveTransactionForm};
-use crate::live_construct::{LiveFinalization, finalize_live_transfer};
+use crate::live_construct::{
+    ExplicitDestinationRole, LiveFinalization, finalize_live_transfer,
+    finalize_live_transfer_declaring,
+};
 use crate::live_private::{
     ConfidentialConstructionModel, PrivateConstructionDemonstration, PrivateConstructionNonClaim,
     SelectedConstructionModel,
@@ -1523,4 +1528,268 @@ fn a_materializer_refusal_arrives_as_the_materializers_own_word() {
         ),
         "the materializer's refusal was not carried through: {refusal:?}",
     );
+}
+
+// --- The sponsorless form that pays its own fee -----------------------
+
+/// One receipt in, one destination out and one fee, all self-funded.
+///
+/// The fee entry names the second owner exactly as the confidential
+/// ceremony's does, and for the same reason: §12.4 gives a destination no
+/// way not to name an owner, and this one's is never read.
+fn self_paying_fixture(
+    abi: &CandidateLiveTransferAbi,
+    fee: u64,
+) -> (LiveTransferRequest, PublicConstructionView) {
+    let coin = outpoint(0xa1, 0);
+    let view = view([
+        receipt_view(
+            abi,
+            coin,
+            &owner(&FIRST_OWNER),
+            LiveTransferRepresentationPlan::Explicit,
+            ValueField::Explicit(1_000),
+        ),
+        // Shown so that the SPONSORED refusal below is reached at the
+        // declaration rather than three stages earlier at a sponsor coin
+        // the view could not show. A refusal has to be the one the case
+        // is about.
+        sponsor_view(sponsor_coin(), 130),
+    ]);
+    let request = LiveTransferRequest::new(
+        [coin],
+        [
+            destination(&SECOND_OWNER, 1_000 - fee),
+            destination(&SECOND_OWNER, fee),
+        ],
+        LiveTransferRepresentationPlan::Explicit,
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+        None,
+    )
+    .expect("the self-paying fixture request validates");
+    (request, view)
+}
+
+/// The declaration a self-paying one-to-one makes: receipt, then fee.
+const SELF_PAYING_ROLES: [ExplicitDestinationRole; 2] = [
+    ExplicitDestinationRole::ReceiptOutput,
+    ExplicitDestinationRole::Fee,
+];
+
+#[test]
+fn a_declared_fee_selects_the_fee_bearing_sponsorless_shape() {
+    // The shape is chosen by counts, and the fee entry is discounted out
+    // of them: two destination entries against a ONE-receipt-output
+    // shape, which only holds because one of the two is the fee.
+    let abi = fee_bearing_live_abi();
+    let (request, view) = self_paying_fixture(&abi, 250);
+    let built = finalize_live_transfer_declaring(
+        &reviewed_target(),
+        &abi,
+        &request,
+        &view,
+        None,
+        None,
+        &SELF_PAYING_ROLES,
+    )
+    .expect("the self-paying explicit form finalizes");
+
+    assert_eq!(built.report().form(), LiveTransactionForm::Sponsorless);
+    let shape = built.report().shape();
+    assert!(!shape.sponsored());
+    assert_eq!(shape.receipt_outputs(), 1);
+    assert_eq!(shape.fee(), FeePresence::Present);
+}
+
+#[test]
+fn the_self_paid_fee_output_is_the_protocol_asset_at_an_empty_program() {
+    // What makes it a fee rather than a destination, read off the built
+    // outputs rather than asserted: no program at all, an explicit value,
+    // and the PROTOCOL asset, which is the only asset closing a tally
+    // whose every input is protocol-asset.
+    let abi = fee_bearing_live_abi();
+    let (request, view) = self_paying_fixture(&abi, 250);
+    let built = finalize_live_transfer_declaring(
+        &reviewed_target(),
+        &abi,
+        &request,
+        &view,
+        None,
+        None,
+        &SELF_PAYING_ROLES,
+    )
+    .expect("the self-paying explicit form finalizes");
+
+    // Immediately after the destinations: a sponsorless shape has no
+    // change role to sit between them, sponsor change requiring a
+    // sponsor region. This is the same index the conservation leaf reads
+    // the fee at, stated from the same fact rather than from a literal.
+    let shape = built.report().shape();
+    let position = usize::from(shape.receipt_outputs());
+    let outputs = built.finalized().protected().outputs();
+    assert_eq!(outputs.len(), 2);
+    let fee = &outputs[position];
+    assert_eq!(fee.program(), &[] as &[u8]);
+    assert_eq!(fee.value(), ValueField::Explicit(250));
+    assert_eq!(
+        fee.asset(),
+        AssetField::Explicit(AssetId::from_internal(LIVE_PROTOCOL_ASSET))
+    );
+
+    // And the destination beside it is a real constructor, so the two
+    // are told apart by what they pay to rather than by their order.
+    let destination = &outputs[0];
+    assert_ne!(destination.program().len(), 0);
+    assert_eq!(destination.value(), ValueField::Explicit(750));
+}
+
+#[test]
+fn the_consumed_receipts_fund_the_destinations_and_the_fee_together() {
+    // Conservation needs no fee term on this lane, and the reason is
+    // structural: the fee IS a destination entry, so it is already
+    // inside the created total the request states. A fee that had been
+    // appended by construction instead would have to be added back here.
+    let abi = fee_bearing_live_abi();
+    let (request, view) = self_paying_fixture(&abi, 250);
+    assert_eq!(request.destination_total(), Some(1_000));
+    finalize_live_transfer_declaring(
+        &reviewed_target(),
+        &abi,
+        &request,
+        &view,
+        None,
+        None,
+        &SELF_PAYING_ROLES,
+    )
+    .expect("the self-paying explicit form finalizes");
+}
+
+#[test]
+fn a_sponsored_request_may_not_declare_a_self_paid_fee() {
+    // §12.5's equivalence: a sponsored form's fee comes from the offer,
+    // and a request declaring both would name two sources for one
+    // position.
+    let abi = fee_bearing_live_abi();
+    let (request, view) = self_paying_fixture(&abi, 250);
+    let sponsored = LiveTransferRequest::new(
+        request.receipts().iter().copied(),
+        request.destinations().to_vec(),
+        LiveTransferRepresentationPlan::Explicit,
+        RequestedForm::Sponsored,
+        SponsorChangeRequest::NotRequested,
+        None,
+    )
+    .expect("the sponsored variant validates");
+    let sponsor = FixtureSponsor::new(90, None);
+    assert_eq!(
+        finalize_live_transfer_declaring(
+            &reviewed_target(),
+            &abi,
+            &sponsored,
+            &view,
+            Some(&sponsor),
+            None,
+            &SELF_PAYING_ROLES,
+        )
+        .err(),
+        Some(TransactionRefusal::SelfPaidFeeUnderSponsoredForm),
+    );
+}
+
+#[test]
+fn a_declaration_that_is_not_one_role_per_destination_is_refused() {
+    let abi = fee_bearing_live_abi();
+    let (request, view) = self_paying_fixture(&abi, 250);
+    assert_eq!(
+        finalize_live_transfer_declaring(
+            &reviewed_target(),
+            &abi,
+            &request,
+            &view,
+            None,
+            None,
+            &[ExplicitDestinationRole::Fee],
+        )
+        .err(),
+        Some(TransactionRefusal::DeclaredRolesDoNotCoverDestinations {
+            declared: 1,
+            destinations: 2,
+        }),
+    );
+}
+
+#[test]
+fn a_second_declared_fee_entry_is_refused() {
+    // The target admits one fee position, so a second declaration is a
+    // request nothing could build rather than a shape nobody linked.
+    let abi = fee_bearing_live_abi();
+    let (request, view) = self_paying_fixture(&abi, 250);
+    assert_eq!(
+        finalize_live_transfer_declaring(
+            &reviewed_target(),
+            &abi,
+            &request,
+            &view,
+            None,
+            None,
+            &[ExplicitDestinationRole::Fee, ExplicitDestinationRole::Fee],
+        )
+        .err(),
+        Some(TransactionRefusal::SelfPaidFeeDeclaredMoreThanOnce { declared: 2 }),
+    );
+}
+
+#[test]
+fn a_declared_fee_against_a_deployment_carrying_none_is_refused() {
+    // The DEMONSTRATION ABI's bounds leave the fee axis off, so no
+    // admitted shape bears a fee and selection says so. This is the
+    // refusal that keeps the fee-bearing vocabulary a separate
+    // deployment rather than an accident of which request arrived.
+    let abi = live_abi();
+    let (request, view) = self_paying_fixture(&abi, 250);
+    let refusal = finalize_live_transfer_declaring(
+        &reviewed_target(),
+        &abi,
+        &request,
+        &view,
+        None,
+        None,
+        &SELF_PAYING_ROLES,
+    )
+    .expect_err("the demonstration deployment bears no fee");
+    assert!(matches!(
+        refusal,
+        TransactionRefusal::UnsupportedLiveShape { .. }
+    ));
+}
+
+#[test]
+fn the_self_paying_form_is_built_at_the_topology_restricted_version() {
+    // The version the TRUC filing was about, recomputed from the built
+    // transaction rather than read off the comment that discharges it. A
+    // real target's mempool allowed exactly this version standalone,
+    // which is what let the filing be answered by keeping it.
+    let abi = fee_bearing_live_abi();
+    let (request, view) = self_paying_fixture(&abi, 250);
+    let built = finalize_live_transfer_declaring(
+        &reviewed_target(),
+        &abi,
+        &request,
+        &view,
+        None,
+        None,
+        &SELF_PAYING_ROLES,
+    )
+    .expect("the self-paying explicit form finalizes");
+
+    assert_eq!(built.report().form(), LiveTransactionForm::Sponsorless);
+    assert_eq!(
+        built.finalized().protected().version(),
+        TargetTransactionVersion::TopologyRestricted.version(),
+    );
+    // And the sponsored form is the other one, so the pair is asserted
+    // together rather than one half of a match being restated.
+    assert_eq!(TargetTransactionVersion::Standard.version(), 2);
+    assert_eq!(TargetTransactionVersion::TopologyRestricted.version(), 3);
 }

@@ -53,8 +53,9 @@ pub use live_census::{
     SpentOutputCensusEntry, check_signature_width, check_type_byte, spend_type_byte,
 };
 pub use live_construct::{
-    CandidateLiveTransferTransaction, LIVE_TRANSFER_SEQUENCE, LiveConstructionReport,
-    LiveFinalization, LiveOwnerCensus, complete_live_transfer, finalize_live_transfer,
+    CandidateLiveTransferTransaction, ExplicitDestinationRole, LIVE_TRANSFER_SEQUENCE,
+    LiveConstructionReport, LiveFinalization, LiveOwnerCensus, complete_live_transfer,
+    finalize_live_transfer, finalize_live_transfer_declaring,
 };
 pub use live_finalize::{
     FinalizedFact, FinalizedLiveTransfer, FinalizedOutputCensus, LiveSigningRequest,

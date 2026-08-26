@@ -806,15 +806,29 @@ fn shape_abi(
     // nothing relayed it on its own and it travelled as a package child —
     // the same version the compact-ASH ABI reaches for the same reason.
     //
-    // The fee axis makes that premise conditional rather than false: a
-    // sponsorless shape that pays its own fee carries its own relay
-    // economics and needs no package parent. The version is nonetheless
-    // left on the FORM, and deliberately, because moving it is a claim
-    // about relay rather than about layout, and a version this ABI has
-    // never watched a node answer for is not one to assign from an
-    // argument. The form that pays its own fee is built at the version
-    // its predecessors were built at, and whether it deserves the other
-    // one is filed rather than decided here.
+    // The fee axis made that premise conditional, and the question of
+    // whether a self-paying sponsorless form deserved the OTHER version
+    // was filed here rather than argued: a version this ABI had never
+    // watched a node answer for was not one to assign from an argument.
+    //
+    // A NODE HAS NOW ANSWERED, and the filing is discharged by keeping
+    // the version where it was. The first sponsorless explicit transfer
+    // to pay its own fee was offered to a real target's
+    // `testmempoolaccept` at the topology-restricted version with NO
+    // package parent, and the mempool ALLOWED it; a block then included
+    // it. So the premise the version rests on is narrower than it looked
+    // and the version is right anyway: what the topology-restricted
+    // version restricts is a transaction's unconfirmed ancestry and
+    // descendants, and a transaction with neither satisfies those
+    // restrictions trivially rather than by exemption. Travelling as a
+    // package child was one way to satisfy them, not the reason the
+    // version was chosen.
+    //
+    // Recorded at `SELF_PAID_FEE_CROSSED_RELAY_AND_BLOCK` in the
+    // vectors crate's explicit run of record, with the accepted identity
+    // beside it. The claim below that the sponsorless form is built at
+    // the topology-restricted version is checked by a test rather than
+    // left to this comment.
     let version = match form {
         LiveTransactionForm::Sponsored => TargetTransactionVersion::Standard,
         LiveTransactionForm::Sponsorless => TargetTransactionVersion::TopologyRestricted,

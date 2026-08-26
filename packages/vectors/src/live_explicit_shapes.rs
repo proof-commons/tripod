@@ -83,7 +83,8 @@ use transaction::live_census::{
     OWNER_SIGNATURE_BYTES, OwnerSigningCensus, OwnerSigningInputRequest,
 };
 use transaction::live_construct::{
-    LiveConstructionReport, complete_live_transfer, finalize_live_transfer,
+    ExplicitDestinationRole, LiveConstructionReport, complete_live_transfer,
+    finalize_live_transfer_declaring,
 };
 use transaction::live_finalize::FinalizedLiveTransfer;
 use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message};
@@ -98,8 +99,8 @@ use crate::error::VectorError;
 use crate::live_capability::OracleLiveCurve;
 use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed_order};
 use crate::live_plan::{
-    FEE_PROGRAM_DIGEST, FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, demonstration_live_abi,
-    live_abi_for_asset, published_owner, reviewed_target, signing_material,
+    FEE_PROGRAM_DIGEST, FIRST_SCALAR, LiveShapeVocabulary, PROTOCOL_ASSET, RESERVE_ASSET,
+    SECOND_SCALAR, live_abi_for_vocabulary, published_owner, reviewed_target, signing_material,
 };
 
 /// What each funded receipt holds.
@@ -108,6 +109,27 @@ use crate::live_plan::{
 /// is what makes two runs' weights comparable; a shape that needed a
 /// different amount would be varying two things at once.
 const RECEIPT_AMOUNT: u64 = 5_000;
+
+/// The fee the self-paying shape pays out of its own receipts.
+///
+/// The confidential sponsorless cell's figure, so the two sponsorless
+/// halves of the owner fee matrix differ in their REPRESENTATION and not
+/// in their arithmetic.
+const SELF_PAID_FEE_AMOUNT: u64 = 250;
+
+/// The fee-program digest one vocabulary's deployment is welded to.
+///
+/// The demonstration deployment is welded to a digest no program hashes
+/// to, kept deliberately so its committed taptree does not move; nothing
+/// had ever executed the clause that reads it. A fee-bearing deployment
+/// must supply the digest of the fee program it actually constructs,
+/// because the clause is about to be executed for the first time.
+fn fee_program_digest_for(vocabulary: LiveShapeVocabulary) -> [u8; 32] {
+    match vocabulary {
+        LiveShapeVocabulary::Demonstration => FEE_PROGRAM_DIGEST,
+        LiveShapeVocabulary::FeeBearing => crate::bundle::fee_program_digest(),
+    }
+}
 
 /// The auxiliary value every signature here is taken with.
 ///
@@ -208,6 +230,19 @@ pub enum ExplicitShape {
     MaximumInputs,
     /// As many receipt outputs as the candidate's bounds admit.
     MaximumOutputs,
+    /// A sponsorless transfer paying its OWN fee out of its receipts.
+    ///
+    /// The fourteenth shape and the only one that is not a §15.1 row.
+    /// The explicit positive table is complete at sixteen rows and none
+    /// of the sixteen is a self-paying transfer, so this shape answers
+    /// the owner fee matrix rather than the table — see [`Self::row_name`].
+    ///
+    /// It is also the only shape built against the FEE-BEARING
+    /// vocabulary. The demonstration bounds leave the fee axis off, so
+    /// the demonstration deployment admits no shape bearing a fee, and
+    /// widening those bounds would move its committed taptree and every
+    /// digest recorded against it.
+    SelfPaidFee,
 }
 
 impl ExplicitShape {
@@ -226,25 +261,35 @@ impl ExplicitShape {
         Self::Sponsorless,
         Self::MaximumInputs,
         Self::MaximumOutputs,
+        Self::SelfPaidFee,
     ];
 
-    /// The §15.1 row this shape is the shape of.
+    /// The §15.1 row this shape is the shape of, where it is one.
+    ///
+    /// An OPTION, and the absent case is a fact about the table rather
+    /// than a gap in this enum. §15.1's explicit positive table is
+    /// complete at sixteen rows, and a sponsorless transfer that pays
+    /// its own fee is not one of the sixteen classes: it answers the
+    /// owner fee matrix, and its evidence is the run of record below.
+    /// Naming it a row anyway would either invent a seventeenth or
+    /// borrow another row's name for a run that did not answer it.
     #[must_use]
-    pub const fn row_name(self) -> &'static str {
+    pub const fn row_name(self) -> Option<&'static str> {
         match self {
-            Self::OneToOne => "one-input-to-one-output",
-            Self::SplitIntoTwo => "one-input-split-into-two",
-            Self::MergedIntoOne => "several-inputs-merged-into-one",
-            Self::SeveralToSeveral => "several-inputs-to-several-outputs",
-            Self::RepeatedOwner => "repeated-owner",
-            Self::SeveralDistinctOwners => "several-distinct-owners",
-            Self::OneDestinationOwner => "one-destination-owner",
-            Self::SeveralDestinationOwners => "several-destination-owners",
-            Self::SemanticBoundaryValues => "semantic-boundary-values",
-            Self::CanonicalInputNormalization => "canonical-input-normalization",
-            Self::Sponsorless => "sponsorless",
-            Self::MaximumInputs => "candidate-maximum-inputs",
-            Self::MaximumOutputs => "candidate-maximum-outputs",
+            Self::SelfPaidFee => None,
+            Self::OneToOne => Some("one-input-to-one-output"),
+            Self::SplitIntoTwo => Some("one-input-split-into-two"),
+            Self::MergedIntoOne => Some("several-inputs-merged-into-one"),
+            Self::SeveralToSeveral => Some("several-inputs-to-several-outputs"),
+            Self::RepeatedOwner => Some("repeated-owner"),
+            Self::SeveralDistinctOwners => Some("several-distinct-owners"),
+            Self::OneDestinationOwner => Some("one-destination-owner"),
+            Self::SeveralDestinationOwners => Some("several-destination-owners"),
+            Self::SemanticBoundaryValues => Some("semantic-boundary-values"),
+            Self::CanonicalInputNormalization => Some("canonical-input-normalization"),
+            Self::Sponsorless => Some("sponsorless"),
+            Self::MaximumInputs => Some("candidate-maximum-inputs"),
+            Self::MaximumOutputs => Some("candidate-maximum-outputs"),
         }
     }
 
@@ -265,6 +310,7 @@ impl ExplicitShape {
             Self::Sponsorless => "explicit-sponsorless",
             Self::MaximumInputs => "explicit-maximum-inputs",
             Self::MaximumOutputs => "explicit-maximum-outputs",
+            Self::SelfPaidFee => "explicit-self-paid-fee",
         }
     }
 
@@ -282,6 +328,7 @@ impl ExplicitShape {
             | Self::SemanticBoundaryValues
             | Self::Sponsorless
             | Self::SeveralDestinationOwners
+            | Self::SelfPaidFee
             | Self::MaximumOutputs => (1, 0),
             Self::MergedIntoOne
             | Self::SeveralToSeveral
@@ -314,7 +361,15 @@ impl ExplicitShape {
             | Self::SemanticBoundaryValues => {
                 vec![ShapeOwner::Second, ShapeOwner::First]
             }
-            Self::OneDestinationOwner => vec![ShapeOwner::Second, ShapeOwner::Second],
+            // The destination, then the FEE entry. The fee names the
+            // second owner only so the literal has the shape its
+            // neighbours have -- a fee output carries no program at all,
+            // which is most of what makes it a fee, and this owner is
+            // never read. The confidential ceremony's fee entry says the
+            // same thing for the same reason.
+            Self::OneDestinationOwner | Self::SelfPaidFee => {
+                vec![ShapeOwner::Second, ShapeOwner::Second]
+            }
             Self::RepeatedOwner | Self::MaximumOutputs => {
                 vec![ShapeOwner::Second, ShapeOwner::First, ShapeOwner::Second]
             }
@@ -344,9 +399,61 @@ impl ExplicitShape {
     }
 
     /// How many destinations this shape creates.
+    ///
+    /// The self-paying shape's fee entry is counted here, because it IS
+    /// a destination entry: it occupies an output position and states an
+    /// amount. What separates it from the others is its declared role.
     #[must_use]
     pub fn output_count(self) -> usize {
         self.destination_owners().len()
+    }
+
+    /// The fee this shape pays out of its own receipts, where it pays one.
+    ///
+    /// Matched to the confidential ceremony's fee so the two sponsorless
+    /// cells of the owner fee matrix are comparable at the amount as well
+    /// as at the shape. A fee of zero is refused outright by the target,
+    /// so there is no zero case to represent here.
+    #[must_use]
+    pub const fn self_paid_fee(self) -> Option<u64> {
+        match self {
+            Self::SelfPaidFee => Some(SELF_PAID_FEE_AMOUNT),
+            _ => None,
+        }
+    }
+
+    /// Which deployment vocabulary this shape's ceremony links against.
+    ///
+    /// Only the self-paying shape leaves the demonstration vocabulary,
+    /// and the separation is what keeps every recorded demonstration
+    /// digest and the demonstration taptree untouched by the fee axis.
+    #[must_use]
+    pub const fn vocabulary(self) -> LiveShapeVocabulary {
+        match self {
+            Self::SelfPaidFee => LiveShapeVocabulary::FeeBearing,
+            _ => LiveShapeVocabulary::Demonstration,
+        }
+    }
+
+    /// The role of each destination entry, in output order.
+    ///
+    /// EMPTY for every shape that declares nothing, which is what the
+    /// explicit lane's other thirteen shapes do: an empty declaration is
+    /// every entry a receipt output, and passing it leaves those runs
+    /// building exactly the bytes they built before this shape existed.
+    #[must_use]
+    pub fn declared_roles(self) -> Vec<ExplicitDestinationRole> {
+        let Some(_) = self.self_paid_fee() else {
+            return Vec::new();
+        };
+        let mut roles = vec![ExplicitDestinationRole::ReceiptOutput; self.output_count()];
+        // The fee is LAST, which is where the sponsorless shape's fee
+        // position is: immediately after the destinations, no change role
+        // being able to sit between them without a sponsor region.
+        if let Some(last) = roles.last_mut() {
+            *last = ExplicitDestinationRole::Fee;
+        }
+        roles
     }
 }
 
@@ -612,6 +719,7 @@ pub struct ExplicitShapeRecord {
     destination_owners: Vec<ShapeOwner>,
     input_owners: Vec<ShapeOwner>,
     submitted_bytes: usize,
+    observed_weight: Option<u64>,
     observed_layer: Option<ObservedOutcomeLayer>,
     observed_detail: Option<String>,
     accepted_txid: Option<String>,
@@ -639,6 +747,15 @@ impl ExplicitShapeRecord {
     #[must_use]
     pub const fn submitted_bytes(&self) -> usize {
         self.submitted_bytes
+    }
+
+    /// The weight the TARGET reported for the submitted transaction.
+    ///
+    /// Absent where the adapter reported none, which is an unmade
+    /// measurement rather than a weight of zero.
+    #[must_use]
+    pub const fn observed_weight(&self) -> Option<u64> {
+        self.observed_weight
     }
 
     /// The layer the target answered at.
@@ -764,7 +881,12 @@ impl ExplicitShapePlanner {
         shape: ExplicitShape,
         printed_genesis_identity: Digest32,
     ) -> Result<Self, VectorError> {
-        let abi = demonstration_live_abi()?;
+        let abi = live_abi_for_vocabulary(
+            shape.vocabulary(),
+            PROTOCOL_ASSET,
+            RESERVE_ASSET,
+            fee_program_digest_for(shape.vocabulary()),
+        )?;
         Ok(Self {
             stage: Stage::Issue,
             shape,
@@ -783,6 +905,7 @@ impl ExplicitShapePlanner {
                 destination_owners: Vec::new(),
                 input_owners: Vec::new(),
                 submitted_bytes: 0,
+                observed_weight: None,
                 observed_layer: None,
                 observed_detail: None,
                 accepted_txid: None,
@@ -897,8 +1020,14 @@ impl ExplicitShapePlanner {
             .clone()
             .ok_or(ExplicitShapeRefusal::IssuanceNamedNoAsset)?;
         let identity = asset_of(&asset).ok_or(ExplicitShapeRefusal::IssuanceNamedNoAsset)?;
-        let abi = live_abi_for_asset(*identity.internal(), RESERVE_ASSET, FEE_PROGRAM_DIGEST)
-            .map_err(|_| ExplicitShapeRefusal::RelinkRefused)?;
+        let vocabulary = self.shape.vocabulary();
+        let abi = live_abi_for_vocabulary(
+            vocabulary,
+            *identity.internal(),
+            RESERVE_ASSET,
+            fee_program_digest_for(vocabulary),
+        )
+        .map_err(|_| ExplicitShapeRefusal::RelinkRefused)?;
         self.record.issued_asset = Some(asset);
         self.record.relinked = true;
         self.abi = abi;
@@ -966,6 +1095,27 @@ impl ExplicitShapePlanner {
         if width == 0 || total < width {
             return None;
         }
+        // A self-paying shape divides only what is LEFT after the fee,
+        // and states the fee as its last entry. Dividing the whole total
+        // and calling one share the fee would make the fee a function of
+        // the coin the node happened to fund.
+        if let Some(fee) = self.shape.self_paid_fee() {
+            let remaining = total.checked_sub(fee)?;
+            if remaining == 0 || outputs < 2 {
+                return None;
+            }
+            let destinations = outputs - 1;
+            let width = u64::try_from(destinations).ok()?;
+            let share = remaining / width;
+            if share == 0 {
+                return None;
+            }
+            let mut amounts = vec![share; destinations];
+            let last = amounts.last_mut()?;
+            *last = remaining - share * (width - 1);
+            amounts.push(fee);
+            return Some(amounts);
+        }
         Some(match self.shape.value_rule() {
             ValueRule::EvenShares => {
                 let share = total / width;
@@ -1032,8 +1182,16 @@ impl ExplicitShapePlanner {
         .map_err(|_| ExplicitShapeRefusal::CandidateNotConstructible)?;
 
         let target = reviewed_target().map_err(|_| ExplicitShapeRefusal::SubstrateUnavailable)?;
-        let finalization = finalize_live_transfer(&target, &self.abi, &request, &view, None, None)
-            .map_err(|_| ExplicitShapeRefusal::CandidateNotConstructible)?;
+        let finalization = finalize_live_transfer_declaring(
+            &target,
+            &self.abi,
+            &request,
+            &view,
+            None,
+            None,
+            &self.shape.declared_roles(),
+        )
+        .map_err(|_| ExplicitShapeRefusal::CandidateNotConstructible)?;
 
         self.record.offered_outpoints = points;
         self.record.canonical_outpoints = request.receipts().iter().copied().collect();
@@ -1200,6 +1358,12 @@ impl ExplicitShapePlanner {
         // value with itself, so it is simply set.
         self.record.control_bytes.clone_from(&submitted);
         self.record.observed_layer = Some(response.observed_layer);
+        // The target's OWN weight, read off `decoderawtransaction` by
+        // the adapter rather than computed here. §20.5 wants the
+        // comparison made against the node's figure, and a weight this
+        // ceremony calculated for itself would be comparing a prediction
+        // with itself.
+        self.record.observed_weight = response.resources.transaction_weight;
         self.record
             .observed_detail
             .clone_from(&response.observed_detail);
@@ -1564,7 +1728,11 @@ fn render_reverification(out: &mut String, record: &ExplicitShapeRecord) {
 pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "explicit_shape {}", record.shape.case_name());
-    let _ = writeln!(out, "row_name {}", record.shape.row_name());
+    let _ = writeln!(
+        out,
+        "row_name {}",
+        record.shape.row_name().unwrap_or("none")
+    );
     let _ = writeln!(
         out,
         "issued_asset {}",
@@ -1598,6 +1766,14 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
         record.offered_order_differs()
     );
     let _ = writeln!(out, "submitted_bytes {}", record.submitted_bytes);
+    match record.observed_weight {
+        Some(weight) => {
+            let _ = writeln!(out, "observed_weight {weight}");
+        }
+        None => {
+            let _ = writeln!(out, "observed_weight none");
+        }
+    }
     let _ = writeln!(
         out,
         "observed_layer {}",
@@ -1765,32 +1941,116 @@ pub mod run_of_record {
     /// THREE destinations created, the candidate's stated output bound.
     pub const MAXIMUM_OUTPUTS_ACCEPTED_TXID: &str =
         "6a5617cc547f0fe22cefa261ed2fb885a82a9e7293aefad76be5c35f0b531613";
+
+    // --- The fourteenth shape: the sponsorless self-paid fee ----------
+    //
+    // The last cell of the owner fee matrix, and the only row here that
+    // is not a §15.1 row at all. Its figures are kept in this register
+    // rather than in the §15 tables because §15.1's explicit positive
+    // table is complete at sixteen rows and none of the sixteen is a
+    // self-paying transfer.
+
+    /// The identity the target computed for the self-paying run.
+    ///
+    /// An OPTION carrying a value: the node answered, and this is what
+    /// it answered. The confidential lane's fee-bearing identity is
+    /// written the same way for the same reason -- a record of what a
+    /// node answered holds a digest only once one has, and a placeholder
+    /// shaped like an identity would be indistinguishable from an
+    /// observation.
+    ///
+    /// It collides with no other row's identity, which the collision
+    /// census checks rather than assumes.
+    pub const SELF_PAID_FEE_ACCEPTED_IDENTITY: Option<&str> =
+        Some("72fad04b346a8ea93c97cd415d24434529d8a5d9ae148a13da3694047e117328");
+
+    /// The witness identity of the same accepted transaction.
+    ///
+    /// Recorded beside the identity because they DIFFER, and the
+    /// difference is the ordinary one: the transaction carries a
+    /// witness, so the two hashes are taken over different bytes.
+    pub const SELF_PAID_FEE_WITNESS_IDENTITY: &str =
+        "fafc82e7396f27e6379572cc958c710412b1ae0e0d69912a04212aa79c7d2822";
+
+    /// The disposable asset the self-paying run issued.
+    pub const SELF_PAID_FEE_ISSUED_ASSET: &str =
+        "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
+
+    /// How many bytes the self-paying candidate handed the node.
+    pub const SELF_PAID_FEE_SUBMITTED_BYTES: usize = 782;
+
+    /// The weight the TARGET reported, read off `decoderawtransaction`.
+    ///
+    /// The node's own figure rather than one computed here, so §20.5's
+    /// comparison is against an observation.
+    pub const SELF_PAID_FEE_TARGET_WEIGHT: u64 = 1_304;
+
+    /// What the one consumed receipt held.
+    pub const SELF_PAID_FEE_CONSUMED: u64 = super::RECEIPT_AMOUNT;
+
+    /// The fee the self-paying run paid, in the PROTOCOL asset.
+    ///
+    /// The protocol asset because the fee is funded out of the consumed
+    /// receipts and Elements balances per asset: a reserve-asset fee
+    /// beside no reserve-asset input dies at the tally.
+    pub const SELF_PAID_FEE_AMOUNT: u64 = super::SELF_PAID_FEE_AMOUNT;
+
+    /// What reached the one destination, the fee having been taken.
+    pub const SELF_PAID_FEE_DESTINATION: u64 = 4_750;
+
+    /// Whether the self-paying candidate crossed RELAY and then a block.
+    ///
+    /// TRUE, and this is the figure the wave existed to obtain. The
+    /// adapter offers every submission to `testmempoolaccept` first and
+    /// records an acceptance only when the mempool ALLOWED it and a
+    /// block then included it, so an accepted layer here is a relay
+    /// verdict and a consensus verdict together.
+    ///
+    /// It matters because this is the FIRST sponsorless form to face
+    /// relay on its own. Its predecessors paid no fee and travelled as
+    /// package children, which is why the ABI builds a sponsorless form
+    /// at the topology-restricted version; a form that pays its own fee
+    /// needs no package parent, and the open question was whether that
+    /// version would still relay standalone. It did.
+    pub const SELF_PAID_FEE_CROSSED_RELAY_AND_BLOCK: bool = true;
+
+    /// Seconds of wall time the self-paying run took.
+    pub const SELF_PAID_FEE_WALL_SECONDS: f64 = 6.0;
 }
 
 impl ExplicitShape {
     /// The identity the target computed for this shape's accepted
     /// transaction.
     ///
-    /// Every member answers, because every member ran and every run was
-    /// accepted. Three identities are each shared by two shapes, and
+    /// An OPTION, and the absent case is a shape whose acceptance this
+    /// register does not yet hold rather than a shape that failed. The
+    /// confidential lane's fee-bearing identity is written the same way
+    /// and for the same reason: an identity is recorded when a node has
+    /// answered, and a placeholder that looked like one would be a claim
+    /// nothing observed.
+    ///
+    /// Three identities are each shared by two shapes, and
     /// [`run_of_record`] states which and why.
     #[must_use]
-    pub const fn observed_identity(self) -> &'static str {
+    pub const fn observed_identity(self) -> Option<&'static str> {
         match self {
-            Self::OneToOne | Self::Sponsorless => run_of_record::ONE_TO_ONE_ACCEPTED_TXID,
+            Self::OneToOne | Self::Sponsorless => Some(run_of_record::ONE_TO_ONE_ACCEPTED_TXID),
             Self::SplitIntoTwo | Self::SeveralDestinationOwners => {
-                run_of_record::SPLIT_ACCEPTED_TXID
+                Some(run_of_record::SPLIT_ACCEPTED_TXID)
             }
             Self::MergedIntoOne | Self::CanonicalInputNormalization => {
-                run_of_record::MERGE_ACCEPTED_TXID
+                Some(run_of_record::MERGE_ACCEPTED_TXID)
             }
-            Self::SeveralToSeveral => run_of_record::SEVERAL_TO_SEVERAL_ACCEPTED_TXID,
-            Self::RepeatedOwner => run_of_record::REPEATED_OWNER_ACCEPTED_TXID,
-            Self::SeveralDistinctOwners => run_of_record::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID,
-            Self::OneDestinationOwner => run_of_record::ONE_DESTINATION_OWNER_ACCEPTED_TXID,
-            Self::SemanticBoundaryValues => run_of_record::BOUNDARY_VALUES_ACCEPTED_TXID,
-            Self::MaximumInputs => run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID,
-            Self::MaximumOutputs => run_of_record::MAXIMUM_OUTPUTS_ACCEPTED_TXID,
+            Self::SeveralToSeveral => Some(run_of_record::SEVERAL_TO_SEVERAL_ACCEPTED_TXID),
+            Self::RepeatedOwner => Some(run_of_record::REPEATED_OWNER_ACCEPTED_TXID),
+            Self::SeveralDistinctOwners => {
+                Some(run_of_record::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID)
+            }
+            Self::OneDestinationOwner => Some(run_of_record::ONE_DESTINATION_OWNER_ACCEPTED_TXID),
+            Self::SemanticBoundaryValues => Some(run_of_record::BOUNDARY_VALUES_ACCEPTED_TXID),
+            Self::MaximumInputs => Some(run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID),
+            Self::MaximumOutputs => Some(run_of_record::MAXIMUM_OUTPUTS_ACCEPTED_TXID),
+            Self::SelfPaidFee => run_of_record::SELF_PAID_FEE_ACCEPTED_IDENTITY,
         }
     }
 }
@@ -1799,7 +2059,9 @@ impl ExplicitShape {
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
-    use super::{ExplicitShape, run_of_record};
+    use transaction::live_construct::ExplicitDestinationRole::Fee;
+
+    use super::{ExplicitShape, LiveShapeVocabulary, run_of_record};
 
     #[test]
     fn every_shape_names_a_distinct_row_of_the_explicit_table() {
@@ -1808,16 +2070,29 @@ mod tests {
         // disagreeing with itself.
         let rows: BTreeSet<&str> = ExplicitShape::ALL
             .iter()
-            .map(|shape| shape.row_name())
+            .filter_map(|shape| shape.row_name())
             .collect();
-        assert_eq!(rows.len(), ExplicitShape::ALL.len());
-        assert_eq!(ExplicitShape::ALL.len(), 13);
+        assert_eq!(rows.len(), 13);
+        assert_eq!(ExplicitShape::ALL.len(), 14);
+
+        // And EXACTLY one shape names no row. The count is asserted
+        // rather than left implied, because the interesting failure is a
+        // second shape quietly acquiring the absent case: §15.1's table
+        // is complete, so a shape naming no row is a claim about the
+        // matrix and every one of them has to be deliberate.
+        let rowless = ExplicitShape::ALL
+            .iter()
+            .filter(|shape| shape.row_name().is_none())
+            .count();
+        assert_eq!(rowless, 1);
     }
 
     #[test]
     fn every_recorded_identity_is_a_target_identity() {
         for shape in ExplicitShape::ALL {
-            let identity = shape.observed_identity();
+            let Some(identity) = shape.observed_identity() else {
+                continue;
+            };
             assert_eq!(
                 identity.len(),
                 64,
@@ -1837,12 +2112,26 @@ mod tests {
         // both classes, and that is a judgement rather than an accident.
         let mut by_identity: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
         for shape in ExplicitShape::ALL {
-            by_identity
-                .entry(shape.observed_identity())
-                .or_default()
-                .insert(shape.row_name());
+            let (Some(identity), Some(row)) = (shape.observed_identity(), shape.row_name()) else {
+                continue;
+            };
+            by_identity.entry(identity).or_default().insert(row);
         }
         assert_eq!(by_identity.len(), 10, "thirteen runs, ten identities");
+
+        // The fourteenth shape is deliberately OUTSIDE this census, and
+        // its exclusion is the census's own subject: this is a count of
+        // which §15.1 ROWS share an acceptance, and a shape naming no row
+        // has none to share. What is asserted about it instead is that
+        // its identity collides with nothing, which is the property the
+        // census exists to protect -- one acceptance may never be cited
+        // for work it did not do.
+        if let Some(identity) = ExplicitShape::SelfPaidFee.observed_identity() {
+            assert!(
+                !by_identity.contains_key(identity),
+                "the self-paying run cites an identity another shape already claims",
+            );
+        }
 
         let shared: BTreeSet<BTreeSet<&str>> = by_identity
             .values()
@@ -1860,6 +2149,69 @@ mod tests {
                 ]),
             ]),
         );
+    }
+
+    #[test]
+    fn the_self_paying_run_conserves_what_it_consumed() {
+        // The fee is a TERM of this equality rather than a residue: the
+        // consumed receipt funds the destination AND the fee, which is
+        // exactly the relation the explicit conservation leaf checks in
+        // the covenant that ran. Recomputed here from the recorded
+        // figures so a register edited on one side fails.
+        assert_eq!(
+            run_of_record::SELF_PAID_FEE_DESTINATION + run_of_record::SELF_PAID_FEE_AMOUNT,
+            run_of_record::SELF_PAID_FEE_CONSUMED,
+        );
+        assert_eq!(
+            run_of_record::SELF_PAID_FEE_AMOUNT,
+            ExplicitShape::SelfPaidFee
+                .self_paid_fee()
+                .expect("the self-paying shape states a fee"),
+        );
+    }
+
+    #[test]
+    fn the_self_paying_shape_declares_its_fee_last_and_only_once() {
+        // The declaration the ceremony hands construction, checked here
+        // rather than trusted: the fee sits immediately after the
+        // destinations, which is where a SPONSORLESS shape's fee
+        // position is -- no change role can precede it without a sponsor
+        // region.
+        let roles = ExplicitShape::SelfPaidFee.declared_roles();
+        assert_eq!(roles.len(), ExplicitShape::SelfPaidFee.output_count());
+        assert_eq!(
+            roles.iter().filter(|role| **role == Fee).count(),
+            1,
+            "the target admits one fee position",
+        );
+        assert_eq!(roles.last(), Some(&Fee));
+
+        // And every OTHER shape declares nothing at all, which is what
+        // leaves their runs building the bytes they built before this
+        // shape existed.
+        for shape in ExplicitShape::ALL {
+            if *shape == ExplicitShape::SelfPaidFee {
+                continue;
+            }
+            assert!(
+                shape.declared_roles().is_empty(),
+                "{shape:?} declares a role it has no fee to declare",
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_self_paying_shape_leaves_the_demonstration_vocabulary() {
+        // The separation that keeps the demonstration taptree and every
+        // digest recorded against it untouched by the fee axis.
+        for shape in ExplicitShape::ALL {
+            let expected = if *shape == ExplicitShape::SelfPaidFee {
+                LiveShapeVocabulary::FeeBearing
+            } else {
+                LiveShapeVocabulary::Demonstration
+            };
+            assert_eq!(shape.vocabulary(), expected, "{shape:?}");
+        }
     }
 
     #[test]

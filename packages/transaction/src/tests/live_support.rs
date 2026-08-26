@@ -51,9 +51,9 @@ use linker::{
 };
 use realization::{RealizationScope, derive};
 use tapscript::{
-    CandidateRelocatableLiveTransferBundle, LiveTransferSymbols, OwnerKey,
+    CandidateRelocatableLiveTransferBundle, LiveTransferShapeSet, LiveTransferSymbols, OwnerKey,
     demonstration_live_shape_set, derive_live_receipt_constructor, emit_candidate_live_bundle,
-    owner_key_encoding_closure, static_transfer_leaf_set,
+    fee_bearing_live_shape_set, owner_key_encoding_closure, static_transfer_leaf_set,
 };
 use target_elements::ReviewedElementsTapscriptDefinition;
 
@@ -214,8 +214,22 @@ fn single_live_bundle(
     representation: LiveTransferRepresentationPlan,
     owner: &[u8],
 ) -> CandidateRelocatableLiveTransferBundle {
+    live_bundle_over(representation, owner, demonstration_live_shape_set())
+}
+
+/// One representation's relocatable bundle over a NAMED shape set.
+///
+/// The shape set is a parameter because the demonstration set carries no
+/// fee-bearing member and a self-paying candidate needs one. Passing it
+/// keeps the two deployments one function apart rather than two copies,
+/// so a change to how a bundle is emitted cannot reach one and miss the
+/// other.
+fn live_bundle_over(
+    representation: LiveTransferRepresentationPlan,
+    owner: &[u8],
+    shapes: LiveTransferShapeSet,
+) -> CandidateRelocatableLiveTransferBundle {
     let target = reviewed_target();
-    let shapes = demonstration_live_shape_set();
     let leaves = static_transfer_leaf_set(representation, &shapes);
     let constructor = derive_live_receipt_constructor(
         &target,
@@ -301,6 +315,42 @@ pub(super) fn linked_live_bundle() -> CandidateLinkedLiveTransferBundle {
 pub(super) fn live_abi() -> CandidateLiveTransferAbi {
     derive_live_transfer_abi(&reviewed_target(), &linked_live_bundle(), &FixtureCurve)
         .expect("the demonstration live ABI derives")
+}
+
+/// The candidate ABI whose shape set admits a sponsorless self-paid fee.
+///
+/// A SEPARATE deployment rather than a widened demonstration one, for
+/// the reason the fee-bearing vocabulary is separate everywhere else:
+/// admitting the fee axis into the demonstration bounds would unroll
+/// extra members, move the committed taptree, and move every recorded
+/// demonstration digest with it.
+pub(super) fn fee_bearing_live_abi() -> CandidateLiveTransferAbi {
+    static BUNDLE: LazyLock<CandidateLinkedLiveTransferBundle> = LazyLock::new(|| {
+        let target = reviewed_target();
+        let bundles = vec![
+            live_bundle_over(
+                LiveTransferRepresentationPlan::Explicit,
+                &FIRST_OWNER,
+                fee_bearing_live_shape_set(),
+            ),
+            live_bundle_over(
+                LiveTransferRepresentationPlan::Explicit,
+                &SECOND_OWNER,
+                fee_bearing_live_shape_set(),
+            ),
+        ];
+        let deployment = LiveLinkDeploymentParameters::new(
+            &target,
+            resolved_live_symbols(&target),
+            LIVE_INTERNAL_KEY.to_vec(),
+            NonZeroU32::new(8).expect("eight is nonzero"),
+        )
+        .expect("the fee-bearing deployment parameters are the reviewed widths");
+
+        link_live_candidate(&target, &bundles, &deployment).expect("the fee-bearing live link")
+    });
+    derive_live_transfer_abi(&reviewed_target(), &BUNDLE.clone(), &FixtureCurve)
+        .expect("the fee-bearing live ABI derives")
 }
 
 /// An ABI over a link that carries one representation and not the other.
