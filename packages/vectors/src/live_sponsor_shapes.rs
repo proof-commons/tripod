@@ -2475,70 +2475,65 @@ pub mod sponsored_run_of_record {
 
     /// Whether a sponsored PRIVATE successor can be REGISTERED.
     ///
-    /// `false`, and this is the private-sponsor wave's typed stop rather
-    /// than a preference. The private construction lane now admits a
-    /// sponsored request at every one of the five sites that refused
-    /// one, and the candidate it would build is unregistrable one layer
-    /// below.
+    /// `true`, and a registered case is what a real node accepted.
     ///
-    /// # The site, named rather than inventoried as absent
+    /// # What the stop was, and what answered it
     ///
-    /// `transaction::live_materialize::fixture_of` requires EVERY
-    /// destination to name the same fixture handle and refuses
-    /// `FixtureOutputOrderMismatch` otherwise, and the binding census
-    /// beside it requires that one fixture's output count to equal the
-    /// destination count and its per-position role, program, amount and
-    /// asset to match. A sponsored private successor has three
-    /// destinations: two protocol-asset receipt outputs and one
-    /// RESERVE-asset sponsor change. So the three have to come from ONE
-    /// registered case declaring two assets across its positions.
+    /// The private lane admitted a sponsored request at every site that
+    /// had refused one, and the candidate it would build was
+    /// unregistrable one layer below: `fixture_of` requires EVERY
+    /// destination to name the same fixture handle, and a sponsored
+    /// private successor has two protocol-asset receipt outputs beside a
+    /// RESERVE-asset sponsor change. So the three had to come from ONE
+    /// registered case declaring two assets across its positions, and a
+    /// registry output carried a role, an amount and a program with no
+    /// asset at all while the manifest carried a single explicit asset
+    /// for the whole case.
     ///
-    /// The registry cannot state one. A registry output carries a role,
-    /// a semantic amount and an output program and no asset at all, the
-    /// manifest carries a single explicit asset for the whole case, and
-    /// `FixtureOutputRole` has no sponsor-change member: its three
-    /// committed roles are primary, balancing and sole-balancing, and
-    /// its fourth is the mandatorily explicit fee.
+    /// The widening was ROLE-KEYED, which is what made it affordable. A
+    /// `SponsorChange` member joins `FixtureOutputRole` carrying its own
+    /// asset, and the transcript's per-output asset field — which it
+    /// already emitted, sourced from the manifest — is now sourced by
+    /// ROLE. No field was added, no presence flag, no position moved, so
+    /// a manifest with no sponsor change hashes the bytes it always
+    /// hashed. Every recorded digest re-derives bit-for-bit under the
+    /// byte-identity tests, and the whole live set reproduced at the
+    /// widened tip.
     ///
-    /// # The vocabulary exists on the reading side and nothing writes it
+    /// # The two walls between the registry and the chain
     ///
-    /// `ConfidentialFixtureOutputView::sponsor_change` takes a reserve
-    /// asset and is exactly the projection this needs, and the asset
-    /// comparison beside it already reads `asset_carried` rather than
-    /// the case's protocol asset, so that a sponsor change is not
-    /// refused for carrying the asset its own fixture declares. Both
-    /// were built where a candidate is READ. Nothing on the registry
-    /// side produces one: that constructor's only callers in this
-    /// workspace are two materializer unit tests that assemble a fixture
-    /// view by hand, and a hand-assembled view has no registered digest
-    /// -- which is the one thing the executor's funding step and the
-    /// candidate must both bind to.
+    /// Neither was the registry's, and both were met by running rather
+    /// than by reading. The first was this ceremony seeding the owner
+    /// message with the genesis identity as a target PRINTS it rather
+    /// than as it HASHES it — the recorded `DeploymentSeedInPrintedOrder`
+    /// negative control, reproduced by accident and drawing the node's
+    /// own invalid-signature verdict while every balance check passed.
+    /// The second was the deployment vocabulary: a sponsored request
+    /// bears a fee by construction, so the candidate executes the
+    /// covenant's fee clause, and the DEMONSTRATION deployment is welded
+    /// to a fixture fee digest no program hashes to. That is the defect
+    /// the sponsor arc met on the explicit lane, met here for the same
+    /// reason and answered the same way, by linking the fee-bearing
+    /// vocabulary — whose taptree is its own, so the demonstration's
+    /// committed identity did not move to buy it.
+    pub const A_SPONSORED_PRIVATE_SUCCESSOR_IS_REGISTRABLE: bool = true;
+
+    /// The identity of the accepted sponsored CONFIDENTIAL control.
     ///
-    /// # A filing from the previous wave is corrected here
-    ///
-    /// That wave recorded the registry narrowing as SMALLER than it
-    /// looked, reasoning that a registry holds many cases and each case
-    /// carries its own asset, so a sponsored successor could reference
-    /// one case for its protocol-asset destinations and another for its
-    /// reserve-asset ones. The one-fixture rule refutes it: two cases
-    /// across one destination list is the first thing `fixture_of`
-    /// refuses. The per-output asset widening that filing called needed
-    /// only where one case's outputs would carry two assets is needed
-    /// HERE, because this case's outputs do.
-    ///
-    /// # Why this wave did not simply widen it
-    ///
-    /// Because the widening lands in a DIGEST TRANSCRIPT. A role's
-    /// transcript code is documented as stable once written, those bytes
-    /// being inside every registered digest, so adding a code is
-    /// admissible and reassigning one is not. A per-output asset is the
-    /// harder half: every recorded fixture digest here is evidence a run
-    /// against a pinned node produced, and a transcript change that
-    /// moved them would be re-recording evidence to keep a test green.
-    /// That is a change to make deliberately, with its digest-stability
-    /// argument written down and checked, rather than as a step inside a
-    /// wave whose subject is the construction lane.
-    pub const A_SPONSORED_PRIVATE_SUCCESSOR_IS_REGISTRABLE: bool = false;
+    /// The run the section 15.2 `private-sponsor-values` row moved on,
+    /// and the first acceptance anywhere of a sponsored private
+    /// successor. Its shape: a blinded sponsor coin in at an explicit
+    /// asset, two blinded receipt destinations, a COMMITTED sponsor
+    /// change in the reserve asset, and an explicit reserve fee in the
+    /// non-protocol funding region, outside both balance equations.
+    pub const SPONSORED_PRIVATE_TXID: &str =
+        "195b103d6d5e2c361f27248d31ef8bed663dffa9b65cea8c5e347f522f5918a8";
+
+    /// The bytes that reached the node for it.
+    pub const SPONSORED_PRIVATE_SUBMITTED_BYTES: usize = 13_873;
+
+    /// The weight the target computed for it.
+    pub const SPONSORED_PRIVATE_TARGET_WEIGHT: u64 = 15_490;
 
     /// Whether any ceremony in this workspace builds a sponsored control
     /// that TAKES CHANGE.
@@ -2716,26 +2711,46 @@ mod tests {
         }
     }
 
-    /// The wave's typed stop says what it says, and the row it blocks
-    /// stays unmoved.
+    /// The registry claim and the gate move TOGETHER, on a run.
     ///
-    /// Asserted rather than left to the doc comment, because these two
-    /// facts are the pair that must not drift apart: the sponsored
-    /// private successor is unregistrable, and therefore no acceptance
-    /// of that shape exists, and therefore the section 15.2 row has
-    /// nothing to move on. A run that made the first true without the
-    /// third would be a row moved on somebody's expectation.
+    /// Asserted rather than left to the doc comments, because these are
+    /// the facts that must not drift apart. For most of this arc the
+    /// pair read the other way: the sponsored private successor was
+    /// unregistrable, therefore no acceptance of that shape existed,
+    /// therefore the section 15.2 row had nothing to move on. A run that
+    /// had made the first true without the third would have been a row
+    /// moved on somebody's expectation.
+    ///
+    /// All three are true now and each was established separately: the
+    /// registry states the case, a node accepted a candidate built from
+    /// it, and the gate opened in the same commit as the observation.
     #[test]
-    fn the_sponsored_private_successor_is_unregistrable_and_its_row_is_unmoved() {
+    fn the_sponsored_private_successor_is_registrable_and_its_row_may_move() {
         const {
             assert!(
-                !sponsored_run_of_record::A_SPONSORED_PRIVATE_SUCCESSOR_IS_REGISTRABLE,
-                "the registry learned to state a two-asset case and the stop was not revisited",
+                sponsored_run_of_record::A_SPONSORED_PRIVATE_SUCCESSOR_IS_REGISTRABLE,
+                "the registry states a two-asset case and the flag was not moved with it",
             );
         }
         assert!(
-            !crate::live_closeout::PositivePrivateClass::PrivateSponsorValues.may_enter_the_delta(),
-            "the sponsor row opened while its own shape is still unregistrable",
+            crate::live_closeout::PositivePrivateClass::PrivateSponsorValues.may_enter_the_delta(),
+            "the sponsor row is shut while its own shape has been accepted",
+        );
+        // The gate opened ON an acceptance, and this is the identity it
+        // opened on. A gate opened with no run behind it would pass the
+        // assertion above and fail here.
+        assert_eq!(
+            sponsored_run_of_record::SPONSORED_PRIVATE_TXID.len(),
+            64,
+            "the accepted identity is not a transaction identity",
+        );
+        assert!(
+            crate::live_closeout::moved_on_acceptance(
+                crate::live_closeout::PositivePrivateClass::PrivateSponsorValues,
+                sponsored_run_of_record::SPONSORED_PRIVATE_TXID,
+            )
+            .is_ok(),
+            "the row the acceptance was for cannot be moved on it",
         );
     }
 
