@@ -969,6 +969,36 @@ fn project(fixture: &ResolvedFixture) -> Result<ConfidentialFixtureView, ProofBe
             outputs.push(ConfidentialFixtureOutputView::fee(output.semantic_amount));
             continue;
         }
+        // The sponsor change is projected through the view's own
+        // sponsor-change constructor for the reason the fee is projected
+        // through the fee one: it is the single output whose ASSET is not
+        // the fixture's, and the opening-bearing constructor has no
+        // parameter to say so. Routing it through `new` would have
+        // compiled and produced a remainder committed against the
+        // protocol asset — a candidate the target reads as the wrong
+        // asset entirely, which is the silent wrong transaction rather
+        // than the honest stop.
+        //
+        // The asset travels in the ROLE, so it arrives here already bound
+        // to the output that carries it and nothing downstream has to
+        // pair an asset with an index.
+        if let FixtureOutputRole::SponsorChange { asset } = output.role {
+            // A committed remainder with no opening is a registry that
+            // changed its mind between deriving and resolving, and this
+            // projection does not decide which half to believe.
+            let opening = opening
+                .as_ref()
+                .ok_or(ProofBearingRefusal::OpeningsAreNotDerived)?;
+            outputs.push(ConfidentialFixtureOutputView::sponsor_change(
+                output.semantic_amount,
+                output.output_program.clone(),
+                AssetId::from_internal(asset),
+                opening.value_blinder,
+                opening.nonce_input,
+                opening.rangeproof_seed,
+            ));
+            continue;
+        }
         let role = match output.role {
             FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
             // Both solving roles project to the view's one solving role,

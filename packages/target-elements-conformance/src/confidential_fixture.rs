@@ -230,6 +230,69 @@ pub enum FixtureOutputRole {
     /// target states, and inventing one here would be this file deciding
     /// a question the target contract does not answer.
     Fee,
+    /// A sponsor's committed change, carrying its OWN asset.
+    ///
+    /// The output a sponsored successor returns the sponsor's unspent
+    /// remainder to. Its value is COMMITTED — a sponsor who funds a
+    /// private successor out of a blinded coin and takes explicit change
+    /// has published the coin's value by subtraction, and a committed
+    /// sponsor value was already proven to REQUIRE committed change: the
+    /// target refuses the mixed form with `bad-txns-in-ne-out`, an asset
+    /// whose inputs are committed and whose outputs are not having no
+    /// tally the consensus code can check.
+    ///
+    /// # Why the ASSET rides in the role
+    ///
+    /// This is the one role whose asset is not the manifest's. A
+    /// sponsored successor pays the protocol asset to its receipts and
+    /// the RESERVE asset to its sponsor change, so a manifest carrying a
+    /// single `explicit_asset` cannot describe it — which is exactly the
+    /// wall the private-sponsor wave stopped at.
+    ///
+    /// The asset is a member of the ROLE rather than of
+    /// [`ConfidentialFixtureOutput`] or of the manifest, and that choice
+    /// is what keeps every registered digest byte-identical. The
+    /// transcript already emits one framed asset per output, sourced
+    /// from the manifest; it now takes that field from
+    /// [`Self::own_asset`] where the role has one and from the manifest
+    /// everywhere else. No field is added, no presence flag is added,
+    /// and no output that is not a sponsor change can reach the new
+    /// source — so no manifest registered before this role existed
+    /// hashes a single byte differently. It is the same argument
+    /// [`Self::SoleBalancing`] and [`Self::Fee`] were added under, for
+    /// the same reason: every recorded digest here is evidence a run
+    /// against a pinned node produced, and moving one to keep a test
+    /// green would be re-recording evidence.
+    ///
+    /// # What this role does NOT change
+    ///
+    /// It solves nothing. The blinder solve is over the whole output set
+    /// because the target's tally is: a value commitment is a point on
+    /// one curve whichever asset generator it was built against, and the
+    /// excess the target checks sums every output alike. A sponsor
+    /// change therefore carries a DERIVED blinder like any other
+    /// non-solving committed output, and some receipt still absorbs the
+    /// input blinder sum.
+    ///
+    /// The registry places no cardinality rule on the role, for the
+    /// reason it places none on [`Self::Fee`]: every sponsored shape
+    /// this workspace has censused carries at most one sponsor change,
+    /// and that is an observation about the shapes built rather than a
+    /// rule the target states.
+    ///
+    /// Nor does it police the asset. A sponsor change whose asset EQUALS
+    /// the manifest's protocol asset registers, because the target has
+    /// no rule against a sponsor holding the protocol asset in reserve,
+    /// and refusing it here would be this file answering a question the
+    /// target contract does not ask. The two remain distinguishable in
+    /// the transcript, by the role code emitted above the asset rather
+    /// than by the asset itself.
+    SponsorChange {
+        /// The reserve asset this output carries, framed into the
+        /// transcript in the position the manifest's asset occupies for
+        /// every other role.
+        asset: [u8; 32],
+    },
 }
 
 impl FixtureOutputRole {
@@ -244,6 +307,22 @@ impl FixtureOutputRole {
             Self::Balancing => 2,
             Self::SoleBalancing => 3,
             Self::Fee => 4,
+            Self::SponsorChange { .. } => 5,
+        }
+    }
+
+    /// The asset this role carries in place of the manifest's, if any.
+    ///
+    /// `Some` for [`Self::SponsorChange`] alone. Every other role takes
+    /// the manifest's single `explicit_asset`, and this accessor is the
+    /// ONE seam through which a role may say otherwise — so a reader
+    /// checking that no existing digest moved has one place to look
+    /// rather than every asset use in the file.
+    #[must_use]
+    pub const fn own_asset(self) -> Option<[u8; 32]> {
+        match self {
+            Self::SponsorChange { asset } => Some(asset),
+            Self::Primary | Self::Balancing | Self::SoleBalancing | Self::Fee => None,
         }
     }
 
@@ -256,7 +335,7 @@ impl FixtureOutputRole {
     pub const fn solves_the_balance(self) -> bool {
         match self {
             Self::Balancing | Self::SoleBalancing => true,
-            Self::Primary | Self::Fee => false,
+            Self::Primary | Self::Fee | Self::SponsorChange { .. } => false,
         }
     }
 
@@ -265,10 +344,15 @@ impl FixtureOutputRole {
     /// False for [`Self::Fee`] alone. An explicit output has no blinder
     /// to derive, no nonce to derive, no proof to seed and no commitment
     /// to compute, and the registry records that absence as an absence.
+    ///
+    /// True for [`Self::SponsorChange`], whose whole point is that the
+    /// sponsor's remainder is committed rather than published.
     #[must_use]
     pub const fn carries_an_opening(self) -> bool {
         match self {
-            Self::Primary | Self::Balancing | Self::SoleBalancing => true,
+            Self::Primary | Self::Balancing | Self::SoleBalancing | Self::SponsorChange { .. } => {
+                true
+            }
             Self::Fee => false,
         }
     }
@@ -283,7 +367,9 @@ impl FixtureOutputRole {
     pub const fn requires_an_empty_program(self) -> bool {
         match self {
             Self::Fee => true,
-            Self::Primary | Self::Balancing | Self::SoleBalancing => false,
+            Self::Primary | Self::Balancing | Self::SoleBalancing | Self::SponsorChange { .. } => {
+                false
+            }
         }
     }
 }
@@ -295,6 +381,7 @@ impl std::fmt::Display for FixtureOutputRole {
             Self::Balancing => "balancing",
             Self::SoleBalancing => "sole balancing",
             Self::Fee => "fee",
+            Self::SponsorChange { .. } => "sponsor change",
         };
         formatter.write_str(text)
     }
@@ -532,6 +619,11 @@ pub struct ConfidentialFixtureManifest {
     /// The parity counter bound this case searches under.
     pub retry_limit: u16,
     /// The explicit protocol asset every protocol output carries.
+    ///
+    /// Every output takes it EXCEPT one whose role names an asset of its
+    /// own — today [`FixtureOutputRole::SponsorChange`] alone, whose
+    /// remainder is denominated in the sponsor's reserve rather than in
+    /// the protocol asset the receipts carry.
     pub explicit_asset: [u8; 32],
     /// The value blinder the funding inputs contribute, as a scalar.
     ///
@@ -1076,6 +1168,20 @@ impl FramedTranscript {
 /// impossible to mistake for a byte-identity one, and it is why the
 /// accepted semantic-only ruling costs one field rather than a second
 /// digest.
+/// The asset one output carries.
+///
+/// The manifest's single explicit asset, unless the output's ROLE names
+/// one of its own. Written once and used by both the transcript and the
+/// commitment, because a transcript that framed one asset while the
+/// commitment was built against another would produce a digest that
+/// described a fixture nobody could reproduce.
+fn output_asset(
+    manifest: &ConfidentialFixtureManifest,
+    output: &ConfidentialFixtureOutput,
+) -> [u8; 32] {
+    output.role.own_asset().unwrap_or(manifest.explicit_asset)
+}
+
 fn digest_transcript(
     manifest: &ConfidentialFixtureManifest,
     openings: &FixtureOpenings,
@@ -1102,7 +1208,15 @@ fn digest_transcript(
     for (index, output) in manifest.outputs.iter().enumerate() {
         transcript.long(u32::try_from(index).unwrap_or(u32::MAX));
         transcript.octet(output.role.transcript_code());
-        transcript.framed(&manifest.explicit_asset);
+        // The asset field is sourced by ROLE, in the position it has
+        // always occupied. Every role but the sponsor change takes the
+        // manifest's single explicit asset, which is the byte string
+        // this line has always emitted, so a manifest without a sponsor
+        // change hashes exactly as it did before the role existed. The
+        // new source is reachable only under the role code emitted on
+        // the line above, which is what makes an asset that is not the
+        // manifest's cost no registered digest anything.
+        transcript.framed(&output_asset(manifest, output));
         transcript.framed(&output.output_program);
         // Whether an opening block follows is decided by the ROLE code
         // emitted just above, which is why no presence flag is needed and
@@ -1408,8 +1522,12 @@ fn derive_at_counter(
             parity_counter,
             0,
         );
+        // Against the output's OWN asset generator where the role names
+        // one. A sponsor change committed against the protocol asset
+        // would be a point the target reads as the wrong asset entirely,
+        // and the surjection proof would have nothing to point at.
         let value_commitment = commitment::commitment(
-            &manifest.explicit_asset,
+            &output_asset(manifest, output),
             output.semantic_amount,
             &value_blinder,
         )
