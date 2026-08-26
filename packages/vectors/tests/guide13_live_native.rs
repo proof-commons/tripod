@@ -2003,8 +2003,14 @@ fn the_witness_content_negatives_are_offered_beside_their_control() {
 /// It asserts nothing about what the node decided. A refusal is written
 /// down as the target typed it and the run stops, which is what a typed
 /// stop is made of.
-fn run_one_sponsor_shape(shape: vectors::live_sponsor_shapes::SponsorShape, extension: &str) {
-    use vectors::live_sponsor_shapes::{SponsorShapePlanner, render_sponsor_shape};
+fn run_one_sponsor_shape(
+    shape: vectors::live_sponsor_shapes::SponsorShape,
+    value_form: vectors::live_sponsor_shapes::SponsorValueForm,
+    extension: &str,
+) {
+    use vectors::live_sponsor_shapes::{
+        SponsorShapePlanner, SponsorValueForm, render_sponsor_shape,
+    };
 
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
@@ -2041,8 +2047,13 @@ fn run_one_sponsor_shape(shape: vectors::live_sponsor_shapes::SponsorShape, exte
         ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
     );
 
-    let mut planner = SponsorShapePlanner::for_shape(shape, identifier(&genesis))
-        .expect("the sponsored ceremony builds");
+    let mut planner = match value_form {
+        SponsorValueForm::Explicit => SponsorShapePlanner::for_shape(shape, identifier(&genesis)),
+        SponsorValueForm::Committed => {
+            SponsorShapePlanner::for_committed_sponsor_value(shape, identifier(&genesis))
+        }
+    }
+    .expect("the sponsored ceremony builds");
     let started = Instant::now();
     let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
@@ -2068,7 +2079,7 @@ fn run_one_sponsor_shape(shape: vectors::live_sponsor_shapes::SponsorShape, exte
     }
     outcome.expect("the ceremony reached the target");
 
-    judge_one_sponsor_shape(record, &rendered, shape);
+    judge_one_sponsor_shape(record, &rendered, shape, value_form);
 }
 
 /// What a completed sponsored run must hold.
@@ -2080,6 +2091,7 @@ fn judge_one_sponsor_shape(
     record: &vectors::live_sponsor_shapes::SponsorShapeRecord,
     rendered: &str,
     shape: vectors::live_sponsor_shapes::SponsorShape,
+    value_form: vectors::live_sponsor_shapes::SponsorValueForm,
 ) {
     // The sponsor round trip happened, and it bound to the exact bytes.
     let round = record.round().expect("the sponsor round trip completed");
@@ -2146,9 +2158,129 @@ fn judge_one_sponsor_shape(
         }
     }
 
-    // The run says in its own bytes what it did not establish.
+    judge_the_sponsor_value_form(record, rendered, value_form);
+
     assert!(rendered.contains("evidences_no_negative_case true"));
-    assert!(rendered.contains("does_not_establish confidential-sponsor-values"));
+}
+
+/// What the sponsor's VALUE FORM obliges the run to have observed.
+///
+/// Split from [`judge_one_sponsor_shape`] because it judges a different
+/// axis. That function asks what any sponsored run owes — a round trip
+/// bound to its own bytes, a candidate that reached the node, and the
+/// change role where an acceptance happened. This asks what THIS run's
+/// sponsor coin was, and the two grew independent enough that reading
+/// one past the other had become the work.
+fn judge_the_sponsor_value_form(
+    record: &vectors::live_sponsor_shapes::SponsorShapeRecord,
+    rendered: &str,
+    value_form: vectors::live_sponsor_shapes::SponsorValueForm,
+) {
+    use vectors::live_sponsor_shapes::{
+        CommittedSponsorCheck, SponsorValueForm, sponsored_run_of_record as record_of,
+    };
+
+    // The value form, judged where a reader of the test sees it.
+    match value_form {
+        SponsorValueForm::Explicit => {
+            assert!(
+                record.committed().is_none(),
+                "an explicit run reported a committed sponsor census",
+            );
+            assert!(
+                record.sponsor_funded().is_some(),
+                "an explicit run observed no amount for its sponsor coin",
+            );
+            // The run says in its own bytes what it did not establish.
+            assert!(rendered.contains("does_not_establish confidential-sponsor-values"));
+        }
+        SponsorValueForm::Committed => {
+            let census = record
+                .committed()
+                .expect("a committed run reported no committed sponsor census");
+            // Named one at a time, so a failure says WHICH check failed
+            // rather than that some did.
+            for check in CommittedSponsorCheck::ALL {
+                assert!(
+                    census.holds(check),
+                    "the committed sponsor coin failed the check {}",
+                    check.name(),
+                );
+            }
+            assert!(census.every_check_held());
+            // The coin exists on a chain: its funding transaction was
+            // accepted and mined, and the node computed an identity for
+            // it. That is a separate acceptance from the candidate's and
+            // is not a substitute for one.
+            assert_eq!(
+                record.committed_funding_txid(),
+                Some(record_of::COMMITTED_SPONSOR_FUNDING_TXID),
+                "the committed sponsor coin was mined under another identity",
+            );
+            assert_eq!(
+                record.committed_funding_weight(),
+                Some(record_of::COMMITTED_SPONSOR_FUNDING_WEIGHT),
+            );
+            // No amount was observed for the coin the control spends,
+            // which is the whole difference the axis makes.
+            assert!(
+                record.sponsor_funded().is_none(),
+                "a committed run reported an amount for a coin whose value is a point",
+            );
+            // And the disclaimer moved with the subject: this run
+            // establishes that confidential sponsor values are FUNDED,
+            // so it no longer says it establishes nothing about them.
+            assert!(!rendered.contains("does_not_establish confidential-sponsor-values"));
+            assert!(rendered.contains("does_not_establish confidential-receipt-values"));
+            assert!(rendered.contains("committed_sponsor_every_check_held true"));
+
+            // The candidate that SPENDS the coin is refused, and the
+            // refusal is the finding rather than a disappointment. An
+            // ACCEPTANCE here would mean the arithmetic below is wrong,
+            // which is why it is asserted rather than tolerated.
+            //
+            // The reserve sub-equation is the sponsor input against the
+            // fee and the change. The input carries a blinder now, both
+            // outputs that spend it are explicit and carry none, and
+            // nothing in the transaction absorbs the difference — so the
+            // target's balance check cannot close whatever the amounts
+            // are.
+            assert_eq!(
+                record.observed_layer(),
+                Some(
+                    target_elements_conformance::protocol::ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+                ),
+                "a committed sponsor value was not refused at the balance check",
+            );
+            assert!(record.accepted_txid().is_none());
+            assert!(
+                rendered.contains(record_of::COMMITTED_SPONSOR_REFUSAL),
+                "the target named something other than its balance check",
+            );
+
+            // Attributability, MEASURED. A candidate names the coin it
+            // spends by outpoint alone, so the value form is not in
+            // these bytes at all: this submission and the explicit
+            // control's are the same shape at the same width, and the
+            // refusal is attributable to which coin was reached for.
+            assert_eq!(
+                record.submitted_bytes(),
+                record_of::COMMITTED_SPONSOR_SUBMITTED_BYTES,
+            );
+            assert_eq!(
+                record.submitted_bytes(),
+                record_of::SPONSORED_CHANGE_SUBMITTED_BYTES,
+            );
+            assert_eq!(
+                record.target_weight(),
+                Some(record_of::COMMITTED_SPONSOR_TARGET_WEIGHT),
+            );
+            assert_eq!(
+                record.target_weight(),
+                Some(record_of::SPONSORED_CHANGE_TARGET_WEIGHT),
+            );
+        }
+    }
 }
 
 /// §15.1 `sponsor-change-absent`: the sponsor funds the fee exactly.
@@ -2162,7 +2294,11 @@ fn judge_one_sponsor_shape(
 fn the_sponsored_change_absent_shape_is_submitted_to_a_real_target() {
     use vectors::live_sponsor_shapes::SponsorShape;
 
-    run_one_sponsor_shape(SponsorShape::ChangeAbsent, "sponsored-change-absent");
+    run_one_sponsor_shape(
+        SponsorShape::ChangeAbsent,
+        vectors::live_sponsor_shapes::SponsorValueForm::Explicit,
+        "sponsored-change-absent",
+    );
 }
 
 /// §15.1 `sponsor-change-present`: the sponsor takes change back.
@@ -2175,7 +2311,39 @@ fn the_sponsored_change_absent_shape_is_submitted_to_a_real_target() {
 fn the_sponsored_change_present_shape_is_submitted_to_a_real_target() {
     use vectors::live_sponsor_shapes::SponsorShape;
 
-    run_one_sponsor_shape(SponsorShape::ChangePresent, "sponsored-change-present");
+    run_one_sponsor_shape(
+        SponsorShape::ChangePresent,
+        vectors::live_sponsor_shapes::SponsorValueForm::Explicit,
+        "sponsored-change-present",
+    );
+}
+
+/// The with-change sponsored control, funded by a sponsor coin whose
+/// VALUE is committed.
+///
+/// The first transaction this workspace offers a target that spends a
+/// blinded sponsor value. Its asset stays explicit, because the covenant
+/// introspects it; its fee stays explicit, because consensus defines a
+/// fee by its explicitness; and the receipts stay explicit, because this
+/// run varies ONE thing against the control above it and the receipts
+/// are not it.
+///
+/// What the run has to establish before it reaches a node is that the
+/// value the chain holds for the sponsor coin is the value this
+/// workspace derives from published constants and no chain at all. That
+/// check is in the ceremony rather than here, and it stops the run
+/// rather than reporting a finding: a run whose two copies disagreed
+/// would have funded something blinded while being unable to say what.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_committed_sponsor_value_shape_is_submitted_to_a_real_target() {
+    use vectors::live_sponsor_shapes::{SponsorShape, SponsorValueForm};
+
+    run_one_sponsor_shape(
+        SponsorShape::ChangePresent,
+        SponsorValueForm::Committed,
+        "sponsored-committed-value",
+    );
 }
 
 /// §15.6 `missing-sponsor-authorization`, the mutant offered FIRST.

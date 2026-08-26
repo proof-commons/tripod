@@ -832,6 +832,48 @@ CONFIDENTIAL_FIXTURE_CATALOGUE = {
             {"role": "primary", "semantic_amount": 100_000_000},
         ),
     },
+    # The sponsor's own reserve coins, whose VALUES are committed.
+    #
+    # # Why a sponsor coin needs a fixture at all
+    #
+    # Because nothing on the chain states its amount. An explicit sponsor
+    # coin is read back from the node and the caller learns what it holds
+    # by asking; a committed one is read back as a commitment, and the
+    # amount behind it exists only where it was written down. This table
+    # is where it is written down, and the digest is what binds the
+    # caller's copy of that number to this one.
+    #
+    # # Why there are TWO outputs and not one
+    #
+    # The funding input is the adapter's own change coin, which is
+    # explicit and therefore contributes a zero value blinder. A single
+    # committed output would have to carry a zero blinder to close that
+    # sum, and a commitment under a zero blinder is a point anybody
+    # recomputes from a guessed amount -- the form of a blinded output
+    # with none of the hiding. So the coin that gets SPENT is a primary
+    # whose blinder is derived, and a second output solves the balance.
+    #
+    # # Why both amounts are the same number
+    #
+    # So that the pair witnesses the thing a commitment is for. The two
+    # outputs carry equal semantic amounts under different blinders, so
+    # their serialized commitments differ; a reader who could recover an
+    # amount from a commitment would find these two identical, and they
+    # are not.
+    #
+    # The primary's amount is the sponsor offer of the with-change shape
+    # -- the fee it pays plus the change it takes back -- because that is
+    # the coin the sponsored ceremony spends. The reserve sub-equation is
+    # held on the caller's side, where the shape states it.
+    "ctf-v1/sponsor-reserve-dual-parity": {
+        "retry_limit": CONFIDENTIAL_MAX_PARITY_COUNTER,
+        # Explicit input, so the same zero the predecessors state.
+        "input_blinder_sum": bytes(32),
+        "outputs": (
+            {"role": "primary", "semantic_amount": 1_250},
+            {"role": "balancing", "semantic_amount": 1_250},
+        ),
+    },
 }
 
 
@@ -2003,6 +2045,16 @@ def explicit_amount(field: bytes, path: str) -> int:
         "confidential or malformed value field, which this adapter cannot "
         "materialise deterministically: %s" % path
     )
+
+
+def explicit_value_field(amount: int) -> bytes:
+    """The nine-byte explicit form of one value field.
+
+    The inverse of `explicit_amount`, spelled once so the two forms of a
+    value field are built in one place: a prefix byte and the amount in
+    the target's own big-endian order.
+    """
+    return bytes([EXPLICIT_PREFIX]) + amount.to_bytes(8, "big")
 
 
 class CaseExecutor:
@@ -3868,12 +3920,174 @@ class OperationExecutor:
             entry = self.created(txid, index)
             # Retained so a later signing step knows what the coin holds
             # without asking the caller to restate it.
+            #
+            # The FIELD is retained and not the number. A signature hash
+            # commits to the spent output's value field verbatim, and
+            # that field has two forms -- an explicit one that carries
+            # an amount and a committed one that carries a point. A
+            # cache holding an integer can only ever reconstruct the
+            # first, so a coin of the second kind would have nothing
+            # here to be signed against. Writing the field itself is
+            # what lets one signing step serve both.
             self.sponsor_coins["%s:%d" % (txid, index)] = {
-                "amount": entry["amount_satoshis"],
+                "value_field": explicit_value_field(entry["amount_satoshis"]),
                 "asset": entry["asset"],
             }
             created.append(entry)
         return {"issued_asset": None, "funded_outputs": created, "accepted_txid": None}
+
+    def fund_confidential_sponsor(self, subject: dict) -> dict:
+        """Creates sponsor coins whose VALUES are committed and whose
+        ASSET stays explicit.
+
+        # The pairing, and why it is not a middle position
+
+        The sponsor's asset is the chain's own reserve and it is written
+        explicitly, because the candidate's covenant INTROSPECTS it: an
+        introspection reads a field, and a committed asset is not a field
+        anything reads an identity out of. The value carries a commitment
+        because the value is the part a sponsor has a reason to keep, and
+        nothing in the covenant reads it. So the two fields differ for
+        two separate reasons rather than as a compromise between them.
+
+        # Why this transaction has an output nothing will ever spend
+
+        Its single input is this adapter's explicit change coin, which
+        contributes a zero value blinder. One committed output would
+        therefore have to be committed under a zero blinder to close the
+        sum, and that commitment is recomputable from a guessed amount --
+        it has the shape of a blinded output and hides nothing. The
+        fixture states two outputs for that reason: the coin the sponsor
+        will spend is a primary whose blinder is derived, and the second
+        solves the balance. Only the first is offered onward.
+
+        # What is checked before any commitment is built
+
+        That the first destination is the program THIS adapter can
+        authorize a spend of. A sponsor coin paid anywhere else is a coin
+        this adapter cannot sign, and the run would discover that two
+        steps later as a signing refusal whose cause looked like the
+        candidate's.
+
+        # Why the created coins are not read back the usual way
+
+        `created` reads `gettxout`'s `value`, and a committed output does
+        not carry one. The node is not asked for what it does not hold:
+        the outputs are reported the way the confidential receipt path
+        reports its own, as commitments beside the mined bytes, and the
+        caller's own oracle is what recomputes them.
+        """
+        executor = self.executor
+        messages = executor.messages
+        materializer = self.materializer
+        if materializer is None:
+            raise AdapterError("this adapter has no deterministic materializer")
+
+        binding = subject["binding"]
+        handle = binding["fixture_handle"]
+        if handle not in CONFIDENTIAL_FIXTURE_CATALOGUE:
+            raise AdapterError("no fixture is registered under that handle")
+        programs = [destination["output_program"] for destination in subject["destinations"]]
+        authorizable = self.sponsor_program()
+        if programs[0] != authorizable:
+            raise AdapterError(
+                "the step's first destination is not the program this adapter "
+                "can authorize a spend of, so the coin it asks for would be "
+                "unspendable by the run that asked for it"
+            )
+
+        field = executor.policy_asset_field
+        if field is None:
+            raise AdapterError("this adapter has not learned the chain's reserve asset")
+        # The reserve travels in the target's internal order inside the
+        # field and in the printed order everywhere a caller reads one.
+        asset = field[1:]
+        printed = asset[::-1].hex()
+
+        resolved = materializer.resolve(handle, asset, programs, binding["profiles"])
+        if bytes(binding["fixture_digest"]) != resolved["digest"]:
+            raise AdapterError("the fixture registered under that handle carries another digest")
+
+        outputs = resolved["outputs"]
+        openings = resolved["openings"]
+        total = sum(output["semantic_amount"] for output in outputs)
+        source = executor.change
+        if source is None:
+            raise AdapterError("the adapter has no spendable change output")
+        remainder = source["amount"] - total - ADAPTER_FEE_SATOSHIS
+        if remainder < 0:
+            raise AdapterError(
+                "the adapter's working coin cannot fund this sponsor step: "
+                "wanted %d plus a fee of %d, and it holds %d"
+                % (total, ADAPTER_FEE_SATOSHIS, source["amount"])
+            )
+
+        transaction = messages.CTransaction()
+        transaction.version = 2
+        transaction.vin.append(
+            messages.CTxIn(
+                messages.COutPoint(txid_to_internal_int(source["txid"]), source["vout"]),
+                nSequence=0xFFFFFFFE,
+            )
+        )
+        for index, output in enumerate(outputs):
+            opening = openings[index]
+            member = executor.output(output["semantic_amount"], programs[index], field)
+            member.nValue.vchCommitment = opening["value_commitment"]
+            member.nNonce = messages.CTxOutNonce(opening["nonce_field"])
+            transaction.vout.append(member)
+        transaction.vout.append(executor.output(remainder, executor.anyone_can_spend))
+        transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+
+        transaction.wit.vtxoutwit = [messages.CTxOutWitness() for _ in transaction.vout]
+        for index, output in enumerate(outputs):
+            opening = openings[index]
+            transaction.wit.vtxoutwit[index].vchRangeproof = materializer.rangeproof(
+                opening["commitment"],
+                opening["value_blinder"],
+                opening["rangeproof_seed"],
+                output["semantic_amount"],
+                programs[index],
+                resolved["generator"],
+            )
+            transaction.wit.vtxoutwit[index].vchSurjectionproof = b""
+
+        readback = self.mine_and_read_back(transaction, "confidential sponsor funding")
+        txid = readback["transaction_id"]
+        executor.change = {"txid": txid, "vout": len(outputs), "amount": remainder}
+
+        reported = []
+        for index, output in enumerate(outputs):
+            opening = openings[index]
+            # The signing step's own record of what this coin holds. The
+            # field is the commitment, because that is what a spend of
+            # this coin commits to.
+            self.sponsor_coins["%s:%d" % (txid, index)] = {
+                "value_field": opening["value_commitment"],
+                "asset": printed,
+            }
+            reported.append(
+                {
+                    "outpoint": {"txid": txid, "vout": index},
+                    "explicit_asset": printed,
+                    "value_commitment": list(opening["value_commitment"]),
+                    "nonce": list(opening["nonce_field"]),
+                    "script": programs[index].hex(),
+                    "output_witness_index": index,
+                    # Declared and empty, because an absent field cannot
+                    # be observed to be empty.
+                    "surjection_proof": [],
+                    "rangeproof": list(transaction.wit.vtxoutwit[index].vchRangeproof),
+                }
+            )
+        return {
+            "issued_asset": None,
+            "funded_outputs": [],
+            "accepted_txid": None,
+            "confidential_funded_outputs": reported,
+            "mined_readback": readback,
+            "transaction_weight": executor.weight_of(transaction.serialize().hex()),
+        }
 
     def sign_sponsor(self, subject: dict) -> dict:
         """Authorizes one input of a finalized transaction.
@@ -3935,10 +4149,14 @@ class OperationExecutor:
                 "authorize a spend of, so it holds nothing that could"
             )
 
+        # The field the funding step retained, written through unchanged.
+        # Whether it is an explicit amount or a value commitment is the
+        # funding step's fact and not this one's: the framework below
+        # serializes either form correctly, and a signing step that
+        # rebuilt the field from a number would silently be able to
+        # authorize only one of them.
         value = messages.CTxOutValue()
-        value.vchCommitment = bytes([EXPLICIT_PREFIX]) + held["amount"].to_bytes(
-            8, "big"
-        )
+        value.vchCommitment = held["value_field"]
 
         key = self.sponsor_key()
         pubkey = key.get_pubkey().get_bytes()
@@ -6094,6 +6312,22 @@ def serve(arguments) -> int:
                     if executor.operations is not None
                     and executor.operations.materializer is not None
                     else []
+                )
+                # The join of the two above, advertised on the
+                # conjunction of their conditions because it is a claim
+                # about doing both to ONE coin: committing its value at
+                # funding time and still being able to authorize a spend
+                # of it afterwards. Neither neighbour implies it -- the
+                # confidential arm creates coins it never spends, and the
+                # sponsor arm spends coins whose value is a number -- and
+                # what makes it true here is that the funding step
+                # retains the value FIELD rather than an amount.
+                + (
+                    ["confidential_value_sponsor_authorization"]
+                    if executor.operations is not None
+                    and executor.sponsor_authorization
+                    and executor.operations.materializer is not None
+                    else []
                 ),
                 "confidential_funding": (
                     {
@@ -6533,13 +6767,31 @@ def parse_confidential_funding_subject(subject: dict) -> dict:
     if not issue and asset is None:
         raise FatalAdapterError("a non-issuing funding step named no asset")
 
-    raw_destinations = subject.get("destinations")
-    if not isinstance(raw_destinations, list) or not raw_destinations:
+    destinations = parse_confidential_destinations(subject.get("destinations"))
+    binding = parse_confidential_binding(subject.get("binding"))
+    return {
+        "issue_asset": issue,
+        "asset": asset,
+        "destinations": destinations,
+        "binding": binding,
+    }
+
+
+def parse_confidential_destinations(raw: object) -> list:
+    """Reads the ordered destination programs of one confidential
+    funding subject.
+
+    Shared by the arms that name a protocol asset and the arm that does
+    not, because the ordered programs mean the same thing in both: they
+    are what the fixture's outputs are paid to, in the order the fixture
+    states them, and they are inside the digest.
+    """
+    if not isinstance(raw, list) or not raw:
         raise FatalAdapterError(
             "request.subject.destinations is not a nonempty list of destinations"
         )
     destinations = []
-    for entry in raw_destinations:
+    for entry in raw:
         destination = require_object(entry, "request.subject.destinations[]")
         require_keys(destination, ("output_program",), "request.subject.destinations[]")
         destinations.append(
@@ -6550,8 +6802,12 @@ def parse_confidential_funding_subject(subject: dict) -> dict:
                 )
             }
         )
+    return destinations
 
-    binding = require_object(subject.get("binding"), "request.subject.binding")
+
+def parse_confidential_binding(raw: object) -> dict:
+    """Reads the fixture binding of one confidential funding subject."""
+    binding = require_object(raw, "request.subject.binding")
     require_keys(
         binding,
         ("fixture_handle", "fixture_digest", "profiles"),
@@ -6591,14 +6847,29 @@ def parse_confidential_funding_subject(subject: dict) -> dict:
                 "not read: %s" % (member, stated)
             )
     return {
-        "issue_asset": issue,
-        "asset": asset,
-        "destinations": destinations,
-        "binding": {
-            "fixture_handle": handle,
-            "fixture_digest": digest,
-            "profiles": {member: profiles[member] for member in assigned},
-        },
+        "fixture_handle": handle,
+        "fixture_digest": digest,
+        "profiles": {member: profiles[member] for member in assigned},
+    }
+
+
+def parse_confidential_sponsor_subject(subject: dict) -> dict:
+    """Reads one confidential SPONSOR funding subject, strictly.
+
+    # Why this subject names no asset where its sibling does
+
+    The sibling funds coins of the protocol asset, which an earlier step
+    issued and the caller therefore knows. A sponsor coin carries the
+    chain's own reserve, which no step of a run chooses: the adapter
+    reads it off the chain it was pointed at, and a caller that stated
+    one would be stating a fact it learned from this adapter in the
+    first place. So the member is absent rather than optional, and a
+    record carrying one is refused here.
+    """
+    require_keys(subject, ("destinations", "binding"), "request.subject")
+    return {
+        "destinations": parse_confidential_destinations(subject.get("destinations")),
+        "binding": parse_confidential_binding(subject.get("binding")),
     }
 
 
@@ -6613,6 +6884,9 @@ def parse_operation_subject(raw: object, kind: str) -> dict:
     subject = require_object(raw, "request.subject")
     if kind == "fund_confidential":
         return parse_confidential_funding_subject(subject)
+
+    if kind == "fund_confidential_sponsor":
+        return parse_confidential_sponsor_subject(subject)
 
     if kind == "submit":
         require_keys(subject, ("transaction_bytes",), "request.subject")
@@ -6750,6 +7024,7 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
         "fund_sponsor",
         "sign_sponsor",
         "fund_confidential",
+        "fund_confidential_sponsor",
     ):
         raise FatalAdapterError("the harness sent an operation step of an unknown kind")
     subject = parse_operation_subject(request.get("subject"), kind)
@@ -6778,6 +7053,13 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
             body.setdefault("accepted_txid", None)
         elif kind == "fund_sponsor":
             body = operations.fund_sponsor(subject)
+        elif kind == "fund_confidential_sponsor":
+            # The confidential arm of sponsor funding, and never a
+            # fallback for the explicit one: it answers with the
+            # confidential members and leaves the explicit ones empty,
+            # because a coin whose value is committed has no amount for
+            # the explicit members to carry.
+            body = operations.fund_confidential_sponsor(subject)
         elif kind == "sign_sponsor":
             body = operations.sign_sponsor(subject)
         elif kind == "fund_confidential":

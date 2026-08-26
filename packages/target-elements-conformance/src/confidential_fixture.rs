@@ -1909,6 +1909,53 @@ pub fn triple_predecessor_handle() -> ConfidentialFixtureHandle {
     ConfidentialFixtureHandle::new(TRIPLE_PREDECESSOR_HANDLE.to_owned())
 }
 
+/// The sponsor's own reserve coins, whose values are committed.
+///
+/// # Why a committed sponsor coin needs a registered fixture where an
+/// explicit one does not
+///
+/// Because nothing on the chain states its amount. An explicit sponsor
+/// coin is read back from the node and a caller learns what it holds by
+/// asking; a committed one reads back as a commitment, and the amount
+/// behind it exists only where it was written down. A registered fixture
+/// is where it is written down, and the digest is what holds the
+/// caller's copy of that number and the executor's to each other.
+///
+/// # Why the case has TWO outputs
+///
+/// The funding input is the executor's own change coin, which is
+/// explicit and therefore contributes a zero value blinder. One
+/// committed output would have to carry a zero blinder to close that
+/// sum, and a commitment under a zero blinder is a point anybody
+/// recomputes from a guessed amount — the form of a blinded output with
+/// none of the hiding, which is the degeneracy
+/// [`FixtureOutputRole::SoleBalancing`] already refuses. So the coin the
+/// sponsor will spend is a [`FixtureOutputRole::Primary`] whose blinder
+/// is derived, and a second output solves the balance.
+///
+/// # Why both amounts are the same number
+///
+/// So the pair witnesses what a commitment is for. Two outputs carrying
+/// equal semantic amounts under different blinders have different
+/// serialized commitments; a reader who could recover an amount from a
+/// commitment would find these two identical, and they are not.
+///
+/// # The spelling
+///
+/// It encodes no amount, no unit, no asset, no opening, no derivation
+/// value, no digest fragment, no retry result, and no transaction
+/// identity, exactly as the predecessor handles do. "Reserve" names the
+/// ROLE the asset plays for a sponsor and not which asset it is; which
+/// one it is, is the chain's fact and reaches the digest through the
+/// manifest.
+pub const SPONSOR_RESERVE_HANDLE: &str = "ctf-v1/sponsor-reserve-dual-parity";
+
+/// The sponsor reserve case's handle.
+#[must_use]
+pub fn sponsor_reserve_handle() -> ConfidentialFixtureHandle {
+    ConfidentialFixtureHandle::new(SPONSOR_RESERVE_HANDLE.to_owned())
+}
+
 /// The scalar width every derived value carries.
 ///
 /// Stated once here so a reader of this module does not have to reach

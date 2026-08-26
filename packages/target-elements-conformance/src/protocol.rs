@@ -589,6 +589,35 @@ pub enum ExecutorCapability {
     /// an unsupported selection is a typed refusal before construction
     /// rather than a silent downgrade after it.
     ConfidentialValueTestFunding,
+    /// It creates a coin of its OWN reserve whose value is committed,
+    /// and can still authorize a spend of it afterwards.
+    ///
+    /// # Why neither existing claim covers this one
+    ///
+    /// [`Self::ConfidentialValueTestFunding`] is a claim about coins the
+    /// executor creates and never spends: a confidential receipt is
+    /// funded, mined, and handed to a candidate, and the executor
+    /// retains nothing about it. [`Self::TestSponsorAuthorization`] is a
+    /// claim about coins the executor DOES spend, and it has always been
+    /// a claim about explicit ones, an amount being enough to rebuild
+    /// the value field a signature hash commits to.
+    ///
+    /// A committed sponsor coin needs both halves at once, and the join
+    /// is where the work is rather than where the words are. The value
+    /// field of such a coin is a point and not a number, so an executor
+    /// that retained an amount has nothing it can sign against: it has
+    /// to retain the FIELD across the funding step. An executor holding
+    /// both existing capabilities may still be unable to do that, which
+    /// is why this is a third claim rather than the conjunction of two
+    /// others.
+    ///
+    /// # What advertising it does not claim
+    ///
+    /// Anything about a sponsor's standing, and anything about what a
+    /// target thinks of a transaction built from such a coin. It says
+    /// the executor can produce one and authorize a spend of it, and a
+    /// target's verdict on the result is a separate observation.
+    ConfidentialValueSponsorAuthorization,
 }
 
 impl ExecutorHandshake {
@@ -1872,6 +1901,30 @@ pub enum OperationStepKind {
     /// nicely. Reading one as the other would attach an explicit
     /// observation to a confidential obligation.
     FundConfidential,
+    /// Create a coin out of the executor's own reserve whose VALUE is
+    /// committed and whose ASSET stays explicit, at a program the
+    /// executor is able to authorize a spend of.
+    ///
+    /// # Why it is neither of the two kinds it sits between
+    ///
+    /// Not [`Self::FundSponsor`], because that step reports an amount
+    /// the caller reads off the chain, and this one has no amount to
+    /// report: what comes back is a commitment, and the number behind it
+    /// lives in the fixture rather than in the answer. Not
+    /// [`Self::FundConfidential`], because that step funds coins of a
+    /// protocol asset the caller names and never spends them, while this
+    /// one funds coins of a reserve the EXECUTOR names and exists so
+    /// that one of them can be spent.
+    ///
+    /// # Why the subject names no asset
+    ///
+    /// The reserve is the executor's fact. A caller learns it from an
+    /// earlier sponsor-funding answer, and restating it here would be
+    /// handing the executor back something it said first. It is not
+    /// unchecked for being unstated: the reserve is folded into the
+    /// fixture digest, so a caller whose idea of the reserve differs
+    /// from the executor's fails the binding rather than proceeding.
+    FundConfidentialSponsor,
 }
 
 impl std::fmt::Display for OperationStepKind {
@@ -1891,6 +1944,7 @@ impl std::fmt::Display for OperationStepKind {
             Self::FundSponsor => "fund_sponsor",
             Self::SignSponsor => "sign_sponsor",
             Self::FundConfidential => "fund_confidential",
+            Self::FundConfidentialSponsor => "fund_confidential_sponsor",
         };
         formatter.write_str(text)
     }
@@ -2310,6 +2364,38 @@ pub struct TargetConfidentialFundingSubject {
     pub binding: ConfidentialFundingBinding,
 }
 
+/// The subject of one confidential SPONSOR funding step.
+///
+/// # Why the asset question is absent rather than optional
+///
+/// The sibling above asks for coins of a protocol asset, which an
+/// earlier step of the same run issued, so the caller states which one.
+/// This step asks for coins of the chain's RESERVE, which no step of a
+/// run chooses: the executor reads it off the chain it was pointed at
+/// and reports it, and a caller stating one would be handing back a fact
+/// it learned from that report.
+///
+/// Unstated is not unchecked. The reserve is folded into the fixture
+/// digest this subject binds itself to, so a caller that resolved its
+/// own fixture against a different asset presents a digest the executor
+/// does not reproduce, and the step refuses at the binding before any
+/// commitment is built.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetConfidentialSponsorFundingSubject {
+    /// Where the created outputs pay, in fixed order.
+    ///
+    /// The FIRST is the coin that will be spent, and it has to be the
+    /// program the executor can authorize a spend of. The executor
+    /// checks that rather than trusting it: a sponsor coin paid anywhere
+    /// else is one nothing can spend, and the run would meet that two
+    /// steps later as a signing refusal that looked like the
+    /// candidate's.
+    pub destinations: Vec<ConfidentialFundingDestination>,
+    /// What the request binds itself to.
+    pub binding: ConfidentialFundingBinding,
+}
+
 /// The subject of one operation step.
 ///
 /// Untagged because the kind is already stated in the case identity, and
@@ -2353,6 +2439,18 @@ pub enum OperationSubject {
     /// `amount_per_output`. That disjointness is a correctness property
     /// and has its own test rather than a comment.
     ConfidentialFunding(Box<TargetConfidentialFundingSubject>),
+    /// A confidential sponsor-funding step's subject.
+    ///
+    /// # How this stays distinguishable from the arm above it
+    ///
+    /// By the member the two do not share. Both carry `destinations` and
+    /// `binding`; only the protocol arm carries `issue_asset`, and under
+    /// `deny_unknown_fields` neither will read the other's record — the
+    /// protocol arm refuses one with no `issue_asset` because the member
+    /// is required, and this arm refuses one that has it because the
+    /// member is unknown here. That is a structural difference rather
+    /// than an ordering accident, and it has a test.
+    ConfidentialSponsorFunding(Box<TargetConfidentialSponsorFundingSubject>),
 }
 
 impl OperationSubject {
@@ -2369,6 +2467,7 @@ impl OperationSubject {
             Self::SponsorFunding(_) => OperationStepKind::FundSponsor,
             Self::SponsorSigning(_) => OperationStepKind::SignSponsor,
             Self::ConfidentialFunding(_) => OperationStepKind::FundConfidential,
+            Self::ConfidentialSponsorFunding(_) => OperationStepKind::FundConfidentialSponsor,
         }
     }
 
@@ -2398,6 +2497,15 @@ impl OperationSubject {
             // funds perfectly well may be unable to answer a single
             // confidential step.
             Self::ConfidentialFunding(_) => ExecutorCapability::ConfidentialValueTestFunding,
+            // A third capability rather than either neighbour, because
+            // the two claims it joins come apart at the retained field:
+            // an executor that funds confidential receipts keeps
+            // nothing about them, and one that authorizes explicit
+            // sponsor coins keeps an amount. Neither is enough to sign a
+            // spend of a coin whose value is a point.
+            Self::ConfidentialSponsorFunding(_) => {
+                ExecutorCapability::ConfidentialValueSponsorAuthorization
+            }
         }
     }
 }
@@ -2700,10 +2808,10 @@ impl NativeOperationResponse {
     /// it judged — a refusal is a verdict, and the transaction it refused
     /// still has a weight the node reports.
     ///
-    /// The match over the step kinds is exhaustive and stays that way. A
-    /// kind added later has no shape rule until one is written here, and
-    /// the compiler is what says so — a catch-all arm would let a new kind
-    /// be admitted, or refused, by a rule nobody chose for it.
+    /// This half asks which members belong to a kind at all. What a kind
+    /// OWES on an acceptance, and what it may not carry on a refusal, is
+    /// the other half and lives in
+    /// [`Self::validate_observation_for_kind`].
     ///
     /// # Errors
     ///
@@ -2739,30 +2847,72 @@ impl NativeOperationResponse {
             return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
         }
 
-        // A confidential observation belongs to the one step that asks
-        // for one, on exactly the reasoning above.
-        if !matches!(self.case.operation, OperationStepKind::FundConfidential)
-            && creates_confidential_coins
+        // A confidential observation belongs to the steps that ask for
+        // one, on exactly the reasoning above. There are two of them
+        // now, and they are the two that create coins whose value is a
+        // commitment: the protocol arm and the reserve arm. They report
+        // through ONE member rather than two, because what they report
+        // is the same observation -- an outpoint, an explicit asset, a
+        // committed value and the proof that goes with it -- and which
+        // step asked for it is already in the case identity.
+        if !matches!(
+            self.case.operation,
+            OperationStepKind::FundConfidential | OperationStepKind::FundConfidentialSponsor
+        ) && creates_confidential_coins
         {
             return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
         }
 
-        // A mined readback belongs to the two kinds that put bytes on a
-        // chain: the confidential funding step, which mines the
-        // predecessor it materialized, and the submission step, which
-        // mines the candidate it was handed. The member is shared rather
-        // than duplicated because it is one observation — what the node
+        // A mined readback belongs to the kinds that put bytes on a
+        // chain: the two confidential funding steps, which mine what
+        // they materialized, and the submission step, which mines the
+        // candidate it was handed. The member is shared rather than
+        // duplicated because it is one observation — what the node
         // reports for a transaction it has confirmed — and a second
         // member of the same shape would let two kinds drift into two
         // spellings of one fact.
         if !matches!(
             self.case.operation,
-            OperationStepKind::FundConfidential | OperationStepKind::Submit
+            OperationStepKind::FundConfidential
+                | OperationStepKind::FundConfidentialSponsor
+                | OperationStepKind::Submit
         ) && reads_back
         {
             return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
         }
 
+        self.validate_observation_for_kind()
+    }
+
+    /// The per-kind half of [`Self::validate_shape`]: what each step
+    /// owes on acceptance, and what it may not carry on a refusal.
+    ///
+    /// Split from its caller because the two ask different questions.
+    /// The caller asks which members belong to a kind AT ALL, which is a
+    /// statement about the vocabulary; this asks whether the members a
+    /// kind may carry are the ones an acceptance or a refusal of it
+    /// entails, which is a statement about one answer. The predicates
+    /// are recomputed here rather than passed in: each is one read of
+    /// one member, and threading six booleans through a boundary would
+    /// make the split look like a shared calculation instead of two
+    /// separate questions over the same record.
+    ///
+    /// The match over the step kinds is exhaustive and stays that way. A
+    /// kind added later has no shape rule until one is written here, and
+    /// the compiler is what says so — a catch-all arm would let a new
+    /// kind be admitted, or refused, by a rule nobody chose for it.
+    ///
+    /// # Errors
+    ///
+    /// [`ResponseShapeDefect`] where the response is not a shape the
+    /// protocol defines.
+    const fn validate_observation_for_kind(&self) -> Result<(), ResponseShapeDefect> {
+        let issues = self.issued_asset.is_some();
+        let creates_coins = !self.funded_outputs.is_empty();
+        let submits = self.accepted_txid.is_some();
+        let authorizes = !self.sponsor_witness.is_empty() || self.signature_bound_to.is_some();
+        let creates_confidential_coins = !self.confidential_funded_outputs.is_empty();
+        let reads_back = self.mined_readback.is_some();
         let accepted = matches!(self.observed_layer, ObservedOutcomeLayer::Accepted);
         match self.case.operation {
             OperationStepKind::Fund => {
@@ -2845,6 +2995,24 @@ impl NativeOperationResponse {
                         return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
                     }
                 } else if issues || creates_confidential_coins || reads_back {
+                    return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
+                }
+            }
+            // The reserve arm owes what the protocol arm owes and one
+            // thing less: it may not issue. The protocol arm may,
+            // because the asset its coins carry is one a run brings into
+            // existence; the reserve is the chain's already, and a step
+            // reporting that it issued the reserve would be reporting
+            // something no run can do.
+            OperationStepKind::FundConfidentialSponsor => {
+                if submits || creates_coins || issues {
+                    return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
+                }
+                if accepted {
+                    if self.confidential_funded_outputs.is_empty() || !reads_back {
+                        return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                    }
+                } else if creates_confidential_coins || reads_back {
                     return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
                 }
             }
