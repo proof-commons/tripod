@@ -2143,7 +2143,7 @@ mod tests {
             .collect();
         assert_eq!(
             supporting,
-            BTreeSet::from(["one-to-one", "merge", "many-to-many"]),
+            BTreeSet::from(["one-to-one", "merge", "many-to-many", "split"]),
         );
 
         for row in &rows {
@@ -2212,13 +2212,14 @@ mod tests {
         use crate::live_multi_shapes::run_of_record as ms;
 
         // Which recorded private run each pair's citation points at, by
-        // its index in the restart order the arrays are written in:
-        // split, many-to-many, several-distinct-owners, strict
-        // one-to-one, one-to-one-with-fee, merge.
+        // its index in the order the arrays are written in: split,
+        // many-to-many, several-distinct-owners, strict one-to-one,
+        // one-to-one-with-fee, merge, pure split.
         let cited = [
             (MinimalityPair::OneToOne, 3_usize),
             (MinimalityPair::Merge, 5),
             (MinimalityPair::ManyToMany, 2),
+            (MinimalityPair::Split, 6),
         ];
         let by_pair: BTreeMap<_, _> = minimality_fixtures()
             .into_iter()
@@ -2245,21 +2246,18 @@ mod tests {
             );
         }
 
-        // And the refusal is EARNED rather than declared. The private
-        // split is the nearest recorded run to the split pair, and it
-        // creates three outputs where the member creates two — which is
-        // exactly why the pair says no run has its shape.
+        // And the split pair cites the run it does for a reason that is
+        // still checked rather than trusted. The three-output split is
+        // the NEAREST recorded run to this member and is not it: it
+        // creates three outputs where the member creates two, which is
+        // what kept the pair unsupported until a run of the member's own
+        // cardinality existed. Both facts are asserted, so a later
+        // citation that drifted back to the near miss fails here.
         let split = &by_pair[&MinimalityPair::Split];
         assert_eq!(split.destinations().len(), 2);
         assert_eq!(ms::OUTPUT_COUNTS[0], 3);
         assert_ne!(ms::OUTPUT_COUNTS[0], split.destinations().len());
-        assert!(
-            !recorded_acceptance(
-                MinimalityPair::Split,
-                LiveTransferRepresentationPlan::PrivateCommitted,
-            )
-            .is_observed(),
-        );
+        assert_eq!(ms::OUTPUT_COUNTS[6], split.destinations().len());
     }
 
     #[test]
@@ -2274,12 +2272,11 @@ mod tests {
         let mut universal = 0_usize;
         for (condition, (satisfied, standings)) in &board {
             if *condition == PairAcceptanceCondition::BothTargetTransactionsAccept {
-                assert_eq!(*satisfied, 3, "the acceptance conjunct");
-                // Both unsatisfied pairs stand at the same member and
-                // both name the private lane, but their reasons differ,
-                // so the set holds two distinct standings rather than
-                // one.
-                assert_eq!(standings.len(), 2);
+                assert_eq!(*satisfied, 4, "the acceptance conjunct");
+                // ONE pair is unsatisfied now that the split's private
+                // member has run, and it stands at the same member and
+                // names the private lane.
+                assert_eq!(standings.len(), 1);
                 for standing in standings {
                     assert!(matches!(
                         standing,

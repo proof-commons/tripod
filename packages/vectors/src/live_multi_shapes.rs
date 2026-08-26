@@ -2292,10 +2292,19 @@ pub mod run_of_record {
     ///
     /// Recorded rather than assumed, so a shape whose cardinality drifted
     /// is readable here rather than inferred from a name.
-    pub const RECEIPT_LEAVES: [usize; 6] = [1, 2, 2, 1, 1, 2];
+    ///
+    /// The order is these arrays' OWN and is not
+    /// [`super::PrivateShape::ALL`]'s: split, many-to-many,
+    /// several-distinct-owners, strict one-to-one, one-to-one-with-fee,
+    /// merge, pure split. The two crossings are absent because a
+    /// crossing's sides are read under different representation plans
+    /// and a single receipt count would state one side as though it were
+    /// both. The pure split is LAST for the reason it is last in `ALL`:
+    /// it was appended after the runs before it were recorded.
+    pub const RECEIPT_LEAVES: [usize; 7] = [1, 2, 2, 1, 1, 2, 1];
 
     /// How many outputs each shape created, in the same order.
-    pub const OUTPUT_COUNTS: [usize; 6] = [3, 3, 2, 1, 2, 1];
+    pub const OUTPUT_COUNTS: [usize; 7] = [3, 3, 2, 1, 2, 1, 2];
 
     // --- The private merge: the row this wave moves --------------------
 

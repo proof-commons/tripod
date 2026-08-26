@@ -1286,10 +1286,11 @@ mod tests {
         // then would have been claiming one for pairs neither of whose
         // halves had ever reached a target.
         //
-        // Both halves of three pairs have now reached one. The token
+        // Both halves of FOUR pairs have now reached one. The token
         // moves to exactly what the census supports and no further:
         // supported for the pairs that satisfy every conjunct, and for
-        // no others.
+        // no others. It stays the weaker token while one pair is short,
+        // which is the whole reason the two tokens are distinct.
         let target = projection();
         let report = assemble_live_minimality_report(target.clone()).expect("the report assembles");
         assert_eq!(
@@ -1298,10 +1299,11 @@ mod tests {
         );
         assert_eq!(report.census().pairs(), MinimalityPair::ALL.len());
         assert_eq!(report.census().claimed(), MinimalityPair::ALL.len());
-        assert_eq!(report.census().supporting(), 3);
+        assert_eq!(report.census().supporting(), 4);
         // Not the stronger token, and the assertion is spelled because
-        // three of five reaching every conjunct is precisely the state
-        // in which a report is most tempting to over-read.
+        // FOUR of five reaching every conjunct is precisely the state
+        // in which a report is most tempting to over-read -- nearer to
+        // complete than three was, and no more complete than three was.
         assert_ne!(
             report.standing(),
             MinimalityStanding::SupportedForEveryClaimedPair,
