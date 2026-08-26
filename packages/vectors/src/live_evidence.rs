@@ -1558,6 +1558,56 @@ pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 /// [`LiveInfrastructureBlocker::PredecessorConstructorAbsent`], is about
 /// a time-locked predecessor this workspace does not build, and neither
 /// clearing touched it.
+/// Whether any run has compared the public protocol projections of an
+/// ACCEPTED private transaction and its PAIRED ACCEPTED explicit one.
+///
+/// FALSE, and this constant is the filed path for the
+/// `projection-equality-with-paired-explicit` row rather than a note
+/// about it. The row did not move in the minimality wave, it does not
+/// move here, and what stands in the way is TWO things rather than one
+/// -- which is the reason for writing them down separately, because a
+/// reader who closed only the first would still not have the row.
+///
+/// # The first gap: the accepted transactions are not a PAIR
+///
+/// §16.1's load-bearing word is that a pair begins from ONE semantic
+/// fixture, materialized twice. The two acceptances a reader would reach
+/// for are `live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID`
+/// and `live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID`,
+/// and they are two INDEPENDENT ceremonies whose shapes match -- not two
+/// materializations of one fixture. The registry says so in its own
+/// bytes: [`crate::live_pairs::PairTargetVerdict`] has no accepted
+/// variant at all, and its
+/// `NotSubmittedShapeAcceptedElsewhere` member exists precisely to
+/// record that a run of a member's OWN SHAPE was accepted while denying
+/// that the member was. So a comparison over those two identities would
+/// compare two UNPAIRED transactions, which is the substitution
+/// [`observed_row_acceptance`] forbids when it refuses an acceptance of
+/// a different shape in place of the row's own.
+///
+/// # The second gap: no standing can hold the observation
+///
+/// [`LiveRowStanding::NativeRunObserved`] carries exactly ONE
+/// `accepted_identity`. A projection equality is a relation over TWO
+/// accepted identities, and filing it under a member shaped for one
+/// would be the single error a run of record exists to prevent -- the
+/// error [`LiveRowStanding::DeterminismObserved`] was minted to avoid
+/// when wave seven produced an observation the vocabulary could not
+/// take. That minting was DIRECTED in answer to a reported gap rather
+/// than taken unilaterally, and this gap is reported the same way rather
+/// than closed by inventing a member for it.
+///
+/// # What would close it
+///
+/// One run that submits the one-to-one pair's two MEMBERS -- not their
+/// shape siblings -- to one node, has both accepted, and compares the
+/// public protocol projections of the two accepted transactions; and a
+/// standing able to carry two identities beside what was compared. The
+/// pairs lane submits nothing today, so the first half is a capability
+/// this workspace has yet to build and not a target verdict anybody has
+/// seen.
+pub const A_PAIRED_ACCEPTED_PROJECTION_COMPARISON_EXISTS: bool = false;
+
 #[must_use]
 pub fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
     BTreeSet::from([LiveInfrastructureBlocker::PredecessorConstructorAbsent])
