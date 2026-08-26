@@ -76,8 +76,8 @@ use transaction::live_construct::{
     finalize_private_live_transfer,
 };
 use transaction::live_materialize::{
-    ConfidentialOutputRole, FixtureOpeningReference, FrozenConfidentialFixtureView,
-    NonProtocolFundingRegion, SCALAR_BYTES,
+    ConfidentialInputRegion, ConfidentialOutputRole, FixtureOpeningReference,
+    FrozenConfidentialFixtureView, NonProtocolFundingRegion, SCALAR_BYTES,
 };
 use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message};
 use transaction::live_request::{
@@ -98,7 +98,8 @@ use crate::confidential_predecessor::{PredecessorShape, TRIPLE_PREDECESSOR_AMOUN
 use crate::error::VectorError;
 use crate::live_owner_observation::printed_order;
 use crate::live_plan::{
-    FIRST_SCALAR, LiveShapeVocabulary, SECOND_SCALAR, published_owner, reviewed_target,
+    FIRST_SCALAR, LiveShapeVocabulary, RESERVE_ASSET, SECOND_SCALAR, published_owner,
+    reviewed_target,
 };
 use crate::live_private_restart::{
     ConsumedReceipt, LinkedDeployment, PrivateRestartRefusal, RestartConfidentialCoin,
@@ -754,6 +755,7 @@ impl MultiShapePlanner {
             ConsumedReceipt::Primary,
             printed,
             self.shape.vocabulary(),
+            RESERVE_ASSET,
         )?;
         self.record.issued_asset = Some(printed.to_owned());
         self.record.predecessor_digest = Some(linked.predecessor_digest);
@@ -951,7 +953,7 @@ impl MultiShapePlanner {
     /// input's witness.
     fn control_bytes(&mut self) -> Result<Vec<u8>, PrivateRestartRefusal> {
         let finalization = self.finalize_shape()?;
-        let built = assemble_control(&finalization, self.genesis_block_hash)?;
+        let built = assemble_control(&finalization, self.genesis_block_hash, None)?;
         self.spent_owner_bytes = built.spent_owner_bytes;
         self.record.receipt_leaves = built.receipt_leaves;
         self.record.output_witness_proof_bytes = built.output_witness_proof_bytes;
@@ -989,6 +991,7 @@ impl MultiShapePlanner {
                 coin.program().to_vec(),
             ));
             input_openings.push(PrivateInputOpening {
+                region: ConfidentialInputRegion::Receipt,
                 opening: FixtureOpeningReference::new(
                     linked.predecessor.handle().as_str().to_owned(),
                     linked.predecessor_digest,
@@ -1069,9 +1072,11 @@ impl MultiShapePlanner {
         ]));
 
         finalize_private_live_transfer(
+            &reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?,
             &linked.abi,
             &request,
             &view,
+            None,
             &openings,
             &fixtures,
             &ReferenceConfidentialMaterializer::new(),

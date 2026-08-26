@@ -2473,6 +2473,73 @@ pub mod sponsored_run_of_record {
     /// effort.
     pub const A_BLINDED_SPONSOR_VALUE_IS_FUNDED_ANYWHERE: bool = true;
 
+    /// Whether a sponsored PRIVATE successor can be REGISTERED.
+    ///
+    /// `false`, and this is the private-sponsor wave's typed stop rather
+    /// than a preference. The private construction lane now admits a
+    /// sponsored request at every one of the five sites that refused
+    /// one, and the candidate it would build is unregistrable one layer
+    /// below.
+    ///
+    /// # The site, named rather than inventoried as absent
+    ///
+    /// `transaction::live_materialize::fixture_of` requires EVERY
+    /// destination to name the same fixture handle and refuses
+    /// `FixtureOutputOrderMismatch` otherwise, and the binding census
+    /// beside it requires that one fixture's output count to equal the
+    /// destination count and its per-position role, program, amount and
+    /// asset to match. A sponsored private successor has three
+    /// destinations: two protocol-asset receipt outputs and one
+    /// RESERVE-asset sponsor change. So the three have to come from ONE
+    /// registered case declaring two assets across its positions.
+    ///
+    /// The registry cannot state one. A registry output carries a role,
+    /// a semantic amount and an output program and no asset at all, the
+    /// manifest carries a single explicit asset for the whole case, and
+    /// `FixtureOutputRole` has no sponsor-change member: its three
+    /// committed roles are primary, balancing and sole-balancing, and
+    /// its fourth is the mandatorily explicit fee.
+    ///
+    /// # The vocabulary exists on the reading side and nothing writes it
+    ///
+    /// `ConfidentialFixtureOutputView::sponsor_change` takes a reserve
+    /// asset and is exactly the projection this needs, and the asset
+    /// comparison beside it already reads `asset_carried` rather than
+    /// the case's protocol asset, so that a sponsor change is not
+    /// refused for carrying the asset its own fixture declares. Both
+    /// were built where a candidate is READ. Nothing on the registry
+    /// side produces one: that constructor's only callers in this
+    /// workspace are two materializer unit tests that assemble a fixture
+    /// view by hand, and a hand-assembled view has no registered digest
+    /// -- which is the one thing the executor's funding step and the
+    /// candidate must both bind to.
+    ///
+    /// # A filing from the previous wave is corrected here
+    ///
+    /// That wave recorded the registry narrowing as SMALLER than it
+    /// looked, reasoning that a registry holds many cases and each case
+    /// carries its own asset, so a sponsored successor could reference
+    /// one case for its protocol-asset destinations and another for its
+    /// reserve-asset ones. The one-fixture rule refutes it: two cases
+    /// across one destination list is the first thing `fixture_of`
+    /// refuses. The per-output asset widening that filing called needed
+    /// only where one case's outputs would carry two assets is needed
+    /// HERE, because this case's outputs do.
+    ///
+    /// # Why this wave did not simply widen it
+    ///
+    /// Because the widening lands in a DIGEST TRANSCRIPT. A role's
+    /// transcript code is documented as stable once written, those bytes
+    /// being inside every registered digest, so adding a code is
+    /// admissible and reassigning one is not. A per-output asset is the
+    /// harder half: every recorded fixture digest here is evidence a run
+    /// against a pinned node produced, and a transcript change that
+    /// moved them would be re-recording evidence to keep a test green.
+    /// That is a change to make deliberately, with its digest-stability
+    /// argument written down and checked, rather than as a step inside a
+    /// wave whose subject is the construction lane.
+    pub const A_SPONSORED_PRIVATE_SUCCESSOR_IS_REGISTRABLE: bool = false;
+
     /// Whether any ceremony in this workspace builds a sponsored control
     /// that TAKES CHANGE.
     ///
@@ -2564,6 +2631,29 @@ mod tests {
                 shape.case_name(),
             );
         }
+    }
+
+    /// The wave's typed stop says what it says, and the row it blocks
+    /// stays unmoved.
+    ///
+    /// Asserted rather than left to the doc comment, because these two
+    /// facts are the pair that must not drift apart: the sponsored
+    /// private successor is unregistrable, and therefore no acceptance
+    /// of that shape exists, and therefore the section 15.2 row has
+    /// nothing to move on. A run that made the first true without the
+    /// third would be a row moved on somebody's expectation.
+    #[test]
+    fn the_sponsored_private_successor_is_unregistrable_and_its_row_is_unmoved() {
+        const {
+            assert!(
+                !sponsored_run_of_record::A_SPONSORED_PRIVATE_SUCCESSOR_IS_REGISTRABLE,
+                "the registry learned to state a two-asset case and the stop was not revisited",
+            );
+        }
+        assert!(
+            !crate::live_closeout::PositivePrivateClass::PrivateSponsorValues.may_enter_the_delta(),
+            "the sponsor row opened while its own shape is still unregistrable",
+        );
     }
 
     /// The without-change shape funds exactly the offer, which is what
