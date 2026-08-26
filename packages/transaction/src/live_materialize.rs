@@ -2194,7 +2194,14 @@ fn preflight(
         {
             return Err(MaterializationRefusal::FixtureOutputOrderMismatch);
         }
-        if destination.explicit_asset() != fixture.explicit_asset() {
+        // Against the asset the FIXTURE declares for this position, not
+        // against the fixture's protocol asset. The two are the same for
+        // every protocol output and differ for a sponsor's change, which
+        // is the position the fixture declares a reserve asset for. A
+        // comparison against the protocol asset here would refuse the
+        // sponsor change for carrying exactly the asset its own fixture
+        // says it carries.
+        if destination.explicit_asset() != projected.asset_carried(fixture.explicit_asset()) {
             return Err(MaterializationRefusal::ProtocolAssetMismatch {
                 member: FamilyMember::ProtocolOutput(index),
             });
