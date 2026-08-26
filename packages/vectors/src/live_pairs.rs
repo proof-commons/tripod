@@ -36,18 +36,24 @@
 //! materialization rather than being mentioned in a report footnote, and
 //! §16.2's first condition reads it.
 //!
-//! The scope of that word is now narrower than it reads, and saying so is
-//! the honest thing rather than leaving a reader to infer it. A
-//! confidential predecessor IS fundable: the confidential funding arm
-//! exists, a deterministic materializer builds the exact
-//! explicit-asset/confidential-value form, and one predecessor of that
-//! form has been submitted, accepted, mined, and read back raw
-//! ([`crate::confidential_predecessor`]). What remains untrue for THIS
-//! pipeline is unchanged — its own funding step names an
-//! `amount_per_output` and has no confidential form, and nothing here
-//! consumes a predecessor funded through the other arm — so the
-//! assumption still stands where it stands, on a narrower ground than
-//! the word alone suggests.
+//! That word has stopped being true, and the blocker no longer stands on
+//! any of §16.2's conditions. A confidential predecessor IS fundable:
+//! the confidential funding arm exists, a deterministic materializer
+//! builds the exact explicit-asset/confidential-value form, one
+//! predecessor of that form has been submitted, accepted, mined, and
+//! read back raw ([`crate::confidential_predecessor`]), and the private
+//! lane has since spent confidential predecessors in six accepted
+//! shapes. The guide's own closeout carries
+//! `NoConfidentialPredecessorCanBeFunded` in its CLEARED set.
+//!
+//! [`PredecessorAssumption`] still travels with every private
+//! materialization, because what it records — that this pipeline states
+//! its confidential inputs as fixture views rather than consuming a
+//! predecessor it funded — remains exactly true. What changed is that
+//! this is no longer a component's absence and is therefore no longer a
+//! blocker. This pipeline does not call the private lane's own entry
+//! point; that is an attempt not yet made, and §16.2's ninth condition
+//! is where the declared test construction model is accounted for.
 //!
 //! # No pair is dropped for being blocked
 //!

@@ -20,27 +20,35 @@
 //!
 //! # The honest finding this plan carries
 //!
-//! Twenty-two of the twenty-six positive rows of §15.1 and §15.2 are
-//! answered. Each stands at [`LiveRowStanding::NativeRunObserved`],
-//! carrying the identity a real node computed for a transfer of that
-//! row's own shape which it accepted, whose bytes were read back out of
-//! the node's own copy equal to the bytes it was handed, and whose
-//! witness verified against an independently recomputed message. The
-//! standing carries the identity so the claim can be checked against a
-//! chain rather than believed.
+//! Twenty-three of the twenty-six positive rows of §15.1 and §15.2 are
+//! answered by a target. Each stands at
+//! [`LiveRowStanding::NativeRunObserved`], carrying the identity a real
+//! node computed for a transfer of that row's own shape which it
+//! accepted, whose bytes were read back out of the node's own copy equal
+//! to the bytes it was handed, and whose witness verified against an
+//! independently recomputed message. The standing carries the identity
+//! so the claim can be checked against a chain rather than believed.
 //!
-//! The four that did not move stand at
+//! A twenty-fourth is answered and no target was involved in it. The
+//! deterministic-public-fixture-openings row's own gate is the
+//! byte-identity contract rather than an acceptance, and it stands at
+//! [`LiveRowStanding::DeterminismObserved`] — a member minted for it,
+//! counted in its own bucket, and never added to the acceptance figure.
+//! A reader asking how much a real node has said should read the
+//! twenty-three and not the twenty-four.
+//!
+//! The two that did not move stand at
 //! [`LiveRowStanding::NativeRunRequired`] — a statement that a run
-//! would answer them and not a statement that nothing could. One asks
-//! for a sponsored transfer that takes change, which no ceremony here
-//! builds, and three are private rows whose grounds the delta test
-//! below names one by one.
+//! would answer them and not a statement that nothing could. Both are
+//! private rows, and the delta test below names their grounds.
 //!
 //! This paragraph has been rewritten each time a wave observed
 //! something, and the rewriting is the discipline rather than churn: it
 //! said two while two were answered, and seven while seven were, and a
 //! header that kept an old number would be the plan's own summary
-//! disagreeing with the census it computes.
+//! disagreeing with the census it computes. It also said twenty-two
+//! while twenty-three were, which is the same failure caught late — the
+//! count beside it was checked by a test and the sentence was not.
 //!
 //! That is a narrower finding than this paragraph used to carry, and
 //! the narrowing is a repair rather than a softening. What it used to
