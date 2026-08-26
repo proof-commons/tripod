@@ -1129,6 +1129,148 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
     assert!(rendered.contains("moves_the_sponsor_row false"));
 }
 
+/// One owner-signing script-path negative, signed over its own mutated
+/// bytes and refused at the leaf's own clause.
+///
+/// # What this run is for
+///
+/// The `vault-control-entitlement-or-bare-u-output` row declares a
+/// script-path refusal, and a mutant with a stale signature would die at
+/// the signature gate before the leaf ran. This ceremony re-signs the
+/// mutant over its own mutated bytes through the negative-evidence census
+/// route, so it passes the signature gate and reaches the coordinator
+/// leaf's `InspectOutputScriptPubKey` version clause — which refuses the
+/// bare-u output. The unmutated control is accepted afterwards on the same
+/// chain, which is what makes the mutant's refusal attributable.
+///
+/// # What it asserts, and what it merely records
+///
+/// What the target DECIDED is written into the artifact and asserted
+/// nowhere: a lane that asserted a refusal would fail rather than report on
+/// the day the honest answer changed. Two first-party construction facts
+/// ARE asserted — the mutant and the control were each submitted and
+/// answered, and the mutation stayed confined to the declared field, which
+/// is what makes the mutant's refusal attributable to that field and to no
+/// other.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
+    use vectors::live_owner_signing_negatives::{
+        OwnerSigningNegativePlanner, render_owner_signing_negatives,
+    };
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let report = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written")
+        .with_extension("owner-signing-negatives");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner =
+        OwnerSigningNegativePlanner::new(identifier(&genesis)).expect("the ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_owner_signing_negatives(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as one.
+    // It is never a target verdict, so it is reported and the test stops
+    // here rather than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the owner-signing negative ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    assert!(record.relinked(), "the ceremony funded before it linked");
+    assert_eq!(record.coins().len(), 2);
+    assert!(
+        record
+            .coins()
+            .iter()
+            .all(vectors::live_owner_observation::ObservedFundedCoin::matches_expectation),
+        "the node reported a coin the ceremony did not ask for",
+    );
+
+    // The mutant and the control were each submitted and answered.
+    let mutant = record.mutant().expect("the mutant was built and submitted");
+    assert!(
+        mutant.observed_layer().is_some(),
+        "the bare-u mutant was not answered",
+    );
+    let control = record
+        .control()
+        .expect("the control was built and submitted");
+    assert!(
+        control.observed_layer().is_some(),
+        "the control was not answered",
+    );
+
+    // The two candidates were signed over different messages: a mutant whose
+    // message coincided with the control's would be signed over the same
+    // bytes and the comparison would be vacuous.
+    assert_ne!(
+        mutant.message(),
+        control.message(),
+        "the mutant and the control were signed over one message",
+    );
+    assert!(rendered.contains("messages_differ true"));
+
+    // Where the control was accepted, the bytes the node reported are the
+    // bytes it was handed.
+    if let Some(check) = control.reverification() {
+        assert!(
+            check.readback_matches_submission(),
+            "the bytes the node reported are not the bytes it was handed",
+        );
+    }
+
+    // The run says in its own bytes what it did not establish.
+    assert!(rendered.contains("discharges_only_its_own_row true"));
+}
+
 /// One KEY-PATH spend attempt against a funded explicit constructor.
 ///
 /// # What this run is for

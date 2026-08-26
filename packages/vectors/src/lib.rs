@@ -27,6 +27,7 @@ pub mod live_multi_shapes;
 pub mod live_native;
 pub mod live_negative_half;
 pub mod live_owner_observation;
+pub mod live_owner_signing_negatives;
 pub mod live_pairs;
 pub mod live_plan;
 pub mod live_private_restart;
