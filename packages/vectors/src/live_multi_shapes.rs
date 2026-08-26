@@ -1081,6 +1081,58 @@ impl MultiShapePlanner {
         Ok(bytes)
     }
 
+    /// One opening per destination, each carrying the role the SHAPE
+    /// stated.
+    ///
+    /// Never the role a position implies. This is the second face of the
+    /// same retirement: the fixture registry stopped inferring the
+    /// balance from an output's index, and so does the layer that hands
+    /// the materializer its openings.
+    fn destination_openings(
+        &self,
+        destinations: &[Destination],
+        digest: [u8; 32],
+    ) -> Vec<PrivateDestinationOpening> {
+        destinations
+            .iter()
+            .enumerate()
+            .map(|(index, destination)| PrivateDestinationOpening {
+                fixture: FixtureOpeningReference::new(self.shape.successor_handle(), digest, index),
+                role: match destination.role {
+                    FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
+                    // The fee role is stated rather than swept into the
+                    // catch-all. It used to fall through to `Balancing`,
+                    // which would have asked the materializer to solve a
+                    // blinder for an output that must not carry one — a
+                    // blinded fee, and not a fee.
+                    FixtureOutputRole::Fee => ConfidentialOutputRole::Fee,
+                    // The sponsor change is stated for exactly the reason
+                    // the fee is, and the catch-all below is why it has
+                    // to be: falling through to `Balancing` would ask the
+                    // materializer to SOLVE a blinder for the sponsor's
+                    // remainder, and a solved blinder absorbs the input
+                    // sum. The remainder would stop being the sponsor's
+                    // and the protocol receipts would stop balancing —
+                    // one substitution producing two wrong outputs.
+                    FixtureOutputRole::SponsorChange { .. } => {
+                        ConfidentialOutputRole::SponsorChange
+                    }
+                    // Stated for the third time for the same reason:
+                    // swept into the catch-all it would ask for a SOLVED
+                    // blinder on an output that carries none, declaring
+                    // two solving outputs where the registry admits one.
+                    FixtureOutputRole::ExplicitDestination => {
+                        ConfidentialOutputRole::ExplicitDestination
+                    }
+                    // Both solving roles are the view's one solving role:
+                    // the sole form is a solve over no others, which is
+                    // the same instruction to the materializer.
+                    _ => ConfidentialOutputRole::Balancing,
+                },
+            })
+            .collect()
+    }
+
     /// Finalize this shape's successor through the private lane's own entry
     /// point, against the coins the node reported.
     fn finalize_shape(&self) -> Result<PrivateLiveFinalization, PrivateRestartRefusal> {
@@ -1147,53 +1199,7 @@ impl MultiShapePlanner {
         )
         .map_err(|_| PrivateRestartRefusal::ControlNotRequestable)?;
 
-        // The openings carry the roles the shape stated, not the roles a
-        // position implies. This is the second face of the same
-        // retirement: the fixture registry stopped inferring the balance
-        // from an output's index, and so does the layer that hands the
-        // materializer its openings.
-        let destination_openings: Vec<PrivateDestinationOpening> = destinations
-            .iter()
-            .enumerate()
-            .map(|(index, destination)| PrivateDestinationOpening {
-                fixture: FixtureOpeningReference::new(
-                    self.shape.successor_handle(),
-                    successor.digest,
-                    index,
-                ),
-                role: match destination.role {
-                    FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
-                    // The fee role is stated rather than swept into the
-                    // catch-all. It used to fall through to `Balancing`,
-                    // which would have asked the materializer to solve a
-                    // blinder for an output that must not carry one — a
-                    // blinded fee, and not a fee.
-                    FixtureOutputRole::Fee => ConfidentialOutputRole::Fee,
-                    // The sponsor change is stated for exactly the reason
-                    // the fee is, and the catch-all below is why it has
-                    // to be: falling through to `Balancing` would ask the
-                    // materializer to SOLVE a blinder for the sponsor's
-                    // remainder, and a solved blinder absorbs the input
-                    // sum. The remainder would stop being the sponsor's
-                    // and the protocol receipts would stop balancing —
-                    // one substitution producing two wrong outputs.
-                    FixtureOutputRole::SponsorChange { .. } => {
-                        ConfidentialOutputRole::SponsorChange
-                    }
-                    // Stated for the third time for the same reason:
-                    // swept into the catch-all it would ask for a SOLVED
-                    // blinder on an output that carries none, declaring
-                    // two solving outputs where the registry admits one.
-                    FixtureOutputRole::ExplicitDestination => {
-                        ConfidentialOutputRole::ExplicitDestination
-                    }
-                    // Both solving roles are the view's one solving role:
-                    // the sole form is a solve over no others, which is
-                    // the same instruction to the materializer.
-                    _ => ConfidentialOutputRole::Balancing,
-                },
-            })
-            .collect();
+        let destination_openings = self.destination_openings(&destinations, successor.digest);
 
         let openings = PrivateLiveOpenings::new(
             input_openings,
