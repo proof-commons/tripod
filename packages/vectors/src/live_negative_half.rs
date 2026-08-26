@@ -490,11 +490,6 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         "no validator refuses a reorder because the stack order is written from a fixed constant",
     ),
     entry(
-        "control-block-from-another-program",
-        G::RefusalIsProgramGeneric,
-        "a foreign control block draws the verdict every foreign taptree draws",
-    ),
-    entry(
         "target-bytes-changed-after-abi-validation",
         G::RowTypingInQuestion,
         "the live lane has no ABI-validation entry point, so the row's after has no referent yet",

@@ -1499,11 +1499,27 @@ pub const STRUCTURAL_FAULTS: &[LiveSafetyRow] = &[
         L::WitnessProof,
         B::ScriptPathRejection,
     ),
-    no_class(
+    // RETYPED FIRST-PARTY. On a chain a foreign control block draws the
+    // verdict every foreign taptree draws — a failed
+    // `VerifyTaprootCommitment` at the pinned target's
+    // `src/script/interpreter.cpp:3286-3290`, which is
+    // `SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH` and names nothing about
+    // control blocks. That observation would establish the commitment
+    // rule and say nothing about this row, so no wave is owed it.
+    //
+    // First-party the row is answered PRECISELY, and by the only site in
+    // this workspace that recomputes what the target recomputes: the
+    // owner signing census folds each declared leaf hash up its offered
+    // control block's path, tweaks the offered internal key and compares
+    // the result with the program spent. Swapping the two receipts'
+    // control blocks and changing nothing else leaves two real paths of
+    // two real trees, neither committing to the input it is offered
+    // for, and the refusal names the input.
+    pre_target(
         S::StructuralFault,
         "control-block-from-another-program",
         L::WitnessProof,
-        B::ConsensusRejectionBeforeScript,
+        B::AbiConstructionRejection,
     ),
     pre_target(
         S::StructuralFault,

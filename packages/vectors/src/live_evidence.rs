@@ -1982,7 +1982,7 @@ mod tests {
         // against its own control, with its own changed field.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let census = plan.census();
-        assert_eq!(census.first_party_discharged(), 30);
+        assert_eq!(census.first_party_discharged(), 31);
         assert_eq!(census.first_party_undischarged(), 0);
 
         let outstanding: BTreeSet<_> = plan

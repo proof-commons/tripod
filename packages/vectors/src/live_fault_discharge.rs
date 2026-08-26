@@ -68,10 +68,14 @@ use tapscript::{
     demonstration_live_shape_set, derive_live_receipt_constructor, owner_key_encoding_closure,
     static_transfer_leaf_set,
 };
-use target_elements::EncodingClass;
+use target_elements::{EncodingClass, LeafVersion};
 use transaction::bytes::{AssetField, AssetId, Outpoint, TargetTransaction, Txid, ValueField};
 use transaction::error::TransactionRefusal;
 use transaction::live_abi::CandidateLiveTransferAbi;
+use transaction::live_census::{
+    AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
+    OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest,
+};
 use transaction::live_construct::finalize_live_transfer;
 use transaction::live_private::PrivateValueCapability;
 use transaction::live_request::{
@@ -82,12 +86,12 @@ use transaction::live_signing::{LiveOwnerResponse, authorize_live_transfer};
 use transaction::sponsor::{
     SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest,
 };
-use transaction::taproot::{TAPROOT_WITNESS_VERSION, witness_program_script};
+use transaction::taproot::{TAPROOT_WITNESS_VERSION, leaf_hash, witness_program_script};
 use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::bundle::PINNED_PROGRAM;
 use crate::error::VectorError;
-use crate::live_capability::OracleFixtureValues;
+use crate::live_capability::{OracleFixtureValues, OracleLiveCurve};
 use crate::live_plan::{
     FEE_PROGRAM_DIGEST, FIRST_SCALAR, LiveShapeVocabulary, PROTOCOL_ASSET, RESERVE_ASSET,
     SECOND_SCALAR, demonstration_live_abi, live_abi_for_vocabulary, live_deployment_for_asset,
@@ -115,6 +119,18 @@ pub enum LiveFaultValidator {
     /// schema has already been checked and the sealed types admit no
     /// unchecked one.
     ConstructorDerivation,
+    /// `transaction::live_census::OwnerSigningCensus::from_explicit_finalized`,
+    /// the sole first-party site that recomputes a leaf commitment.
+    ///
+    /// A SEVENTH entry point, and it is here because it is the only
+    /// place in this workspace that does what a target's
+    /// `VerifyTaprootCommitment` does: fold a declared leaf hash up an
+    /// offered control block's path, tweak the offered internal key, and
+    /// compare the result with the program actually spent. That is why
+    /// it can answer a row whose refusal on a chain is program-generic —
+    /// the target says only that some leaf did not commit, and this site
+    /// says WHICH input's declared leaf did not, naming it.
+    OwnerSigningCensus,
     /// `linker::LiveDefinitionCensus::define`, the sole site that admits
     /// a symbol definition into a link.
     LiveSymbolDefinition,
@@ -137,6 +153,9 @@ impl LiveFaultValidator {
         match self {
             Self::OwnerKeyEncoding => "owner-key-encoding",
             Self::ConstructorDerivation => "constructor-derivation",
+            Self::OwnerSigningCensus => {
+                "transaction::live_census::OwnerSigningCensus::from_explicit_finalized"
+            }
             Self::LiveSymbolDefinition => "live-symbol-definition",
             Self::ProtocolValueDomain => "protocol-value-domain",
             Self::LiveTransferFinalization => "live-transfer-finalization",
@@ -209,6 +228,15 @@ pub enum FaultMutation {
     /// genuinely different program for the same owner — which is what
     /// STALE means, as against corrupted or foreign.
     OfferAReceiptInputUnderASupersededConstructor,
+    /// Declare each receipt's leaf under the OTHER receipt's control
+    /// block.
+    ///
+    /// The two control blocks are swapped between the two signing
+    /// requests and nothing else moves: each leaf hash stays the leaf
+    /// hash of its own input's own script, and each path is a real path
+    /// — of the other program's tree. That is what makes the refusal
+    /// about the control block rather than about malformed bytes.
+    DeclareALeafUnderAnotherProgramsControlBlock,
     /// Make the destination total exceed the target's explicit width.
     OverflowTheDestinationTotal,
     /// Offer a commitment-valued receipt to the explicit plan.
@@ -249,6 +277,15 @@ pub enum ObservedFaultRefusal {
     Link(LinkRefusal),
     /// The transaction layer refused.
     Transaction(TransactionRefusal),
+    /// The owner signing census refused.
+    ///
+    /// A FIFTH vocabulary, added for the same reason there were four: it
+    /// is somebody else's refusal and re-spelling it into one of the
+    /// others would make a discharge evidence about the re-spelling. The
+    /// census refuses things no other entry point here looks at — leaf
+    /// commitments, control-block shape, annex disposition — and a row
+    /// answered by one of them is not answered by the finalization.
+    Census(OwnerCensusRefusal),
 }
 
 /// One first-party case: a §15 row, an owning validator, and one change.
@@ -410,6 +447,13 @@ macro_rules! constructor_is {
     };
 }
 
+/// The same, for the owner signing census.
+macro_rules! census_is {
+    ($pattern:pat) => {
+        |observed| matches!(observed, ObservedFaultRefusal::Census($pattern))
+    };
+}
+
 /// The complete census of first-party cases for §15.4–§15.7.
 ///
 /// Fifteen cases over six owning entry points, and no §15.4–§15.7 row
@@ -566,6 +610,18 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
             M::OfferAReceiptInputUnderASupersededConstructor,
             transaction_is!(TransactionRefusal::ReceiptInputIsNotALiveReceipt(_)),
             "ReceiptInputIsNotALiveReceipt",
+        ),
+        // §15.7's control-block row, retyped first-party. The one row of
+        // the seven whose class the census names PRECISELY: a target
+        // answers a foreign control block with the verdict every foreign
+        // taptree draws, and this site answers with the input whose
+        // declared leaf did not commit.
+        case(
+            "control-block-from-another-program",
+            V::OwnerSigningCensus,
+            M::DeclareALeafUnderAnotherProgramsControlBlock,
+            census_is!(OwnerCensusRefusal::LeafHashDoesNotCommit { .. }),
+            "LeafHashDoesNotCommit",
         ),
         case(
             "time-locked-output",
@@ -1219,6 +1275,80 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
             Ok(Staged {
                 control: finalize_outcome(&abi, &request, &control_view, None)?,
                 malformed: finalize_outcome(&abi, &request, &view, None)?,
+            })
+        }
+        M::DeclareALeafUnderAnotherProgramsControlBlock => {
+            let (request, view) = explicit_control(&abi)?;
+            let target = reviewed_target()?;
+            let curve = OracleLiveCurve::new(reviewed_target()?);
+            // The genesis a first-party staging may choose freely: the
+            // leaf-commitment check folds a path and tweaks a key, and
+            // no term of it reads the deployment seed. Choosing a live
+            // one would suggest this discharge depended on a chain.
+            let deployment = LiveDeployment::new([0x9c_u8; 32]);
+            let finalized = finalize_live_transfer(&target, &abi, &request, &view, None, None)
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?
+                .into_finalized();
+            let records = finalized.receipts();
+            if records.len() < 2 {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            }
+            let honest: Vec<OwnerSigningInputRequest> = records
+                .iter()
+                .map(|record| {
+                    OwnerSigningInputRequest::new(
+                        u32::from(record.position()),
+                        leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
+                        LeafVersion::TAPSCRIPT,
+                        OWNER_CODESEPARATOR_POSITION,
+                        AnnexDisposition::Absent,
+                        IssuanceDisposition::Absent,
+                        record.control_block().to_vec(),
+                    )
+                })
+                .collect();
+            // One change: each request's control block is the OTHER
+            // receipt's. Every other term is untouched — the leaf hash
+            // is still this input's own script's, the version and
+            // codeseparator are the honest ones, and both blocks are
+            // real paths of real trees. So what fails is the commitment
+            // and only the commitment.
+            let swapped: Vec<OwnerSigningInputRequest> = records
+                .iter()
+                .enumerate()
+                .map(|(index, record)| {
+                    let other = records[(index + 1) % records.len()]
+                        .control_block()
+                        .to_vec();
+                    OwnerSigningInputRequest::new(
+                        u32::from(record.position()),
+                        leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
+                        LeafVersion::TAPSCRIPT,
+                        OWNER_CODESEPARATOR_POSITION,
+                        AnnexDisposition::Absent,
+                        IssuanceDisposition::Absent,
+                        other,
+                    )
+                })
+                .collect();
+            if swapped
+                .iter()
+                .zip(honest.iter())
+                .all(|(left, right)| left == right)
+            {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            }
+            Ok(Staged {
+                control: OwnerSigningCensus::from_explicit_finalized(
+                    &target, &finalized, deployment, &honest, &curve,
+                )
+                .err()
+                .map(ObservedFaultRefusal::Census),
+                malformed: OwnerSigningCensus::from_explicit_finalized(
+                    &target, &finalized, deployment, &swapped, &curve,
+                )
+                .err()
+                .map(ObservedFaultRefusal::Census),
             })
         }
         M::OverflowTheDestinationTotal => {
