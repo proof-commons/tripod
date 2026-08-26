@@ -1034,6 +1034,41 @@ pub fn wave_six_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeout
 /// prose is read as of its own wave, and a reader wanting the current
 /// standing reads `carried_residuals` instead.
 fn wave_seven_ledger() -> Result<RestartLedger, CloseoutRefusal> {
+    use crate::live_restart::{RestartStep, RestartStepResult};
+
+    let mut ledger = wave_seven_steps_one_to_five()?;
+    ledger
+        .record(
+            RestartStep::SponsorCases,
+            RestartStepResult::StoppedTyped {
+                blocker: LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
+                because: "the sponsor cases run only after their independent signer dependency \
+                          closes by observation, and it has not: no target has accepted a control \
+                          carrying a sponsor owner's authorization. The dependency is not this \
+                          guide's to close, the private-sponsor-values row may not move, and step \
+                          seven's disclosure-minimality pairs follow this step in the mandatory \
+                          order and are therefore not reached"
+                    .to_owned(),
+            },
+        )
+        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+    Ok(ledger)
+}
+
+/// The restart order's first five steps, as wave seven observed them.
+///
+/// Extracted so that a later wave can carry the order forward from the
+/// same five entries rather than restating them. The extraction is a
+/// move and not a rewrite: the entries below are wave seven's own, to
+/// the byte, and a wave that wanted to say something different about
+/// step three would have to record a different entry rather than edit
+/// this one.
+///
+/// The five results are the same for every wave that has them because
+/// they are OBSERVATIONS. A later wave does not re-derive what a node
+/// said; it inherits it, which is what "each step's entry is the
+/// previous step's observed result" means.
+fn wave_seven_steps_one_to_five() -> Result<RestartLedger, CloseoutRefusal> {
     use crate::live_conservation_negatives::run_of_record as cn;
     use crate::live_multi_shapes::run_of_record as ms;
     use crate::live_private_restart::run_of_record as run;
@@ -1115,21 +1150,6 @@ fn wave_seven_ledger() -> Result<RestartLedger, CloseoutRefusal> {
                               row stays unmoved and the predicate conflict is filed as a guide \
                               erratum rather than resolved here. An accepted fifth step is \
                               therefore three shapes of four, not four of four"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::SponsorCases,
-            RestartStepResult::StoppedTyped {
-                blocker: LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
-                because: "the sponsor cases run only after their independent signer dependency \
-                          closes by observation, and it has not: no target has accepted a control \
-                          carrying a sponsor owner's authorization. The dependency is not this \
-                          guide's to close, the private-sponsor-values row may not move, and step \
-                          seven's disclosure-minimality pairs follow this step in the mandatory \
-                          order and are therefore not reached"
                     .to_owned(),
             },
         )
@@ -1389,6 +1409,347 @@ pub fn wave_seven_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
             ),
         ]),
     })
+}
+
+/// The minimality wave's ledger: the restart order carried to its end.
+///
+/// # What advanced, and on what
+///
+/// Wave seven typed-stopped at step six, and the ledger recording that
+/// stop is a record and stays exactly as it is. This is a separate
+/// wave's ledger, which is how the order advances: the stopped wave
+/// keeps saying what it observed, and a later wave says what it
+/// observed.
+///
+/// Step six's condition is its own text — the sponsor cases run "only
+/// after their independent signer dependency closes by observation" —
+/// and that dependency closed by observation four arcs ago. A real node
+/// accepted a control carrying a sponsor owner's authorization, then a
+/// second carrying sponsor change, then a sponsored CONFIDENTIAL
+/// successor built through the private construction lane.
+///
+/// # The chain rule is obeyed rather than relaxed
+///
+/// Step seven is reached because step six was DISCHARGED, not because
+/// the mandatory chain was read loosely. The chain rule was affirmed
+/// strict, and under a strict chain a discharged step six is exactly
+/// what makes step seven enterable. The step-7 ordering erratum stays
+/// filed against the guide on its own merits — a step typed-stopped on
+/// a named external dependency should not consume the entry of the
+/// steps after it — and nothing here depends on that erratum being
+/// answered, which is why this ledger does not wait for it.
+///
+/// # Both accepted steps are partial, and say so
+///
+/// Step five's precedent governs: a step whose condition is per-item is
+/// accepted on the items that met it, with the shortfall stated in its
+/// own entry. Step seven is three pairs of five and says so.
+fn wave_eight_ledger() -> Result<RestartLedger, CloseoutRefusal> {
+    use crate::live_explicit_shapes::run_of_record as ex;
+    use crate::live_multi_shapes::run_of_record as ms;
+    use crate::live_restart::{RestartStep, RestartStepResult};
+    use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
+
+    let mut ledger = wave_seven_steps_one_to_five()?;
+    ledger
+        .record(
+            RestartStep::SponsorCases,
+            RestartStepResult::Accepted {
+                accepted_identities: vec![
+                    sp::SPONSORED_ACCEPTED_TXID.to_owned(),
+                    sp::SPONSORED_CHANGE_ACCEPTED_TXID.to_owned(),
+                    sp::SPONSORED_PRIVATE_TXID.to_owned(),
+                ],
+                established: "the sponsor cases, entered only after their independent signer \
+                              dependency closed BY OBSERVATION, which is the condition this step \
+                              names: a real node accepted a control carrying a sponsor owner's \
+                              authorization. Three cases behind it -- the change-absent explicit \
+                              control, the change-present explicit control whose change output \
+                              was located in the node's own MINED copy rather than inferred from \
+                              the request, and the sponsored CONFIDENTIAL successor built through \
+                              the private construction lane at a blinded sponsor coin with \
+                              committed change. The private-sponsor-values row moves on the last \
+                              of these and cites it"
+                    .to_owned(),
+            },
+        )
+        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+    ledger
+        .record(
+            RestartStep::MinimalityPairs,
+            RestartStepResult::Accepted {
+                accepted_identities: vec![
+                    ex::ONE_TO_ONE_ACCEPTED_TXID.to_owned(),
+                    ms::STRICT_ONE_TO_ONE_ACCEPTED_TXID.to_owned(),
+                    ex::MERGE_ACCEPTED_TXID.to_owned(),
+                    ms::MERGE_ACCEPTED_TXID.to_owned(),
+                    ex::SEVERAL_TO_SEVERAL_ACCEPTED_TXID.to_owned(),
+                    ms::SEVERAL_OWNERS_ACCEPTED_TXID.to_owned(),
+                ],
+                established: "the disclosure-minimality pairs, entered after step six discharged \
+                              and reached through the mandatory order rather than around it. \
+                              THREE of the five paired cases have a recorded acceptance of BOTH \
+                              members' shapes -- one-to-one, merge, and many-to-many -- and each \
+                              satisfies all ten of the pair-acceptance conjuncts, which is what \
+                              that rule's own 'only when' requires. DISCLOSURE: no member of any \
+                              pair was SUBMITTED. What is cited per member is an acceptance of \
+                              that member's SHAPE, which is this workspace's own rule for moving \
+                              a row and is a narrower fact than the conjunct's words; the \
+                              registry spells the difference at every one of these identities. \
+                              DISCLOSURE: split and sponsor do NOT support minimality and neither \
+                              is unbuilt. Each lacks a run of its PRIVATE member's shape -- the \
+                              recorded private split creates three outputs where the pair's \
+                              member creates two, and the one recorded sponsored private \
+                              successor carries a blinded sponsor coin with committed change \
+                              where the pair's member states an explicit sponsor coin funded to \
+                              the fee and no change role. An accepted seventh step is therefore \
+                              three pairs of five, not five of five. DISCLOSURE: the \
+                              projection-equality-with-paired-explicit row does NOT move on this \
+                              step. Its rule wants an observed acceptance of its own shape, and \
+                              no run compares the semantic projections of an accepted private \
+                              transaction and its paired accepted explicit one; the equality this \
+                              workspace holds is first-party, over registry members that never \
+                              reached a target"
+                    .to_owned(),
+            },
+        )
+        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+    Ok(ledger)
+}
+
+/// The minimality wave's closeout: the first COMPLETED disposition this
+/// guide has had.
+///
+/// # What moved and what did not
+///
+/// Eight rows, and the two that did not move are the interesting half.
+///
+/// `deterministic-public-fixture-openings` is ANSWERED in the safety
+/// matrix and absent from this delta, and the two facts are consistent
+/// rather than in tension. The delta's own rule is that a row enters it
+/// carrying the identity a TARGET computed; that row's gate is the
+/// byte-identity contract, its evidence is a recomputation, and it has
+/// no such identity to carry. It moved in the matrix on
+/// `LiveRowStanding::DeterminismObserved`, which was minted for exactly
+/// this. A reader comparing the two artifacts should find the row
+/// answered in one and unmoved in the other, and that is the vocabulary
+/// difference showing rather than a row nobody is checking.
+///
+/// `projection-equality-with-paired-explicit` is unmoved in both, and
+/// its ground is stated in the seventh step's own entry.
+///
+/// # Errors
+///
+/// Every member of [`CloseoutRefusal`].
+pub fn wave_eight_closeout() -> Result<ConfidentialFundingCloseoutReport, CloseoutRefusal> {
+    use crate::live_conservation_negatives::run_of_record as cn;
+    use crate::live_multi_shapes::run_of_record as ms;
+    use crate::live_private_restart::run_of_record as run;
+    use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
+
+    let mut target_facts = wave_seven_target_facts();
+    target_facts.push(format!(
+        "sponsored_accepted_txid {}",
+        sp::SPONSORED_ACCEPTED_TXID
+    ));
+    target_facts.push(format!(
+        "sponsored_change_accepted_txid {}",
+        sp::SPONSORED_CHANGE_ACCEPTED_TXID,
+    ));
+    target_facts.push(format!(
+        "sponsored_private_txid {}",
+        sp::SPONSORED_PRIVATE_TXID
+    ));
+    target_facts.push(format!(
+        "sponsored_private_submitted_bytes {}",
+        sp::SPONSORED_PRIVATE_SUBMITTED_BYTES,
+    ));
+    target_facts.push(format!("merge_accepted_txid {}", ms::MERGE_ACCEPTED_TXID));
+    target_facts.push(format!(
+        "strict_one_to_one_accepted_txid {}",
+        ms::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
+    ));
+    target_facts.push("minimality_pairs_supporting 3 of 5".to_owned());
+
+    validate_closeout(CloseoutParts {
+        disposition: CloseoutDisposition::Completed,
+        ledger: wave_eight_ledger()?,
+        contracts: BTreeMap::from([
+            (
+                "private-one-to-one-control".to_owned(),
+                "byte-identity".to_owned(),
+            ),
+            (
+                "conservation-and-proof-negatives".to_owned(),
+                "byte-identity".to_owned(),
+            ),
+            ("multi-output-shapes".to_owned(), "byte-identity".to_owned()),
+            ("sponsor-shapes".to_owned(), "byte-identity".to_owned()),
+        ]),
+        funding: BTreeMap::from([(
+            "ctf-v1/predecessor-dual-parity".to_owned(),
+            cn::PREDECESSOR_DIGEST.to_owned(),
+        )]),
+        target_facts,
+        sighash_result: Some(
+            "the reviewed owner-sighash profile, established over its six-member required set \
+             by a verdict this guide consumed and did not produce"
+                .to_owned(),
+        ),
+        roles: BTreeMap::from([("minimality-pairs".to_owned(), wave_eight_roles()?)]),
+        cleared_residuals: BTreeSet::from([CLEARED_BY_FUNDING]),
+        // One carried residual, down from two. `SponsorEnvelopeSignerAbsent`
+        // is gone and it did NOT move to the cleared set: this guide did
+        // not clear it, and the cleared set holds exactly the residual
+        // confidential funding clears. A blocker leaves the carried set
+        // the way `MultiOutputShapeConstructorAbsent` left it, by the
+        // step it stopped being recorded Accepted -- which for this one
+        // is step six, in the ledger above.
+        blockers: BTreeSet::from([LiveInfrastructureBlocker::PredecessorConstructorAbsent]),
+        pre_sighash_matrix_delta: 0,
+        wave5_matrix_delta: vec![
+            moved_on_acceptance(PositivePrivateClass::OneToOne, run::ACCEPTED_TXID)?,
+            moved_on_acceptance(
+                PositivePrivateClass::BothCommitmentParityForms,
+                run::PARITY_ACCEPTED_TXID,
+            )?,
+            moved_on_acceptance(
+                PositivePrivateClass::TargetCtConservation,
+                cn::CONTROL_ACCEPTED_TXID,
+            )?,
+            moved_on_acceptance(PositivePrivateClass::Split, ms::SPLIT_ACCEPTED_TXID)?,
+            moved_on_acceptance(
+                PositivePrivateClass::ManyToManyRepresentative,
+                ms::MANY_TO_MANY_ACCEPTED_TXID,
+            )?,
+            moved_on_acceptance(
+                PositivePrivateClass::SeveralDistinctOwners,
+                ms::SEVERAL_OWNERS_ACCEPTED_TXID,
+            )?,
+            // The two this wave adds.
+            moved_on_acceptance(PositivePrivateClass::Merge, ms::MERGE_ACCEPTED_TXID)?,
+            moved_on_acceptance(
+                PositivePrivateClass::PrivateSponsorValues,
+                sp::SPONSORED_PRIVATE_TXID,
+            )?,
+        ],
+        exclusions: vec![
+            "private-amounts".to_owned(),
+            "fixture-openings".to_owned(),
+            "value-blinders".to_owned(),
+            "nonce-inputs".to_owned(),
+            "proof-inputs".to_owned(),
+            "wallet-data".to_owned(),
+            "credentials".to_owned(),
+            "environment-values".to_owned(),
+            "diagnostics".to_owned(),
+        ],
+        non_claims: vec![
+            "production-custody-not-established".to_owned(),
+            "production-cryptography-not-established".to_owned(),
+            "production-multi-owner-protocol-not-established".to_owned(),
+            "privacy-not-established".to_owned(),
+            "public-fixtures-not-secret".to_owned(),
+            "stock-rpc-hybrid-support-not-established".to_owned(),
+            "funding-does-not-prove-transfer-safety-minimality-or-resource".to_owned(),
+            "malformed-rejection-does-not-replace-control".to_owned(),
+            "owner-sighash-not-established-here".to_owned(),
+            "candidate-interface-not-final".to_owned(),
+        ],
+        wall_times: BTreeMap::new(),
+    })
+}
+
+/// The evidence-role map for the minimality wave.
+///
+/// One role changes from wave seven's and it is the one this wave is
+/// about: minimality stood at `OrderNotReached` while step seven was
+/// unreachable, and the order has now reached it.
+fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
+    use crate::live_multi_shapes::run_of_record as ms;
+    use crate::live_private_restart::run_of_record as run;
+    use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
+
+    let mut roles = CeremonyEvidenceRolesBuilder::new();
+    let settle = |builder: &mut CeremonyEvidenceRolesBuilder, role, ground| {
+        builder
+            .settle(role, RoleEvidence::new(role, ground))
+            .map_err(|_| CloseoutRefusal::SponsorRowMoved)
+    };
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::Funding,
+        RoleGround::ObservedAcceptance {
+            accepted_identity: run::ACCEPTED_TXID.to_owned(),
+            independent_check: "the funding record validated against the first-party \
+                                commitment oracle, and both predecessor coins matched"
+                .to_owned(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::OwnerSignature,
+        RoleGround::ObservedAcceptance {
+            accepted_identity: sp::SPONSORED_PRIVATE_TXID.to_owned(),
+            independent_check: "an owner's signature verified out of the node's own copy against \
+                                a message recomputed independently of the candidate, on the \
+                                sponsored private successor whose sponsor change was located in \
+                                the mined bytes"
+                .to_owned(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::Safety,
+        RoleGround::ObservedAcceptance {
+            accepted_identity: ms::MERGE_ACCEPTED_TXID.to_owned(),
+            independent_check: "eight positive private matrix rows moved, each on an acceptance \
+                                of its own shape; the openings row is answered in the matrix by \
+                                a determinism observation and carries no target identity, and \
+                                the projection-equality row is unmoved with its ground stated"
+                .to_owned(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::CtConservation,
+        RoleGround::ObservedAcceptance {
+            accepted_identity:
+                crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID.to_owned(),
+            independent_check: "the target's own commitment-balance rule accepted the conserving \
+                                control and refused the wrong-blinder mutant at the balance layer"
+                .to_owned(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::Minimality,
+        RoleGround::ObservedAcceptance {
+            accepted_identity: ms::STRICT_ONE_TO_ONE_ACCEPTED_TXID.to_owned(),
+            independent_check: "three of the five paired cases satisfy every pair-acceptance \
+                                conjunct, each pair's two members having a recorded acceptance \
+                                of its own shape; the identity cited is the private half of the \
+                                one-to-one pair, and no member of any pair was itself submitted"
+                .to_owned(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::Resource,
+        RoleGround::OutsideThisCeremony {
+            owned_by: "the live-transfer resource study".to_owned(),
+        },
+    )?;
+    settle(
+        &mut roles,
+        CandidateEvidenceRole::Lifecycle,
+        RoleGround::OutsideThisCeremony {
+            owned_by: "the lifecycle report".to_owned(),
+        },
+    )?;
+    roles
+        .complete()
+        .map_err(|_| CloseoutRefusal::SponsorRowMoved)
 }
 
 #[cfg(test)]

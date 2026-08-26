@@ -1251,7 +1251,6 @@ mod tests {
         render_live_minimality_report, validate_live_minimality_report,
     };
     use crate::live_disclosure::{DisclosedItem, DisclosureStanding};
-    use crate::live_evidence::LiveInfrastructureBlocker;
     use crate::live_pairs::MinimalityPair;
     use crate::live_plan::reviewed_target;
     use crate::live_report::{RecomputedItem, VolatileField};
@@ -1280,39 +1279,56 @@ mod tests {
     }
 
     #[test]
-    fn the_report_says_minimality_is_unanswered_and_names_the_blockers() {
-        // The wave's whole finding, in the document that carries it. A
-        // report claiming a minimality result today would be claiming one
-        // for pairs neither of whose halves has ever reached a target.
+    fn the_report_says_which_pairs_minimality_is_supported_for() {
+        // The wave's whole finding, in the document that carries it.
+        // The token read `unanswered` for as long as no pair satisfied
+        // the ten conjuncts, and a report claiming a minimality result
+        // then would have been claiming one for pairs neither of whose
+        // halves had ever reached a target.
+        //
+        // Both halves of three pairs have now reached one. The token
+        // moves to exactly what the census supports and no further:
+        // supported for the pairs that satisfy every conjunct, and for
+        // no others.
         let target = projection();
         let report = assemble_live_minimality_report(target.clone()).expect("the report assembles");
-        assert_eq!(report.standing(), MinimalityStanding::Unanswered);
+        assert_eq!(
+            report.standing(),
+            MinimalityStanding::SupportedForSomeClaimedPairsOnly,
+        );
         assert_eq!(report.census().pairs(), MinimalityPair::ALL.len());
         assert_eq!(report.census().claimed(), MinimalityPair::ALL.len());
-        assert_eq!(report.census().supporting(), 0);
+        assert_eq!(report.census().supporting(), 3);
+        // Not the stronger token, and the assertion is spelled because
+        // three of five reaching every conjunct is precisely the state
+        // in which a report is most tempting to over-read.
+        assert_ne!(
+            report.standing(),
+            MinimalityStanding::SupportedForEveryClaimedPair,
+        );
 
         let validated =
             validate_live_minimality_report(report, &target).expect("the report validates");
+        // NO named component, and it used to be one. Every blocker this
+        // report ever carried named something that does not exist, and
+        // the last of them is in the guide closeout's CLEARED set. What
+        // the two unsupported pairs lack is a run of one shape each,
+        // which the registry names on the acceptance conjunct — a run
+        // not yet attempted is not a missing component, and a report
+        // naming one would be counting a cleared blocker as a deficit.
         assert_eq!(
             validated
                 .blockers()
                 .keys()
                 .copied()
                 .collect::<BTreeSet<_>>(),
-            // ONE named component, and it used to be two. The digest
-            // blocker left because it is cleared, not because the
-            // deficit shrank: what every blocked condition and every
-            // blocked failure mode now names is the same single gap,
-            // that this pipeline builds no private member. A report
-            // still naming two would be counting a cleared blocker
-            // towards its own deficit.
-            BTreeSet::from([LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded]),
+            BTreeSet::new(),
         );
         let standings = pair_standings(&validated);
         assert_eq!(standings.len(), MinimalityPair::ALL.len());
         for (pair, (claimed, blockers)) in &standings {
             assert!(*claimed, "{} is unclaimed", pair.name());
-            assert_ne!(blockers.len(), 0, "{} names no blocker", pair.name());
+            assert_eq!(blockers.len(), 0, "{} names a blocker", pair.name());
         }
     }
 
@@ -1328,7 +1344,7 @@ mod tests {
             validate_live_minimality_report(report, &target),
             Err(LiveMinimalityReportRefusal::StandingDiffers {
                 reported: MinimalityStanding::SupportedForEveryClaimedPair,
-                recomputed: MinimalityStanding::Unanswered,
+                recomputed: MinimalityStanding::SupportedForSomeClaimedPairsOnly,
             }),
         );
     }
@@ -1501,12 +1517,12 @@ mod tests {
 
         assert_eq!(
             report.failures()[&MinimalityFailureMode::PrivateMaterializationRejects],
-            // Re-pointed with the standing itself. The digest blocker is
-            // cleared, so a failure mode still awaiting a run on it
-            // would be awaiting a run nothing is holding up.
-            FailureModeStanding::AwaitsATargetRun(
-                LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded
-            ),
+            // Re-pointed onto an observation. It awaited a run behind a
+            // blocker the guide's own closeout carries as CLEARED, so
+            // it was awaiting a run nothing was holding up; and what a
+            // target has actually said about these shapes is stronger
+            // than "awaiting" and weaker than "never rejects".
+            FailureModeStanding::NotRejectedOnAnyObservedRun,
         );
         // §18's study filled this one. It is a conjunction, and no pair
         // has an explicit member that completes while its private member
