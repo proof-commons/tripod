@@ -563,7 +563,17 @@ impl SponsoredPrivatePlanner {
             PredecessorShape::DualParity,
             ConsumedReceipt::Primary,
             &printed,
-            LiveShapeVocabulary::Demonstration,
+            // FEE-BEARING and not the demonstration vocabulary. A
+            // sponsored request bears a fee by construction, so this
+            // candidate EXECUTES the covenant's fee clause -- and the
+            // demonstration deployment is welded to a fixture fee digest
+            // that no program hashes to, which would demand of the fee
+            // output a scriptPubKey digest nothing can present and
+            // refuse this ceremony's own candidate at OP_EQUALVERIFY.
+            // The fee-bearing vocabulary is a separate deployment with
+            // its own taptree, so the demonstration's committed identity
+            // does not move to buy this.
+            LiveShapeVocabulary::FeeBearing,
             *reserve.internal(),
         )
         .map_err(SponsoredPrivateRefusal::Private)?;
