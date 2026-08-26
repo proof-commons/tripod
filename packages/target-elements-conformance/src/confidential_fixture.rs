@@ -293,6 +293,52 @@ pub enum FixtureOutputRole {
         /// every other role.
         asset: [u8; 32],
     },
+    /// A receipt destination whose value is EXPLICIT.
+    ///
+    /// The output an exit crossing pays a live receipt to when the
+    /// transfer unblinds: a real program, a real owner, a public amount,
+    /// and no opening at all. It is the exact opposite corner of the
+    /// three predicates from [`Self::Fee`], which is the other role that
+    /// carries no opening — a fee is defined by having NO program and
+    /// this role is defined by having one.
+    ///
+    /// # Why the registry needed a new member for it
+    ///
+    /// Because every role that existed answered at least one of the
+    /// three predicates wrongly for it. [`Self::Primary`] and
+    /// [`Self::Balancing`] carry openings, so registering an explicit
+    /// destination as either would have the registry derive or solve a
+    /// blinder for an output that has none, and the independent recheck
+    /// would then close over a scalar no commitment was built against.
+    /// [`Self::Fee`] carries no opening and would have got the
+    /// arithmetic right, but it REQUIRES an empty program, so an
+    /// explicit destination registered as a fee would be refused — and
+    /// if it were not, it would be registering a spendable receipt as
+    /// the target's fee, which is the silent-wrong-transaction failure
+    /// the fee role's own history warns about.
+    ///
+    /// # It moves no recorded digest
+    ///
+    /// Under transcript code 6, which is the next unused one, and
+    /// nothing else. The presence of the opening block is already
+    /// decided by [`Self::carries_an_opening`] with no presence flag, so
+    /// this role rides the explicit-value framing the fee already rides,
+    /// at a code no manifest registered before it could carry. That is
+    /// the same argument [`Self::SoleBalancing`], [`Self::Fee`] and
+    /// [`Self::SponsorChange`] were added under, for the same reason:
+    /// every recorded digest here is evidence a run against a pinned
+    /// node produced, and moving one to keep a test green would be
+    /// re-recording evidence.
+    ///
+    /// # What it does not do
+    ///
+    /// It solves nothing and absorbs nothing. An exit crossing's blinder
+    /// sum is absorbed by an ordinary [`Self::Balancing`] output at a
+    /// declared destination position, which is why this role needs no
+    /// second balancing election and the uniqueness clause is untouched.
+    /// Its blinder is the all-zero one every explicit value is committed
+    /// with, and it joins the recheck's sum like every other slot.
+    ExplicitDestination,
 }
 
 impl FixtureOutputRole {
@@ -308,6 +354,7 @@ impl FixtureOutputRole {
             Self::SoleBalancing => 3,
             Self::Fee => 4,
             Self::SponsorChange { .. } => 5,
+            Self::ExplicitDestination => 6,
         }
     }
 
@@ -322,7 +369,11 @@ impl FixtureOutputRole {
     pub const fn own_asset(self) -> Option<[u8; 32]> {
         match self {
             Self::SponsorChange { asset } => Some(asset),
-            Self::Primary | Self::Balancing | Self::SoleBalancing | Self::Fee => None,
+            Self::Primary
+            | Self::Balancing
+            | Self::SoleBalancing
+            | Self::Fee
+            | Self::ExplicitDestination => None,
         }
     }
 
@@ -335,7 +386,9 @@ impl FixtureOutputRole {
     pub const fn solves_the_balance(self) -> bool {
         match self {
             Self::Balancing | Self::SoleBalancing => true,
-            Self::Primary | Self::Fee | Self::SponsorChange { .. } => false,
+            Self::Primary | Self::Fee | Self::SponsorChange { .. } | Self::ExplicitDestination => {
+                false
+            }
         }
     }
 
@@ -353,7 +406,7 @@ impl FixtureOutputRole {
             Self::Primary | Self::Balancing | Self::SoleBalancing | Self::SponsorChange { .. } => {
                 true
             }
-            Self::Fee => false,
+            Self::Fee | Self::ExplicitDestination => false,
         }
     }
 
@@ -367,9 +420,11 @@ impl FixtureOutputRole {
     pub const fn requires_an_empty_program(self) -> bool {
         match self {
             Self::Fee => true,
-            Self::Primary | Self::Balancing | Self::SoleBalancing | Self::SponsorChange { .. } => {
-                false
-            }
+            Self::Primary
+            | Self::Balancing
+            | Self::SoleBalancing
+            | Self::SponsorChange { .. }
+            | Self::ExplicitDestination => false,
         }
     }
 }
@@ -382,6 +437,7 @@ impl std::fmt::Display for FixtureOutputRole {
             Self::SoleBalancing => "sole balancing",
             Self::Fee => "fee",
             Self::SponsorChange { .. } => "sponsor change",
+            Self::ExplicitDestination => "explicit destination",
         };
         formatter.write_str(text)
     }
