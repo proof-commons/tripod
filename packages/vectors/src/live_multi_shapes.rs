@@ -722,6 +722,13 @@ pub struct MultiShapeRecord {
     observed_detail: Option<String>,
     accepted_txid: Option<String>,
     reverification: Option<MultiShapeReverification>,
+    /// The weight the TARGET reported for the submitted candidate.
+    ///
+    /// Read off the node's own decode rather than computed here, which
+    /// is the only figure §20.5's comparison can use: a weight this
+    /// workspace calculated would be comparing its arithmetic with
+    /// itself. `None` where no submission reached the node.
+    observed_weight: Option<u64>,
     refusal: Option<PrivateRestartRefusal>,
     forced_blinder: Option<ForcedBlinderCensus>,
 }
@@ -804,6 +811,12 @@ impl MultiShapeRecord {
     #[must_use]
     pub fn accepted_txid(&self) -> Option<&str> {
         self.accepted_txid.as_deref()
+    }
+
+    /// The weight the target reported, where a candidate reached it.
+    #[must_use]
+    pub const fn observed_weight(&self) -> Option<u64> {
+        self.observed_weight
     }
 
     /// The second origin's answer, where there was an acceptance to check.
@@ -1396,6 +1409,7 @@ impl MultiShapePlanner {
                 verify_readback_signature(&readback.raw_transaction, &message, owner)
             });
 
+        self.record.observed_weight = response.resources.transaction_weight;
         self.record.reverification = Some(MultiShapeReverification {
             accepted_txid: readback.transaction_id.clone(),
             readback_matches_submission,
@@ -1520,6 +1534,17 @@ pub fn render_multi_shape(record: &MultiShapeRecord) -> String {
         record.output_witness_proof_bytes(),
     );
     let _ = writeln!(out, "submitted_bytes {}", record.submitted_bytes());
+    // The TARGET's figure, not one computed here. A weight this
+    // workspace calculated would be comparing its arithmetic with
+    // itself, which is not a comparison.
+    match record.observed_weight() {
+        Some(weight) => {
+            let _ = writeln!(out, "target_reported_weight {weight}");
+        }
+        None => {
+            let _ = writeln!(out, "target_reported_weight none");
+        }
+    }
     let _ = writeln!(
         out,
         "observed_layer {}",
