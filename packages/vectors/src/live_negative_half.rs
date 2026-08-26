@@ -399,11 +399,6 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         "every emitted position is classified by construction, so no unclassified member exists",
     ),
     entry(
-        "balanced-theft",
-        G::RowTypingInQuestion,
-        "the conservation fragment folds destinations into one sum, so a balanced swap passes it",
-    ),
-    entry(
         "confidential-sponsor-values",
         G::RowClassUnderdetermined,
         "committed sponsor values are an accepted positive shape and the negative is unstated",

@@ -69,7 +69,9 @@ use tapscript::{
     static_transfer_leaf_set,
 };
 use target_elements::{EncodingClass, LeafVersion};
-use transaction::bytes::{AssetField, AssetId, Outpoint, TargetTransaction, Txid, ValueField};
+use transaction::bytes::{
+    AssetField, AssetId, Outpoint, TargetOutput, TargetTransaction, Txid, ValueField,
+};
 use transaction::error::TransactionRefusal;
 use transaction::live_abi::CandidateLiveTransferAbi;
 use transaction::live_census::{
@@ -237,6 +239,15 @@ pub enum FaultMutation {
     /// — of the other program's tree. That is what makes the refusal
     /// about the control block rather than about malformed bytes.
     DeclareALeafUnderAnotherProgramsControlBlock,
+    /// Move value from one signed destination to another, keeping the
+    /// total.
+    ///
+    /// The balanced theft, staged exactly as the row describes it: the
+    /// whole-transaction balance is preserved and every program stays
+    /// where it was, so nothing a conservation relation folds can see
+    /// the change. Distinct from the sibling reorder, which swaps whole
+    /// outputs and moves no value.
+    MoveValueBetweenDestinationsAfterSigning,
     /// Make the destination total exceed the target's explicit width.
     OverflowTheDestinationTotal,
     /// Offer a commitment-valued receipt to the explicit plan.
@@ -456,7 +467,7 @@ macro_rules! census_is {
 
 /// The complete census of first-party cases for §15.4–§15.7.
 ///
-/// Twenty cases over seven owning entry points, and no §15.4–§15.7 row
+/// Twenty-one cases over seven owning entry points, and no §15.4–§15.7 row
 /// whose verdict a first-party layer owns is missing from it.
 #[must_use]
 #[expect(
@@ -688,6 +699,18 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
             M::DefineTheAssetSymbolWithANonAssetValue,
             link_is!(LinkRefusal::IncompatibleLiveSymbolType { .. }),
             "IncompatibleLiveSymbolType",
+        ),
+        // §15.6's balanced theft, RE-ATTRIBUTED to the guard that
+        // actually stops it. It shares this class with the reorder
+        // sibling below and the FIELD separates them: that one moves
+        // whole outputs and no value, this one moves value and leaves
+        // every output where it was.
+        case(
+            "balanced-theft",
+            V::OfferedTransactionCheck,
+            M::MoveValueBetweenDestinationsAfterSigning,
+            transaction_is!(TransactionRefusal::OutputMutatedAfterSigning { .. }),
+            "OutputMutatedAfterSigning",
         ),
         case(
             "destination-order-changed-after-signing",
@@ -1349,6 +1372,84 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
                 )
                 .err()
                 .map(ObservedFaultRefusal::Census),
+            })
+        }
+        M::MoveValueBetweenDestinationsAfterSigning => {
+            let (request, view) = explicit_control(&abi)?;
+            let target = reviewed_target()?;
+            let finalized = finalize_live_transfer(&target, &abi, &request, &view, None, None)
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?
+                .into_finalized();
+            let responses: Vec<_> = finalized
+                .signing_requests()
+                .iter()
+                .map(|signing| {
+                    (
+                        signing.input(),
+                        LiveOwnerResponse::to(signing, OPAQUE_SIGNATURE.to_vec()),
+                    )
+                })
+                .collect();
+            let authorized = authorize_live_transfer(finalized.clone(), responses)
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            let honest = TargetTransaction::decode(finalized.protected_bytes())
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            // One change: one unit of value moves from the second
+            // explicit destination to the first. The TOTAL is
+            // unchanged, both programs stay exactly where they were,
+            // and the census keeps its size and its members — so the
+            // conservation relation this row used to be attributed to
+            // folds the same sum on both sides and cannot see the
+            // change at all. What sees it is the owner's authorization,
+            // which is bound to every output by position.
+            let mut outputs = honest.outputs().to_vec();
+            let [first, second] = [0_usize, 1_usize];
+            let (ValueField::Explicit(gained), ValueField::Explicit(lost)) = (
+                outputs
+                    .get(first)
+                    .ok_or(LiveFaultRefusal::ControlNotConstructible)?
+                    .value(),
+                outputs
+                    .get(second)
+                    .ok_or(LiveFaultRefusal::ControlNotConstructible)?
+                    .value(),
+            ) else {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            };
+            if lost == 0 {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            }
+            for (index, amount) in [(first, gained + 1), (second, lost - 1)] {
+                let output = outputs
+                    .get(index)
+                    .ok_or(LiveFaultRefusal::ControlNotConstructible)?;
+                outputs[index] = TargetOutput::new(
+                    output.asset(),
+                    ValueField::Explicit(amount),
+                    output.nonce(),
+                    output.program().to_vec(),
+                );
+            }
+            let stolen = TargetTransaction::new(
+                honest.version(),
+                honest.inputs().to_vec(),
+                outputs,
+                honest.lock_time(),
+                honest.witnesses().to_vec(),
+            )
+            .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            if stolen == honest {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            }
+            Ok(Staged {
+                control: authorized
+                    .check_offered(&honest)
+                    .err()
+                    .map(ObservedFaultRefusal::Transaction),
+                malformed: authorized
+                    .check_offered(&stolen)
+                    .err()
+                    .map(ObservedFaultRefusal::Transaction),
             })
         }
         M::OverflowTheDestinationTotal => {

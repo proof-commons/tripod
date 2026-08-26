@@ -1358,18 +1358,29 @@ pub const SPONSOR_FAULTS: &[LiveSafetyRow] = &[
         B::ReportSemanticProjectionRejection,
         LiveUnlinkedReason::ReportIsTheBoundary,
     ),
-    // The mandatory one. The whole-transaction balance is preserved and
-    // every sponsor amount stays positive, so nothing about the sponsor
-    // relation is wrong: what is wrong is the `U` transfer relation, and
-    // the conservation of the closed asset is what must refuse it.
-    linked(
+    // RE-ATTRIBUTED, on the ruling. The row arrived declaring that
+    // closed-asset conservation must refuse a balanced rearrangement,
+    // and conservation is precisely the relation that CANNOT: the
+    // fragment folds every destination into ONE sum and compares it
+    // with the folded receipts, so a swap that preserves the total
+    // passes it by construction. Attributing the row there was
+    // attributing it to the one guard the fault is designed to slip
+    // past.
+    //
+    // What actually stops it is the OWNER'S AUTHORIZATION OVER ALL
+    // OUTPUTS. The authorization is bound to every output by position,
+    // so moving value between two destinations is refused whatever it
+    // does to the total — and that is a pre-target boundary, which is
+    // why the row is here rather than waiting on a chain.
+    //
+    // On a chain the same theft would be refused by CHECKSIG, and that
+    // observation is not owed for this row: a signature failure names a
+    // signature and not a rearrangement, so it would not attribute.
+    pre_target(
         S::SponsorFault,
         "balanced-theft",
         L::TargetTransaction,
-        B::ScriptPathRejection,
-        conservation(),
-        amount_mismatch,
-        "AmountMismatch",
+        B::AbiConstructionRejection,
     ),
     // THE ONE ROW OF THIS MATRIX WHOSE PREDICTION THE SOURCES REFUSE.
     //
