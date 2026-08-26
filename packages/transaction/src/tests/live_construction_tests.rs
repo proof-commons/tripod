@@ -12,6 +12,7 @@ use super::live_support::{
     live_abi, owner, receipt_view, single_representation_live_abi, sponsor_view,
 };
 use super::{outpoint, reviewed_target, view};
+use crate::abi::TargetTransactionVersion;
 use crate::bytes::{AssetField, AssetId, Outpoint, ValueField};
 use crate::error::TransactionRefusal;
 use crate::live_abi::{CandidateLiveTransferAbi, LiveTransactionForm};
@@ -1761,4 +1762,34 @@ fn a_declared_fee_against_a_deployment_carrying_none_is_refused() {
         refusal,
         TransactionRefusal::UnsupportedLiveShape { .. }
     ));
+}
+
+#[test]
+fn the_self_paying_form_is_built_at_the_topology_restricted_version() {
+    // The version the TRUC filing was about, recomputed from the built
+    // transaction rather than read off the comment that discharges it. A
+    // real target's mempool allowed exactly this version standalone,
+    // which is what let the filing be answered by keeping it.
+    let abi = fee_bearing_live_abi();
+    let (request, view) = self_paying_fixture(&abi, 250);
+    let built = finalize_live_transfer_declaring(
+        &reviewed_target(),
+        &abi,
+        &request,
+        &view,
+        None,
+        None,
+        &SELF_PAYING_ROLES,
+    )
+    .expect("the self-paying explicit form finalizes");
+
+    assert_eq!(built.report().form(), LiveTransactionForm::Sponsorless);
+    assert_eq!(
+        built.finalized().protected().version(),
+        TargetTransactionVersion::TopologyRestricted.version(),
+    );
+    // And the sponsored form is the other one, so the pair is asserted
+    // together rather than one half of a match being restated.
+    assert_eq!(TargetTransactionVersion::Standard.version(), 2);
+    assert_eq!(TargetTransactionVersion::TopologyRestricted.version(), 3);
 }
