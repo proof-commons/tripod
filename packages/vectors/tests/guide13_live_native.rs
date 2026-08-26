@@ -1455,6 +1455,138 @@ fn the_private_merge_shape_is_submitted_to_a_real_target() {
     run_one_multi_shape(PrivateShape::PrivateMerge, "multi-private-merge");
 }
 
+/// The sponsored CONFIDENTIAL with-change shape, offered to a real node.
+///
+/// The shape the section 15.2 `private-sponsor-values` row moves on, and
+/// the one no run in this workspace had ever offered: a blinded sponsor
+/// coin in at an explicit asset, blinded receipt destinations, a
+/// COMMITTED sponsor change, and an explicit reserve fee held outside
+/// both balance equations.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_sponsored_confidential_with_change_shape_is_submitted_to_a_real_target() {
+    use vectors::live_sponsored_private::{SponsoredPrivatePlanner, render_sponsored_private};
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension("sponsored-private-with-change");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner =
+        SponsoredPrivatePlanner::new(identifier(&genesis)).expect("the ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    std::fs::write(&report, render_sponsored_private(record)).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as
+    // one. It is never a target verdict, so it is reported and the test
+    // stops here rather than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the sponsored private ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    // The blinded sponsor coin, censused by named check and never by a
+    // scalar. Counted against the whole vocabulary rather than against
+    // the checks this test happens to name, so a check added later is
+    // one this run has to have seen hold.
+    let solve = record
+        .solve()
+        .expect("the sponsor funding stage censused the coin");
+    assert!(
+        solve.chain_reported_a_commitment(),
+        "the chain reported an explicit sponsor value where a commitment was funded",
+    );
+    assert!(
+        solve.commitment_is_the_registrys_own(),
+        "the coin the chain holds is not the one this workspace derives from published constants",
+    );
+    assert!(
+        solve.asset_stayed_explicit(),
+        "the sponsor coin's asset was blinded, which an introspection could not read",
+    );
+    assert!(
+        solve.rangeproof_present(),
+        "a committed coin carries a proof"
+    );
+
+    // The sponsor's round trip: the adapter signed the bytes it was
+    // handed, and returned a witness.
+    let round = record
+        .round()
+        .expect("the staging pass recorded a signing request");
+    assert!(
+        round.echo_matches_what_was_sent(),
+        "the adapter authorized bytes that are not the ones it was handed",
+    );
+    assert!(round.witness_items() > 0, "the sponsor returned no witness");
+
+    // The candidate reached the node.
+    assert!(record.submitted_bytes() > 0);
+    assert!(record.observed_layer().is_some(), "no layer was observed");
+
+    let check = record
+        .reverification()
+        .expect("an acceptance was observed and read back");
+    assert!(
+        check.readback_matches_submission(),
+        "the bytes the node reported are not the bytes it was handed",
+    );
+    assert!(
+        check.owner_signature_verified(),
+        "an owner's signature did not verify against an independently recomputed message",
+    );
+    assert!(
+        check.sponsor_change_located(),
+        "the sponsor's committed change was not found in the mined bytes",
+    );
+}
+
 /// Every committed output carries a range proof, and every fee output
 /// carries none.
 ///
