@@ -216,54 +216,93 @@ struct ObservedSponsorCoin {
     program: Vec<u8>,
 }
 
-/// What was established about the blinded sponsor coin, in booleans.
+/// One thing established about the blinded sponsor coin.
 ///
-/// Booleans and never a scalar. A record carrying the opening would be
-/// publishing one; what a reader needs is whether each claim held, and
-/// the claims are each recomputed from the node's report against values
-/// this workspace derived from published constants.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// A vocabulary of named checks rather than a row of booleans, on the
+/// pattern the explicit sponsor lane's own census sets: a check added
+/// here is one a run has to have seen hold, which a count written down
+/// somewhere else would not give.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum SponsoredSolveCheck {
+    /// The node reported a value commitment and not an explicit amount.
+    ChainReportedACommitment,
+    /// The value the chain holds is the one the frozen registry derives
+    /// for the same case.
+    ///
+    /// The load-bearing member. The registry derives it from published
+    /// constants and no chain at all; the node reports what it actually
+    /// stored. A run that failed this would have funded SOMETHING
+    /// blinded while being unable to say what.
+    CommitmentIsTheRegistrysOwn,
+    /// Each coin's asset stayed explicit beside its committed value,
+    /// which is the asymmetry an introspection requires.
+    AssetStayedExplicit,
+    /// A range proof accompanied each committed value.
+    RangeproofPresent,
+}
+
+impl SponsoredSolveCheck {
+    /// Every check, in the order a reader meets them.
+    pub const ALL: [Self; 4] = [
+        Self::ChainReportedACommitment,
+        Self::CommitmentIsTheRegistrysOwn,
+        Self::AssetStayedExplicit,
+        Self::RangeproofPresent,
+    ];
+
+    /// The check's own name, for a record a person reads.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ChainReportedACommitment => "chain-reported-a-commitment",
+            Self::CommitmentIsTheRegistrysOwn => "commitment-is-the-registrys-own",
+            Self::AssetStayedExplicit => "asset-stayed-explicit",
+            Self::RangeproofPresent => "rangeproof-present",
+        }
+    }
+}
+
+/// Which checks a run's blinded sponsor coin passed.
+///
+/// Named checks and never a scalar. A record carrying the opening would
+/// be publishing one; what a reader needs is which claims held, each
+/// recomputed from the node's report against values this workspace
+/// derived without a chain.
+#[derive(Clone, Debug, Default)]
 pub struct SponsoredSolveCensus {
-    chain_reported_a_commitment: bool,
-    commitment_is_the_registrys_own: bool,
-    asset_stayed_explicit: bool,
-    rangeproof_present: bool,
+    held: std::collections::BTreeSet<SponsoredSolveCheck>,
 }
 
 impl SponsoredSolveCensus {
-    /// Whether the value the chain reported is a commitment rather than
-    /// an explicit amount, which its prefix is what says.
+    /// Whether one named check held.
     #[must_use]
-    pub const fn chain_reported_a_commitment(self) -> bool {
-        self.chain_reported_a_commitment
+    pub fn holds(&self, check: SponsoredSolveCheck) -> bool {
+        self.held.contains(&check)
     }
 
-    /// Whether that commitment is the one this workspace derives from
-    /// published constants and no chain at all.
+    /// Whether every check in the vocabulary held.
     #[must_use]
-    pub const fn commitment_is_the_registrys_own(self) -> bool {
-        self.commitment_is_the_registrys_own
+    pub fn every_check_held(&self) -> bool {
+        SponsoredSolveCheck::ALL
+            .iter()
+            .all(|check| self.held.contains(check))
     }
 
-    /// Whether the asset stayed explicit while the value was committed.
+    /// The checks that did NOT hold, in vocabulary order.
     #[must_use]
-    pub const fn asset_stayed_explicit(self) -> bool {
-        self.asset_stayed_explicit
+    pub fn missing(&self) -> Vec<SponsoredSolveCheck> {
+        SponsoredSolveCheck::ALL
+            .into_iter()
+            .filter(|check| !self.held.contains(check))
+            .collect()
     }
 
-    /// Whether every funded output carried a range proof.
-    #[must_use]
-    pub const fn rangeproof_present(self) -> bool {
-        self.rangeproof_present
-    }
-
-    /// Whether every claim held.
-    #[must_use]
-    pub const fn holds(self) -> bool {
-        self.chain_reported_a_commitment
-            && self.commitment_is_the_registrys_own
-            && self.asset_stayed_explicit
-            && self.rangeproof_present
+    /// Record that one check held.
+    fn record(&mut self, check: SponsoredSolveCheck, held: bool) {
+        if held {
+            self.held.insert(check);
+        }
     }
 }
 
@@ -359,8 +398,8 @@ impl SponsoredPrivateRecord {
 
     /// What was established about the blinded sponsor coin.
     #[must_use]
-    pub const fn solve(&self) -> Option<SponsoredSolveCensus> {
-        self.solve
+    pub const fn solve(&self) -> Option<&SponsoredSolveCensus> {
+        self.solve.as_ref()
     }
 
     /// The sponsor's round trip through the adapter.
@@ -562,15 +601,26 @@ impl SponsoredPrivatePlanner {
         let program =
             decode_hex(&first.script).ok_or(SponsoredPrivateRefusal::MalformedSponsorCoin)?;
 
-        let census = SponsoredSolveCensus {
-            chain_reported_a_commitment: fields.iter().all(|field| field[0] != EXPLICIT_PREFIX),
-            commitment_is_the_registrys_own: fields == derived,
-            asset_stayed_explicit: reported
+        let mut census = SponsoredSolveCensus::default();
+        census.record(
+            SponsoredSolveCheck::ChainReportedACommitment,
+            fields.iter().all(|field| field[0] != EXPLICIT_PREFIX),
+        );
+        census.record(
+            SponsoredSolveCheck::CommitmentIsTheRegistrysOwn,
+            fields == derived,
+        );
+        census.record(
+            SponsoredSolveCheck::AssetStayedExplicit,
+            reported
                 .iter()
                 .all(|output| asset_of(&output.explicit_asset) == Some(asset)),
-            rangeproof_present: reported.iter().all(|output| !output.rangeproof.is_empty()),
-        };
-        if !census.commitment_is_the_registrys_own {
+        );
+        census.record(
+            SponsoredSolveCheck::RangeproofPresent,
+            reported.iter().all(|output| !output.rangeproof.is_empty()),
+        );
+        if !census.holds(SponsoredSolveCheck::CommitmentIsTheRegistrysOwn) {
             return Err(SponsoredPrivateRefusal::SponsorCoinIsNotTheRegistrysOwn);
         }
         self.record.solve = Some(census);
@@ -702,81 +752,18 @@ impl SponsoredPrivatePlanner {
         .map_err(|_| SponsoredPrivateRefusal::ControlNotStaged)
     }
 
-    /// The finalization both passes are assembled against.
-    fn finalize(&self) -> Result<PrivateLiveFinalization, SponsoredPrivateRefusal> {
-        let linked = self
-            .linked
-            .as_ref()
-            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
-        let receipt = self
-            .receipt
-            .as_ref()
-            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
-        let sponsor = self
-            .sponsor
-            .as_ref()
-            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
-        let (successor_digest, successor_view) = self
-            .successor
-            .as_ref()
-            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
-
-        // The view is the node's report of both coins, never the
-        // ceremony's expectation of them.
-        let view = PublicConstructionView::new([
-            PublicOutputView::new(
-                receipt.outpoint(),
-                receipt.asset(),
-                receipt.value(),
-                receipt.program().to_vec(),
-            ),
-            PublicOutputView::new(
-                sponsor.outpoint,
-                transaction::bytes::AssetField::Explicit(sponsor.asset),
-                sponsor.value.clone(),
-                sponsor.program.clone(),
-            ),
-        ])
-        .map_err(|_| {
-            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::ControlNotRequestable)
-        })?;
-
-        let recipient = published_owner(&SECOND_SCALAR).map_err(|_| {
-            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::SubstrateUnavailable)
-        })?;
-        let sender = published_owner(&FIRST_SCALAR).map_err(|_| {
-            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::SubstrateUnavailable)
-        })?;
-        let destination = |owner, amount| {
-            ProtocolValue::new(amount)
-                .map(|value| LiveReceiptDestination::new(OwnerParameter::new(owner), value))
-                .map_err(|_| {
-                    SponsoredPrivateRefusal::Private(PrivateRestartRefusal::ControlNotRequestable)
-                })
-        };
-
-        let request = LiveTransferRequest::new(
-            [receipt.outpoint()],
-            [
-                destination(recipient, PRIMARY_RECEIPT)?,
-                destination(sender.clone(), BALANCING_RECEIPT)?,
-                // The sponsor-change position. Its OWNER is never read:
-                // construction pays the deployment's own sponsor-change
-                // program, because returning a sponsor's reserve to a
-                // live receipt constructor would be a receipt nobody can
-                // spend and a sponsor who is not repaid.
-                destination(sender, SPONSOR_CHANGE)?,
-            ],
-            LiveTransferRepresentationPlan::PrivateCommitted,
-            RequestedForm::Sponsored,
-            SponsorChangeRequest::Requested,
-            Some(PublicTestRandomness::from_published_bytes([0x7e; 32])),
-        )
-        .map_err(|_| {
-            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::ControlNotRequestable)
-        })?;
-
-        let openings = PrivateLiveOpenings::new(
+    /// The openings the finalization is formed against.
+    ///
+    /// Its own method because it is the whole statement of what this
+    /// shape IS: which coin fills each input region, which fixture
+    /// position each destination realizes, and the one region member
+    /// that is the fee.
+    fn openings(
+        &self,
+        linked: &LinkedDeployment,
+        successor_digest: &[u8; 32],
+    ) -> Result<PrivateLiveOpenings, SponsoredPrivateRefusal> {
+        Ok(PrivateLiveOpenings::new(
             vec![
                 PrivateInputOpening {
                     region: ConfidentialInputRegion::Receipt,
@@ -834,7 +821,84 @@ impl SponsoredPrivatePlanner {
                 Vec::new(),
             )]),
             materialization_profiles(),
-        );
+        ))
+    }
+
+    /// The finalization both passes are assembled against.
+    fn finalize(&self) -> Result<PrivateLiveFinalization, SponsoredPrivateRefusal> {
+        let linked = self
+            .linked
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        let receipt = self
+            .receipt
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        let sponsor = self
+            .sponsor
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+        let (successor_digest, successor_view) = self
+            .successor
+            .as_ref()
+            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
+
+        // The view is the node's report of both coins, never the
+        // ceremony's expectation of them.
+        let view = PublicConstructionView::new([
+            PublicOutputView::new(
+                receipt.outpoint(),
+                receipt.asset(),
+                receipt.value(),
+                receipt.program().to_vec(),
+            ),
+            PublicOutputView::new(
+                sponsor.outpoint,
+                transaction::bytes::AssetField::Explicit(sponsor.asset),
+                sponsor.value,
+                sponsor.program.clone(),
+            ),
+        ])
+        .map_err(|_| {
+            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::ControlNotRequestable)
+        })?;
+
+        let recipient = published_owner(&SECOND_SCALAR).map_err(|_| {
+            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::SubstrateUnavailable)
+        })?;
+        let sender = published_owner(&FIRST_SCALAR).map_err(|_| {
+            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::SubstrateUnavailable)
+        })?;
+        let destination = |owner, amount| {
+            ProtocolValue::new(amount)
+                .map(|value| LiveReceiptDestination::new(OwnerParameter::new(owner), value))
+                .map_err(|_| {
+                    SponsoredPrivateRefusal::Private(PrivateRestartRefusal::ControlNotRequestable)
+                })
+        };
+
+        let request = LiveTransferRequest::new(
+            [receipt.outpoint()],
+            [
+                destination(recipient, PRIMARY_RECEIPT)?,
+                destination(sender.clone(), BALANCING_RECEIPT)?,
+                // The sponsor-change position. Its OWNER is never read:
+                // construction pays the deployment's own sponsor-change
+                // program, because returning a sponsor's reserve to a
+                // live receipt constructor would be a receipt nobody can
+                // spend and a sponsor who is not repaid.
+                destination(sender, SPONSOR_CHANGE)?,
+            ],
+            LiveTransferRepresentationPlan::PrivateCommitted,
+            RequestedForm::Sponsored,
+            SponsorChangeRequest::Requested,
+            Some(PublicTestRandomness::from_published_bytes([0x7e; 32])),
+        )
+        .map_err(|_| {
+            SponsoredPrivateRefusal::Private(PrivateRestartRefusal::ControlNotRequestable)
+        })?;
+
+        let openings = self.openings(linked, successor_digest)?;
 
         let fixtures = FrozenConfidentialFixtureView::new(BTreeMap::from([
             (
@@ -1180,27 +1244,10 @@ pub fn render_sponsored_private(record: &SponsoredPrivateRecord) -> String {
         let _ = writeln!(out, "issued_asset {asset}");
     }
     let _ = writeln!(out, "predecessor_coins {}", record.coins.len());
-    if let Some(solve) = record.solve {
-        let _ = writeln!(
-            out,
-            "sponsor_chain_reported_a_commitment {}",
-            solve.chain_reported_a_commitment(),
-        );
-        let _ = writeln!(
-            out,
-            "sponsor_commitment_is_the_registrys_own {}",
-            solve.commitment_is_the_registrys_own(),
-        );
-        let _ = writeln!(
-            out,
-            "sponsor_asset_stayed_explicit {}",
-            solve.asset_stayed_explicit(),
-        );
-        let _ = writeln!(
-            out,
-            "sponsor_rangeproof_present {}",
-            solve.rangeproof_present()
-        );
+    if let Some(solve) = record.solve.as_ref() {
+        for check in SponsoredSolveCheck::ALL {
+            let _ = writeln!(out, "sponsor_check {} {}", check.name(), solve.holds(check));
+        }
     }
     if let Some(txid) = record.sponsor_funding_txid.as_ref() {
         let _ = writeln!(out, "sponsor_funding_txid {txid}");

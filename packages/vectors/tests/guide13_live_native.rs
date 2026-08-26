@@ -1539,20 +1539,9 @@ fn the_sponsored_confidential_with_change_shape_is_submitted_to_a_real_target() 
         .solve()
         .expect("the sponsor funding stage censused the coin");
     assert!(
-        solve.chain_reported_a_commitment(),
-        "the chain reported an explicit sponsor value where a commitment was funded",
-    );
-    assert!(
-        solve.commitment_is_the_registrys_own(),
-        "the coin the chain holds is not the one this workspace derives from published constants",
-    );
-    assert!(
-        solve.asset_stayed_explicit(),
-        "the sponsor coin's asset was blinded, which an introspection could not read",
-    );
-    assert!(
-        solve.rangeproof_present(),
-        "a committed coin carries a proof"
+        solve.every_check_held(),
+        "the blinded sponsor coin failed checks: {:?}",
+        solve.missing(),
     );
 
     // The sponsor's round trip: the adapter signed the bytes it was
