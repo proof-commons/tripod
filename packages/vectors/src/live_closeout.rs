@@ -97,22 +97,38 @@ impl PositivePrivateClass {
 
     /// Whether this guide may move the class at all.
     ///
-    /// Nine of ten, and the tenth is not a matter of effort. It was
-    /// blocked independently by
-    /// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`], which
-    /// this guide does not clear; that residual has since cleared
-    /// elsewhere on an observed acceptance, and the class STILL may not
-    /// enter the delta.
+    /// All ten, now. For most of this guide's life it was nine, and the
+    /// tenth — [`Self::PrivateSponsorValues`] — was held shut twice
+    /// over, each time on a ground that was true when it was written.
     ///
-    /// The ground is a different one now, and naming it is what keeps
-    /// the two facts from being confused. The accepted sponsored control
-    /// is EXPLICIT, and this class asks for confidential sponsor values.
-    /// An acceptance of an explicit sponsored control answers nothing
-    /// about a confidential one, so the row waits on a run of its own
-    /// shape exactly as it did before.
+    /// First it was blocked by
+    /// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`], which
+    /// this guide did not clear. That residual cleared elsewhere on an
+    /// observed acceptance and the class still could not enter, because
+    /// the accepted sponsored control was EXPLICIT and this class asks
+    /// for confidential sponsor values: an acceptance of an explicit
+    /// sponsored control answers nothing about a confidential one.
+    ///
+    /// # What opened it
+    ///
+    /// A run of ITS OWN SHAPE, which is the only thing that could. A
+    /// sponsored private successor — a blinded sponsor coin in at an
+    /// explicit asset, blinded receipt destinations, a COMMITTED sponsor
+    /// change, and an explicit reserve fee outside both balance
+    /// equations — was built through the private construction lane
+    /// against ONE registered case declaring two assets across its
+    /// positions, and a real node accepted and mined it. The bytes it
+    /// reported back are the bytes it was handed, an owner's signature
+    /// verified against a message recomputed independently of the
+    /// candidate, and the sponsor's committed change was located in the
+    /// MINED bytes rather than assumed from what was sent.
+    ///
+    /// The identity is `sponsored_run_of_record::SPONSORED_PRIVATE_TXID`
+    /// and the gate is held to it by a test, so this function and the
+    /// run that opened it cannot drift apart.
     #[must_use]
     pub const fn may_enter_the_delta(self) -> bool {
-        !matches!(self, Self::PrivateSponsorValues)
+        true
     }
 
     /// The class's wire spelling, which is the safety matrix's own row
@@ -1660,11 +1676,39 @@ mod tests {
     }
 
     #[test]
-    fn the_sponsor_row_cannot_be_moved_even_on_an_acceptance() {
-        // Not by the constructor, which is where a ceremony would try.
+    fn the_sponsor_row_moves_on_an_acceptance_of_its_own_shape() {
+        // This test used to assert the opposite, and the reversal is the
+        // point rather than an edit to keep a suite green. The row was
+        // shut because no run of ITS OWN shape existed: an explicit
+        // sponsored acceptance answers nothing about a confidential one,
+        // so the constructor refused the class outright.
+        //
+        // A sponsored CONFIDENTIAL with-change successor has since been
+        // accepted and mined, so the ground the refusal stood on is
+        // gone. What has NOT changed is that the row moves on an
+        // acceptance and on nothing else -- the constructor still takes
+        // an identity, and a caller with no run has none to hand it.
+        let moved = moved_on_acceptance(
+            PositivePrivateClass::PrivateSponsorValues,
+            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_TXID,
+        )
+        .expect("the row moves on the acceptance of its own shape");
+        assert_eq!(moved.class(), PositivePrivateClass::PrivateSponsorValues);
         assert_eq!(
-            moved_on_acceptance(PositivePrivateClass::PrivateSponsorValues, "aa".repeat(32)).err(),
-            Some(CloseoutRefusal::SponsorRowMoved),
+            moved.accepted_identity(),
+            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_TXID,
+        );
+    }
+
+    #[test]
+    fn every_class_may_now_enter_the_delta() {
+        // Counted over the whole vocabulary rather than asserted of the
+        // one that changed, so a class added later with no run behind it
+        // is caught here.
+        assert!(
+            PositivePrivateClass::ALL
+                .iter()
+                .all(|class| class.may_enter_the_delta()),
         );
     }
 

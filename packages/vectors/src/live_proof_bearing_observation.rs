@@ -77,8 +77,9 @@ use std::collections::BTreeMap;
 use target_elements::{LeafVersion, ObservationIdentity};
 use target_elements_conformance::confidential_fixture::{
     ConfidentialFixtureManifest, ConfidentialFixtureOutput, ConfidentialFixtureRegistry,
-    FixtureDerivationProfile, FixtureOpenings, FixtureOutputRole, MAX_PARITY_COUNTER,
-    PublicDisposableTestMaterial, RegistrationRefusal, ResolvedFixture, predecessor_handle,
+    FixtureDerivationProfile, FixtureOpenings, FixtureOutputRole,
+    FrozenConfidentialFixtureRegistry, MAX_PARITY_COUNTER, PublicDisposableTestMaterial,
+    RegistrationRefusal, ResolvedFixture, predecessor_handle,
 };
 use target_elements_conformance::constructor::curve::FIELD_ELEMENT_BYTES;
 use target_elements_conformance::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
@@ -969,6 +970,36 @@ fn project(fixture: &ResolvedFixture) -> Result<ConfidentialFixtureView, ProofBe
             outputs.push(ConfidentialFixtureOutputView::fee(output.semantic_amount));
             continue;
         }
+        // The sponsor change is projected through the view's own
+        // sponsor-change constructor for the reason the fee is projected
+        // through the fee one: it is the single output whose ASSET is not
+        // the fixture's, and the opening-bearing constructor has no
+        // parameter to say so. Routing it through `new` would have
+        // compiled and produced a remainder committed against the
+        // protocol asset — a candidate the target reads as the wrong
+        // asset entirely, which is the silent wrong transaction rather
+        // than the honest stop.
+        //
+        // The asset travels in the ROLE, so it arrives here already bound
+        // to the output that carries it and nothing downstream has to
+        // pair an asset with an index.
+        if let FixtureOutputRole::SponsorChange { asset } = output.role {
+            // A committed remainder with no opening is a registry that
+            // changed its mind between deriving and resolving, and this
+            // projection does not decide which half to believe.
+            let opening = opening
+                .as_ref()
+                .ok_or(ProofBearingRefusal::OpeningsAreNotDerived)?;
+            outputs.push(ConfidentialFixtureOutputView::sponsor_change(
+                output.semantic_amount,
+                output.output_program.clone(),
+                AssetId::from_internal(asset),
+                opening.value_blinder,
+                opening.nonce_input,
+                opening.rangeproof_seed,
+            ));
+            continue;
+        }
         let role = match output.role {
             FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
             // Both solving roles project to the view's one solving role,
@@ -1013,6 +1044,34 @@ fn project(fixture: &ResolvedFixture) -> Result<ConfidentialFixtureView, ProofBe
         },
         outputs,
     ))
+}
+
+/// One already-frozen registry's case, resolved and projected.
+///
+/// The seam a ceremony needs when the manifest is somebody else's. The
+/// sponsor reserve case is registered by its own module, because the
+/// digest the EXECUTOR funds against comes from that manifest and a
+/// second spelling of it here would resolve to a different digest and
+/// refuse. So the case is registered once, there, and this projects the
+/// frozen result rather than re-registering it.
+///
+/// # Errors
+///
+/// [`ProofBearingRefusal::FixtureDidNotResolve`] where the frozen
+/// registry does not hold the handle at that digest, and the projection's
+/// own refusals otherwise.
+pub(crate) fn project_frozen(
+    frozen: &FrozenConfidentialFixtureRegistry,
+    handle: &ConfidentialFixtureHandle,
+    digest: &ConfidentialFixtureDigest,
+) -> Result<ConfidentialFixtureView, ProofBearingRefusal> {
+    let resolved =
+        frozen
+            .resolve(handle, digest)
+            .map_err(|_| ProofBearingRefusal::FixtureDidNotResolve {
+                handle: handle.as_str().to_owned(),
+            })?;
+    project(resolved)
 }
 
 /// One registered and frozen fixture, resolved under its own digest.

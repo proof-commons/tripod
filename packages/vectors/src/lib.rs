@@ -37,6 +37,7 @@ pub mod live_restart;
 pub mod live_roles;
 pub mod live_safety;
 pub mod live_sponsor_shapes;
+pub mod live_sponsored_private;
 pub mod materialize;
 pub mod matrix;
 pub mod mutation;
