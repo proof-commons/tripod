@@ -2435,14 +2435,16 @@ const fn stops_at(form: TransferForm) -> &'static str {
 #[cfg(test)]
 mod tests {
     use target_elements_conformance::confidential_fixture::{
-        ConfidentialFixtureOutput, FixtureOutputRole, RegistrationRefusal,
+        ConfidentialFixtureOutput, FixtureDerivationRefusal, FixtureOutputRole, RegistrationRefusal,
     };
 
     use super::{
-        BlindedShape, ConsensusVerdict, FirstPartyStatus, Limitation, RemovalPath, census_entry,
+        BlindedShape, ConsensusVerdict, ConsumedArity, CreatedArity, FeeAxis, FirstPartyStatus,
+        FormLimitation, FormVerdict, Limitation, RemovalPath, RepresentationAxis, SponsorAxis,
+        TransferForm, census_entry, form_verdict,
     };
     use crate::live_proof_bearing_observation::registry_refusal_for;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     /// A disposable asset for the registry drives below.
     ///
@@ -3273,6 +3275,660 @@ mod tests {
             RemovalPath::FeeOutputRole.degeneracy().is_none(),
             "an explicit fee output has no blinder to degenerate",
         );
+    }
+
+    /// A nonzero input blinder sum, for the cells that consume one.
+    ///
+    /// Chosen rather than convenient. A cell whose consumed side is
+    /// blinded presents a sum that is nonzero for the coins this lane
+    /// now funds — the non-canceling predecessor is what made that true
+    /// — and driving such a cell with a zero sum would recompute the
+    /// refusal for coins the ceremony no longer has to offer. The zero
+    /// sum is still driven, for exactly the cells that really present
+    /// one: the entry-blinding and wholly explicit consumed sides, whose
+    /// coins carry no blinder at all.
+    const NONZERO_CONSUMED_SUM: [u8; 32] = [0x11_u8; 32];
+
+    /// The reserve asset a sponsor's change output is denominated in.
+    ///
+    /// Public test material under ADR-015; it names no chain. It differs
+    /// from `CENSUS_ASSET` because the whole point of a sponsor region is
+    /// that it moves a DIFFERENT asset, and a drive that used one asset
+    /// for both would be recomputing a form no candidate presents.
+    const CENSUS_RESERVE_ASSET: [u8; 32] = [0x5c; 32];
+
+    /// Drives the live registry with a manifest of the CELL's own roles.
+    ///
+    /// The product register's central claim, recomputed. Every cell whose
+    /// verdict says the registry admits it is registered here, and every
+    /// cell whose verdict names a registry wall is driven into that wall,
+    /// so an inherited verdict is checked exactly as hard as a written
+    /// one.
+    ///
+    /// `None` for the cells the confidential registry is not the
+    /// authority on: the wholly explicit lane registers nothing, and a
+    /// sponsor taking EXPLICIT change has no role to be stated as.
+    fn recomputed_form_refusal(form: TransferForm) -> Option<Option<RegistrationRefusal>> {
+        if matches!(form.representation, RepresentationAxis::HomogeneousExplicit) {
+            return None;
+        }
+        if form.sponsor.change_outputs() > 0 && !form.sponsor.change_is_committed() {
+            return None;
+        }
+
+        let blinded = form.representation.blinded_destinations(form.created);
+        let explicit = form.explicit_destinations();
+        let total = form.outputs();
+        let mut outputs: Vec<ConfidentialFixtureOutput> = Vec::with_capacity(total);
+
+        // The explicit destinations come FIRST and the absorber last,
+        // which is the order the covenant's own positional leaf declares
+        // rather than a convenience of this helper.
+        for _ in 0..explicit {
+            outputs.push(ConfidentialFixtureOutput {
+                role: FixtureOutputRole::ExplicitDestination,
+                semantic_amount: 100_000_000_u64,
+                output_program: vec![0x51_u8],
+            });
+        }
+        for index in 0..blinded {
+            // Exactly one blinded destination SOLVES. It is the last of
+            // them, and it is the sole form only when the manifest has
+            // nothing else in it at all — the registry refuses a
+            // sole-balancing role that is not alone, so a lone blinded
+            // output beside a fee is a plain balancing one.
+            let last = index + 1 == blinded;
+            outputs.push(ConfidentialFixtureOutput {
+                role: if last && total == 1 {
+                    FixtureOutputRole::SoleBalancing
+                } else if last {
+                    FixtureOutputRole::Balancing
+                } else {
+                    FixtureOutputRole::Primary
+                },
+                semantic_amount: 100_000_000_u64,
+                output_program: vec![0x51_u8],
+            });
+        }
+        if form.sponsor.change_is_committed() {
+            outputs.push(ConfidentialFixtureOutput {
+                role: FixtureOutputRole::SponsorChange {
+                    asset: CENSUS_RESERVE_ASSET,
+                },
+                semantic_amount: 100_000_000_u64,
+                output_program: vec![0x51_u8],
+            });
+        }
+        if matches!(form.fee, FeeAxis::Present) {
+            outputs.push(ConfidentialFixtureOutput {
+                role: FixtureOutputRole::Fee,
+                semantic_amount: 100_000_000_u64,
+                output_program: Vec::new(),
+            });
+        }
+        assert_eq!(
+            outputs.len(),
+            total,
+            "{} builds its own output count",
+            form.handle()
+        );
+
+        let sum = if form.blinded_inputs() == 0 {
+            CENSUS_BLINDER_SUM
+        } else {
+            NONZERO_CONSUMED_SUM
+        };
+        Some(registry_refusal_for(
+            &format!("ctf-v1/form-{}", form.handle().replace('/', "-")),
+            CENSUS_ASSET,
+            sum,
+            outputs,
+        ))
+    }
+
+    /// The product is total: every cell has a verdict and no cell has two.
+    ///
+    /// The property the whole register rests on. The enumeration states
+    /// what the space IS, and this says every point of it is answered —
+    /// which is the register's bar restated as a test, since a form with
+    /// no verdict is exactly the absence the bar forbids.
+    #[test]
+    fn every_cell_of_the_product_has_exactly_one_verdict() {
+        let forms: Vec<TransferForm> = TransferForm::every_form().collect();
+        assert_eq!(
+            forms.len(),
+            TransferForm::CELLS,
+            "the enumeration yields the product of its axes",
+        );
+        assert_eq!(TransferForm::CELLS, 480);
+
+        let mut handles: Vec<String> = forms.iter().map(|form| form.handle()).collect();
+        handles.sort();
+        let stated = handles.len();
+        handles.dedup();
+        assert_eq!(handles.len(), stated, "no cell is stated twice");
+
+        // And no verdict is a shrug. There is no member meaning
+        // "unconsidered" and this holds that the vocabulary is used as
+        // it was minted: every cell reports a word a reader can act on.
+        for form in forms {
+            let verdict = form_verdict(form);
+            assert_ne!(verdict.supported(), "", "{} answers", form.handle());
+        }
+    }
+
+    /// Every stated verdict agrees with the tally predicate.
+    ///
+    /// The register's standing bar, applied to the product. The predicate
+    /// is computed from the axes alone, over BOTH assets at once, and a
+    /// cell claiming possibility with nothing to absorb its blinder sum —
+    /// or impossibility with something — fails here rather than being
+    /// believed.
+    #[test]
+    fn the_recorded_form_verdicts_agree_with_the_tally_predicate() {
+        for form in TransferForm::every_form() {
+            let verdict = form_verdict(form);
+            let Some(admits) = verdict.consensus_admits() else {
+                continue;
+            };
+            assert_eq!(
+                admits,
+                form.blinder_sum_is_absorbable(),
+                "{} records `{}` against a tally that says otherwise",
+                form.handle(),
+                verdict.supported(),
+            );
+        }
+    }
+
+    /// Every unblinding cell names the output that absorbs, and removing
+    /// it makes the cell impossible.
+    ///
+    /// The register's structural rule, held PER CELL rather than at
+    /// the corner row. An exit crossing at any arity is possible only
+    /// because one declared destination is blinded; take that away and
+    /// the cell is the fully-unblinding corner, where a nonzero consumed
+    /// sum has nowhere to land. Stating it once would have made it look
+    /// like a fact about one shape, so every cell answers and every
+    /// answer is recomputed against the counterpart cell's own verdict.
+    #[test]
+    fn every_unblinding_cell_requires_its_absorber() {
+        let mut checked = 0_usize;
+        for form in TransferForm::every_form() {
+            if matches!(form_verdict(form), FormVerdict::OutsideTheSpace { .. }) {
+                continue;
+            }
+            let Some(stripped) = form.with_the_absorber_removed() else {
+                continue;
+            };
+            if matches!(form_verdict(stripped), FormVerdict::OutsideTheSpace { .. }) {
+                continue;
+            }
+
+            // The cell names its absorber, and it names one exactly when
+            // it has a sum to place.
+            assert_eq!(
+                form.absorbing_output().is_some(),
+                form.blinded_inputs() > 0,
+                "{} names an absorber exactly when it consumes a blinder",
+                form.handle(),
+            );
+            if form.blinded_inputs() == 0 {
+                continue;
+            }
+
+            // And removing it costs the cell its possibility. This is the
+            // derivation the ruling asks to be visible per cell: the
+            // counterpart's OWN verdict is what says so, recomputed
+            // rather than restated.
+            assert!(
+                !stripped.blinder_sum_is_absorbable(),
+                "{} keeps a place for its blinder sum after the absorber is removed",
+                form.handle(),
+            );
+            let counterpart = form_verdict(stripped);
+            assert!(
+                matches!(
+                    counterpart,
+                    FormVerdict::ConsensusRefuses { .. }
+                        | FormVerdict::ObservedRefusedOnBalance { .. }
+                ),
+                "{} loses its absorber and the counterpart {} is not refused: {counterpart:?}",
+                form.handle(),
+                stripped.handle(),
+            );
+            checked += 1;
+        }
+        assert!(
+            checked > 0,
+            "the absorber derivation is exercised by real cells",
+        );
+    }
+
+    /// Every enumerated blinded shape is a cell, and the two registers
+    /// say the same thing about it.
+    ///
+    /// The bridge, held structurally. The product did not replace the
+    /// enumeration and may not contradict it: a shape recorded observed
+    /// in one and expressible in the other would mean one of them is
+    /// wrong, and neither could be trusted afterwards.
+    #[test]
+    fn the_product_and_the_enumeration_agree_on_every_shape() {
+        let mut bridged = 0_usize;
+        for form in TransferForm::every_form() {
+            let Some(shape) = form.as_blinded_shape() else {
+                continue;
+            };
+            let entry = census_entry(shape);
+            let verdict = form_verdict(form);
+            match entry.consensus {
+                ConsensusVerdict::ObservedAccepted { identity } => assert_eq!(
+                    verdict,
+                    FormVerdict::ObservedAccepted { identity },
+                    "{} is observed in the enumeration and not in the product",
+                    shape.handle(),
+                ),
+                ConsensusVerdict::SourceDerivedImpossible => assert!(
+                    matches!(verdict, FormVerdict::ConsensusRefuses { .. }),
+                    "{} is impossible in the enumeration and {verdict:?} in the product",
+                    shape.handle(),
+                ),
+                ConsensusVerdict::SourceDerivedPossible => assert_eq!(
+                    verdict.consensus_admits(),
+                    Some(true),
+                    "{} is possible in the enumeration and not in the product",
+                    shape.handle(),
+                ),
+            }
+
+            // The axes agree too, not just the verdicts. A cell that
+            // described a different partition than the shape it claims to
+            // be would let the two registers drift while both looked
+            // right.
+            assert_eq!(
+                form.blinded_inputs(),
+                shape.blinded_inputs(),
+                "{} agrees on its blinded input count",
+                shape.handle(),
+            );
+            assert_eq!(
+                form.blinded_outputs(),
+                shape.blinded_outputs(),
+                "{} agrees on its blinded output count",
+                shape.handle(),
+            );
+            assert_eq!(
+                form.outputs(),
+                shape.outputs(),
+                "{} agrees on its output count",
+                shape.handle(),
+            );
+            assert_eq!(
+                form.explicit_destinations(),
+                shape.explicit_destinations(),
+                "{} agrees on its explicit destination count",
+                shape.handle(),
+            );
+            bridged += 1;
+        }
+        assert_eq!(
+            bridged,
+            BlindedShape::ALL.len(),
+            "every enumerated shape is exactly one cell of the product",
+        );
+    }
+
+    /// Every cell's verdict is the one the live registry returns.
+    ///
+    /// The recompute that makes the closure rule honest. The register
+    /// derives four hundred and eighty verdicts from about twenty
+    /// written facts, so the derivation is where an error would hide —
+    /// and this drives the real registry for every cell it is the
+    /// authority on and requires the derived verdict to match what comes
+    /// back.
+    #[test]
+    fn every_cell_recomputes_its_verdict_against_the_live_registry() {
+        let mut admitted = 0_usize;
+        let mut refused = 0_usize;
+        for form in TransferForm::every_form() {
+            let verdict = form_verdict(form);
+            if matches!(verdict, FormVerdict::OutsideTheSpace { .. }) {
+                continue;
+            }
+            let Some(recomputed) = recomputed_form_refusal(form) else {
+                continue;
+            };
+            match verdict {
+                FormVerdict::ObservedAccepted { .. } | FormVerdict::ExpressibleAndUnrun { .. } => {
+                    assert_eq!(
+                        recomputed,
+                        None,
+                        "{} is recorded buildable, so the registry must admit its manifest",
+                        form.handle(),
+                    );
+                    admitted += 1;
+                }
+                FormVerdict::RefusedToProtectHiding { .. } => {
+                    assert_eq!(
+                        recomputed,
+                        Some(RegistrationRefusal::Derivation {
+                            refusal: FixtureDerivationRefusal::DegenerateBalancingScalar,
+                        }),
+                        "{} hides nothing, so the registry must say so by name",
+                        form.handle(),
+                    );
+                    refused += 1;
+                }
+                FormVerdict::UnsupportedHere {
+                    limitation: FormLimitation::NoSolvingRoleOutsideTheDestinations,
+                } => {
+                    assert_eq!(
+                        recomputed,
+                        Some(RegistrationRefusal::BalancingRoleNotUnique { found: 0 }),
+                        "{} has no solving role, so the registry must refuse on that",
+                        form.handle(),
+                    );
+                    refused += 1;
+                }
+                FormVerdict::ConsensusRefuses { .. }
+                | FormVerdict::ObservedRefusedOnBalance { .. } => {
+                    assert!(
+                        recomputed.is_some(),
+                        "{} is impossible, so the registry must not admit it",
+                        form.handle(),
+                    );
+                    refused += 1;
+                }
+                FormVerdict::UnsupportedHere { .. }
+                | FormVerdict::StatedInAnotherRegister { .. }
+                | FormVerdict::OutsideTheSpace { .. } => {}
+            }
+        }
+        assert!(admitted > 0 && refused > 0, "both halves are exercised");
+    }
+
+    /// Every fee-bearing arity is a member of the fee-bearing shape
+    /// vocabulary, and of no other.
+    ///
+    /// The wider fee-bearing arities are the cells this register was
+    /// opened for, and this is what makes their expressible-and-unrun
+    /// verdict a proof rather than a hope: the shape vocabulary is
+    /// LINKED and asked, and the member is either there or it is not.
+    ///
+    /// The second half is the finding a reader most needs. The
+    /// demonstration deployment carries none of them, so the same cell
+    /// is expressible from one deployment and unreachable from the other,
+    /// and every fee-bearing row in this register means the first.
+    #[test]
+    fn the_wider_fee_bearing_arities_are_members_of_the_fee_bearing_vocabulary() {
+        let fee_bearing = tapscript::fee_bearing_live_shape_set();
+        let demonstration = tapscript::demonstration_live_shape_set();
+
+        let fee_bearing_members: Vec<(u8, u8)> = fee_bearing
+            .shapes()
+            .filter(|shape| {
+                shape.sponsor_inputs() == 0
+                    && matches!(shape.fee(), tapscript::FeePresence::Present)
+            })
+            .map(|shape| (shape.receipt_inputs(), shape.receipt_outputs()))
+            .collect();
+        let demonstration_members = demonstration
+            .shapes()
+            .filter(|shape| {
+                shape.sponsor_inputs() == 0
+                    && matches!(shape.fee(), tapscript::FeePresence::Present)
+            })
+            .count();
+
+        assert_eq!(
+            demonstration_members, 0,
+            "the demonstration deployment carries no sponsorless fee-bearing member at all",
+        );
+
+        // Every cell of the product whose arity falls inside the shipped
+        // bounds is a member. The five the ruling named are among them,
+        // and none of them has ever been built.
+        for consumed in ConsumedArity::ALL {
+            for created in [CreatedArity::One, CreatedArity::Two, CreatedArity::Three] {
+                let wanted = (
+                    u8::try_from(consumed.count()).expect("a small count"),
+                    u8::try_from(created.count()).expect("a small count"),
+                );
+                assert!(
+                    fee_bearing_members.contains(&wanted),
+                    "the fee-bearing vocabulary states {consumed:?} into {created:?}",
+                );
+
+                let form = TransferForm {
+                    consumed,
+                    created,
+                    fee: FeeAxis::Present,
+                    sponsor: SponsorAxis::Sponsorless,
+                    representation: RepresentationAxis::HomogeneousPrivate,
+                };
+                let verdict = form_verdict(form);
+                let observed = matches!(verdict, FormVerdict::ObservedAccepted { .. });
+                let expressible = matches!(verdict, FormVerdict::ExpressibleAndUnrun { .. });
+                assert!(
+                    observed || expressible,
+                    "{} is stated by the vocabulary, so it is not unsupported: {verdict:?}",
+                    form.handle(),
+                );
+            }
+        }
+
+        // Exactly ONE of the fee-bearing arities has run, and the
+        // register says which. A wave that ran a second and did not move
+        // this register would fail here rather than leave a stale row.
+        let run: Vec<String> = TransferForm::every_form()
+            .filter(|form| {
+                matches!(form.fee, FeeAxis::Present)
+                    && matches!(form.sponsor, SponsorAxis::Sponsorless)
+                    && matches!(form_verdict(*form), FormVerdict::ObservedAccepted { .. })
+            })
+            .map(TransferForm::handle)
+            .collect();
+        assert_eq!(
+            run,
+            vec!["homogeneous-private/one-receipt/one-destination/with-fee/sponsorless"],
+            "one sponsorless fee-bearing cell has run, and the other five have not",
+        );
+    }
+
+    /// The sponsor axis cites its runs of record by name, and its one
+    /// refusal in the target's own words.
+    ///
+    /// The axis had NO census vocabulary before this row, so this is
+    /// where the three acceptances and the one refusal stop being facts
+    /// scattered across a lane module and become cells with verdicts.
+    /// Every citation is the constant itself rather than a transcribed
+    /// literal, so a re-run that recorded different bytes would move the
+    /// register with it.
+    #[test]
+    fn the_sponsor_axis_cites_its_runs_of_record() {
+        use crate::live_sponsor_shapes::sponsored_run_of_record as sponsored;
+
+        let sponsored_cell = |sponsor, representation| TransferForm {
+            consumed: ConsumedArity::Two,
+            created: CreatedArity::Two,
+            fee: FeeAxis::Present,
+            sponsor,
+            representation,
+        };
+
+        assert_eq!(
+            form_verdict(sponsored_cell(
+                SponsorAxis::ExplicitValueNoChange,
+                RepresentationAxis::HomogeneousExplicit,
+            )),
+            FormVerdict::ObservedAccepted {
+                identity: sponsored::SPONSORED_ACCEPTED_TXID,
+            },
+        );
+        assert_eq!(
+            form_verdict(sponsored_cell(
+                SponsorAxis::ExplicitValueExplicitChange,
+                RepresentationAxis::HomogeneousExplicit,
+            )),
+            FormVerdict::ObservedAccepted {
+                identity: sponsored::SPONSORED_CHANGE_ACCEPTED_TXID,
+            },
+        );
+        assert_eq!(
+            form_verdict(sponsored_cell(
+                SponsorAxis::CommittedValueCommittedChange,
+                RepresentationAxis::HomogeneousPrivate,
+            )),
+            FormVerdict::ObservedAccepted {
+                identity: sponsored::SPONSORED_PRIVATE_TXID,
+            },
+        );
+
+        // The refusal, which is an OBSERVATION and outranks the
+        // derivation beside it. The predicate agrees with the node, and
+        // that agreement is the point: the arithmetic this register
+        // computes and the arithmetic a real target ran came out the same.
+        let refused = sponsored_cell(
+            SponsorAxis::CommittedValueExplicitChange,
+            RepresentationAxis::HomogeneousExplicit,
+        );
+        let verdict = form_verdict(refused);
+        assert!(
+            matches!(verdict, FormVerdict::ObservedRefusedOnBalance { detail, .. }
+                if detail == sponsored::COMMITTED_SPONSOR_REFUSAL),
+            "the refused sponsor cell carries the target's own words: {verdict:?}",
+        );
+        assert!(
+            !refused.blinder_sum_is_absorbable(),
+            "and the predicate independently says the same thing",
+        );
+
+        // The one fact that separates the accepted confidential form from
+        // the refused one, isolated. Both carry a committed sponsor
+        // value; only one carries a committed change; and the tally sees
+        // exactly that difference and nothing else.
+        let accepted = sponsored_cell(
+            SponsorAxis::CommittedValueCommittedChange,
+            RepresentationAxis::HomogeneousExplicit,
+        );
+        assert_eq!(accepted.blinded_inputs(), refused.blinded_inputs());
+        assert_eq!(accepted.blinded_outputs(), 1);
+        assert_eq!(refused.blinded_outputs(), 0);
+        assert!(accepted.blinder_sum_is_absorbable());
+    }
+
+    /// The registry has ONE sponsor role and it is the committed change.
+    ///
+    /// The structural fact behind the explicit-change cells' limitation,
+    /// asked of the vocabulary rather than remembered about it. A role
+    /// that owned an asset and carried no opening would be an explicit
+    /// sponsor change and would make those cells stateable; none does.
+    #[test]
+    fn the_only_sponsor_role_the_registry_states_is_a_committed_change() {
+        let change = FixtureOutputRole::SponsorChange {
+            asset: CENSUS_RESERVE_ASSET,
+        };
+        assert_eq!(change.own_asset(), Some(CENSUS_RESERVE_ASSET));
+        assert!(
+            change.carries_an_opening(),
+            "the one sponsor role is a COMMITTED change",
+        );
+        assert!(
+            !change.solves_the_balance(),
+            "and it does not solve, which is why a form whose only blinded output is the \
+             sponsor's change has no solving role to name",
+        );
+
+        // The roles that carry no opening own no asset, which is the
+        // other half of the same absence: there is no explicit output in
+        // the vocabulary that can be denominated in the reserve asset.
+        for role in [
+            FixtureOutputRole::Fee,
+            FixtureOutputRole::ExplicitDestination,
+        ] {
+            assert!(!role.carries_an_opening());
+            assert_eq!(
+                role.own_asset(),
+                None,
+                "no explicit role carries an asset of its own",
+            );
+        }
+    }
+
+    /// Every named limitation is labeled, pinned, explained and carries a
+    /// path — including the one nobody wants removed.
+    ///
+    /// The ruling's arc applied to the walls the product found. The last
+    /// clause is the one that matters: a register able to record only
+    /// walls it wanted torn down would quietly stop recording the other
+    /// kind, and the deployment split is a wall this workspace would
+    /// choose again.
+    #[test]
+    fn every_form_limitation_is_labeled_pinned_and_explained() {
+        let mut cited = BTreeSet::new();
+        for form in TransferForm::every_form() {
+            if let FormVerdict::UnsupportedHere { limitation } = form_verdict(form) {
+                cited.insert(limitation);
+            }
+        }
+        for limitation in &cited {
+            assert_ne!(limitation.refused_at(), "", "the refusing row is named");
+            assert_ne!(limitation.convention(), "", "the convention is explained");
+            assert_ne!(limitation.removal_path(), "", "a path is described");
+        }
+        assert!(
+            cited.contains(&FormLimitation::RegistryHasOnlyACommittedSponsorChangeRole),
+            "the explicit sponsor change is a cell the confidential registry cannot state",
+        );
+        assert!(
+            cited.contains(&FormLimitation::NoSolvingRoleOutsideTheDestinations),
+            "a form whose only blinded output is the sponsor's change has no solving role",
+        );
+        assert!(
+            FormLimitation::RegistryHasOnlyACommittedSponsorChangeRole.removal_is_wanted(),
+            "the missing explicit sponsor role is a wall worth removing",
+        );
+        assert!(
+            !FormLimitation::FeeMemberOnlyInTheFeeBearingDeployment.removal_is_wanted(),
+            "the deployment split is a wall this workspace would choose again, and is recorded \
+             all the same",
+        );
+    }
+
+    /// The census of cells by status, pinned rather than counted.
+    ///
+    /// The register's own summary, and it is a test so that it cannot go
+    /// stale. A wave that ran a new form, or found a new wall, moves
+    /// these numbers and has to say so here — which is the difference
+    /// between a knowledge map that is maintained and one that was true
+    /// once.
+    #[test]
+    fn the_product_census_by_status_is_what_the_register_claims() {
+        let mut census: BTreeMap<&'static str, usize> = BTreeMap::new();
+        for form in TransferForm::every_form() {
+            *census.entry(form_verdict(form).supported()).or_default() += 1;
+        }
+        let total: usize = census.values().sum();
+        assert_eq!(total, TransferForm::CELLS, "every cell is counted once");
+
+        // The two that matter most to a reader, stated exactly.
+        assert_eq!(
+            census.get("supported-and-run").copied().unwrap_or_default(),
+            12,
+            "twelve cells have been accepted by a node: the nine enumerated blinded shapes and \
+             the three sponsored forms, which had no census row anywhere before this one",
+        );
+        assert_eq!(
+            census
+                .get("impossible-observed")
+                .copied()
+                .unwrap_or_default(),
+            1,
+            "one cell was BUILT, offered to a node, and refused on the balance rule itself",
+        );
+
+        // And nothing is unanswered, which is the ruling in one line.
+        assert!(!census.contains_key(""), "no cell reports an empty status",);
     }
 
     /// The two-output floor guards the impossible shape only by
