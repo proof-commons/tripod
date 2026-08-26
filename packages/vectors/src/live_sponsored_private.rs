@@ -55,7 +55,8 @@ use target_elements_conformance::confidential_fixture::{
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
     NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationSubject,
-    TargetSponsorSigningSubject, TargetSubmissionSubject, WireOutpoint, WireSighashProfile,
+    TargetSponsorFundingSubject, TargetSponsorSigningSubject, TargetSubmissionSubject,
+    WireOutpoint, WireSighashProfile,
 };
 use transaction::bytes::{AssetId, COMMITMENT_BYTES, EXPLICIT_PREFIX, Outpoint, Txid, ValueField};
 use transaction::live_census::OwnerSigningCensus;
@@ -83,13 +84,13 @@ use crate::confidential_materializer::{
 };
 use crate::confidential_predecessor::PredecessorShape;
 use crate::confidential_sponsor_reserve::{
-    SPONSOR_RESERVE_OUTPUTS, frozen_sponsor_reserve_registry, sponsor_reserve_subject,
+    FUND_SPONSOR_STEP, SPONSOR_RESERVE_OUTPUTS, frozen_sponsor_reserve_registry,
+    sponsor_reserve_subject,
 };
 use crate::error::VectorError;
 use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
 use crate::live_plan::{
-    FIRST_SCALAR, LiveShapeVocabulary, RESERVE_ASSET, SECOND_SCALAR, published_owner,
-    reviewed_target,
+    FIRST_SCALAR, LiveShapeVocabulary, SECOND_SCALAR, published_owner, reviewed_target,
 };
 use crate::live_private_restart::{
     ConsumedReceipt, LinkedDeployment, PrivateRestartRefusal, RestartConfidentialCoin,
@@ -443,8 +444,18 @@ impl SponsoredPrivateRecord {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stage {
     Issue,
-    FundReceipts,
+    /// The EXPLICIT sponsor coin, funded first and never instead of the
+    /// committed one.
+    ///
+    /// The committed step's fixture is built against two facts only this
+    /// step reports: which asset the chain's reserve actually is, and
+    /// which program the adapter can authorize a spend of. A ceremony
+    /// that guessed either would register a case against one reserve
+    /// while the executor funded against another, and the digests would
+    /// disagree.
+    FundSponsorSeed,
     FundSponsor,
+    FundReceipts,
     SignSponsor,
     Submit,
     Done,
@@ -457,6 +468,10 @@ pub struct SponsoredPrivatePlanner {
     linked: Option<LinkedDeployment>,
     receipt: Option<RestartConfidentialCoin>,
     sponsor: Option<ObservedSponsorCoin>,
+    /// The chain's own reserve asset, learned rather than assumed.
+    reserve: Option<AssetId>,
+    /// The program the adapter can authorize a spend of.
+    adapter_program: Option<Vec<u8>>,
     sponsor_registry: Option<FrozenConfidentialFixtureRegistry>,
     successor: Option<(
         [u8; 32],
@@ -484,6 +499,8 @@ impl SponsoredPrivatePlanner {
             linked: None,
             receipt: None,
             sponsor: None,
+            reserve: None,
+            adapter_program: None,
             sponsor_registry: None,
             successor: None,
             staged: None,
@@ -506,19 +523,54 @@ impl SponsoredPrivatePlanner {
         PlanRefused
     }
 
-    /// Link the deployment against the asset the node issued.
-    fn settle_asset(&mut self, printed: &str) -> Result<(), SponsoredPrivateRefusal> {
+    /// Record the asset the node issued.
+    ///
+    /// The deployment is NOT linked here. It is welded to a reserve
+    /// asset, and which asset the chain's reserve is has not been
+    /// reported yet -- the explicit sponsor step is what reports it.
+    fn settle_asset(&mut self, printed: &str) {
         self.record.issued_asset = Some(printed.to_owned());
+    }
+
+    /// Learn the reserve asset and the adapter's program, then link the
+    /// deployment against the reserve the chain actually has.
+    fn settle_sponsor_seed(
+        &mut self,
+        response: &NativeOperationResponse,
+    ) -> Result<(), SponsoredPrivateRefusal> {
+        let funded = response
+            .funded_outputs
+            .first()
+            .ok_or(SponsoredPrivateRefusal::SponsorFundingCreatedNothing)?;
+        let reserve =
+            asset_of(&funded.asset).ok_or(SponsoredPrivateRefusal::MalformedSponsorCoin)?;
+        let program =
+            decode_hex(&funded.script).ok_or(SponsoredPrivateRefusal::MalformedSponsorCoin)?;
+        let printed = self
+            .record
+            .issued_asset
+            .clone()
+            .ok_or(SponsoredPrivateRefusal::Private(
+                PrivateRestartRefusal::IssuanceNamedNoAsset,
+            ))?;
         let linked = link_and_register(
             PredecessorShape::DualParity,
             ConsumedReceipt::Primary,
-            printed,
+            &printed,
             LiveShapeVocabulary::Demonstration,
-            RESERVE_ASSET,
+            *reserve.internal(),
         )
         .map_err(SponsoredPrivateRefusal::Private)?;
+        self.reserve = Some(reserve);
+        self.adapter_program = Some(program);
         self.linked = Some(linked);
         Ok(())
+    }
+
+    /// The chain's reserve asset, once learned.
+    fn reserve(&self) -> Result<AssetId, SponsoredPrivateRefusal> {
+        self.reserve
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)
     }
 
     /// Take the funded predecessor coins from the node's report.
@@ -538,23 +590,27 @@ impl SponsoredPrivatePlanner {
     }
 
     /// The step that funds the blinded sponsor coin.
+    ///
+    /// Against the reserve the chain reported and the program the
+    /// adapter can authorize, both learned from the explicit step above.
+    /// The coin is paid to the ADAPTER's program and not to the
+    /// deployment's sponsor-change one: the first is what can be spent,
+    /// the second is where the remainder goes, and they are different
+    /// programs for different reasons.
     fn sponsor_funding_step(&mut self) -> Result<OperationStep, SponsoredPrivateRefusal> {
-        let linked = self
-            .linked
-            .as_ref()
-            .ok_or(SponsoredPrivateRefusal::ControlNotStaged)?;
-        // The sponsor's coin pays the program the deployment names for a
-        // sponsor's change, which is the one the adapter can authorize a
-        // spend of.
-        let program = sponsor_program(linked)?;
-        let registry = frozen_sponsor_reserve_registry(RESERVE_ASSET, &program)
+        let reserve = self.reserve()?;
+        let program = self
+            .adapter_program
+            .clone()
+            .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
+        let registry = frozen_sponsor_reserve_registry(*reserve.internal(), &program)
             .map_err(|_| SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
         let digest = *registry
             .registered_digest(&sponsor_reserve_handle())
             .ok_or(SponsoredPrivateRefusal::SponsorReserveUnavailable)?;
         self.sponsor_registry = Some(registry);
         Ok(OperationStep::new(
-            "fund-confidential-sponsor",
+            FUND_SPONSOR_STEP,
             OperationSubject::ConfidentialSponsorFunding(Box::new(sponsor_reserve_subject(
                 digest, &program,
             ))),
@@ -667,7 +723,7 @@ impl SponsoredPrivatePlanner {
                 },
                 ConfidentialFixtureOutput {
                     role: FixtureOutputRole::SponsorChange {
-                        asset: RESERVE_ASSET,
+                        asset: *self.reserve()?.internal(),
                     },
                     semantic_amount: SPONSOR_CHANGE,
                     output_program: change,
@@ -816,7 +872,7 @@ impl SponsoredPrivatePlanner {
             // reserve asset, and carrying the EMPTY program that is a
             // fee's whole identity at the target.
             NonProtocolFundingRegion::new(vec![NonProtocolMember::new(
-                AssetId::from_internal(RESERVE_ASSET),
+                self.reserve()?,
                 SPONSOR_FEE,
                 Vec::new(),
             )]),
@@ -1091,11 +1147,8 @@ impl SponsoredPrivatePlanner {
         // assumed from what was sent: a reserve-asset output whose value
         // is a commitment.
         let sponsor_change_located = self
-            .successor
-            .as_ref()
-            .and_then(|(_, view)| view.outputs().get(2))
-            .and_then(|output| output.value_blinder())
-            .is_some_and(|_| contains_run(&readback.raw_transaction, &RESERVE_ASSET));
+            .reserve
+            .is_some_and(|reserve| contains_run(&readback.raw_transaction, reserve.internal()));
 
         self.record.reverification = Some(SponsoredPrivateReverification {
             accepted_txid: readback.transaction_id.clone(),
@@ -1119,19 +1172,23 @@ impl TargetOperationPlanner for SponsoredPrivatePlanner {
                             PrivateRestartRefusal::IssuanceNamedNoAsset,
                         )));
                     };
-                    if let Err(refusal) = self.settle_asset(&printed) {
-                        return Err(self.refuse(refusal));
-                    }
-                    self.stage = Stage::FundReceipts;
+                    self.settle_asset(&printed);
+                    self.stage = Stage::FundSponsorSeed;
                 }
-                Stage::FundReceipts => {
-                    if let Err(refusal) = self.settle_receipts(response) {
+                Stage::FundSponsorSeed => {
+                    if let Err(refusal) = self.settle_sponsor_seed(response) {
                         return Err(self.refuse(refusal));
                     }
                     self.stage = Stage::FundSponsor;
                 }
                 Stage::FundSponsor => {
                     if let Err(refusal) = self.settle_sponsor(response) {
+                        return Err(self.refuse(refusal));
+                    }
+                    self.stage = Stage::FundReceipts;
+                }
+                Stage::FundReceipts => {
+                    if let Err(refusal) = self.settle_receipts(response) {
                         return Err(self.refuse(refusal));
                     }
                     self.stage = Stage::SignSponsor;
@@ -1153,6 +1210,13 @@ impl TargetOperationPlanner for SponsoredPrivatePlanner {
 
         match self.stage {
             Stage::Issue => Ok(Some(issue_step())),
+            Stage::FundSponsorSeed => Ok(Some(OperationStep::new(
+                "fund-sponsor-region",
+                OperationSubject::SponsorFunding(Box::new(TargetSponsorFundingSubject {
+                    sponsor_outputs: 1,
+                    amount_per_sponsor_output: SPONSOR_FEE + SPONSOR_CHANGE,
+                })),
+            ))),
             Stage::FundReceipts => {
                 let Some(linked) = self.linked.as_ref() else {
                     return Err(self.refuse(SponsoredPrivateRefusal::ControlNotStaged));
