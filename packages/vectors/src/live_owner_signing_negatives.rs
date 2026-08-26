@@ -658,7 +658,14 @@ impl OwnerSigningNegativePlanner {
             &requests,
         )?;
 
-        let scalars = [SECOND_SCALAR, FIRST_SCALAR];
+        // Every funded receipt is paid to the FIRST owner's explicit
+        // destination program, so every input's leaf checks that one
+        // owner's key, and every input is signed by that one scalar. A
+        // per-position scalar would sign an input's leaf with a key it does
+        // not authenticate, which the target refuses as an invalid
+        // signature before any output clause runs.
+        let material = signing_material(&FIRST_SCALAR)
+            .map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
         let mut witnesses = candidate.witnesses().to_vec();
         let mut first_message = None;
         for record in finalized.receipts() {
@@ -673,11 +680,6 @@ impl OwnerSigningNegativePlanner {
             if first_message.is_none() {
                 first_message = Some(message);
             }
-            let scalar = scalars
-                .get(position)
-                .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-            let material = signing_material(scalar)
-                .map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
             let signature = material
                 .sign(&message, &SIGNING_AUXILIARY)
                 .map_err(|_| OwnerSigningNegativeRefusal::SigningRefused)?
