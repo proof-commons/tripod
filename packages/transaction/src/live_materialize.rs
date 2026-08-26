@@ -2471,7 +2471,22 @@ fn preflight(
         });
     match (consumed, created) {
         (Some(consumed), Some(created)) if consumed == created => {}
-        _ => return Err(MaterializationRefusal::SemanticValueImbalance),
+        _ => {
+            eprintln!(
+                "TL-DEBUG imbalance consumed={consumed:?} created={created:?} inputs={:?} dests={:?}",
+                intent
+                    .inputs()
+                    .iter()
+                    .map(|i| (i.region(), i.explicit_amount()))
+                    .collect::<Vec<_>>(),
+                intent
+                    .destinations()
+                    .iter()
+                    .map(|d| (d.role(), d.semantic_amount()))
+                    .collect::<Vec<_>>(),
+            );
+            return Err(MaterializationRefusal::SemanticValueImbalance);
+        }
     }
 
     // The excluded region really is excluded: no member of it carries the
