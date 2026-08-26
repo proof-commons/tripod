@@ -1716,8 +1716,17 @@ mod tests {
             record::SPONSORED_ACCEPTED_TXID,
             record::SPONSORED_CHANGE_ACCEPTED_TXID,
         );
-        assert!(record::SPONSORED_CHANGE_SUBMITTED_BYTES > record::SPONSORED_SUBMITTED_BYTES);
-        assert!(record::A_SPONSORED_CONTROL_TAKING_CHANGE_EXISTS);
+        // The measured width of the change role, stated rather than
+        // bounded: the extra output, and the wider sponsor value beside
+        // it, cost exactly this many bytes at the node.
+        assert_eq!(
+            record::SPONSORED_CHANGE_SUBMITTED_BYTES - record::SPONSORED_SUBMITTED_BYTES,
+            155,
+        );
+        assert_eq!(
+            record::A_SPONSORED_CONTROL_TAKING_CHANGE_EXISTS,
+            SponsorShape::ChangePresent.change().is_some(),
+        );
     }
 
     /// The two shapes differ in the change role and in nothing else a
