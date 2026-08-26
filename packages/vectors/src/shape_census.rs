@@ -1193,6 +1193,1245 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
     }
 }
 
+/// How many receipts a transfer consumes.
+///
+/// The window is the one the register has always used and it is chosen
+/// for the first-party half: every shape this lane has built or been
+/// refused consumes one or two. Consensus sees no ceiling at all, and
+/// [`TransferForm::blinder_sum_is_absorbable`] is why a wider count is
+/// answered by the closure rule rather than enumerated: the predicate
+/// reads whether ANY input is blinded and never how many.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ConsumedArity {
+    /// One receipt.
+    One,
+    /// Two receipts.
+    Two,
+}
+
+impl ConsumedArity {
+    /// Both counts.
+    pub const ALL: [Self; 2] = [Self::One, Self::Two];
+
+    /// The count itself.
+    #[must_use]
+    pub const fn count(self) -> usize {
+        match self {
+            Self::One => 1,
+            Self::Two => 2,
+        }
+    }
+
+    /// The handle the prose register uses.
+    #[must_use]
+    pub const fn handle(self) -> &'static str {
+        match self {
+            Self::One => "one-receipt",
+            Self::Two => "two-receipts",
+        }
+    }
+}
+
+/// How many RECEIPT DESTINATIONS a transfer creates.
+///
+/// Destinations only: the fee output and the sponsor's change output are
+/// separate axes and are never counted here. That separation is the
+/// whole reason this axis can be crossed with the other two without the
+/// counts meaning different things in different cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CreatedArity {
+    /// No destination at all, which only the fee-only degenerate has.
+    None,
+    /// One destination.
+    One,
+    /// Two destinations.
+    Two,
+    /// Three destinations.
+    Three,
+}
+
+impl CreatedArity {
+    /// Every count in the window.
+    pub const ALL: [Self; 4] = [Self::None, Self::One, Self::Two, Self::Three];
+
+    /// The count itself.
+    #[must_use]
+    pub const fn count(self) -> usize {
+        match self {
+            Self::None => 0,
+            Self::One => 1,
+            Self::Two => 2,
+            Self::Three => 3,
+        }
+    }
+
+    /// The handle the prose register uses.
+    #[must_use]
+    pub const fn handle(self) -> &'static str {
+        match self {
+            Self::None => "no-destination",
+            Self::One => "one-destination",
+            Self::Two => "two-destinations",
+            Self::Three => "three-destinations",
+        }
+    }
+}
+
+/// Whether the transfer carries the mandatorily explicit fee output.
+///
+/// The axis this register was opened for. It had been carried by the
+/// blinded-shape enumeration at ONE arity — the one-to-one — and nowhere
+/// else, so every wider fee-bearing form was invisible rather than
+/// refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FeeAxis {
+    /// No fee output. Elements represents a zero fee by the ABSENCE of
+    /// the output rather than by a zero-valued one, which is why this is
+    /// a real member and not an omission.
+    Absent,
+    /// One fee output: empty program, explicit value, explicit asset.
+    Present,
+}
+
+impl FeeAxis {
+    /// Both members.
+    pub const ALL: [Self; 2] = [Self::Absent, Self::Present];
+
+    /// How many outputs the axis contributes.
+    #[must_use]
+    pub const fn outputs(self) -> usize {
+        match self {
+            Self::Absent => 0,
+            Self::Present => 1,
+        }
+    }
+
+    /// The handle the prose register uses.
+    #[must_use]
+    pub const fn handle(self) -> &'static str {
+        match self {
+            Self::Absent => "no-fee",
+            Self::Present => "with-fee",
+        }
+    }
+}
+
+/// What the sponsor region contributes, if there is one.
+///
+/// # Why six members and not two
+///
+/// The axis had NO census vocabulary at all before this row, and the
+/// obvious repair — sponsored or not — would have been the second
+/// version of the error the register exists to prevent. Three facts
+/// about a sponsor region change a consensus verdict and they vary
+/// independently: whether the sponsor's coin carries a COMMITTED value,
+/// whether it takes change back, and whether that change is committed
+/// in turn.
+///
+/// Their product is what the members enumerate, and the enumeration is
+/// what makes the sponsor arithmetic derivable rather than remembered.
+/// One of the six is IMPOSSIBLE on the tally and a node has said so in
+/// its own words, one has never been stated anywhere, and three have
+/// been accepted into blocks — which no single sponsored-or-not axis
+/// could have told apart.
+///
+/// The sponsor's ASSET stays explicit throughout, because the covenant
+/// introspects it and an introspection reads an explicit field. So the
+/// asset coordinate is never in question here and only the value one is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SponsorAxis {
+    /// No sponsor region. The transfer pays its own fee or pays none.
+    Sponsorless,
+    /// An explicit sponsor coin funded to exactly the fee, asking
+    /// nothing back.
+    ExplicitValueNoChange,
+    /// An explicit sponsor coin funded above the fee, taking an EXPLICIT
+    /// change output back.
+    ExplicitValueExplicitChange,
+    /// A sponsor coin whose VALUE is a commitment, asking nothing back.
+    CommittedValueNoChange,
+    /// A sponsor coin whose value is a commitment, taking an EXPLICIT
+    /// change output back.
+    ///
+    /// The member a node refused in its own words, and the reason the
+    /// axis has six members rather than four.
+    CommittedValueExplicitChange,
+    /// A sponsor coin whose value is a commitment, taking a COMMITTED
+    /// change output back.
+    CommittedValueCommittedChange,
+}
+
+impl SponsorAxis {
+    /// Every member.
+    pub const ALL: [Self; 6] = [
+        Self::Sponsorless,
+        Self::ExplicitValueNoChange,
+        Self::ExplicitValueExplicitChange,
+        Self::CommittedValueNoChange,
+        Self::CommittedValueExplicitChange,
+        Self::CommittedValueCommittedChange,
+    ];
+
+    /// How many sponsor inputs the region contributes.
+    ///
+    /// Zero or one. The reviewed shape vocabulary's bound is one in both
+    /// shipped deployments, and no ceremony funds a second sponsor coin,
+    /// so a two-sponsor form is answered by the inheritance rule rather
+    /// than enumerated.
+    #[must_use]
+    pub const fn sponsor_inputs(self) -> usize {
+        match self {
+            Self::Sponsorless => 0,
+            Self::ExplicitValueNoChange
+            | Self::ExplicitValueExplicitChange
+            | Self::CommittedValueNoChange
+            | Self::CommittedValueExplicitChange
+            | Self::CommittedValueCommittedChange => 1,
+        }
+    }
+
+    /// Whether the sponsor's own coin carries a committed value.
+    #[must_use]
+    pub const fn value_is_committed(self) -> bool {
+        match self {
+            Self::Sponsorless | Self::ExplicitValueNoChange | Self::ExplicitValueExplicitChange => {
+                false
+            }
+            Self::CommittedValueNoChange
+            | Self::CommittedValueExplicitChange
+            | Self::CommittedValueCommittedChange => true,
+        }
+    }
+
+    /// How many change outputs the region contributes.
+    #[must_use]
+    pub const fn change_outputs(self) -> usize {
+        match self {
+            Self::Sponsorless | Self::ExplicitValueNoChange | Self::CommittedValueNoChange => 0,
+            Self::ExplicitValueExplicitChange
+            | Self::CommittedValueExplicitChange
+            | Self::CommittedValueCommittedChange => 1,
+        }
+    }
+
+    /// Whether that change output is a COMMITTED one.
+    ///
+    /// The single fact that separates the accepted sponsored
+    /// confidential form from the one a node refused, and the reason
+    /// this is an axis rather than a footnote: a committed change output
+    /// is the only output in a sponsored form that can absorb the
+    /// sponsor coin's own blinder.
+    #[must_use]
+    pub const fn change_is_committed(self) -> bool {
+        match self {
+            Self::Sponsorless
+            | Self::ExplicitValueNoChange
+            | Self::ExplicitValueExplicitChange
+            | Self::CommittedValueNoChange
+            | Self::CommittedValueExplicitChange => false,
+            Self::CommittedValueCommittedChange => true,
+        }
+    }
+
+    /// The handle the prose register uses.
+    #[must_use]
+    pub const fn handle(self) -> &'static str {
+        match self {
+            Self::Sponsorless => "sponsorless",
+            Self::ExplicitValueNoChange => "explicit-sponsor-no-change",
+            Self::ExplicitValueExplicitChange => "explicit-sponsor-explicit-change",
+            Self::CommittedValueNoChange => "committed-sponsor-no-change",
+            Self::CommittedValueExplicitChange => "committed-sponsor-explicit-change",
+            Self::CommittedValueCommittedChange => "committed-sponsor-committed-change",
+        }
+    }
+}
+
+/// Which value form each SIDE of the transfer is written in.
+///
+/// The axis the crossing wave created by pairing an admitted
+/// representation plan to each side. Its members are the four pairings
+/// that name a distinct output partition, plus the wholly explicit lane,
+/// which is here so that a reader asking about an explicit form gets a
+/// status rather than silence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RepresentationAxis {
+    /// Explicit receipts spent into explicit destinations.
+    ///
+    /// The wholly public lane. It is a member of this space and its
+    /// verdicts are NOT restated here: the sponsorless cells are
+    /// recorded in the explicit lane's own register, and this axis
+    /// carries them so that the sponsor cells — which have no register
+    /// of their own anywhere — can be stated at the representation they
+    /// actually ran at.
+    HomogeneousExplicit,
+    /// Blinded receipts spent into blinded destinations.
+    HomogeneousPrivate,
+    /// Explicit receipts spent into blinded destinations.
+    EntryCrossing,
+    /// Blinded receipts spent into explicit destinations beside ONE
+    /// blinded absorber, which is a declared destination position.
+    ExitCrossing,
+    /// Blinded receipts spent into explicit destinations and no absorber.
+    FullUnblinding,
+}
+
+impl RepresentationAxis {
+    /// Every member.
+    pub const ALL: [Self; 5] = [
+        Self::HomogeneousExplicit,
+        Self::HomogeneousPrivate,
+        Self::EntryCrossing,
+        Self::ExitCrossing,
+        Self::FullUnblinding,
+    ];
+
+    /// Whether the receipts a transfer of this representation consumes
+    /// carry blinded values.
+    #[must_use]
+    pub const fn consumed_side_is_blinded(self) -> bool {
+        match self {
+            Self::HomogeneousExplicit | Self::EntryCrossing => false,
+            Self::HomogeneousPrivate | Self::ExitCrossing | Self::FullUnblinding => true,
+        }
+    }
+
+    /// How many of the destinations carry blinded values.
+    ///
+    /// STATED per member for the reason [`BlindedShape::blinded_outputs`]
+    /// records: a subtraction would count an exit crossing's explicit
+    /// destinations as blinded and the tally predicate would then report
+    /// a form absorbable by outputs that absorb nothing.
+    #[must_use]
+    pub const fn blinded_destinations(self, created: CreatedArity) -> usize {
+        match self {
+            Self::HomogeneousExplicit | Self::FullUnblinding => 0,
+            Self::HomogeneousPrivate | Self::EntryCrossing => created.count(),
+            // The absorber, and only ever the absorber.
+            Self::ExitCrossing => 1,
+        }
+    }
+
+    /// The handle the prose register uses.
+    #[must_use]
+    pub const fn handle(self) -> &'static str {
+        match self {
+            Self::HomogeneousExplicit => "homogeneous-explicit",
+            Self::HomogeneousPrivate => "homogeneous-private",
+            Self::EntryCrossing => "entry-crossing",
+            Self::ExitCrossing => "exit-crossing",
+            Self::FullUnblinding => "full-unblinding",
+        }
+    }
+}
+
+/// One cell of the transfer-form product.
+///
+/// # What this is and what [`BlindedShape`] is
+///
+/// The blinded-shape enumeration is eleven NAMED shapes over the
+/// blinder-arithmetic axis, each of which the lane has built or been
+/// refused. This is the PRODUCT of the four axes those shapes are points
+/// in, and it exists to answer a question the enumeration structurally
+/// could not: is a given form supported, for every form in the space
+/// rather than for eleven of them.
+///
+/// The two registers do not compete. Every blinded shape is a cell here,
+/// held equal by test, and the cells the enumeration never reached are
+/// the ones this register is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TransferForm {
+    /// How many receipts it consumes.
+    pub consumed: ConsumedArity,
+    /// How many receipt destinations it creates.
+    pub created: CreatedArity,
+    /// Whether it carries a fee output.
+    pub fee: FeeAxis,
+    /// What its sponsor region contributes.
+    pub sponsor: SponsorAxis,
+    /// Which value form each side is written in.
+    pub representation: RepresentationAxis,
+}
+
+impl TransferForm {
+    /// How many cells the product has.
+    pub const CELLS: usize = ConsumedArity::ALL.len()
+        * CreatedArity::ALL.len()
+        * FeeAxis::ALL.len()
+        * SponsorAxis::ALL.len()
+        * RepresentationAxis::ALL.len();
+
+    /// Every cell of the product, in a fixed order.
+    ///
+    /// Enumerated rather than listed. The point of a product register is
+    /// that no cell can be forgotten, and a hand-written list of four
+    /// hundred and eighty rows would have exactly the failure mode the
+    /// register was built to remove.
+    pub fn every_form() -> impl Iterator<Item = Self> {
+        RepresentationAxis::ALL
+            .into_iter()
+            .flat_map(|representation| {
+                SponsorAxis::ALL.into_iter().flat_map(move |sponsor| {
+                    FeeAxis::ALL.into_iter().flat_map(move |fee| {
+                        ConsumedArity::ALL.into_iter().flat_map(move |consumed| {
+                            CreatedArity::ALL.into_iter().map(move |created| Self {
+                                consumed,
+                                created,
+                                fee,
+                                sponsor,
+                                representation,
+                            })
+                        })
+                    })
+                })
+            })
+    }
+
+    /// How many inputs carry a blinded value, over BOTH assets.
+    ///
+    /// The sponsor's coin is an input like any other and its blinder
+    /// enters the same sum, which is the fact the sponsor axis exists to
+    /// make computable.
+    #[must_use]
+    pub const fn blinded_inputs(self) -> usize {
+        let receipts = if self.representation.consumed_side_is_blinded() {
+            self.consumed.count()
+        } else {
+            0
+        };
+        receipts + self.sponsor.value_is_committed() as usize
+    }
+
+    /// How many outputs carry a blinded value, over BOTH assets.
+    ///
+    /// The fee is never among them: it is explicit by the target's own
+    /// definition. The sponsor's change is among them exactly when it is
+    /// committed, which is the single fact separating the sponsored form
+    /// a node accepted from the one it refused.
+    #[must_use]
+    pub const fn blinded_outputs(self) -> usize {
+        self.representation.blinded_destinations(self.created)
+            + self.sponsor.change_is_committed() as usize
+    }
+
+    /// How many outputs the form creates in total.
+    #[must_use]
+    pub const fn outputs(self) -> usize {
+        self.created.count() + self.fee.outputs() + self.sponsor.change_outputs()
+    }
+
+    /// How many destinations carry EXPLICIT values.
+    #[must_use]
+    pub const fn explicit_destinations(self) -> usize {
+        self.created.count() - self.representation.blinded_destinations(self.created)
+    }
+
+    /// Whether the consumed blinder sum has somewhere to land.
+    ///
+    /// # The rule, and why the sponsor did not change it
+    ///
+    /// A commitment is `v*H_asset + r*G`. The VALUE coordinate rides a
+    /// per-asset generator, produced from the asset id at
+    /// `src/confidential_validation.cpp:321-324` and used to commit at
+    /// `:347-349`, so a value in one asset can never cancel a value in
+    /// another and each asset conserves separately. The BLINDER
+    /// coordinate rides the single generator `G` for every asset alike,
+    /// so the blinder sum is ONE sum across the whole transaction.
+    ///
+    /// That asymmetry is what makes a sponsor region computable without
+    /// a second predicate. The sponsor's reserve-asset value must balance
+    /// against the fee and the change in its own asset, which the funding
+    /// can always arrange and which therefore forbids no cell. Its
+    /// BLINDER joins the same global sum as every receipt's, so a
+    /// committed sponsor coin needs some blinded output SOMEWHERE and
+    /// does not care which asset that output is in.
+    ///
+    /// So the predicate is the one the register always had, counted over
+    /// both assets at once, and `the_recorded_form_verdicts_agree_with_the_tally_predicate`
+    /// holds every cell against it.
+    #[must_use]
+    pub const fn blinder_sum_is_absorbable(self) -> bool {
+        self.blinded_inputs() == 0 || self.blinded_outputs() > 0
+    }
+
+    /// Whether the ONE blinded output would be forced to a zero blinder.
+    ///
+    /// The degeneracy the register has met from three directions now: a
+    /// merge of an inverse pair, a single-output entry crossing, and any
+    /// other form whose consumed blinder sum is zero and which blinds
+    /// exactly one output. The solve returns that zero unchanged, the
+    /// commitment is exactly `v*H`, and the output carries a blinded
+    /// output's FORM with none of its hiding.
+    ///
+    /// It is not a consensus failure — the tally balances perfectly —
+    /// which is precisely why the register has to say it in a verdict of
+    /// its own rather than fold it into either half.
+    #[must_use]
+    pub const fn the_sole_blinded_output_would_hide_nothing(self) -> bool {
+        self.blinded_inputs() == 0 && self.blinded_outputs() == 1
+    }
+
+    /// Which output of THIS cell holds the consumed blinder sum, and what
+    /// happens to the cell if it is taken away.
+    ///
+    /// # Why this is per cell and not one corner row
+    ///
+    /// The register used to state the absorber's necessity once, at the
+    /// fully-unblinding row, as the observation that removing the
+    /// absorber from an exit crossing gives an impossible shape. That is
+    /// true and it is not enough: read at the corner, it looks like a
+    /// fact about one shape, when it is the load-bearing structure of
+    /// every unblinding cell in the product. An exit crossing at any
+    /// arity is possible ONLY because one of its declared destination
+    /// positions is blinded, and a reader deciding whether to build a
+    /// two-explicit-output transfer needs that sentence attached to the
+    /// cell they are reading rather than three sections away.
+    ///
+    /// So every cell answers for itself, and
+    /// `every_unblinding_cell_requires_its_absorber` holds the answer
+    /// against the arithmetic: for each cell that names an absorber, the
+    /// counterpart cell with the absorber removed is required to come
+    /// back consensus-refused. The derivation is recomputed per cell
+    /// rather than asserted once.
+    ///
+    /// `None` is a cell whose blinder sum is already zero, which needs no
+    /// absorber because there is nothing to absorb.
+    #[must_use]
+    pub const fn absorbing_output(self) -> Option<&'static str> {
+        if self.blinded_inputs() == 0 {
+            return None;
+        }
+        match (self.representation, self.sponsor.change_is_committed()) {
+            (RepresentationAxis::ExitCrossing, _) => Some(
+                "The declared absorber, which is the LAST destination position and an ordinary \
+                 blinded destination. Every other destination of this cell is explicit and \
+                 contributes a zero blinder, so the absorber is the only output the consumed sum \
+                 can land on. Remove it and the cell IS the fully-unblinding corner: the sum is \
+                 nonzero, every output contributes zero, and the tally fails.",
+            ),
+            (RepresentationAxis::FullUnblinding, true) => Some(
+                "The sponsor's COMMITTED change, and nothing else in the transaction. This is the \
+                 corner the product found: a form whose destinations are wholly explicit is \
+                 possible after all when a committed sponsor change is present, because the tally \
+                 counts blinded outputs and does not care that this one belongs to the sponsor \
+                 rather than to a recipient. The registry cannot state it -- the change is not a \
+                 SOLVING role -- which is a first-party wall and not the target's.",
+            ),
+            (RepresentationAxis::FullUnblinding, false) => None,
+            (_, _) => Some(
+                "A blinded destination. The homogeneous private and entry-blinding cells create \
+                 blinded destinations, and the balancing one among them takes whatever closes the \
+                 sum, so the absorbing output is a destination the transfer was creating anyway.",
+            ),
+        }
+    }
+
+    /// The same cell with its absorber removed, where removing one is
+    /// meaningful.
+    ///
+    /// The counterpart the absorber derivation is checked against. For an
+    /// exit crossing that is the fully-unblinding cell of the same arity;
+    /// for a form whose only blinded output is a committed sponsor
+    /// change it is the same form taking EXPLICIT change instead.
+    #[must_use]
+    pub const fn with_the_absorber_removed(self) -> Option<Self> {
+        match self.representation {
+            RepresentationAxis::ExitCrossing => Some(Self {
+                representation: RepresentationAxis::FullUnblinding,
+                ..self
+            }),
+            RepresentationAxis::FullUnblinding
+                if matches!(self.sponsor, SponsorAxis::CommittedValueCommittedChange) =>
+            {
+                Some(Self {
+                    sponsor: SponsorAxis::CommittedValueExplicitChange,
+                    ..self
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// The handle the prose register uses for the cell.
+    #[must_use]
+    pub fn handle(self) -> String {
+        format!(
+            "{}/{}/{}/{}/{}",
+            self.representation.handle(),
+            self.consumed.handle(),
+            self.created.handle(),
+            self.fee.handle(),
+            self.sponsor.handle(),
+        )
+    }
+
+    /// Which enumerated blinded shape this cell IS, where it is one.
+    ///
+    /// The bridge between the two registers, and the reason neither can
+    /// drift from the other: a test walks the eleven shapes, finds each
+    /// one's cell, and requires the two verdicts to say the same thing.
+    #[must_use]
+    pub const fn as_blinded_shape(self) -> Option<BlindedShape> {
+        if self.sponsor.sponsor_inputs() != 0 {
+            return None;
+        }
+        match (self.representation, self.consumed, self.created, self.fee) {
+            (
+                RepresentationAxis::HomogeneousPrivate,
+                ConsumedArity::One,
+                CreatedArity::One,
+                FeeAxis::Absent,
+            ) => Some(BlindedShape::OneToOne),
+            (
+                RepresentationAxis::HomogeneousPrivate,
+                ConsumedArity::One,
+                CreatedArity::One,
+                FeeAxis::Present,
+            ) => Some(BlindedShape::OneToOneWithFee),
+            (
+                RepresentationAxis::HomogeneousPrivate,
+                ConsumedArity::One,
+                CreatedArity::Two,
+                FeeAxis::Absent,
+            ) => Some(BlindedShape::OneToTwo),
+            (
+                RepresentationAxis::HomogeneousPrivate,
+                ConsumedArity::One,
+                CreatedArity::Three,
+                FeeAxis::Absent,
+            ) => Some(BlindedShape::OneToThree),
+            (
+                RepresentationAxis::HomogeneousPrivate,
+                ConsumedArity::Two,
+                CreatedArity::One,
+                FeeAxis::Absent,
+            ) => Some(BlindedShape::TwoToOne),
+            (
+                RepresentationAxis::HomogeneousPrivate,
+                ConsumedArity::Two,
+                CreatedArity::Two,
+                FeeAxis::Absent,
+            ) => Some(BlindedShape::TwoToTwo),
+            (
+                RepresentationAxis::HomogeneousPrivate,
+                ConsumedArity::Two,
+                CreatedArity::Three,
+                FeeAxis::Absent,
+            ) => Some(BlindedShape::TwoToThree),
+            (
+                RepresentationAxis::HomogeneousPrivate,
+                ConsumedArity::One,
+                CreatedArity::None,
+                FeeAxis::Present,
+            ) => Some(BlindedShape::FeeOnly),
+            (
+                RepresentationAxis::EntryCrossing,
+                ConsumedArity::One,
+                CreatedArity::Two,
+                FeeAxis::Absent,
+            ) => Some(BlindedShape::EntryCrossing),
+            (
+                RepresentationAxis::ExitCrossing,
+                ConsumedArity::Two,
+                CreatedArity::Three,
+                FeeAxis::Absent,
+            ) => Some(BlindedShape::ExitCrossing),
+            (
+                RepresentationAxis::FullUnblinding,
+                ConsumedArity::Two,
+                CreatedArity::Two,
+                FeeAxis::Absent,
+            ) => Some(BlindedShape::FullyUnblinding),
+            _ => None,
+        }
+    }
+}
+
+/// A first-party convention that refuses a CELL of the product.
+///
+/// Minted beside [`Limitation`] rather than inside it, and the
+/// separation is deliberate. Those members are walls the blinded-shape
+/// enumeration met and mostly walked through; these are walls the
+/// PRODUCT found, which nothing had stood at because nothing had ever
+/// asked. A limitation nobody has been refused by is still a limitation,
+/// and recording the two kinds in one enum would have made the second
+/// look like the first's leftovers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FormLimitation {
+    /// The confidential registry has one sponsor role and it is the
+    /// COMMITTED change.
+    ///
+    /// So a sponsor that takes EXPLICIT change back cannot be stated as
+    /// a confidential manifest at all. This is not a refusal anybody
+    /// wrote: the role was minted for the form that had to run, and the
+    /// explicit-change form runs on the explicit lane, where there is no
+    /// fixture registry to state anything in. The cell exists all the
+    /// same, and consensus admits several of its instances.
+    RegistryHasOnlyACommittedSponsorChangeRole,
+    /// No output of the manifest SOLVES, though consensus admits the
+    /// form.
+    ///
+    /// The corner the product found and the enumeration could not. A
+    /// committed sponsor change absorbs the sponsor's blinder as far as
+    /// the tally is concerned — it is a blinded output and the tally
+    /// counts blinded outputs — but the registry's own model asks which
+    /// output is SOLVED to close the sum, and the sponsor change is not
+    /// a solving role. So a form whose only blinded output is the
+    /// sponsor's change is possible on the target and unstateable here,
+    /// which is exactly the shape of gap this register exists to name.
+    NoSolvingRoleOutsideTheDestinations,
+    /// The fee-bearing shape member lives only in the SECOND deployment.
+    ///
+    /// The reviewed shape vocabulary expresses every fee-bearing arity,
+    /// and the demonstration deployment does not carry them, because
+    /// admitting the member would move every taproot output key and
+    /// therefore every recorded fixture digest. A second deployment
+    /// carries them instead. The cell is expressible; what it is not is
+    /// reachable from the deployment most of this workspace's evidence
+    /// was built against, and a reader who did not know that would
+    /// mis-read every fee-bearing row.
+    FeeMemberOnlyInTheFeeBearingDeployment,
+}
+
+impl FormLimitation {
+    /// The source row that refuses the cell.
+    #[must_use]
+    pub const fn refused_at(self) -> &'static str {
+        match self {
+            Self::RegistryHasOnlyACommittedSponsorChangeRole => {
+                "packages/target-elements-conformance/src/confidential_fixture.rs, the \
+                 `FixtureOutputRole` vocabulary, whose only sponsor member is `SponsorChange` and \
+                 whose `carries_an_opening` is TRUE for it -- a committed change and no other kind"
+            }
+            Self::NoSolvingRoleOutsideTheDestinations => {
+                "packages/target-elements-conformance/src/confidential_fixture.rs, the \
+                 `solves_the_balance` clause of `register_with_source`, which requires exactly one \
+                 solving role and counts `Balancing` and `SoleBalancing` alone; `SponsorChange` \
+                 carries an opening and does not solve"
+            }
+            Self::FeeMemberOnlyInTheFeeBearingDeployment => {
+                "packages/tapscript/src/live_shape.rs, the `SponsorlessFeeBeyondBound` conjunct of \
+                 `LiveTransferShape::checked`, which refuses a sponsorless fee-bearing shape \
+                 whenever the bounds carry `FeePresence::Absent` -- true of \
+                 `demonstration_live_shape_set` and false of `fee_bearing_live_shape_set`"
+            }
+        }
+    }
+
+    /// Why the convention exists, stated as the model it came out of.
+    #[must_use]
+    pub const fn convention(self) -> &'static str {
+        match self {
+            Self::RegistryHasOnlyACommittedSponsorChangeRole => {
+                "The lane a form runs on decides which registry states it. An explicit sponsor \
+                 change belongs to the explicit lane, which registers nothing, so the confidential \
+                 registry was given the one sponsor role the confidential lane needed. Nothing \
+                 decided against the other; no decision was recorded because none was made, which \
+                 is the same sentence this register has now written four times."
+            }
+            Self::NoSolvingRoleOutsideTheDestinations => {
+                "The balancing-output model, met at its edge. A manifest names exactly one output \
+                 whose blinder is SOLVED to close the tally, and the model was written when every \
+                 blinded output was a destination. A sponsor's committed change is a blinded \
+                 output that is not a destination, so the model has a blinded output it will not \
+                 solve for -- and the tally, which does not know what a destination is, would \
+                 have let it."
+            }
+            Self::FeeMemberOnlyInTheFeeBearingDeployment => {
+                "Digest stability. Adding a shape to a deployment's vocabulary moves the taproot \
+                 output key every recorded fixture digest was computed against, so the fee-bearing \
+                 member was landed as a SECOND deployment rather than as a widening of the first. \
+                 That is a cost the workspace chose deliberately and would choose again; what it \
+                 is not is a statement that the shapes are unsupported."
+            }
+        }
+    }
+
+    /// The named path that would structurally remove the limitation.
+    #[must_use]
+    pub const fn removal_path(self) -> &'static str {
+        match self {
+            Self::RegistryHasOnlyACommittedSponsorChangeRole => {
+                "Give the fixture output role vocabulary an EXPLICIT sponsor-change member beside \
+                 the committed one, carrying its own asset exactly as the committed member does \
+                 and carrying NO opening, so that the empty-program clause and the parity rule \
+                 read it as the explicit output it is. The role code is the only transcript field \
+                 that moves and it moves only for manifests that state the new role, so every \
+                 recorded digest re-derives -- the same property that let the committed member land."
+            }
+            Self::NoSolvingRoleOutsideTheDestinations => {
+                "Let the SOLVING role be stated on a sponsor change. Either a second sponsor-change \
+                 member whose `solves_the_balance` is true, or a manifest-level statement of which \
+                 output solves, so that a form whose only blinded output is the sponsor's change \
+                 can name it. The degeneracy warning the single-output form carries applies \
+                 unchanged and would have to be carried with it: a sole solved output over a zero \
+                 consumed sum hides nothing, and `DegenerateBalancingScalar` is what catches it."
+            }
+            Self::FeeMemberOnlyInTheFeeBearingDeployment => {
+                "Nothing needs removing. The path is to state, at every row that cites a \
+                 fee-bearing cell, WHICH deployment the cell is reachable from -- which is what \
+                 this register now does. A single deployment carrying both would cost every \
+                 recorded digest in the workspace and buy a convenience."
+            }
+        }
+    }
+
+    /// Whether the limitation is one the register asks to be removed.
+    ///
+    /// False for the deployment split, and the honesty of the whole
+    /// enum rests on this member existing. A limitation the workspace
+    /// would choose again is still a limitation and still owes a label,
+    /// and a register that could only record walls it wanted torn down
+    /// would quietly stop recording the other kind.
+    #[must_use]
+    pub const fn removal_is_wanted(self) -> bool {
+        match self {
+            Self::RegistryHasOnlyACommittedSponsorChangeRole
+            | Self::NoSolvingRoleOutsideTheDestinations => true,
+            Self::FeeMemberOnlyInTheFeeBearingDeployment => false,
+        }
+    }
+}
+
+/// What this workspace can say about ONE cell of the product.
+///
+/// # The vocabulary this register is built on
+///
+/// The bar is that we do not need to support everything, but we must
+/// know what we do not support EXPLICITLY. So the members below are the
+/// complete set of true answers to "is this form supported", and every
+/// one of them is an answer rather than an absence. There is no member
+/// meaning "unconsidered", and the register cannot represent one: a cell
+/// with no verdict does not compile.
+///
+/// Two members carry an acceptance and two carry a refusal, and the two
+/// refusals are told apart by the same discipline the rest of the
+/// register runs on — one is a derivation, one is a node's own words.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FormVerdict {
+    /// The combination is not a form of this space, and why.
+    ///
+    /// Not a refusal. A cell here is one whose axes contradict each
+    /// other — a transfer with no outputs at all, an exit crossing with
+    /// nothing to unblind — and the reason is stated so that a reader
+    /// asking about it learns which axis made it impossible to state
+    /// rather than that nobody answered.
+    OutsideTheSpace {
+        /// Why the axes cannot be combined.
+        reason: &'static str,
+    },
+    /// The tally cannot admit the form, derived and never observed.
+    ConsensusRefuses {
+        /// The arithmetic ground, in the tally's own terms.
+        ground: &'static str,
+    },
+    /// A node was offered this form and refused it ON THE BALANCE RULE.
+    ///
+    /// # Why this is not [`Self::ConsensusRefuses`]
+    ///
+    /// Because it is an OBSERVATION and that one is a derivation, and
+    /// keeping evidence classes apart is the whole discipline of this
+    /// register. The member was minted by this row: the sponsor axis
+    /// turned out to contain a cell somebody had actually built and
+    /// offered, and a node had refused it in its own words, and the
+    /// register had nowhere to put a refusal that strong.
+    ///
+    /// It is the counterpart of [`ConsensusVerdict::ObservedAccepted`]
+    /// on the other side of the tally, and it is worth more than a
+    /// derivation for exactly the reason an acceptance is: somebody ran
+    /// it.
+    ObservedRefusedOnBalance {
+        /// The target's own verdict, verbatim and unmapped.
+        detail: &'static str,
+        /// What the refusal proves about the arithmetic.
+        proves: &'static str,
+    },
+    /// A node accepted a transaction of this form into a block.
+    ObservedAccepted {
+        /// The identity the target computed.
+        identity: &'static str,
+    },
+    /// Consensus admits it, this workspace can state it, nothing ran it.
+    ///
+    /// The honest answer for most of the product, and by the ruling's own
+    /// terms a COMPLETE one. Nothing here is a promise that a run is
+    /// coming.
+    ExpressibleAndUnrun {
+        /// Where a run stops now, in the stopping layer's own terms.
+        stops_at: &'static str,
+    },
+    /// Consensus admits it and this workspace refuses it, to keep the
+    /// hiding a blinded output is for.
+    ///
+    /// # Why it is not a limitation with a removal path
+    ///
+    /// Because nobody wants it removed, and calling it a limitation
+    /// would file a confidentiality hole as a feature. The tally
+    /// balances perfectly for these cells; what fails is that the one
+    /// blinded output's blinder is forced to zero, so its commitment is
+    /// exactly `v*H` — a point anyone recomputes from a guessed amount,
+    /// carrying a blinded output's form and none of its hiding.
+    ///
+    /// Elements' own wallet refuses the same forms for the same reason
+    /// at `src/blind.cpp:578-586`, which is worth recording: this is a
+    /// convention two independent implementations arrived at, and it is
+    /// still not a protocol rule, and this register claims it as neither.
+    RefusedToProtectHiding {
+        /// The arithmetic of the degeneracy.
+        ground: &'static str,
+    },
+    /// Consensus admits it, this workspace refuses it, and here is the
+    /// wall.
+    UnsupportedHere {
+        /// What refuses it, why, and what would end it.
+        limitation: FormLimitation,
+    },
+    /// The cell's verdict is recorded in ANOTHER register, named here.
+    ///
+    /// Used for the wholly explicit sponsorless lane, whose sixteen
+    /// positive rows have their own table and their own runs. Restating
+    /// them here would create a second authored source for a verdict,
+    /// which is the one thing a register may not do. Naming the register
+    /// answers the reader's question without answering it twice.
+    StatedInAnotherRegister {
+        /// Where the cell's verdict actually lives.
+        register: &'static str,
+    },
+}
+
+impl FormVerdict {
+    /// Whether the verdict reports a form this workspace can build AND
+    /// has seen accepted.
+    #[must_use]
+    pub const fn is_an_acceptance(self) -> bool {
+        matches!(self, Self::ObservedAccepted { .. })
+    }
+
+    /// Whether the tally admits the form.
+    ///
+    /// `None` where the question does not arise — a cell outside the
+    /// space has no arithmetic to ask about, and a cell recorded in
+    /// another register is answered there.
+    #[must_use]
+    pub const fn consensus_admits(self) -> Option<bool> {
+        match self {
+            Self::OutsideTheSpace { .. } | Self::StatedInAnotherRegister { .. } => None,
+            Self::ConsensusRefuses { .. } | Self::ObservedRefusedOnBalance { .. } => Some(false),
+            Self::ObservedAccepted { .. }
+            | Self::ExpressibleAndUnrun { .. }
+            | Self::RefusedToProtectHiding { .. }
+            | Self::UnsupportedHere { .. } => Some(true),
+        }
+    }
+
+    /// The single word a reader asking "is this supported" gets back.
+    ///
+    /// Every member answers, and the answers a reader most needs are the
+    /// unwelcome ones. This is the accessor the prose register's own
+    /// summary table is written from.
+    #[must_use]
+    pub const fn supported(self) -> &'static str {
+        match self {
+            Self::OutsideTheSpace { .. } => "not-a-form-of-this-space",
+            Self::ConsensusRefuses { .. } => "impossible-derived",
+            Self::ObservedRefusedOnBalance { .. } => "impossible-observed",
+            Self::ObservedAccepted { .. } => "supported-and-run",
+            Self::ExpressibleAndUnrun { .. } => "expressible-unrun",
+            Self::RefusedToProtectHiding { .. } => "refused-to-protect-hiding",
+            Self::UnsupportedHere { .. } => "unsupported-here",
+            Self::StatedInAnotherRegister { .. } => "stated-in-another-register",
+        }
+    }
+}
+
+/// The verdict for one cell of the product.
+///
+/// # The closure rule, and why this is a rule rather than a table
+///
+/// The register states four hundred and eighty cells and writes down
+/// about twenty. Everything else is derived, in this order:
+///
+/// 1. the axes are checked for contradiction, and a contradicted cell is
+///    [`FormVerdict::OutsideTheSpace`] with the contradiction named;
+/// 2. the tally predicate decides possibility, over both assets at once,
+///    by [`TransferForm::blinder_sum_is_absorbable`];
+/// 3. a small PINNED set of cells carries what a node actually said,
+///    accepting or refusing, and cites the run-of-record constant by
+///    name rather than a literal;
+/// 4. everything else inherits, and the inheritance is what makes the
+///    register a closure rule: a cell is expressible unless a named
+///    layer refuses it, and every such layer is enumerated in
+///    [`FormLimitation`].
+///
+/// Step 4 is the one that could go quietly wrong, so it does not get to.
+/// The tests drive the live fixture registry and the live shape
+/// vocabulary for every cell and require the derived verdict to be the
+/// one those layers actually return, which means an inherited claim is
+/// recomputed exactly as hard as a written one.
+#[must_use]
+pub const fn form_verdict(form: TransferForm) -> FormVerdict {
+    // 1. Contradicted axes, before any arithmetic. A form nobody can
+    //    state has no verdict to derive and saying so is not a refusal.
+    if let Some(reason) = outside_the_space(form) {
+        return FormVerdict::OutsideTheSpace { reason };
+    }
+
+    // 3a. The one cell a node refused ON THE TALLY, which outranks the
+    //     derivation below because it is an observation. The predicate
+    //     agrees with it, and a test holds them equal rather than
+    //     trusting that they do.
+    if matches!(form.sponsor, SponsorAxis::CommittedValueExplicitChange)
+        && matches!(form.representation, RepresentationAxis::HomogeneousExplicit)
+        && matches!(form.created, CreatedArity::Two)
+        && matches!(form.consumed, ConsumedArity::Two)
+        && matches!(form.fee, FeeAxis::Present)
+    {
+        return FormVerdict::ObservedRefusedOnBalance {
+            detail: crate::live_sponsor_shapes::sponsored_run_of_record::COMMITTED_SPONSOR_REFUSAL,
+            proves: "A committed sponsor value needs a BLINDED output somewhere in the \
+                     transaction, and an explicit change output is not one. The candidate was \
+                     refused before script verification, so the refusal is the balance rule \
+                     itself and not a covenant this workspace wrote -- which is what makes it \
+                     evidence about consensus rather than about us.",
+        };
+    }
+
+    // 2. The tally, over both assets at once.
+    if !form.blinder_sum_is_absorbable() {
+        return FormVerdict::ConsensusRefuses {
+            ground: "The consumed blinder sum is nonzero and no output blinds anything, so there \
+                     is nowhere for it to land. Explicit outputs contribute a zero blinder and \
+                     the fee output is explicit by definition, so neither can hold it.",
+        };
+    }
+
+    // 2b. Possible on the tally and refused here to keep the hiding.
+    //     Ordered BEFORE the acceptances because no accepted cell is
+    //     degenerate, which a test states rather than leaves implied.
+    if form.the_sole_blinded_output_would_hide_nothing() {
+        return FormVerdict::RefusedToProtectHiding {
+            ground: "The consumed blinder sum is zero and exactly one output is blinded, so the \
+                     solve returns that zero unchanged and the commitment is exactly `v*H` -- a \
+                     point anyone recomputes from a guessed amount. The registry refuses it by \
+                     name with `DegenerateBalancingScalar`, and the refusal is the point rather \
+                     than a wall to remove.",
+        };
+    }
+
+    // 3b. The cells a node accepted, each citing its own run of record.
+    if let Some(identity) = accepted_identity(form) {
+        return FormVerdict::ObservedAccepted { identity };
+    }
+
+    // 4. Inheritance. A named layer refuses it, or it is expressible and
+    //    nobody has run it.
+    if let Some(limitation) = the_layer_that_refuses(form) {
+        return FormVerdict::UnsupportedHere { limitation };
+    }
+
+    if matches!(form.representation, RepresentationAxis::HomogeneousExplicit)
+        && matches!(form.sponsor, SponsorAxis::Sponsorless)
+    {
+        return FormVerdict::StatedInAnotherRegister {
+            register: "packages/vectors/src/live_explicit_shapes.rs and the sixteen positive \
+                       explicit rows of the live-transfer safety matrix, all sixteen of which are \
+                       answered by an observed native run",
+        };
+    }
+
+    FormVerdict::ExpressibleAndUnrun {
+        stops_at: stops_at(form),
+    }
+}
+
+/// Why a cell's axes cannot be combined, where they cannot.
+///
+/// Each reason names the axis that contradicts, so a reader who asked
+/// about the cell learns something rather than being told no.
+const fn outside_the_space(form: TransferForm) -> Option<&'static str> {
+    if matches!(form.created, CreatedArity::None) {
+        // A transfer creates destinations. The one exception is the
+        // fee-only degenerate, which the register keeps because the
+        // tally FORBIDS it and a forbidden form is worth a row; it is
+        // kept once, at the representation where the question has
+        // content, because with an explicit consumed side the answer is
+        // trivially yes and the transaction is a burn rather than a
+        // transfer.
+        if matches!(form.representation, RepresentationAxis::HomogeneousPrivate)
+            && matches!(form.fee, FeeAxis::Present)
+            && matches!(form.sponsor, SponsorAxis::Sponsorless)
+        {
+            return None;
+        }
+        return Some(
+            "A transfer creates at least one destination. The fee-only degenerate is stated once, \
+             at the private representation, because that is the only place the tally has an \
+             answer worth recording; a wholly explicit transaction carrying nothing but a fee is a \
+             burn and not a transfer, and this register does not cover burns.",
+        );
+    }
+    if form.sponsor.sponsor_inputs() > 0 && matches!(form.fee, FeeAxis::Absent) {
+        return Some(
+            "A sponsor region is DEFINED by the fee it funds. The reviewed shape vocabulary \
+             derives `FeePresence::Present` from a nonzero sponsor-input count and refuses the \
+             combination by name at the `SponsoredFormWithoutFee` conjunct of \
+             `LiveTransferShape::checked`, so a sponsored form paying no fee is not a form this \
+             space can state. Nothing about consensus forbids one; it is a definition, and the \
+             register says which.",
+        );
+    }
+    if matches!(form.representation, RepresentationAxis::ExitCrossing) && form.created.count() < 2 {
+        return Some(
+            "An exit crossing is explicit destinations BESIDE one blinded absorber, so it needs at \
+             least two destinations to be one. With a single destination the absorber is the only \
+             output and the form IS the homogeneous private one under another name, which the \
+             register states there rather than twice.",
+        );
+    }
+    None
+}
+
+/// The run-of-record identity for a cell a node accepted.
+///
+/// Cited by constant and never as a literal, so a wave that re-ran and
+/// recorded different bytes would move this register with it.
+const fn accepted_identity(form: TransferForm) -> Option<&'static str> {
+    use crate::live_sponsor_shapes::sponsored_run_of_record as sponsored;
+
+    // The sponsored acceptances, which had NO census row anywhere before
+    // this one. Three forms, three lanes, three identities.
+    match (
+        form.representation,
+        form.sponsor,
+        form.consumed,
+        form.created,
+        form.fee,
+    ) {
+        (
+            RepresentationAxis::HomogeneousExplicit,
+            SponsorAxis::ExplicitValueNoChange,
+            ConsumedArity::Two,
+            CreatedArity::Two,
+            FeeAxis::Present,
+        ) => return Some(sponsored::SPONSORED_ACCEPTED_TXID),
+        (
+            RepresentationAxis::HomogeneousExplicit,
+            SponsorAxis::ExplicitValueExplicitChange,
+            ConsumedArity::Two,
+            CreatedArity::Two,
+            FeeAxis::Present,
+        ) => return Some(sponsored::SPONSORED_CHANGE_ACCEPTED_TXID),
+        (
+            RepresentationAxis::HomogeneousPrivate,
+            SponsorAxis::CommittedValueCommittedChange,
+            ConsumedArity::Two,
+            CreatedArity::Two,
+            FeeAxis::Present,
+        ) => return Some(sponsored::SPONSORED_PRIVATE_TXID),
+        _ => {}
+    }
+
+    // The sponsorless acceptances, which are exactly the blinded-shape
+    // enumeration's observed rows. Read THROUGH that register rather
+    // than copied out of it, so the two cannot disagree.
+    match form.as_blinded_shape() {
+        None => None,
+        Some(shape) => match census_entry(shape).consensus {
+            ConsensusVerdict::ObservedAccepted { identity } => Some(identity),
+            ConsensusVerdict::SourceDerivedPossible | ConsensusVerdict::SourceDerivedImpossible => {
+                None
+            }
+        },
+    }
+}
+
+/// The named layer that refuses a consensus-possible cell, if one does.
+///
+/// The heart of the inheritance rule, and every arm was found by DRIVING
+/// the layer rather than by reading it. The tests recompute each one.
+const fn the_layer_that_refuses(form: TransferForm) -> Option<FormLimitation> {
+    // The explicit lane registers nothing, so no confidential-registry
+    // clause can refuse one of its cells. Its sponsor cells are stated
+    // here because the sponsor axis has no register of its own; its
+    // sponsorless cells are stated in the explicit register.
+    if matches!(form.representation, RepresentationAxis::HomogeneousExplicit) {
+        return None;
+    }
+
+    // A sponsor taking EXPLICIT change back cannot be written as a
+    // confidential manifest: the vocabulary's one sponsor role carries an
+    // opening, which an explicit output does not have.
+    if form.sponsor.change_outputs() > 0 && !form.sponsor.change_is_committed() {
+        return Some(FormLimitation::RegistryHasOnlyACommittedSponsorChangeRole);
+    }
+
+    // A form whose only blinded output is the sponsor's committed change
+    // has no SOLVING role, though the tally is perfectly happy with it.
+    if form.representation.blinded_destinations(form.created) == 0 && form.blinded_outputs() > 0 {
+        return Some(FormLimitation::NoSolvingRoleOutsideTheDestinations);
+    }
+
+    None
+}
+
+/// Where a run of an expressible cell stops today.
+///
+/// Named in the stopping layer's own terms, never as "not yet". A cell
+/// whose stopping layer could not be named would be one the register did
+/// not actually understand.
+const fn stops_at(form: TransferForm) -> &'static str {
+    // Crossing composed with a sponsor: the sharpest cell of the
+    // product, because every layer already states it and no layer has
+    // ever been asked. The composition is one axis and the sponsor is
+    // another, and nothing anywhere joins them: the isolation fragment
+    // that handles the sponsor region takes no representation and reads
+    // no value field, the coordinator appends it and THEN matches on the
+    // composition, and the positional value-form leaf runs over the
+    // destination range alone, which the fee and the sponsor change sit
+    // outside of by construction.
+    if form.sponsor.sponsor_inputs() > 0
+        && matches!(
+            form.representation,
+            RepresentationAxis::EntryCrossing | RepresentationAxis::ExitCrossing
+        )
+    {
+        return "Nothing refuses it and nothing has constructed it, which is a different sentence \
+                from either half alone. The crossing taptree ALREADY carries the sponsored \
+                coordinator leaves -- the deployment links a crossing constructor against a shape \
+                set whose unrolling includes both sponsor-change presences -- so the leaves are \
+                emitted and unexercised. What is missing is a caller: the composing finalization \
+                entry point takes a composition and a sponsor capability in the same parameter \
+                list, and every sponsored caller in this workspace takes the homogeneous wrapper \
+                instead, while the one crossing ceremony pins `Sponsorless` and passes no sponsor \
+                capability at all.";
+    }
+    if form.sponsor.sponsor_inputs() > 0 {
+        return "No ceremony builds it. The sponsor lane funds ONE sponsor coin per form and runs \
+                the three forms it has run; every other cell of the sponsor axis is a manifest the \
+                registry admits and a shape the vocabulary carries, with no ceremony stage that \
+                asks for it. The nearest cell to a run is the private sponsored form with an \
+                explicit sponsor coin funded exactly to the fee and one destination, which the \
+                minimality pair registry pins as awaiting a run of its own shape.";
+    }
+    if matches!(form.fee, FeeAxis::Present) {
+        return "No ceremony builds it, and the shape member is in the SECOND deployment. \
+                `fee_bearing_live_shape_set` carries a sponsorless fee-bearing member at every \
+                receipt-input and receipt-output count in its bounds, so the vocabulary states \
+                every one of these cells; the ceremony submits the one-to-one form alone. The \
+                fixture registry admits the manifests outright -- it places no cardinality rule on \
+                the fee role and no ceiling on the output count.";
+    }
+    if !matches!(form.representation, RepresentationAxis::HomogeneousPrivate) {
+        return "No ceremony builds it. Both crossing directions ran at ONE arity each -- one \
+                receipt into two blinded destinations, and two receipts into two explicit \
+                destinations beside an absorber -- and the per-side representation composition is \
+                indifferent to the counts, so every other arity is a composition the compiler \
+                states and nothing has constructed.";
+    }
+    "No ceremony builds it. The manifest registers and the shape member exists; what is missing is \
+     a ceremony stage that asks for this cell."
+}
+
 #[cfg(test)]
 mod tests {
     use target_elements_conformance::confidential_fixture::{
