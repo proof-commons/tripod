@@ -1574,6 +1574,7 @@ mod tests {
                 + census.first_party_undischarged()
                 + census.native_run_required()
                 + census.native_run_observed()
+                + census.determinism_observed()
                 + census.native_refusal_observed()
                 + census.infrastructure_blocked()
                 + census.report_layer()
@@ -1656,17 +1657,18 @@ mod tests {
         // §13.1's fifth source, and §13.6's separation held at the same
         // time: the plan says the registry exists and how wide it is, and
         // it says nothing about whether the private plan discloses less.
-        // The supporting count is zero and that is a fact about the
-        // registry, not a minimality conclusion — which
+        // The supporting count is three of five and that is a fact
+        // about the registry, not a minimality conclusion — which
         // `crate::live_minimality_report` is the only thing entitled to
-        // draw.
+        // draw. It read zero until both shapes of three pairs had been
+        // run against a real target and accepted.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         assert!(plan.minimality().is_built());
         assert_eq!(
             plan.minimality(),
             MinimalityRegistryStanding::Built {
                 pairs: crate::live_pairs::MinimalityPair::ALL.len(),
-                supporting: 0,
+                supporting: 3,
             },
         );
     }
@@ -1682,6 +1684,7 @@ mod tests {
                 + census.first_party_undischarged()
                 + census.native_run_required()
                 + census.native_run_observed()
+                + census.determinism_observed()
                 + census.native_refusal_observed()
                 + census.infrastructure_blocked()
                 + census.report_layer()

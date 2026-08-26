@@ -1029,7 +1029,11 @@ mod tests {
 
         let (private_rows, private_answered, private_blocked) =
             board[&LiveSafetySection::PositivePrivate];
-        assert_eq!(private_answered, 7, "the private table's answered count");
+        // Eight of ten. Seven moved on acceptances of their own shapes;
+        // the eighth is the openings row, answered by the determinism
+        // observation its own §11.2 gate asks for rather than by a
+        // target verdict.
+        assert_eq!(private_answered, 8, "the private table's answered count");
         assert_eq!(private_blocked, 0);
         assert_eq!(private_rows, 10);
         assert_eq!(LiveSafetyPolarity::ALL.len(), 2);

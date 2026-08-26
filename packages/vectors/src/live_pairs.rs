@@ -1944,11 +1944,11 @@ mod tests {
     use super::{
         BOTH_PLANS, MinimalityConditionStanding, MinimalityPair, PairAcceptanceCondition,
         PairTargetVerdict, PredecessorAssumption, ResourceComparisonStanding, SponsorPresence,
-        build_minimality_pairs, condition_scoreboard, minimality_fixtures,
+        build_minimality_pairs, condition_scoreboard, minimality_fixtures, recorded_acceptance,
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
     use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
     fn every_pair_the_guide_names_has_exactly_one_fixture() {
@@ -2095,83 +2095,193 @@ mod tests {
                 row.private().predecessor().blocker(),
                 Some(LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded),
             );
+            // No member of any pair was submitted, and every verdict
+            // still says so — the variant names all begin `NotSubmitted`
+            // and there is no variant that says otherwise. What the
+            // verdict no longer does is name a cleared residual as the
+            // thing in the way.
             for member in row.members() {
-                assert_eq!(
+                assert!(matches!(
                     member.verdict(),
-                    PairTargetVerdict::NotSubmitted(
-                        LiveInfrastructureBlocker::OwnerSighashNotComputable
-                    ),
-                );
+                    PairTargetVerdict::NotSubmittedShapeAcceptedElsewhere { .. }
+                        | PairTargetVerdict::NotSubmittedNoRunOfThisShape { .. },
+                ));
+                assert!(member.verdict().name().starts_with("not-submitted"));
             }
         }
     }
 
     #[test]
-    fn no_pair_supports_minimality_and_the_deficit_is_one_named_component() {
-        // The wave's central honest finding, held as a test. §16.2 is a
-        // conjunction of ten and two of them are blocked, so no pair
-        // supports minimality — and a registry that reported otherwise
-        // would be the one thing this module exists to prevent.
+    fn exactly_the_pairs_whose_two_shapes_ran_support_minimality() {
+        // The wave's central finding, held as a test rather than
+        // written in a report. §16.2 is a conjunction of ten, and the
+        // one conjunct that is not a property of the built members is
+        // answered per pair from the two lanes' runs of record — so
+        // "does this pair support minimality" now has five answers
+        // rather than one.
         //
-        // The two blocked conditions now name the SAME component, and
-        // that is a repair rather than a weakening: the acceptance
-        // condition used to name the digest blocker, which is cleared,
-        // and is downstream of the constructibility condition anyway.
+        // Three pairs have a recorded acceptance of BOTH members'
+        // shapes and satisfy all ten. Two do not, and each is missing
+        // the same side: a run of its PRIVATE member's shape. The names
+        // are spelled here so that a pair moved by an edit rather than
+        // by a run fails, which is the whole point of spelling them.
         let rows = build_minimality_pairs().expect("the pair registry builds");
-        let mut blockers = BTreeSet::new();
+        let supporting: BTreeSet<_> = rows
+            .iter()
+            .filter(|row| row.supports_minimality())
+            .map(|row| row.pair().name())
+            .collect();
+        assert_eq!(
+            supporting,
+            BTreeSet::from(["one-to-one", "merge", "many-to-many"]),
+        );
+
         for row in &rows {
-            assert!(
-                !row.supports_minimality(),
-                "{} claims minimality support",
+            let standing = row.conditions()[&PairAcceptanceCondition::BothTargetTransactionsAccept];
+            if row.supports_minimality() {
+                // A supporting pair rests on observation for exactly one
+                // conjunct and on recomputation for the other nine, and
+                // the two are never summed.
+                assert!(standing.rests_on_observation(), "{}", row.pair().name());
+                let observed = row
+                    .conditions()
+                    .values()
+                    .filter(|standing| standing.rests_on_observation())
+                    .count();
+                assert_eq!(observed, 1, "{}", row.pair().name());
+                continue;
+            }
+            // A pair that does not support minimality names its failing
+            // conjunct, and the failure is the acceptance one for both
+            // of them. Nine of ten is nothing: §16.2 says "only when".
+            assert!(!standing.is_satisfied(), "{}", row.pair().name());
+            let unsatisfied: Vec<_> = row
+                .conditions()
+                .iter()
+                .filter(|(_, standing)| !standing.is_satisfied())
+                .map(|(condition, _)| condition.name())
+                .collect();
+            assert_eq!(
+                unsatisfied,
+                vec!["both-target-transactions-accept"],
+                "{} fails somewhere else too",
                 row.pair().name(),
             );
+            let MinimalityConditionStanding::AwaitsARunOfThisShape { lane, because } = standing
+            else {
+                panic!("{} fails without naming a lane", row.pair().name());
+            };
+            assert_eq!(lane, "private-committed", "{}", row.pair().name());
+            assert_ne!(because.len(), 0);
+        }
+
+        // No pair names a blocker any more. Every blocker this registry
+        // ever carried named a component that does not exist, and the
+        // last of them — `NoConfidentialPredecessorCanBeFunded` — is in
+        // the guide closeout's CLEARED set. What the two unsupported
+        // pairs lack is a run, and a run not yet attempted is not a
+        // missing component.
+        let mut blockers = BTreeSet::new();
+        for row in &rows {
             blockers.extend(row.blockers());
         }
-        assert_eq!(
-            blockers,
-            BTreeSet::from([LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded]),
+        assert_eq!(blockers, BTreeSet::new());
+    }
+
+    #[test]
+    fn each_cited_run_has_its_own_member_s_cardinality() {
+        // The shape match, RECOMPUTED rather than declared. A citation
+        // that named a run of a different shape would be the one error
+        // `recorded_acceptance` exists to prevent, and a table checked
+        // by eye is a table nobody checked.
+        //
+        // The private lane recorded how many receipts each of its runs
+        // consumed and how many outputs each created, in its own run of
+        // record and in the order it ran them. Those two arrays are the
+        // independent statement this test holds the table against.
+        use crate::live_multi_shapes::run_of_record as ms;
+
+        // Which recorded private run each pair's citation points at, by
+        // its index in the restart order the arrays are written in:
+        // split, many-to-many, several-distinct-owners, strict
+        // one-to-one, one-to-one-with-fee, merge.
+        let cited = [
+            (MinimalityPair::OneToOne, 3_usize),
+            (MinimalityPair::Merge, 5),
+            (MinimalityPair::ManyToMany, 2),
+        ];
+        let by_pair: BTreeMap<_, _> = minimality_fixtures()
+            .into_iter()
+            .map(|fixture| (fixture.pair(), fixture))
+            .collect();
+
+        for (pair, index) in cited {
+            let fixture = &by_pair[&pair];
+            assert_eq!(
+                ms::RECEIPT_LEAVES[index],
+                fixture.sources().len(),
+                "{} cites a run consuming a different number of receipts",
+                pair.name(),
+            );
+            assert_eq!(
+                ms::OUTPUT_COUNTS[index],
+                fixture.destinations().len(),
+                "{} cites a run creating a different number of outputs",
+                pair.name(),
+            );
+            assert!(
+                recorded_acceptance(pair, LiveTransferRepresentationPlan::PrivateCommitted)
+                    .is_observed(),
+            );
+        }
+
+        // And the refusal is EARNED rather than declared. The private
+        // split is the nearest recorded run to the split pair, and it
+        // creates three outputs where the member creates two — which is
+        // exactly why the pair says no run has its shape.
+        let split = &by_pair[&MinimalityPair::Split];
+        assert_eq!(split.destinations().len(), 2);
+        assert_eq!(ms::OUTPUT_COUNTS[0], 3);
+        assert_ne!(ms::OUTPUT_COUNTS[0], split.destinations().len());
+        assert!(
+            !recorded_acceptance(
+                MinimalityPair::Split,
+                LiveTransferRepresentationPlan::PrivateCommitted,
+            )
+            .is_observed(),
         );
     }
 
     #[test]
     fn the_scoreboard_names_the_deficit_condition_by_condition() {
-        // §16.2's ten, with how many of the five pairs satisfy each. The
-        // seven first-party conditions hold for every pair, which is the
-        // real content of the wave; the other three name what is missing.
+        // §16.2's ten, with how many of the five pairs satisfy each.
+        // Nine hold for every pair; the tenth holds for three and names
+        // the missing lane for the other two.
         let rows = build_minimality_pairs().expect("the pair registry builds");
         let board = condition_scoreboard(&rows);
         assert_eq!(board.len(), PairAcceptanceCondition::ALL.len());
 
-        let blocked = [
-            (
-                PairAcceptanceCondition::BothMaterializationsConstructible,
-                MinimalityConditionStanding::Blocked(
-                    LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
-                ),
-            ),
-            (
-                PairAcceptanceCondition::BothTargetTransactionsAccept,
-                MinimalityConditionStanding::Blocked(
-                    LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
-                ),
-            ),
-            (
-                PairAcceptanceCondition::BothProjectionsEqualTheExpectedTransfer,
-                MinimalityConditionStanding::AwaitsBothTargetVerdicts,
-            ),
-        ];
-        for (condition, standing) in blocked {
-            let (satisfied, standings) = &board[&condition];
-            assert_eq!(*satisfied, 0, "{} claims a pair", condition.name());
-            assert_eq!(*standings, BTreeSet::from([standing]));
-        }
-
-        let mut holds = 0_usize;
+        let mut universal = 0_usize;
         for (condition, (satisfied, standings)) in &board {
-            if *satisfied == 0 {
+            if *condition == PairAcceptanceCondition::BothTargetTransactionsAccept {
+                assert_eq!(*satisfied, 3, "the acceptance conjunct");
+                // Both unsatisfied pairs stand at the same member and
+                // both name the private lane, but their reasons differ,
+                // so the set holds two distinct standings rather than
+                // one.
+                assert_eq!(standings.len(), 2);
+                for standing in standings {
+                    assert!(matches!(
+                        standing,
+                        MinimalityConditionStanding::AwaitsARunOfThisShape {
+                            lane: "private-committed",
+                            ..
+                        },
+                    ));
+                }
                 continue;
             }
-            holds += 1;
+            universal += 1;
             assert_eq!(
                 *satisfied,
                 rows.len(),
@@ -2180,7 +2290,7 @@ mod tests {
             );
             assert_eq!(*standings, BTreeSet::new());
         }
-        assert_eq!(holds, 7, "the first-party half of §16.2");
+        assert_eq!(universal, 9, "the recomputed half of §16.2");
     }
 
     #[test]
