@@ -33,7 +33,7 @@
 //! precisely the comparison §11.5 forbids.
 
 pub use compiler::live_transfer_plan::{
-    LiveTransferRepresentationPlan, LiveTransferRepresentationProjection,
+    LiveTransferComposition, LiveTransferRepresentationPlan, LiveTransferRepresentationProjection,
     ValidatedLiveTransferOperationPlan,
 };
 pub use compiler::operation_plan::{

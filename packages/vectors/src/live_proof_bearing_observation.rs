@@ -1000,6 +1000,29 @@ fn project(fixture: &ResolvedFixture) -> Result<ConfidentialFixtureView, ProofBe
             ));
             continue;
         }
+        // The explicit destination is projected through its own
+        // constructor for the reason the fee is projected through the
+        // fee one, and the reason is the same fact said from the other
+        // side: it carries NO opening. Routing it through the
+        // opening-bearing constructor below would demand an opening the
+        // registry never derived and refuse a manifest that is correct,
+        // and giving it a placeholder would be worse -- the materializer
+        // would build a commitment for an output whose whole point is
+        // that it publishes its amount.
+        if output.role == FixtureOutputRole::ExplicitDestination {
+            // An explicit destination that arrived WITH an opening is a
+            // registry that changed its mind between deriving and
+            // resolving, and this projection does not decide which half
+            // to believe.
+            if opening.is_some() {
+                return Err(ProofBearingRefusal::OpeningsAreNotDerived);
+            }
+            outputs.push(ConfidentialFixtureOutputView::explicit_destination(
+                output.semantic_amount,
+                output.output_program.clone(),
+            ));
+            continue;
+        }
         let role = match output.role {
             FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
             // Both solving roles project to the view's one solving role,
@@ -1695,7 +1718,15 @@ impl ProofBearingObservationPlanner {
                         ValueField::Explicit(PREDECESSOR_AMOUNTS[0]),
                         first.observed_program().to_vec(),
                         first.sequence(),
-                        first.opening().clone(),
+                        // A registered input, so its opening is
+                        // present. Carried as a refusal rather than
+                        // unwrapped: this control mutates ONE fact and
+                        // an absent opening would mean it had mutated
+                        // two.
+                        first
+                            .opening()
+                            .ok_or(ProofBearingRefusal::OpeningsAreNotDerived)?
+                            .clone(),
                         first.explicit_amount(),
                         *first.zero_asset_blinder(),
                     )

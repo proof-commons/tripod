@@ -56,8 +56,8 @@ pub use live_constructor::{
     LiveConstructorRefusal, LiveProgramRole, LiveSpendingRoute, LiveTransferLeafRole,
     MutationCensusDefect, MutationResidual, OwnerKey, OwnerKeyEstablishment, OwnerKeyRejection,
     OwnerKeyResidual, PendingBinding, StaticLiveReceiptConstructor, constructor_mutation_cases,
-    derive_live_receipt_constructor, key_path_closure, mutation_census_defects,
-    static_transfer_leaf_set,
+    derive_live_receipt_constructor, derive_live_receipt_constructor_composing, key_path_closure,
+    mutation_census_defects, static_transfer_leaf_set,
 };
 pub use live_pattern::{
     CoordinatorGlobalCheck, FinalStackDefect, GlobalCheckPlacement, GlobalCheckStatus,
@@ -72,8 +72,8 @@ pub use live_pattern::{
     live_owner_profile_disposition, live_program_precondition, live_transfer_patterns,
     local_recognition_fragment, mutated_owner_authorization_fragment, mutation_gate,
     negative_disposition, owner_authorization_fragment, owner_authorization_precondition,
-    owner_key_mutation_outcome, owner_key_obligation, patterns_for, recognition_establishments,
-    validate_coordinator_placements,
+    owner_key_mutation_outcome, owner_key_obligation, patterns_for, patterns_for_composition,
+    recognition_establishments, validate_coordinator_placements,
 };
 pub use live_plan::{
     CompleteFamilyRanges, FamilyRangeDefect, LiveFamily, LiveFamilyRange, LiveInputFamily,
@@ -86,9 +86,10 @@ pub use live_private::{
     ComparableProjection, ComparisonSource, PrefixMask, PrivateAmountProhibition,
     PrivateConditionCarrier, PrivatePlanNonClaim, PrivateSoundnessCondition,
     PrivateSoundnessEstablishment, ProhibitionDisposition, RepresentationComparisonAxis,
-    ValueFieldUse, discriminating_mask, opens_no_value_payload, prefix_mask,
-    private_destination_form_fragment, private_soundness_establishments, prohibition_dispositions,
-    representation_comparison_axes, value_field_uses,
+    ValueFieldUse, absorber_position, crossing_destination_form_fragment, discriminating_mask,
+    opens_no_value_payload, prefix_mask, private_destination_form_fragment,
+    private_soundness_establishments, prohibition_dispositions, representation_comparison_axes,
+    value_field_uses,
 };
 pub use live_shape::{
     FeePresence, LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds,

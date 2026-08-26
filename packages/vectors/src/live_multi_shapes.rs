@@ -63,7 +63,7 @@
 use std::collections::BTreeMap;
 
 use linker::OwnerParameter;
-use linker::live_backend::LiveTransferRepresentationPlan;
+use linker::live_backend::{LiveTransferComposition, LiveTransferRepresentationPlan};
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
     NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationStepKind,
@@ -73,7 +73,7 @@ use transaction::bytes::{Outpoint, ValueField};
 use transaction::live_census::OwnerSigningCensus;
 use transaction::live_construct::{
     PrivateDestinationOpening, PrivateInputOpening, PrivateLiveFinalization, PrivateLiveOpenings,
-    finalize_private_live_transfer,
+    finalize_private_live_transfer_composing,
 };
 use transaction::live_materialize::{
     ConfidentialInputRegion, ConfidentialOutputRole, FixtureOpeningReference,
@@ -103,8 +103,9 @@ use crate::live_plan::{
 };
 use crate::live_private_restart::{
     ConsumedReceipt, LinkedDeployment, PrivateRestartRefusal, RestartConfidentialCoin,
-    assemble_control, confidential_funding_step, issue_step, link_and_register,
-    observe_funded_coins, private_program, verify_readback_signature,
+    assemble_control, confidential_funding_step, explicit_funding_step, issue_step,
+    link_and_register_composing, observe_explicit_coins, observe_funded_coins, owner_program,
+    verify_readback_signature,
 };
 use crate::live_proof_bearing_observation::{materialization_profiles, register_multi};
 
@@ -150,6 +151,14 @@ struct Destination {
 /// refused outright — the fee-only row of the shape register records the
 /// same clause.
 const FEE_AMOUNT: u64 = 250;
+
+/// What the entry crossing's single explicit receipt carries.
+///
+/// Small, because nothing about the shape depends on the figure and a
+/// large one would only make the explicit amount it publishes look
+/// meaningful. What matters is that it is nonzero and that the two
+/// destinations sum to it.
+const ENTRY_CROSSING_RECEIPT: u64 = 5_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrivateShape {
@@ -211,17 +220,45 @@ pub enum PrivateShape {
     /// nonzero for a reason that can be stated rather than hoped for --
     /// and the registry would refuse a zero one by name if it were wrong.
     PrivateMerge,
+    /// Blinded receipts spent into EXPLICIT destinations beside the
+    /// blinded absorber a nonzero consumed blinder sum requires.
+    ///
+    /// The exit direction of representation crossing, and the one shape
+    /// here whose consumed and created sides are read under different
+    /// plans. It spends the triple predecessor's non-canceling pair for
+    /// the merge's reason said the other way round: the merge needs a
+    /// nonzero forced blinder so its lone output hides something, and
+    /// this shape needs one so its absorber has something to absorb.
+    ExitCrossing,
+    /// EXPLICIT receipts spent into two blinded destinations.
+    ///
+    /// The entry direction of representation crossing, and the only
+    /// shape here whose predecessor is not a confidential fixture at
+    /// all: it spends an ordinary explicit coin sitting at a receipt
+    /// constructor's program, which is what makes it a covenant-governed
+    /// TRANSFER rather than the funding step this workspace has always
+    /// performed.
+    ///
+    /// TWO blinded destinations and never one. A single one would have
+    /// to declare the sole-balancing form, the solve would return the
+    /// consumed blinder sum unchanged, and that sum is ZERO because
+    /// explicit coins carry zero blinders -- a commitment that hides
+    /// nothing. Both this registry and Elements' own wallet refuse that,
+    /// for the same reason, and neither is a protocol rule.
+    EntryCrossing,
 }
 
 impl PrivateShape {
     /// All six, in the order the restart runs them.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::Split,
         Self::ManyToMany,
         Self::SeveralDistinctOwners,
         Self::StrictOneToOne,
         Self::OneToOneWithFee,
         Self::PrivateMerge,
+        Self::ExitCrossing,
+        Self::EntryCrossing,
     ];
 
     /// The ceremony's own name for the shape, used as the report
@@ -235,6 +272,8 @@ impl PrivateShape {
             Self::StrictOneToOne => "private-strict-one-to-one",
             Self::OneToOneWithFee => "private-one-to-one-with-fee",
             Self::PrivateMerge => "private-merge",
+            Self::ExitCrossing => "private-exit-crossing",
+            Self::EntryCrossing => "private-entry-crossing",
         }
     }
 
@@ -261,9 +300,20 @@ impl PrivateShape {
             Self::Split => Some("private-split"),
             Self::ManyToMany => Some("private-many-to-many-representative"),
             Self::SeveralDistinctOwners => Some("private-several-distinct-owners"),
-            Self::StrictOneToOne | Self::OneToOneWithFee => None,
-            // The merge DOES have a row, and it is the only shape this
-            // wave adds that has one.
+            // Three shapes name no row, and for ONE reason rather than
+            // three: §15.2's positive private table enumerates the
+            // guide's own classes, and it has no member for a strict
+            // one-to-one, for a transfer that pays its own fee, or for
+            // one whose two sides are read under different plans. Each
+            // moves a census entry instead, and naming a row here that
+            // the table does not carry would be inventing one to have
+            // something to move.
+            Self::StrictOneToOne
+            | Self::OneToOneWithFee
+            | Self::ExitCrossing
+            | Self::EntryCrossing => None,
+            // The merge DOES have a row, and it is the only shape of
+            // these that has one.
             Self::PrivateMerge => Some("private-merge"),
         }
     }
@@ -291,7 +341,14 @@ impl PrivateShape {
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
             | Self::OneToOneWithFee => PredecessorShape::DualParity,
-            Self::PrivateMerge => PredecessorShape::TripleNonCanceling,
+            // The entry crossing names one too, and never funds it. Its
+            // consumed coins are explicit and belong to no confidential
+            // fixture; the shape is carried so every other accessor that
+            // asks stays total, and `funds_explicitly` is what decides
+            // which funding step actually runs.
+            Self::PrivateMerge | Self::ExitCrossing | Self::EntryCrossing => {
+                PredecessorShape::TripleNonCanceling
+            }
         }
     }
 
@@ -314,8 +371,83 @@ impl PrivateShape {
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
-            | Self::PrivateMerge => LiveShapeVocabulary::Demonstration,
+            | Self::PrivateMerge
+            | Self::ExitCrossing
+            | Self::EntryCrossing => LiveShapeVocabulary::Demonstration,
             Self::OneToOneWithFee => LiveShapeVocabulary::FeeBearing,
+        }
+    }
+
+    /// How this shape pairs a representation plan to each of its sides.
+    ///
+    /// Six of the seven are wholly private and say so. The exit crossing
+    /// is the one that is not, and stating the composition per shape is
+    /// what lets one ceremony serve both -- the crossing is a private-lane
+    /// shape, because every composition but the wholly explicit one has a
+    /// blinded field somebody must build.
+    ///
+    /// A crossing composition also picks a different DEPLOYMENT, because
+    /// it seats its crossing constructor at the key its consumed side is
+    /// recognized under. That deployment's taptree is its own, exactly as
+    /// the fee-bearing vocabulary's is, so no digest any of the other six
+    /// recorded can move to buy it.
+    #[must_use]
+    pub const fn composition(self) -> LiveTransferComposition {
+        match self {
+            Self::Split
+            | Self::ManyToMany
+            | Self::SeveralDistinctOwners
+            | Self::StrictOneToOne
+            | Self::OneToOneWithFee
+            | Self::PrivateMerge => LiveTransferComposition::HomogeneousPrivate,
+            Self::ExitCrossing => LiveTransferComposition::ExitUnblinding,
+            Self::EntryCrossing => LiveTransferComposition::EntryBlinding,
+        }
+    }
+
+    /// Whether this shape's predecessor coins are funded EXPLICITLY.
+    ///
+    /// True for the entry crossing alone, and it is the one fact that
+    /// decides which funding step runs. A confidential predecessor is a
+    /// registered fixture whose openings the ceremony re-derives; an
+    /// explicit one is an ordinary coin at a receipt program, with no
+    /// opening to derive and a zero blinder to contribute.
+    #[must_use]
+    pub const fn funds_explicitly(self) -> bool {
+        matches!(self, Self::EntryCrossing)
+    }
+
+    /// How many explicit receipt coins the entry crossing is funded
+    /// with, and what each carries.
+    #[must_use]
+    pub const fn explicit_funding(self) -> Option<(u8, u64)> {
+        match self {
+            Self::EntryCrossing => Some((1, ENTRY_CROSSING_RECEIPT)),
+            _ => None,
+        }
+    }
+
+    /// How many of this shape's outputs are EXPLICIT receipt
+    /// destinations.
+    ///
+    /// Read by the same caller that reads [`Self::fee_output_count`] and
+    /// for the same reason: an explicit value carries no range proof, so
+    /// a lane asserting a proof on every output-witness entry would fail
+    /// on this shape. The two counts are separate because the outputs are
+    /// different things -- a fee has no program and these have real ones
+    /// -- and folding them into one number would let a ceremony that
+    /// built a fee where a destination belonged still pass.
+    #[must_use]
+    pub const fn explicit_destination_count(self) -> usize {
+        match self {
+            Self::Split
+            | Self::ManyToMany
+            | Self::SeveralDistinctOwners
+            | Self::StrictOneToOne
+            | Self::OneToOneWithFee
+            | Self::PrivateMerge
+            | Self::EntryCrossing => 0,
+            Self::ExitCrossing => 2,
         }
     }
 
@@ -335,7 +467,9 @@ impl PrivateShape {
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
-            | Self::PrivateMerge => 0,
+            | Self::PrivateMerge
+            | Self::ExitCrossing
+            | Self::EntryCrossing => 0,
             Self::OneToOneWithFee => 1,
         }
     }
@@ -344,7 +478,7 @@ impl PrivateShape {
     #[must_use]
     const fn consumed(self) -> &'static [ConsumedReceipt] {
         match self {
-            Self::Split | Self::StrictOneToOne | Self::OneToOneWithFee => {
+            Self::Split | Self::StrictOneToOne | Self::OneToOneWithFee | Self::EntryCrossing => {
                 &[ConsumedReceipt::Primary]
             }
             // The merge consumes the same two INDICES the two-input
@@ -352,9 +486,10 @@ impl PrivateShape {
             // carry the same two roles, and the difference that matters
             // is the third output standing beside them: it is why the
             // pair's blinders do not cancel.
-            Self::ManyToMany | Self::SeveralDistinctOwners | Self::PrivateMerge => {
-                &[ConsumedReceipt::Primary, ConsumedReceipt::Balancing]
-            }
+            Self::ManyToMany
+            | Self::SeveralDistinctOwners
+            | Self::PrivateMerge
+            | Self::ExitCrossing => &[ConsumedReceipt::Primary, ConsumedReceipt::Balancing],
         }
     }
 
@@ -379,6 +514,15 @@ impl PrivateShape {
             scalar,
             amount,
             role: FixtureOutputRole::Balancing,
+        };
+        // An EXPLICIT receipt destination: a real program and a public
+        // amount, carrying no opening at all. It brings no blinder to the
+        // solve and joins the sum at the all-zero one every explicit
+        // value is committed with.
+        let explicit = |scalar, amount| Destination {
+            scalar,
+            amount,
+            role: FixtureOutputRole::ExplicitDestination,
         };
         match self {
             // 700_000_000 in, split three ways back to the two owners.
@@ -434,6 +578,39 @@ impl PrivateShape {
                 amount: TRIPLE_PREDECESSOR_AMOUNTS[0] + TRIPLE_PREDECESSOR_AMOUNTS[1],
                 role: FixtureOutputRole::SoleBalancing,
             }],
+            // 900_000_000 in across the triple predecessor's non-canceling
+            // pair, out as two EXPLICIT destinations and one blinded
+            // absorber. The absorber is LAST, and that is not a layout
+            // choice: the covenant's positional leaf declares the last
+            // destination as the absorber and checks that position and no
+            // other, so a set that put it anywhere else would build a
+            // candidate the covenant refuses.
+            //
+            // The absorber's blinder is not stated here and is not
+            // chosen. With no output deriving one there is nothing to
+            // subtract, so the registry's solve returns the consumed
+            // blinder sum ITSELF -- which is why the pair must not cancel
+            // and why this shape spends the same predecessor the merge
+            // does.
+            // ONE explicit receipt in, TWO blinded destinations out.
+            // The floor of two is the registry's own arithmetic and not
+            // a preference: an explicit input contributes a zero
+            // blinder, so a single blinded output would be forced to a
+            // zero blinder and hide nothing.
+            Self::EntryCrossing => vec![
+                primary(SECOND_SCALAR, ENTRY_CROSSING_RECEIPT - 1_000),
+                balancing(FIRST_SCALAR, 1_000),
+            ],
+            Self::ExitCrossing => vec![
+                explicit(SECOND_SCALAR, 500_000_000),
+                explicit(FIRST_SCALAR, 300_000_000),
+                balancing(
+                    SECOND_SCALAR,
+                    TRIPLE_PREDECESSOR_AMOUNTS[0] + TRIPLE_PREDECESSOR_AMOUNTS[1]
+                        - 500_000_000
+                        - 300_000_000,
+                ),
+            ],
         }
     }
 }
@@ -545,6 +722,13 @@ pub struct MultiShapeRecord {
     observed_detail: Option<String>,
     accepted_txid: Option<String>,
     reverification: Option<MultiShapeReverification>,
+    /// The weight the TARGET reported for the submitted candidate.
+    ///
+    /// Read off the node's own decode rather than computed here, which
+    /// is the only figure §20.5's comparison can use: a weight this
+    /// workspace calculated would be comparing its arithmetic with
+    /// itself. `None` where no submission reached the node.
+    observed_weight: Option<u64>,
     refusal: Option<PrivateRestartRefusal>,
     forced_blinder: Option<ForcedBlinderCensus>,
 }
@@ -627,6 +811,12 @@ impl MultiShapeRecord {
     #[must_use]
     pub fn accepted_txid(&self) -> Option<&str> {
         self.accepted_txid.as_deref()
+    }
+
+    /// The weight the target reported, where a candidate reached it.
+    #[must_use]
+    pub const fn observed_weight(&self) -> Option<u64> {
+        self.observed_weight
     }
 
     /// The second origin's answer, where there was an acceptance to check.
@@ -750,11 +940,12 @@ impl MultiShapePlanner {
         // receipt programs. Its own one-to-one successor is registered and
         // unused; this ceremony registers its own multi-output successor
         // against the same linked deployment.
-        let linked = link_and_register(
+        let linked = link_and_register_composing(
             self.shape.predecessor(),
             ConsumedReceipt::Primary,
             printed,
             self.shape.vocabulary(),
+            self.shape.composition(),
             RESERVE_ASSET,
         )?;
         self.record.issued_asset = Some(printed.to_owned());
@@ -850,10 +1041,22 @@ impl MultiShapePlanner {
                     // tolerating it. Deriving a receipt constructor here
                     // and handing it over would be refused there, which is
                     // the clause working.
+                    // Under the CREATED side's plan. A destination is a
+                    // coin this transfer mints, and the constructor it
+                    // must be paid to is the one that will RECOGNIZE it
+                    // when somebody spends it next -- which for a
+                    // crossing is not the side this transfer's own
+                    // receipts were read under. Resolving these under the
+                    // consumed plan would register a fixture whose
+                    // outputs the construction does not pay to.
                     output_program: if destination.role == FixtureOutputRole::Fee {
                         Vec::new()
                     } else {
-                        private_program(&linked.abi, &destination.scalar)?
+                        owner_program(
+                            &linked.abi,
+                            &destination.scalar,
+                            self.shape.composition().created(),
+                        )?
                     },
                 })
             })
@@ -906,6 +1109,14 @@ impl MultiShapePlanner {
         &self,
         linked: &LinkedDeployment,
     ) -> Result<[u8; 32], PrivateRestartRefusal> {
+        // An explicitly funded predecessor contributes NOTHING to the
+        // sum, and states that rather than deriving it: an explicit
+        // value is committed with the all-zero blinder, so the sum over
+        // any number of them is zero. It is returned here rather than
+        // summed from openings the coins do not have.
+        if self.shape.funds_explicitly() {
+            return Ok([0_u8; 32]);
+        }
         let mut blinders: Vec<[u8; 32]> = Vec::with_capacity(self.shape.consumed().len());
         for consumed in self.shape.consumed() {
             let output = linked
@@ -933,6 +1144,18 @@ impl MultiShapePlanner {
             .issued_asset
             .clone()
             .ok_or(PrivateRestartRefusal::IssuanceNamedNoAsset)?;
+        // Two funding steps, chosen by the shape rather than by a
+        // parameter. An entry crossing's consumed coins belong to no
+        // confidential fixture, so there is no predecessor manifest to
+        // bind the funding to and nothing for the adapter to derive.
+        if let Some((outputs, amount)) = self.shape.explicit_funding() {
+            let program = owner_program(
+                &linked.abi,
+                &FIRST_SCALAR,
+                self.shape.composition().consumed(),
+            )?;
+            return Ok(explicit_funding_step(program, printed, outputs, amount));
+        }
         Ok(confidential_funding_step(linked, printed))
     }
 
@@ -945,6 +1168,16 @@ impl MultiShapePlanner {
             .linked
             .as_ref()
             .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+        if let Some((outputs, amount)) = self.shape.explicit_funding() {
+            let program = owner_program(
+                &linked.abi,
+                &FIRST_SCALAR,
+                self.shape.composition().consumed(),
+            )?;
+            self.record.coins =
+                observe_explicit_coins(response, linked.asset, &program, outputs as usize, amount)?;
+            return Ok(());
+        }
         self.record.coins = observe_funded_coins(linked, response)?;
         Ok(())
     }
@@ -961,6 +1194,58 @@ impl MultiShapePlanner {
         self.record.submitted_bytes = bytes.len();
         self.census = Some(built.census);
         Ok(bytes)
+    }
+
+    /// One opening per destination, each carrying the role the SHAPE
+    /// stated.
+    ///
+    /// Never the role a position implies. This is the second face of the
+    /// same retirement: the fixture registry stopped inferring the
+    /// balance from an output's index, and so does the layer that hands
+    /// the materializer its openings.
+    fn destination_openings(
+        &self,
+        destinations: &[Destination],
+        digest: [u8; 32],
+    ) -> Vec<PrivateDestinationOpening> {
+        destinations
+            .iter()
+            .enumerate()
+            .map(|(index, destination)| PrivateDestinationOpening {
+                fixture: FixtureOpeningReference::new(self.shape.successor_handle(), digest, index),
+                role: match destination.role {
+                    FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
+                    // The fee role is stated rather than swept into the
+                    // catch-all. It used to fall through to `Balancing`,
+                    // which would have asked the materializer to solve a
+                    // blinder for an output that must not carry one — a
+                    // blinded fee, and not a fee.
+                    FixtureOutputRole::Fee => ConfidentialOutputRole::Fee,
+                    // The sponsor change is stated for exactly the reason
+                    // the fee is, and the catch-all below is why it has
+                    // to be: falling through to `Balancing` would ask the
+                    // materializer to SOLVE a blinder for the sponsor's
+                    // remainder, and a solved blinder absorbs the input
+                    // sum. The remainder would stop being the sponsor's
+                    // and the protocol receipts would stop balancing —
+                    // one substitution producing two wrong outputs.
+                    FixtureOutputRole::SponsorChange { .. } => {
+                        ConfidentialOutputRole::SponsorChange
+                    }
+                    // Stated for the third time for the same reason:
+                    // swept into the catch-all it would ask for a SOLVED
+                    // blinder on an output that carries none, declaring
+                    // two solving outputs where the registry admits one.
+                    FixtureOutputRole::ExplicitDestination => {
+                        ConfidentialOutputRole::ExplicitDestination
+                    }
+                    // Both solving roles are the view's one solving role:
+                    // the sole form is a solve over no others, which is
+                    // the same instruction to the materializer.
+                    _ => ConfidentialOutputRole::Balancing,
+                },
+            })
+            .collect()
     }
 
     /// Finalize this shape's successor through the private lane's own entry
@@ -992,12 +1277,24 @@ impl MultiShapePlanner {
             ));
             input_openings.push(PrivateInputOpening {
                 region: ConfidentialInputRegion::Receipt,
-                opening: FixtureOpeningReference::new(
-                    linked.predecessor.handle().as_str().to_owned(),
-                    linked.predecessor_digest,
-                    receipt.index(),
-                ),
-                explicit_amount: linked.predecessor.amounts()[receipt.index()],
+                // ABSENT for an explicit receipt, which has no opening
+                // to name: its amount is public and its blinder is the
+                // all-zero one. A reference here would name a fixture
+                // output that does not exist.
+                opening: (!self.shape.funds_explicitly()).then(|| {
+                    FixtureOpeningReference::new(
+                        linked.predecessor.handle().as_str().to_owned(),
+                        linked.predecessor_digest,
+                        receipt.index(),
+                    )
+                }),
+                // The amount the coin really carries. For an explicit
+                // receipt that is what was funded, not what a
+                // predecessor manifest states -- there is no manifest.
+                explicit_amount: match self.shape.explicit_funding() {
+                    Some((_, amount)) => amount,
+                    None => linked.predecessor.amounts()[receipt.index()],
+                },
                 zero_asset_blinder: [0_u8; SCALAR_BYTES],
             });
         }
@@ -1013,59 +1310,29 @@ impl MultiShapePlanner {
             .iter()
             .map(Self::receipt_destination)
             .collect::<Result<_, _>>()?;
-        let request = LiveTransferRequest::new(
+        let request = LiveTransferRequest::new_composing(
             receipts,
             live_destinations,
-            LiveTransferRepresentationPlan::PrivateCommitted,
+            self.shape.composition(),
             RequestedForm::Sponsorless,
             SponsorChangeRequest::NotRequested,
-            // Present because the private request vocabulary requires it;
-            // the materializer takes its blinders from fixtures, so it is
-            // not a source of any opening.
-            Some(PublicTestRandomness::from_published_bytes([0x7e; 32])),
+            // Present because the CREATED side is confidential and
+            // blinding is what consumes randomness; the materializer
+            // takes its blinders from fixtures, so it is not a source of
+            // any opening. An exit crossing creates explicit values and
+            // offers none, which is the same rule read the other way.
+            //
+            // Withheld where the created side is explicit, because the
+            // request refuses randomness it has no blinding to spend it
+            // on -- and that refusal is the reason the rule had to move
+            // from the consumed side to the created one.
+            (self.shape.composition().created()
+                == LiveTransferRepresentationPlan::PrivateCommitted)
+                .then(|| PublicTestRandomness::from_published_bytes([0x7e; 32])),
         )
         .map_err(|_| PrivateRestartRefusal::ControlNotRequestable)?;
 
-        // The openings carry the roles the shape stated, not the roles a
-        // position implies. This is the second face of the same
-        // retirement: the fixture registry stopped inferring the balance
-        // from an output's index, and so does the layer that hands the
-        // materializer its openings.
-        let destination_openings: Vec<PrivateDestinationOpening> = destinations
-            .iter()
-            .enumerate()
-            .map(|(index, destination)| PrivateDestinationOpening {
-                fixture: FixtureOpeningReference::new(
-                    self.shape.successor_handle(),
-                    successor.digest,
-                    index,
-                ),
-                role: match destination.role {
-                    FixtureOutputRole::Primary => ConfidentialOutputRole::Primary,
-                    // The fee role is stated rather than swept into the
-                    // catch-all. It used to fall through to `Balancing`,
-                    // which would have asked the materializer to solve a
-                    // blinder for an output that must not carry one — a
-                    // blinded fee, and not a fee.
-                    FixtureOutputRole::Fee => ConfidentialOutputRole::Fee,
-                    // The sponsor change is stated for exactly the reason
-                    // the fee is, and the catch-all below is why it has
-                    // to be: falling through to `Balancing` would ask the
-                    // materializer to SOLVE a blinder for the sponsor's
-                    // remainder, and a solved blinder absorbs the input
-                    // sum. The remainder would stop being the sponsor's
-                    // and the protocol receipts would stop balancing —
-                    // one substitution producing two wrong outputs.
-                    FixtureOutputRole::SponsorChange { .. } => {
-                        ConfidentialOutputRole::SponsorChange
-                    }
-                    // Both solving roles are the view's one solving role:
-                    // the sole form is a solve over no others, which is
-                    // the same instruction to the materializer.
-                    _ => ConfidentialOutputRole::Balancing,
-                },
-            })
-            .collect();
+        let destination_openings = self.destination_openings(&destinations, successor.digest);
 
         let openings = PrivateLiveOpenings::new(
             input_openings,
@@ -1082,10 +1349,11 @@ impl MultiShapePlanner {
             (self.shape.successor_handle(), successor.view.clone()),
         ]));
 
-        finalize_private_live_transfer(
+        finalize_private_live_transfer_composing(
             &reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?,
             &linked.abi,
             &request,
+            self.shape.composition(),
             &view,
             None,
             &openings,
@@ -1141,6 +1409,7 @@ impl MultiShapePlanner {
                 verify_readback_signature(&readback.raw_transaction, &message, owner)
             });
 
+        self.record.observed_weight = response.resources.transaction_weight;
         self.record.reverification = Some(MultiShapeReverification {
             accepted_txid: readback.transaction_id.clone(),
             readback_matches_submission,
@@ -1265,6 +1534,17 @@ pub fn render_multi_shape(record: &MultiShapeRecord) -> String {
         record.output_witness_proof_bytes(),
     );
     let _ = writeln!(out, "submitted_bytes {}", record.submitted_bytes());
+    // The TARGET's figure, not one computed here. A weight this
+    // workspace calculated would be comparing its arithmetic with
+    // itself, which is not a comparison.
+    match record.observed_weight() {
+        Some(weight) => {
+            let _ = writeln!(out, "target_reported_weight {weight}");
+        }
+        None => {
+            let _ = writeln!(out, "target_reported_weight none");
+        }
+    }
     let _ = writeln!(
         out,
         "observed_layer {}",
@@ -1423,6 +1703,8 @@ mod byte_identity_tests {
         // And the two new ones are the ones their runs recorded.
         assert_eq!(digests[4], run::FEE_BEARING_SUCCESSOR_DIGEST);
         assert_eq!(digests[5], run::MERGE_SUCCESSOR_DIGEST);
+        assert_eq!(digests[6], run::EXIT_CROSSING_SUCCESSOR_DIGEST);
+        assert_eq!(digests[7], run::ENTRY_CROSSING_SUCCESSOR_DIGEST);
     }
 
     /// The fee-bearing digest now carries an acceptance, and the two are
@@ -2113,4 +2395,106 @@ pub mod run_of_record {
 
     /// The fee-bearing run's wall time, in seconds.
     pub const FEE_BEARING_WALL_SECONDS: f64 = 12.4;
+
+    // --- The exit crossing: representation crossed at a real node -------
+
+    /// The exit crossing's successor fixture digest.
+    pub const EXIT_CROSSING_SUCCESSOR_DIGEST: &str =
+        "078d250e44da69d659c5351e5e77ccbf6497526e83bb709901480c00232efd07";
+
+    /// The identity the target computed for the accepted exit crossing.
+    ///
+    /// TWO blinded receipts consumed, TWO EXPLICIT destinations created,
+    /// and ONE blinded absorber beside them. It is the first transaction
+    /// this workspace has built whose consumed and created sides are read
+    /// under DIFFERENT representation plans, and the first evidence that
+    /// the target admits one -- which it always did, upstream having
+    /// tested the shape directly; what did not exist was a vocabulary in
+    /// which the candidate could be stated.
+    pub const EXIT_CROSSING_ACCEPTED_TXID: &str =
+        "b382a7c3a6057e49d9b2c11cead5d1864c53e238176480c9709b21ebd1b7d656";
+
+    /// How many bytes the exit crossing handed to the node.
+    pub const EXIT_CROSSING_SUBMITTED_BYTES: usize = 5_412;
+
+    /// The output-witness proof bytes the exit crossing carried.
+    ///
+    /// THE CENSUS THAT MAKES THE CROSSING VISIBLE IN THE BYTES, and it
+    /// is read off the candidate rather than predicted: two entries
+    /// EMPTY and one carrying a range proof. An explicit value admits no
+    /// range proof and an explicit asset no surjection proof, so the two
+    /// explicit destinations carry neither, and the single blinded
+    /// absorber carries the one proof the transaction has.
+    ///
+    /// A wholly private shape of this arity would carry three proofs and
+    /// a wholly explicit one none, so this vector is a shape no
+    /// homogeneous transfer can produce.
+    pub const EXIT_CROSSING_PROOF_BYTES: [usize; 3] = [0, 0, 4_174];
+
+    /// Whether the exit crossing's consumed pair cancels.
+    ///
+    /// FALSE, and it is load-bearing rather than incidental. A canceling
+    /// pair presents a zero blinder sum, the absorber's solved blinder
+    /// would be zero, and an absorber that hides nothing is not an
+    /// absorber -- the registry refuses exactly that as a degenerate
+    /// balancing scalar. This shape spends the merge's own non-canceling
+    /// predecessor for that reason.
+    pub const EXIT_CROSSING_CONSUMED_PAIR_CANCELS: bool = false;
+
+    /// The weight the target reported for the exit crossing.
+    pub const EXIT_CROSSING_TARGET_WEIGHT: u64 = 6_561;
+
+    /// The exit crossing's wall time, in seconds.
+    pub const EXIT_CROSSING_WALL_SECONDS: f64 = 11.5;
+
+    // --- The entry crossing: the other direction, at a real node --------
+
+    /// The entry crossing's successor fixture digest.
+    pub const ENTRY_CROSSING_SUCCESSOR_DIGEST: &str =
+        "8ad54b36e939dbdc59939a3fdf5a95210b520b5101697ecf8d53befa5048e7c1";
+
+    /// The identity the target computed for the accepted entry crossing.
+    ///
+    /// ONE EXPLICIT receipt consumed and TWO blinded destinations
+    /// created. This workspace has performed the SHAPE every ceremony,
+    /// as the funding step that mints a confidential predecessor; what
+    /// this identity records is the first time the coin it spent sat at
+    /// a receipt constructor's program, so the transfer was governed by
+    /// the covenant rather than by the adapter.
+    pub const ENTRY_CROSSING_ACCEPTED_TXID: &str =
+        "7a1771fd3d04cc7ee2c48a0d7daa9287122b6ca07706c943f48a23aa8192793f";
+
+    /// How many bytes the entry crossing handed to the node.
+    pub const ENTRY_CROSSING_SUBMITTED_BYTES: usize = 9_133;
+
+    /// The output-witness proof bytes the entry crossing carried.
+    ///
+    /// TWO proofs for two blinded destinations, and the count is the
+    /// claim: a single blinded output would have been forced to a ZERO
+    /// blinder, because an explicit input contributes one, and its
+    /// commitment would have hidden nothing. Two is the floor, and it is
+    /// the registry's own arithmetic rather than a preference.
+    pub const ENTRY_CROSSING_PROOF_BYTES: [usize; 2] = [4_174, 4_174];
+
+    /// Whether the entry crossing's consumed coin carried a blinder.
+    ///
+    /// FALSE. Its value was explicit, so the blinder it contributed to
+    /// the transaction-wide sum was the all-zero one every explicit
+    /// value is committed with -- which is why the balancing output's
+    /// blinder is the negation of a searched non-zero primary rather
+    /// than a consumed sum.
+    pub const ENTRY_CROSSING_CONSUMED_A_BLINDER: bool = false;
+
+    /// The weight the target reported for the entry crossing.
+    ///
+    /// Larger than the exit crossing's, and the reason is the crossing
+    /// itself rather than the arity: two blinded outputs carry two range
+    /// proofs where the exit crossing's one blinded absorber carries
+    /// one, and a range proof is most of what a confidential output
+    /// weighs. The exit direction is CHEAPER on the wire, which is the
+    /// same fact its shorter form obligation states in the covenant.
+    pub const ENTRY_CROSSING_TARGET_WEIGHT: u64 = 10_093;
+
+    /// The entry crossing's wall time, in seconds.
+    pub const ENTRY_CROSSING_WALL_SECONDS: f64 = 9.9;
 }

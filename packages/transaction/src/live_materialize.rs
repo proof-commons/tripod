@@ -584,6 +584,21 @@ pub enum ConfidentialOutputRole {
     /// carries, so a reserve-asset output absorbs into a protocol-asset
     /// election with no arithmetic added.
     SponsorChange,
+    /// A live receipt destination whose value is EXPLICIT.
+    ///
+    /// The output an EXIT crossing pays a receipt to when the transfer
+    /// unblinds. It carries a real program and a public amount, and it
+    /// is emphatically NOT a fee — a fee is defined by carrying no
+    /// program at all, and treating this as one would build the target's
+    /// paid-away value out of a spendable receipt.
+    ///
+    /// It brings no chosen blinder and it solves nothing. An exit
+    /// crossing's blinder sum is absorbed by an ordinary
+    /// [`Self::Balancing`] output at the declared absorber position, so
+    /// this role needs no second election and changes no arithmetic:
+    /// like a fee, it joins the sum at the all-zero blinder every
+    /// explicit value is committed with.
+    ExplicitDestination,
 }
 
 /// Which region one CONSUMED input belongs to.
@@ -633,7 +648,7 @@ impl ConfidentialOutputRole {
     #[must_use]
     pub const fn is_a_protocol_member(self) -> bool {
         match self {
-            Self::Primary | Self::Balancing | Self::Fee => true,
+            Self::Primary | Self::Balancing | Self::Fee | Self::ExplicitDestination => true,
             Self::SponsorChange => false,
         }
     }
@@ -643,7 +658,7 @@ impl ConfidentialOutputRole {
     pub const fn brings_a_chosen_blinder(self) -> bool {
         match self {
             Self::Primary | Self::SponsorChange => true,
-            Self::Balancing | Self::Fee => false,
+            Self::Balancing | Self::Fee | Self::ExplicitDestination => false,
         }
     }
 }
@@ -763,6 +778,28 @@ impl ConfidentialFixtureOutputView {
             role: ConfidentialOutputRole::Fee,
             semantic_amount,
             output_program: Vec::new(),
+            value_blinder: None,
+            nonce_input: None,
+            rangeproof_seed: None,
+            reserve_asset: None,
+        }
+    }
+
+    /// One projected EXPLICIT receipt destination.
+    ///
+    /// The fee's mirror: it takes an amount AND a program, because a
+    /// program is exactly what separates the two roles that carry no
+    /// opening. The three opening scalars are absent rather than zero
+    /// for the fee's reason — nothing downstream may mistake a
+    /// placeholder for an opening — and the asset is the fixture's, an
+    /// explicit destination being an ordinary receipt output that
+    /// happens to publish its amount.
+    #[must_use]
+    pub const fn explicit_destination(semantic_amount: u64, output_program: Vec<u8>) -> Self {
+        Self {
+            role: ConfidentialOutputRole::ExplicitDestination,
+            semantic_amount,
+            output_program,
             value_blinder: None,
             nonce_input: None,
             rangeproof_seed: None,
@@ -976,7 +1013,7 @@ pub struct ConfidentialInputIntent {
     observed_value: ValueField,
     observed_program: Vec<u8>,
     sequence: u32,
-    opening: FixtureOpeningReference,
+    opening: Option<FixtureOpeningReference>,
     explicit_amount: u64,
     zero_asset_blinder: [u8; SCALAR_BYTES],
     region: ConfidentialInputRegion,
@@ -1002,9 +1039,43 @@ impl ConfidentialInputIntent {
             observed_value,
             observed_program,
             sequence,
-            opening,
+            opening: Some(opening),
             explicit_amount,
             zero_asset_blinder,
+            region: ConfidentialInputRegion::Receipt,
+        }
+    }
+
+    /// One consumed receipt whose VALUE is explicit.
+    ///
+    /// The consumed side's mirror of an explicit destination, and it
+    /// takes no opening for the same reason that one carries none: there
+    /// is nothing to open. Its amount is public, and the blinder it
+    /// brings to the transaction-wide sum is the all-zero one every
+    /// explicit value is committed with.
+    ///
+    /// It is a RECEIPT and not a funding coin. What makes an entry
+    /// crossing a crossing rather than a funding step is that the coin
+    /// it spends is governed by the receipt covenant, and this
+    /// constructor is where a caller says it meant that.
+    #[must_use]
+    pub const fn explicit_receipt(
+        outpoint: Outpoint,
+        observed_asset: AssetField,
+        observed_value: ValueField,
+        observed_program: Vec<u8>,
+        sequence: u32,
+        explicit_amount: u64,
+    ) -> Self {
+        Self {
+            outpoint,
+            observed_asset,
+            observed_value,
+            observed_program,
+            sequence,
+            opening: None,
+            explicit_amount,
+            zero_asset_blinder: [0_u8; SCALAR_BYTES],
             region: ConfidentialInputRegion::Receipt,
         }
     }
@@ -1035,7 +1106,7 @@ impl ConfidentialInputIntent {
             observed_value,
             observed_program,
             sequence,
-            opening,
+            opening: Some(opening),
             explicit_amount,
             zero_asset_blinder,
             region: ConfidentialInputRegion::SponsorReserve,
@@ -1078,10 +1149,16 @@ impl ConfidentialInputIntent {
         self.sequence
     }
 
-    /// Where the opening lives.
+    /// Where the opening lives, for an input that has one.
+    ///
+    /// `None` for a consumed coin whose VALUE is explicit. Such a coin
+    /// has no opening to name -- its amount is public and the blinder it
+    /// contributes to the transaction-wide sum is the all-zero one every
+    /// explicit value is committed with -- so a reference would be
+    /// naming a fixture output that does not exist.
     #[must_use]
-    pub const fn opening(&self) -> &FixtureOpeningReference {
-        &self.opening
+    pub const fn opening(&self) -> Option<&FixtureOpeningReference> {
+        self.opening.as_ref()
     }
 
     /// The semantic amount the opening carries.
@@ -1540,6 +1617,29 @@ pub enum MaterializationRefusal {
         /// Which output.
         output: usize,
     },
+    /// An explicit receipt destination carries no program.
+    ///
+    /// A destination with no program is not a destination. The refusal
+    /// is named here rather than left to the target, whose only verdict
+    /// on such an output would be to treat it as a FEE — which is the
+    /// substitution this role exists to make impossible.
+    OutputProgramEmpty {
+        /// Which output.
+        output: usize,
+    },
+    /// An explicit receipt destination satisfies the target's fee
+    /// predicate.
+    ///
+    /// The mirror of [`Self::FeeOutputNotRecognizable`], and the last
+    /// clause of the explicit-destination stage for the same reason: the
+    /// output is built and then asked whether it is a fee, and this one
+    /// must not be. A destination the target would call a fee is a
+    /// receipt nobody can spend and value the chain treats as paid away,
+    /// which is a wrong transaction rather than a refused one.
+    ExplicitDestinationIsAFee {
+        /// Which output.
+        output: usize,
+    },
 }
 
 // --- The result ---------------------------------------------------------
@@ -1902,6 +2002,15 @@ pub fn materialize_confidential_candidate(
             // and running any of those over it is what a blinded fee
             // output would have been.
             materialize_fee_output(index, projected, carried)?
+        } else if projected.role() == ConfidentialOutputRole::ExplicitDestination {
+            // The same three stages skipped, for the same reason, and
+            // through a DIFFERENT builder. The two roles agree that
+            // there is no commitment to build and disagree about
+            // everything else: this one keeps its program, and the fee
+            // builder's own last act is to assert the target recognizes
+            // its output as a fee -- which this output must fail, and
+            // must not be asked.
+            materialize_explicit_destination(index, projected, carried)?
         } else {
             let blinder = derived[index].ok_or(MaterializationRefusal::InvalidScalar {
                 role: DerivationRole::ValueBlinder,
@@ -2207,6 +2316,60 @@ fn materialize_fee_output(
     Ok((output, OutputWitness::empty()))
 }
 
+/// One EXPLICIT receipt destination of an exit crossing.
+///
+/// The sibling of [`materialize_fee_output`], and deliberately a
+/// separate function rather than a flag on it. The two share exactly one
+/// fact — that no commitment is built — and the fee builder's own last
+/// act is to assert the target RECOGNIZES its output as a fee. This
+/// output must fail that assertion, because it carries a program, and a
+/// builder that could be asked either question would eventually be asked
+/// the wrong one.
+///
+/// # Errors
+///
+/// [`MaterializationRefusal::OutputProgramEmpty`] for a destination
+/// carrying no program, which is not a destination;
+/// [`MaterializationRefusal::FeeOutputCarriesAnOpening`] for an explicit
+/// output carrying opening material it has no use for; and
+/// [`MaterializationRefusal::FeeOutputValueZero`] for a zero amount,
+/// which the target refuses at a spendable program outright.
+fn materialize_explicit_destination(
+    index: usize,
+    projected: &ConfidentialFixtureOutputView,
+    asset: AssetId,
+) -> Result<(TargetOutput, OutputWitness), MaterializationRefusal> {
+    if projected.output_program().is_empty() {
+        return Err(MaterializationRefusal::OutputProgramEmpty { output: index });
+    }
+    if projected.value_blinder().is_some()
+        || projected.nonce_input().is_some()
+        || projected.rangeproof_seed().is_some()
+    {
+        return Err(MaterializationRefusal::FeeOutputCarriesAnOpening { output: index });
+    }
+    if projected.semantic_amount() == 0 {
+        return Err(MaterializationRefusal::FeeOutputValueZero { output: index });
+    }
+
+    let output = TargetOutput::new(
+        AssetField::Explicit(asset),
+        ValueField::Explicit(projected.semantic_amount()),
+        NonceField::Null,
+        projected.output_program().to_vec(),
+    );
+    // Built, then asked, and asked for the OPPOSITE answer the fee
+    // builder asks for. A destination the target would call a fee is a
+    // receipt nobody can spend and value the chain treats as paid away.
+    if output.is_fee() {
+        return Err(MaterializationRefusal::ExplicitDestinationIsAFee { output: index });
+    }
+    // The proofs an explicit value takes are BOTH empty, and that is
+    // consensus rather than an economy: an explicit value admits no
+    // range proof and an explicit asset admits no surjection proof.
+    Ok((output, OutputWitness::empty()))
+}
+
 /// Everything that happens before any cryptographic work.
 ///
 /// None of it reports a private subtotal. A refusal here names what was
@@ -2354,7 +2517,24 @@ fn verify_predecessor_openings(
     let mut bound: BTreeSet<(String, usize)> = BTreeSet::new();
     let mut entries = Vec::with_capacity(intent.inputs().len());
     for input in intent.inputs() {
-        let reference = input.opening();
+        // AN EXPLICIT CONSUMED RECEIPT HAS NOTHING TO OPEN, and is
+        // checked against what it IS rather than against a fixture it
+        // does not name. Three clauses replace the commitment
+        // recomputation below, and each is the explicit-value analogue
+        // of one it replaces: the value field must really be explicit,
+        // it must carry the amount the caller declared, and the asset
+        // must be explicit too. Its blinder contribution is the all-zero
+        // one and is not carried here -- the transaction-wide sum comes
+        // from the successor manifest, whose `input_blinder_sum` states
+        // it for the whole input set.
+        //
+        // No `VerifiedFixtureReference` is pushed, because there is no
+        // reference to verify. That is the honest shape of the result: a
+        // census of verified references over the inputs that have them.
+        let Some(reference) = input.opening() else {
+            check_explicit_receipt(input, entries.len())?;
+            continue;
+        };
         let fixture = fixtures.fixture(reference.handle()).ok_or_else(|| {
             MaterializationRefusal::UnknownFixtureHandle {
                 handle: reference.handle().to_owned(),
@@ -2440,6 +2620,53 @@ fn verify_predecessor_openings(
     Ok(entries)
 }
 
+/// One consumed receipt whose VALUE is explicit, checked against what it
+/// IS rather than against a fixture it does not name.
+///
+/// Three clauses, each the explicit-value analogue of one of the
+/// commitment recomputation's: the value field must really be explicit,
+/// it must carry the amount the caller declared, and the asset must be
+/// explicit too. The blinder such a coin contributes is the all-zero
+/// one and is not carried here -- the transaction-wide sum comes from
+/// the successor manifest, which states it for the whole input set.
+///
+/// # Errors
+///
+/// [`MaterializationRefusal::PredecessorOpeningMismatch`] for a
+/// committed value with no opening, which is a coin nobody can account
+/// for, and for a declared amount the value field does not carry;
+/// [`MaterializationRefusal::ConfidentialProtocolAsset`] for a committed
+/// asset; and
+/// [`MaterializationRefusal::NonzeroProtocolAssetBlinder`] for an asset
+/// blinder the protocol region fixes at zero.
+fn check_explicit_receipt(
+    input: &ConfidentialInputIntent,
+    position: usize,
+) -> Result<(), MaterializationRefusal> {
+    let member = FamilyMember::Input(position);
+    match input.observed_value() {
+        ValueField::Explicit(observed) => {
+            if observed != input.explicit_amount() {
+                return Err(MaterializationRefusal::PredecessorOpeningMismatch {
+                    outpoint: input.outpoint(),
+                });
+            }
+        }
+        ValueField::Commitment(_) => {
+            return Err(MaterializationRefusal::PredecessorOpeningMismatch {
+                outpoint: input.outpoint(),
+            });
+        }
+    }
+    if matches!(input.observed_asset(), AssetField::Commitment(_)) {
+        return Err(MaterializationRefusal::ConfidentialProtocolAsset { member });
+    }
+    if *input.zero_asset_blinder() != [0_u8; SCALAR_BYTES] {
+        return Err(MaterializationRefusal::NonzeroProtocolAssetBlinder { member });
+    }
+    Ok(())
+}
+
 /// The one fixture every destination binds to.
 fn fixture_of<'view>(
     intent: &ConfidentialConstructionIntent,
@@ -2520,7 +2747,19 @@ fn signer_inputs(
     census: &OpeningBindingCensus,
     openings: &[[u8; SCALAR_BYTES]],
 ) -> Result<Vec<ProofFinalizedSignerInput>, MaterializationRefusal> {
-    if census.entries().len() != intent.inputs().len() {
+    // Counted against the inputs that HAVE an opening rather than
+    // against every input. The census is a census of verified
+    // REFERENCES, and an explicit consumed receipt names none -- so
+    // comparing it with the whole input set would demand a reference for
+    // a coin that has nothing to reference. The guard still bites: every
+    // input carrying an opening must have had it verified, and one whose
+    // verification was skipped is still a mismatch.
+    let opened = intent
+        .inputs()
+        .iter()
+        .filter(|input| input.opening().is_some())
+        .count();
+    if census.entries().len() != opened {
         return Err(MaterializationRefusal::OpeningBindingCensusMismatch);
     }
     let mut inputs = Vec::with_capacity(intent.inputs().len());

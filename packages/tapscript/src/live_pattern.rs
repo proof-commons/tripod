@@ -77,7 +77,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
+use compiler::live_transfer_plan::{LiveTransferComposition, LiveTransferRepresentationPlan};
 use compiler::operation_plan::RequiredSourceKind;
 use compiler::target::ExternalEvidenceRole;
 use target_elements::{
@@ -97,7 +97,9 @@ use crate::live_plan::{
     destination_closure_fragment, emits_isolation_fragment, explicit_conservation_fragment,
     has_sponsor_region, issuance_absence_fragment, live_sponsor_isolation_fragment,
 };
-use crate::live_private::{private_destination_form_fragment, require_value_form};
+use crate::live_private::{
+    crossing_destination_form_fragment, private_destination_form_fragment, require_value_form,
+};
 use crate::live_shape::LiveTransferShape;
 use crate::pattern::{
     coordinator_role_fragment, final_truth_fragment, fragment_prerequisites, member_range_fragment,
@@ -772,18 +774,39 @@ pub fn live_coordinator_program(
     instructions
         .extend_from_slice(live_sponsor_isolation_fragment(target, symbols, shape)?.instructions());
     instructions.extend_from_slice(issuance_absence_fragment(target, shape)?.instructions());
-    // Exhaustive rather than an `if`: a representation added to §6.1
-    // stops this compiling until its value obligation is decided, which
-    // is the only mechanism that keeps a coordinator from being emitted
-    // with the slot silently empty.
-    match constructor.representation() {
-        LiveTransferRepresentationPlan::Explicit => {
+    // Exhaustive rather than an `if`: a composition added to §6.5 stops
+    // this compiling until its value obligation is decided, which is the
+    // only mechanism that keeps a coordinator from being emitted with
+    // the slot silently empty.
+    //
+    // Dispatched on the COMPOSITION and not on the consumed plan, and
+    // that is the whole of what crossing changes here. The obligation
+    // this slot carries has always been about the side the transfer
+    // CREATES -- the consumed side's form is `local_pair`'s, at the
+    // input this leaf is running under -- and while both sides were one
+    // plan the two questions had one answer.
+    match constructor.composition() {
+        LiveTransferComposition::HomogeneousExplicit => {
             instructions
                 .extend_from_slice(explicit_conservation_fragment(target, shape)?.instructions());
         }
-        LiveTransferRepresentationPlan::PrivateCommitted => {
+        // Both compositions whose created side is wholly confidential
+        // owe the same obligation, and neither may owe more. A
+        // conservation fragment reads created amounts, and under either
+        // of these every created amount is a commitment.
+        LiveTransferComposition::HomogeneousPrivate | LiveTransferComposition::EntryBlinding => {
             instructions.extend_from_slice(
                 private_destination_form_fragment(target, shape)?.instructions(),
+            );
+        }
+        // The created side is explicit at every position but the
+        // declared absorber, so the obligation is positional. It is
+        // still a FORM obligation and not a conservation one: the
+        // consumed amounts are commitments, so no fragment may read
+        // them and no equality may be claimed over them.
+        LiveTransferComposition::ExitUnblinding => {
+            instructions.extend_from_slice(
+                crossing_destination_form_fragment(target, shape)?.instructions(),
             );
         }
     }
@@ -1982,6 +2005,17 @@ census_enum! {
         /// the value equation over those commitments belongs to the
         /// target's own rule.
         LivePrivateDestinationFormV1,
+        /// §6.5: every destination's value is in the EXPLICIT form save
+        /// the one declared absorber position, which is confidential.
+        ///
+        /// The positional sibling of
+        /// [`Self::LivePrivateDestinationFormV1`], and named for what it
+        /// establishes for the same reason. It is not a conservation
+        /// pattern either, and it is emphatically not a weaker private
+        /// form: it establishes MORE about the destinations than the
+        /// private one does, because it says which position carries
+        /// which form rather than one answer for the whole range.
+        LiveCrossingDestinationFormV1,
         /// §10.7: the sponsor region is exact, disjoint, and never read
         /// for an amount.
         LiveSponsorIsolationV1,
@@ -2482,8 +2516,8 @@ pub fn live_transfer_patterns(
         )?,
     );
 
-    match constructor.representation() {
-        LiveTransferRepresentationPlan::Explicit => {
+    match constructor.composition() {
+        LiveTransferComposition::HomogeneousExplicit => {
             let conservation = explicit_conservation_fragment(target, shape)?;
             patterns.insert(
                 Id::LiveExplicitConservationV1,
@@ -2515,7 +2549,7 @@ pub fn live_transfer_patterns(
                 )?,
             );
         }
-        LiveTransferRepresentationPlan::PrivateCommitted => {
+        LiveTransferComposition::HomogeneousPrivate | LiveTransferComposition::EntryBlinding => {
             let form = private_destination_form_fragment(target, shape)?;
             patterns.insert(
                 Id::LivePrivateDestinationFormV1,
@@ -2544,6 +2578,48 @@ pub fn live_transfer_patterns(
                     // §6.3's relation is sound only where that target
                     // rule holds, and a pattern that named no such
                     // dependency would read as though it did not need it.
+                    introspection
+                        .into_iter()
+                        .chain([
+                            Evidence::OutputIntrospectionSemantics,
+                            Evidence::ComparisonSemantics,
+                            Evidence::ConfidentialValueConservation,
+                        ])
+                        .collect(),
+                )?,
+            );
+        }
+        LiveTransferComposition::ExitUnblinding => {
+            let form = crossing_destination_form_fragment(target, shape)?;
+            patterns.insert(
+                Id::LiveCrossingDestinationFormV1,
+                build_live_pattern(
+                    target,
+                    Id::LiveCrossingDestinationFormV1,
+                    Owns::PrivateDestinationValueForm,
+                    form,
+                    empty.clone(),
+                    Witness::NoWitnessItem,
+                    Build::LinkTimeOnly,
+                    // The same census the private form declares, and for
+                    // the same reasons. No `SemanticAmountDomain`: this
+                    // fragment reads no amount either. Its explicit
+                    // destinations' amounts ARE readable, and it still
+                    // does not read them -- every payload is dropped
+                    // where it stands -- so a domain claimed here would
+                    // be publishing a check nobody emitted.
+                    BTreeSet::from([
+                        Disclose::ValueRepresentationForm,
+                        Disclose::ReceiptOutputCount,
+                    ]),
+                    BTreeSet::from([Source::AuthenticatedOutputObject]),
+                    BTreeSet::from([Residual::FieldFormSettledOnlyOnTheTarget]),
+                    // The confidential-value conservation requirement is
+                    // cited for the private form's reason and one more:
+                    // an exit crossing can read its created total and
+                    // not its consumed one, so the equality between them
+                    // is the target's rule and there is no first-party
+                    // arithmetic that could stand in for it.
                     introspection
                         .into_iter()
                         .chain([
@@ -2744,6 +2820,20 @@ pub fn patterns_for(
     shape: LiveTransferShape,
     representation: LiveTransferRepresentationPlan,
 ) -> BTreeSet<LiveTransferPatternId> {
+    patterns_for_composition(shape, LiveTransferComposition::homogeneous(representation))
+}
+
+/// Which patterns one shape selects under a stated COMPOSITION.
+///
+/// The general form, of which [`patterns_for`] is the homogeneous case.
+/// The value obligation is a partition over compositions and not over
+/// plans, which is what keeps a crossing coordinator from selecting two
+/// value obligations or none.
+#[must_use]
+pub fn patterns_for_composition(
+    shape: LiveTransferShape,
+    composition: LiveTransferComposition,
+) -> BTreeSet<LiveTransferPatternId> {
     LiveTransferPatternId::ALL
         .iter()
         .copied()
@@ -2751,11 +2841,20 @@ pub fn patterns_for(
             LiveTransferPatternId::LiveMemberRoleV1
             | LiveTransferPatternId::LiveMemberProgramV1 => has_member_position(shape),
             LiveTransferPatternId::LiveSponsorIsolationV1 => emits_isolation_fragment(shape),
+            // The three value obligations are a PARTITION over
+            // compositions: exactly one holds for any composition, which
+            // is what a census test executes rather than what this
+            // comment asserts.
             LiveTransferPatternId::LiveExplicitConservationV1 => {
-                representation == LiveTransferRepresentationPlan::Explicit
+                composition == LiveTransferComposition::HomogeneousExplicit
             }
-            LiveTransferPatternId::LivePrivateDestinationFormV1 => {
-                representation == LiveTransferRepresentationPlan::PrivateCommitted
+            LiveTransferPatternId::LivePrivateDestinationFormV1 => matches!(
+                composition,
+                LiveTransferComposition::HomogeneousPrivate
+                    | LiveTransferComposition::EntryBlinding
+            ),
+            LiveTransferPatternId::LiveCrossingDestinationFormV1 => {
+                composition == LiveTransferComposition::ExitUnblinding
             }
             _ => true,
         })

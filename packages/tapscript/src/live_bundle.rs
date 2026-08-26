@@ -113,7 +113,7 @@ use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::live_constructor::{
     CandidateTransferLifecycle, LiveConstructorRefusal, LiveTransferLeafRole, OwnerKey,
-    OwnerKeyRejection, StaticLiveReceiptConstructor, derive_live_receipt_constructor,
+    OwnerKeyRejection, StaticLiveReceiptConstructor, derive_live_receipt_constructor_composing,
 };
 use crate::live_pattern::{
     FinalStackDefect, LiveProgramRefusal, LiveTransferPatternId, LiveTransferSymbols,
@@ -1040,10 +1040,17 @@ fn probe_constructor(
     let probe = OwnerKey::new(constructor.owner_encoding(), owner.encoding(), flipped)
         .map_err(|rejection| LiveBundleRefusal::ProbeOwnerRefused { rejection })?;
 
-    derive_live_receipt_constructor(
+    // The COMPOSITION and not the bare representation. A probe exists to
+    // locate one symbol by differing from its subject in that symbol
+    // alone, so every other thing about it must be the subject's -- and
+    // a crossing constructor rebuilt through the homogeneous entry point
+    // would emit a different value obligation, changing the instruction
+    // count and locating nothing. The probe would then report the symbol
+    // as unlocatable when what actually differed was the covenant.
+    derive_live_receipt_constructor_composing(
         target,
         plan,
-        constructor.representation(),
+        constructor.composition(),
         probe,
         constructor.shapes().clone(),
         constructor.leaves().collect(),

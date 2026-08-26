@@ -214,7 +214,9 @@ fn every_materialization_refusal_is_censused(refusal: &Materialization) {
         | Materialization::FeeOutputProgramNotEmpty { .. }
         | Materialization::FeeOutputCarriesAnOpening { .. }
         | Materialization::FeeOutputValueZero { .. }
-        | Materialization::FeeOutputNotRecognizable { .. } => (),
+        | Materialization::FeeOutputNotRecognizable { .. }
+        | Materialization::OutputProgramEmpty { .. }
+        | Materialization::ExplicitDestinationIsAFee { .. } => (),
     }
 }
 

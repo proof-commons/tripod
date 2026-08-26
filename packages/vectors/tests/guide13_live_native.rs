@@ -1584,11 +1584,49 @@ fn the_sponsored_confidential_with_change_shape_is_submitted_to_a_real_target() 
 /// check exists to catch, and a fee output that GREW one would be a fee
 /// that had been blinded — the failure the fee role was built to make
 /// impossible, and the one worth a second assertion of its own.
+/// The ENTRY CROSSING against a real node.
+///
+/// Explicit receipts spent into two blinded destinations. This workspace
+/// has performed the shape every ceremony as a FUNDING step; what is new
+/// is that the coin it spends sits at a receipt constructor's program,
+/// so the transfer is governed by the covenant rather than by the
+/// adapter.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_entry_crossing_shape_is_submitted_to_a_real_target() {
+    use vectors::live_multi_shapes::PrivateShape;
+
+    run_one_multi_shape(PrivateShape::EntryCrossing, "multi-entry-crossing");
+}
+
+/// The EXIT CROSSING against a real node.
+///
+/// Blinded receipts spent into explicit destinations beside the blinded
+/// absorber a nonzero consumed blinder sum requires. It is registered
+/// exactly as the six homogeneous shapes are, because it runs through
+/// the same ceremony: the crossing changes what is built, not how it is
+/// funded, signed or submitted.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_exit_crossing_shape_is_submitted_to_a_real_target() {
+    use vectors::live_multi_shapes::PrivateShape;
+
+    run_one_multi_shape(PrivateShape::ExitCrossing, "multi-exit-crossing");
+}
+
 fn assert_proofs_match_the_shape(
     shape: vectors::live_multi_shapes::PrivateShape,
     record: &vectors::live_multi_shapes::MultiShapeRecord,
 ) {
-    let proving = record.output_count() - shape.fee_output_count();
+    // TWO kinds of output carry an explicit value and therefore no range
+    // proof, and they are counted separately rather than added together.
+    // A fee has no program and an explicit destination has one, so a
+    // ceremony that built a fee where a destination belonged would still
+    // satisfy a single combined count -- and that substitution is
+    // precisely the one that turns a spendable receipt into value the
+    // chain treats as paid away.
+    let explicit = shape.fee_output_count() + shape.explicit_destination_count();
+    let proving = record.output_count() - explicit;
     assert_eq!(
         record
             .output_witness_proof_bytes()
@@ -1605,8 +1643,8 @@ fn assert_proofs_match_the_shape(
             .iter()
             .filter(|bytes| **bytes == 0)
             .count(),
-        shape.fee_output_count(),
-        "a fee output's witness entry is empty, and only a fee output's is: {:?}",
+        explicit,
+        "an explicit-valued output's witness entry is empty, and only one's is: {:?}",
         record.output_witness_proof_bytes(),
     );
 }
@@ -1693,9 +1731,20 @@ fn run_one_multi_shape(shape: vectors::live_multi_shapes::PrivateShape, extensio
     // a constant: the merge funds a three-output predecessor because a
     // two-output one funded from an explicit input can only offer it an
     // inverse pair.
+    //
+    // An EXPLICITLY funded shape names a predecessor it never funds, so
+    // its width is the count it asked the node for rather than the
+    // fixture's. Stated as its own case rather than folded into the
+    // other: the two are different questions, and a single expression
+    // covering both would stop catching a confidential ceremony that
+    // funded the wrong predecessor.
+    let expected_coins = match shape.explicit_funding() {
+        Some((outputs, _)) => outputs as usize,
+        None => shape.predecessor().outputs(),
+    };
     assert_eq!(
         record.coins().len(),
-        shape.predecessor().outputs(),
+        expected_coins,
         "the node funded a predecessor of a different width than the shape asked for",
     );
     assert!(

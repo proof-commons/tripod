@@ -48,13 +48,19 @@ The middle class is the one that needs the discipline. No node has been offered 
 
 ## The enumeration and why it is closed · `rule:shapes:closure`
 
-The shape axis is the pair (blinded inputs, outputs), together with whether one of those outputs is the mandatorily explicit fee output. Nothing else about a transaction changes either verdict.
+The shape axis is the count of blinded inputs together with a partition of the outputs into three kinds: blinded, explicit receipt destinations, and the mandatorily explicit fee output. Nothing else about a transaction changes either verdict.
 
-The enumeration is the small-shape window: at least one blinded input and at most two, one to three outputs, plus the two fee-bearing members that window does not otherwise reach. Eight shapes.
+The enumeration is the small-shape window: at most two blinded inputs and one to three outputs, plus the fee-bearing and crossing members that window does not otherwise reach. Eleven shapes.
 
-It is closed, and a reader can see that nothing is missing, because of what the tally rule shows: the consensus verdict depends on nothing whatever but whether at least one output is blinded. It does not depend on the input count. It does not depend on the output count beyond the difference between some blinded output and none. Both cases already appear in the window — seven members are the first, and fee-only is the second — so every shape outside the window inherits the verdict of the case it falls into, and adding it would restate a row rather than add one.
+It is closed, and a reader can see that nothing is missing, because of what the tally rule shows: the consensus verdict depends on nothing whatever but whether the consumed blinder sum has somewhere to land. Exactly two facts decide that and no third does — whether any input is blinded, and whether any output is. Every combination of those two appears in the window, so every shape outside it inherits the verdict of the case it falls into, and adding one would restate a row rather than add one.
 
-The window is chosen for the first-party half, where the counts do matter: the registry's own clauses are cardinality clauses, and every shape this lane has built or been refused falls inside it.
+The window is otherwise chosen for the first-party half, where the counts do matter: the registry's own clauses are cardinality clauses, and every shape this lane has built or been refused falls inside it.
+
+**What the crossing wave widened, and why the old rule was narrower than it read.** The rule used to open "at least one blinded input", and that was not a simplification for brevity. It was the premise that let the register DERIVE the blinded-output count as the output count less the fee: on a lane where every input is blinded and every non-fee output with it, there are only two kinds of output, so the fee count determines the rest.
+
+Representation crossing breaks both halves of that premise, in opposite directions. An entry crossing consumes no blinded input at all, which is outside the old domain rather than unlisted within it. An exit crossing carries explicit non-fee outputs, which the subtraction would have counted as blinded — and the register would then have computed absorbability for a shape by counting outputs that absorb nothing, recording a possible verdict on arithmetic that denies it. So the blinded-output count is now an axis each shape states, the explicit destinations are the leftover, and a test requires the three counts to partition the output set.
+
+The tally rule gained the second way a sum lands. A shape with no blinded input presents a sum that is already zero, and zero is absorbed by an all-explicit output set without anything having to hold it. The correct statement is therefore not "a blinded input forces a blinded output" but **the input blinder sum must equal the output blinder sum, and explicit outputs contribute zero** — and the entry crossing is the member that makes the difference between those two readings visible.
 
 ## Index · `tab:shapes:index`
 
@@ -68,16 +74,21 @@ The window is chosen for the first-party half, where the counts do matter: the r
 | Two blinded inputs to two blinded outputs | Possible | Observed | Constructible and observed | none |
 | Two blinded inputs to three blinded outputs | Possible | Observed | Constructible and observed | none |
 | One blinded input to a fee output and nothing else | Impossible | Source-derived | Refusal guards consensus | (`rule:shapes:fee-only`) |
+| No blinded input to two blinded outputs | Possible | Observed | Constructible after removal | (`rule:shapes:homogeneous-representation`), removed |
+| Two blinded inputs to two explicit destinations and one blinded absorber | Possible | Observed | Constructible after removal | (`rule:shapes:homogeneous-representation`), removed |
+| Two blinded inputs to explicit outputs only | Impossible | Source-derived | Refusal guards consensus | (`rule:shapes:fully-unblinding`) |
 
 Every limitation tag in the last column is cited above in a parenthesized group, because each is minted at its own section below and a bare occurrence here would be a second mint of the same name.
 
-Six of eight shapes have been run and accepted. Two have not.
+Nine of eleven shapes have been run and accepted. The two that have not are the two the tally forbids.
 
-The counts moved because four limitations have now been structurally removed, and the first-party statuses in the fourth column are different things that a single word would have flattened. Constructible and observed is a shape this lane always built. Constructible after removal is a shape it was refused until a convention was removed, and the row keeps citing the removed convention, because a row saying only that a shape works loses the fact that a wall stood there — and a wall nobody remembers is one that gets rebuilt. Submitted and refused is the fee-bearing shape: it was BUILT with a real fee output and OFFERED to a node, and the node turned it away, which is more than nobody having tried and less than an acceptance.
+The counts moved because five limitations have now been structurally removed, and the first-party statuses in the fourth column are different things that a single word would have flattened. Constructible and observed is a shape this lane always built. Constructible after removal is a shape it was refused until a convention was removed, and the row keeps citing the removed convention, because a row saying only that a shape works loses the fact that a wall stood there — and a wall nobody remembers is one that gets rebuilt.
 
-Expressible and unrun is now nobody's status, and the register keeps the words because that is what the fee-bearing shape was until it was offered. A status vacated by work is not a status deleted.
+Expressible and unrun is nobody's status, and the emptiness is a result rather than a loosening. Both crossings sat there when the vocabulary landed, and both left by the only honest exit, an acceptance of their own shape. The register keeps the words because the next removal nobody has run must be able to say so.
 
-Of the two unrun shapes, one is consensus-impossible and one is the fee-bearing shape, refused at a covenant this workspace wrote rather than at anything the protocol says about fees.
+The crossing removal is the first that freed TWO shapes and saw both run. Every earlier one freed at most one, so the register had never had to say which shape carried a removal to a chain; it says so now, naming the first, and two rows cite one removal without either claiming the other's acceptance.
+
+Submitted and refused is nobody's status. It was the fee-bearing shape's, which was BUILT with a real fee output and OFFERED to a node and turned away; the shape has since been given the vocabulary member it lacked and ACCEPTED, so it left by the second and last exit. The register keeps the words because the next shape a target refuses must be able to say so. A status vacated by work is not a status deleted.
 
 The one-to-two row carries the first of two identities the lane recorded for that shape; the second, is the same shape spending the opposite commitment parity, and the register cites one because a shape needs one acceptance and not because the other is doubted.
 
@@ -201,14 +212,62 @@ So the wall did not move without anybody deciding it should, which is what the p
 
 **Revising this section touches:** nothing in the registry, because nothing in the registry is what makes this shape impossible. It touches this section and the census row alone, and would only ever be revised by a consensus change to how explicit outputs enter the tally.
 
+## The second impossible shape · `rule:shapes:fully-unblinding`
+
+**Impossible.** A transaction consuming blinded inputs into nothing but explicit outputs cannot balance for a nonzero input blinder sum, for the same reason and at the same line as the fee-only shape: every explicit output contributes a zero blinder, so the output blinder sum is zero while the input blinder sum is not, and the tally at src/confidential_validation.cpp:73-81 fails. Upstream tests it directly — src/test/blind_tests.cpp:155-191 spends an explicit and a blinded input into three explicit outputs and asserts VerifyAmounts false.
+
+There is no structural rule anywhere saying a blinded input forces a blinded output. The transaction passes every shape check, because all-explicit outputs mean every proof is required-empty and trivially satisfied, and it dies at the tally alone.
+
+**Why it is filed separately from the fee-only shape.** Because the first-party half is a different refusal for a different reason, and this is the row that makes the register's central distinction concrete. The fee-only shape dies at the cardinality floor, having one output. This shape has three, clears the floor, and is refused because none of them SOLVES — BalancingRoleNotUnique carrying found zero. Consensus and this workspace refuse the same shape on independent grounds, and a register that recorded only one of them would be claiming a coincidence was a reason.
+
+Both refusals are recomputed rather than transcribed: the census drives the live registry for this row, and a conformance test registers the manifest directly.
+
+**The escape is real, and it is another row's enabling condition rather than a way to take this one.** If the spent coins' blinders sum to zero the tally passes with blinded inputs and wholly explicit outputs. That is reachable by construction and not by luck — a parent with all-explicit inputs has blinder sum zero, so Elements makes its blinded outputs' blinders sum to zero at src/blind.cpp:574-577, and spending all of them together presents a zero input blinder sum. This workspace's dual-parity predecessor is such a parent, and its inverse-pair property is the very thing (`rule:shapes:canceling-predecessor`) was filed as a limitation about. The wall for one shape is the enabling condition for another.
+
+It does not move this verdict, because it is a property of the coins spent rather than of the shape. A shape whose inputs' blinders cancel is a shape with no effective blinded input, which is a different row.
+
+**Revising this section touches:** nothing in the registry, for the reason the fee-only section gives. It touches this section, the census row, and the exit-crossing row it sits beside, since the two differ by exactly one output's value form.
+
+## One representation per transfer · `rule:shapes:homogeneous-representation`
+
+**Refused.** Neither crossing direction could be stated at all. A live transfer's representation was one variable for the whole transaction, so an explicit-valued receipt could not be spent into a blinded destination nor a blinded receipt into an explicit one — refused before any arithmetic, not because a blinder failed to solve or a proof failed to build, but because no vocabulary existed in which the candidate could be written.
+
+**Refused at.** packages/compiler/src/live_transfer_plan.rs, whose representation plan is one value per transfer, read at every site that decides a form: packages/tapscript/src/live_pattern.rs, whose recognition fragment pins the spent value's form to that one plan and whose coordinator dispatches the destinations' obligation on it, and packages/transaction/src/live_construct.rs, which reads it for both the receipts it recognizes and the destinations it pays.
+
+**Convention.** One transfer, one representation. Guide §6.5 states the initial scope as homogeneous explicit required and homogeneous private committed required, with mixed unsupported unless separately admitted — so mixed was never forbidden and never built, and the vocabulary took the scope literally. The clause that kept it that way is the guide's next sentence rather than the scope: an ad hoc mixed transaction accepted by the target does not widen the ABI. No run could ever have supplied the admission and only a ruling could. None was made, so the single variable stood.
+
+This is a limitation of this repository and not of the protocol. Consensus admits both directions and is upstream-tested doing so: src/test/blind_tests.cpp:229-238 builds an explicit non-fee output between two blinded ones with a blinded input and asserts VerifyAmounts true, and test/functional/feature_confidential_transactions.py:370-384 has a live node accept the same shape.
+
+**Removal path, TAKEN under T5-054 and RUN in BOTH directions.** Admit a pairing of the two representation plans, one per side of a transfer, rather than a third representation or a per-reference variable. §6.5 already wrote the escape clause, so what the path needs is a ruling and a vocabulary rather than a guide amendment.
+
+The pairing threads to four decisions that each used to read the single variable: which value form the recognition fragment pins a spent receipt to, which obligation the coordinator emits over the destinations, which constructor a destination is paid to, and which key a deployment seats a constructor at. The exit direction additionally needs a positional value-form leaf, because its created side is per-position heterogeneous — explicit everywhere but the one declared absorber — and no fragment that speaks about a whole range can say that.
+
+**The absorber is a declared destination position.** Not a fourth output family, and the distinction is what keeps §10.4's closure argument untouched. The shape's exact output count and the three-family position census leave no position outside the destinations, the sponsor change and the fee, so an absorber outside the destination range is unrepresentable rather than merely unsound. Inside the range it adds no position and moves none; the leaf only says which of the positions the closure already speaks for carries which form.
+
+**The entry direction has a degeneracy, and it is the single-output form's met from the other side.** An entry crossing spends explicit coins, whose blinders are zero, so a single blinded output would be forced to a zero blinder and its commitment would hide nothing. Two or more blinded outputs avoid it, the balancing blinder being the negation of a searched non-zero primary. The floor of two is therefore the registry's own arithmetic rather than a preference — DegenerateBalancingScalar catches it either way — and Elements' own wallet refuses the same shape for the same reason at src/blind.cpp:578-586. Both are conventions about confidentiality and neither is a protocol rule; this register claims neither as one.
+
+**The exit direction RAN.** A real node accepted and mined it: two blinded receipts consumed, two explicit destinations created, one blinded absorber beside them, 5412 bytes submitted and the mined bytes read back equal to them, an owner signature verified against an independently recomputed message, 11.5 seconds.
+
+The crossing is visible in the bytes and not only in the construction. The output-witness proof census is 0, 0, 4174 — an explicit value admits no range proof and an explicit asset no surjection proof, so the two explicit destinations carry neither and the single blinded absorber carries the transaction's only proof. A wholly private shape of this arity would carry three proofs and a wholly explicit one none, so that vector is a shape no homogeneous transfer can produce.
+
+**The entry direction RAN too.** Accepted and mined: one explicit receipt consumed, two blinded destinations created, 9133 bytes submitted and read back equal, an owner signature verified against an independently recomputed message, 9.9 seconds.
+
+This workspace has performed the shape every ceremony, as the funding step that mints a confidential predecessor. What the acceptance records is the first time the coin it spent sat at a receipt constructor's program, so the transfer was governed by the covenant rather than by the adapter — which is the whole difference between a funding step and a transfer, and it is why an accepted funding transaction could never have stood in for this row.
+
+Its proof census is two range proofs for two blinded destinations, and the count is the claim rather than a detail. A single blinded output would have been forced to a zero blinder, because an explicit input contributes one, and its commitment would have hidden nothing.
+
+**What the entry direction needed, and it was not consensus.** Three first-party readings, each of which had conflated a side with the transaction. A consumed receipt could not be stated without naming a registered confidential fixture output, though an explicit coin has no opening to name. The randomness rule keyed on the request's plan rather than on the side being blinded, and so refused randomness to the one transfer that most needs it. And the opening-binding census counted verified references against every input rather than against the inputs that have them.
+
+**Revising this limitation touches:** the compiler's representation plan and its deferral census, the constructor and the leaf roles keyed by representation, the coordinator's value-obligation dispatch and the positional fragment, the deployment's seating of constructors at table keys, the construction lane's two lookups, the fixture registry's output role vocabulary and the materializer's, the shape census's output axes, and guide §6.5 — which is exercised rather than amended, its own escape clause being what the ruling took.
+
 ## What the register does not claim · `rem:shapes:non-claims`
 
 It does not claim that the source-derived-possible shapes would be accepted. It claims the balance rule does not forbid them. A transaction has to satisfy range proofs, script validity, policy and relay besides, and none of that is in scope here.
 
 It does not claim the observed shapes exhaust what has been run; it claims each cites an acceptance of its own shape.
 
-It does not claim that a removed limitation means the shapes it refused now run. Four limitations have been removed across three waves and each removal freed at most one shape. The merge met a second wall the first had been hiding, and the fee-bearing shape met a third the second had been hiding — both recorded as what they are rather than as consequences of a removal that did not have them. A register that reported only the removals would imply every refused shape now runs.
+It does not claim that a removed limitation means the shapes it refused now run. Five limitations have been removed across four waves and each removal freed at most one shape. The merge met a second wall the first had been hiding, and the fee-bearing shape met a third the second had been hiding — both recorded as what they are rather than as consequences of a removal that did not have them. A register that reported only the removals would imply every refused shape now runs.
 
-It does not claim the fee-bearing shape's remaining removal path is scheduled, designed in detail, or agreed. It is named, which is what the ruling asks for at this stage. No part of it is taken, and taking it means changing a reviewed reading of the target rather than a registry clause.
+The crossing removal is the exception that proves the rule rather than a counterexample to it: it freed two shapes and both ran, which is the first time that has happened. It is recorded as one removal with one proof and two rows citing it, not as two removals, because what was removed was one reading. Two of the five removals still carry no chain identity at all, and the register keeps that visible rather than letting a filed path read as a taken one.
 
 It does not extend to issuance, which is excluded (`rule:exclusions:issuance-bytes`), nor to sponsored shapes, whose signer dependency this workspace does not close.

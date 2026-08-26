@@ -30,7 +30,8 @@ use std::sync::OnceLock;
 use architecture::{ARCHITECTURE, OperationId};
 use compiler::input::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
 use compiler::live_transfer_plan::{
-    ValidatedLiveTransferOperationPlan, plan_live_transfer_target_operation,
+    LiveTransferComposition, ValidatedLiveTransferOperationPlan,
+    plan_live_transfer_target_operation,
 };
 use compiler::operation_plan::PlacementSearchLimits;
 use linker::live_backend::LiveTransferRepresentationPlan;
@@ -40,8 +41,9 @@ use linker::{
 use realization::{RealizationScope, derive};
 use tapscript::{
     CandidateRelocatableLiveTransferBundle, LiveTransferShapeSet, LiveTransferSymbols, OwnerKey,
-    demonstration_live_shape_set, derive_live_receipt_constructor, emit_candidate_live_bundle,
-    fee_bearing_live_shape_set, owner_key_encoding_closure, static_transfer_leaf_set,
+    demonstration_live_shape_set, derive_live_receipt_constructor_composing,
+    emit_candidate_live_bundle, fee_bearing_live_shape_set, owner_key_encoding_closure,
+    static_transfer_leaf_set,
 };
 use target_elements::{ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript};
 use target_elements_conformance::constructor::curve::FIELD_ELEMENT_BYTES;
@@ -290,8 +292,30 @@ pub fn link_live_bundle_for_vocabulary(
     reserve_asset: [u8; 32],
     fee_program_digest: [u8; 32],
 ) -> Result<CandidateLinkedLiveTransferBundle, VectorError> {
+    link_live_bundle_composing(
+        vocabulary,
+        LiveTransferComposition::HomogeneousExplicit,
+        protocol_asset,
+        reserve_asset,
+        fee_program_digest,
+    )
+}
+
+/// The linked bundle of one vocabulary and one seated composition.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when a constructor, an
+/// emission, the deployment parameters, or the link refuses.
+pub fn link_live_bundle_composing(
+    vocabulary: LiveShapeVocabulary,
+    composition: LiveTransferComposition,
+    protocol_asset: [u8; 32],
+    reserve_asset: [u8; 32],
+    fee_program_digest: [u8; 32],
+) -> Result<CandidateLinkedLiveTransferBundle, VectorError> {
     let target = reviewed_target()?;
-    let bundles = relocatable_live_bundles_for(vocabulary)?;
+    let bundles = relocatable_live_bundles_composing(vocabulary, composition)?;
     let deployment = live_deployment_for_asset(protocol_asset, reserve_asset, fee_program_digest)?;
     link_live_candidate(&target, &bundles, &deployment)
         .map_err(|_| VectorError::LiveSubstrateUnavailable)
@@ -355,6 +379,37 @@ impl LiveShapeVocabulary {
 pub fn relocatable_live_bundles_for(
     vocabulary: LiveShapeVocabulary,
 ) -> Result<Vec<CandidateRelocatableLiveTransferBundle>, VectorError> {
+    relocatable_live_bundles_composing(vocabulary, LiveTransferComposition::HomogeneousExplicit)
+}
+
+/// The relocatable bundles of one vocabulary, one of whose keys a stated
+/// CROSSING composition substitutes at.
+///
+/// # A crossing deployment substitutes; it does not widen
+///
+/// A deployment's destination table is keyed by the plan a coin is
+/// RECOGNIZED under, and a crossing constructor recognizes coins of its
+/// consumed side. So a crossing deployment is the homogeneous one with
+/// exactly one of its two keys' constructors replaced — the consumed
+/// side's — and the other key left holding the ordinary homogeneous
+/// constructor, which is what the crossing transfer's own destinations
+/// are then paid to. No key is added, no table widens, and a coin
+/// created by a crossing transfer is spendable by an ordinary
+/// homogeneous one afterwards, which is the property that makes the
+/// crossing a step in a lifecycle rather than a cul-de-sac.
+///
+/// A homogeneous composition substitutes nothing and reproduces
+/// [`relocatable_live_bundles_for`] exactly, which is why that function
+/// is this one rather than a sibling of it.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when a constructor or an
+/// emission refuses.
+pub fn relocatable_live_bundles_composing(
+    vocabulary: LiveShapeVocabulary,
+    composition: LiveTransferComposition,
+) -> Result<Vec<CandidateRelocatableLiveTransferBundle>, VectorError> {
     let target = reviewed_target()?;
     let plan = live_transfer_plan()?;
     let shapes = vocabulary.shape_set();
@@ -372,10 +427,20 @@ pub fn relocatable_live_bundles_for(
             LiveTransferRepresentationPlan::Explicit,
             LiveTransferRepresentationPlan::PrivateCommitted,
         ] {
-            let constructor = derive_live_receipt_constructor(
+            // The crossing constructor stands at its CONSUMED side's
+            // key and nowhere else. Every other key keeps the
+            // homogeneous constructor it always held, so a crossing
+            // deployment differs from the demonstration one at exactly
+            // one of its four bundles per owner-and-plan pair.
+            let seated = if composition.crosses() && representation == composition.consumed() {
+                composition
+            } else {
+                LiveTransferComposition::homogeneous(representation)
+            };
+            let constructor = derive_live_receipt_constructor_composing(
                 &target,
                 &plan,
-                representation,
+                seated,
                 published_owner(&scalar)?,
                 shapes.clone(),
                 static_transfer_leaf_set(representation, &shapes),
@@ -491,12 +556,42 @@ pub fn live_abi_for_vocabulary(
     reserve_asset: [u8; 32],
     fee_program_digest: [u8; 32],
 ) -> Result<CandidateLiveTransferAbi, VectorError> {
+    live_abi_composing(
+        vocabulary,
+        LiveTransferComposition::HomogeneousExplicit,
+        protocol_asset,
+        reserve_asset,
+        fee_program_digest,
+    )
+}
+
+/// The candidate ABI of one vocabulary and one seated composition.
+///
+/// A crossing composition seats its crossing constructor at the key its
+/// consumed side is recognized under, so this ABI's destination table
+/// holds the crossing constructor at one key and the ordinary
+/// homogeneous one at the other. Both are needed and for different
+/// reasons: the crossing key is what a spent receipt resolves through,
+/// and the other is what this transfer's own destinations are paid to.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when the link or the ABI
+/// derivation refuses.
+pub fn live_abi_composing(
+    vocabulary: LiveShapeVocabulary,
+    composition: LiveTransferComposition,
+    protocol_asset: [u8; 32],
+    reserve_asset: [u8; 32],
+    fee_program_digest: [u8; 32],
+) -> Result<CandidateLiveTransferAbi, VectorError> {
     let target = reviewed_target()?;
     let curve = OracleLiveCurve::new(reviewed_target()?);
     derive_live_transfer_abi(
         &target,
-        &link_live_bundle_for_vocabulary(
+        &link_live_bundle_composing(
             vocabulary,
+            composition,
             protocol_asset,
             reserve_asset,
             fee_program_digest,

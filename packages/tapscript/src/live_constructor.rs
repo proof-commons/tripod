@@ -116,8 +116,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 
 use compiler::live_transfer_plan::{
-    LiveTransferClassProjection, LiveTransferLifecycleClosure, LiveTransferOwnerProjection,
-    LiveTransferRepresentationPlan, LiveTransferValueProjection,
+    LiveTransferClassProjection, LiveTransferComposition, LiveTransferLifecycleClosure,
+    LiveTransferOwnerProjection, LiveTransferRepresentationPlan, LiveTransferValueProjection,
     ValidatedLiveTransferOperationPlan,
 };
 use target_elements::{
@@ -834,7 +834,7 @@ pub struct StaticLiveReceiptConstructor {
     class: LiveTransferClassProjection,
     owner_family: LiveTransferOwnerProjection,
     value: LiveTransferValueProjection,
-    representation: LiveTransferRepresentationPlan,
+    composition: LiveTransferComposition,
     shapes: LiveTransferShapeSet,
     leaves: BTreeSet<LiveTransferLeafRole>,
     internal_key: InternalKeyPolicy,
@@ -897,9 +897,28 @@ impl StaticLiveReceiptConstructor {
     }
 
     /// The representation plan this constructor is built for.
+    ///
+    /// The CONSUMED side's plan, and derived from the composition
+    /// rather than stored beside it so the two can never disagree. For
+    /// every homogeneous constructor the two sides are one plan and
+    /// this is what it always was; for a crossing constructor it is the
+    /// plan a receipt spent through this program is read under, which
+    /// is what makes it the right key for the destination table — a
+    /// coin is looked up by the plan that recognizes it, and a crossing
+    /// deployment substitutes its crossing constructor at exactly that
+    /// key.
     #[must_use]
     pub const fn representation(&self) -> LiveTransferRepresentationPlan {
-        self.representation
+        self.composition.consumed()
+    }
+
+    /// How this constructor pairs a plan to each side of a transfer.
+    ///
+    /// The whole of what [`Self::representation`] used to say, plus the
+    /// created side it never said because both sides were one plan.
+    #[must_use]
+    pub const fn composition(&self) -> LiveTransferComposition {
+        self.composition
     }
 
     /// The candidate shape set.
@@ -927,7 +946,7 @@ impl StaticLiveReceiptConstructor {
         shape: LiveTransferShape,
     ) -> Option<(LiveTransferLeafRole, Option<LiveTransferLeafRole>)> {
         let coordinator = LiveTransferLeafRole::Coordinator {
-            representation: self.representation,
+            representation: self.composition.consumed(),
             shape,
         };
         if !self.leaves.contains(&coordinator) {
@@ -935,7 +954,7 @@ impl StaticLiveReceiptConstructor {
         }
 
         let member = LiveTransferLeafRole::Member {
-            representation: self.representation,
+            representation: self.composition.consumed(),
             receipt_inputs: shape.receipt_inputs(),
         };
         Some((coordinator, self.leaves.contains(&member).then_some(member)))
@@ -1023,20 +1042,59 @@ pub fn derive_live_receipt_constructor(
     shapes: LiveTransferShapeSet,
     leaves: BTreeSet<LiveTransferLeafRole>,
 ) -> Result<StaticLiveReceiptConstructor, LiveConstructorRefusal> {
+    derive_live_receipt_constructor_composing(
+        target,
+        plan,
+        LiveTransferComposition::homogeneous(representation),
+        owner,
+        shapes,
+        leaves,
+    )
+}
+
+/// One live-receipt constructor over a stated COMPOSITION.
+///
+/// The general form, of which [`derive_live_receipt_constructor`] is the
+/// homogeneous case. The two are one derivation rather than two, so a
+/// crossing constructor is not a parallel construction path that could
+/// drift from the one every homogeneous candidate uses.
+///
+/// Both sides' plans must be admitted by the validated plan. That is one
+/// check performed twice rather than a relaxation: a composition whose
+/// created side named an unadmitted plan would be a widening of §6.1
+/// wearing §6.5's clothes, and §6.5 admits a PAIRING of admitted plans
+/// and nothing else.
+///
+/// # Errors
+///
+/// As [`derive_live_receipt_constructor`], with
+/// [`LiveConstructorRefusal::RepresentationNotAdmitted`] naming
+/// whichever side is not admitted.
+pub fn derive_live_receipt_constructor_composing(
+    target: &ReviewedElementsTapscriptDefinition,
+    plan: &ValidatedLiveTransferOperationPlan,
+    composition: LiveTransferComposition,
+    owner: OwnerKey,
+    shapes: LiveTransferShapeSet,
+    leaves: BTreeSet<LiveTransferLeafRole>,
+) -> Result<StaticLiveReceiptConstructor, LiveConstructorRefusal> {
+    let representation = composition.consumed();
     let contract = target.definition();
     let owner_encoding = owner_key_encoding_closure(contract.authorization());
 
     let lifecycle = candidate_lifecycle(plan)?;
     check_class(plan)?;
 
-    if !plan
-        .representation()
-        .admitted()
-        .any(|admitted| admitted == representation)
-    {
-        return Err(LiveConstructorRefusal::RepresentationNotAdmitted {
-            selected: representation,
-        });
+    // Both sides, and the consumed one first so a homogeneous
+    // constructor reports exactly the refusal it always reported.
+    for side in [composition.consumed(), composition.created()] {
+        if !plan
+            .representation()
+            .admitted()
+            .any(|admitted| admitted == side)
+        {
+            return Err(LiveConstructorRefusal::RepresentationNotAdmitted { selected: side });
+        }
     }
 
     check_leaves(representation, &shapes, &leaves)?;
@@ -1049,7 +1107,7 @@ pub fn derive_live_receipt_constructor(
         class: plan.class().clone(),
         owner_family: plan.owner().clone(),
         value: plan.value().clone(),
-        representation,
+        composition,
         shapes,
         leaves,
         // Inherited whole from the compact-ASH constructor, as §7.5

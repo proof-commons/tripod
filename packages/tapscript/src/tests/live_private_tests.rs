@@ -56,7 +56,8 @@ use crate::live_plan::{explicit_conservation_fragment, opens_an_amount, reads_a_
 use crate::live_private::{
     ComparisonSource, PrivateAmountProhibition, PrivateConditionCarrier, PrivatePlanNonClaim,
     PrivateSoundnessCondition, ProhibitionDisposition, RepresentationComparisonAxis, ValueFieldUse,
-    discriminating_mask, opens_no_value_payload, prefix_mask, private_destination_form_fragment,
+    absorber_position, crossing_destination_form_fragment, discriminating_mask,
+    opens_no_value_payload, prefix_mask, private_destination_form_fragment,
     private_soundness_establishments, prohibition_dispositions, representation_comparison_axes,
     value_field_uses,
 };
@@ -670,4 +671,131 @@ fn the_non_claims_that_can_be_witnessed_are_witnessed() {
             .len(),
         PrivatePlanNonClaim::ALL.len(),
     );
+}
+
+// --- §6.5: the exit crossing's positional value-form obligation -------
+
+#[test]
+fn the_absorber_is_the_last_destination_of_every_shape_that_has_one() {
+    // A declaration is only a declaration if it names a position for
+    // every shape it governs. Recomputed over a spread of receipt-output
+    // counts rather than asserted for one.
+    let target = reviewed_target();
+
+    for receipt_outputs in 1_u8..=3 {
+        let subject = shape(1, receipt_outputs, 0, Absent);
+        let (first, end) = subject.destination_range();
+
+        assert_eq!(
+            absorber_position(subject),
+            Some(end - 1),
+            "the declared absorber is the last destination",
+        );
+        let position = absorber_position(subject).expect("a destination range with a last member");
+        assert!(
+            position >= first && position < end,
+            "the absorber is INSIDE the destination range, which is what leaves the §10.4 \
+             closure argument untouched",
+        );
+        // Emitting is part of the claim: a position that named itself
+        // but could not be built would be a comment.
+        crossing_destination_form_fragment(&target, subject)
+            .expect("the crossing fragment builds for every admitted destination count");
+    }
+}
+
+#[test]
+fn the_crossing_fragment_requires_the_explicit_form_everywhere_but_the_absorber() {
+    // The property is read off the EMITTED BYTES rather than off the
+    // source, because the bytes are what a node executes. Each
+    // destination position contributes one introspection, one form
+    // comparison and one drop, and only the comparison differs between
+    // the two fragments.
+    let target = reviewed_target();
+    let subject = shape(1, 3, 0, Absent);
+    let absorber = absorber_position(subject).expect("a last destination");
+
+    let crossing =
+        crossing_destination_form_fragment(&target, subject).expect("the crossing fragment builds");
+    let private =
+        private_destination_form_fragment(&target, subject).expect("the private fragment builds");
+
+    // Same POSITIONS, same reads, same drops. Not the same length, and
+    // the difference is a fact about the reviewed registry rather than
+    // about this fragment: the explicit value class declares ONE prefix,
+    // so its form check is a plain equality, while the confidential
+    // class declares two and its check is a mask-and-compare. Counting
+    // introspections and drops is therefore the honest way to say "the
+    // same positions, held to different forms" -- a length comparison
+    // would be asserting that two different form checks cost the same,
+    // which they do not and need not.
+    let count_op = |program: &TapscriptProgram, opcode: OpcodeId| {
+        program
+            .instructions()
+            .iter()
+            .filter(|instruction| **instruction == TapscriptInstruction::Opcode(opcode))
+            .count()
+    };
+    for opcode in [OpcodeId::InspectOutputValue, OpcodeId::Drop] {
+        assert_eq!(
+            count_op(&crossing, opcode),
+            count_op(&private, opcode),
+            "the crossing fragment reads and drops the same positions the private one does",
+        );
+    }
+    assert_eq!(
+        count_op(&crossing, OpcodeId::InspectOutputValue),
+        3,
+        "one read per destination of the three-destination shape",
+    );
+    assert!(
+        crossing.instructions().len() < private.instructions().len(),
+        "two of the three positions take the shorter single-prefix equality, so an exit \
+         crossing's form obligation is CHEAPER than the wholly private one rather than an \
+         addition to it",
+    );
+    // The absorber's own position, emitted alone, IS the private
+    // fragment's treatment of a one-destination shape — which is the
+    // statement that the absorber is an ordinary blinded destination
+    // sitting at a declared index, and not a new kind of output.
+    let sole = shape(1, 1, 0, Absent);
+    assert_eq!(
+        crossing_destination_form_fragment(&target, sole)
+            .expect("builds")
+            .instructions(),
+        private_destination_form_fragment(&target, sole)
+            .expect("builds")
+            .instructions(),
+        "a one-destination exit crossing is all absorber, so it is the private fragment",
+    );
+    assert_eq!(absorber_position(sole), Some(0));
+    assert_eq!(
+        absorber, 2,
+        "the three-destination shape absorbs at index two"
+    );
+}
+
+#[test]
+fn the_crossing_fragment_opens_no_value_payload() {
+    // §6.4 is not weakened because a destination became readable. The
+    // explicit destinations' amounts are readable in principle and this
+    // fragment still does not read them: every introspection is form-
+    // checked and dropped, so there is no payload left for any primitive
+    // to take. That is what keeps this a FORM obligation and stops it
+    // being mistaken for a conservation one.
+    let target = reviewed_target();
+
+    for receipt_outputs in 1_u8..=3 {
+        let subject = shape(1, receipt_outputs, 0, Absent);
+        let fragment = crossing_destination_form_fragment(&target, subject).expect("builds");
+
+        assert!(
+            opens_no_value_payload(&fragment),
+            "the crossing fragment must open no value payload at {receipt_outputs} \
+             destinations",
+        );
+        for use_of_field in value_field_uses(&fragment) {
+            assert_eq!(use_of_field, ValueFieldUse::FormCheckedThenDropped);
+        }
+    }
 }

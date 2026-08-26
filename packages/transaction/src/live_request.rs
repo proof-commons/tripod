@@ -38,7 +38,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use linker::OwnerParameter;
-use linker::live_backend::LiveTransferRepresentationPlan;
+use linker::live_backend::{LiveTransferComposition, LiveTransferRepresentationPlan};
 
 use crate::bytes::Outpoint;
 use crate::error::TransactionRefusal;
@@ -345,6 +345,47 @@ impl LiveTransferRequest {
         sponsor_change: SponsorChangeRequest,
         randomness: Option<PublicTestRandomness>,
     ) -> Result<Self, TransactionRefusal> {
+        Self::new_composing(
+            receipts,
+            destinations,
+            LiveTransferComposition::homogeneous(representation),
+            form,
+            sponsor_change,
+            randomness,
+        )
+    }
+
+    /// One request under a stated COMPOSITION.
+    ///
+    /// The general form, of which [`Self::new`] is the homogeneous case.
+    /// The request still NAMES its consumed side, because that is what
+    /// receipt recognition reads to decide the value form a spent coin
+    /// must carry; what the composition adds is which side the
+    /// randomness rule is about.
+    ///
+    /// # Why randomness follows the CREATED side
+    ///
+    /// Because randomness is what BLINDING consumes, and blinding
+    /// happens on the side a transfer creates. While both sides were one
+    /// plan the rule could read either and be right; an entry crossing
+    /// separates them, consuming explicit coins and creating
+    /// commitments, and a rule that read the consumed side would refuse
+    /// randomness to the one transfer that most needs it.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::new`], with the two randomness refusals stated against
+    /// the created side.
+    pub fn new_composing(
+        receipts: impl IntoIterator<Item = Outpoint>,
+        destinations: impl IntoIterator<Item = LiveReceiptDestination>,
+        composition: LiveTransferComposition,
+        form: RequestedForm,
+        sponsor_change: SponsorChangeRequest,
+        randomness: Option<PublicTestRandomness>,
+    ) -> Result<Self, TransactionRefusal> {
+        let representation = composition.consumed();
+        let creates = composition.created();
         let mut selected = BTreeSet::new();
         for outpoint in receipts {
             if !selected.insert(outpoint) {
@@ -364,7 +405,7 @@ impl LiveTransferRequest {
             return Err(TransactionRefusal::SponsorChangeWithoutSponsoredForm);
         }
 
-        match (representation, randomness) {
+        match (creates, randomness) {
             (LiveTransferRepresentationPlan::Explicit, Some(_)) => {
                 return Err(TransactionRefusal::PublicTestRandomnessWithoutPrivateForm);
             }

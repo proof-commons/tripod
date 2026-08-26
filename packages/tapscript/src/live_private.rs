@@ -290,6 +290,101 @@ pub fn private_destination_form_fragment(
     TapscriptProgram::new(instructions)
 }
 
+/// Which destination position absorbs a consumed blinder sum (§6.5).
+///
+/// The LAST destination, and the choice is a declaration rather than a
+/// search: the covenant states one position, the leaf checks that
+/// position and no other, and a candidate that blinded a different one
+/// is refused. Nothing here infers an absorber from a value form, which
+/// would decide the position from the very field the position governs.
+///
+/// The last position is chosen because it is the one every exit-crossing
+/// shape has. A shape's destination range starts at zero and runs to its
+/// receipt-output count, so "the last destination" names a position for
+/// every count of one or more, while any fixed interior index would name
+/// none for the smallest shapes.
+///
+/// `None` for a shape with no destinations at all, which has nothing to
+/// absorb into.
+#[must_use]
+pub const fn absorber_position(shape: LiveTransferShape) -> Option<u16> {
+    let (first, end) = shape.destination_range();
+    if end <= first { None } else { Some(end - 1) }
+}
+
+/// Every destination's value form under an EXIT crossing (§6.5).
+///
+/// The positional sibling of [`private_destination_form_fragment`], and
+/// the one fragment representation crossing genuinely needs. A transfer
+/// that consumes commitments and creates explicit values presents a
+/// blinder sum the target's tally must see equalled, and explicit
+/// outputs contribute zero to it — so exactly one created position stays
+/// blinded and carries the difference. This fragment is what makes that
+/// position a covenant term rather than a convention the builder happens
+/// to follow.
+///
+/// # It is a declaration and not an inference
+///
+/// The absorber sits at [`absorber_position`], inside the destination
+/// range, carrying the protocol asset like every other destination. It
+/// is NOT a fourth output family: the shape's exact output count and the
+/// three-family position census leave no position outside the
+/// destinations, the sponsor change and the fee, so an absorber outside
+/// the destination range is unrepresentable rather than merely unsound.
+/// The §10.4 closure argument is therefore untouched — this fragment
+/// adds no position and moves none, it only says which of the positions
+/// the closure already speaks for carries which form.
+///
+/// # What it establishes, and what it does not
+///
+/// Forms, positionally, and nothing else. Each non-absorber destination
+/// is required to carry the explicit value form and the absorber the
+/// confidential one; every payload is dropped where it stands, exactly
+/// as the homogeneous private fragment drops its own. In particular this
+/// is NOT a conservation fragment and must not be read as one: the
+/// consumed values are commitments, so no first-party equality over them
+/// is available to claim, and whether the amounts balance is the
+/// target's own confidential-transaction rule and is established by
+/// nothing in this crate.
+///
+/// A reader may ask why the explicit destinations are not summed, since
+/// their amounts are readable. Because the other side of that equality
+/// is not: an equality with one readable side is not an equality, and a
+/// fragment that summed the created side alone would authenticate a
+/// total against nothing.
+///
+/// # Errors
+///
+/// As [`private_destination_form_fragment`].
+pub fn crossing_destination_form_fragment(
+    target: &ReviewedElementsTapscriptDefinition,
+    shape: LiveTransferShape,
+) -> Result<TapscriptProgram, TapscriptError> {
+    let (first, end) = shape.destination_range();
+    // A shape's receipt-output count is nonzero, so the destination
+    // range is nonempty and the declared position exists. Compared as an
+    // `Option` rather than unwrapped, so the one shape that could have
+    // no absorber emits no absorber instead of panicking about it.
+    let absorber = absorber_position(shape);
+    let mut instructions = Vec::new();
+
+    for position in first..end {
+        // Read off the declared position rather than off the value, so
+        // the leaf decides the form and the candidate does not.
+        let class = if absorber == Some(position) {
+            EncodingClass::ConfidentialValue
+        } else {
+            EncodingClass::ExplicitValue
+        };
+        instructions.push(number(target, i64::from(position))?);
+        instructions.push(op(OpcodeId::InspectOutputValue));
+        instructions.extend(require_value_form(target, class)?);
+        instructions.push(op(OpcodeId::Drop));
+    }
+
+    TapscriptProgram::new(instructions)
+}
+
 // --- §6.4: amount opacity over the emitted bytes ----------------------
 
 /// What one program does with a value field it introspects.

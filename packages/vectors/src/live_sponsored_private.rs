@@ -839,21 +839,21 @@ impl SponsoredPrivatePlanner {
             vec![
                 PrivateInputOpening {
                     region: ConfidentialInputRegion::Receipt,
-                    opening: FixtureOpeningReference::new(
+                    opening: Some(FixtureOpeningReference::new(
                         linked.predecessor.handle().as_str().to_owned(),
                         linked.predecessor_digest(),
                         ConsumedReceipt::Primary.index(),
-                    ),
+                    )),
                     explicit_amount: linked.predecessor.amounts()[ConsumedReceipt::Primary.index()],
                     zero_asset_blinder: [0_u8; SCALAR_BYTES],
                 },
                 PrivateInputOpening {
                     region: ConfidentialInputRegion::SponsorReserve,
-                    opening: FixtureOpeningReference::new(
+                    opening: Some(FixtureOpeningReference::new(
                         sponsor_reserve_handle().as_str().to_owned(),
                         *self.sponsor_digest()?.bytes(),
                         SPONSOR_COIN,
-                    ),
+                    )),
                     explicit_amount: SPONSOR_FEE + SPONSOR_CHANGE,
                     zero_asset_blinder: [0_u8; SCALAR_BYTES],
                 },

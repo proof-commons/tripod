@@ -70,7 +70,7 @@
 use std::collections::BTreeMap;
 
 use linker::OwnerParameter;
-use linker::live_backend::LiveTransferRepresentationPlan;
+use linker::live_backend::{LiveTransferComposition, LiveTransferRepresentationPlan};
 use target_elements::LeafVersion;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::owner_key_oracle::verify_owner_signature;
@@ -112,7 +112,7 @@ use crate::error::VectorError;
 use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed_order};
 use crate::live_plan::{
     FEE_PROGRAM_DIGEST, FIRST_SCALAR, LiveShapeVocabulary, RESERVE_ASSET, SECOND_SCALAR,
-    live_abi_for_vocabulary, published_owner, reviewed_target, signing_material,
+    live_abi_composing, published_owner, reviewed_target, signing_material,
 };
 use crate::live_proof_bearing_observation::{materialization_profiles, register, register_multi};
 use target_elements_conformance::confidential_fixture::ConfidentialFixtureOutput;
@@ -211,6 +211,28 @@ pub enum PrivateRestartRefusal {
     IssuanceNamedNoAsset,
     /// The deployment could not be linked against the issued asset.
     RelinkRefused,
+    /// The deployment could not be linked, and the link said why.
+    ///
+    /// Carries the substrate's own refusal rather than discarding it.
+    /// A crossing deployment fails at more layers than a homogeneous
+    /// one -- a constructor, an emission, a link and an ABI derivation
+    /// -- and a ceremony that reported only that it failed would leave
+    /// the reader to guess which.
+    RelinkRefusedBy(String),
+    /// The linked deployment's destination table holds no constructor
+    /// at the plan a program was asked for.
+    ///
+    /// Separated from [`Self::RelinkRefused`] because the two are
+    /// different failures a wave has to tell apart: one is a deployment
+    /// that would not link at all, and this is a deployment that linked
+    /// and then did not carry the key somebody asked it for. A crossing
+    /// ceremony asks for two different keys, so a single refusal
+    /// covering both would say which deployment failed and never which
+    /// side.
+    NoConstructorForPlan {
+        /// Which plan the table was asked for.
+        plan: LiveTransferRepresentationPlan,
+    },
     /// A fixture the ceremony registers is not one the registry admits.
     FixtureNotRegistrable {
         /// Which handle.
@@ -270,6 +292,33 @@ pub struct RestartConfidentialCoin {
 }
 
 impl RestartConfidentialCoin {
+    /// One coin the node created whose VALUE is EXPLICIT.
+    ///
+    /// The predecessor of an ENTRY crossing. It carries no commitment
+    /// and no range proof, so the two facts a confidential coin is
+    /// censused on are stated as what they are rather than as zeroes
+    /// standing in for something: the proof byte count is genuinely
+    /// zero, and `matches_expectation` is true because the expectation
+    /// for an explicit coin IS the amount, which the caller compares
+    /// before building this.
+    #[must_use]
+    pub const fn explicit(
+        outpoint: Outpoint,
+        asset: AssetField,
+        value: ValueField,
+        program: Vec<u8>,
+        matches_expectation: bool,
+    ) -> Self {
+        Self {
+            outpoint,
+            asset,
+            value,
+            program,
+            rangeproof_bytes: 0,
+            matches_expectation,
+        }
+    }
+
     /// The outpoint the node created.
     #[must_use]
     pub const fn outpoint(&self) -> Outpoint {
@@ -749,6 +798,42 @@ pub(crate) fn link_and_register(
     vocabulary: LiveShapeVocabulary,
     reserve: [u8; 32],
 ) -> Result<LinkedDeployment, PrivateRestartRefusal> {
+    link_and_register_composing(
+        predecessor,
+        consumed,
+        printed,
+        vocabulary,
+        LiveTransferComposition::HomogeneousPrivate,
+        reserve,
+    )
+}
+
+/// The linked deployment of one vocabulary and one seated composition.
+///
+/// The general form, of which [`link_and_register`] is the homogeneous
+/// private case. Two things follow the composition rather than the
+/// vocabulary, and both matter.
+///
+/// The ABI is linked through the composing entry point, so a crossing
+/// deployment seats its crossing constructor at the key its CONSUMED
+/// side is recognized under. A crossing deployment is therefore its own
+/// deployment with its own taptree, exactly as the fee-bearing one is,
+/// and no identity recorded against the demonstration can move to buy
+/// it.
+///
+/// The predecessor's programs follow the CONSUMED side, because those
+/// coins are what this transfer spends and they must resolve through
+/// the constructor that recognizes them. A successor's programs follow
+/// the created side, and that is the ceremony's business rather than
+/// this function's.
+pub(crate) fn link_and_register_composing(
+    predecessor: PredecessorShape,
+    consumed: ConsumedReceipt,
+    printed: &str,
+    vocabulary: LiveShapeVocabulary,
+    composition: LiveTransferComposition,
+    reserve: [u8; 32],
+) -> Result<LinkedDeployment, PrivateRestartRefusal> {
     let asset = asset_of(printed).ok_or(PrivateRestartRefusal::IssuanceNamedNoAsset)?;
     let commit_order = *asset.internal();
     // WHICH FEE DIGEST A DEPLOYMENT IS WELDED TO FOLLOWS WHETHER IT
@@ -779,18 +864,21 @@ pub(crate) fn link_and_register(
         LiveShapeVocabulary::Demonstration => FEE_PROGRAM_DIGEST,
         LiveShapeVocabulary::FeeBearing => crate::bundle::fee_program_digest(),
     };
-    let abi = live_abi_for_vocabulary(vocabulary, commit_order, reserve, fee_digest)
-        .map_err(|_| PrivateRestartRefusal::RelinkRefused)?;
+    let abi = live_abi_composing(vocabulary, composition, commit_order, reserve, fee_digest)
+        .map_err(|refusal| PrivateRestartRefusal::RelinkRefusedBy(format!("{refusal:?}")))?;
 
     // The predecessor outputs pay to the published owners' PRIVATE receipt
     // constructors. That is the whole difference between this ceremony
     // and the proof-bearing one, and it is what makes the successor a
     // live-receipt transfer rather than a spend of some other program.
     let owners = [FIRST_SCALAR, SECOND_SCALAR];
+    // Under the CONSUMED side, because these coins are what the
+    // successor spends: a predecessor output paid to a program the
+    // spending covenant does not recognize is a coin nobody can spend.
     let programs = predecessor
         .owner_indices()
         .iter()
-        .map(|index| private_program(&abi, &owners[*index]))
+        .map(|index| owner_program(&abi, &owners[*index], composition.consumed()))
         .collect::<Result<Vec<_>, _>>()?;
 
     let handle = predecessor.handle();
@@ -916,6 +1004,75 @@ pub(crate) fn confidential_funding_step(
             },
         })),
     )
+}
+
+/// The EXPLICIT funding step of an entry crossing.
+///
+/// It funds ordinary explicit coins at a receipt constructor's program,
+/// which is what makes an entry crossing's consumed side explicit. The
+/// coin is a RECEIPT and not a funding coin: what the covenant governs
+/// is decided by the program it sits at, and this step puts it at one.
+pub(crate) fn explicit_funding_step(
+    program: Vec<u8>,
+    printed: String,
+    outputs: u8,
+    amount_per_output: u64,
+) -> OperationStep {
+    OperationStep::new(
+        FUND_STEP,
+        OperationSubject::Funding(Box::new(TargetFundingSubject {
+            issue_asset: false,
+            asset: Some(printed),
+            output_program: program,
+            outputs,
+            amount_per_output,
+        })),
+    )
+}
+
+/// Take the EXPLICIT funded coins the node reported.
+///
+/// Each is compared against what was asked for rather than replaced by
+/// it: the amount the node reports must be the amount requested and the
+/// program must be the one funded, which are the only two facts an
+/// explicit coin has to agree about.
+///
+/// # Errors
+///
+/// [`PrivateRestartRefusal::FundingCreatedNoPredecessor`] where the node
+/// reported a different number of outputs than were asked for.
+pub(crate) fn observe_explicit_coins(
+    response: &NativeOperationResponse,
+    asset: AssetId,
+    program: &[u8],
+    expected: usize,
+    amount: u64,
+) -> Result<Vec<RestartConfidentialCoin>, PrivateRestartRefusal> {
+    if response.funded_outputs.len() != expected {
+        return Err(PrivateRestartRefusal::FundingCreatedNoPredecessor);
+    }
+    response
+        .funded_outputs
+        .iter()
+        .map(|funded| {
+            let outpoint = crate::live_owner_observation::outpoint_of(&funded.outpoint)
+                .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+            let observed_asset = crate::live_owner_observation::asset_of(&funded.asset)
+                .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+            let observed_program = crate::live_owner_observation::decode_hex(&funded.script)
+                .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+            let agrees = observed_asset == asset
+                && funded.amount_satoshis == amount
+                && observed_program == program;
+            Ok(RestartConfidentialCoin::explicit(
+                outpoint,
+                AssetField::Explicit(observed_asset),
+                ValueField::Explicit(funded.amount_satoshis),
+                observed_program,
+                agrees,
+            ))
+        })
+        .collect()
 }
 
 /// Take the funded coins from the node's own report of them, each decoded
@@ -1065,11 +1222,11 @@ fn finalize_control(
     let openings = PrivateLiveOpenings::new(
         vec![PrivateInputOpening {
             region: ConfidentialInputRegion::Receipt,
-            opening: FixtureOpeningReference::new(
+            opening: Some(FixtureOpeningReference::new(
                 linked.predecessor.handle().as_str().to_owned(),
                 linked.predecessor_digest,
                 consumed.index(),
-            ),
+            )),
             explicit_amount: linked.predecessor.amounts()[consumed.index()],
             zero_asset_blinder: [0_u8; SCALAR_BYTES],
         }],
@@ -1309,14 +1466,32 @@ pub(crate) fn private_program(
     abi: &CandidateLiveTransferAbi,
     scalar: &[u8; SCALAR_BYTES],
 ) -> Result<Vec<u8>, PrivateRestartRefusal> {
+    owner_program(
+        abi,
+        scalar,
+        LiveTransferRepresentationPlan::PrivateCommitted,
+    )
+}
+
+/// One published owner's receipt program under a STATED plan.
+///
+/// The general form, of which [`private_program`] is the private case.
+/// A crossing ceremony needs it because the plan a destination's program
+/// is resolved under is the CREATED side's, which for an exit crossing
+/// is not the side its own receipts were recognized under. Resolving a
+/// crossing successor's programs under the consumed plan would register
+/// a fixture whose outputs the construction does not pay to, and the
+/// candidate would then diverge from its own manifest.
+pub(crate) fn owner_program(
+    abi: &CandidateLiveTransferAbi,
+    scalar: &[u8; SCALAR_BYTES],
+    plan: LiveTransferRepresentationPlan,
+) -> Result<Vec<u8>, PrivateRestartRefusal> {
     let owner = published_owner(scalar).map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?;
     Ok(abi
         .destinations()
-        .get(
-            &OwnerParameter::new(owner),
-            LiveTransferRepresentationPlan::PrivateCommitted,
-        )
-        .ok_or(PrivateRestartRefusal::RelinkRefused)?
+        .get(&OwnerParameter::new(owner), plan)
+        .ok_or(PrivateRestartRefusal::NoConstructorForPlan { plan })?
         .instance()
         .program()
         .to_vec())

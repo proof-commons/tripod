@@ -955,3 +955,185 @@ fn the_dual_parity_rule_reads_on_commitments_and_not_on_output_count() {
         .expect("byte identity carries openings");
     assert_eq!(commitments.len(), 2, "two blinded outputs, two commitments");
 }
+
+// --- The explicit destination role, and the exit crossing it serves ----
+
+/// One manifest of an EXIT CROSSING: two explicit receipt destinations
+/// beside the blinded absorber a nonzero input blinder sum requires.
+///
+/// The absorber is an ordinary `Balancing` output at the LAST
+/// destination position, which is the declaration the covenant checks
+/// positionally. It is not a fourth output family and needs no second
+/// balancing election.
+fn exit_crossing_manifest(
+    handle: &str,
+    input_blinder_sum: [u8; 32],
+) -> ConfidentialFixtureManifest {
+    ConfidentialFixtureManifest {
+        handle: ConfidentialFixtureHandle::new(handle.to_owned()),
+        material_class: PublicDisposableTestMaterial::EXPECTED,
+        derivation_profile: FixtureDerivationProfile::GuideCtfV1,
+        profiles: profiles(ReproducibilityContract::ByteIdentity),
+        retry_limit: MAX_PARITY_COUNTER,
+        explicit_asset: ASSET,
+        input_blinder_sum,
+        outputs: vec![
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::ExplicitDestination,
+                semantic_amount: 300_000_000,
+                output_program: vec![0x51],
+            },
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::ExplicitDestination,
+                semantic_amount: 200_000_000,
+                output_program: vec![0x52],
+            },
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::Balancing,
+                semantic_amount: 100_000_000,
+                output_program: vec![0x53],
+            },
+        ],
+    }
+}
+
+#[test]
+fn an_exit_crossing_solves_the_absorber_to_the_input_blinder_sum_itself() {
+    // THE CLAIM THE EXIT CROSSING RESTS ON, recomputed rather than
+    // argued: with no output deriving a blinder there is nothing to
+    // subtract, so the solved absorber blinder is the input blinder sum
+    // ITSELF. That makes the all-explicit-siblings case the EASIEST one
+    // for the solve rather than a stretch of it -- the same arithmetic
+    // the declared single-output form performs, reached through the
+    // ordinary balancing role because the manifest has more than one
+    // output.
+    let mut registry = ConfidentialFixtureRegistry::new();
+    registry
+        .register(exit_crossing_manifest(
+            "ctf-v1/exit-crossing",
+            NON_CANCELING_SUM,
+        ))
+        .expect("an exit crossing registers");
+    let frozen = registry.freeze();
+    let handle = ConfidentialFixtureHandle::new("ctf-v1/exit-crossing".to_owned());
+    let digest = *frozen
+        .registered_digest(&handle)
+        .expect("the registry holds its own digest");
+    let resolved = frozen.resolve(&handle, &digest).expect("it resolves");
+
+    let FixtureOpenings::Derived { openings, .. } = resolved.openings() else {
+        panic!("byte identity derives openings");
+    };
+    assert_eq!(openings.len(), 3, "three outputs, three opening slots");
+
+    // The two explicit destinations carry NO opening, exactly as a fee
+    // carries none, and their blinder is the all-zero one every explicit
+    // value is committed with.
+    for index in [0_usize, 1] {
+        assert!(
+            openings[index].is_none(),
+            "an explicit destination carries no opening, so slot {index} is absent",
+        );
+    }
+
+    // The absorber's blinder is the input blinder sum, unchanged.
+    let absorber = openings[2]
+        .as_ref()
+        .expect("the absorber carries the one opening");
+    assert_eq!(
+        absorber.value_blinder, NON_CANCELING_SUM,
+        "with nothing derived to subtract, the solve returns the input blinder sum ITSELF",
+    );
+}
+
+#[test]
+fn an_exit_crossing_over_a_canceling_predecessor_is_refused_rather_than_built() {
+    // The degeneracy, and it is the SAME one the register already
+    // refuses: a predecessor whose consumed blinders cancel presents a
+    // zero sum, the absorber's solved blinder is zero, and an absorber
+    // hiding nothing is not an absorber. So an exit crossing must be run
+    // over a NON-CANCELING predecessor, and that is arithmetic rather
+    // than a preference.
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(exit_crossing_manifest("ctf-v1/exit-canceling", [0_u8; 32]))
+            .expect_err("a zero input blinder sum leaves nothing to absorb"),
+        RegistrationRefusal::Derivation {
+            refusal: FixtureDerivationRefusal::DegenerateBalancingScalar,
+        },
+    );
+}
+
+#[test]
+fn a_fully_unblinding_manifest_names_no_output_to_solve() {
+    // THE CORNER THE CENSUS KEEPS AND THE WAVE DOES NOT ATTEMPT.
+    // Dropping the absorber leaves a manifest of explicit destinations
+    // only, and consensus admits that shape ONLY over a zero-sum input
+    // set. The registry refuses it independently and for a reason of its
+    // own -- no output solves the balance -- which is exactly the case
+    // the register exists to keep apart from a consensus refusal.
+    let mut fully_explicit = exit_crossing_manifest("ctf-v1/fully-unblinding", NON_CANCELING_SUM);
+    fully_explicit.outputs[2].role = FixtureOutputRole::ExplicitDestination;
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(fully_explicit)
+            .expect_err("no output solves the balance"),
+        RegistrationRefusal::BalancingRoleNotUnique { found: 0 },
+    );
+}
+
+#[test]
+fn an_explicit_destination_must_carry_a_program_and_a_fee_must_not() {
+    // The two non-opening roles are told apart by the ONE predicate that
+    // differs, and each is held to its own side of it. This is what
+    // stops an explicit receipt destination being registered as the
+    // target's fee -- which would be registering a spendable output as
+    // the thing a node treats as paid-away value.
+    let mut programless = exit_crossing_manifest("ctf-v1/exit-programless", NON_CANCELING_SUM);
+    programless.outputs[0].output_program = Vec::new();
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(programless)
+            .expect_err("an explicit destination with no program is not a destination"),
+        RegistrationRefusal::OutputProgramEmpty { output: 0 },
+    );
+
+    // And the mirror: the fee still may not carry one.
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(fee_bearing_manifest(vec![0x51]))
+            .expect_err("a fee carrying a program is not a fee"),
+        RegistrationRefusal::FeeProgramNotEmpty { output: 1 },
+    );
+}
+
+#[test]
+fn the_new_role_moves_no_recorded_digest_because_it_rides_a_new_code() {
+    // The stability argument as arithmetic rather than as prose. Every
+    // role's transcript code is distinct and the new one is the next
+    // unused value, so no manifest registered before this role existed
+    // can hash a byte differently -- there is no framing, field or flag
+    // it shares with them that it changed.
+    let codes = [
+        FixtureOutputRole::Primary,
+        FixtureOutputRole::Balancing,
+        FixtureOutputRole::SoleBalancing,
+        FixtureOutputRole::Fee,
+        FixtureOutputRole::SponsorChange { asset: ASSET },
+        FixtureOutputRole::ExplicitDestination,
+    ]
+    .map(FixtureOutputRole::transcript_code);
+    assert_eq!(
+        codes,
+        [1, 2, 3, 4, 5, 6],
+        "codes are stable and the new one is next"
+    );
+
+    // And it takes the fee's side of every predicate but the program
+    // one, which is the whole of what it is.
+    let role = FixtureOutputRole::ExplicitDestination;
+    assert!(!role.solves_the_balance());
+    assert!(!role.carries_an_opening());
+    assert!(!role.requires_an_empty_program());
+    assert_eq!(role.own_asset(), None, "it takes the manifest's asset");
+}
