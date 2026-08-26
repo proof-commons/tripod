@@ -133,6 +133,15 @@ pub enum LiveFaultValidator {
     /// the target says only that some leaf did not commit, and this site
     /// says WHICH input's declared leaf did not, naming it.
     OwnerSigningCensus,
+    /// `transaction::live_request::LiveTransferRequest::new`, the sole
+    /// site that admits a transfer request at all.
+    ///
+    /// An EIGHTH entry point, and the earliest of them: it refuses
+    /// before an ABI is consulted, before a program is looked up and
+    /// before a candidate exists. A row whose fault is a property of
+    /// what a caller ASKED FOR — rather than of what the ask produces —
+    /// can be answered nowhere else.
+    LiveTransferRequestConstruction,
     /// `linker::LiveDefinitionCensus::define`, the sole site that admits
     /// a symbol definition into a link.
     LiveSymbolDefinition,
@@ -157,6 +166,9 @@ impl LiveFaultValidator {
             Self::ConstructorDerivation => "constructor-derivation",
             Self::OwnerSigningCensus => {
                 "transaction::live_census::OwnerSigningCensus::from_explicit_finalized"
+            }
+            Self::LiveTransferRequestConstruction => {
+                "transaction::live_request::LiveTransferRequest::new"
             }
             Self::LiveSymbolDefinition => "live-symbol-definition",
             Self::ProtocolValueDomain => "protocol-value-domain",
@@ -248,6 +260,13 @@ pub enum FaultMutation {
     /// the change. Distinct from the sibling reorder, which swaps whole
     /// outputs and moves no value.
     MoveValueBetweenDestinationsAfterSigning,
+    /// Name one receipt outpoint twice in the same request.
+    ///
+    /// The whole of the change: the same coin, asked for twice. §12.1
+    /// refuses it before sorting rather than collapsing it, because a
+    /// selection built by insertion would silently consume one coin for
+    /// a caller who asked for two.
+    NameOneReceiptOutpointTwice,
     /// Make the destination total exceed the target's explicit width.
     OverflowTheDestinationTotal,
     /// Offer a commitment-valued receipt to the explicit plan.
@@ -467,7 +486,7 @@ macro_rules! census_is {
 
 /// The complete census of first-party cases for §15.4–§15.7.
 ///
-/// Twenty-one cases over seven owning entry points, and no §15.4–§15.7 row
+/// Twenty-two cases over eight owning entry points, and no §15.4–§15.7 row
 /// whose verdict a first-party layer owns is missing from it.
 #[must_use]
 #[expect(
@@ -633,6 +652,17 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
             M::DeclareALeafUnderAnotherProgramsControlBlock,
             census_is!(OwnerCensusRefusal::LeafHashDoesNotCommit { .. }),
             "LeafHashDoesNotCommit",
+        ),
+        // §15.5's duplication row, retyped to the boundary it actually
+        // has. The request type refuses a repeated outpoint outright,
+        // which is earlier than any script path and is why no run was
+        // ever going to answer this row.
+        case(
+            "duplicated-source",
+            V::LiveTransferRequestConstruction,
+            M::NameOneReceiptOutpointTwice,
+            transaction_is!(TransactionRefusal::DuplicateReceiptOutpoint(_)),
+            "DuplicateReceiptOutpoint",
         ),
         case(
             "time-locked-output",
@@ -1452,6 +1482,41 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
                     .map(ObservedFaultRefusal::Transaction),
             })
         }
+        M::NameOneReceiptOutpointTwice => {
+            let [first, second] = honest_points()?;
+            let control = LiveTransferRequest::new(
+                [first, second],
+                [
+                    destination(&SECOND_SCALAR, 250)?,
+                    destination(&FIRST_SCALAR, 750)?,
+                ],
+                Explicit,
+                RequestedForm::Sponsorless,
+                SponsorChangeRequest::NotRequested,
+                None,
+            )
+            .err()
+            .map(ObservedFaultRefusal::Transaction);
+            // One change: the second receipt is the first one again.
+            // The destinations, the representation and the form are all
+            // the control's, so what refuses is the repetition.
+            Ok(Staged {
+                control,
+                malformed: LiveTransferRequest::new(
+                    [first, first],
+                    [
+                        destination(&SECOND_SCALAR, 250)?,
+                        destination(&FIRST_SCALAR, 750)?,
+                    ],
+                    Explicit,
+                    RequestedForm::Sponsorless,
+                    SponsorChangeRequest::NotRequested,
+                    None,
+                )
+                .err()
+                .map(ObservedFaultRefusal::Transaction),
+            })
+        }
         M::OverflowTheDestinationTotal => {
             let (control_request, view) = explicit_control(&abi)?;
             let [first, second] = honest_points()?;
@@ -1815,7 +1880,7 @@ mod tests {
             .iter()
             .map(super::ValidatedLiveFaultEvidence::validator)
             .collect();
-        assert_eq!(validators.len(), 7, "seven owning entry points");
+        assert_eq!(validators.len(), 8, "eight owning entry points");
     }
 
     #[test]

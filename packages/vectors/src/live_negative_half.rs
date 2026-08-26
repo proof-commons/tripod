@@ -335,16 +335,6 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         "the canonical partition is derived from the request, so omitting a source needs raw bytes",
     ),
     entry(
-        "duplicated-source",
-        G::RowTypingInQuestion,
-        "the request type itself refuses a duplicate receipt outpoint, which is a first-party boundary",
-    ),
-    entry(
-        "duplicated-destination",
-        G::RowTypingInQuestion,
-        "two identical destinations are an ordinary split by the request type's own reading",
-    ),
-    entry(
         "output-claimed-through-two-flows",
         G::OwnerSigningOverForeignBytesAbsent,
         "one output under two flows is not a request the canonical partition can state",

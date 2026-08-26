@@ -1189,15 +1189,31 @@ pub const VALUE_FAULTS: &[LiveSafetyRow] = &[
         missing_family,
         "MissingCanonicalDeltaFamily",
     ),
-    linked(
+    // RETYPED to the boundary it has. The row declared a script path,
+    // and §12.1's request type refuses a repeated receipt outpoint
+    // before sorting rather than collapsing it — earlier than an ABI,
+    // earlier than a program lookup, earlier than a candidate. No run
+    // was ever going to answer this row, because nothing carrying the
+    // fault could be built to offer.
+    pre_target(
         S::ValueFault,
         "duplicated-source",
         L::SemanticFact,
-        B::ScriptPathRejection,
-        delta_policy(),
-        duplicate_endpoint,
-        "DuplicateCanonicalSourceOrDestination",
+        B::AbiConstructionRejection,
     ),
+    // THE SECOND ROW OF THIS MATRIX WHOSE PREDICTION THE SOURCES REFUSE,
+    // and it sits beside its own opposite. `duplicated-source` above is
+    // a real fault refused at the earliest boundary there is; this row
+    // is NOT A FAULT AT ALL by the same type's own reading. §12.2 keeps
+    // the destination census a MULTISET precisely so that two
+    // destinations of one owner and one value count as two receipts
+    // rather than one, and the deciding test builds exactly that pair
+    // and calls it what it is — an even split is an ordinary transfer.
+    //
+    // The declaration is left standing and the STANDING is corrected,
+    // for the reason the zero-valued sponsor row states: which rows
+    // §15.5 lists is the guide's to say, and the erratum is filed
+    // there rather than executed here.
     linked(
         S::ValueFault,
         "duplicated-destination",

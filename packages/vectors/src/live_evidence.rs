@@ -1541,6 +1541,23 @@ fn observed_row_first_party_fact(row: &LiveSafetyRow) -> Option<(&'static str, &
             "the semantic relation admits a zero-valued ordinary sponsor member under exact              role structure: sponsor-value opacity leaves no amount for any relation to              compare with zero, so no layer of this workspace refuses the shape",
             "realization::tests::live_transfer_tests::zero_sponsor_sidecar_is_accepted",
         )),
+        // §15.5's duplicated-destination row, and the second row whose
+        // predicted refusal the sources refuse to make. Its own sibling
+        // `duplicated-source` IS a fault and is refused at the earliest
+        // boundary this workspace has; this row is not a fault by the
+        // same type's own reading. §12.2 makes the destination census a
+        // MULTISET rather than a set, and states why in its own words:
+        // two destinations of the same owner and value are two
+        // receipts, and a set would report them as one. The deciding
+        // test builds that pair and names the verdict — an even split
+        // is an ordinary transfer.
+        //
+        // So no layer refuses it, and the reason is not that a layer is
+        // missing. Nothing is wrong with the candidate.
+        "duplicated-destination" => Some((
+            "two destinations of one owner and one value are two receipts and an ordinary              split: the destination census is a multiset by §12.2 so that a repeat counts              twice rather than collapsing, and no layer of this workspace refuses one",
+            "transaction::tests::live_request_tests::two_destinations_of_one_owner_and_one_value_are_two_receipts",
+        )),
         _ => None,
     }
 }
@@ -1982,7 +1999,7 @@ mod tests {
         // against its own control, with its own changed field.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let census = plan.census();
-        assert_eq!(census.first_party_discharged(), 32);
+        assert_eq!(census.first_party_discharged(), 33);
         assert_eq!(census.first_party_undischarged(), 0);
 
         let outstanding: BTreeSet<_> = plan
@@ -2520,7 +2537,7 @@ mod tests {
         // whether a shape is ADMITTED, and the sources say it is. Both
         // are statements this workspace makes about itself, and neither
         // is anything a target said.
-        assert_eq!(plan.census().first_party_fact_observed(), 2);
+        assert_eq!(plan.census().first_party_fact_observed(), 3);
         let zero = plan
             .rows()
             .iter()
