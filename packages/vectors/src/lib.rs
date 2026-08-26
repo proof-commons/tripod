@@ -6,6 +6,7 @@ pub mod bundle;
 pub mod comparison;
 pub mod confidential_materializer;
 pub mod confidential_predecessor;
+pub mod confidential_sponsor_reserve;
 pub mod divergence;
 pub mod error;
 pub mod first_party;

@@ -12,6 +12,7 @@ vectors_source_files = files(
   'src/fixture.rs',
   'src/confidential_materializer.rs',
   'src/confidential_predecessor.rs',
+  'src/confidential_sponsor_reserve.rs',
   'src/lib.rs',
   'src/live_capability.rs',
   'src/live_closeout.rs',
