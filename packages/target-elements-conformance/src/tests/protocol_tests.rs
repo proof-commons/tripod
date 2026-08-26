@@ -1268,6 +1268,13 @@ mod operation_response_shapes {
                 response.confidential_funded_outputs = vec![confidential_coin()];
                 response.mined_readback = Some(readback());
             }
+            // The same two halves and no issued asset, because the
+            // reserve arm funds coins of an asset the chain already has
+            // and no run brings one into existence.
+            OperationStepKind::FundConfidentialSponsor => {
+                response.confidential_funded_outputs = vec![confidential_coin()];
+                response.mined_readback = Some(readback());
+            }
         }
         response
     }

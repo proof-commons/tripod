@@ -356,7 +356,10 @@ fn a_plan_states_its_second_step_out_of_the_first_answer() {
         OperationSubject::Funding(_)
         | OperationSubject::SponsorFunding(_)
         | OperationSubject::SponsorSigning(_)
-        | OperationSubject::ConfidentialFunding(_) => panic!("the second step is a submission"),
+        | OperationSubject::ConfidentialFunding(_)
+        | OperationSubject::ConfidentialSponsorFunding(_) => {
+            panic!("the second step is a submission")
+        }
     }
     assert_eq!(transcript.operation_responses().len(), 2);
     assert_eq!(transcript.operation_requests().len(), 2);
@@ -387,7 +390,10 @@ fn the_transcript_retains_the_exact_subject_of_every_step() {
         OperationSubject::Submission(_)
         | OperationSubject::SponsorFunding(_)
         | OperationSubject::SponsorSigning(_)
-        | OperationSubject::ConfidentialFunding(_) => panic!("the step was a funding step"),
+        | OperationSubject::ConfidentialFunding(_)
+        | OperationSubject::ConfidentialSponsorFunding(_) => {
+            panic!("the step was a funding step")
+        }
     }
 }
 
@@ -767,7 +773,8 @@ fn a_confidential_step_travels_as_its_own_arm_and_comes_back_as_one() {
         OperationSubject::Funding(_)
         | OperationSubject::Submission(_)
         | OperationSubject::SponsorFunding(_)
-        | OperationSubject::SponsorSigning(_) => {
+        | OperationSubject::SponsorSigning(_)
+        | OperationSubject::ConfidentialSponsorFunding(_) => {
             panic!("the confidential step was written as some other arm")
         }
     }

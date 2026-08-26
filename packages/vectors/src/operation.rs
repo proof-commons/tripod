@@ -2077,13 +2077,17 @@ mod tests {
                         (self.weigh)(&submission.transaction_bytes);
                 }
                 // This fake target materializes no confidential
-                // representation and states so. A step it cannot perform
+                // representation and states so, for either arm of it:
+                // the protocol one and the reserve one differ in which
+                // asset their coins carry and in nothing this target
+                // could do about either. A step it cannot perform
                 // is an infrastructure failure carrying no observation,
                 // which is what an unimplemented step honestly is — and
                 // the compact-ASH planner never states one, so reaching
                 // this arm at all would be a planner defect rather than
                 // a target answer.
-                OperationSubject::ConfidentialFunding(_) => {
+                OperationSubject::ConfidentialFunding(_)
+                | OperationSubject::ConfidentialSponsorFunding(_) => {
                     response.observed_layer = ObservedOutcomeLayer::ExecutorInfrastructureFailure;
                     response.observed_detail = Some(
                         "this fake target performs no confidential funding ceremony".to_owned(),
