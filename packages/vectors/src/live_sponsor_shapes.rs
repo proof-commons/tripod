@@ -60,6 +60,9 @@ use std::fmt::Write as _;
 
 use linker::live_backend::LiveTransferRepresentationPlan;
 use target_elements::LeafVersion;
+use target_elements_conformance::confidential_fixture::{
+    FrozenConfidentialFixtureRegistry, sponsor_reserve_handle,
+};
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::owner_key_oracle::verify_owner_signature;
 use target_elements_conformance::protocol::{
@@ -67,7 +70,10 @@ use target_elements_conformance::protocol::{
     OperationSubject, TargetFundingSubject, TargetSponsorFundingSubject,
     TargetSponsorSigningSubject, TargetSubmissionSubject, WireOutpoint, WireSighashProfile,
 };
-use transaction::bytes::{AssetField, AssetId, Outpoint, TargetTransaction, Txid, ValueField};
+use transaction::bytes::{
+    AssetField, AssetId, COMMITMENT_BYTES, EXPLICIT_PREFIX as EXPLICIT_VALUE_PREFIX, Outpoint,
+    TargetTransaction, Txid, ValueField,
+};
 use transaction::live_abi::CandidateLiveTransferAbi;
 use transaction::live_census::{
     AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
@@ -89,6 +95,10 @@ use transaction::taproot::{Digest32, leaf_hash, witness_program_script};
 use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::bundle::fee_program_digest;
+use crate::confidential_sponsor_reserve::{
+    FUND_SPONSOR_STEP, SPONSOR_RESERVE_OUTPUTS, frozen_sponsor_reserve_registry,
+    sponsor_reserve_subject,
+};
 use crate::live_capability::OracleLiveCurve;
 use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed_order};
 use crate::live_plan::{
@@ -499,6 +509,182 @@ pub enum SponsorShapeRefusal {
     /// the without-change form would be an acceptance of a shape that
     /// already has one, reported under a row it says nothing about.
     ChangeRunCarriedNoChangeOutput,
+    /// The registry refused the sponsor reserve manifest, so there is no
+    /// fixture to bind a committed sponsor coin to.
+    SponsorReserveRegistrationRefused,
+    /// The registry registered the sponsor reserve case and then held no
+    /// digest for it, which is a defect in the registry rather than in
+    /// the run.
+    SponsorReserveDigestAbsent,
+    /// The committed sponsor-funding step reported no coins.
+    CommittedSponsorFundingCreatedNothing,
+    /// A field the committed sponsor-funding step reported is not the
+    /// width or the spelling the representation states.
+    MalformedCommittedSponsorCoin,
+    /// The value the chain holds for the sponsor coin is not the one the
+    /// frozen registry derives for the same fixture.
+    ///
+    /// A HARD stop, and the one this whole layer rests on. The registry
+    /// recomputes the commitment from published constants alone; the
+    /// chain reports what it stored. A run whose two copies disagreed
+    /// would be a run that funded SOMETHING blinded and could say
+    /// nothing about what.
+    CommittedSponsorCoinIsNotTheRegistrysOwn,
+    /// A committed run reached its control with a sponsor coin whose
+    /// value the chain reported as an amount.
+    ///
+    /// A HARD stop on the same ground the change-role one stands on: a
+    /// committed run that degraded to an explicit sponsor value would be
+    /// an acceptance of the shape that already has one.
+    CommittedRunCarriedAnExplicitSponsorValue,
+}
+
+/// Which form the sponsor coin's VALUE takes.
+///
+/// # The second axis, and why it is a second one
+///
+/// [`SponsorShape`] varies whether the sponsor asks for change. This
+/// varies what the sponsor's own coin holds, and the two are
+/// independent: a sponsor taking change may be funded by either form,
+/// and a sponsor taking none by either form as well. Folding them into
+/// one enum would have made four members that share no reason with each
+/// other, and a run differing in two things at once cannot attribute
+/// what it observes to either.
+///
+/// # What stays equal across the axis
+///
+/// Everything a reader would otherwise have to take on trust. Both
+/// forms issue the same asset, fund the same receipts to the same
+/// programs, ask the same explicit sponsor-funding step for a coin of
+/// the same size, make the same offer, and submit through the same
+/// stages. [`Self::Committed`] adds ONE stage and changes ONE field: the
+/// sponsor coin the control spends, and the value field its view
+/// carries.
+///
+/// The explicit sponsor-funding step runs in BOTH forms, and that is not
+/// waste. It is how the run learns the two facts the committed fixture
+/// has to be built against — which asset the chain's reserve is, and
+/// which program the executor can authorize a spend of — and neither is
+/// a run's to choose. Keeping the step identical is also what keeps the
+/// axis to one thing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SponsorValueForm {
+    /// The sponsor's coin carries an explicit amount.
+    Explicit,
+    /// The sponsor's coin carries a value commitment.
+    ///
+    /// Its ASSET stays explicit, and that pairing is the whole
+    /// representation rather than a halfway position: the covenant
+    /// introspects the sponsor input's asset and an introspection reads
+    /// a field, while nothing in the covenant reads its value.
+    Committed,
+}
+
+impl SponsorValueForm {
+    /// Both forms, in the order a reader meets them.
+    pub const ALL: [Self; 2] = [Self::Explicit, Self::Committed];
+
+    /// The form's own name, for a record a person reads.
+    #[must_use]
+    pub const fn case_name(self) -> &'static str {
+        match self {
+            Self::Explicit => "explicit-sponsor-value",
+            Self::Committed => "committed-sponsor-value",
+        }
+    }
+
+    /// Whether this form needs the committed funding stage.
+    #[must_use]
+    pub const fn funds_a_committed_coin(self) -> bool {
+        matches!(self, Self::Committed)
+    }
+}
+
+/// What a run observed about a COMMITTED sponsor coin.
+///
+/// # Why every member is a boolean
+///
+/// Because the interesting facts here are all agreements, and an
+/// agreement is a yes or a no. Printing the commitment, the blinder, or
+/// the amount would put a scalar in a record whose whole subject is that
+/// the scalar is not published — and worse, a reader comparing two
+/// printed scalars is doing by eye what
+/// [`Self::commitment_is_the_registrys_own`] does by recomputation.
+///
+/// The recomputation is the load-bearing one. The frozen registry
+/// derives the commitment from published constants and no chain; the
+/// node reports what it actually stored. Their agreement is a
+/// first-party check of the target's arithmetic against this
+/// workspace's, and it is the only thing here that could have come out
+/// the other way for an interesting reason.
+#[derive(Clone, Copy, Debug)]
+pub struct CommittedSponsorCensus {
+    chain_reported_a_commitment: bool,
+    commitment_is_the_registrys_own: bool,
+    two_equal_amounts_committed_to_two_points: bool,
+    rangeproof_present: bool,
+    surjection_proof_empty: bool,
+    asset_stayed_explicit: bool,
+}
+
+impl CommittedSponsorCensus {
+    /// Whether the chain reported a value commitment rather than an
+    /// amount.
+    #[must_use]
+    pub const fn chain_reported_a_commitment(self) -> bool {
+        self.chain_reported_a_commitment
+    }
+
+    /// Whether the value the chain holds is the one the frozen registry
+    /// derives independently for the same fixture.
+    #[must_use]
+    pub const fn commitment_is_the_registrys_own(self) -> bool {
+        self.commitment_is_the_registrys_own
+    }
+
+    /// Whether the case's two equal amounts produced two different
+    /// points.
+    ///
+    /// The fixture funds both reserve coins to the SAME semantic amount
+    /// under different blinders. If a commitment leaked its amount these
+    /// two would be one value; the run reads both off the chain and says
+    /// whether they are.
+    #[must_use]
+    pub const fn two_equal_amounts_committed_to_two_points(self) -> bool {
+        self.two_equal_amounts_committed_to_two_points
+    }
+
+    /// Whether a range proof accompanied the committed value, which the
+    /// representation requires.
+    #[must_use]
+    pub const fn rangeproof_present(self) -> bool {
+        self.rangeproof_present
+    }
+
+    /// Whether the surjection proof was empty, which an explicit asset
+    /// entails.
+    #[must_use]
+    pub const fn surjection_proof_empty(self) -> bool {
+        self.surjection_proof_empty
+    }
+
+    /// Whether the coin's asset stayed explicit beside its committed
+    /// value.
+    #[must_use]
+    pub const fn asset_stayed_explicit(self) -> bool {
+        self.asset_stayed_explicit
+    }
+
+    /// Whether every member holds.
+    #[must_use]
+    pub const fn every_check_held(self) -> bool {
+        self.chain_reported_a_commitment
+            && self.commitment_is_the_registrys_own
+            && self.two_equal_amounts_committed_to_two_points
+            && self.rangeproof_present
+            && self.surjection_proof_empty
+            && self.asset_stayed_explicit
+    }
 }
 
 /// One coin as the node reported it.
@@ -506,8 +692,41 @@ pub enum SponsorShapeRefusal {
 struct ObservedCoin {
     outpoint: Outpoint,
     asset: AssetId,
-    amount: u64,
+    /// What the coin's value field holds, in whichever form the chain
+    /// reported it.
+    ///
+    /// A field and not a number, because a coin whose value is committed
+    /// HAS no number here: the chain reports a point, and the amount
+    /// behind it lives in the fixture that funded it. Every consumer of
+    /// this struct wants the field anyway — the owner's signature
+    /// commits to the spent output's value field verbatim — so carrying
+    /// the field is carrying what is actually used, and the one place
+    /// that needs an amount asks for it and is told when there is none.
+    value: ValueField,
     program: Vec<u8>,
+}
+
+impl ObservedCoin {
+    /// The amount, where the chain reported one.
+    ///
+    /// `None` for anything that is not an explicit amount, which is the
+    /// honest answer rather than a zero: a run that read a commitment
+    /// observed no amount, and a caller that needs one has to say what
+    /// it does without.
+    ///
+    /// Written as a test of the one form that HAS an amount rather than
+    /// as a match over the forms. The field vocabulary is open, and a
+    /// form this lane has never met is not an amount either — so the
+    /// answer for it is the same answer, arrived at by the same reading,
+    /// instead of by a wildcard arm that would have to be revisited to
+    /// say so.
+    const fn explicit_amount(&self) -> Option<u64> {
+        if let ValueField::Explicit(amount) = self.value {
+            Some(amount)
+        } else {
+            None
+        }
+    }
 }
 
 /// Which step the lane is on.
@@ -515,6 +734,14 @@ struct ObservedCoin {
 enum Stage {
     Issue,
     FundSponsor,
+    /// The committed sponsor coin, funded only where the value axis
+    /// asks for one.
+    ///
+    /// After the explicit sponsor step rather than instead of it,
+    /// because this step's fixture is built against two facts that step
+    /// is what reports: the reserve asset, and the program the executor
+    /// can authorize a spend of.
+    FundCommittedSponsor,
     FundReceipts,
     SignSponsor,
     /// The §15.6 mutant, offered BEFORE its control.
@@ -595,8 +822,10 @@ pub struct SponsorShapeRecord {
     shape: SponsorShape,
     issued_asset: Option<String>,
     relinked: bool,
+    value_form: SponsorValueForm,
     receipt_coins: usize,
     sponsor_funded: Option<u64>,
+    committed: Option<CommittedSponsorCensus>,
     offered_fee: u64,
     offered_change: Option<u64>,
     round: Option<SponsorRoundTrip>,
@@ -665,10 +894,28 @@ impl SponsorShapeRecord {
         &self.negatives
     }
 
-    /// How much the sponsor coin was funded to.
+    /// How much the sponsor coin was funded to, where the chain
+    /// reported an amount.
+    ///
+    /// `None` for a committed run, which is the honest answer and not a
+    /// gap: the chain reported a point, and the amount behind it is the
+    /// fixture's rather than the run's observation.
     #[must_use]
     pub const fn sponsor_funded(&self) -> Option<u64> {
         self.sponsor_funded
+    }
+
+    /// Which form the sponsor coin's value took.
+    #[must_use]
+    pub const fn value_form(&self) -> SponsorValueForm {
+        self.value_form
+    }
+
+    /// What the run observed about a committed sponsor coin, where it
+    /// funded one.
+    #[must_use]
+    pub const fn committed(&self) -> Option<CommittedSponsorCensus> {
+        self.committed
     }
 
     /// What this lane does NOT establish, stated in the record itself.
@@ -686,8 +933,13 @@ impl SponsorShapeRecord {
 pub struct SponsorShapePlanner {
     stage: Stage,
     shape: SponsorShape,
+    /// Which form this run's sponsor coin carries.
+    value_form: SponsorValueForm,
     /// Whether this run offers the §15.6 mutant before its control.
     offers_the_mutant: bool,
+    /// The frozen registry the committed sponsor coin is bound to, once
+    /// the reserve and the program are known.
+    sponsor_registry: Option<FrozenConfidentialFixtureRegistry>,
     abi: CandidateLiveTransferAbi,
     genesis: Digest32,
     explicit_program: Vec<u8>,
@@ -720,7 +972,9 @@ impl SponsorShapePlanner {
         Ok(Self {
             stage: Stage::Issue,
             shape,
+            value_form: SponsorValueForm::Explicit,
             offers_the_mutant: false,
+            sponsor_registry: None,
             abi,
             genesis: printed_order(printed_genesis_identity),
             explicit_program,
@@ -729,10 +983,12 @@ impl SponsorShapePlanner {
             staged: None,
             record: SponsorShapeRecord {
                 shape,
+                value_form: SponsorValueForm::Explicit,
                 issued_asset: None,
                 relinked: false,
                 receipt_coins: 0,
                 sponsor_funded: None,
+                committed: None,
                 offered_fee: SPONSOR_FEE,
                 offered_change: shape.change(),
                 round: None,
@@ -775,10 +1031,158 @@ impl SponsorShapePlanner {
         Ok(planner)
     }
 
+    /// The same ceremony, funded by a sponsor coin whose VALUE is
+    /// committed.
+    ///
+    /// # What this changes and what it leaves alone
+    ///
+    /// One stage is added and one field moves. The added stage funds a
+    /// second sponsor coin against a registered fixture, and the field
+    /// is the value the control's view of the sponsor input carries: a
+    /// commitment instead of an amount. Every other thing the ceremony
+    /// does is the thing it already did, which is what lets a reader
+    /// attribute a difference in what the target says to the value form
+    /// and to nothing else.
+    ///
+    /// The explicit sponsor-funding step is NOT skipped. It is how the
+    /// run learns the reserve asset and the executor's own program, and
+    /// neither is a caller's to choose or a fixture's to guess.
+    ///
+    /// # Errors
+    ///
+    /// [`SponsorShapeRefusal::SubstrateUnavailable`] when the reviewed
+    /// candidate substrate does not build.
+    pub fn for_committed_sponsor_value(
+        shape: SponsorShape,
+        printed_genesis_identity: Digest32,
+    ) -> Result<Self, SponsorShapeRefusal> {
+        let mut planner = Self::for_shape(shape, printed_genesis_identity)?;
+        planner.value_form = SponsorValueForm::Committed;
+        planner.record.value_form = SponsorValueForm::Committed;
+        Ok(planner)
+    }
+
     /// What the run observed.
     #[must_use]
     pub const fn record(&self) -> &SponsorShapeRecord {
         &self.record
+    }
+
+    /// The step that funds the committed sponsor coin.
+    ///
+    /// The fixture is registered HERE, against the reserve and the
+    /// program the explicit sponsor step reported, and the request
+    /// carries the handle, the digest and the ordered programs. It names
+    /// no asset: the executor reads the reserve off the chain, and a run
+    /// whose idea of the reserve differed from the executor's would fail
+    /// the digest rather than produce coins nobody meant.
+    fn committed_sponsor_step(&mut self) -> Result<OperationStep, SponsorShapeRefusal> {
+        let coin = self
+            .sponsor
+            .as_ref()
+            .ok_or(SponsorShapeRefusal::ControlNotConstructible)?;
+        let reserve = *coin.asset.internal();
+        let program = coin.program.clone();
+        let registry = frozen_sponsor_reserve_registry(reserve, &program)
+            .map_err(|_| SponsorShapeRefusal::SponsorReserveRegistrationRefused)?;
+        let digest = *registry
+            .registered_digest(&sponsor_reserve_handle())
+            .ok_or(SponsorShapeRefusal::SponsorReserveDigestAbsent)?;
+        self.sponsor_registry = Some(registry);
+        Ok(OperationStep::new(
+            FUND_SPONSOR_STEP,
+            OperationSubject::ConfidentialSponsorFunding(Box::new(sponsor_reserve_subject(
+                digest, &program,
+            ))),
+        ))
+    }
+
+    /// Read the committed sponsor coins back, and check them against the
+    /// registry's own derivation.
+    ///
+    /// # What is checked here rather than left to a test
+    ///
+    /// That the value the chain holds is the value this workspace
+    /// derives. The registry computes both commitments from published
+    /// constants and no chain at all; the node reports what it stored.
+    /// Their agreement is the only thing in this step that could have
+    /// come out the other way for an interesting reason, and a run whose
+    /// two copies disagreed would have funded SOMETHING blinded while
+    /// being unable to say what.
+    ///
+    /// The coin the ceremony goes on to spend is the FIRST, which is the
+    /// fixture's derived-blinder output. The second solves the balance
+    /// and is read only so the equal-amounts claim has both points.
+    fn settle_committed_sponsor_funding(
+        &mut self,
+        response: &NativeOperationResponse,
+    ) -> Result<(), SponsorShapeRefusal> {
+        let reported = &response.confidential_funded_outputs;
+        if reported.len() != SPONSOR_RESERVE_OUTPUTS {
+            return Err(SponsorShapeRefusal::CommittedSponsorFundingCreatedNothing);
+        }
+        let registry = self
+            .sponsor_registry
+            .as_ref()
+            .ok_or(SponsorShapeRefusal::SponsorReserveDigestAbsent)?;
+        let handle = sponsor_reserve_handle();
+        let digest = *registry
+            .registered_digest(&handle)
+            .ok_or(SponsorShapeRefusal::SponsorReserveDigestAbsent)?;
+        let derived = registry
+            .resolve(&handle, &digest)
+            .map_err(|_| SponsorShapeRefusal::SponsorReserveDigestAbsent)?
+            .value_commitments()
+            .ok_or(SponsorShapeRefusal::SponsorReserveDigestAbsent)?;
+
+        let mut fields = Vec::with_capacity(reported.len());
+        for output in reported {
+            let field: [u8; COMMITMENT_BYTES] = output
+                .value_commitment
+                .clone()
+                .try_into()
+                .map_err(|_| SponsorShapeRefusal::MalformedCommittedSponsorCoin)?;
+            fields.push(field);
+        }
+        let first = &reported[0];
+        let outpoint = outpoint_of(&first.outpoint)
+            .ok_or(SponsorShapeRefusal::MalformedCommittedSponsorCoin)?;
+        let asset = asset_of(&first.explicit_asset)
+            .ok_or(SponsorShapeRefusal::MalformedCommittedSponsorCoin)?;
+        let program =
+            decode_hex(&first.script).ok_or(SponsorShapeRefusal::MalformedCommittedSponsorCoin)?;
+
+        let census = CommittedSponsorCensus {
+            // The field the node reported is a commitment and not an
+            // explicit amount, which its prefix is what says.
+            chain_reported_a_commitment: fields
+                .iter()
+                .all(|field| field[0] != EXPLICIT_VALUE_PREFIX),
+            commitment_is_the_registrys_own: fields == derived,
+            two_equal_amounts_committed_to_two_points: fields[0] != fields[1],
+            rangeproof_present: reported.iter().all(|output| !output.rangeproof.is_empty()),
+            surjection_proof_empty: reported
+                .iter()
+                .all(|output| output.surjection_proof.is_empty()),
+            asset_stayed_explicit: reported
+                .iter()
+                .all(|output| asset_of(&output.explicit_asset) == Some(asset)),
+        };
+        if !census.commitment_is_the_registrys_own {
+            return Err(SponsorShapeRefusal::CommittedSponsorCoinIsNotTheRegistrysOwn);
+        }
+        self.record.committed = Some(census);
+        // The coin the control will spend REPLACES the explicit one, and
+        // the amount the record carried for that coin goes with it: this
+        // run observed no amount for the coin it spends.
+        self.record.sponsor_funded = None;
+        self.sponsor = Some(ObservedCoin {
+            outpoint,
+            asset,
+            value: ValueField::Commitment(fields[0]),
+            program,
+        });
+        Ok(())
     }
 
     fn refuse(&mut self, refusal: SponsorShapeRefusal) -> PlanRefused {
@@ -848,7 +1252,7 @@ impl SponsorShapePlanner {
             .into_iter()
             .next()
             .ok_or(SponsorShapeRefusal::FundingCreatedNoPredecessor)?;
-        self.record.sponsor_funded = Some(coin.amount);
+        self.record.sponsor_funded = coin.explicit_amount();
         self.sponsor = Some(coin);
         self.relink(reserve)
     }
@@ -867,7 +1271,7 @@ impl SponsorShapePlanner {
                     .ok_or(SponsorShapeRefusal::MalformedFundedOutpoint)?,
                 asset: asset_of(&funded.asset)
                     .ok_or(SponsorShapeRefusal::MalformedFundedOutpoint)?,
-                amount: funded.amount_satoshis,
+                value: ValueField::Explicit(funded.amount_satoshis),
                 program: decode_hex(&funded.script)
                     .ok_or(SponsorShapeRefusal::MalformedFundedOutpoint)?,
             });
@@ -919,6 +1323,16 @@ impl SponsorShapePlanner {
             .sponsor
             .as_ref()
             .ok_or(SponsorShapeRefusal::ControlNotConstructible)?;
+        // The hard stop the value axis demands, and the sibling of the
+        // change role's. A committed run that reached its control
+        // holding an explicit sponsor coin would be building the shape
+        // that already has an acceptance, and reporting it under a row
+        // it says nothing about.
+        if self.value_form.funds_a_committed_coin()
+            && !matches!(sponsor_coin.value, ValueField::Commitment(_))
+        {
+            return Err(SponsorShapeRefusal::CommittedRunCarriedAnExplicitSponsorValue);
+        }
         let mut points = Vec::with_capacity(self.receipts.len());
         let mut views = Vec::with_capacity(self.receipts.len() + 1);
         let mut total = 0_u64;
@@ -927,11 +1341,14 @@ impl SponsorShapePlanner {
             views.push(PublicOutputView::new(
                 coin.outpoint,
                 AssetField::Explicit(coin.asset),
-                ValueField::Explicit(coin.amount),
+                coin.value,
                 coin.program.clone(),
             ));
             total = total
-                .checked_add(coin.amount)
+                .checked_add(
+                    coin.explicit_amount()
+                        .ok_or(SponsorShapeRefusal::ControlNotConstructible)?,
+                )
                 .ok_or(SponsorShapeRefusal::ControlNotConstructible)?;
         }
         // The sponsor coin is SHOWN and not merely named. Construction
@@ -940,7 +1357,7 @@ impl SponsorShapePlanner {
         views.push(PublicOutputView::new(
             sponsor_coin.outpoint,
             AssetField::Explicit(sponsor_coin.asset),
-            ValueField::Explicit(sponsor_coin.amount),
+            sponsor_coin.value,
             sponsor_coin.program.clone(),
         ));
         let view = PublicConstructionView::new(views)
@@ -1403,6 +1820,21 @@ impl TargetOperationPlanner for SponsorShapePlanner {
                     if let Err(refusal) = self.settle_sponsor_funding(response) {
                         return Err(self.refuse(refusal));
                     }
+                    // The committed coin is funded before the receipts
+                    // for the same reason the explicit one is: the
+                    // deployment has just been welded to the reserve
+                    // this answer named, and the receipts are paid to
+                    // destination programs that moved when it was.
+                    self.stage = if self.value_form.funds_a_committed_coin() {
+                        Stage::FundCommittedSponsor
+                    } else {
+                        Stage::FundReceipts
+                    };
+                }
+                Stage::FundCommittedSponsor => {
+                    if let Err(refusal) = self.settle_committed_sponsor_funding(response) {
+                        return Err(self.refuse(refusal));
+                    }
                     self.stage = Stage::FundReceipts;
                 }
                 Stage::FundReceipts => match Self::settle_funding(response) {
@@ -1446,6 +1878,10 @@ impl TargetOperationPlanner for SponsorShapePlanner {
                     amount_per_sponsor_output: self.shape.sponsor_funding(),
                 })),
             ),
+            Stage::FundCommittedSponsor => match self.committed_sponsor_step() {
+                Ok(step) => step,
+                Err(refusal) => return Err(self.refuse(refusal)),
+            },
             Stage::FundReceipts => self.funding_step("fund-explicit-constructor", false),
             Stage::SignSponsor => match self.sign_step() {
                 Ok(step) => step,
