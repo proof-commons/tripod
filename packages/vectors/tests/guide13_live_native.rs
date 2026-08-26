@@ -1595,8 +1595,9 @@ fn the_sponsored_confidential_with_change_shape_is_submitted_to_a_real_target() 
         check.owner_signature_verified(),
         "an owner's signature did not verify against an independently recomputed message",
     );
-    assert!(
+    assert_eq!(
         check.sponsor_change_located(),
+        Some(true),
         "the sponsor's committed change was not found in the mined bytes",
     );
 }
@@ -1732,13 +1733,24 @@ fn the_sponsored_explicit_no_change_shape_is_submitted_to_a_real_target() {
         check.owner_signature_verified(),
         "an owner's signature did not verify against an independently recomputed message",
     );
-    // NO sponsor change in the mined bytes, and this is the assertion
-    // the pair member turns on. The sponsor funded exactly the fee, so a
-    // reserve-asset commitment appearing here would mean a change output
-    // this shape does not declare had been built anyway.
-    assert!(
-        !check.sponsor_change_located(),
-        "a sponsor that funded exactly the fee was returned change",
+    // The change question is NOT ASKED of this shape, and that is
+    // asserted rather than left implicit. The located-check is a byte
+    // scan for the reserve asset and a sponsored transaction's FEE
+    // carries the reserve asset too, so on a no-change shape the scan
+    // answers about the fee and a reader would take it for a change
+    // output that is not there.
+    //
+    // What rules the change out is arithmetic over the acceptance just
+    // asserted, and it is the stronger statement. The target balances
+    // per asset, so the reserve sub-equation is
+    // `sponsor_input == fee + change`; this sponsor's coin was funded to
+    // EXACTLY the fee, so any change output at all would leave that
+    // equation short and the node would have refused the candidate. It
+    // accepted it.
+    assert_eq!(
+        check.sponsor_change_located(),
+        None,
+        "a shape with no change role was asked whether its change was located",
     );
 }
 

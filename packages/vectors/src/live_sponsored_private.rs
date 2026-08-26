@@ -342,7 +342,7 @@ pub struct SponsoredPrivateReverification {
     accepted_txid: String,
     readback_matches_submission: bool,
     owner_signature_verified: bool,
-    sponsor_change_located: bool,
+    sponsor_change_located: Option<bool>,
 }
 
 impl SponsoredPrivateReverification {
@@ -368,7 +368,23 @@ impl SponsoredPrivateReverification {
     /// Whether the sponsor's committed change was found in the MINED
     /// bytes, at the reserve asset and carrying a commitment.
     #[must_use]
-    pub const fn sponsor_change_located(&self) -> bool {
+    /// Whether the sponsor's change was located in the mined bytes.
+    ///
+    /// `None` where the shape declares NO change role, and the absence
+    /// is the honest answer rather than a missing measurement. The check
+    /// is a byte scan for the reserve asset, and a sponsored
+    /// transaction's FEE is in the reserve asset too -- so on a shape
+    /// with no change the scan would report `true` for the fee alone and
+    /// a reader would take it for a change output that is not there.
+    ///
+    /// What stands in its place for such a shape is arithmetic over an
+    /// observed acceptance, and it is stronger rather than weaker: the
+    /// target balances per asset, so the reserve sub-equation is
+    /// `sponsor_input == fee + change`. The sponsor coin was funded to
+    /// EXACTLY the fee, so any change output at all would leave that
+    /// equation short and the node would have refused the candidate. It
+    /// accepted it, so the change term is zero.
+    pub const fn sponsor_change_located(&self) -> Option<bool> {
         self.sponsor_change_located
     }
 }
@@ -376,6 +392,13 @@ impl SponsoredPrivateReverification {
 /// One sponsored private run's transcript material.
 #[derive(Clone, Debug, Default)]
 pub struct SponsoredPrivateRecord {
+    /// Which shape this transcript is of.
+    ///
+    /// Carried in the record rather than passed to the renderer, so a
+    /// transcript cannot be filed under a case it is not. The header
+    /// used to be a literal, and a second shape is exactly the condition
+    /// under which a literal becomes a mislabel.
+    shape: SponsoredPrivateShape,
     issued_asset: Option<String>,
     coins: Vec<RestartConfidentialCoin>,
     solve: Option<SponsoredSolveCensus>,
@@ -460,10 +483,11 @@ impl SponsoredPrivateRecord {
 /// explicit value is committed with, so there is nothing to absorb and
 /// no change is owed -- the sponsor input equals the fee output in the
 /// reserve asset, and the protocol asset closes over the receipts alone.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SponsoredPrivateShape {
     /// A committed sponsor coin, committed change, two destinations.
+    #[default]
     CommittedWithChange,
     /// An EXPLICIT sponsor coin funded exactly to the fee, no change
     /// role, one destination: §16.1's sponsor pair's private member.
@@ -619,7 +643,10 @@ impl SponsoredPrivatePlanner {
             submitted: None,
             census: None,
             spent_owner_bytes: None,
-            record: SponsoredPrivateRecord::default(),
+            record: SponsoredPrivateRecord {
+                shape,
+                ..SponsoredPrivateRecord::default()
+            },
         })
     }
 
@@ -1367,9 +1394,10 @@ impl SponsoredPrivatePlanner {
         // The sponsor's change, found in the MINED bytes rather than
         // assumed from what was sent: a reserve-asset output whose value
         // is a commitment.
-        let sponsor_change_located = self
-            .reserve
-            .is_some_and(|reserve| contains_run(&readback.raw_transaction, reserve.internal()));
+        let sponsor_change_located = self.shape.requests_change().then(|| {
+            self.reserve
+                .is_some_and(|reserve| contains_run(&readback.raw_transaction, reserve.internal()))
+        });
 
         self.record.reverification = Some(SponsoredPrivateReverification {
             accepted_txid: readback.transaction_id.clone(),
@@ -1533,7 +1561,7 @@ pub fn render_sponsored_private(record: &SponsoredPrivateRecord) -> String {
     use std::fmt::Write as _;
 
     let mut out = String::new();
-    let _ = writeln!(out, "case sponsored-private-with-change");
+    let _ = writeln!(out, "case {}", record.shape.case_name());
     if let Some(asset) = record.issued_asset.as_ref() {
         let _ = writeln!(out, "issued_asset {asset}");
     }
@@ -1580,7 +1608,10 @@ pub fn render_sponsored_private(record: &SponsoredPrivateRecord) -> String {
         let _ = writeln!(
             out,
             "sponsor_change_located {}",
-            check.sponsor_change_located(),
+            check.sponsor_change_located().map_or_else(
+                || "not-asked-no-change-role".to_owned(),
+                |found| found.to_string()
+            ),
         );
     }
     if let Some(refusal) = record.refusal.as_ref() {
