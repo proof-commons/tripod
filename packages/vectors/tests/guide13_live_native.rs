@@ -2093,9 +2093,6 @@ fn judge_one_sponsor_shape(
     shape: vectors::live_sponsor_shapes::SponsorShape,
     value_form: vectors::live_sponsor_shapes::SponsorValueForm,
 ) {
-    use vectors::live_sponsor_shapes::{
-        CommittedSponsorCheck, SponsorValueForm, sponsored_run_of_record as record_of,
-    };
     // The sponsor round trip happened, and it bound to the exact bytes.
     let round = record.round().expect("the sponsor round trip completed");
     assert!(
@@ -2160,6 +2157,28 @@ fn judge_one_sponsor_shape(
             }
         }
     }
+
+    judge_the_sponsor_value_form(record, rendered, value_form);
+
+    assert!(rendered.contains("evidences_no_negative_case true"));
+}
+
+/// What the sponsor's VALUE FORM obliges the run to have observed.
+///
+/// Split from [`judge_one_sponsor_shape`] because it judges a different
+/// axis. That function asks what any sponsored run owes — a round trip
+/// bound to its own bytes, a candidate that reached the node, and the
+/// change role where an acceptance happened. This asks what THIS run's
+/// sponsor coin was, and the two grew independent enough that reading
+/// one past the other had become the work.
+fn judge_the_sponsor_value_form(
+    record: &vectors::live_sponsor_shapes::SponsorShapeRecord,
+    rendered: &str,
+    value_form: vectors::live_sponsor_shapes::SponsorValueForm,
+) {
+    use vectors::live_sponsor_shapes::{
+        CommittedSponsorCheck, SponsorValueForm, sponsored_run_of_record as record_of,
+    };
 
     // The value form, judged where a reader of the test sees it.
     match value_form {
@@ -2257,8 +2276,6 @@ fn judge_one_sponsor_shape(
             );
         }
     }
-
-    assert!(rendered.contains("evidences_no_negative_case true"));
 }
 
 /// §15.1 `sponsor-change-absent`: the sponsor funds the fee exactly.
