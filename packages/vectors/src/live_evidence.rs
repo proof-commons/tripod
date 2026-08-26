@@ -1969,9 +1969,20 @@ mod tests {
         // beside the `time-locked-output` sibling it always had, and the
         // discharge is a refusal driven against a control like every
         // other row's in this half.
+        //
+        // It reads TWENTY-NINE now, and the three that arrived came the
+        // same way `time-locked-input` did: their declared boundary was
+        // wrong. `ash-input-or-output`, `malformed-live-metadata` and
+        // `foreign-asset-under-receipt-shaped-program` each asked a
+        // target to refuse something on a chain, and for the first and
+        // third what a chain answers is the COMMITMENT rule — the
+        // identical verdict every foreign taptree draws, which names no
+        // family and compares no asset. The second is refused before a
+        // program exists at all. Each is now driven to its own refusal
+        // against its own control, with its own changed field.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let census = plan.census();
-        assert_eq!(census.first_party_discharged(), 26);
+        assert_eq!(census.first_party_discharged(), 29);
         assert_eq!(census.first_party_undischarged(), 0);
 
         let outstanding: BTreeSet<_> = plan
