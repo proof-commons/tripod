@@ -1,9 +1,11 @@
 # Phase 5 — Live Receipt Transfer · `phase:roadmap:live-transfer`
 
-> **Status:** Active — the candidate pipeline is complete and the phase is
-> stopped short of its exit on two typed blockers, both owned by the
-> chartered intermediate guide. The entry gate is satisfied: Phase 4
-> exited 2026-08-21, recorded in the backlog's section 2.8.
+> **Status:** Active — the candidate pipeline is complete, both typed
+> blockers the intermediate guide owned are discharged on observed
+> acceptances, the carried residual set is empty, and the exit campaign's
+> arcs are recorded in the backlog's sections 2.10 through 2.19. The
+> entry gate is satisfied: Phase 4 exited 2026-08-21, recorded in the
+> backlog's section 2.8.
 > **Entry:** (`gate:phase4:exit`)
 > **Packages:** realization, compiler, tapscript, linker, transaction, vectors
 > **Decision:** D005 value representation
@@ -133,7 +135,7 @@ The acceptance lines that hold on the current tree:
 - every target requirement is assessed and every selected proof is realization-approved;
 - every active relation-case has a reachable carrier;
 - the request cannot select a program, a constructor, or any of the fourteen structurally absent facets;
-- explicit invalid cases fail at their owning boundaries — the whole first-party half of the safety matrix is discharged, twenty-five rows of twenty-five, each by driving its own owning validator twice and requiring the refusal to name the row's own class;
+- explicit invalid cases fail at their owning boundaries — the whole first-party half of the safety matrix is discharged, twenty-six rows of twenty-six, each by driving its own owning validator twice and requiring the refusal to name the row's own class, the twenty-sixth being the time-locked-input row retyped to this half when its declared target boundary was shown to demand an observation the target's program-generic commitment refusal can never carry;
 - unknown key types cannot satisfy authorization, because the owner-key encoding closure refuses them before a constructor exists to place them in;
 - linked bundle and ABI are deterministic;
 - safety and minimality reports remain separate, down to distinct schema identifiers on their first lines;
@@ -143,16 +145,14 @@ The acceptance lines that hold on the current tree:
 - no speculative digest is minted;
 - canonical report bytes reproduce.
 
-### What is typed-blocked · `sec:phase5:blocked`
+### What was typed-blocked, and how each blocker discharged · `sec:phase5:blocked`
 
-The result is an honest stopped one rather than a full exit, and the two blockers are typed rather than narrated:
+The phase stood for a time as an honest stopped result on two typed blockers, both owned by [the confidential test materialization and funding guide](../guides/guide_confidential_funding.md) — the intermediate guide the owner chartered and which has since executed to completion, its restart order Completed across all seven steps. Both blockers are discharged on observations rather than narration:
 
-- **Owner sighash not computable.** Section 10.2 checks an owner signature with the target's own verifying primitive over the target's own taproot sighash, and section 1.7 forbids a builder asserting one. No first-party component computes that digest, so no valid live-transfer spend can be witnessed and no target can accept one. Every positive row of sections 15.1 and 15.2 carries this blocker, and the negative half is blocked behind it in turn: while nothing has been accepted, a refusal is not attributable to the row's own mutation. The native run of record is the sharpest evidence for it — the covenant ran over real coins at the linked constructors' own programs, and the target's own words were an invalid Schnorr signature. What stands between this candidate and an accepted transfer is one digest.
-- **No confidential predecessor can be funded.** Section 6.3 admits a private transfer only over confidential receipt inputs, and the target-generic funding step names an explicit amount and has no confidential form. The private plan's constructors link, emit, and materialize; what cannot be created is a predecessor for them to spend.
+- **The owner sighash is computable and established.** The digest was computed, the profile established over its required set, and both lanes carry observed acceptances whose signatures verify against independently recomputed per-input messages. The explicit positive table stands complete at sixteen of sixteen observed acceptances, the private positive table is answered through observed acceptances of each row's own shape, and the negative half opened behind them with refusals made attributable by their accepted controls, mutants offered first.
+- **Confidential predecessors are funded routinely.** The funding stage creates blinded-output predecessors — including the three-output non-canceling form built so that a merge's forced blinder is provably nonzero — and every private acceptance since spends one. The blinded-value sponsor coin has its own funding stage beside them.
 
-Both are owned by [the confidential test materialization and funding concept](../guides/guide_confidential_funding_concept.md), an intermediate guide in the unnumbered category the owner ruled: it must be closed before Guide 14 is drafted.
-
-Two consequences follow and are stated rather than left to inference. An explicit-only candidate with a typed private-plan deferral is a valid stopped result, and it is not the full Guide-13 exit; it cannot satisfy the private minimality gate. And the disclosure-minimality registry reports its verdict unanswered — five pairs built, zero supporting — because constructibility and acceptance carry those same two blockers.
+The consequence paragraph that stood here is retired by the outcomes it predicted: the private minimality gate is satisfiable and the disclosure-minimality registry answers per pair — five pairs built, five supporting on recomputed conjuncts — with the report inheriting rather than escaping the disclosure that no pair member was itself submitted as a pair.
 
 ## Identity, schema, and interchange · `sec:phase5:impact`
 
@@ -168,30 +168,33 @@ Every key, scalar, blinder, and opening in the batch is public disposable test m
 
 Production multi-party signing and blinding is not established. The private construction is central public-fixture construction and says so in its own recorded model; describing it as multi-party blinding would be the overclaim the model exists to prevent.
 
-The bytes standing in every signature position authorize nothing. They are of the right width so that a transaction can be serialized and weighed, and they are called unauthorizing at every use because no first-party component computes the message they would have to be over.
+Signature positions in accepted live-lane runs carry real signatures over recomputed messages, verified per input out of the node's own copy of the transaction. Where placeholder bytes remain — sizing lanes and candidates that never reach a target — they are still called unauthorizing at each use. Every signing key remains ADR-015 public disposable test material; one fixed regtest key answering a request is a wire demonstration, not a ceremony, and production multi-party signing remains unestablished as stated above.
 
 No dependency was added in the batch, so ADR-011's review has no new admission to consider.
 
-## Residuals carried forward · `sec:phase5:residuals`
+## Residuals · `sec:phase5:residuals`
 
-Named as a set in the evidence plan rather than as prose, so that a later wave clearing one has to remove it there. None is removed by this phase, because removal needs an observed result and none exists yet:
+Named as a set in the evidence plan rather than as prose, so that a wave clearing one has to remove it there — and the carried set is now EMPTY. Each member left by its own site's rule, with the variant kept in the vocabulary and its clearing sections written at the defining site:
 
-- the selected sighash profile is not established by the review, so every semantic claim about what the digest commits to is candidate-scoped;
-- the sponsor envelope's authorizing signer is not wired into the evidence lane;
-- no time-locked predecessor constructor exists, so the time-locked-input row has nothing to spend;
-- no confidential predecessor can be funded;
-- the internal key's unspendability is unverified against a target, and the residual discrete-log assumption on it stands regardless of what any probe observes.
+- the sighash profile was established over its required set, with observed acceptances on both lanes verifying against independently recomputed messages;
+- the sponsor envelope's signer cleared on the first observed sponsor-signed acceptance — run first, verdict second;
+- the confidential-predecessor residual cleared when the funding stage created spendable blinded predecessors and acceptances consumed them;
+- the time-locked-predecessor residual retired by GROUND CORRECTION rather than observation: the row that demanded an attributable spend was mis-typed — the class is enforced by leaf commitment, the target's refusal is program-generic and can never name the lock, and the ruling retyped the row first-party where it discharges by its own validator; the retirement cites no run and claims none.
+
+What is not a residual and never was one: the internal key's discrete-log assumption stands regardless of what any probe observes — the phase-A key-path attempt was observed and refused, which discharges only that; the typed carrier of phase B remains named follow-up work below.
 
 ## Handoff · `sec:phase5:handoff`
 
-**Sequencing.** The intermediate confidential-funding guide closes first. Guide 14 — state and maturity — is drafted after it, and consumes the following without reopening any of them: validated target-operation plans, representation-specific backend planning, owner-bound constructor metadata, per-input owner authorization, finalized-output signing, explicit and private proof separation, deterministic linking, candidate ABI construction, validated operation reports, the safety and minimality report separation, exact executor provenance and environment binding, and candidate resource measurement. It adds state constructor continuity, root succession, operator authorization, maturity announcement, state-field commitments, and the first mutable protocol constructor. Phase 5 makes none of those state or root claims.
+**Sequencing.** The intermediate confidential-funding guide has closed — its restart order Completed, its archive in the guides directory. Guide 14 — state and maturity — is drafted after this phase's exit, and consumes the following without reopening any of them: validated target-operation plans, representation-specific backend planning, owner-bound constructor metadata, per-input owner authorization, finalized-output signing, explicit and private proof separation, deterministic linking, candidate ABI construction, validated operation reports, the safety and minimality report separation, exact executor provenance and environment binding, and candidate resource measurement. It adds state constructor continuity, root succession, operator authorization, maturity announcement, state-field commitments, and the first mutable protocol constructor. Phase 5 makes none of those state or root claims.
 
 **Named follow-up work.** Four items, each investigated and each with a report behind it:
 
 - **Shared abstract-program analysis.** Two private wrappers measure program prefixes — one in the conformance package, one in the vectors package — and both wrap the same abstract evaluator in tapscript. The first slice adds a public analysis API beside that evaluator and side-by-side tests against both wrappers, with no consumer deleted and no canonical output changed; the wrappers are retired only after equivalence is demonstrated, and the implementation is optimized only after that.
-- **Sponsor envelope signing.** The adapter capability already exists — a typed sponsor authorization operation, a fixed regtest sponsor key, deterministic signing, and a response bound to the exact finalized transaction — and the cheapest honest first step has now been taken: one integration test finalizes an explicit sponsored control over really funded receipts and a really funded sponsor coin, sends its exact sponsor request, replays the returned witness through the sponsor capability, and verifies byte binding both by comparing the adapter's echo with the bytes it was sent and by observing that the same witness bound to one mutated byte is refused. The residual stays: capability existence never clears a blocker, only an observed result does, and no sponsor-signed control has an observed result, because that step signs and replays without submitting anything. The clause that used to name the owner sighash here is retired rather than kept — the profile is established over its required set and both lanes carry observed acceptances, so the sighash is no longer what stands in the way. What stands in the way is a submission, and a submission needs a reserve asset the chain has issued, where this deployment's is a fixture constant no chain knows.
-- **Internal-key unspendability probe.** Phase A performs one key-path attempt against an already-funded explicit-constructor output, using the existing generic submission wire unchanged and recording exact bytes, the one-item witness shape, the funded outpoint and program binding, target provenance, and the verbatim refusal. A refusal discharges only that the attempt was observed and refused; it establishes nothing about who knows the discrete logarithm, so the residual assumption stands regardless. Phase B adds the typed carrier and the wire correction before the named residual may be called discharged for the instances covered.
-- **The rest of the safety matrix.** Every remaining row is a target-boundary row, and the repair is the two blockers above rather than more first-party tests.
+- **Sponsor envelope evidence, delivered and bounded.** The submission this item waited on happened, and the arc behind it ran to the exit row: sponsor-signed acceptances stand on both lanes, with change and without, with an explicit sponsor value and with a blinded one whose committed change the arithmetic itself demanded. What remains is the standing non-claim, not work: one fixed regtest key answering requests is a wire, never production multi-party signing.
+- **Internal-key unspendability probe, phase B.** Phase A was performed and its refusal recorded; a refusal discharges only that the attempt was observed and refused, and establishes nothing about who knows the discrete logarithm. Phase B — the typed key-path carrier and the wire correction — remains open before the named assumption may be called discharged for the instances covered.
+- **The negative half of the private table.** The explicit table's negative rows opened behind their accepted controls; the private table's positives are answered and its remaining negative rows follow the same attributability rule — accepted control on the same chain, mutants first. Named work, not a blocker: every needed control now exists.
+- **The two stale records the form register found.** The run-of-record cardinality arrays carry six entries for an eight-member private table, and that table's own doc still says all six; filed by the census-forms wave for the owning files' next wave.
+- **A paired-projection materialization.** The projection-equality standing asks for one fixture materialized twice under section 16.1's pair rule; two independent acceptances do not satisfy it, and the standing says so rather than borrowing them.
 
 ## Exit gate · `gate:phase5:exit`
 
