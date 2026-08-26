@@ -586,9 +586,9 @@ fn no_internal_analysis_container_is_re_exported() {
 // --- Guide-13 §8.3: the public live-transfer target-operation plan ---
 
 use compiler::live_transfer_plan::{
-    DeferredRepresentation, LiveTransferClause, LiveTransferRepresentationPlan,
-    RepresentationDeferralGround, ValidatedLiveTransferOperationPlan,
-    plan_live_transfer_target_operation,
+    DeferredRepresentation, LiveTransferClause, LiveTransferComposition,
+    LiveTransferRepresentationPlan, RepresentationDeferralGround,
+    ValidatedLiveTransferOperationPlan, plan_live_transfer_target_operation,
 };
 
 /// The live-transfer plan module's own source, read as an external
@@ -761,6 +761,20 @@ fn the_live_transfer_censuses_are_complete_and_duplicate_free() {
             RepresentationDeferralGround::NoPerReferenceVariable,
         ],
     );
+    // §6.5's separate admission, and the ORDER is part of the claim:
+    // the two homogeneous members come first and in the plan census's
+    // own order, because this type's derived `Ord` breaks taptree ties
+    // and reordering it would move tree roots that recorded fixture
+    // digests were taken over.
+    assert_eq!(
+        LiveTransferComposition::ALL,
+        [
+            LiveTransferComposition::HomogeneousExplicit,
+            LiveTransferComposition::HomogeneousPrivate,
+            LiveTransferComposition::EntryBlinding,
+            LiveTransferComposition::ExitUnblinding,
+        ],
+    );
     assert_eq!(
         LiveTransferClause::ALL.len(),
         19,
@@ -780,11 +794,117 @@ fn the_live_transfer_censuses_are_complete_and_duplicate_free() {
             .iter()
             .map(|member| format!("{member:?}"))
             .collect::<Vec<_>>(),
+        LiveTransferComposition::ALL
+            .iter()
+            .map(|member| format!("{member:?}"))
+            .collect::<Vec<_>>(),
     ] {
         assert_eq!(
             census.iter().collect::<BTreeSet<_>>().len(),
             census.len(),
             "a census that names one member twice is not a census",
+        );
+    }
+}
+
+#[test]
+fn the_admitted_compositions_pair_the_two_plans_and_name_their_own_crossings() {
+    // §6.5's separate admission read back as arithmetic rather than as
+    // membership. Every claim below is recomputed from the sides, so a
+    // member whose sides disagreed with its own name would fail here
+    // rather than be documented into agreement.
+
+    // Every composition's sides are drawn from the two-member plan
+    // census, and every ordered pairing of that census appears exactly
+    // once. That is the completeness claim: crossing admits a PAIRING
+    // of the plans that exist and never a third representation.
+    let pairs = LiveTransferComposition::ALL
+        .iter()
+        .map(|composition| (composition.consumed(), composition.created()))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        pairs.len(),
+        LiveTransferComposition::ALL.len(),
+        "two compositions pairing the same two sides would be one composition",
+    );
+    assert_eq!(
+        pairs.len(),
+        LiveTransferRepresentationPlan::ALL.len() * LiveTransferRepresentationPlan::ALL.len(),
+        "the compositions are every ordered pairing of the admitted plans",
+    );
+
+    // The homogeneous constructor agrees with the sides, in both
+    // directions, so the two ways of naming a homogeneous composition
+    // cannot drift apart.
+    for plan in LiveTransferRepresentationPlan::ALL.iter().copied() {
+        let composition = LiveTransferComposition::homogeneous(plan);
+        assert_eq!(composition.consumed(), plan);
+        assert_eq!(composition.created(), plan);
+        assert!(!composition.crosses());
+        assert_eq!(
+            composition.conservation_capability(),
+            plan.conservation_capability()
+        );
+    }
+
+    // Exactly two members cross, they are the two crossings the two
+    // plans can form, and each crosses in its own direction.
+    let crossing = LiveTransferComposition::ALL
+        .iter()
+        .copied()
+        .filter(|composition| composition.crosses())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        crossing,
+        vec![
+            LiveTransferComposition::EntryBlinding,
+            LiveTransferComposition::ExitUnblinding,
+        ],
+    );
+    assert_eq!(
+        LiveTransferComposition::EntryBlinding.consumed(),
+        LiveTransferRepresentationPlan::Explicit,
+    );
+    assert_eq!(
+        LiveTransferComposition::EntryBlinding.created(),
+        LiveTransferRepresentationPlan::PrivateCommitted,
+    );
+    assert_eq!(
+        LiveTransferComposition::ExitUnblinding.consumed(),
+        LiveTransferRepresentationPlan::PrivateCommitted,
+    );
+    assert_eq!(
+        LiveTransferComposition::ExitUnblinding.created(),
+        LiveTransferRepresentationPlan::Explicit,
+    );
+
+    // The absorber is declared by the ONE composition whose consumed
+    // side presents a blinder sum its created side cannot otherwise
+    // carry, and by no other. Recomputed from the sides rather than
+    // read off the member, so the two cannot drift.
+    for composition in LiveTransferComposition::ALL.iter().copied() {
+        let consumes_commitments =
+            composition.consumed() == LiveTransferRepresentationPlan::PrivateCommitted;
+        let creates_explicit = composition.created() == LiveTransferRepresentationPlan::Explicit;
+        assert_eq!(
+            composition.declares_an_absorber(),
+            consumes_commitments && creates_explicit,
+            "{composition:?} declares an absorber exactly when a nonzero consumed blinder \
+             sum meets a created side that contributes zero to it",
+        );
+    }
+
+    // Only the wholly explicit composition may prove conservation
+    // first-party. Both crossings take the target's own rule, because
+    // each can read one total and not the other.
+    for composition in LiveTransferComposition::ALL.iter().copied() {
+        let first_party = composition.conservation_capability()
+            == RequiredCapability::ExactPublicAmountArithmetic;
+        assert_eq!(
+            first_party,
+            composition == LiveTransferComposition::HomogeneousExplicit,
+            "{composition:?} may prove conservation first-party only if BOTH its sides are \
+             explicit",
         );
     }
 }

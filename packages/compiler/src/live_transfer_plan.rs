@@ -186,6 +186,149 @@ impl LiveTransferRepresentationPlan {
 }
 
 census_enum! {
+    /// How one live transfer pairs an admitted plan on each SIDE.
+    ///
+    /// §6.5 admits mixed representation "unless separately admitted",
+    /// and this vocabulary is that separate admission. What it admits
+    /// is a pairing of the two plans
+    /// [`LiveTransferRepresentationPlan`] already states — one for the
+    /// side a transfer CONSUMES and one for the side it CREATES — and
+    /// nothing else. The plan census is untouched at two members
+    /// because §6.1 states it exhaustively and a crossing transfer
+    /// introduces no third representation: it selects two of the two
+    /// that exist.
+    ///
+    /// # Why a side and not a reference
+    ///
+    /// A per-REFERENCE variable would let two receipts of one
+    /// transaction disagree, and that is the thing
+    /// [`DeferredRepresentation::MixedComposition`] still defers, on a
+    /// ground this widening leaves literally intact: the representation
+    /// decision is one variable per object family, and a side is not a
+    /// reference. Each side of a crossing transfer stays internally
+    /// homogeneous, which is also what leaves both negative safety rows
+    /// refusing for exactly the reasons they refuse today.
+    ///
+    /// The two homogeneous members come FIRST and in the plan census's
+    /// own order. That is load-bearing rather than tidy: this type's
+    /// derived `Ord` decides tie-breaks in the taptree the linker
+    /// builds, so appending the crossing members after them is what
+    /// leaves every existing tree root, destination program and
+    /// recorded fixture digest where it was.
+    pub enum LiveTransferComposition {
+        /// Explicit consumed, explicit created (§6.2).
+        HomogeneousExplicit,
+        /// Confidential consumed, confidential created (§6.3).
+        HomogeneousPrivate,
+        /// Explicit consumed, confidential created — blinding on ENTRY.
+        ///
+        /// The consumed receipts carry explicit values and the created
+        /// destinations carry commitments. The target's own tally is
+        /// what conserves value across the crossing, because no
+        /// fragment may read a created amount.
+        EntryBlinding,
+        /// Confidential consumed, explicit created — unblinding on EXIT.
+        ///
+        /// The consumed receipts carry commitments and the created
+        /// destinations carry explicit values, save the ONE declared
+        /// destination position that absorbs the consumed blinder sum.
+        /// That position is not a fourth output family and not a
+        /// per-reference representation choice; it is a declaration the
+        /// covenant checks positionally, in the same family as a fee
+        /// position and a sponsor-change position.
+        ExitUnblinding,
+    }
+}
+
+impl LiveTransferComposition {
+    /// The plan the side this transfer CONSUMES is read under.
+    #[must_use]
+    pub const fn consumed(self) -> LiveTransferRepresentationPlan {
+        match self {
+            Self::HomogeneousExplicit | Self::EntryBlinding => {
+                LiveTransferRepresentationPlan::Explicit
+            }
+            Self::HomogeneousPrivate | Self::ExitUnblinding => {
+                LiveTransferRepresentationPlan::PrivateCommitted
+            }
+        }
+    }
+
+    /// The plan the side this transfer CREATES is read under.
+    #[must_use]
+    pub const fn created(self) -> LiveTransferRepresentationPlan {
+        match self {
+            Self::HomogeneousExplicit | Self::ExitUnblinding => {
+                LiveTransferRepresentationPlan::Explicit
+            }
+            Self::HomogeneousPrivate | Self::EntryBlinding => {
+                LiveTransferRepresentationPlan::PrivateCommitted
+            }
+        }
+    }
+
+    /// The composition both of whose sides are one stated plan.
+    #[must_use]
+    pub const fn homogeneous(plan: LiveTransferRepresentationPlan) -> Self {
+        match plan {
+            LiveTransferRepresentationPlan::Explicit => Self::HomogeneousExplicit,
+            LiveTransferRepresentationPlan::PrivateCommitted => Self::HomogeneousPrivate,
+        }
+    }
+
+    /// Whether the two sides are read under different plans.
+    ///
+    /// Derived from the sides rather than listed, so a member added
+    /// here cannot disagree with its own answer.
+    #[must_use]
+    pub const fn crosses(self) -> bool {
+        !matches!(
+            (self.consumed(), self.created()),
+            (
+                LiveTransferRepresentationPlan::Explicit,
+                LiveTransferRepresentationPlan::Explicit
+            ) | (
+                LiveTransferRepresentationPlan::PrivateCommitted,
+                LiveTransferRepresentationPlan::PrivateCommitted
+            )
+        )
+    }
+
+    /// Whether this composition declares a blinded absorber position.
+    ///
+    /// Only the exit crossing does. A consumed side carrying
+    /// commitments presents a blinder sum the created side must equal,
+    /// and explicit outputs contribute zero to it — so one created
+    /// position must stay blinded to carry the difference. Every other
+    /// composition's created side either presents no blinder sum to
+    /// absorb or absorbs it in an output that is blinded anyway.
+    #[must_use]
+    pub const fn declares_an_absorber(self) -> bool {
+        matches!(self, Self::ExitUnblinding)
+    }
+
+    /// The capability this composition's value-conservation proof
+    /// requires (§19.4).
+    ///
+    /// A crossing takes the CONFIDENTIAL capability in both directions,
+    /// and neither direction is an oversight. Entry blinding can read
+    /// the consumed total and not the created one; exit unblinding can
+    /// read the created total and not the consumed one. Neither admits
+    /// the first-party equality the homogeneous explicit plan proves,
+    /// so in both cases the conservation is the target's own rule and
+    /// no fragment may claim it.
+    #[must_use]
+    pub const fn conservation_capability(self) -> RequiredCapability {
+        match self {
+            Self::HomogeneousExplicit => RequiredCapability::ExactPublicAmountArithmetic,
+            Self::HomogeneousPrivate | Self::EntryBlinding | Self::ExitUnblinding => {
+                RequiredCapability::ConfidentialValueConservation
+            }
+        }
+    }
+}
+
+census_enum! {
     /// One representation Guide 13 names and this plan does not admit.
     ///
     /// A deferral is data, not silence. Both members are facts the
@@ -196,8 +339,18 @@ census_enum! {
         /// The public-committed mode, deferred while Guide 11 leaves
         /// authenticated public opening open (§6.1).
         PublicCommittedMode,
-        /// Inputs and outputs combining both admitted plans in one
-        /// transfer (§6.5).
+        /// Two references of ONE side combining both admitted plans in
+        /// one transfer (§6.5).
+        ///
+        /// NARROWED, not removed, by the wave that admitted crossing.
+        /// What is admitted is a plan per SIDE
+        /// ([`LiveTransferComposition`]); what stays deferred is what
+        /// was always the harder case — two receipts of the same side,
+        /// or two destinations of the same side, disagreeing with each
+        /// other. The ground below is unchanged and still re-derived
+        /// from the analyzed program rather than asserted, because a
+        /// side is not a reference: admitting a pairing of sides
+        /// introduces no per-reference variable for a transfer to mix.
         MixedComposition,
     }
 }
