@@ -87,7 +87,7 @@ use transaction::live_abi::CandidateLiveTransferAbi;
 use transaction::live_census::{OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest};
 use transaction::live_construct::{
     PrivateDestinationOpening, PrivateInputOpening, PrivateLiveFinalization, PrivateLiveOpenings,
-    finalize_private_live_transfer,
+    finalize_private_live_transfer, private_sponsor_witnesses,
 };
 use transaction::live_materialize::{
     ConfidentialInputRegion, ConfidentialOutputRole, FixtureOpeningReference,
@@ -99,6 +99,7 @@ use transaction::live_request::{
     LiveReceiptDestination, LiveTransferRequest, ProtocolValue, PublicTestRandomness,
     RequestedForm, SponsorChangeRequest,
 };
+use transaction::sponsor::SponsorCapability;
 use transaction::taproot::{Digest32, leaf_hash};
 use transaction::view::{PublicConstructionView, PublicOutputView};
 use transaction::{AnnexDisposition, IssuanceDisposition, LiveDeployment};
@@ -232,6 +233,27 @@ pub enum PrivateRestartRefusal {
     CensusRefused(OwnerCensusRefusal),
     /// An owner could not sign.
     SigningRefused,
+    /// The sponsor's authorization was refused.
+    ///
+    /// Carries the transaction crate's own word, wrapped rather than
+    /// re-spelled, on the pattern [`Self::FinalizationRefused`] already
+    /// sets. The distinctions that matter -- no capability offered, a
+    /// sponsor that declined, an answer bound to other bytes -- are
+    /// drawn there, where the request was minted, and restating them
+    /// here would be a second vocabulary that could disagree with the
+    /// first.
+    SponsorWitnessRefused(String),
+    /// An input position nothing authorized.
+    ///
+    /// Neither an owner's witness nor the sponsor's landed at this
+    /// position. It is refused rather than filled with an empty witness,
+    /// because an unauthorized input is a candidate a node refuses at
+    /// script with a verdict about the program rather than about the gap
+    /// in this ceremony.
+    InputPositionUnauthorized {
+        /// Which input position.
+        position: u16,
+    },
     /// The candidate could not be assembled for the wire.
     CandidateNotSerializable,
 }
@@ -1114,7 +1136,7 @@ pub(crate) fn build_control(
     genesis_block_hash: Digest32,
 ) -> Result<BuiltControl, PrivateRestartRefusal> {
     let finalization = finalize_control(linked, coin, consumed)?;
-    assemble_control(&finalization, genesis_block_hash)
+    assemble_control(&finalization, genesis_block_hash, None)
 }
 
 /// Census, sign, and assemble one finalized private candidate into its
@@ -1122,18 +1144,42 @@ pub(crate) fn build_control(
 ///
 /// The shape-independent tail of [`build_control`]: it takes whatever the
 /// private finalization produced — one input or several, two outputs or
-/// more — and signs each receipt over the leaf that input executes. The
-/// one-to-one control and the multi-output and multi-input shapes of the
-/// restart order's fifth step all share it, so a change to how a
-/// candidate is signed and serialized is a change in one place.
+/// more, sponsored or not — and signs each receipt over the leaf that
+/// input executes. The one-to-one control and the multi-output and
+/// multi-input shapes of the restart order's fifth step all share it, so
+/// a change to how a candidate is signed and serialized is a change in
+/// one place.
+///
+/// # The witness vector is indexed by position and not appended to
+///
+/// Because the input order has two regions and only one of them is
+/// signed here. This used to push one witness per RECEIPT record onto a
+/// vector sized by the receipt count, which is correct exactly while
+/// every input is a receipt: the vector is handed to the transaction
+/// type positionally, so a sponsored candidate would have given a
+/// three-input transaction two witnesses, and a sponsor coin anywhere
+/// but last would have shifted every receipt's witness onto another
+/// input. Each witness is now placed at the position it authorizes, and
+/// the positions nothing placed are the sponsor's.
+///
+/// # Why the sponsor is signed here and the owners are signed the same
+///
+/// §1.9 keeps the sponsor's own authorization outside protocol data, so
+/// it is collected through the capability rather than through the owner
+/// responses — the explicit lane's arrangement, mirrored rather than
+/// reinvented. What it signs over is the PROOF-FINALIZED bytes, which is
+/// the whole reason this lane needs its own sponsor stage: the explicit
+/// lane's protected bytes are the witnessless serialization, and this
+/// candidate's are the frozen ones the materializer produced.
 ///
 /// # Errors
 ///
-/// The census, signing, and serialization members of
+/// The census, signing, sponsor, and serialization members of
 /// [`PrivateRestartRefusal`].
 pub(crate) fn assemble_control(
     finalization: &PrivateLiveFinalization,
     genesis_block_hash: Digest32,
+    sponsor: Option<&dyn SponsorCapability>,
 ) -> Result<BuiltControl, PrivateRestartRefusal> {
     let materialized = finalization.materialized();
 
@@ -1170,7 +1216,7 @@ pub(crate) fn assemble_control(
     )
     .map_err(PrivateRestartRefusal::CensusRefused)?;
 
-    let mut witnesses = Vec::with_capacity(finalization.receipts().len());
+    let mut placed: BTreeMap<u16, InputWitness> = BTreeMap::new();
     for record in finalization.receipts() {
         let position = u32::from(record.position());
         let input = census
@@ -1191,11 +1237,14 @@ pub(crate) fn assemble_control(
             .sign(&message, &RESTART_AUXILIARY)
             .map_err(|_| PrivateRestartRefusal::SigningRefused)?
             .to_vec();
-        witnesses.push(InputWitness::new(vec![
-            signature,
-            record.leaf_script().to_vec(),
-            record.control_block().to_vec(),
-        ]));
+        placed.insert(
+            record.position(),
+            InputWitness::new(vec![
+                signature,
+                record.leaf_script().to_vec(),
+                record.control_block().to_vec(),
+            ]),
+        );
     }
 
     let spent_owner_bytes = finalization
@@ -1204,6 +1253,29 @@ pub(crate) fn assemble_control(
         .map(|record| record.owner().key().bytes().to_vec());
 
     let frozen = materialized.proof_finalized().protected();
+
+    // The sponsor's half, minted where the candidate is. This ceremony
+    // does not build the signing requests: a request names the exact
+    // bytes an authorization is produced against, and the transaction
+    // crate keeps that constructor to itself so no caller can ask a
+    // sponsor to authorize bytes that are not the candidate's.
+    let sponsored = private_sponsor_witnesses(finalization, sponsor)
+        .map_err(|refusal| PrivateRestartRefusal::SponsorWitnessRefused(format!("{refusal:?}")))?;
+
+    // Every input position, receipts from one map and the sponsor suffix
+    // from the other. The walk is over the CANDIDATE's inputs rather
+    // than over either region's count, so a position neither side claims
+    // is a missing witness here instead of a cardinality a node
+    // discovers.
+    let mut witnesses = Vec::with_capacity(frozen.inputs().len());
+    for index in 0..frozen.inputs().len() {
+        let position = u16::try_from(index).unwrap_or(u16::MAX);
+        let witness = placed
+            .get(&position)
+            .or_else(|| sponsored.get(&position))
+            .ok_or(PrivateRestartRefusal::InputPositionUnauthorized { position })?;
+        witnesses.push(witness.clone());
+    }
     let receipt_leaves = finalization.receipts().len();
     let output_witness_proof_bytes = frozen
         .output_witnesses()

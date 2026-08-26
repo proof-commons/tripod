@@ -951,7 +951,7 @@ impl MultiShapePlanner {
     /// input's witness.
     fn control_bytes(&mut self) -> Result<Vec<u8>, PrivateRestartRefusal> {
         let finalization = self.finalize_shape()?;
-        let built = assemble_control(&finalization, self.genesis_block_hash)?;
+        let built = assemble_control(&finalization, self.genesis_block_hash, None)?;
         self.spent_owner_bytes = built.spent_owner_bytes;
         self.record.receipt_leaves = built.receipt_leaves;
         self.record.output_witness_proof_bytes = built.output_witness_proof_bytes;
