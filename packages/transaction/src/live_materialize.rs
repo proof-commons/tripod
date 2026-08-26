@@ -785,6 +785,28 @@ impl ConfidentialFixtureOutputView {
         }
     }
 
+    /// One projected EXPLICIT receipt destination.
+    ///
+    /// The fee's mirror: it takes an amount AND a program, because a
+    /// program is exactly what separates the two roles that carry no
+    /// opening. The three opening scalars are absent rather than zero
+    /// for the fee's reason — nothing downstream may mistake a
+    /// placeholder for an opening — and the asset is the fixture's, an
+    /// explicit destination being an ordinary receipt output that
+    /// happens to publish its amount.
+    #[must_use]
+    pub const fn explicit_destination(semantic_amount: u64, output_program: Vec<u8>) -> Self {
+        Self {
+            role: ConfidentialOutputRole::ExplicitDestination,
+            semantic_amount,
+            output_program,
+            value_blinder: None,
+            nonce_input: None,
+            rangeproof_seed: None,
+            reserve_asset: None,
+        }
+    }
+
     /// Which role this output plays.
     #[must_use]
     pub const fn role(&self) -> ConfidentialOutputRole {
