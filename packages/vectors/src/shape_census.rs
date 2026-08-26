@@ -1785,14 +1785,16 @@ mod tests {
                 Limitation::TwoOutputFloor,
                 Limitation::SponsorlessShapeHasNoFeeMember,
                 Limitation::CancelingPredecessorOnly,
+                Limitation::HomogeneousRepresentationOnly,
             ],
-            "three limitations have been removed AND run: the floor, the shape vocabulary with \
-             no sponsorless fee-bearing member, and the canceling predecessor",
+            "four limitations have been removed AND run: the floor, the shape vocabulary with \
+             no sponsorless fee-bearing member, the canceling predecessor, and the one \
+             representation per transfer",
         );
 
         // Every removal recorded on an observed row is proven by a
         // DISTINCT identity, which is what stops one acceptance being
-        // cited for work it did not do. Three removals, three runs.
+        // cited for work it did not do. Four removals, four runs.
         let identities: BTreeSet<&str> = removed
             .iter()
             .filter_map(|limitation| limitation.removal())
