@@ -991,6 +991,67 @@ fn the_private_output_order_follows_the_request_and_not_the_amount() {
 }
 
 #[test]
+fn a_private_transfer_may_be_sponsored_by_a_coin_whose_value_is_explicit() {
+    // The sponsor region's value form is INDEPENDENT of the
+    // representation plan, and this is where that is enforced rather
+    // than only explained. `recognize_receipts` gates a receipt's value
+    // form against the plan; `recognize_sponsors` deliberately does not,
+    // because §1.9 keeps the sponsor region outside every protocol
+    // claim and §10.7's isolation fragment introspects no value field in
+    // it at all.
+    //
+    // The asymmetry was once read as an unexplained gap, and closing it
+    // is what proved it is not: the mirror clause immediately refused
+    // the disclosure-minimality pair registry's own sponsor pair, whose
+    // PRIVATE member carries an explicit sponsor value on purpose.
+    //
+    // So this is the shape that must keep building: private receipts
+    // whose values are commitments, sponsored by a reserve coin whose
+    // value is explicit. ADR-015 public disposable test material.
+    let abi = live_abi();
+    let first = outpoint(0xc1, 0);
+    let stated = view([
+        receipt_view(
+            &abi,
+            first,
+            &owner(&FIRST_OWNER),
+            LiveTransferRepresentationPlan::PrivateCommitted,
+            ValueField::Commitment([0x09; 33]),
+        ),
+        sponsor_view(sponsor_coin(), 130),
+    ]);
+    let request = LiveTransferRequest::new(
+        [first],
+        [destination(&FIRST_OWNER, 1_000)],
+        LiveTransferRepresentationPlan::PrivateCommitted,
+        RequestedForm::Sponsored,
+        SponsorChangeRequest::NotRequested,
+        Some(PublicTestRandomness::from_published_bytes(
+            PUBLISHED_RANDOMNESS,
+        )),
+    )
+    .expect("the fixture request validates");
+    let sponsor = FixtureSponsor::new(90, None);
+    let built = finalize_live_transfer(
+        &reviewed_target(),
+        &abi,
+        &request,
+        &stated,
+        Some(&sponsor),
+        Some(&FixturePrivateValue),
+    )
+    .expect("a private transfer sponsored by an explicit coin finalizes");
+
+    // It really is the private plan and really is sponsored, read off
+    // the report rather than off the request that was handed in.
+    assert_eq!(
+        built.report().representation(),
+        LiveTransferRepresentationPlan::PrivateCommitted,
+    );
+    assert_eq!(built.report().form(), LiveTransactionForm::Sponsored);
+}
+
+#[test]
 fn a_private_request_with_no_confidential_capability_is_refused() {
     let abi = live_abi();
     let first = outpoint(0xc1, 0);

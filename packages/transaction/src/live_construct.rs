@@ -632,6 +632,38 @@ struct RecognizedReceipt {
 /// Without it the mismatch stays invisible until a node reads the
 /// transaction — and a construction defect reported by a target is a
 /// defect reported at the wrong layer.
+///
+/// # Why the VALUE form is not checked here, and it is not an oversight
+///
+/// [`recognize_receipts`] gates a receipt's value field against the
+/// requested representation and refuses a form the plan does not read.
+/// This function has no counterpart, and the asymmetry was read as an
+/// unexplained gap once. It is not one, and trying to close it is what
+/// established that: adding the mirror clause immediately refused the
+/// disclosure-minimality pair registry's own SPONSOR pair under the
+/// private plan, whose private member deliberately carries an EXPLICIT
+/// sponsor value.
+///
+/// The reason is the one §1.9 states. A representation plan is about
+/// the PROTOCOL region — which receipts are consumed and which
+/// destinations are created, the family whose amounts a protocol claim
+/// is about. The sponsor region is deliberately outside every protocol
+/// claim: it carries the reserve asset, it sits outside both balance
+/// equations, and §10.7's isolation fragment introspects no value field
+/// in it AT ALL, a property checked on the emitted instructions rather
+/// than argued. So the plan has nothing to say about the sponsor's value
+/// form, and a clause here would not be enforcing §6.3 — it would be
+/// extending it over a region it was written to exclude.
+///
+/// What follows is that the two forms are independently choosable: a
+/// private transfer may be sponsored by an explicit coin, and an
+/// explicit transfer's sponsor could carry a commitment. The first is a
+/// registered pair member. The second is what the
+/// `private-sponsor-values` row is about, and it is unbuilt for reasons
+/// that have nothing to do with a guard here.
+///
+/// The ASSET is different and is checked above, because the covenant
+/// reads it and an introspection reads an explicit field.
 fn recognize_sponsors(
     abi: &CandidateLiveTransferAbi,
     request: &LiveTransferRequest,

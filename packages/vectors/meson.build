@@ -38,6 +38,7 @@ vectors_source_files = files(
   'src/live_resources.rs',
   'src/live_roles.rs',
   'src/live_safety.rs',
+  'src/live_sponsor_shapes.rs',
   'src/materialize.rs',
   'src/matrix.rs',
   'src/mutation.rs',

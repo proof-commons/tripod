@@ -35,6 +35,7 @@ pub mod live_resources;
 pub mod live_restart;
 pub mod live_roles;
 pub mod live_safety;
+pub mod live_sponsor_shapes;
 pub mod materialize;
 pub mod matrix;
 pub mod mutation;

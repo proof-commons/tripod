@@ -123,6 +123,67 @@ fn a_non_protocol_member_may_carry_neither_a_commitment_nor_a_proof() {
 }
 
 #[test]
+fn a_blinded_sponsor_coin_trips_the_explicitness_clause_before_the_proof_clause() {
+    // A BLINDED SPONSOR COIN is the shape a confidential sponsor value
+    // needs its funding transaction to create: the reserve asset
+    // explicit, because the isolation fragment introspects it, and the
+    // value committed with the range proof that a committed value
+    // requires. It is non-protocol by asset, so it lands outside the
+    // protocol region and meets the two clauses that guard it.
+    //
+    // It trips BOTH, and which one fires first is the finding. The
+    // explicitness clause is checked before the proof clause, so a
+    // reader who repaired only the refusal they saw would fix the
+    // commitment and be met immediately by the proof — the second
+    // refusal being MASKED by the first rather than absent.
+    //
+    // Recorded as a run rather than as a reading of the branch order,
+    // because the order is what a repair has to plan around and a
+    // reordering of these two clauses would otherwise change the
+    // finding silently.
+    let policy = "bb".repeat(32);
+    let mut blinded = transaction(&policy);
+    blinded.outputs[2] = DecodedFundingOutput {
+        asset: DecodedAssetField::Explicit(policy),
+        value: DecodedValueField::Commitment(commitment(8)),
+        nonce: vec![0x02; 33],
+        program: vec![0x51],
+        // Empty, as it must be: a surjection proof is required exactly
+        // when the ASSET is committed, and this one is not.
+        surjection_proof: Vec::new(),
+        rangeproof: vec![0x7a; 64],
+    };
+    assert_eq!(
+        classify_funding_members(&blinded, protocol().as_str(), 2).expect_err("it refuses"),
+        RegionClassificationRefusal::NonProtocolMemberNotExplicit { index: 2 },
+        "the explicitness clause is no longer the first one a blinded sponsor coin meets",
+    );
+
+    // The masked one, shown by removing only what the first clause
+    // objects to. Nothing else about the member moves, so the second
+    // refusal is attributable to the proof and to nothing else.
+    let mut without_commitment = blinded;
+    without_commitment.outputs[2].value = DecodedValueField::Explicit(1_250);
+    assert_eq!(
+        classify_funding_members(&without_commitment, protocol().as_str(), 2)
+            .expect_err("it refuses"),
+        RegionClassificationRefusal::NonProtocolMemberCarriesProof { index: 2 },
+        "the proof clause was not the second obstacle after all",
+    );
+
+    // And the region vocabulary has no member for it either way: the
+    // classifier decides a non-protocol member's region by whether its
+    // program is empty, so a sponsor coin can only ever be read as
+    // policy change. Admitting a blinded sponsor coin therefore needs a
+    // region member as well as the two clauses, which is why this is a
+    // vocabulary change rather than a relaxation.
+    assert_eq!(
+        NonProtocolFundingRegion::PolicyChange.to_string(),
+        "policy-asset change",
+    );
+}
+
+#[test]
 fn a_protocol_position_must_carry_the_asset_and_a_committed_value() {
     let policy = "bb".repeat(32);
     let mut wrong_asset = transaction(&policy);

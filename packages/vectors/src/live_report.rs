@@ -998,12 +998,12 @@ mod tests {
         // asserted rather than bounded, because a scoreboard that said
         // "some" would let the next row in without a run.
         //
-        // The explicit table is answered in fifteen of its sixteen rows,
-        // and it read ZERO until the explicit shape ceremony ran
-        // thirteen shapes against a real node and every one of them was
-        // accepted; the sponsor-envelope lane's own accepted control
-        // answered two more. The one that remains asks for a sponsored
-        // transfer that TAKES CHANGE, and no ceremony here builds one.
+        // The explicit table is answered in ALL SIXTEEN of its rows, and
+        // it read ZERO until the explicit shape ceremony ran thirteen
+        // shapes against a real node and every one of them was accepted;
+        // the sponsored lane's own accepted control answered two more,
+        // and the sponsored control that TAKES CHANGE answered the last.
+        // Every row was answered by a run of its own shape.
         //
         // The private table is answered in exactly seven rows. It read
         // two before the shape wave built the multi-output and
@@ -1013,7 +1013,11 @@ mod tests {
         // to a range that would stop noticing.
         let (explicit_rows, explicit_answered, explicit_blocked) =
             board[&LiveSafetySection::PositiveExplicit];
-        assert_eq!(explicit_answered, 15, "the explicit table's answered count");
+        assert_eq!(explicit_answered, 16, "the explicit table's answered count");
+        assert_eq!(
+            explicit_answered, explicit_rows,
+            "the explicit table is complete, and a row added to it without a run fails here",
+        );
         assert_eq!(explicit_blocked, 0);
         assert_ne!(explicit_rows, 0);
 
