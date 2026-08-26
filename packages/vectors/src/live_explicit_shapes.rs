@@ -719,6 +719,7 @@ pub struct ExplicitShapeRecord {
     destination_owners: Vec<ShapeOwner>,
     input_owners: Vec<ShapeOwner>,
     submitted_bytes: usize,
+    observed_weight: Option<u64>,
     observed_layer: Option<ObservedOutcomeLayer>,
     observed_detail: Option<String>,
     accepted_txid: Option<String>,
@@ -746,6 +747,15 @@ impl ExplicitShapeRecord {
     #[must_use]
     pub const fn submitted_bytes(&self) -> usize {
         self.submitted_bytes
+    }
+
+    /// The weight the TARGET reported for the submitted transaction.
+    ///
+    /// Absent where the adapter reported none, which is an unmade
+    /// measurement rather than a weight of zero.
+    #[must_use]
+    pub const fn observed_weight(&self) -> Option<u64> {
+        self.observed_weight
     }
 
     /// The layer the target answered at.
@@ -895,6 +905,7 @@ impl ExplicitShapePlanner {
                 destination_owners: Vec::new(),
                 input_owners: Vec::new(),
                 submitted_bytes: 0,
+                observed_weight: None,
                 observed_layer: None,
                 observed_detail: None,
                 accepted_txid: None,
@@ -1347,6 +1358,12 @@ impl ExplicitShapePlanner {
         // value with itself, so it is simply set.
         self.record.control_bytes.clone_from(&submitted);
         self.record.observed_layer = Some(response.observed_layer);
+        // The target's OWN weight, read off `decoderawtransaction` by
+        // the adapter rather than computed here. §20.5 wants the
+        // comparison made against the node's figure, and a weight this
+        // ceremony calculated for itself would be comparing a prediction
+        // with itself.
+        self.record.observed_weight = response.resources.transaction_weight;
         self.record
             .observed_detail
             .clone_from(&response.observed_detail);
@@ -1749,6 +1766,14 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
         record.offered_order_differs()
     );
     let _ = writeln!(out, "submitted_bytes {}", record.submitted_bytes);
+    match record.observed_weight {
+        Some(weight) => {
+            let _ = writeln!(out, "observed_weight {weight}");
+        }
+        None => {
+            let _ = writeln!(out, "observed_weight none");
+        }
+    }
     let _ = writeln!(
         out,
         "observed_layer {}",
