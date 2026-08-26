@@ -2747,7 +2747,19 @@ fn signer_inputs(
     census: &OpeningBindingCensus,
     openings: &[[u8; SCALAR_BYTES]],
 ) -> Result<Vec<ProofFinalizedSignerInput>, MaterializationRefusal> {
-    if census.entries().len() != intent.inputs().len() {
+    // Counted against the inputs that HAVE an opening rather than
+    // against every input. The census is a census of verified
+    // REFERENCES, and an explicit consumed receipt names none -- so
+    // comparing it with the whole input set would demand a reference for
+    // a coin that has nothing to reference. The guard still bites: every
+    // input carrying an opening must have had it verified, and one whose
+    // verification was skipped is still a mismatch.
+    let opened = intent
+        .inputs()
+        .iter()
+        .filter(|input| input.opening().is_some())
+        .count();
+    if census.entries().len() != opened {
         return Err(MaterializationRefusal::OpeningBindingCensusMismatch);
     }
     let mut inputs = Vec::with_capacity(intent.inputs().len());
