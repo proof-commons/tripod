@@ -201,6 +201,21 @@ pub enum FixtureOutputRole {
     /// would let a manifest declare a fee the target would not read as
     /// one.
     ///
+    /// # A closed-out wave's reading of this vocabulary is STALE
+    ///
+    /// The wave-7 closeout records that this vocabulary "has no fee role
+    /// and refuses an empty output program", and concludes that a fee
+    /// output is inexpressible here. That was true when it was written
+    /// and is not true now: the role exists, it REQUIRES the empty
+    /// program rather than refusing it, and a sponsorless fee-bearing
+    /// confidential shape has since been accepted at a real node.
+    ///
+    /// The correction is recorded here rather than in the closeout. A
+    /// closeout is history and history is not edited; what a reader
+    /// following its claim needs is for the site the claim is about to
+    /// say so. The rest of that paragraph still holds, the cardinality
+    /// floor it describes having been a separate refusal.
+    ///
     /// # What a fee output does not have
     ///
     /// No value blinder to derive, no nonce input, no range-proof seed,
