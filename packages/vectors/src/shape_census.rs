@@ -2429,7 +2429,10 @@ const fn stops_at(form: TransferForm) -> &'static str {
                 registry admits and a shape the vocabulary carries, with no ceremony stage that \
                 asks for it. The nearest cell to a run is the private sponsored form with an \
                 explicit sponsor coin funded exactly to the fee and one destination, which the \
-                minimality pair registry pins as awaiting a run of its own shape.";
+                minimality pair registry pins as awaiting a run of its own shape and which row \
+                T5-056 is driving. This register records it UNRUN, and would record it run only \
+                on an acceptance of its own shape: a wave in flight is not evidence, which is the \
+                distinction this module exists to keep.";
     }
     if matches!(form.fee, FeeAxis::Present) {
         return "No ceremony builds it, and the shape member is in the SECOND deployment. \
@@ -3326,12 +3329,12 @@ mod tests {
     /// `None` for the cells the confidential registry is not the
     /// authority on: the wholly explicit lane registers nothing, and a
     /// sponsor taking EXPLICIT change has no role to be stated as.
-    fn recomputed_form_refusal(form: TransferForm) -> Option<Option<RegistrationRefusal>> {
+    fn recomputed_form_refusal(form: TransferForm) -> DrivenRegistry {
         if matches!(form.representation, RepresentationAxis::HomogeneousExplicit) {
-            return None;
+            return DrivenRegistry::NotItsAuthority;
         }
         if form.sponsor.change_outputs() > 0 && !form.sponsor.change_is_committed() {
-            return None;
+            return DrivenRegistry::NotItsAuthority;
         }
 
         let blinded = form.representation.blinded_destinations(form.created);
@@ -3396,12 +3399,28 @@ mod tests {
         } else {
             NONZERO_CONSUMED_SUM
         };
-        Some(registry_refusal_for(
-            &drive_handle(form),
-            CENSUS_ASSET,
-            sum,
-            outputs,
-        ))
+        match registry_refusal_for(&drive_handle(form), CENSUS_ASSET, sum, outputs) {
+            None => DrivenRegistry::Admitted,
+            Some(refusal) => DrivenRegistry::Refused(refusal),
+        }
+    }
+
+    /// What the live registry said about a cell it was driven with.
+    ///
+    /// Three cases and not two, because "the registry admitted it" and
+    /// "the registry is not the authority on it" are different facts and
+    /// a register built on not collapsing facts of different kinds would
+    /// be a poor place to start collapsing them. The wholly explicit
+    /// lane registers nothing at all, and a sponsor taking explicit
+    /// change has no role to be stated as; neither is an admission.
+    #[derive(Debug, PartialEq, Eq)]
+    enum DrivenRegistry {
+        /// The confidential registry does not decide this cell.
+        NotItsAuthority,
+        /// It registered the manifest.
+        Admitted,
+        /// It refused, by name.
+        Refused(RegistrationRefusal),
     }
 
     /// A registry handle for the cell, in the grammar the registry
@@ -3692,14 +3711,15 @@ mod tests {
             if matches!(verdict, FormVerdict::OutsideTheSpace { .. }) {
                 continue;
             }
-            let Some(recomputed) = recomputed_form_refusal(form) else {
+            let recomputed = recomputed_form_refusal(form);
+            if matches!(recomputed, DrivenRegistry::NotItsAuthority) {
                 continue;
-            };
+            }
             match verdict {
                 FormVerdict::ObservedAccepted { .. } | FormVerdict::ExpressibleAndUnrun { .. } => {
                     assert_eq!(
                         recomputed,
-                        None,
+                        DrivenRegistry::Admitted,
                         "{} is recorded buildable, so the registry must admit its manifest",
                         form.handle(),
                     );
@@ -3708,7 +3728,7 @@ mod tests {
                 FormVerdict::RefusedToProtectHiding { .. } => {
                     assert_eq!(
                         recomputed,
-                        Some(RegistrationRefusal::Derivation {
+                        DrivenRegistry::Refused(RegistrationRefusal::Derivation {
                             refusal: FixtureDerivationRefusal::DegenerateBalancingScalar,
                         }),
                         "{} hides nothing, so the registry must say so by name",
@@ -3721,7 +3741,9 @@ mod tests {
                 } => {
                     assert_eq!(
                         recomputed,
-                        Some(RegistrationRefusal::BalancingRoleNotUnique { found: 0 }),
+                        DrivenRegistry::Refused(RegistrationRefusal::BalancingRoleNotUnique {
+                            found: 0
+                        }),
                         "{} has no solving role, so the registry must refuse on that",
                         form.handle(),
                     );
@@ -3730,7 +3752,7 @@ mod tests {
                 FormVerdict::ConsensusRefuses { .. }
                 | FormVerdict::ObservedRefusedOnBalance { .. } => {
                     assert!(
-                        recomputed.is_some(),
+                        matches!(recomputed, DrivenRegistry::Refused(_)),
                         "{} is impossible, so the registry must not admit it",
                         form.handle(),
                     );

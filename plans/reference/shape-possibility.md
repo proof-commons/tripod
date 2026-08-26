@@ -145,6 +145,8 @@ This section exists because the owner read a census row as a claim it does not m
 
 **The trap has a second face inside the pair registry itself.** The split fixture's second destination pays the SOURCE owner, which is semantically change; the registry types it as an ordinary destination because the fixture type has nowhere to record a role. So even the pin's own two-recipient claim is one its type cannot express and only its prose asserts.
 
+**Two of these cells have a run in flight, and a run in flight is not evidence.** Row T5-056 is driving the pure private split and the private sponsored form with an explicit sponsor coin and no change. At the tip this section was written against, neither had merged an acceptance, so both are recorded unrun here and the pair registry's pins stand. They move when a node accepts a transaction of their own shape and not before, which is the same rule every other row in this register was held to.
+
 **What this means for reading any row here.** A row of this register claims exactly what its axes say: how many inputs carry blinded values, how many outputs do, how many are explicit destinations, and whether there is a fee. It claims nothing about who is paid, nothing about which output is change, and nothing about whether a shape at the same cardinality but with different roles has ever run. When those questions matter, the pair registry is the register that answers them, and its unrun pins are the honest statement of what has not been done.
 
 ## The two-output floor · `rule:shapes:two-output-floor`
