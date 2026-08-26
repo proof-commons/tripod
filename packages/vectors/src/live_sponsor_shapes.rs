@@ -1516,9 +1516,143 @@ fn render_sponsor_reverification(out: &mut String, record: &SponsorShapeRecord) 
     }
 }
 
+/// What this lane observed, for the three §15.1 rows whose subject is
+/// the sponsor region.
+///
+/// The register moved here with the ceremony that produces it. It used
+/// to sit beside the explicit shape lane's own, which built no sponsor
+/// region at all and so could only host it; now the lane and its record
+/// are in one place, and a change to what the ceremony builds is next to
+/// the identities it has to keep.
+///
+/// # Both members were observed in ONE session, on one chain
+///
+/// The two runs differ in the change role and in nothing else: the same
+/// issuance, the same two receipts at the same amount, the same two
+/// destinations, the same owners, the same fee. So the difference
+/// between their outputs is attributable to the change role, which is
+/// the whole reason the axis is one axis.
+///
+/// # The without-change run is the lift's own control
+///
+/// It reproduced [`SPONSORED_ACCEPTED_TXID`] — the identity the sponsor
+/// wave first observed and the explicit-runs wave observed again —
+/// after the ceremony had been moved out of the test it lived in. A lift
+/// that changed what the ceremony builds would have produced a different
+/// identity, and this one did not move.
+///
+/// # ADR-015 public disposable test material throughout
+///
+/// One fixed regtest key answers the sponsor's request. A single key
+/// answering once is not production multi-party sponsor signing, and
+/// neither run should be read as establishing any.
+pub mod sponsored_run_of_record {
+    /// The identity the target computed for the accepted sponsor-signed
+    /// explicit control that takes NO change.
+    ///
+    /// 1480 bytes submitted and 1480 read back from the node's own copy,
+    /// equal to the submitted bytes; mined at height 6; a two-item
+    /// sponsor witness of 72 and 33 bytes replayed from the adapter's
+    /// answer; both owner signatures verified out of that copy against
+    /// messages recomputed here, per input rather than per transaction.
+    pub const SPONSORED_ACCEPTED_TXID: &str =
+        "36cd6616ee518320b45f196d6ad0e6db894a5441683f57230e66e5608e6bc08c";
+
+    /// How many bytes the without-change control handed the node.
+    pub const SPONSORED_SUBMITTED_BYTES: usize = 1_480;
+
+    /// The weight the target itself computed for it.
+    pub const SPONSORED_TARGET_WEIGHT: u64 = 2_482;
+
+    /// The fee the target weighed, in the reserve asset.
+    ///
+    /// The same figure BOTH runs declare. Holding it equal is what makes
+    /// the two submissions comparable at all.
+    pub const SPONSORED_FEE_WEIGHED: u64 = 250;
+
+    /// Whether the without-change control crossed the relay boundary
+    /// before the mine.
+    ///
+    /// Read off the submission path rather than assumed: the adapter
+    /// offers a submission to `testmempoolaccept` first and reports an
+    /// acceptance only where that answered allowed, then confirms with
+    /// `generateblock`.
+    pub const SPONSORED_CROSSED_RELAY_AND_BLOCK: bool = true;
+
+    /// The identity the target computed for the accepted sponsor-signed
+    /// explicit control that TAKES CHANGE.
+    ///
+    /// The first sponsored control in this workspace to carry a change
+    /// role. 1636 bytes submitted and read back equal, mined at height
+    /// 6, and the change output observed in the node's own copy at
+    /// position 2 rather than inferred from the request: the reserve
+    /// asset, the offered amount, and the deployment's own
+    /// sponsor-change program.
+    pub const SPONSORED_CHANGE_ACCEPTED_TXID: &str =
+        "e3a4e4319e024bb021501d2ef0b7118b871953e05cb13b6c00e4d8a592982bb8";
+
+    /// How many bytes the with-change control handed the node.
+    ///
+    /// One hundred and fifty-six more than the without-change control,
+    /// which is the change output and the sponsor input's larger amount.
+    pub const SPONSORED_CHANGE_SUBMITTED_BYTES: usize = 1_635;
+
+    /// The weight the target itself computed for it.
+    pub const SPONSORED_CHANGE_TARGET_WEIGHT: u64 = 2_871;
+
+    /// What the sponsor coin was funded to for the with-change run.
+    ///
+    /// Above the offer, which is the whole of what a sponsored control
+    /// taking change was missing: the construction places a change
+    /// output only where the offer states a change amount, and an offer
+    /// can only state one where the coin holds more than the fee.
+    pub const SPONSORED_CHANGE_SPONSOR_FUNDED: u64 = 1_250;
+
+    /// What the sponsor took back.
+    pub const SPONSORED_CHANGE_TAKEN: u64 = 1_000;
+
+    /// Which output position the change role occupied.
+    ///
+    /// Read out of the node's copy of the mined transaction, located by
+    /// the deployment's own sponsor-change program rather than by
+    /// counting: a position is what a shape degraded to the
+    /// without-change form would still have, and the program is what it
+    /// would not.
+    pub const SPONSORED_CHANGE_OUTPUT_POSITION: usize = 2;
+
+    /// Whether any ceremony in this workspace builds a sponsored control
+    /// that TAKES CHANGE.
+    ///
+    /// `true`, and the running is what changed it.
+    ///
+    /// # The obstacle was not the one the spike predicted, and running
+    /// decided it
+    ///
+    /// Two readings stood against each other. One said the demonstration
+    /// deployment's sponsor-change program symbol is a fixture pattern
+    /// no program hashes to, so a control taking change would die at its
+    /// own change-role check the way the first sponsored controls died
+    /// at the fee-role check. The other said the two symbols only look
+    /// alike: the FEE role's program is target-structural, so
+    /// construction wrote the empty program while the symbol was
+    /// arbitrary and the two disagreed, whereas the CHANGE role's
+    /// program is a deployment's own choice and construction writes the
+    /// change output FROM the symbol — refusing outright if a sponsor
+    /// capability offers any other destination.
+    ///
+    /// The second reading is the one that survived. The control was
+    /// accepted at the first attempt with the symbol untouched: nothing
+    /// was threaded, nothing was repointed, the committed taptree did
+    /// not move, and [`SPONSORED_ACCEPTED_TXID`] reproduced beside it.
+    /// What was actually missing was an OFFER that carries change, and
+    /// what supplies one is a sponsor funding step that funds above the
+    /// fee.
+    pub const A_SPONSORED_CONTROL_TAKING_CHANGE_EXISTS: bool = true;
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SPONSOR_CHANGE, SPONSOR_FEE, SponsorShape};
+    use super::{SPONSOR_CHANGE, SPONSOR_FEE, SponsorShape, sponsored_run_of_record};
 
     /// The reserve sub-equation, stated where a change to either number
     /// has to notice.
@@ -1546,6 +1680,44 @@ mod tests {
     fn the_without_change_shape_still_funds_exactly_the_offer() {
         assert_eq!(SponsorShape::ChangeAbsent.sponsor_funding(), SPONSOR_FEE);
         assert!(SponsorShape::ChangeAbsent.change().is_none());
+    }
+
+    /// The register cites identities for the shapes it names.
+    ///
+    /// Bound to the shape constants rather than left as free numbers, so
+    /// that a ceremony edited after its run fails here instead of
+    /// quietly citing an identity for something else. Every figure is
+    /// one the node produced.
+    #[test]
+    fn the_register_is_bound_to_the_shapes_that_produced_it() {
+        use sponsored_run_of_record as record;
+
+        assert_eq!(
+            SponsorShape::ChangeAbsent.sponsor_funding(),
+            record::SPONSORED_FEE_WEIGHED,
+        );
+        assert_eq!(
+            SponsorShape::ChangePresent.sponsor_funding(),
+            record::SPONSORED_CHANGE_SPONSOR_FUNDED,
+        );
+        assert_eq!(
+            SponsorShape::ChangePresent.change(),
+            Some(record::SPONSORED_CHANGE_TAKEN),
+        );
+        assert_eq!(
+            record::SPONSORED_CHANGE_SPONSOR_FUNDED,
+            record::SPONSORED_FEE_WEIGHED + record::SPONSORED_CHANGE_TAKEN,
+        );
+
+        // The two identities are DISTINCT, which is what says the change
+        // role reached the bytes: a with-change run that had silently
+        // degraded would have reproduced the other one.
+        assert_ne!(
+            record::SPONSORED_ACCEPTED_TXID,
+            record::SPONSORED_CHANGE_ACCEPTED_TXID,
+        );
+        assert!(record::SPONSORED_CHANGE_SUBMITTED_BYTES > record::SPONSORED_SUBMITTED_BYTES);
+        assert!(record::A_SPONSORED_CONTROL_TAKING_CHANGE_EXISTS);
     }
 
     /// The two shapes differ in the change role and in nothing else a

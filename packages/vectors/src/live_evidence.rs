@@ -1044,14 +1044,26 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // outputs. So it is the `sponsored` class and the
         // `sponsor-change-absent` class at once.
         //
-        // It is NOT `sponsor-change-present`, and that row stays
-        // unanswered: no ceremony in this workspace builds a sponsored
-        // control that TAKES change, and the register this arm reads
-        // from records why, correcting an earlier wave's prediction
-        // about which obstacle stands in the way.
+        // It is NOT `sponsor-change-present`. That row has its own run
+        // and its own identity, below, on the rule this whole function
+        // is held to: a row moves on an acceptance of its OWN shape.
         "sponsored" | "sponsor-change-absent" => {
-            Some(crate::live_explicit_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID)
+            Some(crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID)
         }
+        // The sponsored control that TAKES CHANGE, and the only run that
+        // could answer this row. The change output is read out of the
+        // node's own copy of the mined transaction and located by the
+        // deployment's sponsor-change program, so a run whose shape had
+        // degraded to the without-change form is a hard stop in the
+        // ceremony rather than an acceptance reported here.
+        //
+        // The two sponsored runs differ in the change role and in
+        // nothing else -- same issuance, receipts, destinations, owners
+        // and fee -- and the target computed two different identities
+        // for them, which is what makes the difference attributable.
+        "sponsor-change-present" => Some(
+            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_CHANGE_ACCEPTED_TXID,
+        ),
         _ => None,
     }
 }
@@ -1649,20 +1661,22 @@ mod tests {
                 "several-inputs-merged-into-one",
                 "several-inputs-to-several-outputs",
                 "sponsor-change-absent",
+                "sponsor-change-present",
                 "sponsored",
                 "sponsorless",
                 "target-ct-conservation",
             ]),
         );
-        assert_eq!(plan.census().native_run_observed(), 22);
+        assert_eq!(plan.census().native_run_observed(), 23);
 
         // The three positive private classes that did NOT move are named
         // here rather than left to the count, because a matrix that only
         // said how many rows moved could not say which.
-        // Private-sponsor-values is blocked by a residual this guide does
-        // not clear, the fixture-openings row asks for a determinism
-        // observation rather than a submission, and the
-        // projection-equality row needs both sides of its pair accepted.
+        // Private-sponsor-values asks for confidential sponsor values and
+        // every sponsored control accepted so far is explicit, the
+        // fixture-openings row asks for a determinism observation rather
+        // than a submission, and the projection-equality row needs both
+        // sides of its pair accepted.
         //
         // Private-merge USED to be in this list, described as structurally
         // unconstructible on this lane. It was never unconstructible: it
@@ -1672,19 +1686,24 @@ mod tests {
         // A row is removed from this list by a run of its own shape and
         // by nothing else, and that run happened.
         //
-        // The ONE explicit row that did not move is named beside them.
-        // It asks for a sponsored transfer that TAKES CHANGE, and no
-        // ceremony here builds one: the construction path places a
-        // change output only where the sponsor's offer states a change
-        // amount, and the sponsor lane funds its coin to exactly the
-        // offer. It is not blocked on a component -- a sponsor-signed
-        // explicit control has been accepted on this lane -- it is
-        // unrun.
+        // Sponsor-change-present USED to be in this list too, as the one
+        // explicit row that had not moved, and it left by the same rule:
+        // a run of its own shape. It was never blocked on a component
+        // either. What was missing was an OFFER that carries change --
+        // the construction places a change output only where the offer
+        // states a change amount, and the sponsor lane funded its coin
+        // to exactly the offer, so no offer this workspace made had ever
+        // carried one. A funding step that funds ABOVE the fee supplied
+        // it, and the demonstration's sponsor-change symbol needed
+        // nothing done to it: the control was accepted at the first
+        // attempt with the symbol untouched.
+        //
+        // THE EXPLICIT POSITIVE TABLE IS NOW COMPLETE. Every row left in
+        // this list is private.
         for unmoved in [
             "private-sponsor-values",
             "deterministic-public-fixture-openings",
             "projection-equality-with-paired-explicit",
-            "sponsor-change-present",
         ] {
             assert!(
                 !answered.contains(unmoved),
