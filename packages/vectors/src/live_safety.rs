@@ -866,14 +866,31 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         L::LinkedConstructorProgram,
         B::AbiConstructionRejection,
     ),
-    linked(
+    // RETYPED FIRST-PARTY, on the ruling and on the `time-locked-input`
+    // precedent exactly. The row was typed target-side, asking that an
+    // ASH input offered to a live transfer be refused by something that
+    // reads its family. Nothing on a chain does: what separates one
+    // receipt family from another before any leaf runs is the LEAF
+    // COMMITMENT, and a spend of a foreign program draws the identical
+    // verdict every foreign taptree draws. THE COMMITMENT REFUSAL IS
+    // PROGRAM-GENERIC AND CAN NEVER NAME THE FAMILY — the pinned target
+    // source refuses a revealed leaf before a single opcode executes at
+    // `src/script/interpreter.cpp:3286-3290`, where a failed
+    // `VerifyTaprootCommitment` is `SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH`
+    // — so an observation of it establishes the commitment rule and says
+    // nothing about families. No later wave is owed that observation and
+    // producing it would not answer this row; it is written here so the
+    // demand cannot be raised again.
+    //
+    // The structural protection is first-party and is driven: the input
+    // recognition searches the linked destination table, an honest ASH
+    // program is not in it, and the finalization answers naming the
+    // class it required.
+    pre_target(
         S::ObjectFault,
         "ash-input-or-output",
-        L::SemanticFact,
-        B::ScriptPathRejection,
-        allowed_families(TransactionSide::Input),
-        undeclared_family,
-        "UndeclaredObjectFamily",
+        L::LinkedConstructorProgram,
+        B::AbiConstructionRejection,
     ),
     linked(
         S::ObjectFault,
@@ -897,14 +914,20 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         wrong_object,
         "WrongRecognizedObject",
     ),
-    linked(
+    // RETYPED FIRST-PARTY, and this row is the one of the seven whose
+    // refusal is NOT program-generic at all. Owner metadata is
+    // authenticated by the constructor before a program exists to place
+    // it in (§1.8, §7.2), exactly as the owner-key encoding is, so
+    // malformed metadata is refused at the same entry point
+    // `unknown-key-type` is refused at and names its own class: a width
+    // the approved closure does not fix. Nothing reaches a chain to be
+    // refused generically, which is why the row is here rather than
+    // waiting on a run that would answer a different question.
+    pre_target(
         S::ObjectFault,
         "malformed-live-metadata",
-        L::SemanticFact,
-        B::ScriptPathRejection,
-        recognition(TransactionSide::Input, ObjectId::ReceiptLive),
-        wrong_object,
-        "WrongRecognizedObject",
+        L::LinkedConstructorProgram,
+        B::AbiConstructionRejection,
     ),
     // §15.4's erratum, filed in the feature-request register. The row
     // arrived declaring `LinkerRejection`, and the linker neither derives
@@ -934,14 +957,24 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         "mixed-operation-program",
         LiveUnlinkedReason::NoSemanticMutationClass,
     ),
-    linked(
+    // RETYPED FIRST-PARTY. A stale constructor is a different program
+    // for the same owner, so what a chain answers is the COMMITMENT
+    // rule — refused before a single opcode executes, in the identical
+    // words every foreign taptree draws, naming nothing about staleness.
+    // The pinned target source is `src/script/interpreter.cpp:3286-3290`,
+    // where a failed `VerifyTaprootCommitment` is
+    // `SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH`. No later wave is owed that
+    // observation.
+    //
+    // First-party the row is answerable and its mutant is honest: the
+    // other shape vocabulary's constructor for the SAME owner and the
+    // SAME representation, which the input recognition does not find in
+    // this deployment's linked table.
+    pre_target(
         S::ObjectFault,
         "stale-constructor",
-        L::SemanticFact,
-        B::ScriptPathRejection,
-        recognition(TransactionSide::Input, ObjectId::ReceiptLive),
-        wrong_object,
-        "WrongRecognizedObject",
+        L::LinkedConstructorProgram,
+        B::AbiConstructionRejection,
     ),
     linked(
         S::ObjectFault,
@@ -982,14 +1015,21 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         undeclared_family,
         "UndeclaredObjectFamily",
     ),
-    linked(
+    // RETYPED FIRST-PARTY, and the cleanest of the seven: the asset is
+    // checked BEFORE the program lookup, so the refusal is attributable
+    // to the asset alone rather than to the shape of the program. The
+    // row was typed target-side on the reading that a receipt-shaped
+    // program carrying a foreign asset reaches a leaf that compares
+    // assets. It does not — the receipt-shaped program is not the
+    // committed one, so the asset is never compared and the commitment
+    // rule answers instead, program-generically. First-party, the honest
+    // linked program is kept and ONLY the asset field is changed, which
+    // is what makes the class the row's own.
+    pre_target(
         S::ObjectFault,
         "foreign-asset-under-receipt-shaped-program",
         L::SemanticFact,
-        B::ScriptPathRejection,
-        recognition(TransactionSide::Input, ObjectId::ReceiptLive),
-        wrong_asset,
-        "WrongRecognizedAsset",
+        B::AbiConstructionRejection,
     ),
     // §7.5 admits no key-path escape, and the internal key is the
     // published unspendable one. A key-path spend is expressible only in
@@ -1149,15 +1189,31 @@ pub const VALUE_FAULTS: &[LiveSafetyRow] = &[
         missing_family,
         "MissingCanonicalDeltaFamily",
     ),
-    linked(
+    // RETYPED to the boundary it has. The row declared a script path,
+    // and §12.1's request type refuses a repeated receipt outpoint
+    // before sorting rather than collapsing it — earlier than an ABI,
+    // earlier than a program lookup, earlier than a candidate. No run
+    // was ever going to answer this row, because nothing carrying the
+    // fault could be built to offer.
+    pre_target(
         S::ValueFault,
         "duplicated-source",
         L::SemanticFact,
-        B::ScriptPathRejection,
-        delta_policy(),
-        duplicate_endpoint,
-        "DuplicateCanonicalSourceOrDestination",
+        B::AbiConstructionRejection,
     ),
+    // THE SECOND ROW OF THIS MATRIX WHOSE PREDICTION THE SOURCES REFUSE,
+    // and it sits beside its own opposite. `duplicated-source` above is
+    // a real fault refused at the earliest boundary there is; this row
+    // is NOT A FAULT AT ALL by the same type's own reading. §12.2 keeps
+    // the destination census a MULTISET precisely so that two
+    // destinations of one owner and one value count as two receipts
+    // rather than one, and the deciding test builds exactly that pair
+    // and calls it what it is — an even split is an ordinary transfer.
+    //
+    // The declaration is left standing and the STANDING is corrected,
+    // for the reason the zero-valued sponsor row states: which rows
+    // §15.5 lists is the guide's to say, and the erratum is filed
+    // there rather than executed here.
     linked(
         S::ValueFault,
         "duplicated-destination",
@@ -1318,19 +1374,59 @@ pub const SPONSOR_FAULTS: &[LiveSafetyRow] = &[
         B::ReportSemanticProjectionRejection,
         LiveUnlinkedReason::ReportIsTheBoundary,
     ),
-    // The mandatory one. The whole-transaction balance is preserved and
-    // every sponsor amount stays positive, so nothing about the sponsor
-    // relation is wrong: what is wrong is the `U` transfer relation, and
-    // the conservation of the closed asset is what must refuse it.
-    linked(
+    // RE-ATTRIBUTED, on the ruling. The row arrived declaring that
+    // closed-asset conservation must refuse a balanced rearrangement,
+    // and conservation is precisely the relation that CANNOT: the
+    // fragment folds every destination into ONE sum and compares it
+    // with the folded receipts, so a swap that preserves the total
+    // passes it by construction. Attributing the row there was
+    // attributing it to the one guard the fault is designed to slip
+    // past.
+    //
+    // What actually stops it is the OWNER'S AUTHORIZATION OVER ALL
+    // OUTPUTS. The authorization is bound to every output by position,
+    // so moving value between two destinations is refused whatever it
+    // does to the total — and that is a pre-target boundary, which is
+    // why the row is here rather than waiting on a chain.
+    //
+    // On a chain the same theft would be refused by CHECKSIG, and that
+    // observation is not owed for this row: a signature failure names a
+    // signature and not a rearrangement, so it would not attribute.
+    pre_target(
         S::SponsorFault,
         "balanced-theft",
         L::TargetTransaction,
-        B::ScriptPathRejection,
-        conservation(),
-        amount_mismatch,
-        "AmountMismatch",
+        B::AbiConstructionRejection,
     ),
+    // THE ONE ROW OF THIS MATRIX WHOSE PREDICTION THE SOURCES REFUSE.
+    //
+    // Its declaration below says a script path rejects a zero-valued
+    // ordinary sponsor member. Nothing does, and the guide series had
+    // already said so twice before this row was written: Guide 8 §22.6
+    // rules the shape a SEMANTIC ACCEPTANCE under exact role structure
+    // and instructs in the next line that no generic domain-failure
+    // vector for it be preserved, and Guide 12 gives the layered
+    // reading — semantic relation may accept, first-party builder omits
+    // known zero change, deployment may reject as nonstandard. The
+    // transcription faithfully carried a §15.6 fault-table ENTRY across
+    // and did not carry the ruling that governs it.
+    //
+    // The declaration is left standing and the row's STANDING is
+    // corrected instead, which is a deliberate division of ownership
+    // rather than a half-measure. Two things prevent the honest repair
+    // here: this matrix's tables are polarity-HOMOGENEOUS by
+    // construction — `a_positive_row_mutates_nothing_and_expects_acceptance`
+    // requires a row's polarity to equal its section's — so a
+    // fault-table row cannot be flipped positive without moving it to
+    // another table, and WHICH TABLE §15.6 LISTS IS THE GUIDE'S to say.
+    // Deleting or moving the row here would be this workspace editing a
+    // published matrix to agree with itself.
+    //
+    // So the erratum is filed with the guide, and the row is answered
+    // at `LiveRowStanding::FirstPartyFactObserved` by the fact the
+    // sources state, cited at that site to its deciding test. A reader
+    // finding this declaration and that standing in disagreement is
+    // seeing the erratum, not a row nobody checked.
     ambiguous(
         S::SponsorFault,
         "zero-valued-ordinary-sponsor-member",
@@ -1430,11 +1526,27 @@ pub const STRUCTURAL_FAULTS: &[LiveSafetyRow] = &[
         L::WitnessProof,
         B::ScriptPathRejection,
     ),
-    no_class(
+    // RETYPED FIRST-PARTY. On a chain a foreign control block draws the
+    // verdict every foreign taptree draws — a failed
+    // `VerifyTaprootCommitment` at the pinned target's
+    // `src/script/interpreter.cpp:3286-3290`, which is
+    // `SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH` and names nothing about
+    // control blocks. That observation would establish the commitment
+    // rule and say nothing about this row, so no wave is owed it.
+    //
+    // First-party the row is answered PRECISELY, and by the only site in
+    // this workspace that recomputes what the target recomputes: the
+    // owner signing census folds each declared leaf hash up its offered
+    // control block's path, tweaks the offered internal key and compares
+    // the result with the program spent. Swapping the two receipts'
+    // control blocks and changing nothing else leaves two real paths of
+    // two real trees, neither committing to the input it is offered
+    // for, and the refusal names the input.
+    pre_target(
         S::StructuralFault,
         "control-block-from-another-program",
         L::WitnessProof,
-        B::ConsensusRejectionBeforeScript,
+        B::AbiConstructionRejection,
     ),
     pre_target(
         S::StructuralFault,

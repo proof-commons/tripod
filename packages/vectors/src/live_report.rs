@@ -741,6 +741,11 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         // belongs in the evidence plan beside the row rather than in
         // bytes whose job is to count.
         LiveRowStanding::DeterminismObserved { .. } => "determinism-observed",
+        // Withheld for the same two reasons: no target sentence exists
+        // to carry, and the payload names a first-party site, which
+        // belongs beside the row in the evidence plan rather than in
+        // bytes whose job is to count.
+        LiveRowStanding::FirstPartyFactObserved { .. } => "first-party-fact-observed",
         LiveRowStanding::InfrastructureBlocked(_) => "infrastructure-blocked",
         LiveRowStanding::ReportLayerAnswerable => "report-layer-answerable",
         LiveRowStanding::OperationVocabularyClosed => "operation-vocabulary-closed",
@@ -862,7 +867,17 @@ mod tests {
         );
         let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
         assert_ne!(validated.outstanding().len(), 0);
-        assert_ne!(validated.blockers().len(), 0);
+        // And NO blockers, where there used to be one. The report is
+        // partial for the honest reason and only for it: rows are
+        // outstanding because no run of their shape has happened, not
+        // because a component they need is missing. The last blocker
+        // left when the raw-bypass row was answered by a fact about
+        // this workspace, its own gate being whether that path exists.
+        //
+        // Asserted as an equality rather than dropped, because "nothing
+        // is blocked" is a claim this report makes and a reader is
+        // entitled to see it checked rather than merely unstated.
+        assert_eq!(validated.blockers().len(), 0);
     }
 
     #[test]

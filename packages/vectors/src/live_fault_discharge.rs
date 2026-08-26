@@ -68,10 +68,16 @@ use tapscript::{
     demonstration_live_shape_set, derive_live_receipt_constructor, owner_key_encoding_closure,
     static_transfer_leaf_set,
 };
-use target_elements::EncodingClass;
-use transaction::bytes::{AssetField, Outpoint, TargetTransaction, Txid, ValueField};
+use target_elements::{EncodingClass, LeafVersion};
+use transaction::bytes::{
+    AssetField, AssetId, Outpoint, TargetOutput, TargetTransaction, Txid, ValueField,
+};
 use transaction::error::TransactionRefusal;
 use transaction::live_abi::CandidateLiveTransferAbi;
+use transaction::live_census::{
+    AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
+    OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest,
+};
 use transaction::live_construct::finalize_live_transfer;
 use transaction::live_private::PrivateValueCapability;
 use transaction::live_request::{
@@ -82,14 +88,16 @@ use transaction::live_signing::{LiveOwnerResponse, authorize_live_transfer};
 use transaction::sponsor::{
     SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest,
 };
+use transaction::taproot::{TAPROOT_WITNESS_VERSION, leaf_hash, witness_program_script};
 use transaction::view::{PublicConstructionView, PublicOutputView};
 
+use crate::bundle::PINNED_PROGRAM;
 use crate::error::VectorError;
-use crate::live_capability::OracleFixtureValues;
+use crate::live_capability::{OracleFixtureValues, OracleLiveCurve};
 use crate::live_plan::{
-    FEE_PROGRAM_DIGEST, FIRST_SCALAR, PROTOCOL_ASSET, RESERVE_ASSET, SECOND_SCALAR,
-    demonstration_live_abi, live_deployment_for_asset, live_transfer_plan, owner_key,
-    published_owner, relocatable_live_bundles, reviewed_target,
+    FEE_PROGRAM_DIGEST, FIRST_SCALAR, LiveShapeVocabulary, PROTOCOL_ASSET, RESERVE_ASSET,
+    SECOND_SCALAR, demonstration_live_abi, live_abi_for_vocabulary, live_deployment_for_asset,
+    live_transfer_plan, owner_key, published_owner, relocatable_live_bundles, reviewed_target,
 };
 use crate::live_safety::{LiveSafetyRow, required_safety_matrix};
 
@@ -113,6 +121,27 @@ pub enum LiveFaultValidator {
     /// schema has already been checked and the sealed types admit no
     /// unchecked one.
     ConstructorDerivation,
+    /// `transaction::live_census::OwnerSigningCensus::from_explicit_finalized`,
+    /// the sole first-party site that recomputes a leaf commitment.
+    ///
+    /// A SEVENTH entry point, and it is here because it is the only
+    /// place in this workspace that does what a target's
+    /// `VerifyTaprootCommitment` does: fold a declared leaf hash up an
+    /// offered control block's path, tweak the offered internal key, and
+    /// compare the result with the program actually spent. That is why
+    /// it can answer a row whose refusal on a chain is program-generic —
+    /// the target says only that some leaf did not commit, and this site
+    /// says WHICH input's declared leaf did not, naming it.
+    OwnerSigningCensus,
+    /// `transaction::live_request::LiveTransferRequest::new`, the sole
+    /// site that admits a transfer request at all.
+    ///
+    /// An EIGHTH entry point, and the earliest of them: it refuses
+    /// before an ABI is consulted, before a program is looked up and
+    /// before a candidate exists. A row whose fault is a property of
+    /// what a caller ASKED FOR — rather than of what the ask produces —
+    /// can be answered nowhere else.
+    LiveTransferRequestConstruction,
     /// `linker::LiveDefinitionCensus::define`, the sole site that admits
     /// a symbol definition into a link.
     LiveSymbolDefinition,
@@ -135,6 +164,12 @@ impl LiveFaultValidator {
         match self {
             Self::OwnerKeyEncoding => "owner-key-encoding",
             Self::ConstructorDerivation => "constructor-derivation",
+            Self::OwnerSigningCensus => {
+                "transaction::live_census::OwnerSigningCensus::from_explicit_finalized"
+            }
+            Self::LiveTransferRequestConstruction => {
+                "transaction::live_request::LiveTransferRequest::new"
+            }
             Self::LiveSymbolDefinition => "live-symbol-definition",
             Self::ProtocolValueDomain => "protocol-value-domain",
             Self::LiveTransferFinalization => "live-transfer-finalization",
@@ -178,6 +213,60 @@ pub enum FaultMutation {
     /// thing about a class that is visible at a spend, on this side of
     /// the target and on the target's.
     OfferAReceiptInputUnderAProgramNothingWasLinkedFor,
+    /// Offer a receipt input paying to an honest ASH program.
+    ///
+    /// Not a corrupted program but a REAL one of another family: the
+    /// pinned ASH bundle's own taproot output key, wrapped in the
+    /// reviewed witness-program script. That is what makes the refusal
+    /// about the family rather than about malformed bytes.
+    OfferAnAshProgramAsAReceiptInput,
+    /// Offer owner metadata the approved closure does not fix a width
+    /// for.
+    ///
+    /// One byte short of the approved width, with the encoding class
+    /// left honest, so the refusal is the width's and not the domain's
+    /// — the sibling change `unknown-key-type` already drives.
+    OfferOwnerMetadataOutsideTheApprovedWidth,
+    /// Offer the reserve asset under an honestly linked receipt program.
+    ///
+    /// The program, the value form and the outpoint all stay honest and
+    /// ONLY the asset field moves, which is what puts the refusal at the
+    /// asset check rather than at the program lookup after it.
+    OfferTheReserveAssetUnderAReceiptShapedProgram,
+    /// Offer a receipt input under a SUPERSEDED constructor's program.
+    ///
+    /// The same owner and the same representation, derived under the
+    /// other shape vocabulary. A vocabulary's shape set becomes one
+    /// coordinator leaf per shape and those leaves tweak the taproot
+    /// output key, so a constructor of the other vocabulary is a
+    /// genuinely different program for the same owner — which is what
+    /// STALE means, as against corrupted or foreign.
+    OfferAReceiptInputUnderASupersededConstructor,
+    /// Declare each receipt's leaf under the OTHER receipt's control
+    /// block.
+    ///
+    /// The two control blocks are swapped between the two signing
+    /// requests and nothing else moves: each leaf hash stays the leaf
+    /// hash of its own input's own script, and each path is a real path
+    /// — of the other program's tree. That is what makes the refusal
+    /// about the control block rather than about malformed bytes.
+    DeclareALeafUnderAnotherProgramsControlBlock,
+    /// Move value from one signed destination to another, keeping the
+    /// total.
+    ///
+    /// The balanced theft, staged exactly as the row describes it: the
+    /// whole-transaction balance is preserved and every program stays
+    /// where it was, so nothing a conservation relation folds can see
+    /// the change. Distinct from the sibling reorder, which swaps whole
+    /// outputs and moves no value.
+    MoveValueBetweenDestinationsAfterSigning,
+    /// Name one receipt outpoint twice in the same request.
+    ///
+    /// The whole of the change: the same coin, asked for twice. §12.1
+    /// refuses it before sorting rather than collapsing it, because a
+    /// selection built by insertion would silently consume one coin for
+    /// a caller who asked for two.
+    NameOneReceiptOutpointTwice,
     /// Make the destination total exceed the target's explicit width.
     OverflowTheDestinationTotal,
     /// Offer a commitment-valued receipt to the explicit plan.
@@ -218,6 +307,15 @@ pub enum ObservedFaultRefusal {
     Link(LinkRefusal),
     /// The transaction layer refused.
     Transaction(TransactionRefusal),
+    /// The owner signing census refused.
+    ///
+    /// A FIFTH vocabulary, added for the same reason there were four: it
+    /// is somebody else's refusal and re-spelling it into one of the
+    /// others would make a discharge evidence about the re-spelling. The
+    /// census refuses things no other entry point here looks at — leaf
+    /// commitments, control-block shape, annex disposition — and a row
+    /// answered by one of them is not answered by the finalization.
+    Census(OwnerCensusRefusal),
 }
 
 /// One first-party case: a §15 row, an owning validator, and one change.
@@ -379,9 +477,16 @@ macro_rules! constructor_is {
     };
 }
 
+/// The same, for the owner signing census.
+macro_rules! census_is {
+    ($pattern:pat) => {
+        |observed| matches!(observed, ObservedFaultRefusal::Census($pattern))
+    };
+}
+
 /// The complete census of first-party cases for §15.4–§15.7.
 ///
-/// Fifteen cases over six owning entry points, and no §15.4–§15.7 row
+/// Twenty-two cases over eight owning entry points, and no §15.4–§15.7 row
 /// whose verdict a first-party layer owns is missing from it.
 #[must_use]
 #[expect(
@@ -483,6 +588,82 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
             transaction_is!(TransactionRefusal::ReceiptInputIsNotALiveReceipt(_)),
             "ReceiptInputIsNotALiveReceipt",
         ),
+        // §15.4's three retyped program-generic rows. Each is discharged
+        // by its own validator driven twice, with its own mutant and its
+        // own declared field.
+        //
+        // Two of them draw the same refusal class as `time-locked-input`
+        // above, and that is the established discipline rather than a
+        // collision: the recognition has ONE answer for an input it
+        // cannot find in the linked table, so the LAYER cannot separate
+        // these rows and the FIELD does. Each case below changes exactly
+        // one field and a different one — a whole program of another
+        // family here, the asset alone below — so a reader can tell
+        // which fact each discharge established.
+        case(
+            "ash-input-or-output",
+            V::LiveTransferFinalization,
+            M::OfferAnAshProgramAsAReceiptInput,
+            transaction_is!(TransactionRefusal::ReceiptInputIsNotALiveReceipt(_)),
+            "ReceiptInputIsNotALiveReceipt",
+        ),
+        // The one that is not program-generic in any form, and the only
+        // one of the three answered before a program exists at all.
+        case(
+            "malformed-live-metadata",
+            V::OwnerKeyEncoding,
+            M::OfferOwnerMetadataOutsideTheApprovedWidth,
+            |observed| {
+                matches!(
+                    observed,
+                    ObservedFaultRefusal::OwnerKey(OwnerKeyRejection::WrongWidth { .. })
+                )
+            },
+            "WrongWidth",
+        ),
+        // The asset check runs BEFORE the program lookup, so this row's
+        // refusal names the asset and separates from the two above by
+        // class as well as by field.
+        case(
+            "foreign-asset-under-receipt-shaped-program",
+            V::LiveTransferFinalization,
+            M::OfferTheReserveAssetUnderAReceiptShapedProgram,
+            transaction_is!(TransactionRefusal::ReceiptInputCarriesForeignAsset(_)),
+            "ReceiptInputCarriesForeignAsset",
+        ),
+        // The third of the recognition's shared-class rows, and its
+        // field is the constructor VOCABULARY: same owner, same
+        // representation, a program the other shape set derives.
+        case(
+            "stale-constructor",
+            V::LiveTransferFinalization,
+            M::OfferAReceiptInputUnderASupersededConstructor,
+            transaction_is!(TransactionRefusal::ReceiptInputIsNotALiveReceipt(_)),
+            "ReceiptInputIsNotALiveReceipt",
+        ),
+        // §15.7's control-block row, retyped first-party. The one row of
+        // the seven whose class the census names PRECISELY: a target
+        // answers a foreign control block with the verdict every foreign
+        // taptree draws, and this site answers with the input whose
+        // declared leaf did not commit.
+        case(
+            "control-block-from-another-program",
+            V::OwnerSigningCensus,
+            M::DeclareALeafUnderAnotherProgramsControlBlock,
+            census_is!(OwnerCensusRefusal::LeafHashDoesNotCommit { .. }),
+            "LeafHashDoesNotCommit",
+        ),
+        // §15.5's duplication row, retyped to the boundary it actually
+        // has. The request type refuses a repeated outpoint outright,
+        // which is earlier than any script path and is why no run was
+        // ever going to answer this row.
+        case(
+            "duplicated-source",
+            V::LiveTransferRequestConstruction,
+            M::NameOneReceiptOutpointTwice,
+            transaction_is!(TransactionRefusal::DuplicateReceiptOutpoint(_)),
+            "DuplicateReceiptOutpoint",
+        ),
         case(
             "time-locked-output",
             V::LiveTransferFinalization,
@@ -548,6 +729,18 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
             M::DefineTheAssetSymbolWithANonAssetValue,
             link_is!(LinkRefusal::IncompatibleLiveSymbolType { .. }),
             "IncompatibleLiveSymbolType",
+        ),
+        // §15.6's balanced theft, RE-ATTRIBUTED to the guard that
+        // actually stops it. It shares this class with the reorder
+        // sibling below and the FIELD separates them: that one moves
+        // whole outputs and no value, this one moves value and leaves
+        // every output where it was.
+        case(
+            "balanced-theft",
+            V::OfferedTransactionCheck,
+            M::MoveValueBetweenDestinationsAfterSigning,
+            transaction_is!(TransactionRefusal::OutputMutatedAfterSigning { .. }),
+            "OutputMutatedAfterSigning",
         ),
         case(
             "destination-order-changed-after-signing",
@@ -1029,6 +1222,301 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
                 malformed: finalize_outcome(&abi, &request, &view, None)?,
             })
         }
+        M::OfferAnAshProgramAsAReceiptInput => {
+            let (request, control_view) = explicit_control(&abi)?;
+            let target = reviewed_target()?;
+            let [first, second] = honest_points()?;
+            // One change: the program the first receipt's coin pays to,
+            // which is now the pinned ASH bundle's own taproot output
+            // key under the reviewed witness-program script. An HONEST
+            // program of another family rather than corrupted bytes —
+            // the row is about a family, so a malformed program would
+            // answer a different question. The asset and the value form
+            // stay honest, so the refusal is the program lookup's rather
+            // than the asset check before it.
+            let ash = witness_program_script(&target, TAPROOT_WITNESS_VERSION, &PINNED_PROGRAM)
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            let view = PublicConstructionView::new(vec![
+                view_of(&abi, first, ash, ValueField::Explicit(400)),
+                view_of(
+                    &abi,
+                    second,
+                    program(&abi, &SECOND_SCALAR, Explicit)?,
+                    ValueField::Explicit(600),
+                ),
+            ])
+            .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            Ok(Staged {
+                control: finalize_outcome(&abi, &request, &control_view, None)?,
+                malformed: finalize_outcome(&abi, &request, &view, None)?,
+            })
+        }
+        M::OfferOwnerMetadataOutsideTheApprovedWidth => {
+            let target = reviewed_target()?;
+            let closure = owner_key_encoding_closure(target.definition().authorization());
+            Ok(Staged {
+                control: OwnerKey::new(&closure, closure.approved(), vec![0x11_u8; 32])
+                    .err()
+                    .map(ObservedFaultRefusal::OwnerKey),
+                // One change: the width. The encoding class stays the
+                // approved one, so what refuses is the fixed width and
+                // not the domain — which is the sibling case's change
+                // and would answer the sibling's row.
+                malformed: OwnerKey::new(&closure, closure.approved(), vec![0x11_u8; 31])
+                    .err()
+                    .map(ObservedFaultRefusal::OwnerKey),
+            })
+        }
+        M::OfferTheReserveAssetUnderAReceiptShapedProgram => {
+            let (request, control_view) = explicit_control(&abi)?;
+            let [first, second] = honest_points()?;
+            // One change: the asset the first receipt's coin carries,
+            // which is now the deployment's own reserve asset. The
+            // program stays the honestly linked receipt program and the
+            // value form stays explicit, so the recognition reaches its
+            // ASSET check — which runs before the program lookup — and
+            // refuses naming the outpoint whose asset was foreign.
+            let view = PublicConstructionView::new(vec![
+                PublicOutputView::new(
+                    first,
+                    AssetField::Explicit(AssetId::from_internal(RESERVE_ASSET)),
+                    ValueField::Explicit(400),
+                    program(&abi, &FIRST_SCALAR, Explicit)?,
+                ),
+                view_of(
+                    &abi,
+                    second,
+                    program(&abi, &SECOND_SCALAR, Explicit)?,
+                    ValueField::Explicit(600),
+                ),
+            ])
+            .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            Ok(Staged {
+                control: finalize_outcome(&abi, &request, &control_view, None)?,
+                malformed: finalize_outcome(&abi, &request, &view, None)?,
+            })
+        }
+        M::OfferAReceiptInputUnderASupersededConstructor => {
+            let (request, control_view) = explicit_control(&abi)?;
+            let [first, second] = honest_points()?;
+            // One change: the shape vocabulary the first receipt's
+            // constructor was derived under. The owner is the SAME
+            // owner and the representation the same representation —
+            // only the coordinator leaf set differs, which tweaks the
+            // taproot output key and so yields a different program for
+            // the same party. That is what a stale constructor IS, and
+            // it is why the mutant is an honestly derived program
+            // rather than corrupted bytes: a corrupted program would
+            // answer the question a foreign taptree answers.
+            let superseded = live_abi_for_vocabulary(
+                LiveShapeVocabulary::FeeBearing,
+                PROTOCOL_ASSET,
+                RESERVE_ASSET,
+                FEE_PROGRAM_DIGEST,
+            )?;
+            let stale = program(&superseded, &FIRST_SCALAR, Explicit)?;
+            let view = PublicConstructionView::new(vec![
+                view_of(&abi, first, stale, ValueField::Explicit(400)),
+                view_of(
+                    &abi,
+                    second,
+                    program(&abi, &SECOND_SCALAR, Explicit)?,
+                    ValueField::Explicit(600),
+                ),
+            ])
+            .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            Ok(Staged {
+                control: finalize_outcome(&abi, &request, &control_view, None)?,
+                malformed: finalize_outcome(&abi, &request, &view, None)?,
+            })
+        }
+        M::DeclareALeafUnderAnotherProgramsControlBlock => {
+            let (request, view) = explicit_control(&abi)?;
+            let target = reviewed_target()?;
+            let curve = OracleLiveCurve::new(reviewed_target()?);
+            // The genesis a first-party staging may choose freely: the
+            // leaf-commitment check folds a path and tweaks a key, and
+            // no term of it reads the deployment seed. Choosing a live
+            // one would suggest this discharge depended on a chain.
+            let deployment = LiveDeployment::new([0x9c_u8; 32]);
+            let finalized = finalize_live_transfer(&target, &abi, &request, &view, None, None)
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?
+                .into_finalized();
+            let records = finalized.receipts();
+            if records.len() < 2 {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            }
+            let honest: Vec<OwnerSigningInputRequest> = records
+                .iter()
+                .map(|record| {
+                    OwnerSigningInputRequest::new(
+                        u32::from(record.position()),
+                        leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
+                        LeafVersion::TAPSCRIPT,
+                        OWNER_CODESEPARATOR_POSITION,
+                        AnnexDisposition::Absent,
+                        IssuanceDisposition::Absent,
+                        record.control_block().to_vec(),
+                    )
+                })
+                .collect();
+            // One change: each request's control block is the OTHER
+            // receipt's. Every other term is untouched — the leaf hash
+            // is still this input's own script's, the version and
+            // codeseparator are the honest ones, and both blocks are
+            // real paths of real trees. So what fails is the commitment
+            // and only the commitment.
+            let swapped: Vec<OwnerSigningInputRequest> = records
+                .iter()
+                .enumerate()
+                .map(|(index, record)| {
+                    let other = records[(index + 1) % records.len()]
+                        .control_block()
+                        .to_vec();
+                    OwnerSigningInputRequest::new(
+                        u32::from(record.position()),
+                        leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
+                        LeafVersion::TAPSCRIPT,
+                        OWNER_CODESEPARATOR_POSITION,
+                        AnnexDisposition::Absent,
+                        IssuanceDisposition::Absent,
+                        other,
+                    )
+                })
+                .collect();
+            if swapped
+                .iter()
+                .zip(honest.iter())
+                .all(|(left, right)| left == right)
+            {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            }
+            Ok(Staged {
+                control: OwnerSigningCensus::from_explicit_finalized(
+                    &target, &finalized, deployment, &honest, &curve,
+                )
+                .err()
+                .map(ObservedFaultRefusal::Census),
+                malformed: OwnerSigningCensus::from_explicit_finalized(
+                    &target, &finalized, deployment, &swapped, &curve,
+                )
+                .err()
+                .map(ObservedFaultRefusal::Census),
+            })
+        }
+        M::MoveValueBetweenDestinationsAfterSigning => {
+            let (request, view) = explicit_control(&abi)?;
+            let target = reviewed_target()?;
+            let finalized = finalize_live_transfer(&target, &abi, &request, &view, None, None)
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?
+                .into_finalized();
+            let responses: Vec<_> = finalized
+                .signing_requests()
+                .iter()
+                .map(|signing| {
+                    (
+                        signing.input(),
+                        LiveOwnerResponse::to(signing, OPAQUE_SIGNATURE.to_vec()),
+                    )
+                })
+                .collect();
+            let authorized = authorize_live_transfer(finalized.clone(), responses)
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            let honest = TargetTransaction::decode(finalized.protected_bytes())
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            // One change: one unit of value moves from the second
+            // explicit destination to the first. The TOTAL is
+            // unchanged, both programs stay exactly where they were,
+            // and the census keeps its size and its members — so the
+            // conservation relation this row used to be attributed to
+            // folds the same sum on both sides and cannot see the
+            // change at all. What sees it is the owner's authorization,
+            // which is bound to every output by position.
+            let mut outputs = honest.outputs().to_vec();
+            let [first, second] = [0_usize, 1_usize];
+            let (ValueField::Explicit(gained), ValueField::Explicit(lost)) = (
+                outputs
+                    .get(first)
+                    .ok_or(LiveFaultRefusal::ControlNotConstructible)?
+                    .value(),
+                outputs
+                    .get(second)
+                    .ok_or(LiveFaultRefusal::ControlNotConstructible)?
+                    .value(),
+            ) else {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            };
+            if lost == 0 {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            }
+            for (index, amount) in [(first, gained + 1), (second, lost - 1)] {
+                let output = outputs
+                    .get(index)
+                    .ok_or(LiveFaultRefusal::ControlNotConstructible)?;
+                outputs[index] = TargetOutput::new(
+                    output.asset(),
+                    ValueField::Explicit(amount),
+                    output.nonce(),
+                    output.program().to_vec(),
+                );
+            }
+            let stolen = TargetTransaction::new(
+                honest.version(),
+                honest.inputs().to_vec(),
+                outputs,
+                honest.lock_time(),
+                honest.witnesses().to_vec(),
+            )
+            .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            if stolen == honest {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            }
+            Ok(Staged {
+                control: authorized
+                    .check_offered(&honest)
+                    .err()
+                    .map(ObservedFaultRefusal::Transaction),
+                malformed: authorized
+                    .check_offered(&stolen)
+                    .err()
+                    .map(ObservedFaultRefusal::Transaction),
+            })
+        }
+        M::NameOneReceiptOutpointTwice => {
+            let [first, second] = honest_points()?;
+            let control = LiveTransferRequest::new(
+                [first, second],
+                [
+                    destination(&SECOND_SCALAR, 250)?,
+                    destination(&FIRST_SCALAR, 750)?,
+                ],
+                Explicit,
+                RequestedForm::Sponsorless,
+                SponsorChangeRequest::NotRequested,
+                None,
+            )
+            .err()
+            .map(ObservedFaultRefusal::Transaction);
+            // One change: the second receipt is the first one again.
+            // The destinations, the representation and the form are all
+            // the control's, so what refuses is the repetition.
+            Ok(Staged {
+                control,
+                malformed: LiveTransferRequest::new(
+                    [first, first],
+                    [
+                        destination(&SECOND_SCALAR, 250)?,
+                        destination(&FIRST_SCALAR, 750)?,
+                    ],
+                    Explicit,
+                    RequestedForm::Sponsorless,
+                    SponsorChangeRequest::NotRequested,
+                    None,
+                )
+                .err()
+                .map(ObservedFaultRefusal::Transaction),
+            })
+        }
         M::OverflowTheDestinationTotal => {
             let (control_request, view) = explicit_control(&abi)?;
             let [first, second] = honest_points()?;
@@ -1296,7 +1784,7 @@ pub fn discharge_live_faults() -> Result<Vec<ValidatedLiveFaultEvidence>, LiveFa
 ///
 /// Each case is a pure function of constants in this file and of the
 /// substrate [`crate::live_plan`] already caches, so two runs cannot
-/// differ; driving thirteen entry points twice each cost about a minute
+/// differ; driving every entry point twice each cost about a minute
 /// per caller, and [`crate::live_evidence`] asks for the census once per
 /// evidence plan. The cache holds the *result*, refusals included, so a
 /// census that failed §4.2 keeps failing rather than being retried into a
@@ -1392,7 +1880,7 @@ mod tests {
             .iter()
             .map(super::ValidatedLiveFaultEvidence::validator)
             .collect();
-        assert_eq!(validators.len(), 6, "six owning entry points");
+        assert_eq!(validators.len(), 8, "eight owning entry points");
     }
 
     #[test]
