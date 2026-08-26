@@ -652,6 +652,31 @@ fn recognize_sponsors(
             ));
         }
 
+        // The value form follows the representation plan, exactly as a
+        // receipt's does. This clause closes an asymmetry rather than
+        // adding a rule: `recognize_receipts` has gated the form since
+        // the plan existed, the sponsor side had no counterpart and no
+        // prose saying why, and a sponsor coin whose form the plan does
+        // not license passed here unremarked.
+        //
+        // The ASSET above stays explicit under both plans and is not
+        // part of this: the isolation fragment introspects it.
+        let admitted = matches!(
+            (request.representation(), stated.value()),
+            (
+                LiveTransferRepresentationPlan::Explicit,
+                ValueField::Explicit(_)
+            ) | (
+                LiveTransferRepresentationPlan::PrivateCommitted,
+                ValueField::Commitment(_),
+            )
+        );
+        if !admitted {
+            return Err(TransactionRefusal::LiveSponsorInputValueFormRefused(
+                *outpoint,
+            ));
+        }
+
         // Kept, not merely checked. The owner's signature commits to
         // every spent output, and this is the last place that holds a
         // view of the sponsor region.
