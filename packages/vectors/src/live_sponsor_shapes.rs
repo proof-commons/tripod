@@ -2364,6 +2364,29 @@ pub mod sponsored_run_of_record {
     /// would not.
     pub const SPONSORED_CHANGE_OUTPUT_POSITION: usize = 2;
 
+    /// The identity the target computed for the transaction that FUNDED
+    /// the committed sponsor coin.
+    ///
+    /// An ACCEPTANCE, and the one this wave's flag rests on. This
+    /// transaction is the executor's own rather than a candidate, so
+    /// what its acceptance establishes is that a coin of this form
+    /// exists on a chain — and nothing whatever about a candidate that
+    /// spends one.
+    ///
+    /// Recorded rather than described, on the rule every identity in
+    /// this module follows: a ceremony edited after its run cites an
+    /// identity for something else unless something fails.
+    pub const COMMITTED_SPONSOR_FUNDING_TXID: &str =
+        "0150397668adf2b72545786ab61bd90c927f9da769655a2d3a1955107fc09237";
+
+    /// The weight the target computed for that funding transaction.
+    ///
+    /// Wide beside the candidate's, and the width is the representation
+    /// rather than an inefficiency: two committed outputs carry a range
+    /// proof each, and a range proof is most of what a confidential
+    /// output weighs.
+    pub const COMMITTED_SPONSOR_FUNDING_WEIGHT: u64 = 9_904;
+
     /// What the target answered a candidate spending a COMMITTED sponsor
     /// coin, at the layer it answered.
     ///

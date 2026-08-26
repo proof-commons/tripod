@@ -2212,9 +2212,14 @@ fn judge_the_sponsor_value_form(
             // accepted and mined, and the node computed an identity for
             // it. That is a separate acceptance from the candidate's and
             // is not a substitute for one.
-            assert!(
-                record.committed_funding_txid().is_some(),
-                "the committed sponsor coin was never mined",
+            assert_eq!(
+                record.committed_funding_txid(),
+                Some(record_of::COMMITTED_SPONSOR_FUNDING_TXID),
+                "the committed sponsor coin was mined under another identity",
+            );
+            assert_eq!(
+                record.committed_funding_weight(),
+                Some(record_of::COMMITTED_SPONSOR_FUNDING_WEIGHT),
             );
             // No amount was observed for the coin the control spends,
             // which is the whole difference the axis makes.
