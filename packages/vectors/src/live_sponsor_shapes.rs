@@ -1954,7 +1954,12 @@ mod tests {
                 - record::MISSING_SPONSOR_AUTHORIZATION_SUBMITTED_BYTES,
             105,
         );
-        assert!(!record::MISSING_SPONSOR_AUTHORIZATION_REFUSAL.is_empty());
+        // The target's own words, and a verdict a reader can check
+        // against the layer the refusal was typed at.
+        assert!(
+            record::MISSING_SPONSOR_AUTHORIZATION_REFUSAL
+                .contains("Script failed an OP_EQUALVERIFY operation"),
+        );
     }
 
     /// The two shapes differ in the change role and in nothing else a
