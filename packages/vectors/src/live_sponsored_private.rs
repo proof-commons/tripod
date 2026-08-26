@@ -982,6 +982,37 @@ impl SponsoredPrivatePlanner {
         .map_err(|_| SponsoredPrivateRefusal::ControlNotStaged)
     }
 
+    /// Every fixture case the finalization may resolve an opening
+    /// against.
+    ///
+    /// The sponsor reserve case is present only where the sponsor coin
+    /// was BLINDED. An explicit coin has no opening to resolve, and
+    /// offering a fixture nothing references would register a case this
+    /// candidate does not use.
+    fn fixture_views(
+        &self,
+        linked: &LinkedDeployment,
+        successor_view: &transaction::live_materialize::ConfidentialFixtureView,
+    ) -> Result<FrozenConfidentialFixtureView, SponsoredPrivateRefusal> {
+        let mut registered = BTreeMap::from([
+            (
+                linked.predecessor.handle().as_str().to_owned(),
+                linked.predecessor_view.clone(),
+            ),
+            (
+                self.shape.successor_handle().to_owned(),
+                successor_view.clone(),
+            ),
+        ]);
+        if self.shape.commits_the_sponsor_value() {
+            registered.insert(
+                sponsor_reserve_handle().as_str().to_owned(),
+                self.sponsor_view()?,
+            );
+        }
+        Ok(FrozenConfidentialFixtureView::new(registered))
+    }
+
     /// The openings the finalization is formed against.
     ///
     /// Its own method because it is the whole statement of what this
@@ -1156,27 +1187,7 @@ impl SponsoredPrivatePlanner {
 
         let openings = self.openings(linked, successor_digest)?;
 
-        let mut registered = BTreeMap::from([
-            (
-                linked.predecessor.handle().as_str().to_owned(),
-                linked.predecessor_view.clone(),
-            ),
-            (
-                self.shape.successor_handle().to_owned(),
-                successor_view.clone(),
-            ),
-        ]);
-        // The sponsor reserve case exists only where a sponsor coin was
-        // BLINDED. An explicit coin has no opening to resolve, and
-        // offering a fixture nothing references would register a case
-        // this candidate does not use.
-        if self.shape.commits_the_sponsor_value() {
-            registered.insert(
-                sponsor_reserve_handle().as_str().to_owned(),
-                self.sponsor_view()?,
-            );
-        }
-        let fixtures = FrozenConfidentialFixtureView::new(registered);
+        let fixtures = self.fixture_views(linked, successor_view)?;
 
         let envelope = StagedEnvelope {
             offer: self.offer()?,
