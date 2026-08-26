@@ -949,12 +949,30 @@ impl SponsorShapeRecord {
 
     /// What this lane does NOT establish, stated in the record itself.
     #[must_use]
-    pub const fn non_claims() -> &'static [&'static str] {
-        &[
-            "production-multi-party-sponsor-signing",
-            "confidential-sponsor-values",
-            "any-negative-row",
-        ]
+    pub const fn non_claims(&self) -> &'static [&'static str] {
+        // The list depends on what the run DID, which is the whole
+        // point of writing it down. A run whose sponsor coin carries an
+        // explicit amount establishes nothing about confidential
+        // sponsor values and says so; a run whose sponsor coin carries
+        // a commitment establishes exactly that, and leaving the
+        // disclaimer in place would be a record disowning its own
+        // subject.
+        //
+        // The other two members do not move. Neither form of this
+        // ceremony has more than one sponsor, and neither offers a
+        // negative row unless it was built to.
+        match self.value_form {
+            SponsorValueForm::Explicit => &[
+                "production-multi-party-sponsor-signing",
+                "confidential-sponsor-values",
+                "any-negative-row",
+            ],
+            SponsorValueForm::Committed => &[
+                "production-multi-party-sponsor-signing",
+                "confidential-receipt-values",
+                "any-negative-row",
+            ],
+        }
     }
 }
 
@@ -2015,6 +2033,7 @@ pub fn render_sponsor_shape(record: &SponsorShapeRecord) -> String {
         "issued_asset {}",
         record.issued_asset.as_deref().unwrap_or("none")
     );
+    let _ = writeln!(out, "sponsor_value_form {}", record.value_form.case_name());
     let _ = writeln!(out, "relinked {}", record.relinked);
     let _ = writeln!(out, "receipt_coins {}", record.receipt_coins);
     let _ = writeln!(
@@ -2033,6 +2052,7 @@ pub fn render_sponsor_shape(record: &SponsorShapeRecord) -> String {
             .map_or_else(|| "none".to_owned(), |amount| amount.to_string())
     );
     let _ = writeln!(out, "expected_output_count {}", record.shape.output_count());
+    render_committed_sponsor(&mut out, record);
     render_sponsor_round_trip(&mut out, record);
     let _ = writeln!(out, "submitted_bytes {}", record.submitted_bytes);
     let _ = writeln!(
@@ -2086,10 +2106,35 @@ pub fn render_sponsor_shape(record: &SponsorShapeRecord) -> String {
             negative.detail.as_deref().unwrap_or("none"),
         );
     }
-    for claim in SponsorShapeRecord::non_claims() {
+    for claim in record.non_claims() {
         let _ = writeln!(out, "does_not_establish {claim}");
     }
     out
+}
+
+/// The committed sponsor coin's lines, where one was funded.
+///
+/// Every line is a check name and a yes or a no. No commitment, no
+/// blinder and no amount is printed: the record's subject is that those
+/// are not published, and a reader comparing two printed points by eye
+/// would be doing worse what the registry check does by recomputation.
+fn render_committed_sponsor(out: &mut String, record: &SponsorShapeRecord) {
+    let Some(census) = &record.committed else {
+        return;
+    };
+    for check in CommittedSponsorCheck::ALL {
+        let _ = writeln!(
+            out,
+            "committed_sponsor_check {} {}",
+            check.name(),
+            census.holds(check),
+        );
+    }
+    let _ = writeln!(
+        out,
+        "committed_sponsor_every_check_held {}",
+        census.every_check_held(),
+    );
 }
 
 /// The round-trip lines, where a round trip completed.
