@@ -2001,6 +2001,37 @@ fn the_explicit_maximum_outputs_shape_is_submitted_to_a_real_target() {
     run_one_explicit_shape(ExplicitShape::MaximumOutputs, "explicit-maximum-outputs");
 }
 
+/// The owner fee matrix's last cell: sponsorless, EXPLICIT, self-paid.
+///
+/// Not a §15.1 row. The explicit positive table is complete at sixteen
+/// rows and a transfer that pays its own fee is none of the sixteen
+/// classes, so what this run answers is the owner fee matrix and its
+/// evidence is the explicit run of record.
+///
+/// # What only this run can establish
+///
+/// The explicit conservation leaf carries the fee as a TERM for
+/// fee-bearing shapes, and until this run nothing had ever executed that
+/// clause: the leaf was emitted at link time by a vocabulary no request
+/// could select, because the explicit lane declared no fee destination.
+/// A leaf that is emitted and never run is a leaf whose arithmetic has
+/// been reviewed and never checked against a target, so this submission
+/// is the first thing that can tell the two apart.
+///
+/// It is also the first sponsorless form to face RELAY on its own. The
+/// sponsorless forms before it paid no fee and travelled as package
+/// children, which is why the ABI builds them at the topology-restricted
+/// version; a form that pays its own fee needs no package parent, and
+/// what the node does with it at that version is recorded here rather
+/// than predicted.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_explicit_self_paid_fee_shape_is_submitted_to_a_real_target() {
+    use vectors::live_explicit_shapes::ExplicitShape;
+
+    run_one_explicit_shape(ExplicitShape::SelfPaidFee, "explicit-self-paid-fee");
+}
+
 /// §15.3's two witness-content rows, with their control, on one chain.
 ///
 /// # Why the control and the mutants are one test
