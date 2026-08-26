@@ -484,6 +484,37 @@ pub enum LiveInfrastructureBlocker {
     /// *exists*, and the safe constructor refusing establishes nothing
     /// about it — a refusal from something that could not have built the
     /// offending transaction anyway is not evidence that nothing can.
+    ///
+    /// # The premise has expired, and the row is NOT moved on it
+    ///
+    /// This is recorded here, at the blocker's own site, because the
+    /// alternative is two artifacts disagreeing about one row — the
+    /// failure a previous wave found between a closeout and the matrix
+    /// and had to repair, and which is cheaper to prevent than to fix.
+    ///
+    /// The sentence above says the row needs a raw path that does not
+    /// exist. One does. `TargetTransaction::with_output_witnesses` is
+    /// public and checks census ARITY only — no amount, asset, program,
+    /// position or role — and three lanes already rebuild finalized
+    /// bytes through it and hand the result to a real node: the
+    /// conservation negatives, the key-path probe, and the proof-bearing
+    /// observation. So the answer to the question this row asks is
+    /// visibly yes, and the blocker is describing a workspace that no
+    /// longer exists.
+    ///
+    /// The row is left where it stands anyway, and deliberately. What
+    /// would move it is undetermined rather than merely unwritten: the
+    /// row's evidence is that a bypass EXISTS, which is a first-party
+    /// fact about this workspace and not a verdict any target gave, and
+    /// no standing here carries such a fact — the observation members
+    /// all carry target identities. Moving it would therefore mean
+    /// choosing a standing for it, and that is the kind of choice the
+    /// determinism member was minted by DIRECTION rather than taken
+    /// unilaterally. A ruling is owed on which of two repairs the row
+    /// wants: a standing for an existence fact this workspace
+    /// establishes about itself, or a retyping of the row as first-party
+    /// beside the other §4.3 distinctions. Recorded, escalated, and not
+    /// decided here.
     RawSurgeryPathAbsent,
 }
 
