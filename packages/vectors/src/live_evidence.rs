@@ -1703,6 +1703,15 @@ mod tests {
         // A row is removed from this list by a run of its own shape and
         // by nothing else, and that run happened.
         //
+        // Private-sponsor-values is where this wave STOPPED, and the
+        // stop is typed rather than narrated. It asks for confidential
+        // sponsor VALUES, and no ceremony here funds a sponsor coin
+        // whose value is blinded --
+        // `sponsored_run_of_record::A_BLINDED_SPONSOR_VALUE_IS_FUNDED_ANYWHERE`
+        // is the filed path and carries the site inventory. What it is
+        // NO LONGER blocked on is the with-change shape, which was its
+        // arithmetic precondition and which now runs.
+        //
         // Sponsor-change-present USED to be in this list too, as the one
         // explicit row that had not moved, and it left by the same rule:
         // a run of its own shape. It was never blocked on a component

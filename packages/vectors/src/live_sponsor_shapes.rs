@@ -1865,6 +1865,75 @@ pub mod sponsored_run_of_record {
     /// the adapter returned and this offering does not carry. MEASURED
     /// at the node rather than argued from the code that built the two.
     pub const MISSING_SPONSOR_AUTHORIZATION_SUBMITTED_BYTES: usize = 1_375;
+
+    /// Whether any ceremony in this workspace funds a sponsor coin whose
+    /// VALUE is blinded.
+    ///
+    /// `false`, and this is the filed path rather than a note: the
+    /// sponsored side of §15.2's `private-sponsor-values` row rests on
+    /// it, and flipping it is the next wave's work.
+    ///
+    /// # Why a confidential sponsor value needs the with-change shape
+    ///
+    /// Arithmetic, not preference. Elements balances per asset, so a
+    /// sponsored transaction's reserve sub-equation is
+    /// `sponsor_input == fee + change`. In the WITHOUT-change shape that
+    /// forces the sponsor input's value equal to the fee, and a fee is
+    /// mandatorily explicit — an empty-script output with a committed
+    /// value is not a fee at the target at all. So blinding the sponsor
+    /// input there commits to a publicly derivable number and hides
+    /// nothing, which is the same degeneracy the fixture registry
+    /// already refuses in its balancing solve.
+    ///
+    /// The with-change shape removes that, and it now RUNS: see
+    /// [`SPONSORED_CHANGE_ACCEPTED_TXID`]. Which is why this is the next
+    /// thing rather than a thing behind another thing.
+    ///
+    /// # What the blinder arithmetic does NOT need
+    ///
+    /// Nothing. The transaction-wide solve subtracts freely chosen
+    /// `Primary` blinders from the input blinder sum and holds the fee
+    /// out at a zero blinder, and the `r·G` term does not depend on
+    /// which asset an output carries. So a blinded sponsor change is
+    /// simply a `Primary`, a blinded sponsor input is one more addend in
+    /// the input sum, and the existing single balancing election
+    /// absorbs the residue with no second election and no new role. The
+    /// destination intents already carry a PER-OUTPUT asset, so a
+    /// reserve-asset blinded change needs no widening there either.
+    ///
+    /// # What it does need, each site read rather than predicted
+    ///
+    /// The private lane refuses a sponsored request at its entry and
+    /// passes a sponsor count of zero to shape selection, so a sponsored
+    /// private request selects no shape at all. Its openings vocabulary
+    /// indexes inputs against the receipts alone, so a sponsor input has
+    /// nowhere to put its opening or its blinder. Its destination
+    /// intents are built from the receipt destinations, so the sponsor
+    /// change and the fee have no intent to be built from.
+    ///
+    /// And the structural one, which is not a widening of anything: the
+    /// private lane has NO sponsor signing stage. The explicit lane
+    /// collects sponsor requests against its finalized bytes and splices
+    /// the returned witness back; the private lane's bytes are the
+    /// materializer's, and its control assembly builds one witness per
+    /// RECEIPT record with no sponsor slot and no capability call.
+    ///
+    /// Outside the lane: the funding-region classifier refuses a
+    /// non-protocol member that carries a commitment and refuses one
+    /// that carries a proof, in that order, and decides a member's
+    /// region by whether its program is empty — so it needs a region
+    /// member as well as both clauses. The executor funds and signs the
+    /// sponsor coin explicitly throughout, and its sponsor program has
+    /// no blinding key.
+    ///
+    /// # This is a typed stop and not a prediction
+    ///
+    /// Two readings of a sponsored obstacle have been overturned by
+    /// running in this lane's own history, so nothing above is offered
+    /// as a forecast of what a node would say. Every site named is one
+    /// read in the source, and what a target thinks of the shape is
+    /// unknown until one is asked.
+    pub const A_BLINDED_SPONSOR_VALUE_IS_FUNDED_ANYWHERE: bool = false;
 }
 
 #[cfg(test)]
