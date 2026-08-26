@@ -1788,6 +1788,11 @@ mod tests {
             );
             removed.push(limitation);
         }
+        // The ROWS, in order, and the crossing limitation appears TWICE
+        // because two rows cite it. That repetition is a fact rather
+        // than a duplicate to collapse: one removal freed two shapes and
+        // BOTH of them ran, which had not happened before -- every
+        // earlier removal freed at most one.
         assert_eq!(
             removed,
             vec![
@@ -1795,24 +1800,46 @@ mod tests {
                 Limitation::SponsorlessShapeHasNoFeeMember,
                 Limitation::CancelingPredecessorOnly,
                 Limitation::HomogeneousRepresentationOnly,
+                Limitation::HomogeneousRepresentationOnly,
             ],
-            "four limitations have been removed AND run: the floor, the shape vocabulary with \
-             no sponsorless fee-bearing member, the canceling predecessor, and the one \
-             representation per transfer",
+            "five observed rows cite a removal, over FOUR distinct limitations: the floor, the \
+             shape vocabulary with no sponsorless fee-bearing member, the canceling \
+             predecessor, and the one representation per transfer -- which two rows cite \
+             because it freed both crossing directions",
+        );
+        let distinct: BTreeSet<Limitation> = removed.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            4,
+            "four distinct limitations are removed and run"
         );
 
-        // Every removal recorded on an observed row is proven by a
-        // DISTINCT identity, which is what stops one acceptance being
-        // cited for work it did not do. Four removals, four runs.
-        let identities: BTreeSet<&str> = removed
+        // Every DISTINCT removal is proven by its own identity, which is
+        // what stops one acceptance being cited for work it did not do.
+        // Counted over the distinct limitations rather than the rows,
+        // because two rows citing one removal share its proof by
+        // construction and that is not a collision.
+        let identities: BTreeSet<&str> = distinct
             .iter()
             .filter_map(|limitation| limitation.removal())
             .filter_map(|removal| removal.proven_by)
             .collect();
         assert_eq!(
             identities.len(),
-            removed.len(),
+            distinct.len(),
             "each removal is proven by its own run, not by a shared one",
+        );
+
+        // And the shared removal's proof is ONE of the two acceptances
+        // rather than both or neither. The register records which shape
+        // carried a removal to a chain, and a removal freeing two shapes
+        // does not thereby acquire two proofs.
+        assert_eq!(
+            Limitation::HomogeneousRepresentationOnly
+                .removal()
+                .and_then(|removal| removal.proven_by),
+            Some(crate::live_multi_shapes::run_of_record::EXIT_CROSSING_ACCEPTED_TXID),
+            "the crossing removal names the first shape that carried it to a chain",
         );
     }
 
