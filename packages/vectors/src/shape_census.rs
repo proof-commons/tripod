@@ -3399,10 +3399,8 @@ mod tests {
         } else {
             NONZERO_CONSUMED_SUM
         };
-        match registry_refusal_for(&drive_handle(form), CENSUS_ASSET, sum, outputs) {
-            None => DrivenRegistry::Admitted,
-            Some(refusal) => DrivenRegistry::Refused(refusal),
-        }
+        registry_refusal_for(&drive_handle(form), CENSUS_ASSET, sum, outputs)
+            .map_or(DrivenRegistry::Admitted, DrivenRegistry::Refused)
     }
 
     /// What the live registry said about a cell it was driven with.
