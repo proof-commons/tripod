@@ -1282,7 +1282,14 @@ pub struct PrivateInputOpening {
     /// decide.
     pub region: ConfidentialInputRegion,
     /// Which registered fixture output this input is.
-    pub opening: FixtureOpeningReference,
+    ///
+    /// `None` for a consumed receipt whose VALUE is explicit, which has
+    /// no opening to name: its amount is public and the blinder it
+    /// brings to the transaction-wide sum is the all-zero one every
+    /// explicit value is committed with. An entry crossing's receipts
+    /// are exactly that, and a reference here would be naming a fixture
+    /// output that does not exist.
+    pub opening: Option<FixtureOpeningReference>,
     /// The explicit amount behind the spent commitment.
     pub explicit_amount: u64,
     /// The asset blinder, which the guide's representation fixes at
@@ -1732,15 +1739,35 @@ fn private_input_intents(
                 ConfidentialInputRegion::Receipt => ConfidentialInputIntent::new,
                 ConfidentialInputRegion::SponsorReserve => ConfidentialInputIntent::sponsor,
             };
-            build(
-                outpoint,
-                asset,
-                value,
-                program.to_vec(),
-                LIVE_TRANSFER_SEQUENCE,
-                opening.opening.clone(),
-                opening.explicit_amount,
-                opening.zero_asset_blinder,
+            // Three constructors rather than a flag, on the
+            // materializer's own ground: an input becomes a sponsor's
+            // only where somebody meant it to be one, and it becomes an
+            // opening-free explicit receipt only where somebody meant
+            // that too. A coin that fell into the wrong one would be a
+            // wrong transaction rather than a refused one.
+            opening.opening.clone().map_or_else(
+                || {
+                    ConfidentialInputIntent::explicit_receipt(
+                        outpoint,
+                        asset,
+                        value,
+                        program.to_vec(),
+                        LIVE_TRANSFER_SEQUENCE,
+                        opening.explicit_amount,
+                    )
+                },
+                |reference| {
+                    build(
+                        outpoint,
+                        asset,
+                        value,
+                        program.to_vec(),
+                        LIVE_TRANSFER_SEQUENCE,
+                        reference,
+                        opening.explicit_amount,
+                        opening.zero_asset_blinder,
+                    )
+                },
             )
         })
         .collect()

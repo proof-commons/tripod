@@ -1013,7 +1013,7 @@ pub struct ConfidentialInputIntent {
     observed_value: ValueField,
     observed_program: Vec<u8>,
     sequence: u32,
-    opening: FixtureOpeningReference,
+    opening: Option<FixtureOpeningReference>,
     explicit_amount: u64,
     zero_asset_blinder: [u8; SCALAR_BYTES],
     region: ConfidentialInputRegion,
@@ -1039,9 +1039,43 @@ impl ConfidentialInputIntent {
             observed_value,
             observed_program,
             sequence,
-            opening,
+            opening: Some(opening),
             explicit_amount,
             zero_asset_blinder,
+            region: ConfidentialInputRegion::Receipt,
+        }
+    }
+
+    /// One consumed receipt whose VALUE is explicit.
+    ///
+    /// The consumed side's mirror of an explicit destination, and it
+    /// takes no opening for the same reason that one carries none: there
+    /// is nothing to open. Its amount is public, and the blinder it
+    /// brings to the transaction-wide sum is the all-zero one every
+    /// explicit value is committed with.
+    ///
+    /// It is a RECEIPT and not a funding coin. What makes an entry
+    /// crossing a crossing rather than a funding step is that the coin
+    /// it spends is governed by the receipt covenant, and this
+    /// constructor is where a caller says it meant that.
+    #[must_use]
+    pub const fn explicit_receipt(
+        outpoint: Outpoint,
+        observed_asset: AssetField,
+        observed_value: ValueField,
+        observed_program: Vec<u8>,
+        sequence: u32,
+        explicit_amount: u64,
+    ) -> Self {
+        Self {
+            outpoint,
+            observed_asset,
+            observed_value,
+            observed_program,
+            sequence,
+            opening: None,
+            explicit_amount,
+            zero_asset_blinder: [0_u8; SCALAR_BYTES],
             region: ConfidentialInputRegion::Receipt,
         }
     }
@@ -1072,7 +1106,7 @@ impl ConfidentialInputIntent {
             observed_value,
             observed_program,
             sequence,
-            opening,
+            opening: Some(opening),
             explicit_amount,
             zero_asset_blinder,
             region: ConfidentialInputRegion::SponsorReserve,
@@ -1115,10 +1149,16 @@ impl ConfidentialInputIntent {
         self.sequence
     }
 
-    /// Where the opening lives.
+    /// Where the opening lives, for an input that has one.
+    ///
+    /// `None` for a consumed coin whose VALUE is explicit. Such a coin
+    /// has no opening to name -- its amount is public and the blinder it
+    /// contributes to the transaction-wide sum is the all-zero one every
+    /// explicit value is committed with -- so a reference would be
+    /// naming a fixture output that does not exist.
     #[must_use]
-    pub const fn opening(&self) -> &FixtureOpeningReference {
-        &self.opening
+    pub const fn opening(&self) -> Option<&FixtureOpeningReference> {
+        self.opening.as_ref()
     }
 
     /// The semantic amount the opening carries.
@@ -2477,7 +2517,24 @@ fn verify_predecessor_openings(
     let mut bound: BTreeSet<(String, usize)> = BTreeSet::new();
     let mut entries = Vec::with_capacity(intent.inputs().len());
     for input in intent.inputs() {
-        let reference = input.opening();
+        // AN EXPLICIT CONSUMED RECEIPT HAS NOTHING TO OPEN, and is
+        // checked against what it IS rather than against a fixture it
+        // does not name. Three clauses replace the commitment
+        // recomputation below, and each is the explicit-value analogue
+        // of one it replaces: the value field must really be explicit,
+        // it must carry the amount the caller declared, and the asset
+        // must be explicit too. Its blinder contribution is the all-zero
+        // one and is not carried here -- the transaction-wide sum comes
+        // from the successor manifest, whose `input_blinder_sum` states
+        // it for the whole input set.
+        //
+        // No `VerifiedFixtureReference` is pushed, because there is no
+        // reference to verify. That is the honest shape of the result: a
+        // census of verified references over the inputs that have them.
+        let Some(reference) = input.opening() else {
+            check_explicit_receipt(input, entries.len())?;
+            continue;
+        };
         let fixture = fixtures.fixture(reference.handle()).ok_or_else(|| {
             MaterializationRefusal::UnknownFixtureHandle {
                 handle: reference.handle().to_owned(),
@@ -2561,6 +2618,53 @@ fn verify_predecessor_openings(
     }
 
     Ok(entries)
+}
+
+/// One consumed receipt whose VALUE is explicit, checked against what it
+/// IS rather than against a fixture it does not name.
+///
+/// Three clauses, each the explicit-value analogue of one of the
+/// commitment recomputation's: the value field must really be explicit,
+/// it must carry the amount the caller declared, and the asset must be
+/// explicit too. The blinder such a coin contributes is the all-zero
+/// one and is not carried here -- the transaction-wide sum comes from
+/// the successor manifest, which states it for the whole input set.
+///
+/// # Errors
+///
+/// [`MaterializationRefusal::PredecessorOpeningMismatch`] for a
+/// committed value with no opening, which is a coin nobody can account
+/// for, and for a declared amount the value field does not carry;
+/// [`MaterializationRefusal::ConfidentialProtocolAsset`] for a committed
+/// asset; and
+/// [`MaterializationRefusal::NonzeroProtocolAssetBlinder`] for an asset
+/// blinder the protocol region fixes at zero.
+fn check_explicit_receipt(
+    input: &ConfidentialInputIntent,
+    position: usize,
+) -> Result<(), MaterializationRefusal> {
+    let member = FamilyMember::Input(position);
+    match input.observed_value() {
+        ValueField::Explicit(observed) => {
+            if observed != input.explicit_amount() {
+                return Err(MaterializationRefusal::PredecessorOpeningMismatch {
+                    outpoint: input.outpoint(),
+                });
+            }
+        }
+        ValueField::Commitment(_) => {
+            return Err(MaterializationRefusal::PredecessorOpeningMismatch {
+                outpoint: input.outpoint(),
+            });
+        }
+    }
+    if matches!(input.observed_asset(), AssetField::Commitment(_)) {
+        return Err(MaterializationRefusal::ConfidentialProtocolAsset { member });
+    }
+    if *input.zero_asset_blinder() != [0_u8; SCALAR_BYTES] {
+        return Err(MaterializationRefusal::NonzeroProtocolAssetBlinder { member });
+    }
+    Ok(())
 }
 
 /// The one fixture every destination binds to.

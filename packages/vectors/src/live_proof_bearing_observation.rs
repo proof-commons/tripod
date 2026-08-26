@@ -1718,7 +1718,15 @@ impl ProofBearingObservationPlanner {
                         ValueField::Explicit(PREDECESSOR_AMOUNTS[0]),
                         first.observed_program().to_vec(),
                         first.sequence(),
-                        first.opening().clone(),
+                        // A registered input, so its opening is
+                        // present. Carried as a refusal rather than
+                        // unwrapped: this control mutates ONE fact and
+                        // an absent opening would mean it had mutated
+                        // two.
+                        first
+                            .opening()
+                            .ok_or(ProofBearingRefusal::OpeningsAreNotDerived)?
+                            .clone(),
                         first.explicit_amount(),
                         *first.zero_asset_blinder(),
                     )

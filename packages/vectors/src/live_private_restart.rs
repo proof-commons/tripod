@@ -1126,11 +1126,11 @@ fn finalize_control(
     let openings = PrivateLiveOpenings::new(
         vec![PrivateInputOpening {
             region: ConfidentialInputRegion::Receipt,
-            opening: FixtureOpeningReference::new(
+            opening: Some(FixtureOpeningReference::new(
                 linked.predecessor.handle().as_str().to_owned(),
                 linked.predecessor_digest,
                 consumed.index(),
-            ),
+            )),
             explicit_amount: linked.predecessor.amounts()[consumed.index()],
             zero_asset_blinder: [0_u8; SCALAR_BYTES],
         }],

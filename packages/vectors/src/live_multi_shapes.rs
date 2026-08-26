@@ -1162,11 +1162,11 @@ impl MultiShapePlanner {
             ));
             input_openings.push(PrivateInputOpening {
                 region: ConfidentialInputRegion::Receipt,
-                opening: FixtureOpeningReference::new(
+                opening: Some(FixtureOpeningReference::new(
                     linked.predecessor.handle().as_str().to_owned(),
                     linked.predecessor_digest,
                     receipt.index(),
-                ),
+                )),
                 explicit_amount: linked.predecessor.amounts()[receipt.index()],
                 zero_asset_blinder: [0_u8; SCALAR_BYTES],
             });

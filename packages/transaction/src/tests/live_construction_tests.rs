@@ -1359,7 +1359,7 @@ fn openings(inputs: usize, destinations: usize) -> crate::live_construct::Privat
         (0..inputs)
             .map(|index| crate::live_construct::PrivateInputOpening {
                 region: crate::live_materialize::ConfidentialInputRegion::Receipt,
-                opening: opening(index),
+                opening: Some(opening(index)),
                 explicit_amount: 1_000,
                 zero_asset_blinder: [0_u8; crate::live_materialize::SCALAR_BYTES],
             })
