@@ -273,17 +273,18 @@ impl PrivateShape {
             Self::Split => Some("private-split"),
             Self::ManyToMany => Some("private-many-to-many-representative"),
             Self::SeveralDistinctOwners => Some("private-several-distinct-owners"),
-            Self::StrictOneToOne | Self::OneToOneWithFee => None,
-            // The merge DOES have a row, and it is the only shape this
-            // wave adds that has one.
+            // Three shapes name no row, and for ONE reason rather than
+            // three: §15.2's positive private table enumerates the
+            // guide's own classes, and it has no member for a strict
+            // one-to-one, for a transfer that pays its own fee, or for
+            // one whose two sides are read under different plans. Each
+            // moves a census entry instead, and naming a row here that
+            // the table does not carry would be inventing one to have
+            // something to move.
+            Self::StrictOneToOne | Self::OneToOneWithFee | Self::ExitCrossing => None,
+            // The merge DOES have a row, and it is the only shape of
+            // these that has one.
             Self::PrivateMerge => Some("private-merge"),
-            // The exit crossing has no row either, and for the same
-            // reason the two above have none: §15.2's positive private
-            // table enumerates the guide's own classes and carries no
-            // member for a transfer whose two sides are read under
-            // different plans. Its evidence surface is the shape census
-            // and its own run of record.
-            Self::ExitCrossing => None,
         }
     }
 
@@ -1132,11 +1133,10 @@ impl MultiShapePlanner {
             .collect::<Result<_, _>>()?;
         let request = LiveTransferRequest::new(
             receipts,
+            // The CONSUMED side: `recognize_receipts` reads it to
+            // decide a spent receipt's value form, and a request naming
+            // the other side would refuse its own inputs.
             live_destinations,
-            // The CONSUMED side, which is what `recognize_receipts`
-            // reads to decide the value form a spent receipt must carry.
-            // A request naming the other side would be refusing its own
-            // inputs.
             self.shape.composition().consumed(),
             RequestedForm::Sponsorless,
             SponsorChangeRequest::NotRequested,
@@ -1180,12 +1180,10 @@ impl MultiShapePlanner {
                     FixtureOutputRole::SponsorChange { .. } => {
                         ConfidentialOutputRole::SponsorChange
                     }
-                    // And the explicit destination is stated for the
-                    // third time for the same reason. Swept into the
-                    // catch-all it would ask the materializer to SOLVE a
-                    // blinder for an output that carries none, and the
-                    // manifest would then declare two solving outputs
-                    // where the registry admits exactly one.
+                    // Stated for the third time for the same reason:
+                    // swept into the catch-all it would ask for a SOLVED
+                    // blinder on an output that carries none, declaring
+                    // two solving outputs where the registry admits one.
                     FixtureOutputRole::ExplicitDestination => {
                         ConfidentialOutputRole::ExplicitDestination
                     }
