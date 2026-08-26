@@ -1690,7 +1690,7 @@ pub const A_PAIRED_ACCEPTED_PROJECTION_COMPARISON_EXISTS: bool = false;
 /// site by its own rule, and it says nothing about the rows a run has
 /// still to answer: those the census counts, and this does not.
 #[must_use]
-pub fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
+pub const fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
     BTreeSet::new()
 }
 
