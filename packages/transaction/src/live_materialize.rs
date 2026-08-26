@@ -1080,6 +1080,50 @@ impl ConfidentialInputIntent {
         }
     }
 
+    /// One consumed sponsor coin whose VALUE is explicit.
+    ///
+    /// The sponsor-region counterpart of [`Self::explicit_receipt`], and
+    /// it exists for the reason that one does: there is nothing to open,
+    /// so there is no opening to carry. Its amount is public and the
+    /// blinder it brings to the transaction-wide sum is the all-zero one
+    /// every explicit value is committed with.
+    ///
+    /// # Why the opening-free path needed a second member
+    ///
+    /// Without it, an opening-free input could only ever be a RECEIPT.
+    /// A caller declaring the sponsor region on an input with no opening
+    /// got a receipt anyway, silently, and its amount then joined the
+    /// PROTOCOL subtotal -- which §1.9 holds the sponsor region outside
+    /// of. The symptom was a semantic imbalance of exactly the sponsor's
+    /// own amount, reported against a candidate whose arithmetic was
+    /// right, and the declared region was the thing being discarded.
+    ///
+    /// No shape could reach it until one combined the two: every earlier
+    /// opening-free input was an entry crossing's explicit receipt,
+    /// which really is a receipt, and every earlier sponsor coin carried
+    /// a commitment and therefore an opening.
+    #[must_use]
+    pub const fn explicit_sponsor(
+        outpoint: Outpoint,
+        observed_asset: AssetField,
+        observed_value: ValueField,
+        observed_program: Vec<u8>,
+        sequence: u32,
+        explicit_amount: u64,
+    ) -> Self {
+        Self {
+            outpoint,
+            observed_asset,
+            observed_value,
+            observed_program,
+            sequence,
+            opening: None,
+            explicit_amount,
+            zero_asset_blinder: [0_u8; SCALAR_BYTES],
+            region: ConfidentialInputRegion::SponsorReserve,
+        }
+    }
+
     /// One consumed sponsor coin.
     ///
     /// Its own constructor rather than a parameter on the other, so that
@@ -2471,22 +2515,7 @@ fn preflight(
         });
     match (consumed, created) {
         (Some(consumed), Some(created)) if consumed == created => {}
-        _ => {
-            eprintln!(
-                "TL-DEBUG imbalance consumed={consumed:?} created={created:?} inputs={:?} dests={:?}",
-                intent
-                    .inputs()
-                    .iter()
-                    .map(|i| (i.region(), i.explicit_amount()))
-                    .collect::<Vec<_>>(),
-                intent
-                    .destinations()
-                    .iter()
-                    .map(|d| (d.role(), d.semantic_amount()))
-                    .collect::<Vec<_>>(),
-            );
-            return Err(MaterializationRefusal::SemanticValueImbalance);
-        }
+        _ => return Err(MaterializationRefusal::SemanticValueImbalance),
     }
 
     // The excluded region really is excluded: no member of it carries the
