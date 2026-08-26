@@ -1284,6 +1284,176 @@ fn private_destination_intents(
     Ok(destinations)
 }
 
+/// The sponsor's witnesses for a finalized PRIVATE candidate, by
+/// position.
+///
+/// The private lane's counterpart to the sponsor branch inside
+/// [`complete_live_transfer`], and it exists here rather than in a
+/// ceremony for the reason [`SponsorSigningRequest`] is not publicly
+/// constructible: a request names the exact bytes an authorization is
+/// produced against, and a caller that could mint one could ask a
+/// sponsor to authorize bytes that are not the candidate's. The request
+/// is therefore built where the candidate is, from the candidate.
+///
+/// # Why the private lane needs its own and cannot call the explicit one
+///
+/// What a sponsor signs over. [`complete_live_transfer`] hands the
+/// capability the finalized form's protected bytes, which are the
+/// WITNESSLESS serialization. A proof-finalized candidate's protected
+/// bytes are the frozen ones the materializer produced, and they are not
+/// the same bytes — so a sponsor answering the explicit lane's request
+/// would be authorizing a transaction that is not this one.
+///
+/// # Why it returns witnesses instead of a transaction
+///
+/// Because the owner authorizations for this lane are produced outside
+/// this crate, against messages this crate computes. Returning the
+/// sponsor's half by position lets the caller merge the two without
+/// either half being able to displace the other, and without this
+/// function needing owner signing material it has no business holding.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::LiveSponsorRequestedWithoutCapability`] where
+/// the candidate carries a sponsor input and no capability was offered;
+/// [`TransactionRefusal::SponsorSignatureMissing`] where the sponsor
+/// declined; and
+/// [`TransactionRefusal::SponsorSignatureBindingMismatch`] where it
+/// answered about other bytes.
+pub fn private_sponsor_witnesses(
+    finalization: &PrivateLiveFinalization,
+    sponsor: Option<&dyn SponsorCapability>,
+) -> Result<BTreeMap<u16, InputWitness>, TransactionRefusal> {
+    let mut witnesses = BTreeMap::new();
+    if finalization.sponsor_inputs().is_empty() {
+        return Ok(witnesses);
+    }
+    let capability = sponsor.ok_or(TransactionRefusal::LiveSponsorRequestedWithoutCapability)?;
+    let frozen = finalization.materialized().proof_finalized();
+    let protected = frozen.protected_bytes();
+    let outputs = frozen.protected().outputs().to_vec();
+
+    // The sponsor suffix, at the positions the input order puts it: the
+    // receipts occupy the run before it, and this lane wrote both runs
+    // in that order.
+    let first = finalization.receipts().len();
+    for (offset, outpoint) in finalization.sponsor_inputs().iter().enumerate() {
+        let position = u16::try_from(first + offset).unwrap_or(u16::MAX);
+        let request = SponsorSigningRequest::new(
+            protected.to_vec(),
+            position,
+            SignerRole::SponsorSuffixMember,
+            SighashProfile::AllInputsAllOutputs,
+            outputs.clone(),
+        );
+        let signature = capability
+            .sign(&request)
+            .ok_or(TransactionRefusal::SponsorSignatureMissing(*outpoint))?;
+        if signature.bound_to() != protected {
+            return Err(TransactionRefusal::SponsorSignatureBindingMismatch(
+                *outpoint,
+            ));
+        }
+        witnesses.insert(position, InputWitness::new(signature.stack().to_vec()));
+    }
+    Ok(witnesses)
+}
+
+/// Hold each input opening to the region its position holds.
+///
+/// Receipts first and the sponsor suffix after, which is the canonical
+/// input order the explicit lane sorts into and the order the
+/// materializer reads its regions in.
+///
+/// Checked rather than re-sorted, and rather than derived from the
+/// position and the declaration discarded. Re-sorting would move an
+/// opening onto a coin it does not open, and openings carry blinders, so
+/// the failure would surface as a sum that does not close rather than as
+/// the caller error it is.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::PrivateOpeningRegionDisagreesWithPosition`] at
+/// the first position whose opening claims the other region.
+fn check_opening_regions(
+    openings: &PrivateLiveOpenings,
+    receipts: usize,
+) -> Result<(), TransactionRefusal> {
+    for (position, opening) in openings.inputs().iter().enumerate() {
+        let expected = if position < receipts {
+            ConfidentialInputRegion::Receipt
+        } else {
+            ConfidentialInputRegion::SponsorReserve
+        };
+        if opening.region != expected {
+            return Err(
+                TransactionRefusal::PrivateOpeningRegionDisagreesWithPosition {
+                    position,
+                    stated: opening.region,
+                    expected,
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Every consumed input the materializer sees, in canonical order.
+///
+/// The three fields of each spent output are the ones the node reported,
+/// carried through recognition unchanged; the opening beside them is the
+/// one the per-output role cannot reach. The receipts come from receipt
+/// recognition and the sponsor's coins from sponsor recognition — two
+/// functions because they answer two different questions about a coin,
+/// and one order because the transaction has one.
+///
+/// Infallible: every disagreement this could meet was refused before it
+/// was called, which is why the regions are checked up there rather than
+/// here.
+fn private_input_intents(
+    recognized: &[RecognizedReceipt],
+    sponsor_inputs: &[Outpoint],
+    sponsor_spent: &[SpentSponsorOutput],
+    openings: &PrivateLiveOpenings,
+) -> Vec<ConfidentialInputIntent> {
+    let receipts = recognized.iter().map(|receipt| {
+        (
+            receipt.outpoint,
+            receipt.asset,
+            receipt.value,
+            receipt.program.as_slice(),
+        )
+    });
+    let sponsors = sponsor_inputs
+        .iter()
+        .zip(sponsor_spent)
+        .map(|(outpoint, spent)| (*outpoint, spent.asset(), spent.value(), spent.program()));
+    receipts
+        .chain(sponsors)
+        .zip(openings.inputs())
+        .map(|((outpoint, asset, value, program), opening)| {
+            // The region the opening declares, already checked against
+            // this position. Two constructors rather than a parameter,
+            // on the materializer's own ground: an input becomes a
+            // sponsor's only where somebody meant it to be one.
+            let build = match opening.region {
+                ConfidentialInputRegion::Receipt => ConfidentialInputIntent::new,
+                ConfidentialInputRegion::SponsorReserve => ConfidentialInputIntent::sponsor,
+            };
+            build(
+                outpoint,
+                asset,
+                value,
+                program.to_vec(),
+                LIVE_TRANSFER_SEQUENCE,
+                opening.opening.clone(),
+                opening.explicit_amount,
+                opening.zero_asset_blinder,
+            )
+        })
+        .collect()
+}
+
 /// Finalize a private live transfer transaction-wide.
 ///
 /// The private lane's entry point, and the one §8.9 names when it says
@@ -1342,6 +1512,14 @@ fn private_destination_intents(
 /// shape selection, or of receipt and sponsor recognition, all of which
 /// are the explicit lane's own and are called rather than reimplemented
 /// here.
+// Nine parameters, and the count is the lane rather than an accretion.
+// Six are the ones this entry point always took; the reviewed target and
+// the sponsor capability are what admitting a sponsored request needs,
+// because the sponsor change's program is built from a deployment symbol
+// through the target's own push forms and because §12.5's equivalence
+// cannot be checked against a capability nobody passed. Grouping them
+// into a parameter struct would name a thing that is not one.
+#[allow(clippy::too_many_arguments)]
 pub fn finalize_private_live_transfer(
     target: &ReviewedElementsTapscriptDefinition,
     abi: &CandidateLiveTransferAbi,
@@ -1396,27 +1574,7 @@ pub fn finalize_private_live_transfer(
         });
     }
 
-    // Receipts first, sponsor suffix after: the canonical input order
-    // the explicit lane sorts into, checked here against what each
-    // opening declares itself to be. Checked rather than re-sorted,
-    // because an opening moved to another position is an opening applied
-    // to a coin it does not open.
-    for (position, opening) in openings.inputs().iter().enumerate() {
-        let expected = if position < request.receipts().len() {
-            ConfidentialInputRegion::Receipt
-        } else {
-            ConfidentialInputRegion::SponsorReserve
-        };
-        if opening.region != expected {
-            return Err(
-                TransactionRefusal::PrivateOpeningRegionDisagreesWithPosition {
-                    position,
-                    stated: opening.region,
-                    expected,
-                },
-            );
-        }
-    }
+    check_opening_regions(openings, request.receipts().len())?;
 
     // The explicit lane's own stages, called and not reimplemented. The
     // non-receipt positions are counted off the openings' roles, which is
@@ -1432,58 +1590,7 @@ pub fn finalize_private_live_transfer(
         .destination_total()
         .ok_or(TransactionRefusal::DestinationTotalOutOfRange)?;
 
-    // The inputs the materializer sees are the ones the node reported,
-    // carried through recognition unchanged, plus the opening each one
-    // needs and the per-output role cannot reach. The receipts come from
-    // receipt recognition and the sponsor's coins from sponsor
-    // recognition — two functions because they answer two different
-    // questions about a coin, and one order because the transaction has
-    // one.
-    let receipt_intents = recognized.iter().map(|receipt| {
-        (
-            receipt.outpoint,
-            receipt.asset,
-            receipt.value,
-            receipt.program.as_slice(),
-        )
-    });
-    let sponsor_intents = sponsor_inputs
-        .iter()
-        .zip(&sponsor_spent)
-        .map(|(outpoint, spent)| (*outpoint, spent.asset(), spent.value(), spent.program()));
-    let inputs: Vec<ConfidentialInputIntent> = receipt_intents
-        .chain(sponsor_intents)
-        .zip(openings.inputs())
-        .map(|((outpoint, asset, value, program), opening)| {
-            // The region the opening declares, checked against this
-            // position just above. Two constructors rather than a
-            // parameter, on the materializer's own ground: an input
-            // becomes a sponsor's only where somebody meant it to be
-            // one.
-            match opening.region {
-                ConfidentialInputRegion::Receipt => ConfidentialInputIntent::new(
-                    outpoint,
-                    asset,
-                    value,
-                    program.to_vec(),
-                    LIVE_TRANSFER_SEQUENCE,
-                    opening.opening.clone(),
-                    opening.explicit_amount,
-                    opening.zero_asset_blinder,
-                ),
-                ConfidentialInputRegion::SponsorReserve => ConfidentialInputIntent::sponsor(
-                    outpoint,
-                    asset,
-                    value,
-                    program.to_vec(),
-                    LIVE_TRANSFER_SEQUENCE,
-                    opening.opening.clone(),
-                    opening.explicit_amount,
-                    opening.zero_asset_blinder,
-                ),
-            }
-        })
-        .collect();
+    let inputs = private_input_intents(&recognized, &sponsor_inputs, &sponsor_spent, openings);
 
     // Each destination pays to the private constructor the ABI
     // determines for that owner. Taking the program from anywhere else
