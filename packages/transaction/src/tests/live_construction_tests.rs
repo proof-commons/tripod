@@ -730,79 +730,6 @@ fn a_sponsor_input_carrying_an_asset_that_is_not_the_reserve_is_refused() {
     );
 }
 
-#[test]
-fn a_sponsor_input_whose_value_form_the_plan_does_not_read_is_refused() {
-    // The asymmetry this closes: a receipt's value form has been gated
-    // against the representation plan since the plan existed, and the
-    // sponsor side had no counterpart and no prose saying why. So an
-    // EXPLICIT request accepted a COMMITTED sponsor value and built a
-    // candidate no reader of the request expected.
-    //
-    // The two runs differ in the sponsor view's VALUE FORM and in
-    // nothing else — same request, same offer, same receipts, same
-    // reserve asset — so the refusal is attributable to the form.
-    let abi = live_abi();
-    let (request, admitted) = explicit_fixture(
-        &abi,
-        RequestedForm::Sponsored,
-        SponsorChangeRequest::NotRequested,
-    );
-    let sponsor = FixtureSponsor::new(90, None);
-    assert!(
-        finalize_live_transfer(
-            &reviewed_target(),
-            &abi,
-            &request,
-            &admitted,
-            Some(&sponsor),
-            None,
-        )
-        .is_ok(),
-        "the explicit sponsor value is the admitted case under an explicit plan",
-    );
-
-    let committed = view([
-        receipt_view(
-            &abi,
-            outpoint(0xa1, 0),
-            &owner(&FIRST_OWNER),
-            LiveTransferRepresentationPlan::Explicit,
-            ValueField::Explicit(400),
-        ),
-        receipt_view(
-            &abi,
-            outpoint(0xa2, 1),
-            &owner(&SECOND_OWNER),
-            LiveTransferRepresentationPlan::Explicit,
-            ValueField::Explicit(600),
-        ),
-        crate::view::PublicOutputView::new(
-            sponsor_coin(),
-            // The RESERVE asset, unchanged, so the asset guard has
-            // nothing to say and the form guard is what answers. ADR-015
-            // public disposable test material.
-            AssetField::Explicit(AssetId::from_internal(LIVE_RESERVE_ASSET)),
-            ValueField::Commitment([0x08; 33]),
-            LIVE_SPONSOR_CHANGE_PROGRAM.to_vec(),
-        ),
-    ]);
-    assert_eq!(
-        finalize_live_transfer(
-            &reviewed_target(),
-            &abi,
-            &request,
-            &committed,
-            Some(&sponsor),
-            None,
-        )
-        .err(),
-        Some(TransactionRefusal::LiveSponsorInputValueFormRefused(
-            sponsor_coin()
-        )),
-        "a committed sponsor value under an explicit plan is not refused for its form",
-    );
-}
-
 // --- The request's plan against the link's (§12.4) ---------------------
 
 #[test]
@@ -1061,6 +988,67 @@ fn the_private_output_order_follows_the_request_and_not_the_amount() {
     assert_ne!(one, other);
     assert_eq!(one[0], other[1]);
     assert_eq!(one[1], other[0]);
+}
+
+#[test]
+fn a_private_transfer_may_be_sponsored_by_a_coin_whose_value_is_explicit() {
+    // The sponsor region's value form is INDEPENDENT of the
+    // representation plan, and this is where that is enforced rather
+    // than only explained. `recognize_receipts` gates a receipt's value
+    // form against the plan; `recognize_sponsors` deliberately does not,
+    // because §1.9 keeps the sponsor region outside every protocol
+    // claim and §10.7's isolation fragment introspects no value field in
+    // it at all.
+    //
+    // The asymmetry was once read as an unexplained gap, and closing it
+    // is what proved it is not: the mirror clause immediately refused
+    // the disclosure-minimality pair registry's own sponsor pair, whose
+    // PRIVATE member carries an explicit sponsor value on purpose.
+    //
+    // So this is the shape that must keep building: private receipts
+    // whose values are commitments, sponsored by a reserve coin whose
+    // value is explicit. ADR-015 public disposable test material.
+    let abi = live_abi();
+    let first = outpoint(0xc1, 0);
+    let stated = view([
+        receipt_view(
+            &abi,
+            first,
+            &owner(&FIRST_OWNER),
+            LiveTransferRepresentationPlan::PrivateCommitted,
+            ValueField::Commitment([0x09; 33]),
+        ),
+        sponsor_view(sponsor_coin(), 130),
+    ]);
+    let request = LiveTransferRequest::new(
+        [first],
+        [destination(&FIRST_OWNER, 1_000)],
+        LiveTransferRepresentationPlan::PrivateCommitted,
+        RequestedForm::Sponsored,
+        SponsorChangeRequest::NotRequested,
+        Some(PublicTestRandomness::from_published_bytes(
+            PUBLISHED_RANDOMNESS,
+        )),
+    )
+    .expect("the fixture request validates");
+    let sponsor = FixtureSponsor::new(90, None);
+    let built = finalize_live_transfer(
+        &reviewed_target(),
+        &abi,
+        &request,
+        &stated,
+        Some(&sponsor),
+        Some(&FixturePrivateValue),
+    )
+    .expect("a private transfer sponsored by an explicit coin finalizes");
+
+    // It really is the private plan and really is sponsored, read off
+    // the report rather than off the request that was handed in.
+    assert_eq!(
+        built.report().representation(),
+        LiveTransferRepresentationPlan::PrivateCommitted,
+    );
+    assert_eq!(built.report().form(), LiveTransactionForm::Sponsored);
 }
 
 #[test]

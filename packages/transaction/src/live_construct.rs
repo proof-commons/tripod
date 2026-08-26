@@ -632,6 +632,38 @@ struct RecognizedReceipt {
 /// Without it the mismatch stays invisible until a node reads the
 /// transaction — and a construction defect reported by a target is a
 /// defect reported at the wrong layer.
+///
+/// # Why the VALUE form is not checked here, and it is not an oversight
+///
+/// [`recognize_receipts`] gates a receipt's value field against the
+/// requested representation and refuses a form the plan does not read.
+/// This function has no counterpart, and the asymmetry was read as an
+/// unexplained gap once. It is not one, and trying to close it is what
+/// established that: adding the mirror clause immediately refused the
+/// disclosure-minimality pair registry's own SPONSOR pair under the
+/// private plan, whose private member deliberately carries an EXPLICIT
+/// sponsor value.
+///
+/// The reason is the one §1.9 states. A representation plan is about
+/// the PROTOCOL region — which receipts are consumed and which
+/// destinations are created, the family whose amounts a protocol claim
+/// is about. The sponsor region is deliberately outside every protocol
+/// claim: it carries the reserve asset, it sits outside both balance
+/// equations, and §10.7's isolation fragment introspects no value field
+/// in it AT ALL, a property checked on the emitted instructions rather
+/// than argued. So the plan has nothing to say about the sponsor's value
+/// form, and a clause here would not be enforcing §6.3 — it would be
+/// extending it over a region it was written to exclude.
+///
+/// What follows is that the two forms are independently choosable: a
+/// private transfer may be sponsored by an explicit coin, and an
+/// explicit transfer's sponsor could carry a commitment. The first is a
+/// registered pair member. The second is what the
+/// `private-sponsor-values` row is about, and it is unbuilt for reasons
+/// that have nothing to do with a guard here.
+///
+/// The ASSET is different and is checked above, because the covenant
+/// reads it and an introspection reads an explicit field.
 fn recognize_sponsors(
     abi: &CandidateLiveTransferAbi,
     request: &LiveTransferRequest,
@@ -648,31 +680,6 @@ fn recognize_sponsors(
             .ok_or(TransactionRefusal::MissingPublicSponsorView(*outpoint))?;
         if stated.asset() != AssetField::Explicit(abi.symbols().reserve_asset()) {
             return Err(TransactionRefusal::LiveSponsorInputCarriesForeignAsset(
-                *outpoint,
-            ));
-        }
-
-        // The value form follows the representation plan, exactly as a
-        // receipt's does. This clause closes an asymmetry rather than
-        // adding a rule: `recognize_receipts` has gated the form since
-        // the plan existed, the sponsor side had no counterpart and no
-        // prose saying why, and a sponsor coin whose form the plan does
-        // not license passed here unremarked.
-        //
-        // The ASSET above stays explicit under both plans and is not
-        // part of this: the isolation fragment introspects it.
-        let admitted = matches!(
-            (request.representation(), stated.value()),
-            (
-                LiveTransferRepresentationPlan::Explicit,
-                ValueField::Explicit(_)
-            ) | (
-                LiveTransferRepresentationPlan::PrivateCommitted,
-                ValueField::Commitment(_),
-            )
-        );
-        if !admitted {
-            return Err(TransactionRefusal::LiveSponsorInputValueFormRefused(
                 *outpoint,
             ));
         }

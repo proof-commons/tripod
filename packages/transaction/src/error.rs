@@ -526,33 +526,6 @@ pub enum TransactionRefusal {
     MissingPublicSponsorView(Outpoint),
     /// A sponsor input carries an asset other than the reserve asset.
     LiveSponsorInputCarriesForeignAsset(Outpoint),
-    /// A sponsor input's value field is not the form the requested
-    /// representation reads.
-    ///
-    /// A DISTINCT refusal from
-    /// [`Self::LiveSponsorInputCarriesForeignAsset`] rather than an
-    /// overload of it, on the rule that separates the receipt pair: that
-    /// one is a claim about which ASSET a coin carries, this one is a
-    /// claim about the FORM of its value, and a caller told "foreign
-    /// asset" about a coin whose asset is right would go looking in the
-    /// wrong place.
-    ///
-    /// # It closes an asymmetry rather than adding a rule
-    ///
-    /// [`Self::ReceiptInputValueFormRefused`] has gated a receipt's
-    /// value form against the representation plan since the plan
-    /// existed. The sponsor side had no counterpart and no prose saying
-    /// why, so a sponsor coin whose value form the plan does not license
-    /// passed construction unremarked — an explicit request would have
-    /// accepted a committed sponsor value and built a candidate no
-    /// reader of the request expected. The gap was a gap and not a
-    /// design; §6.3's rule is about which fields a REPRESENTATION reads,
-    /// and it does not stop at the receipt family.
-    ///
-    /// The sponsor's ASSET stays explicit under both plans and that is
-    /// separate: the isolation fragment introspects it, and an
-    /// introspection reads an explicit field.
-    LiveSponsorInputValueFormRefused(Outpoint),
     /// The destinations' semantic total overflows the target's explicit
     /// width.
     DestinationTotalOutOfRange,
