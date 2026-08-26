@@ -97,7 +97,9 @@ use crate::confidential_materializer::{
 use crate::confidential_predecessor::{PredecessorShape, TRIPLE_PREDECESSOR_AMOUNTS};
 use crate::error::VectorError;
 use crate::live_owner_observation::printed_order;
-use crate::live_plan::{FIRST_SCALAR, SECOND_SCALAR, published_owner, reviewed_target};
+use crate::live_plan::{
+    FIRST_SCALAR, LiveShapeVocabulary, SECOND_SCALAR, published_owner, reviewed_target,
+};
 use crate::live_private_restart::{
     ConsumedReceipt, LinkedDeployment, PrivateRestartRefusal, RestartConfidentialCoin,
     assemble_control, confidential_funding_step, issue_step, link_and_register,
@@ -289,6 +291,30 @@ impl PrivateShape {
             | Self::StrictOneToOne
             | Self::OneToOneWithFee => PredecessorShape::DualParity,
             Self::PrivateMerge => PredecessorShape::TripleNonCanceling,
+        }
+    }
+
+    /// Which shape vocabulary this shape's deployment emits programs
+    /// for.
+    ///
+    /// Only the fee-bearing shape asks for the fee-bearing candidate, and
+    /// the narrowness is the point rather than caution. A candidate's
+    /// shape set becomes one coordinator leaf per shape, the leaves tweak
+    /// the taproot output key, and that key is the destination program
+    /// each of these shapes' recorded successor digests was taken over --
+    /// so linking a shape against the wider vocabulary would move a
+    /// digest that a run against a pinned node already wrote down. Five
+    /// of the six keep the demonstration candidate and keep their
+    /// digests, byte for byte.
+    #[must_use]
+    pub const fn vocabulary(self) -> LiveShapeVocabulary {
+        match self {
+            Self::Split
+            | Self::ManyToMany
+            | Self::SeveralDistinctOwners
+            | Self::StrictOneToOne
+            | Self::PrivateMerge => LiveShapeVocabulary::Demonstration,
+            Self::OneToOneWithFee => LiveShapeVocabulary::FeeBearing,
         }
     }
 
@@ -723,8 +749,12 @@ impl MultiShapePlanner {
         // receipt programs. Its own one-to-one successor is registered and
         // unused; this ceremony registers its own multi-output successor
         // against the same linked deployment.
-        let linked =
-            link_and_register(self.shape.predecessor(), ConsumedReceipt::Primary, printed)?;
+        let linked = link_and_register(
+            self.shape.predecessor(),
+            ConsumedReceipt::Primary,
+            printed,
+            self.shape.vocabulary(),
+        )?;
         self.record.issued_asset = Some(printed.to_owned());
         self.record.predecessor_digest = Some(linked.predecessor_digest);
 
@@ -1378,6 +1408,59 @@ mod byte_identity_tests {
         assert_eq!(digests[4], run::FEE_BEARING_SUCCESSOR_DIGEST);
         assert_eq!(digests[5], run::MERGE_SUCCESSOR_DIGEST);
     }
+
+    /// The fee-bearing digest now carries an acceptance, and the two are
+    /// checked against each other rather than side by side.
+    ///
+    /// This figure moved three times while the fee axis was being built,
+    /// and every move was free for one reason: no node had accepted the
+    /// fixture, so re-recording it restated nothing. That reason has now
+    /// expired. A node has accepted a candidate built against THIS
+    /// deployment, so the digest and the identity are two halves of one
+    /// observation and moving either alone would leave the register
+    /// citing a run that produced the other.
+    ///
+    /// So the freedom the earlier commits used is closed here
+    /// deliberately: from now on a change that moves this digest must
+    /// move the identity with it, which means running the shape again.
+    #[test]
+    fn the_fee_bearing_digest_and_its_acceptance_belong_to_one_run() {
+        let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
+        let mut planner = MultiShapePlanner::for_shape(PrivateShape::OneToOneWithFee, genesis)
+            .expect("the ceremony builds");
+        planner
+            .settle_asset(run::ISSUED_ASSET)
+            .expect("the fee-bearing successor registers");
+        let digest = planner
+            .record()
+            .successor_digest()
+            .map(hex)
+            .expect("the ceremony recorded a successor digest");
+
+        assert_eq!(
+            digest,
+            run::FEE_BEARING_SUCCESSOR_DIGEST,
+            "the fee-bearing fixture re-registers under the digest its accepted run recorded",
+        );
+
+        // The acceptance is present, is the identity the register cites,
+        // and is a target-computed one rather than a placeholder.
+        assert_eq!(
+            run::FEE_BEARING_ACCEPTED_IDENTITY,
+            Some(run::FEE_BEARING_SUCCESSOR_IDENTITY),
+            "the optional acceptance and the cited identity are the same run",
+        );
+        assert_eq!(
+            run::FEE_BEARING_SUCCESSOR_IDENTITY.len(),
+            64,
+            "an accepted identity is a target-computed transaction identity",
+        );
+        assert_ne!(
+            run::FEE_BEARING_SUCCESSOR_IDENTITY,
+            run::FEE_BEARING_SUCCESSOR_DIGEST,
+            "the identity a node computed is not the digest a registry computed",
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1905,26 +1988,75 @@ pub mod run_of_record {
     /// The merge's wall time, in seconds.
     pub const MERGE_WALL_SECONDS: f64 = 10.9;
 
-    // --- The fee-bearing shape: a refusal, and NOT an acceptance -------
+    // --- The fee-bearing shape: ACCEPTED, after three refusals ---------
 
     /// The fee-bearing one-to-one's successor fixture digest.
     ///
     /// The fixture registered, derived and PROJECTED. Recording the digest
     /// is recording that much and no more.
+    ///
+    /// # This figure MOVED with the fee axis, and it is the only one that
+    /// did
+    ///
+    /// The fee-bearing ceremony links against the fee-bearing shape
+    /// vocabulary rather than the demonstration one, and a candidate's
+    /// shape set becomes one coordinator leaf per shape: the extra member
+    /// changes the taptree root, the root tweaks the taproot output key,
+    /// and that key is the destination program this fixture's manifest is
+    /// digested over. So the digest had to move, and moving it costs no
+    /// evidence for a reason that is checkable rather than asserted --
+    /// this fixture never carried an acceptance, so nothing a node did is
+    /// being restated.
+    ///
+    /// Every OTHER recorded digest re-derives unchanged, and that is a
+    /// running check rather than a claim made here: the four shapes that
+    /// ran before the removals wave re-register under their own recorded
+    /// digests, and the dual-parity predecessor and both one-to-one
+    /// successors under theirs. Not one of those tests was touched to
+    /// accommodate this figure. Had any of them moved, the correct
+    /// response would have been to revert the design and never to
+    /// re-record them: they are what pinned nodes did, and a digest
+    /// rewritten to keep a test green destroys the claim the test exists
+    /// to make.
     pub const FEE_BEARING_SUCCESSOR_DIGEST: &str =
         "d08a306819cc5ad713b393ecd956f2b5b38c7eb46de20069e8780620d79ed0cf";
 
-    /// No identity is minted for the fee-bearing shape, and this constant
-    /// exists to say so in the module acceptances are cited from.
+    /// The identity a real node computed for the fee-bearing transfer.
     ///
-    /// The target ACCEPTED NOTHING. Filing a non-acceptance among the
-    /// identities would be the one error a run of record exists to
-    /// prevent, so the shape's evidence is its own reproducible bytes and
-    /// the verdict the target returned, both recorded below.
-    pub const FEE_BEARING_ACCEPTED_IDENTITY: Option<&str> = None;
+    /// One receipt consumed, one blinded destination created, and the
+    /// transaction's own fee paid out of the value it consumed, with no
+    /// sponsor anywhere in it. The node accepted it and mined it, and the
+    /// bytes it handed back are equal to the bytes submitted.
+    ///
+    /// # Three refusals stood between the vocabulary and this figure
+    ///
+    /// Each was a layer the one before it uncovered, and each was a
+    /// first-party defect rather than a property of the target. The
+    /// registry had no fee output role. The materializer had no fee
+    /// projection, so a fee would have been blinded. Then the shape
+    /// vocabulary had no sponsorless fee-bearing member, so a
+    /// two-destination request selected a two-receipt-output shape and
+    /// the receipt covenant demanded a receipt program where the fee's
+    /// empty one sat.
+    ///
+    /// Giving the vocabulary the member uncovered a fourth, which is the
+    /// pattern holding rather than breaking: the deployment was welded to
+    /// a fee-program digest of 0xb5 bytes that no program hashes to, kept
+    /// deliberately so the demonstration's taptree would not move, and
+    /// nothing had ever executed the clause that reads it.
+    pub const FEE_BEARING_ACCEPTED_IDENTITY: Option<&str> =
+        Some("65a4b10b802292f583a15dd0ac9c40e57832981a4a072ee8574f00c5ef692b9f");
+
+    /// The same identity, as the register cites an acceptance.
+    ///
+    /// The `Option` above says whether an acceptance exists; a consensus
+    /// verdict needs the identity itself. Written once and read from
+    /// there, so the two can never disagree about what was accepted.
+    pub const FEE_BEARING_SUCCESSOR_IDENTITY: &str =
+        "65a4b10b802292f583a15dd0ac9c40e57832981a4a072ee8574f00c5ef692b9f";
 
     /// How many bytes the fee-bearing one-to-one handed to the node.
-    pub const FEE_BEARING_SUBMITTED_BYTES: usize = 4_870;
+    pub const FEE_BEARING_SUBMITTED_BYTES: usize = 4_927;
 
     /// The output-witness entries the fee-bearing candidate carried.
     ///
@@ -1936,7 +2068,14 @@ pub mod run_of_record {
     /// and not a fee at all.
     pub const FEE_BEARING_PROOF_BYTES: [usize; 2] = [4_174, 0];
 
-    /// The verdict the target returned, verbatim and unmapped.
+    /// The verdict the target returned when the shape vocabulary had no
+    /// member for this form.
+    ///
+    /// KEPT, and kept deliberately, though the shape is now accepted. It
+    /// is the diagnosis that located the third layer, and the register's
+    /// discipline is that a wall's history survives its removal -- a
+    /// removal whose refusal has been deleted cannot be checked against
+    /// what it claims to have removed.
     ///
     /// A script-path rejection, at the workspace's OWN receipt covenant
     /// rather than at any confidential rule. The candidate's value balance
@@ -1948,11 +2087,11 @@ pub mod run_of_record {
     ///
     /// What it failed is the covenant the shape selection built for it.
     /// The request states two destinations, the reviewed live-transfer
-    /// shape vocabulary reads a two-destination sponsorless shape as TWO
-    /// RECEIPT OUTPUTS, and the receipt covenant therefore requires the
+    /// shape vocabulary read a two-destination sponsorless shape as TWO
+    /// RECEIPT OUTPUTS, and the receipt covenant therefore required the
     /// second output to carry the second owner's private receipt
     /// constructor program. The second output is the fee, whose program is
-    /// empty, so the comparison fails.
+    /// empty, so the comparison failed.
     pub const FEE_BEARING_OBSERVED_DETAIL: &str =
         "mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)";
 

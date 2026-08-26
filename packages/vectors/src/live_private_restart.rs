@@ -109,8 +109,8 @@ use crate::confidential_predecessor::{FUND_STEP, ISSUE_STEP, PredecessorShape, s
 use crate::error::VectorError;
 use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed_order};
 use crate::live_plan::{
-    FEE_PROGRAM_DIGEST, FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, live_abi_for_asset,
-    published_owner, reviewed_target, signing_material,
+    FEE_PROGRAM_DIGEST, FIRST_SCALAR, LiveShapeVocabulary, RESERVE_ASSET, SECOND_SCALAR,
+    live_abi_for_vocabulary, published_owner, reviewed_target, signing_material,
 };
 use crate::live_proof_bearing_observation::{materialization_profiles, register, register_multi};
 use target_elements_conformance::confidential_fixture::ConfidentialFixtureOutput;
@@ -574,7 +574,12 @@ impl PrivateRestartPlanner {
     /// it. Registering before linking would bind a fixture to programs
     /// of a different deployment.
     fn settle_asset(&mut self, printed: &str) -> Result<(), PrivateRestartRefusal> {
-        let linked = link_and_register(PredecessorShape::DualParity, self.consumed, printed)?;
+        let linked = link_and_register(
+            PredecessorShape::DualParity,
+            self.consumed,
+            printed,
+            LiveShapeVocabulary::Demonstration,
+        )?;
         self.record.issued_asset = Some(printed.to_owned());
         self.record.predecessor_digest = Some(linked.predecessor_digest);
         self.record.successor_digest = Some(linked.successor_digest);
@@ -717,10 +722,39 @@ pub(crate) fn link_and_register(
     predecessor: PredecessorShape,
     consumed: ConsumedReceipt,
     printed: &str,
+    vocabulary: LiveShapeVocabulary,
 ) -> Result<LinkedDeployment, PrivateRestartRefusal> {
     let asset = asset_of(printed).ok_or(PrivateRestartRefusal::IssuanceNamedNoAsset)?;
     let commit_order = *asset.internal();
-    let abi = live_abi_for_asset(commit_order, RESERVE_ASSET, FEE_PROGRAM_DIGEST)
+    // WHICH FEE DIGEST A DEPLOYMENT IS WELDED TO FOLLOWS WHETHER IT
+    // MEANS TO SPEND A CONTROL THAT HAS A FEE.
+    //
+    // FEE_PROGRAM_DIGEST is a fixture constant that hashes to no program
+    // at all, and its own doc says so: the demonstration deployment
+    // keeps it because moving it would move the demonstration's
+    // committed taptree and with it every live run-of-record identity
+    // the plans cite. Nothing the demonstration builds ever executes the
+    // fee clause, so nothing there notices.
+    //
+    // A fee-bearing candidate executes exactly that clause. The covenant
+    // compares the fee output's scriptPubKey digest against the symbol,
+    // construction writes the target-structural EMPTY program, and the
+    // empty program's digest is the specification's SHA-256 of the empty
+    // string -- so a deployment linked against the fixture constant
+    // demands a value no program hashes to and refuses its own candidate
+    // at OP_EQUALVERIFY. That is the defect the sponsor arc met on the
+    // other lane and diagnosed in these words; it is met here for the
+    // same reason and answered the same way.
+    //
+    // Supplying the real digest costs nothing HERE precisely because the
+    // fee-bearing vocabulary is a separate deployment: its taptree is
+    // already its own, so the only digest that moves is one no node has
+    // ever accepted.
+    let fee_digest = match vocabulary {
+        LiveShapeVocabulary::Demonstration => FEE_PROGRAM_DIGEST,
+        LiveShapeVocabulary::FeeBearing => crate::bundle::fee_program_digest(),
+    };
+    let abi = live_abi_for_vocabulary(vocabulary, commit_order, RESERVE_ASSET, fee_digest)
         .map_err(|_| PrivateRestartRefusal::RelinkRefused)?;
 
     // The predecessor outputs pay to the published owners' PRIVATE receipt
@@ -1578,7 +1612,9 @@ mod tests {
 
 #[cfg(test)]
 mod byte_identity_tests {
-    use super::{ConsumedReceipt, hex, link_and_register, run_of_record as run};
+    use super::{
+        ConsumedReceipt, LiveShapeVocabulary, hex, link_and_register, run_of_record as run,
+    };
     use crate::confidential_predecessor::PredecessorShape;
 
     /// The two fixtures of the run of record register under exactly the
@@ -1604,9 +1640,13 @@ mod byte_identity_tests {
     #[test]
     fn the_run_of_record_fixtures_register_under_the_digests_it_recorded() {
         for consumed in ConsumedReceipt::ALL {
-            let linked =
-                link_and_register(PredecessorShape::DualParity, consumed, run::ISSUED_ASSET)
-                    .expect("the run of record's own fixtures register");
+            let linked = link_and_register(
+                PredecessorShape::DualParity,
+                consumed,
+                run::ISSUED_ASSET,
+                LiveShapeVocabulary::Demonstration,
+            )
+            .expect("the run of record's own fixtures register");
 
             // The predecessor is the same manifest for both runs, so both
             // must land on the one recorded digest.

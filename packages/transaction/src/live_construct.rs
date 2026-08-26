@@ -324,8 +324,12 @@ pub fn finalize_live_transfer(
         .unwrap_or_default();
     let sponsor_spent = recognize_sponsors(abi, request, view, &sponsor_inputs)?;
 
-    // Stage 4: the shape, chosen by every count at once.
-    let shape = select_shape(abi, request, sponsor_inputs.len())?;
+    // Stage 4: the shape, chosen by every count at once. The explicit
+    // lane declares no fee destination: a sponsored form's fee is funded
+    // from the sponsor region and construction places it, and the
+    // explicit sponsorless form that pays its own fee is not built here
+    // yet.
+    let shape = select_shape(abi, request, sponsor_inputs.len(), 0)?;
 
     // Stage 5: recognize each consumed receipt.
     let recognized = recognize_receipts(abi, request, view)?;
@@ -524,21 +528,56 @@ fn check_form_exactness(
 
 /// The one admitted shape realizing every requested count.
 ///
-/// Five conjuncts, and the form is one of them rather than a consequence
+/// Six conjuncts, and the form is one of them rather than a consequence
 /// of the others: §12.5 reports the form as its own term, and a shape
 /// selected by counts alone could satisfy them under the other form.
+///
+/// # Why the fee is counted out of the destinations
+///
+/// The private request vocabulary has no fee destination member, so a
+/// candidate that pays its own fee states the fee as a destination and
+/// the *opening's role* is what says which position it is — the same
+/// place [`private_destination_intents`] already reads it, and the same
+/// reason. A shape's `receipt_outputs` counts live receipts, and a fee
+/// output is emphatically not one, so the two are compared only after
+/// the declared fee positions are discounted. `fee_destinations` is
+/// therefore a statement the caller makes about its own request rather
+/// than something inferred here from an empty program or a zero owner.
+///
+/// This is exactly the conjunct that refused the sponsorless fee-bearing
+/// candidate at a real node: two destinations were matched against a
+/// two-receipt-output shape, so the receipt covenant demanded a receipt
+/// constructor program where the fee's empty program sat.
 fn select_shape<'abi>(
     abi: &'abi CandidateLiveTransferAbi,
     request: &LiveTransferRequest,
     sponsor_inputs: usize,
+    fee_destinations: usize,
 ) -> Result<&'abi LiveShapeAbi, TransactionRefusal> {
     let receipt_inputs = request.receipts().len();
-    let destinations = request.destinations().len();
+    let declared = request.destinations().len();
     let sponsor_change = request.sponsor_change().requested();
     let wanted = if request.form().sponsored() {
         LiveTransactionForm::Sponsored
     } else {
         LiveTransactionForm::Sponsorless
+    };
+    // A sponsored form's fee is funded by the sponsor region and never
+    // appears among the destinations, so the two sources of a fee output
+    // are disjoint and adding them would be double counting.
+    let bears_a_fee = fee_destinations > 0 || request.form().sponsored();
+
+    let refusal = TransactionRefusal::UnsupportedLiveShape {
+        receipt_inputs,
+        destinations: declared,
+        sponsor_inputs,
+        sponsor_change,
+    };
+    // Refused rather than saturated: a request declaring more fee
+    // positions than it has destinations describes no shape at all, and
+    // clamping it would go looking for one.
+    let Some(destinations) = declared.checked_sub(fee_destinations) else {
+        return Err(refusal);
     };
 
     abi.shapes()
@@ -549,14 +588,10 @@ fn select_shape<'abi>(
                 && usize::from(shape.receipt_outputs()) == destinations
                 && usize::from(shape.sponsor_inputs()) == sponsor_inputs
                 && candidate.sponsor_change_position().is_some() == sponsor_change
+                && candidate.fee_position().is_some() == bears_a_fee
                 && candidate.form() == wanted
         })
-        .ok_or(TransactionRefusal::UnsupportedLiveShape {
-            receipt_inputs,
-            destinations,
-            sponsor_inputs,
-            sponsor_change,
-        })
+        .ok_or(refusal)
 }
 
 /// One recognized receipt: its owner and the three spent-output fields
@@ -1105,8 +1140,18 @@ pub fn finalize_private_live_transfer(
         });
     }
 
-    // The explicit lane's own stages, called and not reimplemented.
-    let shape = select_shape(abi, request, 0)?;
+    // The explicit lane's own stages, called and not reimplemented. The
+    // fee positions are counted off the openings' roles, which is where
+    // this lane already decides that a destination is a fee: the request
+    // vocabulary cannot say it, so the opening does, and the count is
+    // read from the same field rather than a second one that could
+    // disagree with it.
+    let fee_destinations = openings
+        .destinations()
+        .iter()
+        .filter(|opening| opening.role == ConfidentialOutputRole::Fee)
+        .count();
+    let shape = select_shape(abi, request, 0, fee_destinations)?;
     let recognized = recognize_receipts(abi, request, view)?;
     let created_total = request
         .destination_total()

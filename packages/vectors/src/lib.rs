@@ -116,9 +116,10 @@ pub use live_pairs::{
     condition_scoreboard, minimality_fixtures,
 };
 pub use live_plan::{
-    demonstration_live_abi, demonstration_live_bundle, link_live_bundle_for_asset,
-    live_abi_for_asset, live_deployment_for_asset, live_transfer_plan, published_owner,
-    relocatable_live_bundles,
+    LiveShapeVocabulary, demonstration_live_abi, demonstration_live_bundle,
+    link_live_bundle_for_asset, link_live_bundle_for_vocabulary, live_abi_for_asset,
+    live_abi_for_vocabulary, live_deployment_for_asset, live_transfer_plan, published_owner,
+    relocatable_live_bundles, relocatable_live_bundles_for,
 };
 pub use live_report::{
     LIVE_SAFETY_REPORT_SCHEMA, LiveLifecycleStatus, LiveRunStanding, LiveSafetyCompleteness,

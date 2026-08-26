@@ -39,9 +39,9 @@ use linker::{
 };
 use realization::{RealizationScope, derive};
 use tapscript::{
-    CandidateRelocatableLiveTransferBundle, LiveTransferSymbols, OwnerKey,
+    CandidateRelocatableLiveTransferBundle, LiveTransferShapeSet, LiveTransferSymbols, OwnerKey,
     demonstration_live_shape_set, derive_live_receipt_constructor, emit_candidate_live_bundle,
-    owner_key_encoding_closure, static_transfer_leaf_set,
+    fee_bearing_live_shape_set, owner_key_encoding_closure, static_transfer_leaf_set,
 };
 use target_elements::{ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript};
 use target_elements_conformance::constructor::curve::FIELD_ELEMENT_BYTES;
@@ -263,8 +263,35 @@ pub fn link_live_bundle_for_asset(
     reserve_asset: [u8; 32],
     fee_program_digest: [u8; 32],
 ) -> Result<CandidateLinkedLiveTransferBundle, VectorError> {
+    link_live_bundle_for_vocabulary(
+        LiveShapeVocabulary::Demonstration,
+        protocol_asset,
+        reserve_asset,
+        fee_program_digest,
+    )
+}
+
+/// The linked bundle of one stated vocabulary over one stated pair of
+/// assets.
+///
+/// The deployment parameters are the same for both vocabularies — same
+/// symbols, same internal key, same depth — and only the shape set
+/// differs. That is the point rather than an economy: the fee-bearing
+/// candidate is the demonstration candidate plus one member, so anything
+/// that moves between them moved because of the member.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when a constructor, an
+/// emission, the deployment parameters, or the link refuses.
+pub fn link_live_bundle_for_vocabulary(
+    vocabulary: LiveShapeVocabulary,
+    protocol_asset: [u8; 32],
+    reserve_asset: [u8; 32],
+    fee_program_digest: [u8; 32],
+) -> Result<CandidateLinkedLiveTransferBundle, VectorError> {
     let target = reviewed_target()?;
-    let bundles = relocatable_live_bundles()?;
+    let bundles = relocatable_live_bundles_for(vocabulary)?;
     let deployment = live_deployment_for_asset(protocol_asset, reserve_asset, fee_program_digest)?;
     link_live_candidate(&target, &bundles, &deployment)
         .map_err(|_| VectorError::LiveSubstrateUnavailable)
@@ -286,9 +313,51 @@ pub fn link_live_bundle_for_asset(
 /// emission refuses.
 pub fn relocatable_live_bundles() -> Result<Vec<CandidateRelocatableLiveTransferBundle>, VectorError>
 {
+    relocatable_live_bundles_for(LiveShapeVocabulary::Demonstration)
+}
+
+/// Which live-transfer shape vocabulary a deployment emits programs for.
+///
+/// Two candidates, not one candidate with a switch. The whole reason the
+/// fee-bearing form is a second vocabulary rather than a widening of the
+/// first is that a candidate's shape set becomes one coordinator leaf per
+/// shape, those leaves tweak the taproot output key, and that key is the
+/// destination program every recorded fixture digest was taken over. A
+/// ceremony that does not intend a fee-bearing transfer therefore keeps
+/// the demonstration vocabulary and keeps its digests, byte for byte.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LiveShapeVocabulary {
+    /// The Phase-5 demonstration set, with no sponsorless fee-bearing
+    /// member.
+    Demonstration,
+    /// The same counts, also emitting the sponsorless form that pays its
+    /// own fee.
+    FeeBearing,
+}
+
+impl LiveShapeVocabulary {
+    /// The shape set this vocabulary names.
+    #[must_use]
+    pub fn shape_set(self) -> LiveTransferShapeSet {
+        match self {
+            Self::Demonstration => demonstration_live_shape_set(),
+            Self::FeeBearing => fee_bearing_live_shape_set(),
+        }
+    }
+}
+
+/// The relocatable bundles of one stated vocabulary.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when a constructor or an
+/// emission refuses.
+pub fn relocatable_live_bundles_for(
+    vocabulary: LiveShapeVocabulary,
+) -> Result<Vec<CandidateRelocatableLiveTransferBundle>, VectorError> {
     let target = reviewed_target()?;
     let plan = live_transfer_plan()?;
-    let shapes = demonstration_live_shape_set();
+    let shapes = vocabulary.shape_set();
     let placeholders = live_symbols(
         &target,
         vec![0x5a; 32],
@@ -395,11 +464,43 @@ pub fn live_abi_for_asset(
     reserve_asset: [u8; 32],
     fee_program_digest: [u8; 32],
 ) -> Result<CandidateLiveTransferAbi, VectorError> {
+    live_abi_for_vocabulary(
+        LiveShapeVocabulary::Demonstration,
+        protocol_asset,
+        reserve_asset,
+        fee_program_digest,
+    )
+}
+
+/// The candidate ABI of one stated vocabulary over one stated pair of
+/// assets.
+///
+/// Not memoized, for the reason [`live_abi_for_asset`] gives and one
+/// more: the vocabulary is a second key, and a cache holding one of the
+/// two candidates would hand a fee-bearing ceremony the demonstration
+/// candidate's programs — which is exactly the confusion the two
+/// vocabularies exist to prevent.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when the link or the ABI
+/// derivation refuses.
+pub fn live_abi_for_vocabulary(
+    vocabulary: LiveShapeVocabulary,
+    protocol_asset: [u8; 32],
+    reserve_asset: [u8; 32],
+    fee_program_digest: [u8; 32],
+) -> Result<CandidateLiveTransferAbi, VectorError> {
     let target = reviewed_target()?;
     let curve = OracleLiveCurve::new(reviewed_target()?);
     derive_live_transfer_abi(
         &target,
-        &link_live_bundle_for_asset(protocol_asset, reserve_asset, fee_program_digest)?,
+        &link_live_bundle_for_vocabulary(
+            vocabulary,
+            protocol_asset,
+            reserve_asset,
+            fee_program_digest,
+        )?,
         &curve,
     )
     .map_err(|_| VectorError::LiveSubstrateUnavailable)
@@ -408,7 +509,8 @@ pub fn live_abi_for_asset(
 #[cfg(test)]
 mod tests {
     use super::{
-        FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, demonstration_live_bundle,
+        FEE_PROGRAM_DIGEST, FIRST_SCALAR, LiveShapeVocabulary, PROTOCOL_ASSET, RESERVE_ASSET,
+        SECOND_SCALAR, demonstration_live_abi, demonstration_live_bundle, live_abi_for_vocabulary,
         live_transfer_plan, published_owner,
     };
     use std::collections::BTreeSet;
@@ -425,6 +527,62 @@ mod tests {
         assert_ne!(bundle.constructors().len(), 0);
         let abi = demonstration_live_abi().expect("the ABI derives");
         assert_eq!(abi.destinations().entries().len(), 4);
+    }
+
+    #[test]
+    fn the_fee_bearing_deployment_carries_the_shape_a_self_paid_fee_needs() {
+        // The construction path is only reachable with a node, so the
+        // thing that would send a ceremony to a real target to learn
+        // `UnsupportedLiveShape` is asked here instead: does a candidate
+        // exist for one receipt in, one receipt out, no sponsor, and a
+        // fee? Selection matches on exactly these terms, so a shape
+        // answering them is what stands between the ceremony and a
+        // typed stop that costs a node run to observe.
+        let abi = live_abi_for_vocabulary(
+            LiveShapeVocabulary::FeeBearing,
+            PROTOCOL_ASSET,
+            RESERVE_ASSET,
+            FEE_PROGRAM_DIGEST,
+        )
+        .expect("the fee-bearing ABI derives");
+
+        let selected = abi
+            .shapes()
+            .values()
+            .find(|candidate| {
+                let shape = candidate.shape();
+                shape.receipt_inputs() == 1
+                    && shape.receipt_outputs() == 1
+                    && shape.sponsor_inputs() == 0
+                    && candidate.sponsor_change_position().is_none()
+                    && candidate.fee_position().is_some()
+            })
+            .expect("the fee-bearing candidate emits a sponsorless one-to-one shape with a fee");
+
+        // The fee sits immediately after the single destination, and the
+        // exact output count leaves no position over. Both are what the
+        // covenant's own family census asserts, so a disagreement here
+        // is a disagreement the emitted program would have carried.
+        assert_eq!(selected.fee_position(), Some(1));
+        assert_eq!(selected.shape().outputs(), 2);
+        assert_eq!(selected.shape().inputs(), 1);
+    }
+
+    #[test]
+    fn the_demonstration_deployment_still_offers_no_such_shape() {
+        // The converse, and the reason the two vocabularies are separate
+        // deployments rather than one widened set: nothing that links
+        // against the demonstration candidate can accidentally select a
+        // fee-bearing shape, so no existing ceremony changes what it
+        // builds.
+        let abi = demonstration_live_abi().expect("the ABI derives");
+
+        assert!(
+            !abi.shapes().values().any(|candidate| {
+                candidate.shape().sponsor_inputs() == 0 && candidate.fee_position().is_some()
+            }),
+            "the demonstration deployment gained a sponsorless fee-bearing shape"
+        );
     }
 
     #[test]

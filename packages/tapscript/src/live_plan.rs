@@ -69,7 +69,7 @@ use crate::capability::census_enum;
 use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::live_pattern::{LiveFragmentId, LiveTransferSymbols};
-use crate::live_shape::LiveTransferShape;
+use crate::live_shape::{FeePresence, LiveTransferShape};
 use crate::pattern::{
     narrow_to_operand, number, op, require_amount_domain, require_asset, require_explicit,
     require_program,
@@ -380,7 +380,13 @@ pub fn live_family_ranges(shape: LiveTransferShape) -> CompleteFamilyRanges {
         ));
         next += 1;
     }
-    if shape.sponsored() {
+    // The fee range follows the shape's fee axis, not its sponsor count.
+    // The two answers coincide for every sponsored form; they part for
+    // the sponsorless form that pays its own fee, and this census is one
+    // of the three readings that has to part with them together or the
+    // emitted program and the family census will disagree about which
+    // position the fee occupies.
+    if shape.fee() == FeePresence::Present {
         outputs.push(range(
             LiveFamily::Output(Out::TargetFee),
             next,
@@ -473,9 +479,31 @@ fn cover(side: FieldSide, total: u16, ranges: &[LiveFamilyRange]) -> Vec<FamilyR
 ///
 /// The other half of §10.4 — that no output carrying the protocol asset
 /// lies outside this range — is not here either, and is not owed: it is
-/// [`live_sponsor_isolation_fragment`]'s, which requires the reserve
+/// [`live_sponsor_isolation_fragment`]'s, which states the admitted
 /// asset at every output position this range does not hold, and the
 /// exact output count, which leaves no third kind of position.
+///
+/// # The one position where that asset is the protocol asset
+///
+/// A sponsorless shape that pays its own fee carries the protocol asset
+/// at its fee position, and that position is outside this range. The
+/// closure argument survives, and it is worth saying exactly why rather
+/// than leaving it to be re-derived.
+///
+/// What §10.4 forbids is an *unaccounted* protocol-asset output — value
+/// leaving the covenant's census through a position no fragment speaks
+/// for. The fee position is not that. It is declared by the shape, it
+/// sits at an index the exact output count fixes, and the isolation
+/// fragment names both its asset and its form there, so it is spoken for
+/// as completely as any destination is. What it is not is a *receipt*,
+/// and that is why it is outside this range rather than inside it.
+///
+/// The amount is not bounded here and is not owed either: under the
+/// private plan the conservation is the target's own tally, which counts
+/// the fee like every other output, and §1.9 forbids this leaf reading
+/// an amount to bound it with. An owner who signs a transfer paying most
+/// of its value to fees has authorized exactly that, which is a
+/// different thing from value escaping unnoticed.
 ///
 /// # Errors
 ///
@@ -579,7 +607,41 @@ pub fn explicit_conservation_fragment(
             i64::from(position),
         )?);
     }
-    instructions.extend(fold(shape.receipt_outputs()));
+
+    // A SELF-PAID FEE IS A TERM OF THIS EQUALITY, and leaving it out is
+    // the one way this fragment can be quietly unsatisfiable.
+    //
+    // The relation the explicit plan closes locally is that what the
+    // receipts carried is what the transaction created. Where a sponsor
+    // pays the fee that is receipts equals destinations, because the fee
+    // came out of the sponsor region in the reserve asset and never
+    // touched the protocol sum. Where the transfer pays its OWN fee the
+    // value leaves through the fee position instead, in the protocol
+    // asset, out of the very receipts being summed -- so the equality is
+    // receipts equals destinations PLUS fee, which is the same tally the
+    // target performs and not a second opinion about it.
+    //
+    // Emitting the sponsored form's equality for a self-paying shape
+    // would demand that a positive fee be zero: no such transaction
+    // exists, and the leaf would refuse every candidate offered to it
+    // rather than fail to compile. The fee's value is readable here for
+    // the reason the amount is readable at all under this plan -- the
+    // target requires a fee output's value to be EXPLICIT -- so the term
+    // costs no confidentiality the plan was keeping.
+    let created = if shape.fee() == FeePresence::Present && !shape.sponsored() {
+        instructions.extend(explicit_amount(
+            target,
+            OpcodeId::InspectOutputValue,
+            // Immediately after the destinations. A sponsorless shape has
+            // no change role to sit between them, sponsor change
+            // requiring a sponsor region.
+            i64::from(shape.receipt_outputs()),
+        )?);
+        shape.receipt_outputs().saturating_add(1)
+    } else {
+        shape.receipt_outputs()
+    };
+    instructions.extend(fold(created));
 
     let (receipts_first, receipts_end) = shape.receipt_input_range();
     for position in receipts_first..receipts_end {
@@ -700,17 +762,41 @@ pub fn live_sponsor_isolation_fragment(
         position += 1;
     }
 
-    if shape.sponsored() {
+    if shape.fee() == FeePresence::Present {
+        // WHICH ASSET THE FEE CARRIES FOLLOWS WHO FUNDED IT, and this is
+        // forced by the target's own tally rather than chosen here.
+        //
+        // A sponsored form's fee is paid out of the sponsor region, whose
+        // inputs carry the reserve asset, so the fee output carries the
+        // reserve asset and the protocol asset stays entirely inside the
+        // destination range. A SPONSORLESS form has no sponsor region to
+        // pay from: its only inputs are receipts, which carry the
+        // protocol asset. Elements balances per asset, so a reserve-asset
+        // fee beside no reserve-asset input cannot balance — the
+        // transaction would die at the tally with the protocol sum
+        // over-supplied and the reserve sum short. The protocol asset is
+        // the only asset a self-paying fee can be denominated in.
+        let fee_asset = if shape.sponsored() {
+            symbols.reserve_asset()
+        } else {
+            symbols.protocol_asset()
+        };
         instructions.extend(require_asset(
             target,
             OpcodeId::InspectOutputAsset,
             position,
-            symbols.reserve_asset(),
+            fee_asset,
         )?);
         // The fee role by form, never by amount: the reviewed target
         // replaces a program that is not a witness program by a digest of
         // it under a negative version marker, and that pair is the whole
         // discriminator.
+        //
+        // Nothing in THIS half of the clause reads the sponsor region,
+        // which is why the discriminator itself needed no widening: it
+        // recognized the fee by its empty program under the negative
+        // marker, and a fee funded from the receipts wears exactly that
+        // form.
         instructions.extend([
             number(target, position)?,
             op(OpcodeId::InspectOutputScriptPubKey),
@@ -791,14 +877,38 @@ pub fn issuance_absence_fragment(
 
 /// Whether one shape has a sponsor region at all.
 ///
-/// The sponsor-isolation fragment of a shape without one is empty, and
-/// [`crate::live_pattern::patterns_for`] uses this to omit the pattern
-/// record rather than mint an identity over zero instructions — the same
-/// answer [`crate::live_pattern::has_member_position`] gives for the
-/// member leaf of a one-to-one transfer.
+/// Region membership, and nothing about the fee. This answered both
+/// questions while a fee output existed only where a sponsor region did;
+/// [`emits_isolation_fragment`] is the one to ask about the fragment
+/// now.
 #[must_use]
 pub const fn has_sponsor_region(shape: LiveTransferShape) -> bool {
     shape.sponsored() || matches!(shape.sponsor_change(), SponsorChangePresence::Present)
+}
+
+/// Whether [`live_sponsor_isolation_fragment`] emits anything for one
+/// shape.
+///
+/// The fragment carries three clauses — the sponsor inputs' reserve
+/// asset, the sponsor-change role, and the target fee role — and a shape
+/// reaching none of them gets an empty program.
+/// [`crate::live_pattern::patterns_for`] uses this to omit the pattern
+/// record rather than mint an identity over zero instructions, the same
+/// answer [`crate::live_pattern::has_member_position`] gives for the
+/// member leaf of a one-to-one transfer.
+///
+/// # Why this is not [`has_sponsor_region`]
+///
+/// It was, and the two came apart when the fee axis did. A sponsorless
+/// shape that pays its own fee has no sponsor region and still emits the
+/// fee clause, so asking the sponsor question would have dropped the
+/// pattern while the fragment went on carrying instructions — the
+/// emitted program and the pattern census disagreeing about what the
+/// leaf contains, which is exactly the silent gap the census exists to
+/// refuse.
+#[must_use]
+pub const fn emits_isolation_fragment(shape: LiveTransferShape) -> bool {
+    has_sponsor_region(shape) || matches!(shape.fee(), FeePresence::Present)
 }
 
 /// Whether a program introspects a value field at all.

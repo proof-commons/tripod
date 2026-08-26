@@ -94,8 +94,8 @@ use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::live_constructor::{LiveProgramRole, OwnerKey, StaticLiveReceiptConstructor};
 use crate::live_plan::{
-    destination_closure_fragment, explicit_conservation_fragment, has_sponsor_region,
-    issuance_absence_fragment, live_sponsor_isolation_fragment,
+    destination_closure_fragment, emits_isolation_fragment, explicit_conservation_fragment,
+    has_sponsor_region, issuance_absence_fragment, live_sponsor_isolation_fragment,
 };
 use crate::live_private::{private_destination_form_fragment, require_value_form};
 use crate::live_shape::LiveTransferShape;
@@ -2557,8 +2557,22 @@ pub fn live_transfer_patterns(
         }
     }
 
-    if has_sponsor_region(shape) {
+    if emits_isolation_fragment(shape) {
         let isolation = live_sponsor_isolation_fragment(target, symbols, shape)?;
+        // Every clause this fragment can emit reads the reserve asset,
+        // and the fee clause additionally reads the destination count to
+        // find the fee's position, so those three are disclosed by any
+        // shape that reaches the fragment at all. The change role is the
+        // one clause a sponsorless fee-bearing shape never emits, so it
+        // is disclosed on the sponsor question rather than on this one.
+        let mut isolation_disclosure = BTreeSet::from([
+            Disclose::ReserveAsset,
+            Disclose::TargetFeeRole,
+            Disclose::ReceiptOutputCount,
+        ]);
+        if has_sponsor_region(shape) {
+            isolation_disclosure.insert(Disclose::SponsorChangeRole);
+        }
         patterns.insert(
             Id::LiveSponsorIsolationV1,
             build_live_pattern(
@@ -2569,12 +2583,7 @@ pub fn live_transfer_patterns(
                 empty.clone(),
                 Witness::NoWitnessItem,
                 Build::LinkTimeOnly,
-                BTreeSet::from([
-                    Disclose::ReserveAsset,
-                    Disclose::SponsorChangeRole,
-                    Disclose::TargetFeeRole,
-                    Disclose::ReceiptOutputCount,
-                ]),
+                isolation_disclosure,
                 BTreeSet::from([Source::AuthenticatedFamilyCensus]),
                 BTreeSet::from([Residual::FieldFormSettledOnlyOnTheTarget]),
                 introspection
@@ -2628,12 +2637,11 @@ pub fn live_transfer_patterns(
         Disclose::ReceiptOutputCount,
         Disclose::DestinationProgramVersion,
     ]);
+    if emits_isolation_fragment(shape) {
+        coordinator_disclosure.extend([Disclose::ReserveAsset, Disclose::TargetFeeRole]);
+    }
     if has_sponsor_region(shape) {
-        coordinator_disclosure.extend([
-            Disclose::ReserveAsset,
-            Disclose::SponsorChangeRole,
-            Disclose::TargetFeeRole,
-        ]);
+        coordinator_disclosure.insert(Disclose::SponsorChangeRole);
     }
     if constructor.representation() == LiveTransferRepresentationPlan::Explicit {
         coordinator_disclosure
@@ -2742,7 +2750,7 @@ pub fn patterns_for(
         .filter(|id| match id {
             LiveTransferPatternId::LiveMemberRoleV1
             | LiveTransferPatternId::LiveMemberProgramV1 => has_member_position(shape),
-            LiveTransferPatternId::LiveSponsorIsolationV1 => has_sponsor_region(shape),
+            LiveTransferPatternId::LiveSponsorIsolationV1 => emits_isolation_fragment(shape),
             LiveTransferPatternId::LiveExplicitConservationV1 => {
                 representation == LiveTransferRepresentationPlan::Explicit
             }
