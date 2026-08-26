@@ -1128,12 +1128,17 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
         // wallet refuses the same thing for the same reason. Both are
         // conventions about confidentiality; neither is a protocol rule
         // and this row claims neither as one.
+        // RUN. The shape this workspace has performed every ceremony as
+        // a FUNDING step, performed for the first time as a
+        // covenant-governed transfer -- the coin it spent sat at a
+        // receipt constructor's program, which is the whole difference.
         BlindedShape::EntryCrossing => (
-            ConsensusVerdict::SourceDerivedPossible,
-            FirstPartyStatus::ExpressibleAndUnrun {
+            ConsensusVerdict::ObservedAccepted {
+                identity: crate::live_multi_shapes::run_of_record::ENTRY_CROSSING_ACCEPTED_TXID,
+            },
+            FirstPartyStatus::ConstructibleAfterRemoval {
                 removed: Limitation::HomogeneousRepresentationOnly,
                 removal: PER_SIDE_REPRESENTATION_REMOVAL,
-                stops_at: "packages/transaction/src/live_construct.rs `PrivateInputOpening`,                            which requires every consumed input to name a registered confidential                            fixture output. An entry crossing's inputs are EXPLICIT coins carrying                            no opening at all, so the private lane cannot yet be handed the input                            set this shape spends -- the blinder each contributes is the zero one,                            and the vocabulary has no way to say so.",
             },
         ),
         // UNBLINDING ON EXIT, expressible and unrun. The absorber is
@@ -1552,6 +1557,10 @@ mod tests {
                 BlindedShape::ExitCrossing,
                 crate::live_multi_shapes::run_of_record::EXIT_CROSSING_ACCEPTED_TXID,
             ),
+            (
+                BlindedShape::EntryCrossing,
+                crate::live_multi_shapes::run_of_record::ENTRY_CROSSING_ACCEPTED_TXID,
+            ),
         ];
         for (shape, identity) in expected {
             let entry = census_entry(shape);
@@ -1573,9 +1582,9 @@ mod tests {
         }
         assert_eq!(
             expected.len(),
-            8,
-            "eight of the eleven shapes have been run: the seven homogeneous ones and the exit \
-             crossing",
+            9,
+            "nine of the eleven shapes have been run: the seven homogeneous ones and BOTH \
+             crossing directions. The two that have not are the two the tally forbids",
         );
 
         // The converse, which this test used to leave unchecked. The list
@@ -1879,31 +1888,18 @@ mod tests {
         // here -- or one of these two leaving without its acceptance
         // being recorded -- is a visible test change and not a number
         // that quietly moved.
-        // OCCUPIED by the ENTRY direction alone. Both crossings sat
-        // here when the vocabulary landed; the exit direction then ran
-        // and left by the only honest exit, an acceptance of its own
-        // shape. The list is pinned rather than counted, so the entry
-        // direction leaving without an acceptance recorded, or a third
-        // shape arriving, is a visible test change.
-        assert_eq!(
-            expressible,
-            vec![BlindedShape::EntryCrossing],
-            "the entry crossing is expressible and unrun",
-        );
-
-        // Its removal is PROVEN, by the other shape it freed, and that
-        // is not a contradiction to resolve but the distinction the
-        // register keeps: the vocabulary really was carried to a chain,
-        // and THIS shape still has no acceptance of its own.
-        let FirstPartyStatus::ExpressibleAndUnrun { removal, .. } =
-            census_entry(BlindedShape::EntryCrossing).first_party
-        else {
-            unreachable!("asserted above");
-        };
-        assert_eq!(
-            removal.proven_by,
-            Some(crate::live_multi_shapes::run_of_record::EXIT_CROSSING_ACCEPTED_TXID),
-            "the crossing removal was carried to a chain by the exit direction",
+        // EMPTY again, and the emptiness is a result rather than a
+        // loosening. Both crossings sat here when the vocabulary landed
+        // and both then left by the only honest exit, an acceptance of
+        // their own shape. The status is kept for the reason the others
+        // are kept: a vocabulary member that nothing currently reaches
+        // is not thereby wrong, and the next removal nobody has run must
+        // be able to say so. What is checked above is that anything
+        // sitting here would still owe an unproven acceptance and a
+        // named stopping layer.
+        assert!(
+            expressible.is_empty(),
+            "no shape is expressible-and-unrun any more: {expressible:?}",
         );
 
         // The fee-bearing shape used to be the sole member here, and it

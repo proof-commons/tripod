@@ -1679,6 +1679,7 @@ mod byte_identity_tests {
         assert_eq!(digests[4], run::FEE_BEARING_SUCCESSOR_DIGEST);
         assert_eq!(digests[5], run::MERGE_SUCCESSOR_DIGEST);
         assert_eq!(digests[6], run::EXIT_CROSSING_SUCCESSOR_DIGEST);
+        assert_eq!(digests[7], run::ENTRY_CROSSING_SUCCESSOR_DIGEST);
     }
 
     /// The fee-bearing digest now carries an acceptance, and the two are
@@ -2417,4 +2418,45 @@ pub mod run_of_record {
 
     /// The exit crossing's wall time, in seconds.
     pub const EXIT_CROSSING_WALL_SECONDS: f64 = 11.5;
+
+    // --- The entry crossing: the other direction, at a real node --------
+
+    /// The entry crossing's successor fixture digest.
+    pub const ENTRY_CROSSING_SUCCESSOR_DIGEST: &str =
+        "8ad54b36e939dbdc59939a3fdf5a95210b520b5101697ecf8d53befa5048e7c1";
+
+    /// The identity the target computed for the accepted entry crossing.
+    ///
+    /// ONE EXPLICIT receipt consumed and TWO blinded destinations
+    /// created. This workspace has performed the SHAPE every ceremony,
+    /// as the funding step that mints a confidential predecessor; what
+    /// this identity records is the first time the coin it spent sat at
+    /// a receipt constructor's program, so the transfer was governed by
+    /// the covenant rather than by the adapter.
+    pub const ENTRY_CROSSING_ACCEPTED_TXID: &str =
+        "7a1771fd3d04cc7ee2c48a0d7daa9287122b6ca07706c943f48a23aa8192793f";
+
+    /// How many bytes the entry crossing handed to the node.
+    pub const ENTRY_CROSSING_SUBMITTED_BYTES: usize = 9_133;
+
+    /// The output-witness proof bytes the entry crossing carried.
+    ///
+    /// TWO proofs for two blinded destinations, and the count is the
+    /// claim: a single blinded output would have been forced to a ZERO
+    /// blinder, because an explicit input contributes one, and its
+    /// commitment would have hidden nothing. Two is the floor, and it is
+    /// the registry's own arithmetic rather than a preference.
+    pub const ENTRY_CROSSING_PROOF_BYTES: [usize; 2] = [4_174, 4_174];
+
+    /// Whether the entry crossing's consumed coin carried a blinder.
+    ///
+    /// FALSE. Its value was explicit, so the blinder it contributed to
+    /// the transaction-wide sum was the all-zero one every explicit
+    /// value is committed with -- which is why the balancing output's
+    /// blinder is the negation of a searched non-zero primary rather
+    /// than a consumed sum.
+    pub const ENTRY_CROSSING_CONSUMED_A_BLINDER: bool = false;
+
+    /// The entry crossing's wall time, in seconds.
+    pub const ENTRY_CROSSING_WALL_SECONDS: f64 = 9.9;
 }
