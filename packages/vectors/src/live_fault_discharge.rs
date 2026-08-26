@@ -167,6 +167,17 @@ pub enum FaultMutation {
     AskForAZeroValuedDestination,
     /// Name a destination owner nothing was linked for.
     NameADestinationOwnerNothingWasLinkedFor,
+    /// Offer a receipt input sitting under a taptree nothing was linked
+    /// for.
+    ///
+    /// The input-side twin of
+    /// [`Self::NameADestinationOwnerNothingWasLinkedFor`], and the one
+    /// change is the same kind of change: the coin's own program. A
+    /// receipt CLASS is a leaf set and therefore a tree, so a receipt of
+    /// another class sits under another program — which is the only
+    /// thing about a class that is visible at a spend, on this side of
+    /// the target and on the target's.
+    OfferAReceiptInputUnderAProgramNothingWasLinkedFor,
     /// Make the destination total exceed the target's explicit width.
     OverflowTheDestinationTotal,
     /// Offer a commitment-valued receipt to the explicit plan.
@@ -370,7 +381,7 @@ macro_rules! constructor_is {
 
 /// The complete census of first-party cases for §15.4–§15.7.
 ///
-/// Fourteen cases over six owning entry points, and no §15.4–§15.7 row
+/// Fifteen cases over six owning entry points, and no §15.4–§15.7 row
 /// whose verdict a first-party layer owns is missing from it.
 #[must_use]
 #[expect(
@@ -412,6 +423,66 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
             "LeafOfAnotherRepresentation",
         ),
         // §15.4's constructor and object rows the ABI owns.
+        //
+        // The input row is here because it was RETYPED, and the retyping
+        // is a correction of a boundary rather than a lowering of a bar.
+        // It was typed target-side, asking that a
+        // time-locked predecessor offered to a live leaf be refused by
+        // the target's own introspection, and no such introspection
+        // exists: the live class is carried by CONSTRUCTOR TYPING, which
+        // emits zero instructions, no live fragment introspects an
+        // input's program, and the two receipt classes carry the same
+        // asset — so a live leaf that ran would compare nothing that
+        // separates them.
+        //
+        // What separates them is structural, at two sites, and the row
+        // is discharged against the first of them because the second can
+        // never be observed as being about the lock.
+        //
+        // The first is the linked table this case drives. A class cannot
+        // be constructed into a live transfer at all:
+        // `compiler::live_transfer_plan::derive_class` admits only
+        // `ObjectId::ReceiptLive` as the protocol object on both sides
+        // and refuses any analyzed program that names another, so no
+        // time-locked constructor can enter the destination table the
+        // input recognition searches, and no request can name one — the
+        // request states outpoints, and the class of a spent coin is its
+        // program.
+        //
+        // The second is the leaf commitment, on a chain: a leaf runs
+        // only from a taptree the spent program commits to, so a
+        // candidate revealing a live-transfer leaf against a coin of
+        // another class fails `VerifyTaprootCommitment` before a single
+        // opcode executes (the pinned target source, at
+        // `src/script/interpreter.cpp:3286-3290`, where a failed
+        // commitment is `SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH`). THAT
+        // REFUSAL IS PROGRAM-GENERIC AND CAN NEVER NAME THE LOCK: what
+        // it attributes to is a leaf the spent program does not commit
+        // to, which is true of every foreign taptree, so an observation
+        // of it says the commitment rule holds and says nothing about
+        // receipt classes. No later wave is owed that observation, and
+        // producing it would not answer this row.
+        //
+        // The maturity reading the old typing rested on is refused by
+        // §10.4 besides: the time-locked class is a receipt CLASS whose
+        // maturity is committed cycle arithmetic, not a consensus
+        // timelock, so there is no "after maturity" control to accept
+        // beside a refusal and no attributable pair was ever available.
+        //
+        // What the case below observes is therefore the same fact its
+        // sibling observes, from the consumed side: the recognition
+        // admits exactly the programs the linked live constructors emit
+        // and refuses everything else, naming the class it required. It
+        // does not single out the time-locked class, and it does not
+        // claim to — no time-locked program exists to offer, which is
+        // the structural protection rather than a gap in the evidence.
+        case(
+            "time-locked-input",
+            V::LiveTransferFinalization,
+            M::OfferAReceiptInputUnderAProgramNothingWasLinkedFor,
+            transaction_is!(TransactionRefusal::ReceiptInputIsNotALiveReceipt(_)),
+            "ReceiptInputIsNotALiveReceipt",
+        ),
         case(
             "time-locked-output",
             V::LiveTransferFinalization,
@@ -925,6 +996,36 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
             .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
             Ok(Staged {
                 control: finalize_outcome(&abi, &control_request, &view, None)?,
+                malformed: finalize_outcome(&abi, &request, &view, None)?,
+            })
+        }
+        M::OfferAReceiptInputUnderAProgramNothingWasLinkedFor => {
+            let (request, control_view) = explicit_control(&abi)?;
+            let [first, second] = honest_points()?;
+            // One change: the tree the first receipt's coin sits under.
+            // The linked program with one byte of the output key it
+            // commits to moved, which is a coin of a taptree this
+            // deployment did not build — what a receipt of another class
+            // is, a class being a leaf set and therefore a tree. The
+            // asset and the value form stay honest, so the refusal is
+            // the program lookup's rather than either check before it.
+            let mut foreign = program(&abi, &FIRST_SCALAR, Explicit)?;
+            let key_byte = foreign
+                .last_mut()
+                .ok_or(LiveFaultRefusal::ControlNotConstructible)?;
+            *key_byte ^= 0x01;
+            let view = PublicConstructionView::new(vec![
+                view_of(&abi, first, foreign, ValueField::Explicit(400)),
+                view_of(
+                    &abi,
+                    second,
+                    program(&abi, &SECOND_SCALAR, Explicit)?,
+                    ValueField::Explicit(600),
+                ),
+            ])
+            .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            Ok(Staged {
+                control: finalize_outcome(&abi, &request, &control_view, None)?,
                 malformed: finalize_outcome(&abi, &request, &view, None)?,
             })
         }
