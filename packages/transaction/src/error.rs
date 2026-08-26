@@ -456,6 +456,34 @@ pub enum TransactionRefusal {
     EmptyDestinationCensus,
     /// A sponsorless request asks for the sponsor-change role (§12.5).
     SponsorChangeWithoutSponsoredForm,
+    /// The explicit lane's declared destination roles are neither empty
+    /// nor one role per destination entry.
+    DeclaredRolesDoNotCoverDestinations {
+        /// How many roles the caller declared.
+        declared: usize,
+        /// How many destination entries the request carries.
+        destinations: usize,
+    },
+    /// A sponsored request declares a self-paid fee entry, whose fee is
+    /// the sponsor's to place from the offer instead (§12.5).
+    SelfPaidFeeUnderSponsoredForm,
+    /// More than one destination entry was declared the fee, where the
+    /// target admits exactly one fee position.
+    SelfPaidFeeDeclaredMoreThanOnce {
+        /// How many entries were declared the fee.
+        declared: usize,
+    },
+    /// A fee entry was declared against a shape that carries no fee
+    /// position at all.
+    SelfPaidFeeHasNoShapePosition,
+    /// The declared fee entry sits at a position the selected shape does
+    /// not name for the fee.
+    SelfPaidFeePositionDisagreesWithShape {
+        /// The position the entry's own index puts it at.
+        declared: u16,
+        /// The position the shape names for the fee.
+        shaped: u16,
+    },
     /// An explicit request offers public test randomness, which only a
     /// private construction consumes.
     PublicTestRandomnessWithoutPrivateForm,
