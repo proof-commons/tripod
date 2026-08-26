@@ -55,7 +55,7 @@
 //! against is created and destroyed by that run.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use linker::live_backend::LiveTransferRepresentationPlan;
@@ -600,90 +600,119 @@ impl SponsorValueForm {
     }
 }
 
-/// What a run observed about a COMMITTED sponsor coin.
+/// One thing a run checks about a COMMITTED sponsor coin.
 ///
-/// # Why every member is a boolean
+/// # Why this is a vocabulary and not a row of booleans
 ///
-/// Because the interesting facts here are all agreements, and an
-/// agreement is a yes or a no. Printing the commitment, the blinder, or
-/// the amount would put a scalar in a record whose whole subject is that
-/// the scalar is not published — and worse, a reader comparing two
-/// printed scalars is doing by eye what
-/// [`Self::commitment_is_the_registrys_own`] does by recomputation.
+/// Because the questions are not interchangeable and a reader has to be
+/// able to say WHICH one failed. Six flags in a record answer six
+/// questions whose names live only in the field names; a closed
+/// vocabulary names them once, lets a run report exactly the set that
+/// held, and makes a check that stopped being asked a member nobody
+/// inserts rather than a field that quietly stays true.
 ///
-/// The recomputation is the load-bearing one. The frozen registry
-/// derives the commitment from published constants and no chain; the
-/// node reports what it actually stored. Their agreement is a
-/// first-party check of the target's arithmetic against this
-/// workspace's, and it is the only thing here that could have come out
-/// the other way for an interesting reason.
-#[derive(Clone, Copy, Debug)]
+/// Each member is a yes or a no because each is an AGREEMENT. Printing
+/// the commitment, the blinder, or the amount would put a scalar into a
+/// record whose whole subject is that the scalar is not published — and
+/// a reader comparing two printed scalars by eye is doing worse what
+/// [`Self::CommitmentIsTheRegistrysOwn`] does by recomputation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CommittedSponsorCheck {
+    /// The node reported a value commitment and not an explicit amount.
+    ChainReportedACommitment,
+    /// The value the chain holds is the one the frozen registry derives
+    /// for the same fixture.
+    ///
+    /// The load-bearing member. The registry derives it from published
+    /// constants and no chain at all; the node reports what it actually
+    /// stored. This is the only check here that could have come out the
+    /// other way for an interesting reason, and a run that failed it
+    /// would have funded SOMETHING blinded while being unable to say
+    /// what.
+    CommitmentIsTheRegistrysOwn,
+    /// The case's two equal semantic amounts produced two different
+    /// points.
+    ///
+    /// The fixture funds both reserve coins to the SAME amount under
+    /// different blinders. If a commitment leaked its amount these two
+    /// would be one value; the run reads both off the chain and says
+    /// whether they are.
+    TwoEqualAmountsCommittedToTwoPoints,
+    /// A range proof accompanied each committed value, which the
+    /// representation requires.
+    RangeproofPresent,
+    /// Each surjection proof was empty, which an explicit asset entails.
+    SurjectionProofEmpty,
+    /// Each coin's asset stayed explicit beside its committed value.
+    AssetStayedExplicit,
+}
+
+impl CommittedSponsorCheck {
+    /// Every check, in the order a reader meets them.
+    pub const ALL: [Self; 6] = [
+        Self::ChainReportedACommitment,
+        Self::CommitmentIsTheRegistrysOwn,
+        Self::TwoEqualAmountsCommittedToTwoPoints,
+        Self::RangeproofPresent,
+        Self::SurjectionProofEmpty,
+        Self::AssetStayedExplicit,
+    ];
+
+    /// The check's own name, for a record a person reads.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ChainReportedACommitment => "chain-reported-a-commitment",
+            Self::CommitmentIsTheRegistrysOwn => "commitment-is-the-registrys-own",
+            Self::TwoEqualAmountsCommittedToTwoPoints => {
+                "two-equal-amounts-committed-to-two-points"
+            }
+            Self::RangeproofPresent => "rangeproof-present",
+            Self::SurjectionProofEmpty => "surjection-proof-empty",
+            Self::AssetStayedExplicit => "asset-stayed-explicit",
+        }
+    }
+}
+
+/// Which checks a run's committed sponsor coin passed.
+#[derive(Clone, Debug, Default)]
 pub struct CommittedSponsorCensus {
-    chain_reported_a_commitment: bool,
-    commitment_is_the_registrys_own: bool,
-    two_equal_amounts_committed_to_two_points: bool,
-    rangeproof_present: bool,
-    surjection_proof_empty: bool,
-    asset_stayed_explicit: bool,
+    held: BTreeSet<CommittedSponsorCheck>,
 }
 
 impl CommittedSponsorCensus {
-    /// Whether the chain reported a value commitment rather than an
-    /// amount.
+    /// Whether one named check held.
     #[must_use]
-    pub const fn chain_reported_a_commitment(self) -> bool {
-        self.chain_reported_a_commitment
+    pub fn holds(&self, check: CommittedSponsorCheck) -> bool {
+        self.held.contains(&check)
     }
 
-    /// Whether the value the chain holds is the one the frozen registry
-    /// derives independently for the same fixture.
-    #[must_use]
-    pub const fn commitment_is_the_registrys_own(self) -> bool {
-        self.commitment_is_the_registrys_own
-    }
-
-    /// Whether the case's two equal amounts produced two different
-    /// points.
+    /// Whether every check in the vocabulary held.
     ///
-    /// The fixture funds both reserve coins to the SAME semantic amount
-    /// under different blinders. If a commitment leaked its amount these
-    /// two would be one value; the run reads both off the chain and says
-    /// whether they are.
+    /// Counted against [`CommittedSponsorCheck::ALL`] rather than
+    /// against a number written here, so a check added to the vocabulary
+    /// is one this has to have seen hold.
     #[must_use]
-    pub const fn two_equal_amounts_committed_to_two_points(self) -> bool {
-        self.two_equal_amounts_committed_to_two_points
+    pub fn every_check_held(&self) -> bool {
+        CommittedSponsorCheck::ALL
+            .iter()
+            .all(|check| self.held.contains(check))
     }
 
-    /// Whether a range proof accompanied the committed value, which the
-    /// representation requires.
+    /// The checks that did NOT hold, in vocabulary order.
     #[must_use]
-    pub const fn rangeproof_present(self) -> bool {
-        self.rangeproof_present
+    pub fn missing(&self) -> Vec<CommittedSponsorCheck> {
+        CommittedSponsorCheck::ALL
+            .into_iter()
+            .filter(|check| !self.held.contains(check))
+            .collect()
     }
 
-    /// Whether the surjection proof was empty, which an explicit asset
-    /// entails.
-    #[must_use]
-    pub const fn surjection_proof_empty(self) -> bool {
-        self.surjection_proof_empty
-    }
-
-    /// Whether the coin's asset stayed explicit beside its committed
-    /// value.
-    #[must_use]
-    pub const fn asset_stayed_explicit(self) -> bool {
-        self.asset_stayed_explicit
-    }
-
-    /// Whether every member holds.
-    #[must_use]
-    pub const fn every_check_held(self) -> bool {
-        self.chain_reported_a_commitment
-            && self.commitment_is_the_registrys_own
-            && self.two_equal_amounts_committed_to_two_points
-            && self.rangeproof_present
-            && self.surjection_proof_empty
-            && self.asset_stayed_explicit
+    /// Record that one check held.
+    fn record(&mut self, check: CommittedSponsorCheck, held: bool) {
+        if held {
+            self.held.insert(check);
+        }
     }
 }
 
@@ -914,8 +943,8 @@ impl SponsorShapeRecord {
     /// What the run observed about a committed sponsor coin, where it
     /// funded one.
     #[must_use]
-    pub const fn committed(&self) -> Option<CommittedSponsorCensus> {
-        self.committed
+    pub const fn committed(&self) -> Option<&CommittedSponsorCensus> {
+        self.committed.as_ref()
     }
 
     /// What this lane does NOT establish, stated in the record itself.
@@ -1152,23 +1181,38 @@ impl SponsorShapePlanner {
         let program =
             decode_hex(&first.script).ok_or(SponsorShapeRefusal::MalformedCommittedSponsorCoin)?;
 
-        let census = CommittedSponsorCensus {
+        let mut census = CommittedSponsorCensus::default();
+        census.record(
             // The field the node reported is a commitment and not an
             // explicit amount, which its prefix is what says.
-            chain_reported_a_commitment: fields
-                .iter()
-                .all(|field| field[0] != EXPLICIT_VALUE_PREFIX),
-            commitment_is_the_registrys_own: fields == derived,
-            two_equal_amounts_committed_to_two_points: fields[0] != fields[1],
-            rangeproof_present: reported.iter().all(|output| !output.rangeproof.is_empty()),
-            surjection_proof_empty: reported
+            CommittedSponsorCheck::ChainReportedACommitment,
+            fields.iter().all(|field| field[0] != EXPLICIT_VALUE_PREFIX),
+        );
+        census.record(
+            CommittedSponsorCheck::CommitmentIsTheRegistrysOwn,
+            fields == derived,
+        );
+        census.record(
+            CommittedSponsorCheck::TwoEqualAmountsCommittedToTwoPoints,
+            fields[0] != fields[1],
+        );
+        census.record(
+            CommittedSponsorCheck::RangeproofPresent,
+            reported.iter().all(|output| !output.rangeproof.is_empty()),
+        );
+        census.record(
+            CommittedSponsorCheck::SurjectionProofEmpty,
+            reported
                 .iter()
                 .all(|output| output.surjection_proof.is_empty()),
-            asset_stayed_explicit: reported
+        );
+        census.record(
+            CommittedSponsorCheck::AssetStayedExplicit,
+            reported
                 .iter()
                 .all(|output| asset_of(&output.explicit_asset) == Some(asset)),
-        };
-        if !census.commitment_is_the_registrys_own {
+        );
+        if !census.holds(CommittedSponsorCheck::CommitmentIsTheRegistrysOwn) {
             return Err(SponsorShapeRefusal::CommittedSponsorCoinIsNotTheRegistrysOwn);
         }
         self.record.committed = Some(census);
