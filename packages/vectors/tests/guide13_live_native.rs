@@ -2063,6 +2063,19 @@ fn run_one_sponsor_shape(shape: vectors::live_sponsor_shapes::SponsorShape, exte
     }
     outcome.expect("the ceremony reached the target");
 
+    judge_one_sponsor_shape(record, &rendered, shape);
+}
+
+/// What a completed sponsored run must hold.
+///
+/// Split from the arranging on the rule the sponsor ceremony already
+/// followed before it was lifted: a function that both arranges a run
+/// and judges it makes the judging hard to read past the arranging.
+fn judge_one_sponsor_shape(
+    record: &vectors::live_sponsor_shapes::SponsorShapeRecord,
+    rendered: &str,
+    shape: vectors::live_sponsor_shapes::SponsorShape,
+) {
     // The sponsor round trip happened, and it bound to the exact bytes.
     let round = record.round().expect("the sponsor round trip completed");
     assert!(
