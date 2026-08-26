@@ -1731,9 +1731,20 @@ fn run_one_multi_shape(shape: vectors::live_multi_shapes::PrivateShape, extensio
     // a constant: the merge funds a three-output predecessor because a
     // two-output one funded from an explicit input can only offer it an
     // inverse pair.
+    //
+    // An EXPLICITLY funded shape names a predecessor it never funds, so
+    // its width is the count it asked the node for rather than the
+    // fixture's. Stated as its own case rather than folded into the
+    // other: the two are different questions, and a single expression
+    // covering both would stop catching a confidential ceremony that
+    // funded the wrong predecessor.
+    let expected_coins = match shape.explicit_funding() {
+        Some((outputs, _)) => outputs as usize,
+        None => shape.predecessor().outputs(),
+    };
     assert_eq!(
         record.coins().len(),
-        shape.predecessor().outputs(),
+        expected_coins,
         "the node funded a predecessor of a different width than the shape asked for",
     );
     assert!(
