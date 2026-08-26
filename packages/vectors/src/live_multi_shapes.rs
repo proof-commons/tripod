@@ -63,7 +63,7 @@
 use std::collections::BTreeMap;
 
 use linker::OwnerParameter;
-use linker::live_backend::LiveTransferComposition;
+use linker::live_backend::{LiveTransferComposition, LiveTransferRepresentationPlan};
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
     NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationStepKind,
@@ -1297,19 +1297,25 @@ impl MultiShapePlanner {
             .iter()
             .map(Self::receipt_destination)
             .collect::<Result<_, _>>()?;
-        let request = LiveTransferRequest::new(
+        let request = LiveTransferRequest::new_composing(
             receipts,
-            // The CONSUMED side: `recognize_receipts` reads it to
-            // decide a spent receipt's value form, and a request naming
-            // the other side would refuse its own inputs.
             live_destinations,
-            self.shape.composition().consumed(),
+            self.shape.composition(),
             RequestedForm::Sponsorless,
             SponsorChangeRequest::NotRequested,
-            // Present because the private request vocabulary requires it;
-            // the materializer takes its blinders from fixtures, so it is
-            // not a source of any opening.
-            Some(PublicTestRandomness::from_published_bytes([0x7e; 32])),
+            // Present because the CREATED side is confidential and
+            // blinding is what consumes randomness; the materializer
+            // takes its blinders from fixtures, so it is not a source of
+            // any opening. An exit crossing creates explicit values and
+            // offers none, which is the same rule read the other way.
+            //
+            // Withheld where the created side is explicit, because the
+            // request refuses randomness it has no blinding to spend it
+            // on -- and that refusal is the reason the rule had to move
+            // from the consumed side to the created one.
+            (self.shape.composition().created()
+                == LiveTransferRepresentationPlan::PrivateCommitted)
+                .then(|| PublicTestRandomness::from_published_bytes([0x7e; 32])),
         )
         .map_err(|_| PrivateRestartRefusal::ControlNotRequestable)?;
 
