@@ -1733,7 +1733,7 @@ mod tests {
         // §13.1's fifth source, and §13.6's separation held at the same
         // time: the plan says the registry exists and how wide it is, and
         // it says nothing about whether the private plan discloses less.
-        // The supporting count is FOUR of five and that is a fact
+        // The supporting count is FIVE of five and that is a fact
         // about the registry, not a minimality conclusion — which
         // `crate::live_minimality_report` is the only thing entitled to
         // draw. It read zero until both shapes of a pair had been run
@@ -1744,7 +1744,7 @@ mod tests {
             plan.minimality(),
             MinimalityRegistryStanding::Built {
                 pairs: crate::live_pairs::MinimalityPair::ALL.len(),
-                supporting: 4,
+                supporting: 5,
             },
         );
     }

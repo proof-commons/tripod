@@ -2144,7 +2144,7 @@ mod tests {
             .collect();
         assert_eq!(
             supporting,
-            BTreeSet::from(["one-to-one", "merge", "many-to-many", "split"]),
+            BTreeSet::from(["one-to-one", "merge", "many-to-many", "split", "sponsor"]),
         );
 
         for row in &rows {
@@ -2273,11 +2273,13 @@ mod tests {
         let mut universal = 0_usize;
         for (condition, (satisfied, standings)) in &board {
             if *condition == PairAcceptanceCondition::BothTargetTransactionsAccept {
-                assert_eq!(*satisfied, 4, "the acceptance conjunct");
-                // ONE pair is unsatisfied now that the split's private
-                // member has run, and it stands at the same member and
-                // names the private lane.
-                assert_eq!(standings.len(), 1);
+                assert_eq!(*satisfied, 5, "the acceptance conjunct");
+                // NO pair is unsatisfied any more, so the deficit set is
+                // empty. It is asserted empty rather than dropped: a
+                // later shape whose run stopped reproducing would put a
+                // standing back here, and a test that had stopped
+                // looking would not notice.
+                assert_eq!(standings.len(), 0);
                 for standing in standings {
                     assert!(matches!(
                         standing,

@@ -1286,27 +1286,35 @@ mod tests {
         // then would have been claiming one for pairs neither of whose
         // halves had ever reached a target.
         //
-        // Both halves of FOUR pairs have now reached one. The token
-        // moves to exactly what the census supports and no further:
-        // supported for the pairs that satisfy every conjunct, and for
-        // no others. It stays the weaker token while one pair is short,
-        // which is the whole reason the two tokens are distinct.
+        // Both halves of ALL FIVE pairs have now reached one, so the
+        // token moves to the stronger of the two. It moves because the
+        // census supports it and for no other reason: the weaker token
+        // stood while any pair was short, and no pair is short.
+        //
+        // What the stronger token does NOT say is that any pair MEMBER
+        // was submitted. None was, and `PairTargetVerdict` carries no
+        // variant that could say otherwise; what each member cites is
+        // an acceptance of its own SHAPE, which is this workspace's rule
+        // for moving a row and is a narrower fact than §16.2's words.
+        // The registry spells that difference at every one of these
+        // identities, and this token inherits the narrowness rather
+        // than escaping it.
         let target = projection();
         let report = assemble_live_minimality_report(target.clone()).expect("the report assembles");
         assert_eq!(
             report.standing(),
-            MinimalityStanding::SupportedForSomeClaimedPairsOnly,
+            MinimalityStanding::SupportedForEveryClaimedPair,
         );
         assert_eq!(report.census().pairs(), MinimalityPair::ALL.len());
         assert_eq!(report.census().claimed(), MinimalityPair::ALL.len());
-        assert_eq!(report.census().supporting(), 4);
-        // Not the stronger token, and the assertion is spelled because
-        // FOUR of five reaching every conjunct is precisely the state
-        // in which a report is most tempting to over-read -- nearer to
-        // complete than three was, and no more complete than three was.
+        assert_eq!(report.census().supporting(), 5);
+        // And NOT the weaker token, which is the assertion that now
+        // costs something: a census supporting every claimed pair and a
+        // report still hedging would be a report refusing to say what
+        // it recomputed.
         assert_ne!(
             report.standing(),
-            MinimalityStanding::SupportedForEveryClaimedPair,
+            MinimalityStanding::SupportedForSomeClaimedPairsOnly,
         );
 
         let validated =
@@ -1341,12 +1349,16 @@ mod tests {
         let target = projection();
         let mut report =
             assemble_live_minimality_report(target.clone()).expect("the report assembles");
-        report.standing = MinimalityStanding::SupportedForEveryClaimedPair;
+        // The injected token is the WEAKER one now, because the
+        // recomputation produces the stronger. Falsifying a derivation
+        // means claiming something it did not derive, whichever
+        // direction that happens to lie in.
+        report.standing = MinimalityStanding::SupportedForSomeClaimedPairsOnly;
         assert_eq!(
             validate_live_minimality_report(report, &target),
             Err(LiveMinimalityReportRefusal::StandingDiffers {
-                reported: MinimalityStanding::SupportedForEveryClaimedPair,
-                recomputed: MinimalityStanding::SupportedForSomeClaimedPairsOnly,
+                reported: MinimalityStanding::SupportedForSomeClaimedPairsOnly,
+                recomputed: MinimalityStanding::SupportedForEveryClaimedPair,
             }),
         );
     }
