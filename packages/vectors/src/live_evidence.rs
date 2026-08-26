@@ -1558,6 +1558,80 @@ pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 /// [`LiveInfrastructureBlocker::PredecessorConstructorAbsent`], is about
 /// a time-locked predecessor this workspace does not build, and neither
 /// clearing touched it.
+/// Whether the `time-locked-input` row is reachable at the boundary it
+/// declares.
+///
+/// FALSE, and this constant is the filed path for
+/// [`LiveInfrastructureBlocker::PredecessorConstructorAbsent`] rather
+/// than a note about it. The residual is NOT cleared, and the reason is
+/// not that the work was long: the row cannot be answered as it is
+/// typed, and clearing a residual on an observation its own row cannot
+/// carry would be the one error a run of record exists to prevent.
+///
+/// # The first gap is the one the residual already names
+///
+/// No time-locked constructor exists. `ObjectId::ReceiptTimeLocked` is a
+/// fully specified covenant branch in the architecture -- structurally
+/// the live transfer's twin, with the same shape on both sides -- but
+/// `compiler::live_transfer_plan::derive_class` refuses any analyzed
+/// program whose protocol object is not `ReceiptLive`, so a time-locked
+/// sibling is a compiler derivation this workspace has not built.
+///
+/// # The second gap is the one that decides the row
+///
+/// Building the constructor would still not produce the row's evidence,
+/// because the live covenant has no input-class check to violate. The
+/// live class is carried by CONSTRUCTOR TYPING and emits ZERO
+/// instructions: `RecognizedFact::LiveClass` maps to
+/// `Carrier::ConstructorTyping` with an empty instruction list, and no
+/// live fragment ever emits an input scriptPubKey introspection. What
+/// the emitted recognition fragment does compare is the input's ASSET --
+/// and `ReceiptLive` and `ReceiptTimeLocked` carry the SAME asset,
+/// differing only by a metadata field the script never reads. So a
+/// time-locked receipt would pass every comparison the leaf makes.
+///
+/// The class distinction is enforced by the LEAF COMMITMENT instead: a
+/// leaf runs only from a taptree its input's program commits to. A
+/// time-locked coin's program commits to the time-locked leaf set, so a
+/// candidate revealing a live-transfer leaf against it fails
+/// `VerifyTaprootCommitment` BEFORE a single opcode executes, and the
+/// target says `mandatory-script-verify-flag-failed (Witness program
+/// hash mismatch)`.
+///
+/// # Why that observation may not be filed against this row
+///
+/// The row declares [`crate::live_safety::EvidenceBoundary`]'s
+/// script-path member, and
+/// [`target_elements_conformance::protocol::ObservedOutcomeLayer::ScriptPathRejection`]
+/// is documented as the target having RUN the script path and failed.
+/// No script path runs here. Filing a pre-execution commitment failure
+/// under a member that says a script ran would be recording the layer
+/// the adapter's text-prefix classifier reports rather than the layer
+/// that happened -- the same mis-filing already recorded verbatim
+/// against the key-path probe, and known there rather than discovered
+/// here.
+///
+/// The refusal would also not be ATTRIBUTABLE to the time-locked class.
+/// What it attributes to is a leaf not committed by the spent program,
+/// which is the general fact §7.3 rests on and is true of ANY foreign
+/// taptree. An accepted live-predecessor control beside it would make
+/// the pair differ in which tree the coin sits in, not in which class
+/// the covenant recognized -- so the negative would establish the
+/// commitment rule and say nothing about receipt classes.
+///
+/// # What would close it
+///
+/// A ruling on which of two things the row wants, because the row as
+/// written asks for something the design does not produce. Either the
+/// row's boundary moves to the layer that actually refuses a
+/// cross-class predecessor -- at which point a time-locked constructor
+/// and one funding stage are the whole of the work -- or §7.3's
+/// structural claim is accepted as discharged by constructor typing and
+/// the row is retyped as first-party, the way its sibling
+/// `time-locked-output` already is. This wave reports the mis-typing
+/// rather than choosing between them.
+pub const THE_TIME_LOCKED_INPUT_ROW_IS_REACHABLE_AS_TYPED: bool = false;
+
 /// Whether any run has compared the public protocol projections of an
 /// ACCEPTED private transaction and its PAIRED ACCEPTED explicit one.
 ///
