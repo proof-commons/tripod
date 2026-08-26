@@ -1772,6 +1772,13 @@ mod byte_identity_tests {
         assert_eq!(digests[5], run::MERGE_SUCCESSOR_DIGEST);
         assert_eq!(digests[6], run::EXIT_CROSSING_SUCCESSOR_DIGEST);
         assert_eq!(digests[7], run::ENTRY_CROSSING_SUCCESSOR_DIGEST);
+        // The pure split is index EIGHT because it was appended, and it
+        // is pinned here for the reason the fee-bearing digest is: a
+        // node has accepted a candidate built against this fixture, so
+        // the digest and the identity are two halves of one observation
+        // and moving either alone would leave the register citing a run
+        // that produced the other.
+        assert_eq!(digests[8], run::PURE_SPLIT_SUCCESSOR_DIGEST);
     }
 
     /// The fee-bearing digest now carries an acceptance, and the two are
@@ -2564,4 +2571,37 @@ pub mod run_of_record {
 
     /// The entry crossing's wall time, in seconds.
     pub const ENTRY_CROSSING_WALL_SECONDS: f64 = 9.9;
+
+    /// The identity the target computed for the accepted PURE split.
+    ///
+    /// One receipt consumed, TWO created, both of them receipts, no
+    /// change and no fee. It moves no §15.2 row: `private-split` moved
+    /// on the three-output split and a row does not move twice. What it
+    /// answers is §16.2's second conjunct for the SPLIT pair, whose
+    /// private member is this shape and not that one.
+    pub const PURE_SPLIT_ACCEPTED_TXID: &str =
+        "544afb18a0016db35e007f1da9a49d60ba163b8cc565adf16fe25a04a198eea0";
+
+    /// How many bytes the pure split handed to the node.
+    pub const PURE_SPLIT_SUBMITTED_BYTES: usize = 9_136;
+
+    /// The output-witness proof bytes the pure split carried.
+    ///
+    /// TWO proofs for two created outputs, and the count is the whole
+    /// claim this run exists to make. A range proof is what a BLINDED
+    /// output carries and a fee output carries none, so two proofs over
+    /// two outputs is the measured form of "both created outputs are
+    /// receipts" -- the conjunct the fee-bearing one-in-two-out run
+    /// could not satisfy, its second output having been a fee.
+    pub const PURE_SPLIT_PROOF_BYTES: [usize; 2] = [4_174, 4_174];
+
+    /// The weight the target reported for the pure split.
+    pub const PURE_SPLIT_TARGET_WEIGHT: u64 = 10_096;
+
+    /// The successor fixture digest the pure split registered.
+    pub const PURE_SPLIT_SUCCESSOR_DIGEST: &str =
+        "af8d60ffa311847150f65df8fcbd94fd457c7db958c451dd29fa244efd4c78d7";
+
+    /// The pure split's wall time, in seconds.
+    pub const PURE_SPLIT_WALL_SECONDS: f64 = 14.1;
 }

@@ -879,19 +879,23 @@ pub const fn recorded_acceptance(
             case: "explicit-split",
             accepted_identity: crate::live_explicit_shapes::run_of_record::SPLIT_ACCEPTED_TXID,
         },
-        // The private lane has run two shapes near this one and neither
-        // is it. Its split creates THREE outputs — two recipients and a
-        // balancing change — and this member creates two; its only
-        // recorded one-in-two-out run is the fee-bearing shape, whose
-        // second output is a FEE and not a receipt. A pair member is
-        // not answered by a run of a different cardinality, and it is
-        // not answered by a run whose second output is a different
-        // ROLE, so the honest answer is that this shape has not run.
-        (P::Split, Plan::PrivateCommitted) => A::NoRunOfThisShape {
-            because: "the recorded private split creates three outputs (two recipients and a \
-                      balancing change) and this member creates two; the only recorded private \
-                      one-in-two-out run is the fee-bearing shape, whose second output is a fee \
-                      role rather than a receipt",
+        // The private lane HAS now run this member's own shape. It did
+        // not before, and the two shapes it had run near this one are
+        // still not it: the recorded split creates THREE outputs, and
+        // the only other one-in-two-out private run is the fee-bearing
+        // shape whose second output is a FEE. Neither was answered by
+        // being close, so a shape of exactly two created receipts was
+        // built and submitted, and the node accepted it.
+        //
+        // What makes the acceptance this member's rather than another
+        // near miss is measured rather than argued: the run carried TWO
+        // output-witness range proofs over TWO created outputs, and a
+        // fee output carries no range proof at all. Two proofs over two
+        // outputs is the measured form of "both created outputs being
+        // RECEIPTS".
+        (P::Split, Plan::PrivateCommitted) => A::ObservedForThisShape {
+            case: "private-pure-split",
+            accepted_identity: crate::live_multi_shapes::run_of_record::PURE_SPLIT_ACCEPTED_TXID,
         },
         // 2 -> 1.
         (P::Merge, Plan::Explicit) => A::ObservedForThisShape {
