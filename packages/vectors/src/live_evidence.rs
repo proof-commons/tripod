@@ -352,6 +352,68 @@ pub enum LiveInfrastructureBlocker {
     /// The time-locked-predecessor row's blocker: §7.3 makes the two
     /// constructors distinct and this workspace builds only the live one,
     /// so there is no time-locked output to offer a live transfer leaf.
+    ///
+    /// # It is no longer carried, and the ruling that moved it
+    ///
+    /// It left by a RULING and not by a run, and the ruling is a
+    /// correction of the ground rather than a verdict on the work. The
+    /// clearing rule this residual stood on asked for an ATTRIBUTABLE
+    /// observed pair — a time-locked spend REFUSED naming the lock and
+    /// the same shape after maturity ACCEPTED — and that pair was
+    /// demanded by a MIS-TYPING of the row it belonged to. Two things
+    /// are wrong with it, and either alone is decisive.
+    ///
+    /// §10.4 refuses the maturity half. The time-locked class is a
+    /// receipt CLASS whose maturity is committed cycle arithmetic, and
+    /// the guide forbids inferring that it uses the target's timelock
+    /// facilities; there is no consensus lock to expire, so no "after
+    /// maturity" control exists to stand beside a refusal, and the pair
+    /// was never constructible rather than merely unbuilt.
+    ///
+    /// The refusal half is unattributable in principle. What excludes a
+    /// foreign class at a spend is the LEAF COMMITMENT — the pinned
+    /// target source refuses a revealed leaf its spent program does not
+    /// commit to before any opcode runs — and that refusal is
+    /// PROGRAM-GENERIC: every foreign taptree draws the identical
+    /// verdict, so no observation of it can ever NAME the lock. A wave
+    /// that built the constructor and ran the spend would come back with
+    /// a fact about the commitment rule and nothing about receipt
+    /// classes.
+    ///
+    /// So the row was retyped FIRST-PARTY rather than pursued, beside
+    /// the `time-locked-output` row it is the sibling of, and
+    /// [`crate::live_fault_discharge`] discharges it against the
+    /// constructor typing that is the real protection:
+    /// `compiler::live_transfer_plan::derive_class` admits only
+    /// `ObjectId::ReceiptLive` as the protocol object, so the class
+    /// cannot be constructed into a live transfer at all. The residual
+    /// is gone from [`carried_residuals`], which is now EMPTY.
+    ///
+    /// # What did not move with it
+    ///
+    /// No target ever refused a time-locked spend, and nothing here says
+    /// one did. This clearing rests on a ruling about what the row asks
+    /// for; it cites no run, no identity, and no node.
+    ///
+    /// No time-locked constructor was built either. The class remains a
+    /// compiler derivation this workspace has not written, and the
+    /// retyping is the statement that the row never needed one — not the
+    /// statement that one now exists.
+    ///
+    /// The key-path probe's follow-up phase keeps its own typed carrier,
+    /// OPEN and untouched: the observed-layer vocabulary still has no
+    /// key-path member, so a key-path refusal is still filed under a
+    /// script-path name, and [`crate::live_keypath_probe`] still reports
+    /// that and changes nothing. This clearing quotes the same
+    /// mis-filing as a reason the commitment observation may not be
+    /// filed either, which is a use of the finding and not a repair of
+    /// it. The internal-key unspendability residual stands where it
+    /// stood, and the probe's record still says so in its own bytes.
+    ///
+    /// The word stays in this vocabulary because it is still the right
+    /// name for the condition, and a lane that genuinely has no
+    /// predecessor constructor to build a spend from must be able to say
+    /// so. What it may no longer be is a standing residual of this plan.
     PredecessorConstructorAbsent,
     /// No fixture constructs the remaining §15.2 positive shapes beyond
     /// the one-to-one control.
@@ -933,9 +995,19 @@ const fn a_positive_control_exists() -> bool {
 /// The blocker one specific negative row carries, where it has its own.
 ///
 /// Most target-boundary rows are blocked by the absent positive control.
-/// Two carry a blocker of their own as well, and the more specific one
-/// wins: a reader repairing the pipeline needs to know that these two
-/// would still be outstanding after the digest existed.
+/// One carries a blocker of its own as well, and the more specific one
+/// wins: a reader repairing the pipeline needs to know that it would
+/// still be outstanding after the digest existed.
+///
+/// # The time-locked row left by being retyped
+///
+/// `time-locked-input` carried
+/// [`LiveInfrastructureBlocker::PredecessorConstructorAbsent`] until the
+/// row was RETYPED first-party. It is not a target-boundary
+/// row any more — [`crate::live_fault_discharge`] discharges it beside
+/// its `time-locked-output` sibling — so it can carry no specific
+/// blocker at all, and its entry is removed here rather than left to
+/// describe a row this function no longer reaches.
 ///
 /// # It was three, and the sponsor row left
 ///
@@ -959,7 +1031,6 @@ const fn a_positive_control_exists() -> bool {
 /// run of its own shape that nothing now prevents.
 fn specific_blocker(row: &LiveSafetyRow) -> Option<LiveInfrastructureBlocker> {
     match row.name() {
-        "time-locked-input" => Some(LiveInfrastructureBlocker::PredecessorConstructorAbsent),
         "raw-transaction-bypassing-safe-construction" => {
             Some(LiveInfrastructureBlocker::RawSurgeryPathAbsent)
         }
@@ -1524,114 +1595,6 @@ pub fn blocker_census(
 /// measured weight is a weight of.
 pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 
-/// The residuals this plan inherits and does not clear.
-///
-/// Named as a set rather than as prose so that a later wave clearing one
-/// has to remove it here, and so a reader can see at a glance which of
-/// them are this workspace's to clear.
-///
-/// The doc comment stating that was sitting above
-/// [`UNAUTHORIZING_SIGNATURE`] rather than above this function, which is
-/// where the two are separated back. It is repaired here rather than
-/// left because this function is what the paragraph is about and a
-/// reader following it would otherwise be told the constant is a set.
-///
-/// ONE member, and it was three. Two have left, and they left by
-/// different kinds of evidence, which is the distinction this set exists
-/// to keep legible.
-///
-/// [`LiveInfrastructureBlocker::SighashProfileUnreviewed`] was cleared by
-/// the owner-sighash review verdict together with the
-/// post-verdict re-typing — by a verdict, that is, and never by a
-/// run, which is the discipline that residual was separated from the
-/// digest blocker in order to keep.
-///
-/// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`] was
-/// cleared the other way, by a RUN and only by a run: a sponsored
-/// explicit control carrying a sponsor owner's authorization was
-/// submitted to a real node, accepted, read back byte for byte, and
-/// mined. Its defining site said a returned byte stack is not a target
-/// authorization until a target has accepted a control carrying it, and
-/// that is the sentence this clearing satisfies.
-///
-/// The one that remains,
-/// [`LiveInfrastructureBlocker::PredecessorConstructorAbsent`], is about
-/// a time-locked predecessor this workspace does not build, and neither
-/// clearing touched it.
-/// Whether the `time-locked-input` row is reachable at the boundary it
-/// declares.
-///
-/// FALSE, and this constant is the filed path for
-/// [`LiveInfrastructureBlocker::PredecessorConstructorAbsent`] rather
-/// than a note about it. The residual is NOT cleared, and the reason is
-/// not that the work was long: the row cannot be answered as it is
-/// typed, and clearing a residual on an observation its own row cannot
-/// carry would be the one error a run of record exists to prevent.
-///
-/// # The first gap is the one the residual already names
-///
-/// No time-locked constructor exists. `ObjectId::ReceiptTimeLocked` is a
-/// fully specified covenant branch in the architecture -- structurally
-/// the live transfer's twin, with the same shape on both sides -- but
-/// `compiler::live_transfer_plan::derive_class` refuses any analyzed
-/// program whose protocol object is not `ReceiptLive`, so a time-locked
-/// sibling is a compiler derivation this workspace has not built.
-///
-/// # The second gap is the one that decides the row
-///
-/// Building the constructor would still not produce the row's evidence,
-/// because the live covenant has no input-class check to violate. The
-/// live class is carried by CONSTRUCTOR TYPING and emits ZERO
-/// instructions: `RecognizedFact::LiveClass` maps to
-/// `Carrier::ConstructorTyping` with an empty instruction list, and no
-/// live fragment ever emits an input scriptPubKey introspection. What
-/// the emitted recognition fragment does compare is the input's ASSET --
-/// and `ReceiptLive` and `ReceiptTimeLocked` carry the SAME asset,
-/// differing only by a metadata field the script never reads. So a
-/// time-locked receipt would pass every comparison the leaf makes.
-///
-/// The class distinction is enforced by the LEAF COMMITMENT instead: a
-/// leaf runs only from a taptree its input's program commits to. A
-/// time-locked coin's program commits to the time-locked leaf set, so a
-/// candidate revealing a live-transfer leaf against it fails
-/// `VerifyTaprootCommitment` BEFORE a single opcode executes, and the
-/// target says `mandatory-script-verify-flag-failed (Witness program
-/// hash mismatch)`.
-///
-/// # Why that observation may not be filed against this row
-///
-/// The row declares [`crate::matrix::EvidenceBoundary`]'s script-path
-/// member, and
-/// [`target_elements_conformance::protocol::ObservedOutcomeLayer::ScriptPathRejection`]
-/// is documented as the target having RUN the script path and failed.
-/// No script path runs here. Filing a pre-execution commitment failure
-/// under a member that says a script ran would be recording the layer
-/// the adapter's text-prefix classifier reports rather than the layer
-/// that happened -- the same mis-filing already recorded verbatim
-/// against the key-path probe, and known there rather than discovered
-/// here.
-///
-/// The refusal would also not be ATTRIBUTABLE to the time-locked class.
-/// What it attributes to is a leaf not committed by the spent program,
-/// which is the general fact §7.3 rests on and is true of ANY foreign
-/// taptree. An accepted live-predecessor control beside it would make
-/// the pair differ in which tree the coin sits in, not in which class
-/// the covenant recognized -- so the negative would establish the
-/// commitment rule and say nothing about receipt classes.
-///
-/// # What would close it
-///
-/// A ruling on which of two things the row wants, because the row as
-/// written asks for something the design does not produce. Either the
-/// row's boundary moves to the layer that actually refuses a
-/// cross-class predecessor -- at which point a time-locked constructor
-/// and one funding stage are the whole of the work -- or §7.3's
-/// structural claim is accepted as discharged by constructor typing and
-/// the row is retyped as first-party, the way its sibling
-/// `time-locked-output` already is. This wave reports the mis-typing
-/// rather than choosing between them.
-pub const THE_TIME_LOCKED_INPUT_ROW_IS_REACHABLE_AS_TYPED: bool = false;
-
 /// Whether any run has compared the public protocol projections of an
 /// ACCEPTED private transaction and its PAIRED ACCEPTED explicit one.
 ///
@@ -1682,9 +1645,53 @@ pub const THE_TIME_LOCKED_INPUT_ROW_IS_REACHABLE_AS_TYPED: bool = false;
 /// seen.
 pub const A_PAIRED_ACCEPTED_PROJECTION_COMPARISON_EXISTS: bool = false;
 
+/// The residuals this plan inherits and does not clear.
+///
+/// Named as a set rather than as prose so that a later wave clearing one
+/// has to remove it here, and so a reader can see at a glance which of
+/// them are this workspace's to clear.
+///
+/// This paragraph has now been separated back TWICE. It sat above
+/// [`UNAUTHORIZING_SIGNATURE`] once and was moved; the move put it above
+/// the time-locked row's typed stop instead of above this function, so
+/// the set went on carrying no doc comment of its own while a constant
+/// beside it carried one describing a set. It is attached to the
+/// function it is about here, and the stop it was glued to is gone.
+///
+/// EMPTY, and it was three. All three have left, and they left by three
+/// different kinds of evidence, which is the distinction this set exists
+/// to keep legible.
+///
+/// [`LiveInfrastructureBlocker::SighashProfileUnreviewed`] was cleared by
+/// the owner-sighash review verdict together with the
+/// post-verdict re-typing — by a verdict, that is, and never by a
+/// run, which is the discipline that residual was separated from the
+/// digest blocker in order to keep.
+///
+/// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`] was
+/// cleared the other way, by a RUN and only by a run: a sponsored
+/// explicit control carrying a sponsor owner's authorization was
+/// submitted to a real node, accepted, read back byte for byte, and
+/// mined. Its defining site said a returned byte stack is not a target
+/// authorization until a target has accepted a control carrying it, and
+/// that is the sentence this clearing satisfies.
+///
+/// [`LiveInfrastructureBlocker::PredecessorConstructorAbsent`] left the
+/// third way, by a RULING that corrected the ground: the observed pair
+/// its clearing rule demanded was demanded by a mis-typing of the row it
+/// belonged to, one half of that pair is refused by §10.4 and the other
+/// is unattributable in principle, and the row is retyped first-party
+/// where its sibling already sat. Its defining site carries the whole of
+/// that, including what did NOT move with it — no time-locked spend was
+/// ever observed refused, and no constructor was built.
+///
+/// An empty set is not a smaller set of obligations. It says that every
+/// residual this plan inherited has been discharged at its own defining
+/// site by its own rule, and it says nothing about the rows a run has
+/// still to answer: those the census counts, and this does not.
 #[must_use]
 pub fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
-    BTreeSet::from([LiveInfrastructureBlocker::PredecessorConstructorAbsent])
+    BTreeSet::new()
 }
 
 #[cfg(test)]
@@ -1698,16 +1705,24 @@ mod tests {
 
     #[test]
     fn the_first_party_half_of_the_matrix_is_answered_in_full() {
-        // The matrix's pre-target half, after both censuses. Twenty-five
+        // The matrix's pre-target half, after both censuses. Twenty-six
         // rows of §15 are refused before any target sees the bytes, and
         // every one of them has been driven to its own refusal against
         // its own control. Nothing here is outstanding, and nothing here
         // was closed by a wildcard: the two rows that left this half
         // left because their declared boundary was wrong, and the count
         // is recomputed from the classification rather than adjusted.
+        //
+        // It read twenty-five until `time-locked-input` ARRIVED here,
+        // and it arrived the same way those two left — because its
+        // declared boundary was wrong. The row asked the target to
+        // refuse a class the target never reads; the ruling retyped it
+        // beside the `time-locked-output` sibling it always had, and the
+        // discharge is a refusal driven against a control like every
+        // other row's in this half.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let census = plan.census();
-        assert_eq!(census.first_party_discharged(), 25);
+        assert_eq!(census.first_party_discharged(), 26);
         assert_eq!(census.first_party_undischarged(), 0);
 
         let outstanding: BTreeSet<_> = plan
@@ -2192,20 +2207,27 @@ mod tests {
         // positive half has never run.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         assert!(!plan.census().every_required_row_is_answered());
-        // TWO rows carry a blocker of their own, and it was three: a
-        // predecessor constructor and a raw path, neither of which the
-        // owner message was ever in the way of.
+        // ONE row carries a blocker of its own, and it was three: the
+        // raw path, which the owner message was never in the way of.
         //
-        // The third was the sponsor envelope signer, and it left because
-        // its residual cleared on an observed acceptance. The row it
-        // blocked, missing-sponsor-authorization, is NOT answered by
-        // that: it is a negative asking that a control missing the
+        // The second was the sponsor envelope signer, and it left
+        // because its residual cleared on an observed acceptance. The
+        // row it blocked, missing-sponsor-authorization, is NOT answered
+        // by that: it is a negative asking that a control missing the
         // sponsor's authorization be refused, and what was accepted is a
         // positive sponsored control. The row moved from blocked to
-        // awaiting a run of its own shape, which is why the count above
-        // fell by one while the completeness assertion below did not
-        // change at all.
-        assert_eq!(plan.census().infrastructure_blocked(), 2);
+        // awaiting a run of its own shape, which is why the count fell
+        // by one while the completeness assertion below did not change
+        // at all.
+        //
+        // The third was the predecessor constructor, and its row left
+        // this side of the matrix entirely: `time-locked-input` is
+        // discharged first-party now, on the ruling that retyped it. So
+        // this count fell for a second reason of a different kind — a
+        // blocked row became an ANSWERED one rather than a waiting one —
+        // and the completeness assertion still does not change, because
+        // the positive half is what it is about.
+        assert_eq!(plan.census().infrastructure_blocked(), 1);
     }
 
     #[test]

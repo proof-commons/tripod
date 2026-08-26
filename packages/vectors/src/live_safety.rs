@@ -825,22 +825,37 @@ pub const OWNER_SIGNATURE_FAULTS: &[LiveSafetyRow] = &[
 ///
 /// The table splits on §7.3's rule that live class is structural. A
 /// mutation the constructor can express is refused by the constructor; a
-/// mutation about what a *predecessor* or a *foreign output* carries is
-/// only expressible in bytes, and the target's own introspection is what
-/// refuses it.
+/// mutation about what a *foreign output* carries is only expressible in
+/// bytes, and the target's own introspection is what refuses it.
+///
+/// The split is not "a predecessor implies the target". Whether the
+/// target refuses a predecessor depends on whether the covenant reads
+/// the property in question, and for the receipt CLASS it does not: the
+/// class is constructor typing, which emits nothing for a leaf to run.
+/// The `time-locked-input` row was typed target-side on that inference
+/// and is typed first-party here instead, beside the
+/// `time-locked-output` row it is the sibling of.
 pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
-    // A time-locked predecessor offered to a live leaf is the object the
-    // input recognition authenticates being the wrong one. §7.3 makes the
-    // two constructors distinct, so the input side's recognition relation
-    // is exactly what such a spend violates.
-    linked(
+    // A time-locked predecessor is refused where its *output* sibling is,
+    // and the row is typed as that sibling rather than as a target
+    // introspection. §7.3 makes the two constructors distinct
+    // and the distinction is carried by CONSTRUCTOR TYPING, which emits no
+    // instructions: no live fragment introspects an input's program, and
+    // the two receipt classes carry the same asset, so a live leaf that
+    // ran would compare nothing that separates them. What separates them
+    // before any leaf runs is the linked table the input recognition
+    // searches — `compiler::live_transfer_plan::derive_class` admits only
+    // `ReceiptLive` as the protocol object, so no time-locked constructor
+    // can be in it — and, on a chain, the leaf commitment. The commitment
+    // refusal is PROGRAM-GENERIC and may not be filed here: it attributes
+    // to a leaf the spent program does not commit to, which is true of
+    // every foreign taptree, so no observation of it can ever name the
+    // lock. [`crate::live_fault_discharge`] discharges the row.
+    pre_target(
         S::ObjectFault,
         "time-locked-input",
-        L::SemanticFact,
-        B::ScriptPathRejection,
-        recognition(TransactionSide::Input, ObjectId::ReceiptLive),
-        wrong_object,
-        "WrongRecognizedObject",
+        L::LinkedConstructorProgram,
+        B::AbiConstructionRejection,
     ),
     // A time-locked *output* is refused by the constructor: the
     // destination table selects among linked live constructors and has no
