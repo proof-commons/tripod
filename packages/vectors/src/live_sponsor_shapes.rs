@@ -2613,6 +2613,89 @@ pub mod sponsored_run_of_record {
 mod tests {
     use super::{SPONSOR_CHANGE, SPONSOR_FEE, SponsorShape, sponsored_run_of_record};
 
+    /// A sponsored private successor REGISTERS, and its reserve asset
+    /// survives the projection.
+    ///
+    /// The typed stop this module files says a sponsored private
+    /// successor cannot be registered: a case carries one explicit asset
+    /// and the role vocabulary had no member for a sponsor's change, so
+    /// two protocol receipts and a reserve-asset remainder could not come
+    /// from ONE registered case. This registers exactly that case and
+    /// reads the projection back.
+    ///
+    /// It is a check on the REGISTRY and claims nothing about a chain.
+    /// What it establishes is the half the stop was about: the case is
+    /// statable, it derives, it digests, and the asset the sponsor's
+    /// remainder carries arrives at the reading side as the RESERVE one
+    /// rather than as the case's protocol asset — which is the
+    /// substitution that would have committed the remainder against the
+    /// wrong generator while the tally still looked closed.
+    #[test]
+    fn a_sponsored_private_successor_registers_and_keeps_its_reserve_asset() {
+        use crate::live_plan::{PROTOCOL_ASSET, RESERVE_ASSET};
+        use crate::live_proof_bearing_observation::register_multi;
+        use target_elements_conformance::confidential_fixture::{
+            ConfidentialFixtureOutput, FixtureOutputRole,
+        };
+        use transaction::live_materialize::ConfidentialOutputRole;
+
+        let (digest, view) = register_multi(
+            "ctf-v1/sponsored-private-successor-registration-check",
+            PROTOCOL_ASSET,
+            [0x11; 32],
+            vec![
+                ConfidentialFixtureOutput {
+                    role: FixtureOutputRole::Primary,
+                    semantic_amount: 400_000_000,
+                    output_program: vec![0x51, 0x20, 0xaa],
+                },
+                ConfidentialFixtureOutput {
+                    role: FixtureOutputRole::Balancing,
+                    semantic_amount: 300_000_000,
+                    output_program: vec![0x51, 0x20, 0xbb],
+                },
+                ConfidentialFixtureOutput {
+                    role: FixtureOutputRole::SponsorChange {
+                        asset: RESERVE_ASSET,
+                    },
+                    semantic_amount: SPONSOR_CHANGE,
+                    output_program: vec![0x51, 0x20, 0xcc],
+                },
+            ],
+        )
+        .expect("the sponsored successor registers");
+
+        // One case, three outputs, two assets across them.
+        assert_eq!(view.outputs().len(), 3);
+        assert_eq!(*view.explicit_asset().internal(), PROTOCOL_ASSET);
+
+        // The two protocol receipts take the case's asset, stated as the
+        // ABSENCE of a reserve one rather than as a repeat of it.
+        assert_eq!(view.outputs()[0].role(), ConfidentialOutputRole::Primary);
+        assert!(view.outputs()[0].reserve_asset().is_none());
+        assert_eq!(view.outputs()[1].role(), ConfidentialOutputRole::Balancing);
+        assert!(view.outputs()[1].reserve_asset().is_none());
+
+        // The remainder is the sponsor's, and it carries the reserve
+        // asset through the projection the writing side now reaches.
+        assert_eq!(
+            view.outputs()[2].role(),
+            ConfidentialOutputRole::SponsorChange,
+        );
+        assert_eq!(
+            *view.outputs()[2]
+                .reserve_asset()
+                .expect("the sponsor change names an asset")
+                .internal(),
+            RESERVE_ASSET,
+        );
+
+        // It solves nothing: the remainder's blinder is derived, and the
+        // balancing receipt is what absorbs the input sum.
+        assert!(view.outputs()[2].value_blinder().is_some());
+        assert_ne!(digest.bytes(), &[0_u8; 32]);
+    }
+
     /// The reserve sub-equation, stated where a change to either number
     /// has to notice.
     ///
