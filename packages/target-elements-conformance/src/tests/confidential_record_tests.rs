@@ -144,7 +144,7 @@ fn a_blinded_sponsor_coin_trips_the_explicitness_clause_before_the_proof_clause(
     let policy = "bb".repeat(32);
     let mut blinded = transaction(&policy);
     blinded.outputs[2] = DecodedFundingOutput {
-        asset: DecodedAssetField::Explicit(policy.clone()),
+        asset: DecodedAssetField::Explicit(policy),
         value: DecodedValueField::Commitment(commitment(8)),
         nonce: vec![0x02; 33],
         program: vec![0x51],
