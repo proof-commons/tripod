@@ -569,11 +569,6 @@ const fn missing_owner(mutation: &RelationMutation) -> bool {
     matches!(mutation, RelationMutation::MissingRequiredOwner)
 }
 
-/// The `WrongRecognizedObject` predicate, spelled once.
-const fn wrong_object(mutation: &RelationMutation) -> bool {
-    matches!(mutation, RelationMutation::WrongRecognizedObject)
-}
-
 /// The `WrongRecognizedAsset` predicate, spelled once.
 const fn wrong_asset(mutation: &RelationMutation) -> bool {
     matches!(mutation, RelationMutation::WrongRecognizedAsset)
@@ -902,17 +897,24 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         "UndeclaredObjectFamily",
     ),
     // Owner metadata is committed by the constructor, so replacing it
-    // changes the program the output pays to. What reaches the target is a
-    // spend of an output whose constructor is not the one the linked
-    // bundle emits, which the input recognition refuses.
-    linked(
+    // RETYPED FIRST-PARTY, joining the three siblings that share
+    // `ReceiptInputIsNotALiveReceipt`. Owner metadata is committed by the
+    // constructor, so a program differing only in owner is a coin of a
+    // taptree the deployment did not build — which on a chain draws the
+    // program-generic commitment refusal every foreign taptree draws,
+    // saying nothing about owners. The row's real boundary is the
+    // FIRST-PARTY input recognition, which searches the linked
+    // destination table and refuses a program it does not hold. The
+    // T5-060 ruling settled the target-side wall and escalated the row
+    // `MutantBuilderOwed` only because the honest third-owner program
+    // could not be built at two owners; a third owner threaded through
+    // the bundle link now supplies it, so the row is driven where its
+    // siblings are.
+    pre_target(
         S::ObjectFault,
         "wrong-owner-metadata",
-        L::SemanticFact,
-        B::ScriptPathRejection,
-        recognition(TransactionSide::Input, ObjectId::ReceiptLive),
-        wrong_object,
-        "WrongRecognizedObject",
+        L::LinkedConstructorProgram,
+        B::AbiConstructionRejection,
     ),
     // RETYPED FIRST-PARTY, and this row is the one of the seven whose
     // refusal is NOT program-generic at all. Owner metadata is

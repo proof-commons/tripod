@@ -223,32 +223,11 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     ),
     // §15.4 — the class, asset and constructor faults still waiting.
     //
-    // The first five share one ground and it is the time-locked row's:
-    // what separates one receipt class from another before any leaf runs
-    // is the LEAF COMMITMENT, and a spend of a foreign program is
-    // refused by the commitment rule rather than by anything that reads
-    // a class.
-    // RETYPED. Its target-side wall is settled and is no longer what
-    // keeps it here: owner metadata is committed by the constructor, so
-    // changing it changes the program spent, and a chain answers that
-    // with the commitment rule in the words every foreign taptree draws.
-    // Its four siblings left this register on exactly that ground.
-    //
-    // What keeps THIS one is work rather than a wall, and the work is
-    // named. The input recognition answers `ReceiptInputIsNotALiveReceipt`
-    // for any program its linked table does not hold, and the field that
-    // would separate this row from the three siblings sharing that class
-    // is a program whose OWNER alone differs. No such program can be
-    // built today: `live_plan::relocatable_live_bundles_composing` links
-    // exactly two owners, and a third has to be threaded through it
-    // before an unlinked owner's honestly derived program exists to
-    // offer. `THIRD_SCALAR` is published for that purpose and nothing
-    // consumes it yet.
-    entry(
-        "wrong-owner-metadata",
-        G::MutantBuilderOwed,
-        "a program differing only in owner needs a third owner threaded through the bundle link",
-    ),
+    // The row that shared this section's head with a fifth
+    // recognition-class sibling, `wrong-owner-metadata`, has LEFT: its
+    // honest third-owner program is now buildable, a third owner threaded
+    // through the bundle link, and it is discharged first-party beside
+    // its three siblings on the input recognition's own refusal.
     entry(
         "vault-control-entitlement-or-bare-u-output",
         G::OwnerSigningOverForeignBytesAbsent,

@@ -471,6 +471,88 @@ pub fn relocatable_live_bundles_composing(
     Ok(bundles)
 }
 
+/// The demonstration bundle set WIDENED by a third owner — negative
+/// evidence only.
+///
+/// The demonstration link is taken over two published owners, so a
+/// program derived under [`THIRD_SCALAR`] is one the recognition table
+/// does not hold. It is emitted here under the SAME shapes, plan and
+/// placeholder symbols as the two linked owners, so what separates it
+/// from a linked program is the owner ALONE — which is the field the
+/// `wrong-owner-metadata` §15.4 row needs staged and the two-owner
+/// demonstration bundles cannot supply. This is a private fixture used
+/// by the fault-discharge ceremony to extract that third owner's honest
+/// program; it is never the demonstration set and moves no recorded
+/// digest.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when a constructor or an
+/// emission refuses.
+pub fn relocatable_live_bundles_with_third_owner()
+-> Result<Vec<CandidateRelocatableLiveTransferBundle>, VectorError> {
+    let target = reviewed_target()?;
+    let plan = live_transfer_plan()?;
+    let shapes = LiveShapeVocabulary::Demonstration.shape_set();
+    let placeholders = live_symbols(
+        &target,
+        vec![0x5a; 32],
+        vec![0x22; 32],
+        vec![0x44; 20],
+        vec![0x55; 32],
+    )?;
+
+    let mut bundles = Vec::with_capacity(6);
+    for scalar in [FIRST_SCALAR, SECOND_SCALAR, THIRD_SCALAR] {
+        for representation in [
+            LiveTransferRepresentationPlan::Explicit,
+            LiveTransferRepresentationPlan::PrivateCommitted,
+        ] {
+            let constructor = derive_live_receipt_constructor_composing(
+                &target,
+                &plan,
+                LiveTransferComposition::homogeneous(representation),
+                published_owner(&scalar)?,
+                shapes.clone(),
+                static_transfer_leaf_set(representation, &shapes),
+            )
+            .map_err(|_| VectorError::LiveSubstrateUnavailable)?;
+            bundles.push(
+                emit_candidate_live_bundle(&target, &plan, &constructor, placeholders.clone())
+                    .map_err(|_| VectorError::LiveSubstrateUnavailable)?,
+            );
+        }
+    }
+    Ok(bundles)
+}
+
+/// A three-owner ABI resolved against the demonstration deployment —
+/// negative evidence only.
+///
+/// It links [`relocatable_live_bundles_with_third_owner`] against the
+/// SAME deployment parameters the demonstration ABI uses, so the third
+/// owner's destination program is derived under the real symbols and
+/// differs from a linked owner's program in the owner alone. The
+/// demonstration ABI stays two-owner and every digest it feeds is
+/// untouched; this ABI's only consumer is the `wrong-owner-metadata`
+/// discharge, which offers the third owner's program to the two-owner
+/// recognition and observes it refused.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when the link or the ABI
+/// derivation refuses.
+pub fn three_owner_live_abi() -> Result<CandidateLiveTransferAbi, VectorError> {
+    let target = reviewed_target()?;
+    let curve = OracleLiveCurve::new(reviewed_target()?);
+    let bundles = relocatable_live_bundles_with_third_owner()?;
+    let deployment = live_deployment_for_asset(PROTOCOL_ASSET, RESERVE_ASSET, FEE_PROGRAM_DIGEST)?;
+    let linked = link_live_candidate(&target, &bundles, &deployment)
+        .map_err(|_| VectorError::LiveSubstrateUnavailable)?;
+    derive_live_transfer_abi(&target, &linked, &curve)
+        .map_err(|_| VectorError::LiveSubstrateUnavailable)
+}
+
 /// The deployment parameters the demonstration link resolves against.
 ///
 /// The counterpart of [`relocatable_live_bundles`], and exposed for the

@@ -1999,7 +1999,12 @@ mod tests {
         // against its own control, with its own changed field.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let census = plan.census();
-        assert_eq!(census.first_party_discharged(), 33);
+        // THIRTY-FOUR now: `wrong-owner-metadata` joined the three
+        // siblings sharing `ReceiptInputIsNotALiveReceipt`, its honest
+        // third-owner program buildable once a third owner was threaded
+        // through the bundle link, so it is discharged first-party where
+        // its declared boundary — the input recognition — actually is.
+        assert_eq!(census.first_party_discharged(), 34);
         assert_eq!(census.first_party_undischarged(), 0);
 
         let outstanding: BTreeSet<_> = plan

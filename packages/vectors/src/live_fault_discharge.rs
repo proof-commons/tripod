@@ -242,6 +242,20 @@ pub enum FaultMutation {
     /// genuinely different program for the same owner — which is what
     /// STALE means, as against corrupted or foreign.
     OfferAReceiptInputUnderASupersededConstructor,
+    /// Offer a receipt input under a program differing ONLY in owner.
+    ///
+    /// The third of the recognition's shared-class rows to be staged,
+    /// and its field is the OWNER alone: an honestly derived receipt
+    /// program under [`crate::live_plan::THIRD_SCALAR`], same vocabulary,
+    /// same representation, same shapes and the same deployment symbols
+    /// as the two linked owners, so what makes the coin foreign is the
+    /// owner metadata and nothing else. A byte-flipped key would answer
+    /// the taptree-nothing-linked-for question the time-locked sibling
+    /// drives; a third-owner program answers wrong-owner-metadata's,
+    /// which is why the mutant is derived rather than corrupted and why
+    /// a third owner had to be threaded through the bundle link before
+    /// it could exist to offer.
+    OfferAProgramDifferingOnlyInOwner,
     /// Declare each receipt's leaf under the OTHER receipt's control
     /// block.
     ///
@@ -638,6 +652,24 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
             "stale-constructor",
             V::LiveTransferFinalization,
             M::OfferAReceiptInputUnderASupersededConstructor,
+            transaction_is!(TransactionRefusal::ReceiptInputIsNotALiveReceipt(_)),
+            "ReceiptInputIsNotALiveReceipt",
+        ),
+        // The fourth of the recognition's shared-class rows, and the one
+        // the T5-060 ruling escalated `MutantBuilderOwed` because its
+        // mutant could not be built at two owners. Its target-side wall
+        // is settled — owner metadata is committed by the constructor,
+        // so a program differing only in owner is a coin of a taptree
+        // the deployment did not build, and every foreign taptree draws
+        // the same program-generic commitment refusal on a chain, which
+        // says nothing about owners. What the row is answerable by is the
+        // FIRST-PARTY recognition, and its field is the owner alone: a
+        // third owner threaded through the bundle link yields an honest
+        // program the two-owner table does not hold.
+        case(
+            "wrong-owner-metadata",
+            V::LiveTransferFinalization,
+            M::OfferAProgramDifferingOnlyInOwner,
             transaction_is!(TransactionRefusal::ReceiptInputIsNotALiveReceipt(_)),
             "ReceiptInputIsNotALiveReceipt",
         ),
@@ -1317,6 +1349,37 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
             let stale = program(&superseded, &FIRST_SCALAR, Explicit)?;
             let view = PublicConstructionView::new(vec![
                 view_of(&abi, first, stale, ValueField::Explicit(400)),
+                view_of(
+                    &abi,
+                    second,
+                    program(&abi, &SECOND_SCALAR, Explicit)?,
+                    ValueField::Explicit(600),
+                ),
+            ])
+            .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            Ok(Staged {
+                control: finalize_outcome(&abi, &request, &control_view, None)?,
+                malformed: finalize_outcome(&abi, &request, &view, None)?,
+            })
+        }
+        M::OfferAProgramDifferingOnlyInOwner => {
+            let (request, control_view) = explicit_control(&abi)?;
+            let [first, second] = honest_points()?;
+            // One change: the OWNER the first receipt's program was
+            // derived under. The three-owner ABI links a third owner
+            // against the SAME deployment the demonstration ABI uses, so
+            // its explicit program is derived under the real symbols and
+            // differs from the linked first owner's program in the owner
+            // alone. The demonstration recognition holds only the two
+            // linked owners, so it does not find this program and refuses
+            // naming the outpoint — the input recognition's answer for a
+            // coin its linked table does not hold, which is the field
+            // that separates this row from its two siblings drawing the
+            // same class.
+            let widened = crate::live_plan::three_owner_live_abi()?;
+            let third_owner = program(&widened, &crate::live_plan::THIRD_SCALAR, Explicit)?;
+            let view = PublicConstructionView::new(vec![
+                view_of(&abi, first, third_owner, ValueField::Explicit(400)),
                 view_of(
                     &abi,
                     second,
