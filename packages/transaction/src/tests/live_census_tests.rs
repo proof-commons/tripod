@@ -248,7 +248,7 @@ fn try_parts_census(
         requests: vec![request()],
     });
 
-    OwnerSigningCensus::from_parts(
+    OwnerSigningCensus::over_foreign_bytes_for_negative_evidence(
         target,
         parts.candidate,
         parts.protected_bytes,
@@ -609,7 +609,7 @@ fn an_internal_key_with_no_output_key_is_refused() {
     let protected_bytes = candidate.encode();
     let output_witnesses = candidate.output_witnesses().to_vec();
 
-    let refused = OwnerSigningCensus::from_parts(
+    let refused = OwnerSigningCensus::over_foreign_bytes_for_negative_evidence(
         &target,
         candidate,
         protected_bytes,

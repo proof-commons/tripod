@@ -39,14 +39,26 @@
 //! taproot internal key — is a *constructor argument* that the leaf
 //! commitment check consumes and drops. Nothing key-shaped is retained.
 //!
-//! # Why there is no public constructor
+//! # Why there is no public PRODUCTION constructor
 //!
-//! [`OwnerSigningCensus`] is reachable from exactly one public route,
-//! [`OwnerSigningCensus::from_proof_finalized`], and that route takes a
-//! materialized confidential candidate. The pattern is the finalized
+//! [`OwnerSigningCensus`] is reachable from two production routes,
+//! [`OwnerSigningCensus::from_proof_finalized`] and
+//! [`OwnerSigningCensus::from_explicit_finalized`], and each takes a
+//! value only finalization produces. The pattern is the finalized
 //! form's own: private fields, immutable accessors, and a constructor
 //! whose argument cannot be obtained except by going through
 //! finalization.
+//!
+//! There is a THIRD route,
+//! [`OwnerSigningCensus::over_foreign_bytes_for_negative_evidence`], and
+//! it is not a production one. It takes parts a caller assembled — the
+//! skipping route this section's other paragraphs warn of — and it is
+//! admitted for negative evidence alone: it exists so a script-path
+//! §15 negative can be signed over its own mutated bytes and reach the
+//! leaf's own clause instead of dying at the signature gate. It signs
+//! nothing and takes no key, the census excluding every secret-bearing
+//! input by shape, so it creates no production secret path. Its own
+//! doc carries the full posture; the name is the warning.
 //!
 //! The route takes the materialized value rather than the frozen
 //! candidate inside it because the frozen candidate does not carry the
@@ -772,31 +784,69 @@ impl OwnerSigningCensus {
         )
     }
 
-    /// The census of parts a test supplies directly.
+    /// The census of decoded foreign bytes a caller supplies directly —
+    /// NEGATIVE-EVIDENCE MACHINERY, never a production route.
     ///
-    /// An authorized, bounded seam and not a second public route: it is
-    /// crate-private *and* test-only — the attribute is what keeps it
-    /// from being a route at all outside a test build — it runs the same
-    /// clause list as the public route rather than a relaxed one, and
-    /// its whole purpose is that the refusals above can be shown firing.
-    /// Several of them are
-    /// structurally unreachable from a materialized candidate — a frozen
+    /// # What this is for, stated once and plainly
+    ///
+    /// It exists so a SCRIPT-PATH negative becomes attributable past the
+    /// signature gate. Every §15 row that declares a script-path refusal
+    /// needs the target to RUN the leaf, the leaf checks an owner
+    /// signature first, and surgery after signing invalidates it — so a
+    /// mutant carrying a stale signature dies at the signature check and
+    /// the row's own class is never what refused. This route lets an
+    /// evidence ceremony build a census over the MUTATED bytes, form the
+    /// owner message from it, and sign afresh, so the re-signed mutant
+    /// passes the signature check and reaches the leaf's own clause. The
+    /// row class this discharges is spelled
+    /// `OwnerSigningOverForeignBytesAbsent` in the negative-half
+    /// register, and this constructor is the component that register
+    /// named absent.
+    ///
+    /// # Why it is not a production surface
+    ///
+    /// The two production routes — [`Self::from_proof_finalized`] and
+    /// [`Self::from_explicit_finalized`] — take a value only finalization
+    /// produces, so neither can skip finalization. This route takes
+    /// parts a caller assembled, which is exactly the skipping the module
+    /// header warns of, and it is admitted for negative evidence ALONE:
+    /// no production construction path calls it, and it is documented so
+    /// that none ever does. The `for_negative_evidence` in its name is
+    /// load-bearing rather than decorative.
+    ///
+    /// # Keys, and the ADR-015 posture
+    ///
+    /// It signs nothing and takes no key. The census excludes every
+    /// secret-bearing input by SHAPE `(´[ADR015-rule:security:test-material]´)`
+    /// — no opening, blinder, nonce, key or proof input has a field to
+    /// enter — so this route creates no production secret path and cannot.
+    /// The signing an evidence ceremony does AROUND it takes disposable
+    /// regtest keys only, the same public material every lane in this
+    /// crate authorizes nothing outside regtest with; this route is the
+    /// census half of that ceremony and the disposability is the whole
+    /// ceremony's, not a property this method could weaken.
+    ///
+    /// # What it runs
+    ///
+    /// The SAME [`Self::assemble`] clause list the production routes run,
+    /// not a relaxed one. Several of that list's refusals are
+    /// structurally unreachable from a finalized candidate — a frozen
     /// candidate's output-witness vector is one entry per output by the
     /// transaction type's own invariant, and its protected bytes are the
-    /// bytes it computed — and a refusal that no test can reach is a
-    /// refusal nobody has checked says what it says.
+    /// bytes it computed — and a refusal no caller can reach is a refusal
+    /// nobody has checked says what it says; this seam is how they are
+    /// shown firing.
     ///
     /// # Errors
     ///
     /// [`OwnerCensusRefusal`], at the first clause the parts fail.
-    #[cfg(test)]
     #[expect(
         clippy::too_many_arguments,
         reason = "the seam takes the assembled clause list's own arguments; \
                   bundling them into a parts struct would give the seam a \
                   shape the public route does not have"
     )]
-    pub(crate) fn from_parts(
+    pub fn over_foreign_bytes_for_negative_evidence(
         target: &ReviewedElementsTapscriptDefinition,
         candidate: TargetTransaction,
         protected_bytes: Vec<u8>,
