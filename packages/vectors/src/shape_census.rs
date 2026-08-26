@@ -766,9 +766,19 @@ impl RemovalPath {
                  fragment recognizes a fee output BY FORM, at a negative version marker against \
                  the digest of the empty program, and never by amount. What is missing is a shape \
                  that says a sponsorless form may carry one. This is a guide-level reading rather \
-                 than a registry clause, and it is filed as a path rather than taken, because the \
-                 vocabulary states a REVIEWED reading of the target and changing one is a ruling \
-                 rather than an edit."
+                 than a registry clause, so it stood filed until the owner's fee-matrix ruling at \
+                 gate commit 0.5.7-dev made changing a reviewed reading a decision rather than an \
+                 edit. It was then TAKEN, and the taking found more than the filing had \
+                 anticipated. Three further readings decide WHERE the fee sits and had to move \
+                 with the output count -- the family-range census, the isolation fragment's own \
+                 emission, and the pattern census deciding whether that fragment is emitted at \
+                 all, which had been a pure alias of the sponsor question. Selection had to count \
+                 declared fee positions out of the destinations before matching. The fee clause \
+                 had to read its asset off who funded the fee, a sponsorless form having no \
+                 reserve-asset input while Elements balances per asset. The explicit conservation \
+                 relation had to gain the fee as a term. And the deployment had to be welded to \
+                 the digest an empty program actually hashes to, the fixture constant it carried \
+                 hashing to no program at all."
             }
         }
     }
