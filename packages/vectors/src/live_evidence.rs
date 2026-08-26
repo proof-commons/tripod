@@ -20,7 +20,7 @@
 //!
 //! # The honest finding this plan carries
 //!
-//! Twenty-three of the twenty-six positive rows of §15.1 and §15.2 are
+//! Twenty-four of the twenty-six positive rows of §15.1 and §15.2 are
 //! answered by a target. Each stands at
 //! [`LiveRowStanding::NativeRunObserved`], carrying the identity a real
 //! node computed for a transfer of that row's own shape which it
@@ -29,18 +29,19 @@
 //! independently recomputed message. The standing carries the identity
 //! so the claim can be checked against a chain rather than believed.
 //!
-//! A twenty-fourth is answered and no target was involved in it. The
+//! A twenty-fifth is answered and no target was involved in it. The
 //! deterministic-public-fixture-openings row's own gate is the
 //! byte-identity contract rather than an acceptance, and it stands at
 //! [`LiveRowStanding::DeterminismObserved`] — a member minted for it,
 //! counted in its own bucket, and never added to the acceptance figure.
 //! A reader asking how much a real node has said should read the
-//! twenty-three and not the twenty-four.
+//! twenty-four and not the twenty-five.
 //!
-//! The two that did not move stand at
+//! The ONE that did not move stands at
 //! [`LiveRowStanding::NativeRunRequired`] — a statement that a run
-//! would answer them and not a statement that nothing could. Both are
-//! private rows, and the delta test below names their grounds.
+//! would answer it and not a statement that nothing could. It is
+//! `projection-equality-with-paired-explicit`, and the delta test below
+//! names its ground.
 //!
 //! This paragraph has been rewritten each time a wave observed
 //! something, and the rewriting is the discipline rather than churn: it
@@ -1005,6 +1006,23 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         "target-ct-conservation" => {
             Some(crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID)
         }
+        // A sponsored PRIVATE successor: a blinded sponsor coin in at an
+        // explicit asset, blinded receipt destinations, a committed
+        // sponsor change, and an explicit reserve fee outside both
+        // balance equations. Accepted and mined, with the sponsor's
+        // committed change located in the node's own copy.
+        //
+        // Its absence here was the same defect the conservation arm
+        // above records: the guide closeout moves this row on this
+        // identity and the matrix classified it as still awaiting a
+        // run, and a row that has moved in one artifact and not the
+        // other is a row nobody is checking. An acceptance of an
+        // EXPLICIT sponsored control would not have done — this class
+        // asks for confidential sponsor values, and it is answered only
+        // by a run of its own shape.
+        "private-sponsor-values" => {
+            Some(crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_TXID)
+        }
         // One receipt consumed and THREE outputs created: two recipients
         // and the balancing change back to the sender.
         "private-split" => Some(crate::live_multi_shapes::run_of_record::SPLIT_ACCEPTED_TXID),
@@ -1817,6 +1835,7 @@ mod tests {
                 "one-input-split-into-two",
                 "one-input-to-one-output",
                 "private-many-to-many-representative",
+                "private-sponsor-values",
                 "private-merge",
                 "private-one-to-one",
                 "private-several-distinct-owners",
@@ -1834,16 +1853,29 @@ mod tests {
                 "target-ct-conservation",
             ]),
         );
-        assert_eq!(plan.census().native_run_observed(), 23);
+        assert_eq!(plan.census().native_run_observed(), 24);
 
-        // The three positive private classes that did NOT move are named
-        // here rather than left to the count, because a matrix that only
-        // said how many rows moved could not say which.
-        // Private-sponsor-values asks for confidential sponsor values and
-        // every sponsored control accepted so far is explicit, the
-        // fixture-openings row asks for a determinism observation rather
-        // than a submission, and the projection-equality row needs both
-        // sides of its pair accepted.
+        // The positive private class that did NOT move is named here
+        // rather than left to the count, because a matrix that only said
+        // how many rows moved could not say which.
+        //
+        // Private-sponsor-values USED to be listed here, on the ground
+        // that every sponsored control accepted so far was explicit and
+        // an explicit acceptance answers nothing about a confidential
+        // one. That ground held until a sponsored PRIVATE successor was
+        // accepted and mined; the guide closeout moved the row on that
+        // identity while this matrix still classified it as awaiting a
+        // run, and the arm above is the matrix catching up rather than
+        // a new claim.
+        //
+        // The fixture-openings row also left, by a rule of its own: it
+        // asks for a determinism observation rather than a submission,
+        // and it is asserted below at the standing minted to hold one.
+        //
+        // What remains is the projection-equality row, which needs both
+        // sides of its pair accepted AND an observation comparing their
+        // projections. Both sides of three pairs are now accepted; no
+        // run compares the projections, so the row stays.
         //
         // Private-merge USED to be in this list, described as structurally
         // unconstructible on this lane. It was never unconstructible: it
@@ -1885,10 +1917,7 @@ mod tests {
         // a member able to hold it. The row is asserted below at that
         // member, and it is asserted NOT to be in `answered` — because
         // no run of its shape produced anything, and that remains true.
-        for unmoved in [
-            "private-sponsor-values",
-            "projection-equality-with-paired-explicit",
-        ] {
+        for unmoved in ["projection-equality-with-paired-explicit"] {
             assert!(
                 !answered.contains(unmoved),
                 "{unmoved} claims an answer no run of its own shape produced",
@@ -1904,9 +1933,10 @@ mod tests {
         );
         assert!(!answered.contains("deterministic-public-fixture-openings"));
         assert_eq!(plan.census().determinism_observed(), 1);
-        // The acceptance buckets did NOT move on this account, which is
-        // the whole claim of a separate bucket made checkable.
-        assert_eq!(plan.census().native_run_observed(), 23);
+        // The acceptance buckets did NOT move on the determinism row's
+        // account, which is the whole claim of a separate bucket made
+        // checkable.
+        assert_eq!(plan.census().native_run_observed(), 24);
     }
 
     #[test]
