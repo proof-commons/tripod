@@ -933,25 +933,26 @@ pub const fn recorded_acceptance(
             accepted_identity:
                 crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
         },
-        // Its private half has no run, and the differences are stated
-        // rather than summarized. The one recorded sponsored private
-        // successor carries a BLINDED sponsor coin, a COMMITTED sponsor
-        // change, and two blinded destinations; this member states an
-        // explicit sponsor coin funded exactly to the fee, no change
-        // role, and one destination.
+        // Its private half HAS now been run as its own shape. The one
+        // sponsored private successor recorded before it is still not
+        // this member: that one carries a BLINDED sponsor coin, a
+        // COMMITTED sponsor change, and two blinded destinations, where
+        // this member states an explicit sponsor coin funded exactly to
+        // the fee, no change role, and one destination.
         //
-        // Nothing is claimed here about what a target would do with
-        // this member's shape. The sponsor arc observed that a
-        // COMMITTED sponsor value requires committed change, and this
-        // member's sponsor value is explicit, so that observation does
-        // not reach it either way. What is recorded is that the shape
-        // has not been run, which is the whole of what is known.
-        (P::Sponsor, Plan::PrivateCommitted) => A::NoRunOfThisShape {
-            because: "the one recorded sponsored private successor carries a blinded sponsor \
-                      coin, a committed sponsor change, and two blinded destinations, and this \
-                      member states an explicit sponsor coin funded exactly to the fee, no \
-                      change role, and one destination; what a target would make of this shape \
-                      is unobserved and nothing is claimed about it",
+        // The arc's observation that a COMMITTED sponsor value requires
+        // committed change never reached this member and never forbade
+        // it: an explicit sponsor coin brings the all-zero blinder, so
+        // there is nothing for a change term to absorb. Running it is
+        // what settled that, and the acceptance rules the change out by
+        // arithmetic rather than by inspection -- the reserve
+        // sub-equation is `sponsor_input == fee + change`, this coin was
+        // funded to exactly the fee, and a node that accepted it cannot
+        // have been handed a change output.
+        (P::Sponsor, Plan::PrivateCommitted) => A::ObservedForThisShape {
+            case: "sponsored-private-explicit-no-change",
+            accepted_identity:
+                crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_TXID,
         },
     }
 }
