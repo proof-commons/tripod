@@ -709,8 +709,8 @@ fn the_crossing_fragment_requires_the_explicit_form_everywhere_but_the_absorber(
     // The property is read off the EMITTED BYTES rather than off the
     // source, because the bytes are what a node executes. Each
     // destination position contributes one introspection, one form
-    // comparison and one drop, so the two fragments differ in exactly
-    // the comparison bytes and in nothing else.
+    // comparison and one drop, and only the comparison differs between
+    // the two fragments.
     let target = reviewed_target();
     let subject = shape(1, 3, 0, Absent);
     let absorber = absorber_position(subject).expect("a last destination");
@@ -720,21 +720,40 @@ fn the_crossing_fragment_requires_the_explicit_form_everywhere_but_the_absorber(
     let private =
         private_destination_form_fragment(&target, subject).expect("the private fragment builds");
 
-    // Same length: same positions, same reads, same drops. Only the
-    // form each position is held to differs.
+    // Same POSITIONS, same reads, same drops. Not the same length, and
+    // the difference is a fact about the reviewed registry rather than
+    // about this fragment: the explicit value class declares ONE prefix,
+    // so its form check is a plain equality, while the confidential
+    // class declares two and its check is a mask-and-compare. Counting
+    // introspections and drops is therefore the honest way to say "the
+    // same positions, held to different forms" -- a length comparison
+    // would be asserting that two different form checks cost the same,
+    // which they do not and need not.
+    let count_op = |program: &TapscriptProgram, opcode: OpcodeId| {
+        program
+            .instructions()
+            .iter()
+            .filter(|instruction| **instruction == TapscriptInstruction::Opcode(opcode))
+            .count()
+    };
+    for opcode in [OpcodeId::InspectOutputValue, OpcodeId::Drop] {
+        assert_eq!(
+            count_op(&crossing, opcode),
+            count_op(&private, opcode),
+            "the crossing fragment reads and drops the same positions the private one does",
+        );
+    }
     assert_eq!(
-        crossing.instructions().len(),
-        private.instructions().len(),
-        "the crossing fragment adds no position and drops none; it only changes which form \
-         each position is held to",
+        count_op(&crossing, OpcodeId::InspectOutputValue),
+        3,
+        "one read per destination of the three-destination shape",
     );
-    assert_ne!(
-        crossing.instructions(),
-        private.instructions(),
-        "a crossing fragment identical to the private one would hold the explicit \
-         destinations to the confidential form",
+    assert!(
+        crossing.instructions().len() < private.instructions().len(),
+        "two of the three positions take the shorter single-prefix equality, so an exit \
+         crossing's form obligation is CHEAPER than the wholly private one rather than an \
+         addition to it",
     );
-
     // The absorber's own position, emitted alone, IS the private
     // fragment's treatment of a one-destination shape — which is the
     // statement that the absorber is an ordinary blinded destination
