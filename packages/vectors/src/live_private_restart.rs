@@ -211,6 +211,20 @@ pub enum PrivateRestartRefusal {
     IssuanceNamedNoAsset,
     /// The deployment could not be linked against the issued asset.
     RelinkRefused,
+    /// The linked deployment's destination table holds no constructor
+    /// at the plan a program was asked for.
+    ///
+    /// Separated from [`Self::RelinkRefused`] because the two are
+    /// different failures a wave has to tell apart: one is a deployment
+    /// that would not link at all, and this is a deployment that linked
+    /// and then did not carry the key somebody asked it for. A crossing
+    /// ceremony asks for two different keys, so a single refusal
+    /// covering both would say which deployment failed and never which
+    /// side.
+    NoConstructorForPlan {
+        /// Which plan the table was asked for.
+        plan: LiveTransferRepresentationPlan,
+    },
     /// A fixture the ceremony registers is not one the registry admits.
     FixtureNotRegistrable {
         /// Which handle.
@@ -1373,7 +1387,7 @@ pub(crate) fn owner_program(
     Ok(abi
         .destinations()
         .get(&OwnerParameter::new(owner), plan)
-        .ok_or(PrivateRestartRefusal::RelinkRefused)?
+        .ok_or(PrivateRestartRefusal::NoConstructorForPlan { plan })?
         .instance()
         .program()
         .to_vec())
