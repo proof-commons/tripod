@@ -1727,3 +1727,402 @@ fn a_signer_input_that_would_carry_an_opening_is_refused() {
         },
     );
 }
+
+// --- The sponsor's change position --------------------------------------
+
+/// The reserve asset a sponsor's coin brings in, distinct from the
+/// protocol asset in every byte so that a test which confused the two
+/// could not pass by coincidence.
+const RESERVE_ASSET: [u8; 32] = [0x5d; 32];
+
+/// The sponsor change's freely chosen blinder.
+const SPONSOR_BLINDER: [u8; SCALAR_BYTES] = [0x26; SCALAR_BYTES];
+
+/// What the sponsor's change returns.
+const SPONSOR_CHANGE_AMOUNT: u64 = 1_000;
+
+/// The reserve asset, as a typed identifier.
+fn reserve_asset() -> AssetId {
+    AssetId::from_internal(RESERVE_ASSET)
+}
+
+/// The balancing blinder once a sponsor's change is one of the others.
+///
+/// This is the whole absorber claim, written as arithmetic: the solved
+/// blinder subtracts the sponsor change's freely chosen blinder along
+/// with the primary's, which is what "the existing balancing election
+/// absorbs the sponsor residue" MEANS.
+fn balancing_blinder_with_sponsor_change() -> [u8; SCALAR_BYTES] {
+    stub_solve(&INPUT_BLINDER, &[PRIMARY_BLINDER, SPONSOR_BLINDER])
+}
+
+/// The successor fixture with a sponsor's change beside its two protocol
+/// outputs.
+fn sponsored_successor_fixture() -> ConfidentialFixtureView {
+    ConfidentialFixtureView::new(
+        SUCCESSOR_DIGEST,
+        asset(),
+        INPUT_BLINDER,
+        ParityOutcome::Settled { counter: 0 },
+        vec![
+            ConfidentialFixtureOutputView::new(
+                ConfidentialOutputRole::Primary,
+                PRIMARY_AMOUNT,
+                vec![0x51, 0x20, 0xaa],
+                PRIMARY_BLINDER,
+                [0x32; SCALAR_BYTES],
+                [0x42; SCALAR_BYTES],
+            ),
+            ConfidentialFixtureOutputView::new(
+                ConfidentialOutputRole::Balancing,
+                BALANCING_AMOUNT,
+                vec![0x51, 0x20, 0xbb],
+                balancing_blinder_with_sponsor_change(),
+                [0x33; SCALAR_BYTES],
+                [0x43; SCALAR_BYTES],
+            ),
+            ConfidentialFixtureOutputView::sponsor_change(
+                SPONSOR_CHANGE_AMOUNT,
+                vec![0x51, 0x20, 0xcc],
+                reserve_asset(),
+                SPONSOR_BLINDER,
+                [0x34; SCALAR_BYTES],
+                [0x44; SCALAR_BYTES],
+            ),
+        ],
+    )
+}
+
+/// The frozen view carrying that successor.
+fn sponsored_view() -> FrozenConfidentialFixtureView {
+    let mut entries = BTreeMap::new();
+    entries.insert(PREDECESSOR.to_owned(), predecessor_fixture());
+    entries.insert(SUCCESSOR.to_owned(), sponsored_successor_fixture());
+    FrozenConfidentialFixtureView::new(entries)
+}
+
+/// The sponsored intent: two protocol destinations and one sponsor
+/// change, the last carrying the reserve asset.
+fn sponsored_intent() -> ConfidentialConstructionIntent {
+    let mut destinations = destinations();
+    destinations.push(ConfidentialDestinationIntent::new(
+        SPONSOR_CHANGE_AMOUNT,
+        reserve_asset(),
+        vec![0x51, 0x20, 0xcc],
+        FixtureOpeningReference::new(SUCCESSOR.to_owned(), SUCCESSOR_DIGEST, 2),
+        ConfidentialOutputRole::SponsorChange,
+    ));
+    ConfidentialConstructionIntent::new(
+        vec![input()],
+        destinations,
+        NonProtocolFundingRegion::default(),
+        profiles(),
+        3,
+        0,
+    )
+}
+
+#[test]
+fn the_existing_balancing_election_absorbs_a_sponsor_changes_residue() {
+    // THE ABSORBER CLAIM, decided by running rather than by reading the
+    // arithmetic again. A spike argued that a blinded sponsor change is
+    // simply one more freely chosen blinder and that the single
+    // balancing election already elected absorbs it, needing no second
+    // election and no new role in the solve. This is that claim executed.
+    let materialized = materialize(
+        &sponsored_intent(),
+        &sponsored_view(),
+        &StubMaterializer::default(),
+        &StubChecker::default(),
+    )
+    .expect("the sponsored candidate materializes");
+
+    let outputs = materialized.proof_finalized().protected().outputs();
+    assert_eq!(outputs.len(), 3, "the sponsor change reached the outputs");
+
+    // The claim itself: the balancing output's blinder is the solve over
+    // BOTH freely chosen blinders. Had the sponsor change been left out
+    // of `others`, this would be `balancing_blinder()` instead, and the
+    // two are different values.
+    assert_ne!(
+        balancing_blinder_with_sponsor_change(),
+        balancing_blinder(),
+        "the two solves coincide, so this test could not tell them apart",
+    );
+    assert_eq!(
+        outputs[1].value(),
+        ValueField::Commitment(stub_commitment(
+            asset(),
+            BALANCING_AMOUNT,
+            &balancing_blinder_with_sponsor_change(),
+        )),
+        "the balancing output did not absorb the sponsor change's blinder",
+    );
+
+    // The sponsor's change carries the RESERVE asset explicitly and its
+    // value as a commitment -- the asymmetry §10.7 requires, since the
+    // isolation fragment introspects the asset and no value field at all.
+    assert_eq!(outputs[2].asset(), AssetField::Explicit(reserve_asset()));
+    assert_eq!(
+        outputs[2].value(),
+        ValueField::Commitment(stub_commitment(
+            reserve_asset(),
+            SPONSOR_CHANGE_AMOUNT,
+            &SPONSOR_BLINDER,
+        )),
+        "the sponsor change was committed against the wrong asset",
+    );
+
+    // And the protocol region is untouched by it: the two protocol
+    // outputs still carry the protocol asset, and the semantic balance
+    // they close is the one they would close if no sponsor were here.
+    assert_eq!(outputs[0].asset(), AssetField::Explicit(asset()));
+    assert_eq!(outputs[1].asset(), AssetField::Explicit(asset()));
+    assert_eq!(PRIMARY_AMOUNT + BALANCING_AMOUNT, CONSUMED);
+}
+
+#[test]
+fn a_sponsor_change_does_not_decide_the_transactions_protocol_asset() {
+    // The reserve asset is a different asset, and the agreement check
+    // that every protocol destination carries ONE asset must not read it
+    // as a disagreement. Before the position existed, this intent was
+    // refused as `ProtocolAssetMismatch` -- which is the refusal that
+    // made a sponsored confidential transfer inexpressible rather than
+    // merely unbuilt.
+    let intent = sponsored_intent();
+    assert!(
+        matches!(
+            intent.destinations()[2].role(),
+            ConfidentialOutputRole::SponsorChange
+        ),
+        "the fixture under test stopped carrying a sponsor change",
+    );
+    assert!(!ConfidentialOutputRole::SponsorChange.is_a_protocol_member());
+    assert!(ConfidentialOutputRole::SponsorChange.brings_a_chosen_blinder());
+
+    materialize(
+        &intent,
+        &sponsored_view(),
+        &StubMaterializer::default(),
+        &StubChecker::default(),
+    )
+    .expect("a reserve-asset change is not an asset disagreement");
+}
+
+/// What the sponsor's coin holds: the fee it pays and the change it
+/// takes back, which is the reserve sub-equation written as a constant.
+const SPONSOR_FUNDED: u64 = SPONSOR_CHANGE_AMOUNT + SPONSOR_FEE;
+
+/// The explicit fee the sponsor's coin pays.
+const SPONSOR_FEE: u64 = 250;
+
+/// The sponsor coin's own value blinder, as its funding fixture derived
+/// it.
+const SPONSOR_INPUT_BLINDER: [u8; SCALAR_BYTES] = [0x17; SCALAR_BYTES];
+
+/// The handle of the fixture that FUNDED the sponsor's coin.
+const SPONSOR_PREDECESSOR: &str = "ctf-v1/sponsor-reserve-predecessor";
+
+/// Its digest.
+const SPONSOR_PREDECESSOR_DIGEST: [u8; 32] = [0x73; 32];
+
+/// The outpoint the sponsor's coin sits at.
+fn sponsor_consumed() -> Outpoint {
+    outpoint(0xc2, 0)
+}
+
+/// The fixture that funded the sponsor's coin.
+///
+/// Its own registered case, carrying the RESERVE asset as its explicit
+/// asset. That is what makes the sponsor input's opening the registry's
+/// like every other opening, rather than a second kind of thing the
+/// materializer would have to be taught: a sponsor's coin is an output
+/// of a funding transaction, and a funding transaction is a fixture.
+fn sponsor_predecessor_fixture() -> ConfidentialFixtureView {
+    ConfidentialFixtureView::new(
+        SPONSOR_PREDECESSOR_DIGEST,
+        reserve_asset(),
+        [0_u8; SCALAR_BYTES],
+        ParityOutcome::Settled { counter: 0 },
+        vec![ConfidentialFixtureOutputView::new(
+            ConfidentialOutputRole::Primary,
+            SPONSOR_FUNDED,
+            vec![0x00, 0x14, 0x5a],
+            SPONSOR_INPUT_BLINDER,
+            [0x35; SCALAR_BYTES],
+            [0x45; SCALAR_BYTES],
+        )],
+    )
+}
+
+/// The input sum the successor registers once a sponsor coin is one of
+/// the consumed inputs.
+///
+/// The sponsor's blinder is an ADDEND here and not an exclusion, which
+/// is the asymmetry the whole design turns on: the sponsor's amount is
+/// out of the protocol subtotal, and the sponsor's blinder is in the
+/// transaction-wide sum, because the blinder equation does not know
+/// which asset a term came from.
+fn sponsored_input_blinder_sum() -> [u8; SCALAR_BYTES] {
+    stub_solve(&INPUT_BLINDER, &[SPONSOR_INPUT_BLINDER])
+}
+
+/// The whole sponsored confidential shape's successor fixture.
+fn whole_shape_successor_fixture() -> ConfidentialFixtureView {
+    let balancing = stub_solve(
+        &sponsored_input_blinder_sum(),
+        &[PRIMARY_BLINDER, SPONSOR_BLINDER],
+    );
+    ConfidentialFixtureView::new(
+        SUCCESSOR_DIGEST,
+        asset(),
+        sponsored_input_blinder_sum(),
+        ParityOutcome::Settled { counter: 0 },
+        vec![
+            ConfidentialFixtureOutputView::new(
+                ConfidentialOutputRole::Primary,
+                PRIMARY_AMOUNT,
+                vec![0x51, 0x20, 0xaa],
+                PRIMARY_BLINDER,
+                [0x32; SCALAR_BYTES],
+                [0x42; SCALAR_BYTES],
+            ),
+            ConfidentialFixtureOutputView::new(
+                ConfidentialOutputRole::Balancing,
+                BALANCING_AMOUNT,
+                vec![0x51, 0x20, 0xbb],
+                balancing,
+                [0x33; SCALAR_BYTES],
+                [0x43; SCALAR_BYTES],
+            ),
+            ConfidentialFixtureOutputView::sponsor_change(
+                SPONSOR_CHANGE_AMOUNT,
+                vec![0x51, 0x20, 0xcc],
+                reserve_asset(),
+                SPONSOR_BLINDER,
+                [0x34; SCALAR_BYTES],
+                [0x44; SCALAR_BYTES],
+            ),
+        ],
+    )
+}
+
+#[test]
+fn the_whole_sponsored_confidential_shape_materializes() {
+    // THE SHAPE §15.2 ASKS FOR, built end to end in this crate: a
+    // blinded-value sponsor coin consumed beside the receipts, a blinded
+    // sponsor change returned, an explicit fee paid, and blinded receipt
+    // destinations -- with every asset field explicit throughout.
+    //
+    // What a node thinks of it is a separate question and is not
+    // answered here. This settles that the construction EXISTS, which
+    // was the thing that did not before: the materializer refused the
+    // shape as an asset disagreement.
+    let mut entries = BTreeMap::new();
+    entries.insert(PREDECESSOR.to_owned(), predecessor_fixture());
+    entries.insert(
+        SPONSOR_PREDECESSOR.to_owned(),
+        sponsor_predecessor_fixture(),
+    );
+    entries.insert(SUCCESSOR.to_owned(), whole_shape_successor_fixture());
+    let view = FrozenConfidentialFixtureView::new(entries);
+
+    let sponsor_input = ConfidentialInputIntent::sponsor(
+        sponsor_consumed(),
+        // EXPLICIT, and this is the load-bearing asymmetry: §10.7's
+        // isolation fragment introspects the sponsor input's asset and
+        // no value field at all, so the asset must stay readable while
+        // the value hides.
+        AssetField::Explicit(reserve_asset()),
+        ValueField::Commitment(stub_commitment(
+            reserve_asset(),
+            SPONSOR_FUNDED,
+            &SPONSOR_INPUT_BLINDER,
+        )),
+        vec![0x00, 0x14, 0x5a],
+        0xffff_ffff,
+        FixtureOpeningReference::new(
+            SPONSOR_PREDECESSOR.to_owned(),
+            SPONSOR_PREDECESSOR_DIGEST,
+            0,
+        ),
+        SPONSOR_FUNDED,
+        [0_u8; SCALAR_BYTES],
+    );
+
+    let mut destinations = destinations();
+    destinations.push(ConfidentialDestinationIntent::new(
+        SPONSOR_CHANGE_AMOUNT,
+        reserve_asset(),
+        vec![0x51, 0x20, 0xcc],
+        FixtureOpeningReference::new(SUCCESSOR.to_owned(), SUCCESSOR_DIGEST, 2),
+        ConfidentialOutputRole::SponsorChange,
+    ));
+
+    let intent = ConfidentialConstructionIntent::new(
+        vec![input(), sponsor_input],
+        destinations,
+        // The fee, explicit in both fields and carrying no program,
+        // because the target defines a fee by exactly that and an
+        // empty-script output with a committed value is not a fee at all
+        // but a blinded burn.
+        NonProtocolFundingRegion::new(vec![NonProtocolMember::new(
+            reserve_asset(),
+            SPONSOR_FEE,
+            Vec::new(),
+        )]),
+        profiles(),
+        3,
+        0,
+    );
+
+    let materialized = materialize(
+        &intent,
+        &view,
+        &StubMaterializer::default(),
+        &StubChecker::default(),
+    )
+    .expect("the whole sponsored confidential shape materializes");
+
+    let protected = materialized.proof_finalized().protected();
+    assert_eq!(protected.inputs().len(), 2, "receipt and sponsor coin in");
+    assert_eq!(
+        protected.outputs().len(),
+        4,
+        "two receipts, the sponsor change, and the fee",
+    );
+
+    // The reserve sub-equation, which is the whole reason a confidential
+    // sponsor value needs a change output: without one the sponsor
+    // input's value is forced equal to the explicit fee and its
+    // commitment opens to a number anyone recomputes.
+    assert_eq!(SPONSOR_FUNDED, SPONSOR_FEE + SPONSOR_CHANGE_AMOUNT);
+
+    // The sponsor change: reserve asset explicit, value committed.
+    assert_eq!(
+        protected.outputs()[2].asset(),
+        AssetField::Explicit(reserve_asset())
+    );
+    assert!(matches!(
+        protected.outputs()[2].value(),
+        ValueField::Commitment(_)
+    ));
+
+    // The fee: reserve asset explicit, value explicit, no program.
+    assert_eq!(
+        protected.outputs()[3].asset(),
+        AssetField::Explicit(reserve_asset())
+    );
+    assert_eq!(
+        protected.outputs()[3].value(),
+        ValueField::Explicit(SPONSOR_FEE)
+    );
+    // Checked through the target's OWN fee test rather than by looking
+    // at the program here, so the assertion is that the output is a fee
+    // and not that it resembles one.
+    assert!(protected.outputs()[3].is_fee());
+
+    // And the protocol region closed its own equation on the receipts
+    // alone, with the sponsor's amount counted in neither side of it.
+    assert_eq!(PRIMARY_AMOUNT + BALANCING_AMOUNT, CONSUMED);
+}
