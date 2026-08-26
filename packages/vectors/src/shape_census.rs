@@ -1402,13 +1402,26 @@ mod tests {
         }
     }
 
-    /// Exactly one shape is impossible, and it is the fee-only one.
+    /// The impossible shapes are exactly those that consume a blinded
+    /// input and create no blinded output.
     ///
-    /// Stated as its own fact because it is the register's sharpest
-    /// claim: everything else the small-shape window holds, consensus
-    /// admits.
+    /// The register's sharpest claim, and it is now stated as the
+    /// PROPERTY rather than as a member. It used to name the fee-only
+    /// shape, and while that was the only member with no blinded output
+    /// the two readings were the same sentence. The crossing wave added
+    /// a second such member -- full unblinding -- and naming a member
+    /// would have made this test a list to be updated rather than a
+    /// claim to be checked.
+    ///
+    /// The property is the whole of the tally: a consumed blinder sum
+    /// must land somewhere, explicit outputs contribute zero, so a shape
+    /// that consumes a nonzero sum and blinds nothing has nowhere to put
+    /// it. Both impossible members fail on exactly that, and they differ
+    /// only in WHAT the outputs are -- a fee in one case, explicit
+    /// receipt destinations in the other -- which is a difference the
+    /// tally does not see.
     #[test]
-    fn the_fee_only_shape_is_the_only_impossible_one() {
+    fn the_impossible_shapes_are_those_that_blind_an_input_and_no_output() {
         let impossible: Vec<BlindedShape> = BlindedShape::ALL
             .into_iter()
             .filter(|shape| {
@@ -1418,9 +1431,33 @@ mod tests {
                 )
             })
             .collect();
-        assert_eq!(impossible, vec![BlindedShape::FeeOnly]);
-        assert_eq!(BlindedShape::FeeOnly.blinded_outputs(), 0);
+        assert_eq!(
+            impossible,
+            vec![BlindedShape::FeeOnly, BlindedShape::FullyUnblinding],
+        );
+
+        for shape in impossible {
+            assert_eq!(
+                shape.blinded_outputs(),
+                0,
+                "{} is impossible because it blinds no output",
+                shape.handle(),
+            );
+            assert!(
+                shape.blinded_inputs() > 0,
+                "{} is impossible because it has a sum to place at all",
+                shape.handle(),
+            );
+        }
+
+        // The two differ in what their outputs ARE, which is exactly
+        // what the tally does not see -- and it is why the two rows
+        // record DIFFERENT first-party refusals for the same consensus
+        // verdict.
         assert_eq!(BlindedShape::FeeOnly.fee_outputs(), 1);
+        assert_eq!(BlindedShape::FeeOnly.explicit_destinations(), 0);
+        assert_eq!(BlindedShape::FullyUnblinding.fee_outputs(), 0);
+        assert_eq!(BlindedShape::FullyUnblinding.explicit_destinations(), 2);
     }
 
     /// Every refused row's refusal is the one the registry really
@@ -1458,9 +1495,12 @@ mod tests {
             refused += 1;
         }
         assert_eq!(
-            refused, 1,
-            "one of the eight shapes is refused by the registry: the impossible one. The merge \
-             used to be the other, and it is now accepted",
+            refused, 2,
+            "two of the eleven shapes are refused by the registry, and both are the impossible \
+             ones. They are refused for DIFFERENT reasons and that is the point: the fee-only \
+             shape dies on cardinality, having one output, and the fully-unblinding shape has \
+             three and dies because none of them SOLVES. The merge used to be a third and is now \
+             accepted",
         );
     }
 
@@ -1752,15 +1792,27 @@ mod tests {
     /// A removal that nothing has run says so, and says where a run
     /// stops.
     ///
-    /// The register's sharpest discipline, applied to its own work. The
-    /// fee role was really added and a fee-bearing manifest really
-    /// registers — but a vocabulary that CAN express a shape is not a
-    /// chain that HAS accepted one, and the whole reason this register
-    /// exists is that those two had been collapsing into one word.
+    /// The register's sharpest discipline, applied to its own work. A
+    /// vocabulary that CAN express a shape is not a chain that HAS
+    /// accepted one, and the whole reason this register exists is that
+    /// those two had been collapsing into one word.
     ///
     /// So the row carries no identity, its removal carries no identity,
     /// and the place a run stops is named in the stopping layer's own
     /// terms rather than left as "not yet".
+    ///
+    /// # The status is occupied again, and by two
+    ///
+    /// It stood EMPTY between the fee-bearing shape's acceptance and the
+    /// crossing wave, and the emptiness was a result rather than a
+    /// loosening. Both crossing directions now sit here: their
+    /// limitation is really removed -- a composition pairs a plan to
+    /// each side, the covenant dispatches on it, the registry has an
+    /// explicit destination role and the materializer builds one -- and
+    /// NO node has been offered either shape. That is precisely the
+    /// distinction this status was minted to carry, and a wave that
+    /// recorded its own unrun vocabulary as an observation would be the
+    /// failure the register was built to prevent.
     #[test]
     fn an_unrun_removal_claims_no_acceptance_and_names_where_it_stops() {
         let mut expressible = Vec::new();
@@ -1795,9 +1847,31 @@ mod tests {
             );
             expressible.push(shape);
         }
-        assert!(
-            expressible.is_empty(),
-            "no shape is expressible-and-unrun any more: {expressible:?}",
+        // OCCUPIED, and by exactly the two the crossing wave added. The
+        // list is pinned rather than counted, so a third shape arriving
+        // here -- or one of these two leaving without its acceptance
+        // being recorded -- is a visible test change and not a number
+        // that quietly moved.
+        assert_eq!(
+            expressible,
+            vec![BlindedShape::EntryCrossing, BlindedShape::ExitCrossing],
+            "the two crossing directions are expressible and unrun",
+        );
+
+        // The two stop at DIFFERENT layers, and saying so is most of
+        // what makes the filing worth keeping: a single "not yet" would
+        // hide that one direction is blocked on a vocabulary gap and the
+        // other only on a ceremony nobody has written.
+        let stops: Vec<&str> = expressible
+            .iter()
+            .map(|shape| match census_entry(*shape).first_party {
+                FirstPartyStatus::ExpressibleAndUnrun { stops_at, .. } => stops_at,
+                _ => unreachable!("filtered above"),
+            })
+            .collect();
+        assert_ne!(
+            stops[0], stops[1],
+            "two directions blocked at one layer would be one filing, not two",
         );
 
         // The fee-bearing shape used to be the sole member here, and it
