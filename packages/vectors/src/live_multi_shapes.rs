@@ -98,7 +98,8 @@ use crate::confidential_predecessor::{PredecessorShape, TRIPLE_PREDECESSOR_AMOUN
 use crate::error::VectorError;
 use crate::live_owner_observation::printed_order;
 use crate::live_plan::{
-    FIRST_SCALAR, LiveShapeVocabulary, SECOND_SCALAR, published_owner, reviewed_target,
+    FIRST_SCALAR, LiveShapeVocabulary, RESERVE_ASSET, SECOND_SCALAR, published_owner,
+    reviewed_target,
 };
 use crate::live_private_restart::{
     ConsumedReceipt, LinkedDeployment, PrivateRestartRefusal, RestartConfidentialCoin,
@@ -754,6 +755,7 @@ impl MultiShapePlanner {
             ConsumedReceipt::Primary,
             printed,
             self.shape.vocabulary(),
+            RESERVE_ASSET,
         )?;
         self.record.issued_asset = Some(printed.to_owned());
         self.record.predecessor_digest = Some(linked.predecessor_digest);

@@ -602,6 +602,7 @@ impl PrivateRestartPlanner {
             self.consumed,
             printed,
             LiveShapeVocabulary::Demonstration,
+            RESERVE_ASSET,
         )?;
         self.record.issued_asset = Some(printed.to_owned());
         self.record.predecessor_digest = Some(linked.predecessor_digest);
@@ -746,6 +747,7 @@ pub(crate) fn link_and_register(
     consumed: ConsumedReceipt,
     printed: &str,
     vocabulary: LiveShapeVocabulary,
+    reserve: [u8; 32],
 ) -> Result<LinkedDeployment, PrivateRestartRefusal> {
     let asset = asset_of(printed).ok_or(PrivateRestartRefusal::IssuanceNamedNoAsset)?;
     let commit_order = *asset.internal();
@@ -777,7 +779,7 @@ pub(crate) fn link_and_register(
         LiveShapeVocabulary::Demonstration => FEE_PROGRAM_DIGEST,
         LiveShapeVocabulary::FeeBearing => crate::bundle::fee_program_digest(),
     };
-    let abi = live_abi_for_vocabulary(vocabulary, commit_order, RESERVE_ASSET, fee_digest)
+    let abi = live_abi_for_vocabulary(vocabulary, commit_order, reserve, fee_digest)
         .map_err(|_| PrivateRestartRefusal::RelinkRefused)?;
 
     // The predecessor outputs pay to the published owners' PRIVATE receipt
@@ -1689,7 +1691,8 @@ mod tests {
 #[cfg(test)]
 mod byte_identity_tests {
     use super::{
-        ConsumedReceipt, LiveShapeVocabulary, hex, link_and_register, run_of_record as run,
+        ConsumedReceipt, LiveShapeVocabulary, RESERVE_ASSET, hex, link_and_register,
+        run_of_record as run,
     };
     use crate::confidential_predecessor::PredecessorShape;
 
@@ -1721,6 +1724,7 @@ mod byte_identity_tests {
                 consumed,
                 run::ISSUED_ASSET,
                 LiveShapeVocabulary::Demonstration,
+                RESERVE_ASSET,
             )
             .expect("the run of record's own fixtures register");
 

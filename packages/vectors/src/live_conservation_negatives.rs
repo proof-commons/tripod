@@ -77,7 +77,7 @@ use crate::confidential_materializer::FirstPartyCommitmentCheck;
 use crate::confidential_predecessor::{FUND_STEP, PredecessorShape};
 use crate::error::VectorError;
 use crate::live_owner_observation::{asset_of, printed_order};
-use crate::live_plan::{LiveShapeVocabulary, reviewed_target};
+use crate::live_plan::{LiveShapeVocabulary, RESERVE_ASSET, reviewed_target};
 use crate::live_private_restart::{
     BuiltControl, ConsumedReceipt, LinkedDeployment, build_control, confidential_funding_step,
     issue_step, link_and_register, observe_funded_coins, verify_readback_signature,
@@ -359,6 +359,7 @@ impl ConservationNegativePlanner {
             self.consumed,
             printed,
             LiveShapeVocabulary::Demonstration,
+            RESERVE_ASSET,
         )
         .map_err(|refusal| {
             ConservationNegativeRefusal::LinkOrRegisterRefused(format!("{refusal:?}"))
