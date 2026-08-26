@@ -228,15 +228,26 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // is the LEAF COMMITMENT, and a spend of a foreign program is
     // refused by the commitment rule rather than by anything that reads
     // a class.
+    // RETYPED. Its target-side wall is settled and is no longer what
+    // keeps it here: owner metadata is committed by the constructor, so
+    // changing it changes the program spent, and a chain answers that
+    // with the commitment rule in the words every foreign taptree draws.
+    // Its four siblings left this register on exactly that ground.
+    //
+    // What keeps THIS one is work rather than a wall, and the work is
+    // named. The input recognition answers `ReceiptInputIsNotALiveReceipt`
+    // for any program its linked table does not hold, and the field that
+    // would separate this row from the three siblings sharing that class
+    // is a program whose OWNER alone differs. No such program can be
+    // built today: `live_plan::relocatable_live_bundles_composing` links
+    // exactly two owners, and a third has to be threaded through it
+    // before an unlinked owner's honestly derived program exists to
+    // offer. `THIRD_SCALAR` is published for that purpose and nothing
+    // consumes it yet.
     entry(
         "wrong-owner-metadata",
-        G::RefusalIsProgramGeneric,
-        "owner metadata is committed by the constructor, so changing it changes the program spent",
-    ),
-    entry(
-        "stale-constructor",
-        G::RefusalIsProgramGeneric,
-        "a stale constructor is a different program, refused before any opcode runs",
+        G::MutantBuilderOwed,
+        "a program differing only in owner needs a third owner threaded through the bundle link",
     ),
     entry(
         "vault-control-entitlement-or-bare-u-output",
@@ -452,10 +463,31 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         G::OwnerSigningOverForeignBytesAbsent,
         "the two ranges are derived from one shape and no caller value exchanges them",
     ),
+    // A TYPED STOP, and the one row of the seven the retyping ruling
+    // does not reach. Its target-side wall stands as written. What the
+    // retyping would need beside it is a first-party validator that
+    // refuses a reordered stack, and there is none: `check_offered`
+    // compares inputs, outputs, version and locktime and states in its
+    // own doc that the witness is excluded because the selected profile
+    // excludes it from the message, and `live_signing` writes the stack
+    // unconditionally from `LiveWitnessItem::ORDER` with no field a
+    // caller could use to reorder it. So the order is not a degree of
+    // freedom, which is a structural protection rather than a refusal —
+    // nothing REFUSES a reorder because nothing can express one.
+    //
+    // The nearest available observation is refused deliberately. A
+    // signing census can be handed a declared leaf hash taken over the
+    // item a reorder would move into the leaf position, which draws
+    // `LeafHashDoesNotCommit` — but that is a MODEL of the row rather
+    // than the row's own mutation, and it is the same class
+    // `control-block-from-another-program` draws on its own mutant. Two
+    // rows sharing one class where only one drove its own change is the
+    // reading-one-observation-onto-two-rows the register exists to
+    // prevent. Escalated rather than answered.
     entry(
         "witness-reorder",
         G::RefusalIsProgramGeneric,
-        "reordering reveals the signature as the leaf, which the spent program does not commit to",
+        "no validator refuses a reorder because the stack order is written from a fixed constant",
     ),
     entry(
         "control-block-from-another-program",

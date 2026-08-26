@@ -66,6 +66,22 @@ pub const SECOND_SCALAR: [u8; FIELD_ELEMENT_BYTES] = [
     0x29, 0x02, 0x4E, 0x08, 0x8A, 0x67, 0xCC, 0x74, 0x02, 0x0B, 0xBE, 0xA6, 0x3B, 0x14, 0xE5, 0xC9,
 ];
 
+/// The third published BIP-340 signing scalar.
+///
+/// Beside the two above and published on the same footing — BIP-340's
+/// own appendix vector, a value with no secrecy to lose
+/// (`[ADR015-rule:security:test-material]`). It differs from them in
+/// PURPOSE rather than in kind: nothing is linked for this owner in the
+/// demonstration deployment, and that is exactly what it is for. A
+/// discharge asking what happens to a receipt whose owner metadata
+/// names somebody the constructor never built for needs an owner the
+/// constructor never built for, and reusing a linked one would stage a
+/// candidate the recognition accepts.
+pub const THIRD_SCALAR: [u8; FIELD_ELEMENT_BYTES] = [
+    0x0B, 0x43, 0x2B, 0x26, 0x77, 0x93, 0x73, 0x81, 0xAE, 0xF0, 0x5B, 0xB0, 0x2A, 0x66, 0xEC, 0xD0,
+    0x12, 0x77, 0x30, 0x62, 0xCF, 0x3F, 0xA2, 0x54, 0x9E, 0x44, 0xF5, 0x8E, 0xD2, 0x40, 0x17, 0x10,
+];
+
 /// The protocol asset this demonstration deployment resolves.
 ///
 /// A constant, and deliberately not a value a target issued: the linked

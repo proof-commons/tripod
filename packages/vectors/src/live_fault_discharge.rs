@@ -89,9 +89,9 @@ use crate::bundle::PINNED_PROGRAM;
 use crate::error::VectorError;
 use crate::live_capability::OracleFixtureValues;
 use crate::live_plan::{
-    FEE_PROGRAM_DIGEST, FIRST_SCALAR, PROTOCOL_ASSET, RESERVE_ASSET, SECOND_SCALAR,
-    demonstration_live_abi, live_deployment_for_asset, live_transfer_plan, owner_key,
-    published_owner, relocatable_live_bundles, reviewed_target,
+    FEE_PROGRAM_DIGEST, FIRST_SCALAR, LiveShapeVocabulary, PROTOCOL_ASSET, RESERVE_ASSET,
+    SECOND_SCALAR, demonstration_live_abi, live_abi_for_vocabulary, live_deployment_for_asset,
+    live_transfer_plan, owner_key, published_owner, relocatable_live_bundles, reviewed_target,
 };
 use crate::live_safety::{LiveSafetyRow, required_safety_matrix};
 
@@ -200,6 +200,15 @@ pub enum FaultMutation {
     /// ONLY the asset field moves, which is what puts the refusal at the
     /// asset check rather than at the program lookup after it.
     OfferTheReserveAssetUnderAReceiptShapedProgram,
+    /// Offer a receipt input under a SUPERSEDED constructor's program.
+    ///
+    /// The same owner and the same representation, derived under the
+    /// other shape vocabulary. A vocabulary's shape set becomes one
+    /// coordinator leaf per shape and those leaves tweak the taproot
+    /// output key, so a constructor of the other vocabulary is a
+    /// genuinely different program for the same owner — which is what
+    /// STALE means, as against corrupted or foreign.
+    OfferAReceiptInputUnderASupersededConstructor,
     /// Make the destination total exceed the target's explicit width.
     OverflowTheDestinationTotal,
     /// Offer a commitment-valued receipt to the explicit plan.
@@ -547,6 +556,16 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
             M::OfferTheReserveAssetUnderAReceiptShapedProgram,
             transaction_is!(TransactionRefusal::ReceiptInputCarriesForeignAsset(_)),
             "ReceiptInputCarriesForeignAsset",
+        ),
+        // The third of the recognition's shared-class rows, and its
+        // field is the constructor VOCABULARY: same owner, same
+        // representation, a program the other shape set derives.
+        case(
+            "stale-constructor",
+            V::LiveTransferFinalization,
+            M::OfferAReceiptInputUnderASupersededConstructor,
+            transaction_is!(TransactionRefusal::ReceiptInputIsNotALiveReceipt(_)),
+            "ReceiptInputIsNotALiveReceipt",
         ),
         case(
             "time-locked-output",
@@ -1155,6 +1174,40 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
                     ValueField::Explicit(400),
                     program(&abi, &FIRST_SCALAR, Explicit)?,
                 ),
+                view_of(
+                    &abi,
+                    second,
+                    program(&abi, &SECOND_SCALAR, Explicit)?,
+                    ValueField::Explicit(600),
+                ),
+            ])
+            .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            Ok(Staged {
+                control: finalize_outcome(&abi, &request, &control_view, None)?,
+                malformed: finalize_outcome(&abi, &request, &view, None)?,
+            })
+        }
+        M::OfferAReceiptInputUnderASupersededConstructor => {
+            let (request, control_view) = explicit_control(&abi)?;
+            let [first, second] = honest_points()?;
+            // One change: the shape vocabulary the first receipt's
+            // constructor was derived under. The owner is the SAME
+            // owner and the representation the same representation —
+            // only the coordinator leaf set differs, which tweaks the
+            // taproot output key and so yields a different program for
+            // the same party. That is what a stale constructor IS, and
+            // it is why the mutant is an honestly derived program
+            // rather than corrupted bytes: a corrupted program would
+            // answer the question a foreign taptree answers.
+            let superseded = live_abi_for_vocabulary(
+                LiveShapeVocabulary::FeeBearing,
+                PROTOCOL_ASSET,
+                RESERVE_ASSET,
+                FEE_PROGRAM_DIGEST,
+            )?;
+            let stale = program(&superseded, &FIRST_SCALAR, Explicit)?;
+            let view = PublicConstructionView::new(vec![
+                view_of(&abi, first, stale, ValueField::Explicit(400)),
                 view_of(
                     &abi,
                     second,

@@ -957,14 +957,24 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         "mixed-operation-program",
         LiveUnlinkedReason::NoSemanticMutationClass,
     ),
-    linked(
+    // RETYPED FIRST-PARTY. A stale constructor is a different program
+    // for the same owner, so what a chain answers is the COMMITMENT
+    // rule — refused before a single opcode executes, in the identical
+    // words every foreign taptree draws, naming nothing about staleness.
+    // The pinned target source is `src/script/interpreter.cpp:3286-3290`,
+    // where a failed `VerifyTaprootCommitment` is
+    // `SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH`. No later wave is owed that
+    // observation.
+    //
+    // First-party the row is answerable and its mutant is honest: the
+    // other shape vocabulary's constructor for the SAME owner and the
+    // SAME representation, which the input recognition does not find in
+    // this deployment's linked table.
+    pre_target(
         S::ObjectFault,
         "stale-constructor",
-        L::SemanticFact,
-        B::ScriptPathRejection,
-        recognition(TransactionSide::Input, ObjectId::ReceiptLive),
-        wrong_object,
-        "WrongRecognizedObject",
+        L::LinkedConstructorProgram,
+        B::AbiConstructionRejection,
     ),
     linked(
         S::ObjectFault,
