@@ -1622,7 +1622,7 @@ fn the_self_paid_fee_output_is_the_protocol_asset_at_an_empty_program() {
     let outputs = built.finalized().protected().outputs();
     assert_eq!(outputs.len(), 2);
     let fee = &outputs[position];
-    assert!(fee.program().is_empty());
+    assert_eq!(fee.program(), &[] as &[u8]);
     assert_eq!(fee.value(), ValueField::Explicit(250));
     assert_eq!(
         fee.asset(),
@@ -1632,7 +1632,7 @@ fn the_self_paid_fee_output_is_the_protocol_asset_at_an_empty_program() {
     // And the destination beside it is a real constructor, so the two
     // are told apart by what they pay to rather than by their order.
     let destination = &outputs[0];
-    assert!(!destination.program().is_empty());
+    assert_ne!(destination.program().len(), 0);
     assert_eq!(destination.value(), ValueField::Explicit(750));
 }
 
