@@ -735,6 +735,12 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         // that quoted a verdict would be carrying evidence in bytes
         // whose job is to count.
         LiveRowStanding::NativeRefusalObserved { .. } => "native-refusal-observed",
+        // Withheld for the first reason and not the second: there is no
+        // target sentence here to carry, and what the payload names is
+        // the first-party test that recomputed the fixture, which
+        // belongs in the evidence plan beside the row rather than in
+        // bytes whose job is to count.
+        LiveRowStanding::DeterminismObserved { .. } => "determinism-observed",
         LiveRowStanding::InfrastructureBlocked(_) => "infrastructure-blocked",
         LiveRowStanding::ReportLayerAnswerable => "report-layer-answerable",
         LiveRowStanding::OperationVocabularyClosed => "operation-vocabulary-closed",

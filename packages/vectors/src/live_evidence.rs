@@ -542,6 +542,48 @@ pub enum LiveRowStanding {
         /// What the target said when it refused the mutated candidate.
         refusal_detail: &'static str,
     },
+    /// A first-party determinism run answered the row, and here is what
+    /// it recomputed.
+    ///
+    /// # Why this member had to be minted
+    ///
+    /// Both observation members above are TARGET verdicts, and the
+    /// ground each of them carries is an identity the target computed.
+    /// One §15.2 row does not ask for a target verdict at all: §11.2
+    /// gives `deterministic-public-fixture-openings` the byte-identity
+    /// contract (§6.7) as its gate, and that contract is satisfied by
+    /// recomputing a fixture from its manifest and comparing the result
+    /// byte for byte. No target is asked and none accepts anything.
+    ///
+    /// Wave seven produced exactly that observation and could not file
+    /// it. The only members that would have taken it carry
+    /// target-computed identities, so filing a determinism fact under
+    /// one would have been the single error a run of record exists to
+    /// prevent; the wave reported the gap and left the row unmoved.
+    /// This member is the repair directed in answer — the VOCABULARY
+    /// was narrow, not the guide defective, so the §11.2 gate stands as
+    /// written and the code catches up to it.
+    ///
+    /// # What may occupy it, and what it must never be read as
+    ///
+    /// A first-party recomputation that produced byte-identical output
+    /// from equal inputs, naming what was recomputed and the test that
+    /// recomputed it. Not a run that happened; not a fixture that was
+    /// buildable; not a contract that is stated somewhere.
+    ///
+    /// It is counted in its OWN census bucket and is never added to the
+    /// acceptance count. A determinism observation establishes nothing
+    /// whatever about any target — no transaction was offered to one —
+    /// and a single figure covering both kinds would let a reader take
+    /// a recomputation for an acceptance, which is the same misreading
+    /// [`LiveEvidenceCensus::native_refusal_observed`] is kept separate
+    /// to prevent.
+    DeterminismObserved {
+        /// What was recomputed, in the contract's own terms.
+        recomputed: &'static str,
+        /// The first-party test that recomputed it.
+        observed_by: &'static str,
+    },
     /// A component the row needs does not exist.
     InfrastructureBlocked(LiveInfrastructureBlocker),
     /// The row's boundary is this workspace's own report bytes.
@@ -585,6 +627,13 @@ impl LiveRowStanding {
             Self::FirstPartyDischarged { .. }
                 | Self::NativeRunObserved { .. }
                 | Self::NativeRefusalObserved { .. }
+                // Answered, and answered by the gate its own row was
+                // given: §11.2 names the byte-identity contract rather
+                // than an acceptance for the openings row, so a
+                // determinism observation discharges it outright. What
+                // it is NOT is a target verdict, which is why it stands
+                // in its own member and counts in its own bucket.
+                | Self::DeterminismObserved { .. }
                 | Self::ReportLayerAnswerable
         )
     }
@@ -626,6 +675,7 @@ pub struct LiveEvidenceCensus {
     native_run_required: usize,
     native_run_observed: usize,
     native_refusal_observed: usize,
+    determinism_observed: usize,
     infrastructure_blocked: usize,
     report_layer: usize,
     vocabulary_closed: usize,
@@ -671,6 +721,19 @@ impl LiveEvidenceCensus {
     #[must_use]
     pub const fn native_refusal_observed(&self) -> usize {
         self.native_refusal_observed
+    }
+
+    /// How many rows a first-party determinism observation has answered.
+    ///
+    /// A third bucket for the same reason there is a second: this one
+    /// counts observations no target was involved in at all. Adding it
+    /// to either target figure would inflate a count of chain evidence
+    /// with a recomputation, and a reader summing the observation
+    /// buckets to ask "how much did a real node say" would get the
+    /// wrong answer by exactly this number.
+    #[must_use]
+    pub const fn determinism_observed(&self) -> usize {
+        self.determinism_observed
     }
 
     /// How many rows are waiting on a target-native run.
@@ -1118,6 +1181,37 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
     }
 }
 
+/// The first-party determinism observation that answers one row, where
+/// there is one.
+///
+/// Beside [`observed_row_acceptance`] and shaped like it, and separate
+/// from it for the reason [`LiveRowStanding::DeterminismObserved`]
+/// states: what this returns is not a target verdict and must never be
+/// filed as one.
+///
+/// One row today, and it is the row §11.2 gave a non-acceptance gate.
+/// A row whose gate IS an acceptance may not be answered here, however
+/// deterministically it reproduces — the wave-five closeout recorded
+/// exactly that case and declined it, a successor reproducing its own
+/// accepted identity byte for byte being a determinism fact about a
+/// SUCCESSOR while this row is about fixture OPENINGS.
+fn observed_row_determinism(row: &LiveSafetyRow) -> Option<(&'static str, &'static str)> {
+    match row.name() {
+        // §11.2 lists this row's gate as the byte-identity contract
+        // (§6.7) rather than as an acceptance, and §6.7's own closing
+        // sentence says it is the contract that satisfies this row.
+        // The observation is wave seven's: registering the same
+        // three-output manifest twice yields the same fixture digest
+        // and the same per-output value blinders, byte for byte.
+        "deterministic-public-fixture-openings" => Some((
+            "a fixture recomputed from its own manifest: equal digest and equal \
+             per-output openings, byte for byte",
+            "crate::live_multi_shapes::a_fixture_recomputes_byte_identically_from_its_manifest",
+        )),
+        _ => None,
+    }
+}
+
 /// Classify one row of the §15 matrix.
 fn classify(
     row: &'static LiveSafetyRow,
@@ -1166,6 +1260,17 @@ fn classify(
         return Ok(LiveRowStanding::NativeRefusalObserved {
             control_identity,
             refusal_detail,
+        });
+    }
+    // Last of the three observation branches, and after the specific
+    // blocker for the same reason the other two are. It is asked after
+    // them rather than before because a row whose gate IS a target
+    // verdict must take the target's answer where one exists; only a
+    // row §11.2 gave a non-acceptance gate reaches this at all.
+    if let Some((recomputed, observed_by)) = observed_row_determinism(row) {
+        return Ok(LiveRowStanding::DeterminismObserved {
+            recomputed,
+            observed_by,
         });
     }
     if !a_positive_control_exists() {
@@ -1275,6 +1380,7 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
             LiveRowStanding::NativeRunRequired(_) => census.native_run_required += 1,
             LiveRowStanding::NativeRunObserved { .. } => census.native_run_observed += 1,
             LiveRowStanding::NativeRefusalObserved { .. } => census.native_refusal_observed += 1,
+            LiveRowStanding::DeterminismObserved { .. } => census.determinism_observed += 1,
             LiveRowStanding::InfrastructureBlocked(_) => census.infrastructure_blocked += 1,
             LiveRowStanding::ReportLayerAnswerable => census.report_layer += 1,
             LiveRowStanding::OperationVocabularyClosed => census.vocabulary_closed += 1,
@@ -1609,11 +1715,24 @@ mod tests {
     #[test]
     fn exactly_the_positive_rows_a_run_answered_are_answered() {
         // The wave's delta, held as a test rather than written in a
-        // report. Twenty-six positive rows; twenty-two of them are answered,
-        // and each is answered because a real node accepted a transaction
-        // of ITS OWN SHAPE and the standing carries the identity. The
-        // other four await the run that would answer them, and awaiting
-        // a run is not an answer.
+        // report. Twenty-six positive rows; twenty-three of them are
+        // answered by a target, and each is answered because a real node
+        // accepted a transaction of ITS OWN SHAPE and the standing
+        // carries the identity.
+        //
+        // The figure in this comment read "twenty-two" against a set of
+        // twenty-three for as long as the set has had twenty-three
+        // members, which is a defect of exactly the kind the spelled
+        // count below exists to catch — the count was checked and the
+        // sentence beside it was not. It is corrected here rather than
+        // carried.
+        //
+        // One further row is answered and is NOT in that set: the
+        // openings row, whose §11.2 gate is the byte-identity contract
+        // rather than an acceptance. It is collected separately and
+        // asserted separately, because a determinism observation is not
+        // a target verdict. Two rows still await the run that would
+        // answer them, and awaiting a run is not an answer.
         //
         // It read seven until the explicit shape ceremony ran thirteen
         // shapes against a real node and every one was accepted, which
@@ -1629,6 +1748,7 @@ mod tests {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let mut positives = 0_usize;
         let mut answered = BTreeSet::new();
+        let mut by_determinism = BTreeSet::new();
         for row in plan.rows() {
             if row.row().polarity() != LiveSafetyPolarity::Positive {
                 continue;
@@ -1651,6 +1771,25 @@ mod tests {
                         "{} claims an answer no run produced",
                         row.row(),
                     );
+                }
+                // The third observation kind, kept in its own set for
+                // the same reason it has its own census bucket: what
+                // answers this row is a recomputation and not a target
+                // verdict, and folding it into `answered` would put a
+                // row into a set whose own assertion message says every
+                // member was produced by a run of its own shape.
+                LiveRowStanding::DeterminismObserved {
+                    recomputed,
+                    observed_by,
+                } => {
+                    assert_ne!(recomputed.len(), 0, "{} recomputed nothing", row.row());
+                    assert!(
+                        observed_by.contains("::"),
+                        "{} names no first-party test",
+                        row.row(),
+                    );
+                    assert!(row.standing().is_answered());
+                    by_determinism.insert(row.row().name());
                 }
                 other => panic!("{} stands at {other:?}", row.row()),
             }
@@ -1726,16 +1865,37 @@ mod tests {
         //
         // THE EXPLICIT POSITIVE TABLE IS NOW COMPLETE. Every row left in
         // this list is private.
+        //
+        // The openings row LEFT this list, and it left by a different
+        // rule from every row before it. Every previous departure was a
+        // run of the row's own shape; this one is a determinism
+        // observation that was already recorded when the row was still
+        // listed here, and what changed is that the vocabulary acquired
+        // a member able to hold it. The row is asserted below at that
+        // member, and it is asserted NOT to be in `answered` — because
+        // no run of its shape produced anything, and that remains true.
         for unmoved in [
             "private-sponsor-values",
-            "deterministic-public-fixture-openings",
             "projection-equality-with-paired-explicit",
         ] {
             assert!(
                 !answered.contains(unmoved),
                 "{unmoved} claims an answer no run of its own shape produced",
             );
+            assert!(
+                !by_determinism.contains(unmoved),
+                "{unmoved} claims a determinism answer nothing recomputed",
+            );
         }
+        assert_eq!(
+            by_determinism,
+            BTreeSet::from(["deterministic-public-fixture-openings"]),
+        );
+        assert!(!answered.contains("deterministic-public-fixture-openings"));
+        assert_eq!(plan.census().determinism_observed(), 1);
+        // The acceptance buckets did NOT move on this account, which is
+        // the whole claim of a separate bucket made checkable.
+        assert_eq!(plan.census().native_run_observed(), 23);
     }
 
     #[test]
