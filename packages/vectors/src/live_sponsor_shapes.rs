@@ -1826,6 +1826,45 @@ pub mod sponsored_run_of_record {
     /// what supplies one is a sponsor funding step that funds above the
     /// fee.
     pub const A_SPONSORED_CONTROL_TAKING_CHANGE_EXISTS: bool = true;
+
+    /// What the target said to a sponsored control whose sponsor input
+    /// carries NO authorization.
+    ///
+    /// Its own words, verbatim, from a run that offered the mutant
+    /// FIRST and then the unmutated control to one node on one chain.
+    /// The mutant is the recording pass's own completion — one
+    /// finalization, every owner really signing, the sponsor capability
+    /// answering with an empty stack — so it differs from the control in
+    /// the sponsor witness and in nothing else.
+    ///
+    /// # The verdict reads like an earlier wave's and is NOT it
+    ///
+    /// This exact string is what the first sponsored controls drew from
+    /// the covenant's own FEE-ROLE comparison, before the fee program's
+    /// digest was threaded. It is not that comparison here, and what
+    /// says so is the control accepted in the SAME run: the fee-role
+    /// check passes for this deployment, so the comparison that failed
+    /// is one the sponsor witness reaches.
+    ///
+    /// Which comparison that is follows from the sponsor program's
+    /// class. The admitted class is the target's version-zero key hash,
+    /// whose evaluation duplicates the offered public key, hashes it,
+    /// and compares the digest against the one the program commits to.
+    /// The mutant offers an EMPTY item where the key goes, so the hash
+    /// of nothing meets the committed digest and the comparison fails
+    /// before any signature is judged. The row asks for a missing
+    /// authorization to be refused, and it was refused at the first
+    /// check a missing authorization reaches.
+    pub const MISSING_SPONSOR_AUTHORIZATION_REFUSAL: &str =
+        "mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)";
+
+    /// How many bytes the unauthorized mutant handed the node.
+    ///
+    /// One hundred and five fewer than the control, which is exactly the
+    /// seventy-two-byte signature and the thirty-three-byte public key
+    /// the adapter returned and this offering does not carry. MEASURED
+    /// at the node rather than argued from the code that built the two.
+    pub const MISSING_SPONSOR_AUTHORIZATION_SUBMITTED_BYTES: usize = 1_375;
 }
 
 #[cfg(test)]
@@ -1905,6 +1944,17 @@ mod tests {
             record::A_SPONSORED_CONTROL_TAKING_CHANGE_EXISTS,
             SponsorShape::ChangePresent.change().is_some(),
         );
+
+        // The negative's own measurement, bound to the control it was
+        // offered against: the mutant is short by exactly the two
+        // witness items the adapter returned, seventy-two and
+        // thirty-three bytes.
+        assert_eq!(
+            record::SPONSORED_SUBMITTED_BYTES
+                - record::MISSING_SPONSOR_AUTHORIZATION_SUBMITTED_BYTES,
+            105,
+        );
+        assert!(!record::MISSING_SPONSOR_AUTHORIZATION_REFUSAL.is_empty());
     }
 
     /// The two shapes differ in the change role and in nothing else a

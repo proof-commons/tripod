@@ -1097,6 +1097,23 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
             witness::CONTROL_ACCEPTED_TXID,
             witness::MALFORMED_SIGNATURE_REFUSAL,
         )),
+        // §15.6's sponsor-authorization row, answered by the sponsored
+        // lane's own run: the mutant offered FIRST and then the
+        // unmutated control, to one node on one chain. The mutant is
+        // the recording pass's own completion, so it differs from the
+        // control in the sponsor witness and in nothing else, and the
+        // node measured the difference at exactly the two items the
+        // adapter returned.
+        //
+        // The verdict reads the same as an earlier wave's fee-role
+        // failure and is NOT it. What disambiguates them is the control
+        // accepted in the SAME run: the fee-role check passes for this
+        // deployment, so the comparison that failed is the one the
+        // sponsor witness reaches.
+        "missing-sponsor-authorization" => Some((
+            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            crate::live_sponsor_shapes::sponsored_run_of_record::MISSING_SPONSOR_AUTHORIZATION_REFUSAL,
+        )),
         _ => None,
     }
 }
