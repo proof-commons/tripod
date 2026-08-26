@@ -1952,12 +1952,41 @@ pub mod run_of_record {
 
     /// The identity the target computed for the self-paying run.
     ///
-    /// An OPTION and NOT yet a value. The confidential lane's
-    /// fee-bearing identity is written the same way for the same reason:
-    /// this is a record of what a node answered, so it holds a digest
-    /// only once a node has answered, and a placeholder shaped like an
-    /// identity would be indistinguishable from an observation.
-    pub const SELF_PAID_FEE_ACCEPTED_IDENTITY: Option<&str> = None;
+    /// An OPTION carrying a value: the node answered, and this is what
+    /// it answered. The confidential lane's fee-bearing identity is
+    /// written the same way for the same reason -- a record of what a
+    /// node answered holds a digest only once one has, and a placeholder
+    /// shaped like an identity would be indistinguishable from an
+    /// observation.
+    ///
+    /// It collides with no other row's identity, which the collision
+    /// census checks rather than assumes.
+    pub const SELF_PAID_FEE_ACCEPTED_IDENTITY: Option<&str> =
+        Some("72fad04b346a8ea93c97cd415d24434529d8a5d9ae148a13da3694047e117328");
+
+    /// The witness identity of the same accepted transaction.
+    ///
+    /// Recorded beside the identity because they DIFFER, and the
+    /// difference is the ordinary one: the transaction carries a
+    /// witness, so the two hashes are taken over different bytes.
+    pub const SELF_PAID_FEE_WITNESS_IDENTITY: &str =
+        "fafc82e7396f27e6379572cc958c710412b1ae0e0d69912a04212aa79c7d2822";
+
+    /// The disposable asset the self-paying run issued.
+    pub const SELF_PAID_FEE_ISSUED_ASSET: &str =
+        "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
+
+    /// How many bytes the self-paying candidate handed the node.
+    pub const SELF_PAID_FEE_SUBMITTED_BYTES: usize = 782;
+
+    /// The weight the TARGET reported, read off `decoderawtransaction`.
+    ///
+    /// The node's own figure rather than one computed here, so §20.5's
+    /// comparison is against an observation.
+    pub const SELF_PAID_FEE_TARGET_WEIGHT: u64 = 1_304;
+
+    /// What the one consumed receipt held.
+    pub const SELF_PAID_FEE_CONSUMED: u64 = super::RECEIPT_AMOUNT;
 
     /// The fee the self-paying run paid, in the PROTOCOL asset.
     ///
@@ -1965,6 +1994,28 @@ pub mod run_of_record {
     /// receipts and Elements balances per asset: a reserve-asset fee
     /// beside no reserve-asset input dies at the tally.
     pub const SELF_PAID_FEE_AMOUNT: u64 = super::SELF_PAID_FEE_AMOUNT;
+
+    /// What reached the one destination, the fee having been taken.
+    pub const SELF_PAID_FEE_DESTINATION: u64 = 4_750;
+
+    /// Whether the self-paying candidate crossed RELAY and then a block.
+    ///
+    /// TRUE, and this is the figure the wave existed to obtain. The
+    /// adapter offers every submission to `testmempoolaccept` first and
+    /// records an acceptance only when the mempool ALLOWED it and a
+    /// block then included it, so an accepted layer here is a relay
+    /// verdict and a consensus verdict together.
+    ///
+    /// It matters because this is the FIRST sponsorless form to face
+    /// relay on its own. Its predecessors paid no fee and travelled as
+    /// package children, which is why the ABI builds a sponsorless form
+    /// at the topology-restricted version; a form that pays its own fee
+    /// needs no package parent, and the open question was whether that
+    /// version would still relay standalone. It did.
+    pub const SELF_PAID_FEE_CROSSED_RELAY_AND_BLOCK: bool = true;
+
+    /// Seconds of wall time the self-paying run took.
+    pub const SELF_PAID_FEE_WALL_SECONDS: f64 = 6.0;
 }
 
 impl ExplicitShape {
@@ -2008,7 +2059,9 @@ impl ExplicitShape {
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
-    use super::{ExplicitShape, run_of_record};
+    use transaction::live_construct::ExplicitDestinationRole::Fee;
+
+    use super::{ExplicitShape, LiveShapeVocabulary, run_of_record};
 
     #[test]
     fn every_shape_names_a_distinct_row_of_the_explicit_table() {
@@ -2096,6 +2149,69 @@ mod tests {
                 ]),
             ]),
         );
+    }
+
+    #[test]
+    fn the_self_paying_run_conserves_what_it_consumed() {
+        // The fee is a TERM of this equality rather than a residue: the
+        // consumed receipt funds the destination AND the fee, which is
+        // exactly the relation the explicit conservation leaf checks in
+        // the covenant that ran. Recomputed here from the recorded
+        // figures so a register edited on one side fails.
+        assert_eq!(
+            run_of_record::SELF_PAID_FEE_DESTINATION + run_of_record::SELF_PAID_FEE_AMOUNT,
+            run_of_record::SELF_PAID_FEE_CONSUMED,
+        );
+        assert_eq!(
+            run_of_record::SELF_PAID_FEE_AMOUNT,
+            ExplicitShape::SelfPaidFee
+                .self_paid_fee()
+                .expect("the self-paying shape states a fee"),
+        );
+    }
+
+    #[test]
+    fn the_self_paying_shape_declares_its_fee_last_and_only_once() {
+        // The declaration the ceremony hands construction, checked here
+        // rather than trusted: the fee sits immediately after the
+        // destinations, which is where a SPONSORLESS shape's fee
+        // position is -- no change role can precede it without a sponsor
+        // region.
+        let roles = ExplicitShape::SelfPaidFee.declared_roles();
+        assert_eq!(roles.len(), ExplicitShape::SelfPaidFee.output_count());
+        assert_eq!(
+            roles.iter().filter(|role| **role == Fee).count(),
+            1,
+            "the target admits one fee position",
+        );
+        assert_eq!(roles.last(), Some(&Fee));
+
+        // And every OTHER shape declares nothing at all, which is what
+        // leaves their runs building the bytes they built before this
+        // shape existed.
+        for shape in ExplicitShape::ALL {
+            if *shape == ExplicitShape::SelfPaidFee {
+                continue;
+            }
+            assert!(
+                shape.declared_roles().is_empty(),
+                "{shape:?} declares a role it has no fee to declare",
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_self_paying_shape_leaves_the_demonstration_vocabulary() {
+        // The separation that keeps the demonstration taptree and every
+        // digest recorded against it untouched by the fee axis.
+        for shape in ExplicitShape::ALL {
+            let expected = if *shape == ExplicitShape::SelfPaidFee {
+                LiveShapeVocabulary::FeeBearing
+            } else {
+                LiveShapeVocabulary::Demonstration
+            };
+            assert_eq!(shape.vocabulary(), expected, "{shape:?}");
+        }
     }
 
     #[test]
