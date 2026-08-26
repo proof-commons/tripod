@@ -69,7 +69,7 @@ use tapscript::{
     static_transfer_leaf_set,
 };
 use target_elements::EncodingClass;
-use transaction::bytes::{AssetField, Outpoint, TargetTransaction, Txid, ValueField};
+use transaction::bytes::{AssetField, AssetId, Outpoint, TargetTransaction, Txid, ValueField};
 use transaction::error::TransactionRefusal;
 use transaction::live_abi::CandidateLiveTransferAbi;
 use transaction::live_construct::finalize_live_transfer;
@@ -82,8 +82,10 @@ use transaction::live_signing::{LiveOwnerResponse, authorize_live_transfer};
 use transaction::sponsor::{
     SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest,
 };
+use transaction::taproot::{TAPROOT_WITNESS_VERSION, witness_program_script};
 use transaction::view::{PublicConstructionView, PublicOutputView};
 
+use crate::bundle::PINNED_PROGRAM;
 use crate::error::VectorError;
 use crate::live_capability::OracleFixtureValues;
 use crate::live_plan::{
@@ -178,6 +180,26 @@ pub enum FaultMutation {
     /// thing about a class that is visible at a spend, on this side of
     /// the target and on the target's.
     OfferAReceiptInputUnderAProgramNothingWasLinkedFor,
+    /// Offer a receipt input paying to an honest ASH program.
+    ///
+    /// Not a corrupted program but a REAL one of another family: the
+    /// pinned ASH bundle's own taproot output key, wrapped in the
+    /// reviewed witness-program script. That is what makes the refusal
+    /// about the family rather than about malformed bytes.
+    OfferAnAshProgramAsAReceiptInput,
+    /// Offer owner metadata the approved closure does not fix a width
+    /// for.
+    ///
+    /// One byte short of the approved width, with the encoding class
+    /// left honest, so the refusal is the width's and not the domain's
+    /// — the sibling change `unknown-key-type` already drives.
+    OfferOwnerMetadataOutsideTheApprovedWidth,
+    /// Offer the reserve asset under an honestly linked receipt program.
+    ///
+    /// The program, the value form and the outpoint all stay honest and
+    /// ONLY the asset field moves, which is what puts the refusal at the
+    /// asset check rather than at the program lookup after it.
+    OfferTheReserveAssetUnderAReceiptShapedProgram,
     /// Make the destination total exceed the target's explicit width.
     OverflowTheDestinationTotal,
     /// Offer a commitment-valued receipt to the explicit plan.
@@ -482,6 +504,49 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
             M::OfferAReceiptInputUnderAProgramNothingWasLinkedFor,
             transaction_is!(TransactionRefusal::ReceiptInputIsNotALiveReceipt(_)),
             "ReceiptInputIsNotALiveReceipt",
+        ),
+        // §15.4's three retyped program-generic rows. Each is discharged
+        // by its own validator driven twice, with its own mutant and its
+        // own declared field.
+        //
+        // Two of them draw the same refusal class as `time-locked-input`
+        // above, and that is the established discipline rather than a
+        // collision: the recognition has ONE answer for an input it
+        // cannot find in the linked table, so the LAYER cannot separate
+        // these rows and the FIELD does. Each case below changes exactly
+        // one field and a different one — a whole program of another
+        // family here, the asset alone below — so a reader can tell
+        // which fact each discharge established.
+        case(
+            "ash-input-or-output",
+            V::LiveTransferFinalization,
+            M::OfferAnAshProgramAsAReceiptInput,
+            transaction_is!(TransactionRefusal::ReceiptInputIsNotALiveReceipt(_)),
+            "ReceiptInputIsNotALiveReceipt",
+        ),
+        // The one that is not program-generic in any form, and the only
+        // one of the three answered before a program exists at all.
+        case(
+            "malformed-live-metadata",
+            V::OwnerKeyEncoding,
+            M::OfferOwnerMetadataOutsideTheApprovedWidth,
+            |observed| {
+                matches!(
+                    observed,
+                    ObservedFaultRefusal::OwnerKey(OwnerKeyRejection::WrongWidth { .. })
+                )
+            },
+            "WrongWidth",
+        ),
+        // The asset check runs BEFORE the program lookup, so this row's
+        // refusal names the asset and separates from the two above by
+        // class as well as by field.
+        case(
+            "foreign-asset-under-receipt-shaped-program",
+            V::LiveTransferFinalization,
+            M::OfferTheReserveAssetUnderAReceiptShapedProgram,
+            transaction_is!(TransactionRefusal::ReceiptInputCarriesForeignAsset(_)),
+            "ReceiptInputCarriesForeignAsset",
         ),
         case(
             "time-locked-output",
@@ -1016,6 +1081,80 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
             *key_byte ^= 0x01;
             let view = PublicConstructionView::new(vec![
                 view_of(&abi, first, foreign, ValueField::Explicit(400)),
+                view_of(
+                    &abi,
+                    second,
+                    program(&abi, &SECOND_SCALAR, Explicit)?,
+                    ValueField::Explicit(600),
+                ),
+            ])
+            .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            Ok(Staged {
+                control: finalize_outcome(&abi, &request, &control_view, None)?,
+                malformed: finalize_outcome(&abi, &request, &view, None)?,
+            })
+        }
+        M::OfferAnAshProgramAsAReceiptInput => {
+            let (request, control_view) = explicit_control(&abi)?;
+            let target = reviewed_target()?;
+            let [first, second] = honest_points()?;
+            // One change: the program the first receipt's coin pays to,
+            // which is now the pinned ASH bundle's own taproot output
+            // key under the reviewed witness-program script. An HONEST
+            // program of another family rather than corrupted bytes —
+            // the row is about a family, so a malformed program would
+            // answer a different question. The asset and the value form
+            // stay honest, so the refusal is the program lookup's rather
+            // than the asset check before it.
+            let ash = witness_program_script(&target, TAPROOT_WITNESS_VERSION, &PINNED_PROGRAM)
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            let view = PublicConstructionView::new(vec![
+                view_of(&abi, first, ash, ValueField::Explicit(400)),
+                view_of(
+                    &abi,
+                    second,
+                    program(&abi, &SECOND_SCALAR, Explicit)?,
+                    ValueField::Explicit(600),
+                ),
+            ])
+            .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            Ok(Staged {
+                control: finalize_outcome(&abi, &request, &control_view, None)?,
+                malformed: finalize_outcome(&abi, &request, &view, None)?,
+            })
+        }
+        M::OfferOwnerMetadataOutsideTheApprovedWidth => {
+            let target = reviewed_target()?;
+            let closure = owner_key_encoding_closure(target.definition().authorization());
+            Ok(Staged {
+                control: OwnerKey::new(&closure, closure.approved(), vec![0x11_u8; 32])
+                    .err()
+                    .map(ObservedFaultRefusal::OwnerKey),
+                // One change: the width. The encoding class stays the
+                // approved one, so what refuses is the fixed width and
+                // not the domain — which is the sibling case's change
+                // and would answer the sibling's row.
+                malformed: OwnerKey::new(&closure, closure.approved(), vec![0x11_u8; 31])
+                    .err()
+                    .map(ObservedFaultRefusal::OwnerKey),
+            })
+        }
+        M::OfferTheReserveAssetUnderAReceiptShapedProgram => {
+            let (request, control_view) = explicit_control(&abi)?;
+            let [first, second] = honest_points()?;
+            // One change: the asset the first receipt's coin carries,
+            // which is now the deployment's own reserve asset. The
+            // program stays the honestly linked receipt program and the
+            // value form stays explicit, so the recognition reaches its
+            // ASSET check — which runs before the program lookup — and
+            // refuses naming the outpoint whose asset was foreign.
+            let view = PublicConstructionView::new(vec![
+                PublicOutputView::new(
+                    first,
+                    AssetField::Explicit(AssetId::from_internal(RESERVE_ASSET)),
+                    ValueField::Explicit(400),
+                    program(&abi, &FIRST_SCALAR, Explicit)?,
+                ),
                 view_of(
                     &abi,
                     second,

@@ -229,29 +229,14 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // refused by the commitment rule rather than by anything that reads
     // a class.
     entry(
-        "ash-input-or-output",
-        G::RefusalIsProgramGeneric,
-        "an input under a foreign program is refused by the commitment rule, which reads no family",
-    ),
-    entry(
         "wrong-owner-metadata",
         G::RefusalIsProgramGeneric,
         "owner metadata is committed by the constructor, so changing it changes the program spent",
     ),
     entry(
-        "malformed-live-metadata",
-        G::RefusalIsProgramGeneric,
-        "malformed metadata yields a program the spent output does not commit to",
-    ),
-    entry(
         "stale-constructor",
         G::RefusalIsProgramGeneric,
         "a stale constructor is a different program, refused before any opcode runs",
-    ),
-    entry(
-        "foreign-asset-under-receipt-shaped-program",
-        G::RefusalIsProgramGeneric,
-        "the receipt-shaped program is not the committed one, so the asset is never compared",
     ),
     entry(
         "vault-control-entitlement-or-bare-u-output",

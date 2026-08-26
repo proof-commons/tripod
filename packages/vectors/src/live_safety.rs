@@ -866,14 +866,31 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         L::LinkedConstructorProgram,
         B::AbiConstructionRejection,
     ),
-    linked(
+    // RETYPED FIRST-PARTY, on the ruling and on the `time-locked-input`
+    // precedent exactly. The row was typed target-side, asking that an
+    // ASH input offered to a live transfer be refused by something that
+    // reads its family. Nothing on a chain does: what separates one
+    // receipt family from another before any leaf runs is the LEAF
+    // COMMITMENT, and a spend of a foreign program draws the identical
+    // verdict every foreign taptree draws. THE COMMITMENT REFUSAL IS
+    // PROGRAM-GENERIC AND CAN NEVER NAME THE FAMILY — the pinned target
+    // source refuses a revealed leaf before a single opcode executes at
+    // `src/script/interpreter.cpp:3286-3290`, where a failed
+    // `VerifyTaprootCommitment` is `SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH`
+    // — so an observation of it establishes the commitment rule and says
+    // nothing about families. No later wave is owed that observation and
+    // producing it would not answer this row; it is written here so the
+    // demand cannot be raised again.
+    //
+    // The structural protection is first-party and is driven: the input
+    // recognition searches the linked destination table, an honest ASH
+    // program is not in it, and the finalization answers naming the
+    // class it required.
+    pre_target(
         S::ObjectFault,
         "ash-input-or-output",
-        L::SemanticFact,
-        B::ScriptPathRejection,
-        allowed_families(TransactionSide::Input),
-        undeclared_family,
-        "UndeclaredObjectFamily",
+        L::LinkedConstructorProgram,
+        B::AbiConstructionRejection,
     ),
     linked(
         S::ObjectFault,
@@ -897,14 +914,20 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         wrong_object,
         "WrongRecognizedObject",
     ),
-    linked(
+    // RETYPED FIRST-PARTY, and this row is the one of the seven whose
+    // refusal is NOT program-generic at all. Owner metadata is
+    // authenticated by the constructor before a program exists to place
+    // it in (§1.8, §7.2), exactly as the owner-key encoding is, so
+    // malformed metadata is refused at the same entry point
+    // `unknown-key-type` is refused at and names its own class: a width
+    // the approved closure does not fix. Nothing reaches a chain to be
+    // refused generically, which is why the row is here rather than
+    // waiting on a run that would answer a different question.
+    pre_target(
         S::ObjectFault,
         "malformed-live-metadata",
-        L::SemanticFact,
-        B::ScriptPathRejection,
-        recognition(TransactionSide::Input, ObjectId::ReceiptLive),
-        wrong_object,
-        "WrongRecognizedObject",
+        L::LinkedConstructorProgram,
+        B::AbiConstructionRejection,
     ),
     // §15.4's erratum, filed in the feature-request register. The row
     // arrived declaring `LinkerRejection`, and the linker neither derives
@@ -982,14 +1005,21 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         undeclared_family,
         "UndeclaredObjectFamily",
     ),
-    linked(
+    // RETYPED FIRST-PARTY, and the cleanest of the seven: the asset is
+    // checked BEFORE the program lookup, so the refusal is attributable
+    // to the asset alone rather than to the shape of the program. The
+    // row was typed target-side on the reading that a receipt-shaped
+    // program carrying a foreign asset reaches a leaf that compares
+    // assets. It does not — the receipt-shaped program is not the
+    // committed one, so the asset is never compared and the commitment
+    // rule answers instead, program-generically. First-party, the honest
+    // linked program is kept and ONLY the asset field is changed, which
+    // is what makes the class the row's own.
+    pre_target(
         S::ObjectFault,
         "foreign-asset-under-receipt-shaped-program",
         L::SemanticFact,
-        B::ScriptPathRejection,
-        recognition(TransactionSide::Input, ObjectId::ReceiptLive),
-        wrong_asset,
-        "WrongRecognizedAsset",
+        B::AbiConstructionRejection,
     ),
     // §7.5 admits no key-path escape, and the internal key is the
     // published unspendable one. A key-path spend is expressible only in
