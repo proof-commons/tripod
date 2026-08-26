@@ -72,8 +72,8 @@ pub use live_pattern::{
     live_owner_profile_disposition, live_program_precondition, live_transfer_patterns,
     local_recognition_fragment, mutated_owner_authorization_fragment, mutation_gate,
     negative_disposition, owner_authorization_fragment, owner_authorization_precondition,
-    owner_key_mutation_outcome, owner_key_obligation, patterns_for, recognition_establishments,
-    validate_coordinator_placements,
+    owner_key_mutation_outcome, owner_key_obligation, patterns_for, patterns_for_composition,
+    recognition_establishments, validate_coordinator_placements,
 };
 pub use live_plan::{
     CompleteFamilyRanges, FamilyRangeDefect, LiveFamily, LiveFamilyRange, LiveInputFamily,
