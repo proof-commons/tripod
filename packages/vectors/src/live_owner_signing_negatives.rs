@@ -406,7 +406,7 @@ impl OwnerSigningNegativePlanner {
     }
 
     /// Record one refusal and stop.
-    fn refuse(&mut self, refusal: OwnerSigningNegativeRefusal) -> PlanRefused {
+    const fn refuse(&mut self, refusal: OwnerSigningNegativeRefusal) -> PlanRefused {
         if self.record.refusal.is_none() {
             self.record.refusal = Some(refusal);
         }
@@ -773,7 +773,7 @@ impl OwnerSigningNegativePlanner {
     }
 
     /// Rebuild and stage the control for submission.
-    fn stage_control(&mut self) -> Result<Vec<u8>, OwnerSigningNegativeRefusal> {
+    fn stage_control(&self) -> Result<Vec<u8>, OwnerSigningNegativeRefusal> {
         let finalized = self.finalize()?;
         let spent_outputs = self.spent_outputs(&finalized)?;
         let (control_bytes, _message) = self.build(&finalized, &spent_outputs, false)?;
