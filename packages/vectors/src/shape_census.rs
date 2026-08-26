@@ -595,20 +595,20 @@ const SPONSORLESS_FEE_REMOVAL: LimitationRemoval = LimitationRemoval {
 
 /// The homogeneous-representation limitation's removal, recorded once.
 ///
-/// `proven_by` is `None`, and that absence is the whole honest half of
-/// this record. The vocabulary really does express both crossing
-/// directions now — a composition pairs a plan to each side, the
-/// coordinator dispatches its value obligation on the pairing, the exit
-/// crossing has a positional value-form leaf naming its declared
-/// absorber, the registry has an explicit receipt destination role and
-/// the materializer builds one — and NO node has been offered either
-/// shape. A vocabulary that can express a shape and a chain that has
-/// accepted one are different facts, and this register's whole reason
-/// for existing is not collapsing them into one word.
+/// `proven_by` carries an identity because a shape it freed RAN: a real
+/// node accepted and mined the EXIT crossing. The removal is therefore
+/// TAKEN and not merely filed, which is the only thing that turns a
+/// named path into a taken one.
+///
+/// It proves the exit direction and it does not prove the entry one.
+/// The two rows say so separately, and that separation is the register
+/// working: one removal can free two shapes and be carried to a chain by
+/// only one of them, and a record that reported the removal alone would
+/// imply both had run.
 const PER_SIDE_REPRESENTATION_REMOVAL: LimitationRemoval = LimitationRemoval {
     row: "T5-054",
     change: "A composition pairs one admitted representation plan to each SIDE of a transfer,              taking §6.5's own \"unless separately admitted\" clause rather than widening the              guide, and leaving the plan census at the two members §6.1 states exhaustively. The              constructor carries the composition and derives its representation from the CONSUMED              side, so a crossing deployment seats its crossing constructor at exactly the key a              coin is recognized under and no destination table widens. The coordinator's value              obligation dispatches on the composition rather than on one plan, which is what the              obligation was always about -- the side a transfer CREATES -- and the exit direction              gains a POSITIONAL value-form fragment requiring the explicit form at every              destination but the declared absorber and the confidential form at that one. The              absorber is a declared destination position inside the destination range, so it adds              no output family and the §10.4 closure argument is untouched. The registry gained an              explicit receipt destination role at a new transcript code, the opposite corner of              the three predicates from the fee, and the materializer builds one through its own              stage that asks the target for the OPPOSITE answer the fee stage asks for. Every              recorded digest re-derives bit-for-bit through all of it.",
-    proven_by: None,
+    proven_by: Some(crate::live_multi_shapes::run_of_record::EXIT_CROSSING_ACCEPTED_TXID),
 };
 
 /// A first-party convention that refuses a shape consensus admits.
@@ -1541,6 +1541,10 @@ mod tests {
                 BlindedShape::TwoToOne,
                 crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID,
             ),
+            (
+                BlindedShape::ExitCrossing,
+                crate::live_multi_shapes::run_of_record::EXIT_CROSSING_ACCEPTED_TXID,
+            ),
         ];
         for (shape, identity) in expected {
             let entry = census_entry(shape);
@@ -1560,7 +1564,12 @@ mod tests {
                 shape.handle(),
             );
         }
-        assert_eq!(expected.len(), 7, "seven of the eight shapes have been run");
+        assert_eq!(
+            expected.len(),
+            8,
+            "eight of the eleven shapes have been run: the seven homogeneous ones and the exit \
+             crossing",
+        );
 
         // The converse, which this test used to leave unchecked. The list
         // above says every shape in it is observed; without this, a shape
@@ -1826,12 +1835,21 @@ mod tests {
                 continue;
             };
 
-            assert_eq!(
-                removal.proven_by,
-                None,
-                "{} has not run, so its removal proves nothing about a chain",
-                shape.handle(),
-            );
+            // NOT `removal.proven_by == None`, and the change is a
+            // reading rather than a loosening. That assertion encoded an
+            // assumption that has now been refuted by running: that a
+            // removal frees exactly one shape. The crossing removal
+            // freed TWO, the exit direction ran and the entry direction
+            // did not, and `proven_by` names -- by its own field doc --
+            // the first shape a removal unlocked, not every shape it
+            // could.
+            //
+            // What the discipline actually forbids is a ROW claiming an
+            // acceptance it does not have, and that is asserted below
+            // against this shape's own consensus verdict. A removal's
+            // proof and a row's evidence are different facts, and this
+            // is the register whose reason for existing is not
+            // collapsing facts of different kinds into one word.
             assert_ne!(stops_at, "", "the stopping layer is named");
             assert_eq!(removed.removal(), Some(removal));
 
@@ -1852,26 +1870,31 @@ mod tests {
         // here -- or one of these two leaving without its acceptance
         // being recorded -- is a visible test change and not a number
         // that quietly moved.
+        // OCCUPIED by the ENTRY direction alone. Both crossings sat
+        // here when the vocabulary landed; the exit direction then ran
+        // and left by the only honest exit, an acceptance of its own
+        // shape. The list is pinned rather than counted, so the entry
+        // direction leaving without an acceptance recorded, or a third
+        // shape arriving, is a visible test change.
         assert_eq!(
             expressible,
-            vec![BlindedShape::EntryCrossing, BlindedShape::ExitCrossing],
-            "the two crossing directions are expressible and unrun",
+            vec![BlindedShape::EntryCrossing],
+            "the entry crossing is expressible and unrun",
         );
 
-        // The two stop at DIFFERENT layers, and saying so is most of
-        // what makes the filing worth keeping: a single "not yet" would
-        // hide that one direction is blocked on a vocabulary gap and the
-        // other only on a ceremony nobody has written.
-        let stops: Vec<&str> = expressible
-            .iter()
-            .map(|shape| match census_entry(*shape).first_party {
-                FirstPartyStatus::ExpressibleAndUnrun { stops_at, .. } => stops_at,
-                _ => unreachable!("filtered above"),
-            })
-            .collect();
-        assert_ne!(
-            stops[0], stops[1],
-            "two directions blocked at one layer would be one filing, not two",
+        // Its removal is PROVEN, by the other shape it freed, and that
+        // is not a contradiction to resolve but the distinction the
+        // register keeps: the vocabulary really was carried to a chain,
+        // and THIS shape still has no acceptance of its own.
+        let FirstPartyStatus::ExpressibleAndUnrun { removal, .. } =
+            census_entry(BlindedShape::EntryCrossing).first_party
+        else {
+            unreachable!("asserted above");
+        };
+        assert_eq!(
+            removal.proven_by,
+            Some(crate::live_multi_shapes::run_of_record::EXIT_CROSSING_ACCEPTED_TXID),
+            "the crossing removal was carried to a chain by the exit direction",
         );
 
         // The fee-bearing shape used to be the sole member here, and it
