@@ -26,7 +26,7 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU8;
 
-use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
+use compiler::live_transfer_plan::{LiveTransferComposition, LiveTransferRepresentationPlan};
 use compiler::target::ExternalEvidenceRole;
 use target_elements::{
     EncodingClass, FailureCause, OpcodeId, PayloadWidth, ReviewedElementsTapscriptDefinition,
@@ -53,8 +53,8 @@ use crate::live_pattern::{
     live_owner_profile_disposition, live_program_precondition, live_transfer_patterns,
     local_recognition_fragment, mutated_owner_authorization_fragment, mutation_gate,
     negative_disposition, owner_authorization_fragment, owner_authorization_precondition,
-    owner_key_mutation_outcome, owner_key_obligation, patterns_for, recognition_establishments,
-    validate_coordinator_placements,
+    owner_key_mutation_outcome, owner_key_obligation, patterns_for, patterns_for_composition,
+    recognition_establishments, validate_coordinator_placements,
 };
 use crate::live_plan::{has_sponsor_region, live_sponsor_isolation_fragment};
 use crate::live_private::prefix_mask;
@@ -1037,21 +1037,44 @@ fn a_false_comparison_followed_by_verify_has_no_abstract_success_path() {
 fn every_pattern_identity_has_a_record_built_by_walking_its_fragment() {
     // A sponsored shape with a member position, which is the one shape
     // that calls for every identity a single representation can reach: it
-    // has a nonzero receipt position and a sponsor region. The two value
-    // obligations are a partition, so no one selection holds both — the
-    // union over the two plans is what covers the census.
+    // has a nonzero receipt position and a sponsor region. The value
+    // obligations are a partition, so no one selection holds two — the
+    // union over every COMPOSITION is what covers the census.
+    //
+    // Over compositions and no longer over plans, and that is the claim
+    // rather than a mechanical widening: the obligation a coordinator
+    // owes is decided by the pairing of its two sides, so a union over
+    // plans alone would miss the one obligation only a crossing selects
+    // and would report a pattern identity nothing reaches.
     let subject = sponsored_shape(2);
     let patterns = live_transfer_patterns(&reviewed_target(), &symbols(), &explicit(), subject)
         .expect("the census builds");
 
-    let both = [
-        LiveTransferRepresentationPlan::Explicit,
-        LiveTransferRepresentationPlan::PrivateCommitted,
-    ]
-    .into_iter()
-    .flat_map(|representation| patterns_for(subject, representation))
-    .collect::<BTreeSet<_>>();
-    assert_eq!(both, LiveTransferPatternId::ALL.iter().copied().collect());
+    let every = LiveTransferComposition::ALL
+        .iter()
+        .copied()
+        .flat_map(|composition| patterns_for_composition(subject, composition))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(every, LiveTransferPatternId::ALL.iter().copied().collect());
+
+    // And it really is a partition: each composition selects EXACTLY one
+    // of the three value obligations, so none is emitted with the slot
+    // silently empty and none with two answers in it.
+    for composition in LiveTransferComposition::ALL.iter().copied() {
+        let selected = patterns_for_composition(subject, composition);
+        let obligations = [
+            LiveTransferPatternId::LiveExplicitConservationV1,
+            LiveTransferPatternId::LivePrivateDestinationFormV1,
+            LiveTransferPatternId::LiveCrossingDestinationFormV1,
+        ]
+        .into_iter()
+        .filter(|id| selected.contains(id))
+        .count();
+        assert_eq!(
+            obligations, 1,
+            "{composition:?} selects {obligations} value obligations, not one",
+        );
+    }
 
     assert_eq!(
         patterns.keys().copied().collect::<BTreeSet<_>>(),
