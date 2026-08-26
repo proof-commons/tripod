@@ -1869,9 +1869,11 @@ pub mod sponsored_run_of_record {
     /// Whether any ceremony in this workspace funds a sponsor coin whose
     /// VALUE is blinded.
     ///
-    /// `false`, and this is the filed path rather than a note: the
+    /// Still `false`, and still the filed path rather than a note: the
     /// sponsored side of §15.2's `private-sponsor-values` row rests on
-    /// it, and flipping it is the next wave's work.
+    /// it. What has changed is everything BEHIND it, so this is a
+    /// narrower stop than the one it replaces rather than the same one
+    /// restated.
     ///
     /// # Why a confidential sponsor value needs the with-change shape
     ///
@@ -1882,34 +1884,77 @@ pub mod sponsored_run_of_record {
     /// mandatorily explicit — an empty-script output with a committed
     /// value is not a fee at the target at all. So blinding the sponsor
     /// input there commits to a publicly derivable number and hides
-    /// nothing, which is the same degeneracy the fixture registry
-    /// already refuses in its balancing solve.
+    /// nothing.
     ///
-    /// The with-change shape removes that, and it now RUNS: see
-    /// [`SPONSORED_CHANGE_ACCEPTED_TXID`]. Which is why this is the next
-    /// thing rather than a thing behind another thing.
+    /// The with-change shape removes that, and it RUNS: see
+    /// [`SPONSORED_CHANGE_ACCEPTED_TXID`].
     ///
-    /// # What the blinder arithmetic does NOT need
+    /// # What now stands, each of it run rather than argued
     ///
-    /// Nothing. The transaction-wide solve subtracts freely chosen
-    /// `Primary` blinders from the input blinder sum and holds the fee
-    /// out at a zero blinder, and the `r·G` term does not depend on
-    /// which asset an output carries. So a blinded sponsor change is
-    /// simply a `Primary`, a blinded sponsor input is one more addend in
-    /// the input sum, and the existing single balancing election
-    /// absorbs the residue with no second election and no new role. The
-    /// destination intents already carry a PER-OUTPUT asset, so a
-    /// reserve-asset blinded change needs no widening there either.
+    /// The CONSTRUCTION EXISTS. The whole shape materializes in this
+    /// workspace end to end — a blinded-value sponsor coin consumed
+    /// beside the receipts, a blinded sponsor change returned, an
+    /// explicit fee paid, blinded receipt destinations, every asset field
+    /// explicit throughout — and the test that builds it says so at
+    /// `the_whole_sponsored_confidential_shape_materializes`. Before it,
+    /// the shape was INEXPRESSIBLE rather than merely unbuilt.
     ///
-    /// # What it does need, each site read rather than predicted
+    /// The absorber claim is executed rather than argued a third time:
+    /// the single balancing election already elected absorbs a sponsor
+    /// change's residue, needing no second election and no new role in
+    /// the solve, and the test asserts first that the two candidate
+    /// solves are different values so a run that quietly dropped the
+    /// sponsor term fails instead of passing on a coincidence.
     ///
-    /// The private lane refuses a sponsored request at its entry and
-    /// passes a sponsor count of zero to shape selection, so a sponsored
-    /// private request selects no shape at all. Its openings vocabulary
-    /// indexes inputs against the receipts alone, so a sponsor input has
-    /// nowhere to put its opening or its blinder. Its destination
-    /// intents are built from the receipt destinations, so the sponsor
-    /// change and the fee have no intent to be built from.
+    /// The funding-region classifier has the sponsor's own region and
+    /// four rules for it, and the ordering defect behind it is repaired:
+    /// the region is now decided BEFORE the clauses that guard it, so the
+    /// explicitness clause no longer masks the proof clause.
+    ///
+    /// # Two more of the spike's readings are overturned, by reading
+    ///
+    /// It said the destination intents already carry a per-output asset
+    /// so a reserve-asset change needs no widening. Half right: the TYPE
+    /// carries one, and both the caller and the validator wrote the
+    /// protocol asset over it, so the materializer refused the shape as
+    /// an asset disagreement among its own destinations. That is now
+    /// three separate places that decide an asset, and they read one
+    /// answer.
+    ///
+    /// It also left open how a sponsor input's blinder reaches the solve,
+    /// which looked like it needed scalar summation in a crate that
+    /// carries no bignum and may not acquire one. It needs none: the
+    /// sponsor's coin is an output of its OWN registered funding fixture,
+    /// so its blinder is the registry's derivation like every other
+    /// opening, and the successor fixture registers an input sum that
+    /// already includes it.
+    ///
+    /// # What remains, each site read rather than predicted
+    ///
+    /// The EXECUTOR funds and signs its sponsor coin explicitly
+    /// throughout and this is the layer the flag is about. `fund_sponsor`
+    /// writes an explicit value field and caches an integer amount;
+    /// `sign_sponsor` rebuilds the sighash value field from that integer,
+    /// though the framework below it already serializes a 33-byte
+    /// commitment correctly and needs no change; `created` reads
+    /// `gettxout`'s `value`, which a blinded output does not carry, and
+    /// the confidential path avoids it by reading mined bytes back
+    /// instead. `fund_confidential` is the working template and caches
+    /// NOTHING, which is the one gap it does not close: a coin that will
+    /// be SPENT needs its commitment retained, and the receipt path never
+    /// spends one. A blinded sponsor coin also needs a balancing output
+    /// in its own funding transaction, its single input today being an
+    /// explicit change coin at a zero blinder.
+    ///
+    /// The PRIVATE LANE still refuses a sponsored request at its entry
+    /// and passes a sponsor count of zero to shape selection. Admitting
+    /// one needs two more parameters on the entry point rather than a
+    /// relaxation: the reviewed target, because the sponsor change's
+    /// program is built from the deployment symbol through
+    /// `witness_program_script` and refused if a capability offers any
+    /// other destination, and the sponsor capability itself. Its openings
+    /// vocabulary indexes inputs against the receipts alone, and its
+    /// destination intents take the protocol asset unconditionally.
     ///
     /// And the structural one, which is not a widening of anything: the
     /// private lane has NO sponsor signing stage. The explicit lane
@@ -1918,21 +1963,28 @@ pub mod sponsored_run_of_record {
     /// materializer's, and its control assembly builds one witness per
     /// RECEIPT record with no sponsor slot and no capability call.
     ///
-    /// Outside the lane: the funding-region classifier refuses a
-    /// non-protocol member that carries a commitment and refuses one
-    /// that carries a proof, in that order, and decides a member's
-    /// region by whether its program is empty — so it needs a region
-    /// member as well as both clauses. The executor funds and signs the
-    /// sponsor coin explicitly throughout, and its sponsor program has
-    /// no blinding key.
+    /// The FIXTURE REGISTRY has one explicit asset per case and no
+    /// sponsor-change output role, so the sponsored successor and the
+    /// sponsor's own funding case are both unregistered. Every recorded
+    /// digest has to re-derive across that, on the pattern the fee axis
+    /// already set.
+    ///
+    /// The SHAPE CENSUS has no sponsored-shape row vocabulary at all —
+    /// not one member of it mentions a sponsor region, every `sponsor`
+    /// string in it being `sponsorless` — so there is nothing there to
+    /// extend and a member would be new vocabulary arguing past the
+    /// enum's own stated closure rule. Filed rather than invented, on the
+    /// census's own discipline that naming a path says nothing about
+    /// taking it.
     ///
     /// # This is a typed stop and not a prediction
     ///
-    /// Two readings of a sponsored obstacle have been overturned by
-    /// running in this lane's own history, so nothing above is offered
-    /// as a forecast of what a node would say. Every site named is one
-    /// read in the source, and what a target thinks of the shape is
-    /// unknown until one is asked.
+    /// Five readings of a sponsored obstacle have now been overturned by
+    /// running or by reading the code they were about, three in the
+    /// previous wave and two in this one. Nothing above is offered as a
+    /// forecast of what a node would say. Every site named is one read in
+    /// the source, and what a target thinks of the shape is unknown until
+    /// one is asked.
     pub const A_BLINDED_SPONSOR_VALUE_IS_FUNDED_ANYWHERE: bool = false;
 }
 
