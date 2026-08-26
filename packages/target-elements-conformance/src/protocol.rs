@@ -2808,10 +2808,10 @@ impl NativeOperationResponse {
     /// it judged — a refusal is a verdict, and the transaction it refused
     /// still has a weight the node reports.
     ///
-    /// The match over the step kinds is exhaustive and stays that way. A
-    /// kind added later has no shape rule until one is written here, and
-    /// the compiler is what says so — a catch-all arm would let a new kind
-    /// be admitted, or refused, by a rule nobody chose for it.
+    /// This half asks which members belong to a kind at all. What a kind
+    /// OWES on an acceptance, and what it may not carry on a refusal, is
+    /// the other half and lives in
+    /// [`Self::validate_observation_for_kind`].
     ///
     /// # Errors
     ///
@@ -2881,6 +2881,38 @@ impl NativeOperationResponse {
             return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
         }
 
+        self.validate_observation_for_kind()
+    }
+
+    /// The per-kind half of [`Self::validate_shape`]: what each step
+    /// owes on acceptance, and what it may not carry on a refusal.
+    ///
+    /// Split from its caller because the two ask different questions.
+    /// The caller asks which members belong to a kind AT ALL, which is a
+    /// statement about the vocabulary; this asks whether the members a
+    /// kind may carry are the ones an acceptance or a refusal of it
+    /// entails, which is a statement about one answer. The predicates
+    /// are recomputed here rather than passed in: each is one read of
+    /// one member, and threading six booleans through a boundary would
+    /// make the split look like a shared calculation instead of two
+    /// separate questions over the same record.
+    ///
+    /// The match over the step kinds is exhaustive and stays that way. A
+    /// kind added later has no shape rule until one is written here, and
+    /// the compiler is what says so — a catch-all arm would let a new
+    /// kind be admitted, or refused, by a rule nobody chose for it.
+    ///
+    /// # Errors
+    ///
+    /// [`ResponseShapeDefect`] where the response is not a shape the
+    /// protocol defines.
+    const fn validate_observation_for_kind(&self) -> Result<(), ResponseShapeDefect> {
+        let issues = self.issued_asset.is_some();
+        let creates_coins = !self.funded_outputs.is_empty();
+        let submits = self.accepted_txid.is_some();
+        let authorizes = !self.sponsor_witness.is_empty() || self.signature_bound_to.is_some();
+        let creates_confidential_coins = !self.confidential_funded_outputs.is_empty();
+        let reads_back = self.mined_readback.is_some();
         let accepted = matches!(self.observed_layer, ObservedOutcomeLayer::Accepted);
         match self.case.operation {
             OperationStepKind::Fund => {
