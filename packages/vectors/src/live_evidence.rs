@@ -2503,7 +2503,22 @@ mod tests {
             raw.standing(),
             LiveRowStanding::FirstPartyFactObserved { .. }
         ));
-        assert_eq!(plan.census().first_party_fact_observed(), 1);
+        // TWO rows stand here, and they are different kinds of fact
+        // answering the same kind of gate. The raw-bypass row asks
+        // whether a path EXISTS; the zero-valued sponsor row asks
+        // whether a shape is ADMITTED, and the sources say it is. Both
+        // are statements this workspace makes about itself, and neither
+        // is anything a target said.
+        assert_eq!(plan.census().first_party_fact_observed(), 2);
+        let zero = plan
+            .rows()
+            .iter()
+            .find(|row| row.row().name() == "zero-valued-ordinary-sponsor-member")
+            .expect("the zero-valued sponsor row is in the matrix");
+        assert!(matches!(
+            zero.standing(),
+            LiveRowStanding::FirstPartyFactObserved { .. }
+        ));
         // And it did NOT land in either target bucket. The separate
         // bucket's whole claim, made checkable.
         assert_eq!(plan.census().native_run_observed(), 24);
