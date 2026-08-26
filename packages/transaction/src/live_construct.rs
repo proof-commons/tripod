@@ -56,10 +56,10 @@ use crate::live_finalize::{
 };
 use crate::live_materialize::{
     ConfidentialConstructionIntent, ConfidentialDestinationIntent, ConfidentialInputIntent,
-    ConfidentialMaterializationProfiles, ConfidentialOutputRole, ConfidentialProofMaterializer,
-    FixtureOpeningReference, FrozenConfidentialFixtureView, IndependentCommitmentCheck,
-    MaterializedConfidentialCandidate, NonProtocolFundingRegion, SCALAR_BYTES,
-    materialize_confidential_candidate,
+    ConfidentialInputRegion, ConfidentialMaterializationProfiles, ConfidentialOutputRole,
+    ConfidentialProofMaterializer, FixtureOpeningReference, FrozenConfidentialFixtureView,
+    IndependentCommitmentCheck, MaterializedConfidentialCandidate, NonProtocolFundingRegion,
+    SCALAR_BYTES, materialize_confidential_candidate,
 };
 use crate::live_private::{
     ConfidentialConstructionModel, PrivateValueCapability, SelectedConstructionModel,
@@ -329,7 +329,12 @@ pub fn finalize_live_transfer(
     // from the sponsor region and construction places it, and the
     // explicit sponsorless form that pays its own fee is not built here
     // yet.
-    let shape = select_shape(abi, request, sponsor_inputs.len(), 0)?;
+    let shape = select_shape(
+        abi,
+        request,
+        sponsor_inputs.len(),
+        DeclaredDestinationRoles::NONE,
+    )?;
 
     // Stage 5: recognize each consumed receipt.
     let recognized = recognize_receipts(abi, request, view)?;
@@ -526,6 +531,63 @@ fn check_form_exactness(
     }
 }
 
+/// How many declared destination positions are NOT live receipt outputs.
+///
+/// A census of the request's own destinations by the role their openings
+/// carry, taken once and handed to shape selection, rather than two
+/// counts recomputed at each caller.
+///
+/// # Why the two roles are counted apart
+///
+/// Because they are discounted for the same reason and consulted for
+/// different ones. Both a fee position and a sponsor-change position
+/// occupy a declared destination slot that is not a live receipt output,
+/// so both are subtracted before the receipt-output comparison. Only the
+/// fee decides whether the candidate bears a fee. Collapsing them into
+/// one total is arithmetically equal on every shape this lane builds
+/// today and wrong on the first sponsorless request that declares a
+/// change position, which is precisely the kind of agreement that stops
+/// holding without anything looking different.
+///
+/// The explicit lane declares NEITHER: it appends its sponsor change and
+/// its fee itself, from the offer, at the positions the shape names, and
+/// its request's destinations are receipt outputs to a one. So it passes
+/// [`Self::NONE`] and the discount is a private-lane fact stated where
+/// the private lane states every other one — the opening's role.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DeclaredDestinationRoles {
+    /// Declared positions whose role is a fee.
+    fee: usize,
+    /// Declared positions whose role is the sponsor's change.
+    sponsor_change: usize,
+}
+
+impl DeclaredDestinationRoles {
+    /// A request whose declared destinations are all receipt outputs.
+    const NONE: Self = Self {
+        fee: 0,
+        sponsor_change: 0,
+    };
+
+    /// Census the openings' roles.
+    fn census(openings: &[PrivateDestinationOpening]) -> Self {
+        let mut roles = Self::NONE;
+        for opening in openings {
+            match opening.role {
+                ConfidentialOutputRole::Fee => roles.fee += 1,
+                ConfidentialOutputRole::SponsorChange => roles.sponsor_change += 1,
+                ConfidentialOutputRole::Primary | ConfidentialOutputRole::Balancing => (),
+            }
+        }
+        roles
+    }
+
+    /// How many declared positions are discounted altogether.
+    const fn declared(self) -> usize {
+        self.fee + self.sponsor_change
+    }
+}
+
 /// The one admitted shape realizing every requested count.
 ///
 /// Six conjuncts, and the form is one of them rather than a consequence
@@ -552,7 +614,7 @@ fn select_shape<'abi>(
     abi: &'abi CandidateLiveTransferAbi,
     request: &LiveTransferRequest,
     sponsor_inputs: usize,
-    fee_destinations: usize,
+    roles: DeclaredDestinationRoles,
 ) -> Result<&'abi LiveShapeAbi, TransactionRefusal> {
     let receipt_inputs = request.receipts().len();
     let declared = request.destinations().len();
@@ -565,7 +627,16 @@ fn select_shape<'abi>(
     // A sponsored form's fee is funded by the sponsor region and never
     // appears among the destinations, so the two sources of a fee output
     // are disjoint and adding them would be double counting.
-    let bears_a_fee = fee_destinations > 0 || request.form().sponsored();
+    //
+    // The fee count is read on its own and NOT off the combined
+    // non-receipt total, because the two discounts answer two different
+    // questions. A declared sponsor-change position is discounted from
+    // the receipt-output comparison exactly as a fee is, and it says
+    // nothing whatever about whether the candidate bears a fee — a
+    // request declaring a change position and no fee would otherwise be
+    // matched against a fee-bearing shape on the strength of the
+    // change.
+    let bears_a_fee = roles.fee > 0 || request.form().sponsored();
 
     let refusal = TransactionRefusal::UnsupportedLiveShape {
         receipt_inputs,
@@ -573,10 +644,10 @@ fn select_shape<'abi>(
         sponsor_inputs,
         sponsor_change,
     };
-    // Refused rather than saturated: a request declaring more fee
+    // Refused rather than saturated: a request declaring more non-receipt
     // positions than it has destinations describes no shape at all, and
     // clamping it would go looking for one.
-    let Some(destinations) = declared.checked_sub(fee_destinations) else {
+    let Some(destinations) = declared.checked_sub(roles.declared()) else {
         return Err(refusal);
     };
 
@@ -655,12 +726,34 @@ struct RecognizedReceipt {
 /// form, and a clause here would not be enforcing §6.3 — it would be
 /// extending it over a region it was written to exclude.
 ///
-/// What follows is that the two forms are independently choosable: a
-/// private transfer may be sponsored by an explicit coin, and an
-/// explicit transfer's sponsor could carry a commitment. The first is a
-/// registered pair member. The second is what the
-/// `private-sponsor-values` row is about, and it is unbuilt for reasons
-/// that have nothing to do with a guard here.
+/// What follows is that this function guards neither form, and both are
+/// built without complaint here. A private transfer sponsored by an
+/// explicit coin is a registered pair member and is accepted.
+///
+/// # A reading recorded here was overturned by running
+///
+/// This comment used to add that an explicit transfer's sponsor could
+/// carry a commitment, and named that combination as what the
+/// `private-sponsor-values` row is about. The first half stands and is
+/// the paragraph above: nothing here guards the value form, and such a
+/// candidate is CONSTRUCTED. The second half is refuted by a target. The
+/// candidate was built, owner-signed, sponsor-signed and offered to the
+/// pinned node, which refused it at consensus before script with its
+/// balance check.
+///
+/// The refusal is arithmetic and not policy, which is why no guard here
+/// could have been the difference. The target balances per asset, so the
+/// reserve sub-equation is the sponsor input against the fee and the
+/// change. A committed sponsor value carries a blinder, both outputs the
+/// explicit lane writes for that region are explicit and carry none, and
+/// nothing in the transaction absorbs the difference — so the sum cannot
+/// close whatever the amounts are. A fee is mandatorily explicit, so the
+/// only term that could absorb it is the sponsor's CHANGE, and the lane
+/// that writes committed change is the private one.
+///
+/// So `private-sponsor-values` is about a PRIVATE transfer sponsored by
+/// a committed coin, and it is
+/// [`finalize_private_live_transfer`] that builds it.
 ///
 /// The ASSET is different and is checked above, because the covenant
 /// reads it and an introspection reads an explicit field.
@@ -958,8 +1051,23 @@ pub struct PrivateLiveOpenings {
 }
 
 /// One spent predecessor output's opening facts.
+///
+/// One type for both regions, because a sponsor's coin needs exactly
+/// what a receipt needs: it is an output of its own funding fixture, so
+/// it opens against the registry the same way and its blinder joins the
+/// same transaction-wide sum. What differs is which equations it is
+/// inside, and that is the [`Self::region`] field rather than a second
+/// vocabulary.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrivateInputOpening {
+    /// Which region this input belongs to.
+    ///
+    /// Declared by the caller and checked against the position, never
+    /// inferred from the asset — the materializer's own reason applies
+    /// unchanged here, that a region read off the asset would make the
+    /// protocol balance depend on a comparison the balance is trying to
+    /// decide.
+    pub region: ConfidentialInputRegion,
     /// Which registered fixture output this input is.
     pub opening: FixtureOpeningReference,
     /// The explicit amount behind the spent commitment.
@@ -1033,6 +1141,8 @@ impl PrivateLiveOpenings {
 pub struct PrivateLiveFinalization {
     materialized: MaterializedConfidentialCandidate,
     receipts: Vec<ReceiptInputRecord>,
+    sponsor_inputs: Vec<Outpoint>,
+    sponsor_spent: Vec<SpentSponsorOutput>,
     report: LiveConstructionReport,
 }
 
@@ -1048,6 +1158,27 @@ impl PrivateLiveFinalization {
     #[must_use]
     pub fn receipts(&self) -> &[ReceiptInputRecord] {
         &self.receipts
+    }
+
+    /// The sponsor's consumed coins, in the suffix order they occupy.
+    ///
+    /// Empty for a sponsorless candidate, which is the same thing the
+    /// explicit lane's finalization says with the same emptiness.
+    #[must_use]
+    pub fn sponsor_inputs(&self) -> &[Outpoint] {
+        &self.sponsor_inputs
+    }
+
+    /// What the view stated each sponsor coin held.
+    ///
+    /// Carried rather than re-fetched, because an owner's signature
+    /// commits to EVERY spent output and this is the last place holding
+    /// a view of the sponsor region. A caller rebuilding the owner
+    /// message from the receipts alone would sign a different
+    /// transaction than the one it is about to submit.
+    #[must_use]
+    pub fn sponsor_spent(&self) -> &[SpentSponsorOutput] {
+        &self.sponsor_spent
     }
 
     /// The construction report.
@@ -1070,33 +1201,81 @@ impl PrivateLiveFinalization {
 /// destination's program is decided, and because a fee destination
 /// decides it differently — see the comment inside.
 ///
+/// # Which asset each position carries
+///
+/// Read off the role, and off the form for the one role where the form
+/// decides. §10.7 isolates the sponsor and the fee roles in the RESERVE
+/// asset, so a sponsored candidate's fee and its sponsor change both
+/// carry the reserve — the sponsor's coin brought that asset in, and an
+/// output funded from it in any other asset is a transaction that cannot
+/// balance. A SPONSORLESS candidate's fee is funded from the receipts
+/// instead, and therefore carries the PROTOCOL asset. That is the one
+/// place the form and not the role decides, and it is why the fee's
+/// asset is not a constant beside the role.
+///
+/// Everything else is the protocol asset, which is what the destinations
+/// of a live transfer are denominated in.
+///
+/// Writing one asset over every position, as this did while the lane was
+/// sponsorless, was correct for exactly as long as no position could
+/// carry another one.
+///
 /// # Errors
 ///
 /// [`TransactionRefusal::DestinationOwnerHasNoConstructor`] where a
-/// non-fee destination names an owner the ABI does not carry a
-/// constructor for.
+/// receipt destination names an owner the ABI does not carry a
+/// constructor for; and
+/// [`TransactionRefusal::MalformedLiveDeploymentSymbol`] where the
+/// deployment's sponsor-change symbol does not form a witness program.
 fn private_destination_intents(
+    target: &ReviewedElementsTapscriptDefinition,
     abi: &CandidateLiveTransferAbi,
     request: &LiveTransferRequest,
     openings: &PrivateLiveOpenings,
 ) -> Result<Vec<ConfidentialDestinationIntent>, TransactionRefusal> {
     let mut destinations = Vec::with_capacity(request.destinations().len());
     for (destination, opening) in request.destinations().iter().zip(openings.destinations()) {
-        let program = if opening.role == ConfidentialOutputRole::Fee {
-            Vec::new()
-        } else {
-            abi.destinations()
-                .get(destination.owner(), request.representation())
-                .ok_or_else(|| TransactionRefusal::DestinationOwnerHasNoConstructor {
-                    owner: destination.owner().clone(),
-                })?
-                .instance()
-                .program()
-                .to_vec()
+        let (asset, program) = match opening.role {
+            // The empty program: the fee role's whole identity is
+            // target-structural, and this is the structure. Its owner
+            // parameter is not consulted at all — see the caller.
+            ConfidentialOutputRole::Fee => {
+                let asset = if request.form().sponsored() {
+                    abi.symbols().reserve_asset()
+                } else {
+                    abi.symbols().protocol_asset()
+                };
+                (asset, Vec::new())
+            }
+            // The sponsor's change pays the deployment's sponsor-change
+            // program, exactly as the explicit lane's does and from the
+            // same symbol. Taking it from the destination's owner
+            // instead would return the sponsor's reserve to a live
+            // receipt constructor, which is a receipt nobody can spend
+            // and a sponsor who is not repaid.
+            ConfidentialOutputRole::SponsorChange => {
+                let version = abi.symbols().sponsor_change_version();
+                let payload = abi.symbols().sponsor_change_program();
+                (
+                    abi.symbols().reserve_asset(),
+                    witness_program_script(target, version, payload)?,
+                )
+            }
+            ConfidentialOutputRole::Primary | ConfidentialOutputRole::Balancing => (
+                abi.symbols().protocol_asset(),
+                abi.destinations()
+                    .get(destination.owner(), request.representation())
+                    .ok_or_else(|| TransactionRefusal::DestinationOwnerHasNoConstructor {
+                        owner: destination.owner().clone(),
+                    })?
+                    .instance()
+                    .program()
+                    .to_vec(),
+            ),
         };
         destinations.push(ConfidentialDestinationIntent::new(
             destination.value().amount(),
-            abi.symbols().protocol_asset(),
+            asset,
             program,
             opening.fixture.clone(),
             opening.role,
@@ -1118,29 +1297,57 @@ fn private_destination_intents(
 ///
 /// The stages it shares with the explicit lane are shared rather than
 /// copied: the shape is selected by the same function over the same
-/// counts, the receipts are recognized against the same view, and the
-/// receipt records come out of the same assembly. Only the outputs and
-/// the protected transaction are the materializer's instead of this
-/// module's, which is the whole of the difference and is why the two
-/// lanes cannot drift about what a live receipt is.
+/// counts, the receipts are recognized against the same view, the
+/// sponsor's coins are recognized against the same view by the same
+/// function, the form and the offer are held to §12.5's equivalence by
+/// the same check, and the receipt records come out of the same
+/// assembly. Only the outputs and the protected transaction are the
+/// materializer's instead of this module's, which is the whole of the
+/// difference and is why the two lanes cannot drift about what a live
+/// receipt is.
+///
+/// # Why this lane is the one that can be sponsored by a blinded coin
+///
+/// Arithmetic, established by a target and not by preference. The target
+/// balances per asset, so a sponsored transaction's reserve sub-equation
+/// is the sponsor input against the fee and the change. A committed
+/// sponsor value carries a blinder; a fee is mandatorily explicit and
+/// carries none; so the only term that can absorb that blinder is the
+/// sponsor's CHANGE, and a candidate spending a committed sponsor coin
+/// must return COMMITTED change. The explicit lane writes explicit
+/// outputs by construction and therefore cannot, which a node said
+/// plainly by refusing such a candidate at consensus before script. A
+/// committed change output is the materializer's shape, so it is this
+/// lane's.
+///
+/// The blinded sponsor coin is admitted and NOT required. §1.9 holds the
+/// sponsor region outside every protocol claim, so the representation
+/// plan has nothing to say about the sponsor's value form and a private
+/// transfer sponsored by an EXPLICIT coin stays exactly as buildable as
+/// it was — see [`recognize_sponsors`], which declines to mirror the
+/// receipt clause for that reason.
 ///
 /// # Errors
 ///
 /// [`TransactionRefusal::PrivateFinalizationIsNotTheExplicitLane`] for a
 /// request that is not private;
-/// [`TransactionRefusal::PrivateFinalizationIsSponsorless`] for a
-/// sponsored one; [`TransactionRefusal::RepresentationNotLinked`] where
-/// the ABI carries no private plan;
+/// [`TransactionRefusal::RepresentationNotLinked`] where the ABI carries
+/// no private plan;
 /// [`TransactionRefusal::PrivateOpeningsDoNotCoverTheRequest`] where the
 /// openings and the request disagree about how many things there are;
+/// [`TransactionRefusal::PrivateOpeningRegionDisagreesWithPosition`]
+/// where an opening claims a region its position does not hold;
 /// [`TransactionRefusal::PrivateMaterializationRefused`] carrying the
-/// materializer's own refusal; and any refusal of shape selection or of
-/// receipt recognition, both of which are the explicit lane's own and
-/// are called rather than reimplemented here.
+/// materializer's own refusal; and any refusal of form exactness, of
+/// shape selection, or of receipt and sponsor recognition, all of which
+/// are the explicit lane's own and are called rather than reimplemented
+/// here.
 pub fn finalize_private_live_transfer(
+    target: &ReviewedElementsTapscriptDefinition,
     abi: &CandidateLiveTransferAbi,
     request: &LiveTransferRequest,
     view: &PublicConstructionView,
+    sponsor: Option<&dyn SponsorCapability>,
     openings: &PrivateLiveOpenings,
     fixtures: &FrozenConfidentialFixtureView,
     crypto: &dyn ConfidentialProofMaterializer,
@@ -1153,16 +1360,33 @@ pub fn finalize_private_live_transfer(
             },
         );
     }
-    if request.form() != RequestedForm::Sponsorless {
-        return Err(TransactionRefusal::PrivateFinalizationIsSponsorless);
-    }
     if !abi.representations().contains(&request.representation()) {
         return Err(TransactionRefusal::RepresentationNotLinked);
     }
-    if openings.inputs().len() != request.receipts().len() {
+
+    // §12.5's equivalence, both directions, before anything is built
+    // from either side of it — the explicit lane's stage 1, called here
+    // for the same reason it is called there. This is what refuses a
+    // sponsored request with no capability and a capability with no
+    // sponsored request, and it is why this lane no longer needs a
+    // refusal of its own for the form.
+    let offer = check_form_exactness(request, sponsor)?;
+    let sponsor_inputs: Vec<Outpoint> = offer
+        .as_ref()
+        .map(|offer| offer.inputs().iter().copied().collect())
+        .unwrap_or_default();
+    let sponsor_spent = recognize_sponsors(abi, request, view, &sponsor_inputs)?;
+
+    // The openings cover the WHOLE input order and not the receipts
+    // alone. A sponsor's coin is a spent predecessor output like any
+    // other and needs the same opening: its blinder is one addend of the
+    // transaction-wide input sum, and an input whose blinder the
+    // materializer cannot reach is a sum that cannot be closed.
+    let required_inputs = request.receipts().len() + sponsor_inputs.len();
+    if openings.inputs().len() != required_inputs {
         return Err(TransactionRefusal::PrivateOpeningsDoNotCoverTheRequest {
             offered: openings.inputs().len(),
-            required: request.receipts().len(),
+            required: required_inputs,
         });
     }
     if openings.destinations().len() != request.destinations().len() {
@@ -1172,18 +1396,37 @@ pub fn finalize_private_live_transfer(
         });
     }
 
+    // Receipts first, sponsor suffix after: the canonical input order
+    // the explicit lane sorts into, checked here against what each
+    // opening declares itself to be. Checked rather than re-sorted,
+    // because an opening moved to another position is an opening applied
+    // to a coin it does not open.
+    for (position, opening) in openings.inputs().iter().enumerate() {
+        let expected = if position < request.receipts().len() {
+            ConfidentialInputRegion::Receipt
+        } else {
+            ConfidentialInputRegion::SponsorReserve
+        };
+        if opening.region != expected {
+            return Err(
+                TransactionRefusal::PrivateOpeningRegionDisagreesWithPosition {
+                    position,
+                    stated: opening.region,
+                    expected,
+                },
+            );
+        }
+    }
+
     // The explicit lane's own stages, called and not reimplemented. The
-    // fee positions are counted off the openings' roles, which is where
-    // this lane already decides that a destination is a fee: the request
-    // vocabulary cannot say it, so the opening does, and the count is
-    // read from the same field rather than a second one that could
-    // disagree with it.
-    let fee_destinations = openings
-        .destinations()
-        .iter()
-        .filter(|opening| opening.role == ConfidentialOutputRole::Fee)
-        .count();
-    let shape = select_shape(abi, request, 0, fee_destinations)?;
+    // non-receipt positions are counted off the openings' roles, which is
+    // where this lane already decides that a destination is a fee: the
+    // request vocabulary cannot say it, so the opening does, and the
+    // count is read from the same field rather than a second one that
+    // could disagree with it. The sponsor's change is counted from the
+    // same field for the same reason.
+    let roles = DeclaredDestinationRoles::census(openings.destinations());
+    let shape = select_shape(abi, request, sponsor_inputs.len(), roles)?;
     let recognized = recognize_receipts(abi, request, view)?;
     let created_total = request
         .destination_total()
@@ -1191,21 +1434,54 @@ pub fn finalize_private_live_transfer(
 
     // The inputs the materializer sees are the ones the node reported,
     // carried through recognition unchanged, plus the opening each one
-    // needs and the per-output role cannot reach.
-    let inputs: Vec<ConfidentialInputIntent> = recognized
+    // needs and the per-output role cannot reach. The receipts come from
+    // receipt recognition and the sponsor's coins from sponsor
+    // recognition — two functions because they answer two different
+    // questions about a coin, and one order because the transaction has
+    // one.
+    let receipt_intents = recognized.iter().map(|receipt| {
+        (
+            receipt.outpoint,
+            receipt.asset,
+            receipt.value,
+            receipt.program.as_slice(),
+        )
+    });
+    let sponsor_intents = sponsor_inputs
         .iter()
+        .zip(&sponsor_spent)
+        .map(|(outpoint, spent)| (*outpoint, spent.asset(), spent.value(), spent.program()));
+    let inputs: Vec<ConfidentialInputIntent> = receipt_intents
+        .chain(sponsor_intents)
         .zip(openings.inputs())
-        .map(|(receipt, opening)| {
-            ConfidentialInputIntent::new(
-                receipt.outpoint,
-                receipt.asset,
-                receipt.value,
-                receipt.program.clone(),
-                LIVE_TRANSFER_SEQUENCE,
-                opening.opening.clone(),
-                opening.explicit_amount,
-                opening.zero_asset_blinder,
-            )
+        .map(|((outpoint, asset, value, program), opening)| {
+            // The region the opening declares, checked against this
+            // position just above. Two constructors rather than a
+            // parameter, on the materializer's own ground: an input
+            // becomes a sponsor's only where somebody meant it to be
+            // one.
+            match opening.region {
+                ConfidentialInputRegion::Receipt => ConfidentialInputIntent::new(
+                    outpoint,
+                    asset,
+                    value,
+                    program.to_vec(),
+                    LIVE_TRANSFER_SEQUENCE,
+                    opening.opening.clone(),
+                    opening.explicit_amount,
+                    opening.zero_asset_blinder,
+                ),
+                ConfidentialInputRegion::SponsorReserve => ConfidentialInputIntent::sponsor(
+                    outpoint,
+                    asset,
+                    value,
+                    program.to_vec(),
+                    LIVE_TRANSFER_SEQUENCE,
+                    opening.opening.clone(),
+                    opening.explicit_amount,
+                    opening.zero_asset_blinder,
+                ),
+            }
         })
         .collect();
 
@@ -1224,7 +1500,12 @@ pub fn finalize_private_live_transfer(
     // no fee destination member to state instead; that is a gap in the
     // request vocabulary and it is named here rather than papered over by
     // resolving an owner whose program would then be discarded.
-    let destinations = private_destination_intents(abi, request, openings)?;
+    //
+    // The SPONSOR CHANGE is the second exception and has the same shape
+    // of reason: its program is the deployment's sponsor-change symbol
+    // rather than any owner's constructor, because the output repays the
+    // sponsor and not a live receipt holder.
+    let destinations = private_destination_intents(target, abi, request, openings)?;
 
     let intent = ConfidentialConstructionIntent::new(
         inputs,
@@ -1276,6 +1557,8 @@ pub fn finalize_private_live_transfer(
     Ok(PrivateLiveFinalization {
         materialized,
         receipts,
+        sponsor_inputs,
+        sponsor_spent,
         report,
     })
 }

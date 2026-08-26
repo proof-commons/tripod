@@ -1353,6 +1353,7 @@ fn openings(inputs: usize, destinations: usize) -> crate::live_construct::Privat
     crate::live_construct::PrivateLiveOpenings::new(
         (0..inputs)
             .map(|index| crate::live_construct::PrivateInputOpening {
+                region: crate::live_materialize::ConfidentialInputRegion::Receipt,
                 opening: opening(index),
                 explicit_amount: 1_000,
                 zero_asset_blinder: [0_u8; crate::live_materialize::SCALAR_BYTES],
@@ -1398,9 +1399,11 @@ fn the_private_entry_point_refuses_an_explicit_request_by_its_own_name() {
     );
     assert_eq!(
         crate::live_construct::finalize_private_live_transfer(
+            &reviewed_target(),
             &abi,
             &request,
             &stated,
+            None,
             &openings(2, 2),
             &empty_fixtures(),
             &UnreachedMaterializer,
@@ -1416,24 +1419,33 @@ fn the_private_entry_point_refuses_an_explicit_request_by_its_own_name() {
 }
 
 #[test]
-fn a_sponsored_private_request_refuses_on_the_absent_signer_rather_than_building() {
-    // The candidate is buildable and would be unauthorizable, which is
-    // the shape that produces a refusal attributable to the wrong
-    // thing. So the lane stops at the form.
+fn a_sponsored_private_request_refuses_on_the_absent_capability_and_not_on_the_form() {
+    // The lane USED to stop at the form here, on the ground that no
+    // sponsor signer was wired into it and a candidate nothing could
+    // authorize earns a refusal attributable to the wrong thing. A
+    // signer is wired in now, so the form is admitted and what is
+    // refused is the request that asks to be sponsored by nobody.
+    //
+    // This is §12.5's equivalence and it is the EXPLICIT lane's own
+    // check, called here rather than restated: a sponsored request with
+    // no capability and a capability with no sponsored request are the
+    // two ways to fail it, and both lanes now fail them identically.
     let abi = live_abi();
     let (request, stated) = private_fixture(&abi, RequestedForm::Sponsored);
     assert_eq!(
         crate::live_construct::finalize_private_live_transfer(
+            &reviewed_target(),
             &abi,
             &request,
             &stated,
+            None,
             &openings(2, 2),
             &empty_fixtures(),
             &UnreachedMaterializer,
             &UnreachedMaterializer,
         )
         .err(),
-        Some(TransactionRefusal::PrivateFinalizationIsSponsorless),
+        Some(TransactionRefusal::LiveSponsorRequestedWithoutCapability),
     );
 }
 
@@ -1445,9 +1457,11 @@ fn openings_that_do_not_cover_the_request_are_refused_on_both_sides() {
     // One opening short on the input side.
     assert_eq!(
         crate::live_construct::finalize_private_live_transfer(
+            &reviewed_target(),
             &abi,
             &request,
             &stated,
+            None,
             &openings(1, 2),
             &empty_fixtures(),
             &UnreachedMaterializer,
@@ -1464,9 +1478,11 @@ fn openings_that_do_not_cover_the_request_are_refused_on_both_sides() {
     // check written as "at least as many" would pass the second.
     assert_eq!(
         crate::live_construct::finalize_private_live_transfer(
+            &reviewed_target(),
             &abi,
             &request,
             &stated,
+            None,
             &openings(2, 3),
             &empty_fixtures(),
             &UnreachedMaterializer,
@@ -1489,9 +1505,11 @@ fn a_materializer_refusal_arrives_as_the_materializers_own_word() {
     let abi = live_abi();
     let (request, stated) = private_fixture(&abi, RequestedForm::Sponsorless);
     let refusal = crate::live_construct::finalize_private_live_transfer(
+        &reviewed_target(),
         &abi,
         &request,
         &stated,
+        None,
         &openings(2, 2),
         &empty_fixtures(),
         &UnreachedMaterializer,

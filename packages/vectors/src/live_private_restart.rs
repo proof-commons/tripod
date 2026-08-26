@@ -90,8 +90,9 @@ use transaction::live_construct::{
     finalize_private_live_transfer,
 };
 use transaction::live_materialize::{
-    ConfidentialOutputRole, FixtureOpeningReference, FrozenConfidentialFixtureView,
-    IndependentCommitmentCheck as _, NonProtocolFundingRegion, SCALAR_BYTES,
+    ConfidentialInputRegion, ConfidentialOutputRole, FixtureOpeningReference,
+    FrozenConfidentialFixtureView, IndependentCommitmentCheck as _, NonProtocolFundingRegion,
+    SCALAR_BYTES,
 };
 use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message};
 use transaction::live_request::{
@@ -1039,6 +1040,7 @@ fn finalize_control(
 
     let openings = PrivateLiveOpenings::new(
         vec![PrivateInputOpening {
+            region: ConfidentialInputRegion::Receipt,
             opening: FixtureOpeningReference::new(
                 linked.predecessor.handle().as_str().to_owned(),
                 linked.predecessor_digest,
@@ -1078,9 +1080,11 @@ fn finalize_control(
     ]));
 
     finalize_private_live_transfer(
+        &reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?,
         &linked.abi,
         &request,
         &view,
+        None,
         &openings,
         &fixtures,
         &ReferenceConfidentialMaterializer::new(),

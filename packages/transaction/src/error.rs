@@ -25,6 +25,7 @@ use linker::live_backend::{
 use target_elements::ResourceDimension;
 
 use crate::bytes::Outpoint;
+use crate::live_materialize::ConfidentialInputRegion;
 
 /// Why the transaction layer refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -570,31 +571,43 @@ pub enum TransactionRefusal {
         /// The representation the request selected.
         representation: LiveTransferRepresentationPlan,
     },
-    /// A transaction-wide private finalization was asked for a sponsored
-    /// form.
-    ///
-    /// Not a claim that sponsored private transfers are impossible. A
-    /// statement that no signer for a sponsor envelope is wired into
-    /// THIS lane, and that building a candidate nothing could authorize
-    /// would earn a refusal attributable to the missing signer rather
-    /// than to the form.
-    ///
-    /// The scope of that sentence has narrowed and the sentence has not.
-    /// `SponsorEnvelopeSignerAbsent` was a standing residual of the live
-    /// evidence plan when this refusal was minted, and it is no longer,
-    /// a target having accepted an explicit sponsored control carrying a
-    /// sponsor owner's authorization. What stays true is the local fact
-    /// this refusal is about: the transaction-wide PRIVATE finalization
-    /// lane has no sponsor signer wired into it, and the control that
-    /// was accepted is explicit.
-    PrivateFinalizationIsSponsorless,
     /// The openings offered do not cover the request's inputs, or its
     /// destinations, one for one.
+    ///
+    /// The input side counts the WHOLE input order and not the receipts
+    /// alone. A sponsored private candidate consumes the sponsor's coin
+    /// after its receipts, that coin is a spent predecessor output like
+    /// any other, and it needs the same opening — so a request that
+    /// offers openings for its receipts only is short here rather than
+    /// discovered to be short by a materializer reading past its own
+    /// slice.
     PrivateOpeningsDoNotCoverTheRequest {
         /// How many entries the openings carry.
         offered: usize,
         /// How many the request needs.
         required: usize,
+    },
+    /// A private input opening declares a region its position cannot be.
+    ///
+    /// The input order is receipts first and the sponsor suffix after,
+    /// which is the canonical order the explicit lane sorts into and the
+    /// order the materializer's regions are read in. The caller declares
+    /// each opening's region rather than having it inferred — the
+    /// materializer's own reason, that a region inferred from the asset
+    /// would make the balance depend on a comparison the balance is
+    /// trying to decide — and a declaration is worth having only where
+    /// disagreeing with it is refused.
+    ///
+    /// Raised in preference to silently re-sorting, because the openings
+    /// carry blinders and an opening moved to another position is an
+    /// opening applied to a coin it does not open.
+    PrivateOpeningRegionDisagreesWithPosition {
+        /// The input position, receipts first.
+        position: usize,
+        /// The region the opening declared.
+        stated: ConfidentialInputRegion,
+        /// The region that position holds.
+        expected: ConfidentialInputRegion,
     },
     /// The transaction-wide materializer refused the private candidate.
     ///
