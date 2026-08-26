@@ -1676,11 +1676,39 @@ mod tests {
     }
 
     #[test]
-    fn the_sponsor_row_cannot_be_moved_even_on_an_acceptance() {
-        // Not by the constructor, which is where a ceremony would try.
+    fn the_sponsor_row_moves_on_an_acceptance_of_its_own_shape() {
+        // This test used to assert the opposite, and the reversal is the
+        // point rather than an edit to keep a suite green. The row was
+        // shut because no run of ITS OWN shape existed: an explicit
+        // sponsored acceptance answers nothing about a confidential one,
+        // so the constructor refused the class outright.
+        //
+        // A sponsored CONFIDENTIAL with-change successor has since been
+        // accepted and mined, so the ground the refusal stood on is
+        // gone. What has NOT changed is that the row moves on an
+        // acceptance and on nothing else -- the constructor still takes
+        // an identity, and a caller with no run has none to hand it.
+        let moved = moved_on_acceptance(
+            PositivePrivateClass::PrivateSponsorValues,
+            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_TXID,
+        )
+        .expect("the row moves on the acceptance of its own shape");
+        assert_eq!(moved.class(), PositivePrivateClass::PrivateSponsorValues);
         assert_eq!(
-            moved_on_acceptance(PositivePrivateClass::PrivateSponsorValues, "aa".repeat(32)).err(),
-            Some(CloseoutRefusal::SponsorRowMoved),
+            moved.accepted_identity(),
+            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_TXID,
+        );
+    }
+
+    #[test]
+    fn every_class_may_now_enter_the_delta() {
+        // Counted over the whole vocabulary rather than asserted of the
+        // one that changed, so a class added later with no run behind it
+        // is caught here.
+        assert!(
+            PositivePrivateClass::ALL
+                .iter()
+                .all(|class| class.may_enter_the_delta()),
         );
     }
 
