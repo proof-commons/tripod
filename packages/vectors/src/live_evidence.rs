@@ -1140,7 +1140,7 @@ const fn a_positive_control_exists() -> bool {
 /// member stays in the vocabulary — it is the right name for a lane that
 /// genuinely has no raw path — on the pattern two retired blockers
 /// before it set.
-fn specific_blocker(_row: &LiveSafetyRow) -> Option<LiveInfrastructureBlocker> {
+const fn specific_blocker(_row: &LiveSafetyRow) -> Option<LiveInfrastructureBlocker> {
     None
 }
 
