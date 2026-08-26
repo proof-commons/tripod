@@ -365,26 +365,7 @@ pub fn finalize_live_transfer_declaring(
     // places it from the offer, so it declares nothing here. A
     // sponsorless form that pays its OWN fee funds the fee out of the
     // receipts, and says which destination entry is the fee.
-    let roles = if declared.is_empty() {
-        DeclaredDestinationRoles::NONE
-    } else {
-        if declared.len() != request.destinations().len() {
-            return Err(TransactionRefusal::DeclaredRolesDoNotCoverDestinations {
-                declared: declared.len(),
-                destinations: request.destinations().len(),
-            });
-        }
-        let census = DeclaredDestinationRoles::declared_explicitly(declared);
-        if census.fee > 0 && request.form().sponsored() {
-            return Err(TransactionRefusal::SelfPaidFeeUnderSponsoredForm);
-        }
-        if census.fee > 1 {
-            return Err(TransactionRefusal::SelfPaidFeeDeclaredMoreThanOnce {
-                declared: census.fee,
-            });
-        }
-        census
-    };
+    let roles = admit_declared_roles(request, declared)?;
     let shape = select_shape(abi, request, sponsor_inputs.len(), roles)?;
 
     // Stage 5: recognize each consumed receipt.
@@ -583,6 +564,46 @@ fn check_form_exactness(
             }
         }
     }
+}
+
+/// The explicit lane's declared roles, censused once and checked.
+///
+/// An EMPTY declaration is every entry a receipt output, which is what
+/// every explicit caller but the self-paying one says, and it is
+/// admitted without further question so that those callers are
+/// unaffected by this stage existing at all.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::DeclaredRolesDoNotCoverDestinations`] for a
+/// non-empty declaration that is not one role per destination entry;
+/// [`TransactionRefusal::SelfPaidFeeUnderSponsoredForm`] where a
+/// sponsored request declares a fee entry; and
+/// [`TransactionRefusal::SelfPaidFeeDeclaredMoreThanOnce`] for a second
+/// declared fee entry.
+fn admit_declared_roles(
+    request: &LiveTransferRequest,
+    declared: &[ExplicitDestinationRole],
+) -> Result<DeclaredDestinationRoles, TransactionRefusal> {
+    if declared.is_empty() {
+        return Ok(DeclaredDestinationRoles::NONE);
+    }
+    if declared.len() != request.destinations().len() {
+        return Err(TransactionRefusal::DeclaredRolesDoNotCoverDestinations {
+            declared: declared.len(),
+            destinations: request.destinations().len(),
+        });
+    }
+    let census = DeclaredDestinationRoles::declared_explicitly(declared);
+    if census.fee > 0 && request.form().sponsored() {
+        return Err(TransactionRefusal::SelfPaidFeeUnderSponsoredForm);
+    }
+    if census.fee > 1 {
+        return Err(TransactionRefusal::SelfPaidFeeDeclaredMoreThanOnce {
+            declared: census.fee,
+        });
+    }
+    Ok(census)
 }
 
 /// What one EXPLICIT destination entry is for.
@@ -1000,7 +1021,7 @@ struct OutputDeclarations<'a> {
 /// selected shape carries no fee position, and
 /// [`TransactionRefusal::SelfPaidFeePositionDisagreesWithShape`] where
 /// it names a different one.
-fn self_paid_fee_output(
+const fn self_paid_fee_output(
     abi: &CandidateLiveTransferAbi,
     shape: &LiveShapeAbi,
     destination: &LiveReceiptDestination,
