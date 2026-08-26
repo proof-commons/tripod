@@ -211,6 +211,14 @@ pub enum PrivateRestartRefusal {
     IssuanceNamedNoAsset,
     /// The deployment could not be linked against the issued asset.
     RelinkRefused,
+    /// The deployment could not be linked, and the link said why.
+    ///
+    /// Carries the substrate's own refusal rather than discarding it.
+    /// A crossing deployment fails at more layers than a homogeneous
+    /// one -- a constructor, an emission, a link and an ABI derivation
+    /// -- and a ceremony that reported only that it failed would leave
+    /// the reader to guess which.
+    RelinkRefusedBy(String),
     /// The linked deployment's destination table holds no constructor
     /// at the plan a program was asked for.
     ///
@@ -830,7 +838,7 @@ pub(crate) fn link_and_register_composing(
         LiveShapeVocabulary::FeeBearing => crate::bundle::fee_program_digest(),
     };
     let abi = live_abi_composing(vocabulary, composition, commit_order, reserve, fee_digest)
-        .map_err(|_| PrivateRestartRefusal::RelinkRefused)?;
+        .map_err(|refusal| PrivateRestartRefusal::RelinkRefusedBy(format!("{refusal:?}")))?;
 
     // The predecessor outputs pay to the published owners' PRIVATE receipt
     // constructors. That is the whole difference between this ceremony
