@@ -1314,6 +1314,31 @@ fn the_split_shape_is_submitted_to_a_real_target() {
     run_one_multi_shape(PrivateShape::Split, "multi-split");
 }
 
+/// The split PAIR's private member: one receipt in, TWO blinded receipts
+/// out, no change and no fee, against a real node.
+///
+/// # Why the split run above does not answer this
+///
+/// §16.1's split pair states one semantic fixture and materializes it
+/// twice. Its explicit member ran and was accepted; its private member
+/// creates exactly two outputs, and neither private run this lane has
+/// recorded is that shape. The split above creates THREE outputs, keeping
+/// a balancing change back for the sender, and the only other recorded
+/// one-in-two-out private run is the fee-bearing shape, whose second
+/// output is a fee role rather than a receipt. A pair member is not
+/// answered by a run of a different cardinality, and it is not answered
+/// by a run whose second output is a different role.
+///
+/// So this run exists to be the pair member's own shape, and the pair's
+/// acceptance conjunct moves on it or on nothing.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_pure_split_shape_is_submitted_to_a_real_target() {
+    use vectors::live_multi_shapes::PrivateShape;
+
+    run_one_multi_shape(PrivateShape::PureSplit, "multi-pure-split");
+}
+
 /// The restart order's fifth step, the many-to-many shape: two receipts in,
 /// three outputs, against a real node.
 ///
