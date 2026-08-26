@@ -2093,7 +2093,9 @@ fn judge_one_sponsor_shape(
     shape: vectors::live_sponsor_shapes::SponsorShape,
     value_form: vectors::live_sponsor_shapes::SponsorValueForm,
 ) {
-    use vectors::live_sponsor_shapes::{CommittedSponsorCheck, SponsorValueForm};
+    use vectors::live_sponsor_shapes::{
+        CommittedSponsorCheck, SponsorValueForm, sponsored_run_of_record as record_of,
+    };
     // The sponsor round trip happened, and it bound to the exact bytes.
     let round = record.round().expect("the sponsor round trip completed");
     assert!(
@@ -2187,6 +2189,14 @@ fn judge_one_sponsor_shape(
                 );
             }
             assert!(census.every_check_held());
+            // The coin exists on a chain: its funding transaction was
+            // accepted and mined, and the node computed an identity for
+            // it. That is a separate acceptance from the candidate's and
+            // is not a substitute for one.
+            assert!(
+                record.committed_funding_txid().is_some(),
+                "the committed sponsor coin was never mined",
+            );
             // No amount was observed for the coin the control spends,
             // which is the whole difference the axis makes.
             assert!(
@@ -2194,11 +2204,57 @@ fn judge_one_sponsor_shape(
                 "a committed run reported an amount for a coin whose value is a point",
             );
             // And the disclaimer moved with the subject: this run
-            // establishes confidential sponsor values, so it no longer
-            // says it does not.
+            // establishes that confidential sponsor values are FUNDED,
+            // so it no longer says it establishes nothing about them.
             assert!(!rendered.contains("does_not_establish confidential-sponsor-values"));
             assert!(rendered.contains("does_not_establish confidential-receipt-values"));
             assert!(rendered.contains("committed_sponsor_every_check_held true"));
+
+            // The candidate that SPENDS the coin is refused, and the
+            // refusal is the finding rather than a disappointment. An
+            // ACCEPTANCE here would mean the arithmetic below is wrong,
+            // which is why it is asserted rather than tolerated.
+            //
+            // The reserve sub-equation is the sponsor input against the
+            // fee and the change. The input carries a blinder now, both
+            // outputs that spend it are explicit and carry none, and
+            // nothing in the transaction absorbs the difference — so the
+            // target's balance check cannot close whatever the amounts
+            // are.
+            assert_eq!(
+                record.observed_layer(),
+                Some(
+                    target_elements_conformance::protocol::ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+                ),
+                "a committed sponsor value was not refused at the balance check",
+            );
+            assert!(record.accepted_txid().is_none());
+            assert!(
+                rendered.contains(record_of::COMMITTED_SPONSOR_REFUSAL),
+                "the target named something other than its balance check",
+            );
+
+            // Attributability, MEASURED. A candidate names the coin it
+            // spends by outpoint alone, so the value form is not in
+            // these bytes at all: this submission and the explicit
+            // control's are the same shape at the same width, and the
+            // refusal is attributable to which coin was reached for.
+            assert_eq!(
+                record.submitted_bytes(),
+                record_of::COMMITTED_SPONSOR_SUBMITTED_BYTES,
+            );
+            assert_eq!(
+                record.submitted_bytes(),
+                record_of::SPONSORED_CHANGE_SUBMITTED_BYTES,
+            );
+            assert_eq!(
+                record.target_weight(),
+                Some(record_of::COMMITTED_SPONSOR_TARGET_WEIGHT),
+            );
+            assert_eq!(
+                record.target_weight(),
+                Some(record_of::SPONSORED_CHANGE_TARGET_WEIGHT),
+            );
         }
     }
 

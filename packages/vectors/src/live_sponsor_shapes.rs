@@ -855,6 +855,8 @@ pub struct SponsorShapeRecord {
     receipt_coins: usize,
     sponsor_funded: Option<u64>,
     committed: Option<CommittedSponsorCensus>,
+    committed_funding_txid: Option<String>,
+    committed_funding_weight: Option<u64>,
     offered_fee: u64,
     offered_change: Option<u64>,
     round: Option<SponsorRoundTrip>,
@@ -947,6 +949,24 @@ impl SponsorShapeRecord {
         self.committed.as_ref()
     }
 
+    /// The identity the target computed for the transaction that FUNDED
+    /// the committed sponsor coin.
+    ///
+    /// A separate acceptance from the candidate's and never a substitute
+    /// for it. This transaction is the executor's own, and what its
+    /// acceptance establishes is that a coin of this form exists on a
+    /// chain — not anything about a candidate that spends one.
+    #[must_use]
+    pub fn committed_funding_txid(&self) -> Option<&str> {
+        self.committed_funding_txid.as_deref()
+    }
+
+    /// The weight the target computed for that funding transaction.
+    #[must_use]
+    pub const fn committed_funding_weight(&self) -> Option<u64> {
+        self.committed_funding_weight
+    }
+
     /// What this lane does NOT establish, stated in the record itself.
     #[must_use]
     pub const fn non_claims(&self) -> &'static [&'static str] {
@@ -1036,6 +1056,8 @@ impl SponsorShapePlanner {
                 receipt_coins: 0,
                 sponsor_funded: None,
                 committed: None,
+                committed_funding_txid: None,
+                committed_funding_weight: None,
                 offered_fee: SPONSOR_FEE,
                 offered_change: shape.change(),
                 round: None,
@@ -1234,6 +1256,13 @@ impl SponsorShapePlanner {
             return Err(SponsorShapeRefusal::CommittedSponsorCoinIsNotTheRegistrysOwn);
         }
         self.record.committed = Some(census);
+        // The funding transaction's own acceptance, read off the node's
+        // report of the block it made rather than projected from what
+        // was sent.
+        if let Some(readback) = response.mined_readback.as_ref() {
+            self.record.committed_funding_txid = Some(readback.transaction_id.clone());
+        }
+        self.record.committed_funding_weight = response.resources.transaction_weight;
         // The coin the control will spend REPLACES the explicit one, and
         // the amount the record carried for that coin goes with it: this
         // run observed no amount for the coin it spends.
@@ -2135,6 +2164,18 @@ fn render_committed_sponsor(out: &mut String, record: &SponsorShapeRecord) {
         "committed_sponsor_every_check_held {}",
         census.every_check_held(),
     );
+    let _ = writeln!(
+        out,
+        "committed_sponsor_funding_txid {}",
+        record.committed_funding_txid.as_deref().unwrap_or("none"),
+    );
+    let _ = writeln!(
+        out,
+        "committed_sponsor_funding_weight {}",
+        record
+            .committed_funding_weight
+            .map_or_else(|| "none".to_owned(), |weight| weight.to_string()),
+    );
 }
 
 /// The round-trip lines, where a round trip completed.
@@ -2323,6 +2364,92 @@ pub mod sponsored_run_of_record {
     /// would not.
     pub const SPONSORED_CHANGE_OUTPUT_POSITION: usize = 2;
 
+    /// What the target answered a candidate spending a COMMITTED sponsor
+    /// coin, at the layer it answered.
+    ///
+    /// A refusal, and a refusal this arc went looking for an acceptance
+    /// of. It is recorded as the target typed it because that is the
+    /// whole value of it: the shape was offered, and the answer came
+    /// back from consensus rather than from a reading.
+    pub const COMMITTED_SPONSOR_REFUSAL: &str = "bad-txns-in-ne-out";
+
+    /// How many bytes the committed candidate handed the node.
+    ///
+    /// The SAME number the explicit control handed it, and the equality
+    /// is the attributability. A candidate names the coin it spends by
+    /// outpoint alone, so the sponsor coin's value form is not in these
+    /// bytes at all: the two submissions are the same shape at the same
+    /// width, differing in which coin they reach for. The refusal is
+    /// therefore attributable to the value form and to nothing the
+    /// candidate did differently.
+    pub const COMMITTED_SPONSOR_SUBMITTED_BYTES: usize = 1_635;
+
+    /// The weight the target computed for it, which is likewise the
+    /// control's.
+    pub const COMMITTED_SPONSOR_TARGET_WEIGHT: u64 = 2_871;
+
+    /// Whether any ceremony in this workspace FUNDS a sponsor coin whose
+    /// value is committed.
+    ///
+    /// `true`, and a real node holds one.
+    ///
+    /// # What was built, and what a node said about it
+    ///
+    /// The executor grew a funding stage that mines a coin whose VALUE
+    /// is a commitment and whose ASSET stays explicit, against a
+    /// registered fixture, and it retains the value FIELD rather than an
+    /// amount so a later signing step has something to sign against. The
+    /// transaction that creates the coin is accepted and mined, and the
+    /// commitment the chain holds is the one this workspace derives from
+    /// published constants and no chain at all.
+    ///
+    /// So the question this constant asks is answered: a blinded sponsor
+    /// value is funded, and the site that funds it is
+    /// `fund_confidential_sponsor` in the native executor, bound to the
+    /// `ctf-v1/sponsor-reserve-dual-parity` case and paid to the program
+    /// that executor can authorize a spend of.
+    ///
+    /// # What the SAME run established that no reading had
+    ///
+    /// That such a coin cannot be spent by an explicit-lane candidate at
+    /// all. The candidate was built, owner-signed, sponsor-signed and
+    /// offered, and the target refused it at consensus before script
+    /// with [`COMMITTED_SPONSOR_REFUSAL`], which is its balance check.
+    ///
+    /// The workspace's reading of that verdict, stated as a reading: the
+    /// reserve sub-equation is the sponsor input against the fee and the
+    /// change, the input now carries a blinder, and both outputs that
+    /// spend it are explicit and therefore carry none. Nothing in the
+    /// transaction absorbs the input's blinder, so the sum cannot close
+    /// whatever the amounts are. A fee is mandatorily explicit, so the
+    /// only term that COULD absorb it is the sponsor's change, which
+    /// means a candidate spending a committed sponsor coin must return
+    /// COMMITTED change -- the materializer's shape rather than the
+    /// explicit lane's.
+    ///
+    /// # This overturns a reading recorded elsewhere, and running is
+    /// what overturned it
+    ///
+    /// `recognize_sponsors` records that the two value forms are
+    /// independently choosable and that an explicit transfer's sponsor
+    /// could carry a commitment, filed as unbuilt. The first half
+    /// stands: nothing guards the form, and construction produced the
+    /// transaction without complaint. The second does not. The shape is
+    /// not merely unbuilt, it is one a target refuses, and the refusal
+    /// is arithmetic rather than policy. Building it is what found that
+    /// out, which is the sixth reading in this arc that running
+    /// overturned.
+    ///
+    /// # What this does NOT settle
+    ///
+    /// Whether the sponsored confidential shape is accepted. No such
+    /// shape has been offered to a node, and the section 15.2
+    /// `private-sponsor-values` row does not move on this run. What
+    /// moved is that the coin exists on a chain and that the explicit
+    /// route to spending one is closed by consensus rather than by
+    /// effort.
+    pub const A_BLINDED_SPONSOR_VALUE_IS_FUNDED_ANYWHERE: bool = true;
+
     /// Whether any ceremony in this workspace builds a sponsored control
     /// that TAKES CHANGE.
     ///
@@ -2390,127 +2517,6 @@ pub mod sponsored_run_of_record {
     /// the adapter returned and this offering does not carry. MEASURED
     /// at the node rather than argued from the code that built the two.
     pub const MISSING_SPONSOR_AUTHORIZATION_SUBMITTED_BYTES: usize = 1_375;
-
-    /// Whether any ceremony in this workspace funds a sponsor coin whose
-    /// VALUE is blinded.
-    ///
-    /// Still `false`, and still the filed path rather than a note: the
-    /// sponsored side of §15.2's `private-sponsor-values` row rests on
-    /// it. What has changed is everything BEHIND it, so this is a
-    /// narrower stop than the one it replaces rather than the same one
-    /// restated.
-    ///
-    /// # Why a confidential sponsor value needs the with-change shape
-    ///
-    /// Arithmetic, not preference. Elements balances per asset, so a
-    /// sponsored transaction's reserve sub-equation is
-    /// `sponsor_input == fee + change`. In the WITHOUT-change shape that
-    /// forces the sponsor input's value equal to the fee, and a fee is
-    /// mandatorily explicit — an empty-script output with a committed
-    /// value is not a fee at the target at all. So blinding the sponsor
-    /// input there commits to a publicly derivable number and hides
-    /// nothing.
-    ///
-    /// The with-change shape removes that, and it RUNS: see
-    /// [`SPONSORED_CHANGE_ACCEPTED_TXID`].
-    ///
-    /// # What now stands, each of it run rather than argued
-    ///
-    /// The CONSTRUCTION EXISTS. The whole shape materializes in this
-    /// workspace end to end — a blinded-value sponsor coin consumed
-    /// beside the receipts, a blinded sponsor change returned, an
-    /// explicit fee paid, blinded receipt destinations, every asset field
-    /// explicit throughout — and the test that builds it says so at
-    /// `the_whole_sponsored_confidential_shape_materializes`. Before it,
-    /// the shape was INEXPRESSIBLE rather than merely unbuilt.
-    ///
-    /// The absorber claim is executed rather than argued a third time:
-    /// the single balancing election already elected absorbs a sponsor
-    /// change's residue, needing no second election and no new role in
-    /// the solve, and the test asserts first that the two candidate
-    /// solves are different values so a run that quietly dropped the
-    /// sponsor term fails instead of passing on a coincidence.
-    ///
-    /// The funding-region classifier has the sponsor's own region and
-    /// four rules for it, and the ordering defect behind it is repaired:
-    /// the region is now decided BEFORE the clauses that guard it, so the
-    /// explicitness clause no longer masks the proof clause.
-    ///
-    /// # Two more of the spike's readings are overturned, by reading
-    ///
-    /// It said the destination intents already carry a per-output asset
-    /// so a reserve-asset change needs no widening. Half right: the TYPE
-    /// carries one, and both the caller and the validator wrote the
-    /// protocol asset over it, so the materializer refused the shape as
-    /// an asset disagreement among its own destinations. That is now
-    /// three separate places that decide an asset, and they read one
-    /// answer.
-    ///
-    /// It also left open how a sponsor input's blinder reaches the solve,
-    /// which looked like it needed scalar summation in a crate that
-    /// carries no bignum and may not acquire one. It needs none: the
-    /// sponsor's coin is an output of its OWN registered funding fixture,
-    /// so its blinder is the registry's derivation like every other
-    /// opening, and the successor fixture registers an input sum that
-    /// already includes it.
-    ///
-    /// # What remains, each site read rather than predicted
-    ///
-    /// The EXECUTOR funds and signs its sponsor coin explicitly
-    /// throughout and this is the layer the flag is about. `fund_sponsor`
-    /// writes an explicit value field and caches an integer amount;
-    /// `sign_sponsor` rebuilds the sighash value field from that integer,
-    /// though the framework below it already serializes a 33-byte
-    /// commitment correctly and needs no change; `created` reads
-    /// `gettxout`'s `value`, which a blinded output does not carry, and
-    /// the confidential path avoids it by reading mined bytes back
-    /// instead. `fund_confidential` is the working template and caches
-    /// NOTHING, which is the one gap it does not close: a coin that will
-    /// be SPENT needs its commitment retained, and the receipt path never
-    /// spends one. A blinded sponsor coin also needs a balancing output
-    /// in its own funding transaction, its single input today being an
-    /// explicit change coin at a zero blinder.
-    ///
-    /// The PRIVATE LANE still refuses a sponsored request at its entry
-    /// and passes a sponsor count of zero to shape selection. Admitting
-    /// one needs two more parameters on the entry point rather than a
-    /// relaxation: the reviewed target, because the sponsor change's
-    /// program is built from the deployment symbol through
-    /// `witness_program_script` and refused if a capability offers any
-    /// other destination, and the sponsor capability itself. Its openings
-    /// vocabulary indexes inputs against the receipts alone, and its
-    /// destination intents take the protocol asset unconditionally.
-    ///
-    /// And the structural one, which is not a widening of anything: the
-    /// private lane has NO sponsor signing stage. The explicit lane
-    /// collects sponsor requests against its finalized bytes and splices
-    /// the returned witness back; the private lane's bytes are the
-    /// materializer's, and its control assembly builds one witness per
-    /// RECEIPT record with no sponsor slot and no capability call.
-    ///
-    /// The FIXTURE REGISTRY has one explicit asset per case and no
-    /// sponsor-change output role, so the sponsored successor and the
-    /// sponsor's own funding case are both unregistered. Every recorded
-    /// digest has to re-derive across that, on the pattern the fee axis
-    /// already set.
-    ///
-    /// The SHAPE CENSUS has no sponsored-shape row vocabulary at all —
-    /// not one member of it mentions a sponsor region, every `sponsor`
-    /// string in it being `sponsorless` — so there is nothing there to
-    /// extend and a member would be new vocabulary arguing past the
-    /// enum's own stated closure rule. Filed rather than invented, on the
-    /// census's own discipline that naming a path says nothing about
-    /// taking it.
-    ///
-    /// # This is a typed stop and not a prediction
-    ///
-    /// Five readings of a sponsored obstacle have now been overturned by
-    /// running or by reading the code they were about, three in the
-    /// previous wave and two in this one. Nothing above is offered as a
-    /// forecast of what a node would say. Every site named is one read in
-    /// the source, and what a target thinks of the shape is unknown until
-    /// one is asked.
-    pub const A_BLINDED_SPONSOR_VALUE_IS_FUNDED_ANYWHERE: bool = false;
 }
 
 #[cfg(test)]
