@@ -558,7 +558,7 @@ pub enum FirstPartyGap {
 pub enum DischargingValidator {
     /// One of §12.7's two owner-authorization entry points.
     OwnerAuthorization(LiveFirstPartyValidator),
-    /// One of the five §15.4–§15.7 fault entry points.
+    /// One of the seven §15.4–§15.7 fault entry points.
     Fault(LiveFaultValidator),
 }
 

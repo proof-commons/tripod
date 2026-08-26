@@ -456,7 +456,7 @@ macro_rules! census_is {
 
 /// The complete census of first-party cases for §15.4–§15.7.
 ///
-/// Fifteen cases over six owning entry points, and no §15.4–§15.7 row
+/// Twenty cases over seven owning entry points, and no §15.4–§15.7 row
 /// whose verdict a first-party layer owns is missing from it.
 #[must_use]
 #[expect(
@@ -1618,7 +1618,7 @@ pub fn discharge_live_faults() -> Result<Vec<ValidatedLiveFaultEvidence>, LiveFa
 ///
 /// Each case is a pure function of constants in this file and of the
 /// substrate [`crate::live_plan`] already caches, so two runs cannot
-/// differ; driving thirteen entry points twice each cost about a minute
+/// differ; driving every entry point twice each cost about a minute
 /// per caller, and [`crate::live_evidence`] asks for the census once per
 /// evidence plan. The cache holds the *result*, refusals included, so a
 /// census that failed §4.2 keeps failing rather than being retried into a
@@ -1714,7 +1714,7 @@ mod tests {
             .iter()
             .map(super::ValidatedLiveFaultEvidence::validator)
             .collect();
-        assert_eq!(validators.len(), 6, "six owning entry points");
+        assert_eq!(validators.len(), 7, "seven owning entry points");
     }
 
     #[test]
