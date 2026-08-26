@@ -1029,11 +1029,14 @@ mod tests {
 
         let (private_rows, private_answered, private_blocked) =
             board[&LiveSafetySection::PositivePrivate];
-        // Eight of ten. Seven moved on acceptances of their own shapes;
-        // the eighth is the openings row, answered by the determinism
+        // Nine of ten. Eight moved on acceptances of their own shapes,
+        // the last of those being the sponsored PRIVATE successor; the
+        // ninth is the openings row, answered by the determinism
         // observation its own §11.2 gate asks for rather than by a
-        // target verdict.
-        assert_eq!(private_answered, 8, "the private table's answered count");
+        // target verdict. The tenth is projection-equality, which needs
+        // an observation comparing two accepted transactions'
+        // projections and has none.
+        assert_eq!(private_answered, 9, "the private table's answered count");
         assert_eq!(private_blocked, 0);
         assert_eq!(private_rows, 10);
         assert_eq!(LiveSafetyPolarity::ALL.len(), 2);
