@@ -1768,9 +1768,31 @@ mod tests {
         }
         assert_eq!(
             answered,
-            BTreeSet::from(["empty-signature", "malformed-signature"]),
+            BTreeSet::from([
+                "empty-signature",
+                "malformed-signature",
+                "missing-sponsor-authorization",
+            ]),
         );
-        assert_eq!(plan.census().native_refusal_observed(), 2);
+        assert_eq!(plan.census().native_refusal_observed(), 3);
+
+        // THE THIRD ROW COMES FROM A DIFFERENT LANE and is held to the
+        // same rule. Its mutant was offered first and its control
+        // accepted behind it, on one node on one chain, and the two
+        // differ in the sponsor witness and in nothing else.
+        //
+        // Its verdict READS THE SAME as an earlier wave's fee-role
+        // failure and is not it. What separates them is the control:
+        // the fee-role check passes for the deployment that control was
+        // accepted under, so the comparison that failed is one the
+        // sponsor witness reaches. A row whose refusal could not be
+        // told apart from another comparison's would be a row answered
+        // by a string rather than by a run.
+        assert_ne!(
+            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            witness::CONTROL_ACCEPTED_TXID,
+            "the sponsored negative cites the sponsorless lane's control",
+        );
 
         // The two are DISTINGUISHABLE, which is what makes each one its
         // own row rather than one observation counted twice. The empty
