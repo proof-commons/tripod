@@ -165,6 +165,33 @@ pub enum PrivateShape {
     /// One receipt in, three outputs: two recipients and one balancing
     /// change output back to the sender.
     Split,
+    /// ONE receipt in and TWO blinded receipts out, with no change and no
+    /// fee: the PURE split.
+    ///
+    /// The shape §16.1's split pair states for its private member, which
+    /// is not the shape [`Self::Split`] runs. That one creates three
+    /// outputs because it keeps a balancing change back for the sender;
+    /// this one creates exactly the two the pair's fixture names, and the
+    /// second of them is a RECEIPT rather than the fee role the only
+    /// other recorded one-in-two-out private run carries. A pair member
+    /// is not answered by a run of a different cardinality nor by one
+    /// whose second output is a different role, so neither recorded run
+    /// reaches it and this shape exists to be run.
+    ///
+    /// It is constructible for the same arithmetic that makes the entry
+    /// crossing constructible at two outputs: the first output's blinder
+    /// is DERIVED and the second is solved from the consumed sum less
+    /// that one. What differs is the input side -- a single confidential
+    /// coin's blinder rather than an explicit input's zero -- so the
+    /// solved blinder is a nonzero sum less a derived value, and the
+    /// registry refuses a zero one by name if that ever comes out wrong.
+    ///
+    /// It pays NO fee, which is the pair fixture's own statement: its two
+    /// destinations consume the whole source. Every identity the
+    /// confidential lane has recorded was built sponsorless and carries
+    /// no fee output, so this is the lane's ordinary case rather than a
+    /// concession made to reach the pair.
+    PureSplit,
     /// Two receipts in, three outputs: the representative many-to-many
     /// case, chosen as the smallest transfer whose input and output
     /// cardinalities both exceed the one-to-one control's.
@@ -249,8 +276,17 @@ pub enum PrivateShape {
 }
 
 impl PrivateShape {
-    /// All six, in the order the restart runs them.
-    pub const ALL: [Self; 8] = [
+    /// All nine, in the order the restart runs them.
+    ///
+    /// The pure split is LAST rather than beside the split it is a
+    /// sibling of, and the position is load-bearing. This array's order
+    /// is read positionally by the byte-identity tests, which pin each
+    /// recorded successor digest at its index; inserting a shape in the
+    /// middle would renumber every digest after it and make a test that
+    /// exists to catch drift report drift that did not happen. A shape
+    /// added after a run is appended, so the indices a run wrote down
+    /// keep meaning what they meant.
+    pub const ALL: [Self; 9] = [
         Self::Split,
         Self::ManyToMany,
         Self::SeveralDistinctOwners,
@@ -259,6 +295,7 @@ impl PrivateShape {
         Self::PrivateMerge,
         Self::ExitCrossing,
         Self::EntryCrossing,
+        Self::PureSplit,
     ];
 
     /// The ceremony's own name for the shape, used as the report
@@ -267,6 +304,7 @@ impl PrivateShape {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Split => "private-split",
+            Self::PureSplit => "private-pure-split",
             Self::ManyToMany => "private-many-to-many",
             Self::SeveralDistinctOwners => "private-several-distinct-owners",
             Self::StrictOneToOne => "private-strict-one-to-one",
@@ -300,18 +338,31 @@ impl PrivateShape {
             Self::Split => Some("private-split"),
             Self::ManyToMany => Some("private-many-to-many-representative"),
             Self::SeveralDistinctOwners => Some("private-several-distinct-owners"),
-            // Three shapes name no row, and for ONE reason rather than
-            // three: §15.2's positive private table enumerates the
+            // Four shapes name no row, and for ONE reason rather than
+            // four: §15.2's positive private table enumerates the
             // guide's own classes, and it has no member for a strict
             // one-to-one, for a transfer that pays its own fee, or for
             // one whose two sides are read under different plans. Each
             // moves a census entry instead, and naming a row here that
             // the table does not carry would be inventing one to have
             // something to move.
+            //
+            // The pure split shares the arm for a DIFFERENT reason, and
+            // the reason is written here because a shared `None` hides
+            // it. §15.2 DOES carry a `private-split` row, and
+            // [`Self::Split`] already moved it on an acceptance of its
+            // own three-output shape. This shape exists for §16.1's
+            // split PAIR, whose private member states two created
+            // outputs, and a pair member is not a matrix row. Pointing
+            // it at `private-split` would move a row that has already
+            // moved, and would claim the three-output run and this one
+            // are the same shape -- which is the very fact the pair's
+            // failing conjunct records.
             Self::StrictOneToOne
             | Self::OneToOneWithFee
             | Self::ExitCrossing
-            | Self::EntryCrossing => None,
+            | Self::EntryCrossing
+            | Self::PureSplit => None,
             // The merge DOES have a row, and it is the only shape of
             // these that has one.
             Self::PrivateMerge => Some("private-merge"),
@@ -337,6 +388,7 @@ impl PrivateShape {
     pub const fn predecessor(self) -> PredecessorShape {
         match self {
             Self::Split
+            | Self::PureSplit
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
@@ -368,6 +420,7 @@ impl PrivateShape {
     pub const fn vocabulary(self) -> LiveShapeVocabulary {
         match self {
             Self::Split
+            | Self::PureSplit
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
@@ -395,6 +448,7 @@ impl PrivateShape {
     pub const fn composition(self) -> LiveTransferComposition {
         match self {
             Self::Split
+            | Self::PureSplit
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
@@ -441,6 +495,7 @@ impl PrivateShape {
     pub const fn explicit_destination_count(self) -> usize {
         match self {
             Self::Split
+            | Self::PureSplit
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
@@ -464,6 +519,7 @@ impl PrivateShape {
     pub const fn fee_output_count(self) -> usize {
         match self {
             Self::Split
+            | Self::PureSplit
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
@@ -478,9 +534,11 @@ impl PrivateShape {
     #[must_use]
     const fn consumed(self) -> &'static [ConsumedReceipt] {
         match self {
-            Self::Split | Self::StrictOneToOne | Self::OneToOneWithFee | Self::EntryCrossing => {
-                &[ConsumedReceipt::Primary]
-            }
+            Self::Split
+            | Self::PureSplit
+            | Self::StrictOneToOne
+            | Self::OneToOneWithFee
+            | Self::EntryCrossing => &[ConsumedReceipt::Primary],
             // The merge consumes the same two INDICES the two-input
             // shapes do. Against the triple predecessor those indices
             // carry the same two roles, and the difference that matters
@@ -530,6 +588,15 @@ impl PrivateShape {
                 primary(SECOND_SCALAR, 400_000_000),
                 primary(FIRST_SCALAR, 200_000_000),
                 balancing(FIRST_SCALAR, 100_000_000),
+            ],
+            // 700_000_000 in, split TWO ways between the two owners and
+            // nothing held back. The whole consumed amount travels, so
+            // there is no change output and no fee, which is exactly the
+            // difference between this shape and the three-output split
+            // above it.
+            Self::PureSplit => vec![
+                primary(SECOND_SCALAR, 400_000_000),
+                balancing(FIRST_SCALAR, 300_000_000),
             ],
             // 1_000_000_000 in across two receipts, three ways out.
             Self::ManyToMany => vec![
@@ -1705,6 +1772,13 @@ mod byte_identity_tests {
         assert_eq!(digests[5], run::MERGE_SUCCESSOR_DIGEST);
         assert_eq!(digests[6], run::EXIT_CROSSING_SUCCESSOR_DIGEST);
         assert_eq!(digests[7], run::ENTRY_CROSSING_SUCCESSOR_DIGEST);
+        // The pure split is index EIGHT because it was appended, and it
+        // is pinned here for the reason the fee-bearing digest is: a
+        // node has accepted a candidate built against this fixture, so
+        // the digest and the identity are two halves of one observation
+        // and moving either alone would leave the register citing a run
+        // that produced the other.
+        assert_eq!(digests[8], run::PURE_SPLIT_SUCCESSOR_DIGEST);
     }
 
     /// The fee-bearing digest now carries an acceptance, and the two are
@@ -2218,10 +2292,19 @@ pub mod run_of_record {
     ///
     /// Recorded rather than assumed, so a shape whose cardinality drifted
     /// is readable here rather than inferred from a name.
-    pub const RECEIPT_LEAVES: [usize; 6] = [1, 2, 2, 1, 1, 2];
+    ///
+    /// The order is these arrays' OWN and is not
+    /// [`super::PrivateShape::ALL`]'s: split, many-to-many,
+    /// several-distinct-owners, strict one-to-one, one-to-one-with-fee,
+    /// merge, pure split. The two crossings are absent because a
+    /// crossing's sides are read under different representation plans
+    /// and a single receipt count would state one side as though it were
+    /// both. The pure split is LAST for the reason it is last in `ALL`:
+    /// it was appended after the runs before it were recorded.
+    pub const RECEIPT_LEAVES: [usize; 7] = [1, 2, 2, 1, 1, 2, 1];
 
     /// How many outputs each shape created, in the same order.
-    pub const OUTPUT_COUNTS: [usize; 6] = [3, 3, 2, 1, 2, 1];
+    pub const OUTPUT_COUNTS: [usize; 7] = [3, 3, 2, 1, 2, 1, 2];
 
     // --- The private merge: the row this wave moves --------------------
 
@@ -2497,4 +2580,37 @@ pub mod run_of_record {
 
     /// The entry crossing's wall time, in seconds.
     pub const ENTRY_CROSSING_WALL_SECONDS: f64 = 9.9;
+
+    /// The identity the target computed for the accepted PURE split.
+    ///
+    /// One receipt consumed, TWO created, both of them receipts, no
+    /// change and no fee. It moves no §15.2 row: `private-split` moved
+    /// on the three-output split and a row does not move twice. What it
+    /// answers is §16.2's second conjunct for the SPLIT pair, whose
+    /// private member is this shape and not that one.
+    pub const PURE_SPLIT_ACCEPTED_TXID: &str =
+        "544afb18a0016db35e007f1da9a49d60ba163b8cc565adf16fe25a04a198eea0";
+
+    /// How many bytes the pure split handed to the node.
+    pub const PURE_SPLIT_SUBMITTED_BYTES: usize = 9_136;
+
+    /// The output-witness proof bytes the pure split carried.
+    ///
+    /// TWO proofs for two created outputs, and the count is the whole
+    /// claim this run exists to make. A range proof is what a BLINDED
+    /// output carries and a fee output carries none, so two proofs over
+    /// two outputs is the measured form of "both created outputs are
+    /// receipts" -- the conjunct the fee-bearing one-in-two-out run
+    /// could not satisfy, its second output having been a fee.
+    pub const PURE_SPLIT_PROOF_BYTES: [usize; 2] = [4_174, 4_174];
+
+    /// The weight the target reported for the pure split.
+    pub const PURE_SPLIT_TARGET_WEIGHT: u64 = 10_096;
+
+    /// The successor fixture digest the pure split registered.
+    pub const PURE_SPLIT_SUCCESSOR_DIGEST: &str =
+        "af8d60ffa311847150f65df8fcbd94fd457c7db958c451dd29fa244efd4c78d7";
+
+    /// The pure split's wall time, in seconds.
+    pub const PURE_SPLIT_WALL_SECONDS: f64 = 14.1;
 }

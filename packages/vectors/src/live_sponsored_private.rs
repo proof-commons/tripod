@@ -342,7 +342,7 @@ pub struct SponsoredPrivateReverification {
     accepted_txid: String,
     readback_matches_submission: bool,
     owner_signature_verified: bool,
-    sponsor_change_located: bool,
+    sponsor_change_located: Option<bool>,
 }
 
 impl SponsoredPrivateReverification {
@@ -368,7 +368,23 @@ impl SponsoredPrivateReverification {
     /// Whether the sponsor's committed change was found in the MINED
     /// bytes, at the reserve asset and carrying a commitment.
     #[must_use]
-    pub const fn sponsor_change_located(&self) -> bool {
+    /// Whether the sponsor's change was located in the mined bytes.
+    ///
+    /// `None` where the shape declares NO change role, and the absence
+    /// is the honest answer rather than a missing measurement. The check
+    /// is a byte scan for the reserve asset, and a sponsored
+    /// transaction's FEE is in the reserve asset too -- so on a shape
+    /// with no change the scan would report `true` for the fee alone and
+    /// a reader would take it for a change output that is not there.
+    ///
+    /// What stands in its place for such a shape is arithmetic over an
+    /// observed acceptance, and it is stronger rather than weaker: the
+    /// target balances per asset, so the reserve sub-equation is
+    /// `sponsor_input == fee + change`. The sponsor coin was funded to
+    /// EXACTLY the fee, so any change output at all would leave that
+    /// equation short and the node would have refused the candidate. It
+    /// accepted it, so the change term is zero.
+    pub const fn sponsor_change_located(&self) -> Option<bool> {
         self.sponsor_change_located
     }
 }
@@ -376,6 +392,13 @@ impl SponsoredPrivateReverification {
 /// One sponsored private run's transcript material.
 #[derive(Clone, Debug, Default)]
 pub struct SponsoredPrivateRecord {
+    /// Which shape this transcript is of.
+    ///
+    /// Carried in the record rather than passed to the renderer, so a
+    /// transcript cannot be filed under a case it is not. The header
+    /// used to be a literal, and a second shape is exactly the condition
+    /// under which a literal becomes a mislabel.
+    shape: SponsoredPrivateShape,
     issued_asset: Option<String>,
     coins: Vec<RestartConfidentialCoin>,
     solve: Option<SponsoredSolveCensus>,
@@ -440,6 +463,95 @@ impl SponsoredPrivateRecord {
     }
 }
 
+/// Which sponsored private shape a ceremony builds.
+///
+/// TWO, and they differ on the sponsor's side rather than the receipts'.
+/// The sponsor arc built the first and §16.1's sponsor pair states the
+/// second, and the pair's private member is not answered by the arc's
+/// run: that one carries a BLINDED sponsor coin, a COMMITTED sponsor
+/// change, and two blinded destinations, where the member states an
+/// EXPLICIT sponsor coin funded exactly to the fee, no change role, and
+/// one destination.
+///
+/// # The explicit shape balances for a reason worth stating
+///
+/// The arc observed that a COMMITTED sponsor value requires committed
+/// change: a blinded input's blinder has to be absorbed by something,
+/// a fee is mandatorily explicit, and the change is the only remaining
+/// term. That observation does not reach this shape and does not forbid
+/// it. An EXPLICIT sponsor coin contributes the all-zero blinder every
+/// explicit value is committed with, so there is nothing to absorb and
+/// no change is owed -- the sponsor input equals the fee output in the
+/// reserve asset, and the protocol asset closes over the receipts alone.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SponsoredPrivateShape {
+    /// A committed sponsor coin, committed change, two destinations.
+    #[default]
+    CommittedWithChange,
+    /// An EXPLICIT sponsor coin funded exactly to the fee, no change
+    /// role, one destination: §16.1's sponsor pair's private member.
+    ExplicitWithoutChange,
+}
+
+impl SponsoredPrivateShape {
+    /// Both shapes, in the order they were built.
+    pub const ALL: [Self; 2] = [Self::CommittedWithChange, Self::ExplicitWithoutChange];
+
+    /// The name a transcript files this run under.
+    #[must_use]
+    pub const fn case_name(self) -> &'static str {
+        match self {
+            Self::CommittedWithChange => "sponsored-private-with-change",
+            Self::ExplicitWithoutChange => "sponsored-private-explicit-no-change",
+        }
+    }
+
+    /// The successor fixture handle, its own per shape so a digest drift
+    /// between the two is detectable.
+    #[must_use]
+    pub const fn successor_handle(self) -> &'static str {
+        match self {
+            Self::CommittedWithChange => SUCCESSOR_HANDLE,
+            Self::ExplicitWithoutChange => "ctf-v1/sponsored-private-explicit-successor",
+        }
+    }
+
+    /// Whether the sponsor's coin carries a value COMMITMENT.
+    #[must_use]
+    pub const fn commits_the_sponsor_value(self) -> bool {
+        matches!(self, Self::CommittedWithChange)
+    }
+
+    /// Whether the offer asks for change back.
+    #[must_use]
+    pub const fn requests_change(self) -> bool {
+        matches!(self, Self::CommittedWithChange)
+    }
+
+    /// What the explicit seed step funds the sponsor region with.
+    ///
+    /// The committed shape funds ABOVE the fee because it takes a
+    /// remainder back; the explicit shape funds EXACTLY the fee, which
+    /// is what "no change role" means in an amount.
+    #[must_use]
+    pub const fn seed_amount(self) -> u64 {
+        match self {
+            Self::CommittedWithChange => SPONSOR_FEE + SPONSOR_CHANGE,
+            Self::ExplicitWithoutChange => SPONSOR_FEE,
+        }
+    }
+
+    /// How many protocol receipts the successor creates.
+    #[must_use]
+    pub const fn destination_count(self) -> usize {
+        match self {
+            Self::CommittedWithChange => 2,
+            Self::ExplicitWithoutChange => 1,
+        }
+    }
+}
+
 /// Where the ceremony is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stage {
@@ -464,6 +576,7 @@ enum Stage {
 /// The sponsored private ceremony.
 pub struct SponsoredPrivatePlanner {
     stage: Stage,
+    shape: SponsoredPrivateShape,
     genesis_block_hash: Digest32,
     linked: Option<LinkedDeployment>,
     receipt: Option<RestartConfidentialCoin>,
@@ -492,9 +605,26 @@ impl SponsoredPrivatePlanner {
     /// [`VectorError::LiveSubstrateUnavailable`] where the reviewed
     /// target does not build.
     pub fn new(printed_genesis_identity: Digest32) -> Result<Self, VectorError> {
+        Self::for_shape(
+            SponsoredPrivateShape::CommittedWithChange,
+            printed_genesis_identity,
+        )
+    }
+
+    /// The ceremony for one named shape.
+    ///
+    /// # Errors
+    ///
+    /// [`VectorError::LiveSubstrateUnavailable`] where the reviewed
+    /// target does not build.
+    pub fn for_shape(
+        shape: SponsoredPrivateShape,
+        printed_genesis_identity: Digest32,
+    ) -> Result<Self, VectorError> {
         reviewed_target()?;
         Ok(Self {
             stage: Stage::Issue,
+            shape,
             // The seed in the order a target HASHES a block identity,
             // not the order it prints one. The owner message writes this
             // hash twice, so a printed-order seed is a message over the
@@ -513,7 +643,10 @@ impl SponsoredPrivatePlanner {
             submitted: None,
             census: None,
             spent_owner_bytes: None,
-            record: SponsoredPrivateRecord::default(),
+            record: SponsoredPrivateRecord {
+                shape,
+                ..SponsoredPrivateRecord::default()
+            },
         })
     }
 
@@ -578,8 +711,24 @@ impl SponsoredPrivatePlanner {
         )
         .map_err(SponsoredPrivateRefusal::Private)?;
         self.reserve = Some(reserve);
-        self.adapter_program = Some(program);
+        self.adapter_program = Some(program.clone());
         self.linked = Some(linked);
+        // The EXPLICIT shape spends this very coin, so the seed step is
+        // its sponsor funding step and there is no committed one to
+        // wait for. Its value FIELD is explicit, which is the whole
+        // difference the pair's private member states, and the owner's
+        // signature commits to that field verbatim exactly as it does
+        // to a commitment.
+        if !self.shape.commits_the_sponsor_value() {
+            let outpoint = outpoint_of(&funded.outpoint)
+                .ok_or(SponsoredPrivateRefusal::MalformedSponsorCoin)?;
+            self.sponsor = Some(ObservedSponsorCoin {
+                outpoint,
+                asset: reserve,
+                value: ValueField::Explicit(self.shape.seed_amount()),
+                program,
+            });
+        }
         Ok(())
     }
 
@@ -720,12 +869,8 @@ impl SponsoredPrivatePlanner {
             .map_err(SponsoredPrivateRefusal::Private)?;
         let sender = private_program(&linked.abi, &FIRST_SCALAR)
             .map_err(SponsoredPrivateRefusal::Private)?;
-        let change = sponsor_program(linked)?;
-
-        let (digest, view) = register_multi(
-            SUCCESSOR_HANDLE,
-            *linked.asset.internal(),
-            self.input_blinder_sum()?,
+        let outputs = if self.shape.commits_the_sponsor_value() {
+            let change = sponsor_program(linked)?;
             vec![
                 ConfidentialFixtureOutput {
                     role: FixtureOutputRole::Primary,
@@ -744,11 +889,35 @@ impl SponsoredPrivatePlanner {
                     semantic_amount: SPONSOR_CHANGE,
                     output_program: change,
                 },
-            ],
+            ]
+        } else {
+            // ONE output, declaring the fully-solved form, exactly as
+            // the strict one-to-one's lone output does. There is no
+            // second protocol output to absorb anything and none is
+            // needed: the whole consumed amount travels to the
+            // recipient, and the sponsor's side of the transaction is a
+            // fee output this manifest does not carry -- a fee has an
+            // explicit value and no program, which is most of what makes
+            // it a fee. No SponsorChange role appears, because the
+            // sponsor funded exactly the fee and asked nothing back.
+            let _ = &sender;
+            vec![ConfidentialFixtureOutput {
+                role: FixtureOutputRole::SoleBalancing,
+                semantic_amount: PRIMARY_RECEIPT + BALANCING_RECEIPT,
+                output_program: recipient,
+            }]
+        };
+
+        let handle = self.shape.successor_handle();
+        let (digest, view) = register_multi(
+            handle,
+            *linked.asset.internal(),
+            self.input_blinder_sum()?,
+            outputs,
         )
         .map_err(|_| {
             SponsoredPrivateRefusal::Private(PrivateRestartRefusal::FixtureNotRegistrable {
-                handle: SUCCESSOR_HANDLE.to_owned(),
+                handle: handle.to_owned(),
             })
         })?;
         self.successor = Some((*digest.bytes(), view));
@@ -777,6 +946,14 @@ impl SponsoredPrivatePlanner {
             .ok_or(SponsoredPrivateRefusal::Private(
                 PrivateRestartRefusal::PredecessorBlindersDoNotClose,
             ))?;
+        // An EXPLICIT sponsor coin is committed with the all-zero
+        // blinder, so it is not an addend and there is no sponsor
+        // fixture to read one out of. The sum is the consumed receipt's
+        // own blinder, which is nonzero for the reason a single consumed
+        // coin's blinder is.
+        if !self.shape.commits_the_sponsor_value() {
+            return Ok(receipt);
+        }
         let sponsor = self
             .sponsor_view()?
             .outputs()
@@ -819,9 +996,48 @@ impl SponsoredPrivatePlanner {
             // change position against; the output's value form is the
             // materializer's business and is committed because the
             // fixture says so.
-            Some(ValueField::Explicit(SPONSOR_CHANGE)),
+            //
+            // NONE for the explicit shape, and the absence is the offer
+            // itself rather than an omission: a sponsor that funded
+            // exactly the fee has no remainder to ask back, and stating
+            // a change amount of zero would declare a change POSITION
+            // for a role the candidate does not carry.
+            self.shape
+                .requests_change()
+                .then_some(ValueField::Explicit(SPONSOR_CHANGE)),
         )
         .map_err(|_| SponsoredPrivateRefusal::ControlNotStaged)
+    }
+
+    /// Every fixture case the finalization may resolve an opening
+    /// against.
+    ///
+    /// The sponsor reserve case is present only where the sponsor coin
+    /// was BLINDED. An explicit coin has no opening to resolve, and
+    /// offering a fixture nothing references would register a case this
+    /// candidate does not use.
+    fn fixture_views(
+        &self,
+        linked: &LinkedDeployment,
+        successor_view: &transaction::live_materialize::ConfidentialFixtureView,
+    ) -> Result<FrozenConfidentialFixtureView, SponsoredPrivateRefusal> {
+        let mut registered = BTreeMap::from([
+            (
+                linked.predecessor.handle().as_str().to_owned(),
+                linked.predecessor_view.clone(),
+            ),
+            (
+                self.shape.successor_handle().to_owned(),
+                successor_view.clone(),
+            ),
+        ]);
+        if self.shape.commits_the_sponsor_value() {
+            registered.insert(
+                sponsor_reserve_handle().as_str().to_owned(),
+                self.sponsor_view()?,
+            );
+        }
+        Ok(FrozenConfidentialFixtureView::new(registered))
     }
 
     /// The openings the finalization is formed against.
@@ -835,6 +1051,56 @@ impl SponsoredPrivatePlanner {
         linked: &LinkedDeployment,
         successor_digest: &[u8; 32],
     ) -> Result<PrivateLiveOpenings, SponsoredPrivateRefusal> {
+        let handle = self.shape.successor_handle();
+        // The sponsor input's opening, where the coin has one. A
+        // COMMITTED coin's value is a fixture position and the
+        // finalization resolves it; an EXPLICIT coin's value is the
+        // number itself, so it carries no opening and states its amount
+        // directly. `None` here is the explicit form rather than a
+        // missing reference.
+        let sponsor_input = if self.shape.commits_the_sponsor_value() {
+            PrivateInputOpening {
+                region: ConfidentialInputRegion::SponsorReserve,
+                opening: Some(FixtureOpeningReference::new(
+                    sponsor_reserve_handle().as_str().to_owned(),
+                    *self.sponsor_digest()?.bytes(),
+                    SPONSOR_COIN,
+                )),
+                explicit_amount: SPONSOR_FEE + SPONSOR_CHANGE,
+                zero_asset_blinder: [0_u8; SCALAR_BYTES],
+            }
+        } else {
+            PrivateInputOpening {
+                region: ConfidentialInputRegion::SponsorReserve,
+                opening: None,
+                explicit_amount: self.shape.seed_amount(),
+                zero_asset_blinder: [0_u8; SCALAR_BYTES],
+            }
+        };
+        let destinations = if self.shape.commits_the_sponsor_value() {
+            vec![
+                PrivateDestinationOpening {
+                    fixture: FixtureOpeningReference::new(handle.to_owned(), *successor_digest, 0),
+                    role: ConfidentialOutputRole::Primary,
+                },
+                PrivateDestinationOpening {
+                    fixture: FixtureOpeningReference::new(handle.to_owned(), *successor_digest, 1),
+                    role: ConfidentialOutputRole::Balancing,
+                },
+                PrivateDestinationOpening {
+                    fixture: FixtureOpeningReference::new(handle.to_owned(), *successor_digest, 2),
+                    role: ConfidentialOutputRole::SponsorChange,
+                },
+            ]
+        } else {
+            // ONE destination, at the sole-balancing role its manifest
+            // declares. No sponsor-change opening appears because the
+            // candidate carries no sponsor-change output to open.
+            vec![PrivateDestinationOpening {
+                fixture: FixtureOpeningReference::new(handle.to_owned(), *successor_digest, 0),
+                role: ConfidentialOutputRole::Balancing,
+            }]
+        };
         Ok(PrivateLiveOpenings::new(
             vec![
                 PrivateInputOpening {
@@ -847,43 +1113,9 @@ impl SponsoredPrivatePlanner {
                     explicit_amount: linked.predecessor.amounts()[ConsumedReceipt::Primary.index()],
                     zero_asset_blinder: [0_u8; SCALAR_BYTES],
                 },
-                PrivateInputOpening {
-                    region: ConfidentialInputRegion::SponsorReserve,
-                    opening: Some(FixtureOpeningReference::new(
-                        sponsor_reserve_handle().as_str().to_owned(),
-                        *self.sponsor_digest()?.bytes(),
-                        SPONSOR_COIN,
-                    )),
-                    explicit_amount: SPONSOR_FEE + SPONSOR_CHANGE,
-                    zero_asset_blinder: [0_u8; SCALAR_BYTES],
-                },
+                sponsor_input,
             ],
-            vec![
-                PrivateDestinationOpening {
-                    fixture: FixtureOpeningReference::new(
-                        SUCCESSOR_HANDLE.to_owned(),
-                        *successor_digest,
-                        0,
-                    ),
-                    role: ConfidentialOutputRole::Primary,
-                },
-                PrivateDestinationOpening {
-                    fixture: FixtureOpeningReference::new(
-                        SUCCESSOR_HANDLE.to_owned(),
-                        *successor_digest,
-                        1,
-                    ),
-                    role: ConfidentialOutputRole::Balancing,
-                },
-                PrivateDestinationOpening {
-                    fixture: FixtureOpeningReference::new(
-                        SUCCESSOR_HANDLE.to_owned(),
-                        *successor_digest,
-                        2,
-                    ),
-                    role: ConfidentialOutputRole::SponsorChange,
-                },
-            ],
+            destinations,
             // The fee, outside both balance equations. Explicit, in the
             // reserve asset, and carrying the EMPTY program that is a
             // fee's whole identity at the target.
@@ -949,9 +1181,8 @@ impl SponsoredPrivatePlanner {
                 })
         };
 
-        let request = LiveTransferRequest::new(
-            [receipt.outpoint()],
-            [
+        let destinations = if self.shape.commits_the_sponsor_value() {
+            vec![
                 destination(recipient, PRIMARY_RECEIPT)?,
                 destination(sender.clone(), BALANCING_RECEIPT)?,
                 // The sponsor-change position. Its OWNER is never read:
@@ -960,10 +1191,21 @@ impl SponsoredPrivatePlanner {
                 // live receipt constructor would be a receipt nobody can
                 // spend and a sponsor who is not repaid.
                 destination(sender, SPONSOR_CHANGE)?,
-            ],
+            ]
+        } else {
+            vec![destination(recipient, PRIMARY_RECEIPT + BALANCING_RECEIPT)?]
+        };
+
+        let request = LiveTransferRequest::new(
+            [receipt.outpoint()],
+            destinations,
             LiveTransferRepresentationPlan::PrivateCommitted,
             RequestedForm::Sponsored,
-            SponsorChangeRequest::Requested,
+            if self.shape.requests_change() {
+                SponsorChangeRequest::Requested
+            } else {
+                SponsorChangeRequest::NotRequested
+            },
             Some(PublicTestRandomness::from_published_bytes([0x7e; 32])),
         )
         .map_err(|_| {
@@ -972,17 +1214,7 @@ impl SponsoredPrivatePlanner {
 
         let openings = self.openings(linked, successor_digest)?;
 
-        let fixtures = FrozenConfidentialFixtureView::new(BTreeMap::from([
-            (
-                linked.predecessor.handle().as_str().to_owned(),
-                linked.predecessor_view.clone(),
-            ),
-            (
-                sponsor_reserve_handle().as_str().to_owned(),
-                self.sponsor_view()?,
-            ),
-            (SUCCESSOR_HANDLE.to_owned(), successor_view.clone()),
-        ]));
+        let fixtures = self.fixture_views(linked, successor_view)?;
 
         let envelope = StagedEnvelope {
             offer: self.offer()?,
@@ -1162,9 +1394,10 @@ impl SponsoredPrivatePlanner {
         // The sponsor's change, found in the MINED bytes rather than
         // assumed from what was sent: a reserve-asset output whose value
         // is a commitment.
-        let sponsor_change_located = self
-            .reserve
-            .is_some_and(|reserve| contains_run(&readback.raw_transaction, reserve.internal()));
+        let sponsor_change_located = self.shape.requests_change().then(|| {
+            self.reserve
+                .is_some_and(|reserve| contains_run(&readback.raw_transaction, reserve.internal()))
+        });
 
         self.record.reverification = Some(SponsoredPrivateReverification {
             accepted_txid: readback.transaction_id.clone(),
@@ -1195,7 +1428,16 @@ impl TargetOperationPlanner for SponsoredPrivatePlanner {
                     if let Err(refusal) = self.settle_sponsor_seed(response) {
                         return Err(self.refuse(refusal));
                     }
-                    self.stage = Stage::FundSponsor;
+                    // The committed stage exists to turn the seed into a
+                    // blinded coin. The explicit shape spends the seed
+                    // itself, so it has nothing to do there and skipping
+                    // it is what "explicit sponsor coin" means in the
+                    // step plan rather than only in the record.
+                    self.stage = if self.shape.commits_the_sponsor_value() {
+                        Stage::FundSponsor
+                    } else {
+                        Stage::FundReceipts
+                    };
                 }
                 Stage::FundSponsor => {
                     if let Err(refusal) = self.settle_sponsor(response) {
@@ -1230,7 +1472,7 @@ impl TargetOperationPlanner for SponsoredPrivatePlanner {
                 "fund-sponsor-region",
                 OperationSubject::SponsorFunding(Box::new(TargetSponsorFundingSubject {
                     sponsor_outputs: 1,
-                    amount_per_sponsor_output: SPONSOR_FEE + SPONSOR_CHANGE,
+                    amount_per_sponsor_output: self.shape.seed_amount(),
                 })),
             ))),
             Stage::FundReceipts => {
@@ -1258,7 +1500,7 @@ impl TargetOperationPlanner for SponsoredPrivatePlanner {
                 };
                 self.record.submitted_bytes = bytes.len();
                 Ok(Some(OperationStep::new(
-                    "sponsored-private-with-change",
+                    self.shape.case_name(),
                     OperationSubject::Submission(Box::new(TargetSubmissionSubject {
                         transaction_bytes: bytes,
                     })),
@@ -1319,7 +1561,7 @@ pub fn render_sponsored_private(record: &SponsoredPrivateRecord) -> String {
     use std::fmt::Write as _;
 
     let mut out = String::new();
-    let _ = writeln!(out, "case sponsored-private-with-change");
+    let _ = writeln!(out, "case {}", record.shape.case_name());
     if let Some(asset) = record.issued_asset.as_ref() {
         let _ = writeln!(out, "issued_asset {asset}");
     }
@@ -1366,7 +1608,10 @@ pub fn render_sponsored_private(record: &SponsoredPrivateRecord) -> String {
         let _ = writeln!(
             out,
             "sponsor_change_located {}",
-            check.sponsor_change_located(),
+            check.sponsor_change_located().map_or_else(
+                || "not-asked-no-change-role".to_owned(),
+                |found| found.to_string()
+            ),
         );
     }
     if let Some(refusal) = record.refusal.as_ref() {

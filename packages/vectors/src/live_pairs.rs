@@ -879,19 +879,23 @@ pub const fn recorded_acceptance(
             case: "explicit-split",
             accepted_identity: crate::live_explicit_shapes::run_of_record::SPLIT_ACCEPTED_TXID,
         },
-        // The private lane has run two shapes near this one and neither
-        // is it. Its split creates THREE outputs — two recipients and a
-        // balancing change — and this member creates two; its only
-        // recorded one-in-two-out run is the fee-bearing shape, whose
-        // second output is a FEE and not a receipt. A pair member is
-        // not answered by a run of a different cardinality, and it is
-        // not answered by a run whose second output is a different
-        // ROLE, so the honest answer is that this shape has not run.
-        (P::Split, Plan::PrivateCommitted) => A::NoRunOfThisShape {
-            because: "the recorded private split creates three outputs (two recipients and a \
-                      balancing change) and this member creates two; the only recorded private \
-                      one-in-two-out run is the fee-bearing shape, whose second output is a fee \
-                      role rather than a receipt",
+        // The private lane HAS now run this member's own shape. It did
+        // not before, and the two shapes it had run near this one are
+        // still not it: the recorded split creates THREE outputs, and
+        // the only other one-in-two-out private run is the fee-bearing
+        // shape whose second output is a FEE. Neither was answered by
+        // being close, so a shape of exactly two created receipts was
+        // built and submitted, and the node accepted it.
+        //
+        // What makes the acceptance this member's rather than another
+        // near miss is measured rather than argued: the run carried TWO
+        // output-witness range proofs over TWO created outputs, and a
+        // fee output carries no range proof at all. Two proofs over two
+        // outputs is the measured form of "both created outputs being
+        // RECEIPTS".
+        (P::Split, Plan::PrivateCommitted) => A::ObservedForThisShape {
+            case: "private-pure-split",
+            accepted_identity: crate::live_multi_shapes::run_of_record::PURE_SPLIT_ACCEPTED_TXID,
         },
         // 2 -> 1.
         (P::Merge, Plan::Explicit) => A::ObservedForThisShape {
@@ -929,25 +933,26 @@ pub const fn recorded_acceptance(
             accepted_identity:
                 crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
         },
-        // Its private half has no run, and the differences are stated
-        // rather than summarized. The one recorded sponsored private
-        // successor carries a BLINDED sponsor coin, a COMMITTED sponsor
-        // change, and two blinded destinations; this member states an
-        // explicit sponsor coin funded exactly to the fee, no change
-        // role, and one destination.
+        // Its private half HAS now been run as its own shape. The one
+        // sponsored private successor recorded before it is still not
+        // this member: that one carries a BLINDED sponsor coin, a
+        // COMMITTED sponsor change, and two blinded destinations, where
+        // this member states an explicit sponsor coin funded exactly to
+        // the fee, no change role, and one destination.
         //
-        // Nothing is claimed here about what a target would do with
-        // this member's shape. The sponsor arc observed that a
-        // COMMITTED sponsor value requires committed change, and this
-        // member's sponsor value is explicit, so that observation does
-        // not reach it either way. What is recorded is that the shape
-        // has not been run, which is the whole of what is known.
-        (P::Sponsor, Plan::PrivateCommitted) => A::NoRunOfThisShape {
-            because: "the one recorded sponsored private successor carries a blinded sponsor \
-                      coin, a committed sponsor change, and two blinded destinations, and this \
-                      member states an explicit sponsor coin funded exactly to the fee, no \
-                      change role, and one destination; what a target would make of this shape \
-                      is unobserved and nothing is claimed about it",
+        // The arc's observation that a COMMITTED sponsor value requires
+        // committed change never reached this member and never forbade
+        // it: an explicit sponsor coin brings the all-zero blinder, so
+        // there is nothing for a change term to absorb. Running it is
+        // what settled that, and the acceptance rules the change out by
+        // arithmetic rather than by inspection -- the reserve
+        // sub-equation is `sponsor_input == fee + change`, this coin was
+        // funded to exactly the fee, and a node that accepted it cannot
+        // have been handed a change output.
+        (P::Sponsor, Plan::PrivateCommitted) => A::ObservedForThisShape {
+            case: "sponsored-private-explicit-no-change",
+            accepted_identity:
+                crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_TXID,
         },
     }
 }
@@ -2139,7 +2144,7 @@ mod tests {
             .collect();
         assert_eq!(
             supporting,
-            BTreeSet::from(["one-to-one", "merge", "many-to-many"]),
+            BTreeSet::from(["one-to-one", "merge", "many-to-many", "split", "sponsor"]),
         );
 
         for row in &rows {
@@ -2208,13 +2213,14 @@ mod tests {
         use crate::live_multi_shapes::run_of_record as ms;
 
         // Which recorded private run each pair's citation points at, by
-        // its index in the restart order the arrays are written in:
-        // split, many-to-many, several-distinct-owners, strict
-        // one-to-one, one-to-one-with-fee, merge.
+        // its index in the order the arrays are written in: split,
+        // many-to-many, several-distinct-owners, strict one-to-one,
+        // one-to-one-with-fee, merge, pure split.
         let cited = [
             (MinimalityPair::OneToOne, 3_usize),
             (MinimalityPair::Merge, 5),
             (MinimalityPair::ManyToMany, 2),
+            (MinimalityPair::Split, 6),
         ];
         let by_pair: BTreeMap<_, _> = minimality_fixtures()
             .into_iter()
@@ -2241,21 +2247,18 @@ mod tests {
             );
         }
 
-        // And the refusal is EARNED rather than declared. The private
-        // split is the nearest recorded run to the split pair, and it
-        // creates three outputs where the member creates two — which is
-        // exactly why the pair says no run has its shape.
+        // And the split pair cites the run it does for a reason that is
+        // still checked rather than trusted. The three-output split is
+        // the NEAREST recorded run to this member and is not it: it
+        // creates three outputs where the member creates two, which is
+        // what kept the pair unsupported until a run of the member's own
+        // cardinality existed. Both facts are asserted, so a later
+        // citation that drifted back to the near miss fails here.
         let split = &by_pair[&MinimalityPair::Split];
         assert_eq!(split.destinations().len(), 2);
         assert_eq!(ms::OUTPUT_COUNTS[0], 3);
         assert_ne!(ms::OUTPUT_COUNTS[0], split.destinations().len());
-        assert!(
-            !recorded_acceptance(
-                MinimalityPair::Split,
-                LiveTransferRepresentationPlan::PrivateCommitted,
-            )
-            .is_observed(),
-        );
+        assert_eq!(ms::OUTPUT_COUNTS[6], split.destinations().len());
     }
 
     #[test]
@@ -2270,12 +2273,13 @@ mod tests {
         let mut universal = 0_usize;
         for (condition, (satisfied, standings)) in &board {
             if *condition == PairAcceptanceCondition::BothTargetTransactionsAccept {
-                assert_eq!(*satisfied, 3, "the acceptance conjunct");
-                // Both unsatisfied pairs stand at the same member and
-                // both name the private lane, but their reasons differ,
-                // so the set holds two distinct standings rather than
-                // one.
-                assert_eq!(standings.len(), 2);
+                assert_eq!(*satisfied, 5, "the acceptance conjunct");
+                // NO pair is unsatisfied any more, so the deficit set is
+                // empty. It is asserted empty rather than dropped: a
+                // later shape whose run stopped reproducing would put a
+                // standing back here, and a test that had stopped
+                // looking would not notice.
+                assert_eq!(standings.len(), 0);
                 for standing in standings {
                     assert!(matches!(
                         standing,

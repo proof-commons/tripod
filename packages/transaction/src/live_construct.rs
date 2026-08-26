@@ -1739,15 +1739,30 @@ fn private_input_intents(
                 ConfidentialInputRegion::Receipt => ConfidentialInputIntent::new,
                 ConfidentialInputRegion::SponsorReserve => ConfidentialInputIntent::sponsor,
             };
-            // Three constructors rather than a flag, on the
-            // materializer's own ground: an input becomes a sponsor's
-            // only where somebody meant it to be one, and it becomes an
-            // opening-free explicit receipt only where somebody meant
-            // that too. A coin that fell into the wrong one would be a
-            // wrong transaction rather than a refused one.
+            // The opening-free constructors, chosen by the SAME declared
+            // region the opened ones are. Four constructors rather than
+            // a flag, on the materializer's own ground: an input becomes
+            // a sponsor's only where somebody meant it to be one, and it
+            // becomes opening-free only where somebody meant that too. A
+            // coin that fell into the wrong one would be a wrong
+            // transaction rather than a refused one.
+            //
+            // This branch used to build a RECEIPT whatever the region
+            // said, which discarded the declaration on exactly the
+            // inputs that had no opening to fall back on. A sponsor coin
+            // with an explicit value then joined the protocol subtotal
+            // that §1.9 holds it outside of, and the candidate was
+            // refused for a semantic imbalance of exactly the sponsor's
+            // own amount.
+            let build_bare = match opening.region {
+                ConfidentialInputRegion::Receipt => ConfidentialInputIntent::explicit_receipt,
+                ConfidentialInputRegion::SponsorReserve => {
+                    ConfidentialInputIntent::explicit_sponsor
+                }
+            };
             opening.opening.clone().map_or_else(
                 || {
-                    ConfidentialInputIntent::explicit_receipt(
+                    build_bare(
                         outpoint,
                         asset,
                         value,
@@ -1813,7 +1828,7 @@ fn private_input_intents(
 /// sponsor region outside every protocol claim, so the representation
 /// plan has nothing to say about the sponsor's value form and a private
 /// transfer sponsored by an EXPLICIT coin stays exactly as buildable as
-/// it was — see [`recognize_sponsors`], which declines to mirror the
+/// it was — see `recognize_sponsors`, which declines to mirror the
 /// receipt clause for that reason.
 ///
 /// # Errors
