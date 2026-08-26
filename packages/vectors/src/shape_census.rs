@@ -2346,6 +2346,26 @@ const fn accepted_identity(form: TransferForm) -> Option<&'static str> {
             CreatedArity::Two,
             FeeAxis::Present,
         ) => return Some(sponsored::SPONSORED_PRIVATE_TXID),
+        // The fourth sponsored acceptance, and the one this register
+        // predicted. It sat here as expressible-and-unrun with row
+        // T5-056 named as the wave driving it; that wave has since run
+        // it, and the cell moved on an acceptance of its OWN shape
+        // rather than on the wave's momentum.
+        //
+        // Its arithmetic is the register's own, confirmed from outside:
+        // an EXPLICIT sponsor coin brings an all-zero blinder, so there
+        // is nothing for a change output to absorb and none is owed,
+        // while the reserve sub-equation stays `sponsor == fee + change`
+        // per asset. The run's own record states both halves, which is
+        // the tally rule this module derives every sponsor cell from
+        // arriving at the same answer by a different route.
+        (
+            RepresentationAxis::HomogeneousPrivate,
+            SponsorAxis::ExplicitValueNoChange,
+            ConsumedArity::Two,
+            CreatedArity::One,
+            FeeAxis::Present,
+        ) => return Some(sponsored::SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_TXID),
         _ => {}
     }
 
@@ -2428,11 +2448,11 @@ const fn stops_at(form: TransferForm) -> &'static str {
                 the three forms it has run; every other cell of the sponsor axis is a manifest the \
                 registry admits and a shape the vocabulary carries, with no ceremony stage that \
                 asks for it. The nearest cell to a run is the private sponsored form with an \
-                explicit sponsor coin funded exactly to the fee and one destination, which the \
-                minimality pair registry pins as awaiting a run of its own shape and which row \
-                T5-056 is driving. This register records it UNRUN, and would record it run only \
-                on an acceptance of its own shape: a wave in flight is not evidence, which is the \
-                distinction this module exists to keep.";
+                explicit sponsor coin funded exactly to the fee and one destination, and that one \
+                has since RUN -- it sat here named as unrun with the wave driving it named too, \
+                and it left by the only honest exit, an acceptance of its own shape. Four of the \
+                sponsor axis's cells are now answered by a node and the rest are answered by this \
+                sentence.";
     }
     if matches!(form.fee, FeeAxis::Present) {
         return "No ceremony builds it, and the shape member is in the SECOND deployment. \
@@ -3901,6 +3921,24 @@ mod tests {
             },
         );
 
+        // The fourth, which this register recorded as expressible and
+        // unrun BEFORE it ran, at exactly these axes. A cell that was
+        // predicted and then observed is the strongest evidence a
+        // knowledge map can offer that it is describing the real space
+        // rather than the space somebody happened to have built.
+        assert_eq!(
+            form_verdict(TransferForm {
+                consumed: ConsumedArity::Two,
+                created: CreatedArity::One,
+                fee: FeeAxis::Present,
+                sponsor: SponsorAxis::ExplicitValueNoChange,
+                representation: RepresentationAxis::HomogeneousPrivate,
+            }),
+            FormVerdict::ObservedAccepted {
+                identity: sponsored::SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_TXID,
+            },
+        );
+
         // The refusal, which is an OBSERVATION and outranks the
         // derivation beside it. The predicate agrees with the node, and
         // that agreement is the point: the arithmetic this register
@@ -4040,15 +4078,17 @@ mod tests {
             // Consensus admits it, this workspace states it, nothing has
             // built one. The honest answer for most of the space, and by
             // the ruling's own terms a complete one.
-            ("expressible-unrun", 80),
+            ("expressible-unrun", 79),
             // The tally forbids it, derived.
             ("impossible-derived", 49),
             // Consensus admits it and a named layer here refuses it.
             ("unsupported-here", 36),
             // A node accepted one: the nine enumerated blinded shapes and
-            // the three sponsored forms, which had no census row anywhere
-            // before this one.
-            ("supported-and-run", 12),
+            // the FOUR sponsored forms, which had no census row anywhere
+            // before this one. The fourth arrived while this register was
+            // being written, at a cell it had already recorded as
+            // expressible and named a wave for.
+            ("supported-and-run", 13),
             // The wholly explicit sponsorless lane, answered by its own
             // register rather than twice.
             ("stated-in-another-register", 12),
