@@ -1006,6 +1006,75 @@ pub(crate) fn confidential_funding_step(
     )
 }
 
+/// The EXPLICIT funding step of an entry crossing.
+///
+/// It funds ordinary explicit coins at a receipt constructor's program,
+/// which is what makes an entry crossing's consumed side explicit. The
+/// coin is a RECEIPT and not a funding coin: what the covenant governs
+/// is decided by the program it sits at, and this step puts it at one.
+pub(crate) fn explicit_funding_step(
+    program: Vec<u8>,
+    printed: String,
+    outputs: u8,
+    amount_per_output: u64,
+) -> OperationStep {
+    OperationStep::new(
+        FUND_STEP,
+        OperationSubject::Funding(Box::new(TargetFundingSubject {
+            issue_asset: false,
+            asset: Some(printed),
+            output_program: program,
+            outputs,
+            amount_per_output,
+        })),
+    )
+}
+
+/// Take the EXPLICIT funded coins the node reported.
+///
+/// Each is compared against what was asked for rather than replaced by
+/// it: the amount the node reports must be the amount requested and the
+/// program must be the one funded, which are the only two facts an
+/// explicit coin has to agree about.
+///
+/// # Errors
+///
+/// [`PrivateRestartRefusal::FundingCreatedNoPredecessor`] where the node
+/// reported a different number of outputs than were asked for.
+pub(crate) fn observe_explicit_coins(
+    response: &NativeOperationResponse,
+    asset: AssetId,
+    program: &[u8],
+    expected: usize,
+    amount: u64,
+) -> Result<Vec<RestartConfidentialCoin>, PrivateRestartRefusal> {
+    if response.funded_outputs.len() != expected {
+        return Err(PrivateRestartRefusal::FundingCreatedNoPredecessor);
+    }
+    response
+        .funded_outputs
+        .iter()
+        .map(|funded| {
+            let outpoint = crate::live_owner_observation::outpoint_of(&funded.outpoint)
+                .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+            let observed_asset = crate::live_owner_observation::asset_of(&funded.asset)
+                .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+            let observed_program = crate::live_owner_observation::decode_hex(&funded.script)
+                .ok_or(PrivateRestartRefusal::MalformedConfidentialOutput)?;
+            let agrees = observed_asset == asset
+                && funded.amount_satoshis == amount
+                && observed_program == program;
+            Ok(RestartConfidentialCoin::explicit(
+                outpoint,
+                AssetField::Explicit(observed_asset),
+                ValueField::Explicit(funded.amount_satoshis),
+                observed_program,
+                agrees,
+            ))
+        })
+        .collect()
+}
+
 /// Take the funded coins from the node's own report of them, each decoded
 /// and compared against the expectation rather than replaced by it.
 ///
