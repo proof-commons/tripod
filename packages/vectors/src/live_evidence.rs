@@ -686,6 +686,48 @@ pub enum LiveRowStanding {
         /// The first-party test that recomputed it.
         observed_by: &'static str,
     },
+    /// A row whose own gate is a FACT about this workspace, established.
+    ///
+    /// # Why this member had to be minted
+    ///
+    /// Minted by DIRECTION, on the precedent [`Self::DeterminismObserved`]
+    /// set and for the same reason it was set: a row was answerable, the
+    /// vocabulary had no name to file the answer under, and the honest
+    /// options were to leave the row unmoved or to file its answer under a
+    /// member that would misdescribe it. The first was taken twice and
+    /// reported as a gap; this member is the repair directed in answer.
+    ///
+    /// Both observation members above carry an identity a TARGET computed,
+    /// and [`Self::DeterminismObserved`] carries a byte-identity
+    /// recomputation. Two rows' gates are neither. What each of them asks
+    /// is whether something is SO of this workspace — whether a path
+    /// exists at all, whether a shape is admitted — and the answer to that
+    /// is a first-party fact with a first-party site: not a verdict
+    /// anybody gave, and not a recomputation of anything.
+    ///
+    /// # What may occupy it, and what it must never be read as
+    ///
+    /// A fact this workspace establishes about ITSELF, for a row whose own
+    /// published gate is that fact, naming the fact and the site that
+    /// establishes it. The second condition is the load-bearing one, and
+    /// it is what keeps this member from becoming the place a wave files
+    /// whatever it could not otherwise move: a row whose gate is a target
+    /// verdict may NOT be answered here however true some fact about it
+    /// is, exactly as a row whose gate is an acceptance may not be
+    /// answered by determinism however deterministically it reproduces.
+    ///
+    /// It is counted in its OWN census bucket, and is added neither to the
+    /// acceptance count nor to the refusal count. No transaction was
+    /// offered to any target, so a single figure covering this and an
+    /// acceptance would let a reader take a statement this workspace makes
+    /// about itself for a verdict a chain gave — the misreading every
+    /// separate bucket here exists to prevent.
+    FirstPartyFactObserved {
+        /// The fact, in the row's own terms.
+        fact: &'static str,
+        /// The first-party site that establishes it.
+        observed_by: &'static str,
+    },
     /// A component the row needs does not exist.
     InfrastructureBlocked(LiveInfrastructureBlocker),
     /// The row's boundary is this workspace's own report bytes.
@@ -736,6 +778,13 @@ impl LiveRowStanding {
                 // it is NOT is a target verdict, which is why it stands
                 // in its own member and counts in its own bucket.
                 | Self::DeterminismObserved { .. }
+                // Answered, and answered by the gate its own row was
+                // given: two rows ask whether something is SO of this
+                // workspace, and a fact with a site is the whole of what
+                // such a row wants. What it is NOT is a target verdict,
+                // which is why it stands in its own member and counts in
+                // its own bucket.
+                | Self::FirstPartyFactObserved { .. }
                 | Self::ReportLayerAnswerable
         )
     }
@@ -778,6 +827,7 @@ pub struct LiveEvidenceCensus {
     native_run_observed: usize,
     native_refusal_observed: usize,
     determinism_observed: usize,
+    first_party_fact_observed: usize,
     infrastructure_blocked: usize,
     report_layer: usize,
     vocabulary_closed: usize,
@@ -833,6 +883,23 @@ impl LiveEvidenceCensus {
     /// with a recomputation, and a reader summing the observation
     /// buckets to ask "how much did a real node say" would get the
     /// wrong answer by exactly this number.
+    /// How many rows a first-party FACT about this workspace has
+    /// answered.
+    ///
+    /// A fourth bucket, on the third one's reasoning carried one step
+    /// further. The determinism bucket is separate because it counts
+    /// observations no target was involved in; this one counts answers
+    /// that are not observations of a transaction at all — a path either
+    /// exists or it does not, a shape is either admitted or it is not.
+    /// Summing it with either target figure would report a statement this
+    /// workspace makes about itself as something a chain did, and a
+    /// reader adding the observation buckets to ask "how much did a real
+    /// node say" would be wrong by exactly this number.
+    #[must_use]
+    pub const fn first_party_fact_observed(&self) -> usize {
+        self.first_party_fact_observed
+    }
+
     #[must_use]
     pub const fn determinism_observed(&self) -> usize {
         self.determinism_observed
@@ -1060,13 +1127,21 @@ const fn a_positive_control_exists() -> bool {
 /// the sponsor's authorization be refused. So the row resolves to
 /// `NativeRunRequired`: no longer blocked, not yet run, and waiting on a
 /// run of its own shape that nothing now prevents.
-fn specific_blocker(row: &LiveSafetyRow) -> Option<LiveInfrastructureBlocker> {
-    match row.name() {
-        "raw-transaction-bypassing-safe-construction" => {
-            Some(LiveInfrastructureBlocker::RawSurgeryPathAbsent)
-        }
-        _ => None,
-    }
+/// No row is in it today, and the function is not decoration. It is what
+/// keeps a blocked row counted and rendered from the moment one exists
+/// rather than from the moment somebody notices, which is the same
+/// reason the undischarged first-party branch above is kept empty.
+///
+/// The last entry left on the ruling recorded at
+/// [`LiveInfrastructureBlocker::RawSurgeryPathAbsent`]: the blocker's
+/// premise had expired, the previous wave declined to move the row
+/// unilaterally, and the ruling minted
+/// [`LiveRowStanding::FirstPartyFactObserved`] and moved it there. The
+/// member stays in the vocabulary — it is the right name for a lane that
+/// genuinely has no raw path — on the pattern two retired blockers
+/// before it set.
+fn specific_blocker(_row: &LiveSafetyRow) -> Option<LiveInfrastructureBlocker> {
+    None
 }
 
 /// The identity that answered one row, where a run answered it.
@@ -1380,6 +1455,50 @@ fn observed_row_determinism(row: &LiveSafetyRow) -> Option<(&'static str, &'stat
     }
 }
 
+/// The first-party fact that answers one row, where the row's own gate
+/// IS that fact.
+///
+/// Beside [`observed_row_determinism`] and shaped like it, and separate
+/// from it for the reason [`LiveRowStanding::FirstPartyFactObserved`]
+/// states: what this returns is neither a target verdict nor a
+/// recomputation, and must never be filed as either.
+///
+/// The bar for an entry is the one the member states, and it is about
+/// the ROW rather than about the fact: the row's published gate has to
+/// be the fact itself. A row asking what a target does with something
+/// may not be answered here however firmly some fact about it is
+/// established.
+fn observed_row_first_party_fact(row: &LiveSafetyRow) -> Option<(&'static str, &'static str)> {
+    match row.name() {
+        // §4.3's third distinction. The row's gate is stated at its own
+        // site in `crate::live_safety`: the safe constructor cannot
+        // express this candidate, so its refusal would establish nothing
+        // about it, and WHAT THE ROW ASKS IS WHETHER A RAW PATH EXISTS
+        // AT ALL. That is a question about this workspace, and the
+        // answer is visibly yes.
+        //
+        // `transaction::TargetTransaction::with_output_witnesses` is
+        // public and checks census ARITY only — no amount, asset,
+        // program, position or role — and three lanes already rebuild
+        // finalized bytes through it and hand the result to a real node.
+        // The blocker that used to carry this row said the path did not
+        // exist; that premise expired, the previous wave recorded the
+        // expiry at the blocker's own site and escalated rather than
+        // choosing a standing, and this is the standing the ruling
+        // chose.
+        //
+        // What this does NOT claim is that any target refused a bypass.
+        // No such run happened and the row never asked for one.
+        "raw-transaction-bypassing-safe-construction" => Some((
+            "a raw assembly path bypassing the safe constructor exists and is used: \
+             `with_output_witnesses` is public, checks census arity only, and three \
+             lanes rebuild finalized bytes through it and submit them to a real node",
+            "crate::live_conservation_negatives::run_of_record",
+        )),
+        _ => None,
+    }
+}
+
 /// Classify one row of the §15 matrix.
 fn classify(
     row: &'static LiveSafetyRow,
@@ -1440,6 +1559,16 @@ fn classify(
             recomputed,
             observed_by,
         });
+    }
+    // Last of the four observation branches, and after the specific
+    // blocker for the reason all of them are: a row waiting on a
+    // component that does not exist is not answered by a fact about a
+    // different component. It is asked after the three above because a
+    // row whose gate is a target verdict or a recomputation must take
+    // that answer where one exists; only a row whose own gate is a fact
+    // about this workspace reaches here at all.
+    if let Some((fact, observed_by)) = observed_row_first_party_fact(row) {
+        return Ok(LiveRowStanding::FirstPartyFactObserved { fact, observed_by });
     }
     if !a_positive_control_exists() {
         return Ok(LiveRowStanding::InfrastructureBlocked(
@@ -1549,6 +1678,9 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
             LiveRowStanding::NativeRunObserved { .. } => census.native_run_observed += 1,
             LiveRowStanding::NativeRefusalObserved { .. } => census.native_refusal_observed += 1,
             LiveRowStanding::DeterminismObserved { .. } => census.determinism_observed += 1,
+            LiveRowStanding::FirstPartyFactObserved { .. } => {
+                census.first_party_fact_observed += 1;
+            }
             LiveRowStanding::InfrastructureBlocked(_) => census.infrastructure_blocked += 1,
             LiveRowStanding::ReportLayerAnswerable => census.report_layer += 1,
             LiveRowStanding::OperationVocabularyClosed => census.vocabulary_closed += 1,
@@ -1811,6 +1943,7 @@ mod tests {
                 + census.native_run_required()
                 + census.native_run_observed()
                 + census.determinism_observed()
+                + census.first_party_fact_observed()
                 + census.native_refusal_observed()
                 + census.infrastructure_blocked()
                 + census.report_layer()
@@ -1921,6 +2054,7 @@ mod tests {
                 + census.native_run_required()
                 + census.native_run_observed()
                 + census.determinism_observed()
+                + census.first_party_fact_observed()
                 + census.native_refusal_observed()
                 + census.infrastructure_blocked()
                 + census.report_layer()
@@ -2300,7 +2434,34 @@ mod tests {
         // blocked row became an ANSWERED one rather than a waiting one —
         // and the completeness assertion still does not change, because
         // the positive half is what it is about.
-        assert_eq!(plan.census().infrastructure_blocked(), 1);
+        //
+        // The fourth was the raw path, and it left the way the third
+        // did — the row ANSWERED rather than waiting — but on a ruling
+        // rather than on a retyping. Its blocker's premise had expired:
+        // the path it called absent is public and three lanes use it,
+        // the previous wave recorded that at the blocker's own site and
+        // declined to choose a standing, and the ruling minted one. So
+        // the count is ZERO, and no row of this matrix is waiting on a
+        // component that does not exist.
+        assert_eq!(plan.census().infrastructure_blocked(), 0);
+        // The row it carried is answered, and answered by a fact rather
+        // than by anything a target said. Asserted here, beside the
+        // count it changed, so a reader finding the blocker gone can see
+        // in one place where the row went.
+        let raw = plan
+            .rows()
+            .iter()
+            .find(|row| row.row().name() == "raw-transaction-bypassing-safe-construction")
+            .expect("the raw-bypass row is in the matrix");
+        assert!(matches!(
+            raw.standing(),
+            LiveRowStanding::FirstPartyFactObserved { .. }
+        ));
+        assert_eq!(plan.census().first_party_fact_observed(), 1);
+        // And it did NOT land in either target bucket. The separate
+        // bucket's whole claim, made checkable.
+        assert_eq!(plan.census().native_run_observed(), 24);
+        assert_eq!(plan.census().native_refusal_observed(), 3);
     }
 
     #[test]

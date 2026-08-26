@@ -418,11 +418,15 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         "committed sponsor values are an accepted positive shape and the negative is unstated",
     ),
     // §15.7 — the root, event, ABI and linker faults still waiting. One
-    // unanswered row of this section is deliberately NOT here:
-    // `raw-transaction-bypassing-safe-construction` stands at
+    // row of this section is deliberately NOT here and never was:
+    // `raw-transaction-bypassing-safe-construction` stood at
     // `InfrastructureBlocked`, which is a different state from waiting
-    // on a run, and listing it here would report a blocked row as a
-    // runnable one.
+    // on a run, and listing it here would have reported a blocked row as
+    // a runnable one. It is now ANSWERED at
+    // `LiveRowStanding::FirstPartyFactObserved` — its own site says what
+    // it asks is whether a raw path exists at all, and one does — so it
+    // is absent from this register for the second of two reasons in a
+    // row, neither of them that a run is owed.
     entry(
         "any-root-input-or-output",
         G::OwnerSigningOverForeignBytesAbsent,

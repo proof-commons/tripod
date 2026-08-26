@@ -741,6 +741,11 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         // belongs in the evidence plan beside the row rather than in
         // bytes whose job is to count.
         LiveRowStanding::DeterminismObserved { .. } => "determinism-observed",
+        // Withheld for the same two reasons: no target sentence exists
+        // to carry, and the payload names a first-party site, which
+        // belongs beside the row in the evidence plan rather than in
+        // bytes whose job is to count.
+        LiveRowStanding::FirstPartyFactObserved { .. } => "first-party-fact-observed",
         LiveRowStanding::InfrastructureBlocked(_) => "infrastructure-blocked",
         LiveRowStanding::ReportLayerAnswerable => "report-layer-answerable",
         LiveRowStanding::OperationVocabularyClosed => "operation-vocabulary-closed",
