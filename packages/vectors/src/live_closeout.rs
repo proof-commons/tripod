@@ -1547,30 +1547,6 @@ pub fn wave_eight_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
     use crate::live_private_restart::run_of_record as run;
     use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
 
-    let mut target_facts = wave_seven_target_facts();
-    target_facts.push(format!(
-        "sponsored_accepted_txid {}",
-        sp::SPONSORED_ACCEPTED_TXID
-    ));
-    target_facts.push(format!(
-        "sponsored_change_accepted_txid {}",
-        sp::SPONSORED_CHANGE_ACCEPTED_TXID,
-    ));
-    target_facts.push(format!(
-        "sponsored_private_txid {}",
-        sp::SPONSORED_PRIVATE_TXID
-    ));
-    target_facts.push(format!(
-        "sponsored_private_submitted_bytes {}",
-        sp::SPONSORED_PRIVATE_SUBMITTED_BYTES,
-    ));
-    target_facts.push(format!("merge_accepted_txid {}", ms::MERGE_ACCEPTED_TXID));
-    target_facts.push(format!(
-        "strict_one_to_one_accepted_txid {}",
-        ms::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
-    ));
-    target_facts.push("minimality_pairs_supporting 3 of 5".to_owned());
-
     validate_closeout(CloseoutParts {
         disposition: CloseoutDisposition::Completed,
         ledger: wave_eight_ledger()?,
@@ -1590,7 +1566,7 @@ pub fn wave_eight_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
             "ctf-v1/predecessor-dual-parity".to_owned(),
             cn::PREDECESSOR_DIGEST.to_owned(),
         )]),
-        target_facts,
+        target_facts: wave_eight_target_facts(),
         sighash_result: Some(
             "the reviewed owner-sighash profile, established over its six-member required set \
              by a verdict this guide consumed and did not produce"
@@ -1658,6 +1634,40 @@ pub fn wave_eight_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
         ],
         wall_times: BTreeMap::new(),
     })
+}
+
+/// The target facts the minimality wave adds to the shape wave's.
+///
+/// Appended rather than restated, because the shape wave's facts are
+/// observations and a later wave inherits them.
+fn wave_eight_target_facts() -> Vec<String> {
+    use crate::live_multi_shapes::run_of_record as ms;
+    use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
+
+    let mut facts = wave_seven_target_facts();
+    facts.push(format!(
+        "sponsored_accepted_txid {}",
+        sp::SPONSORED_ACCEPTED_TXID,
+    ));
+    facts.push(format!(
+        "sponsored_change_accepted_txid {}",
+        sp::SPONSORED_CHANGE_ACCEPTED_TXID,
+    ));
+    facts.push(format!(
+        "sponsored_private_txid {}",
+        sp::SPONSORED_PRIVATE_TXID,
+    ));
+    facts.push(format!(
+        "sponsored_private_submitted_bytes {}",
+        sp::SPONSORED_PRIVATE_SUBMITTED_BYTES,
+    ));
+    facts.push(format!("merge_accepted_txid {}", ms::MERGE_ACCEPTED_TXID));
+    facts.push(format!(
+        "strict_one_to_one_accepted_txid {}",
+        ms::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
+    ));
+    facts.push("minimality_pairs_supporting 3 of 5".to_owned());
+    facts
 }
 
 /// The evidence-role map for the minimality wave.
@@ -1785,7 +1795,7 @@ mod tests {
         assert_eq!(report.parts().disposition, CloseoutDisposition::Completed);
         assert_eq!(report.parts().ledger.stopped_at(), None);
         for (step, result) in report.parts().ledger.entries() {
-            assert!(result.continues(), "step {} did not accept", step.number(),);
+            assert!(result.continues(), "step {} did not accept", step.number());
         }
 
         // Eight rows moved, each carrying a target-computed identity.
