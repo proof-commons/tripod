@@ -1584,6 +1584,21 @@ fn the_sponsored_confidential_with_change_shape_is_submitted_to_a_real_target() 
 /// check exists to catch, and a fee output that GREW one would be a fee
 /// that had been blinded — the failure the fee role was built to make
 /// impossible, and the one worth a second assertion of its own.
+/// The ENTRY CROSSING against a real node.
+///
+/// Explicit receipts spent into two blinded destinations. This workspace
+/// has performed the shape every ceremony as a FUNDING step; what is new
+/// is that the coin it spends sits at a receipt constructor's program,
+/// so the transfer is governed by the covenant rather than by the
+/// adapter.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_entry_crossing_shape_is_submitted_to_a_real_target() {
+    use vectors::live_multi_shapes::PrivateShape;
+
+    run_one_multi_shape(PrivateShape::EntryCrossing, "multi-entry-crossing");
+}
+
 /// The EXIT CROSSING against a real node.
 ///
 /// Blinded receipts spent into explicit destinations beside the blinded
