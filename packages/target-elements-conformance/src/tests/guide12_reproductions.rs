@@ -248,7 +248,7 @@ fn a_conservation_response_round_trips_through_its_own_type() {
         },
         observed_layer: crate::protocol::ObservedOutcomeLayer::Accepted,
         observed_detail: None,
-        transaction_bytes: None,
+        transaction_bytes: Some(vec![0x02]),
         observed_value_commitments: Vec::new(),
         observed_asset_commitments: Vec::new(),
         observed_openings: vec![crate::protocol::ConservationOpening {
@@ -330,7 +330,7 @@ fn an_infrastructure_conservation_response_carries_no_openings() {
     );
 }
 
-/// `G12-R14`: an infrastructure response carries no interpreter figures.
+/// `G12-R14`: an infrastructure response carries no resource figures.
 ///
 /// The infrastructure arm of the shape rules states that a run which did
 /// not happen observed nothing, and it used to check the failure class
@@ -347,15 +347,14 @@ fn an_infrastructure_conservation_response_carries_no_openings() {
 /// report figures for a run it never made. The arm now refuses them
 /// itself.
 ///
-/// Where the line falls is `observes_interpreter`'s to say rather than
-/// this arm's: the script's size and the initial stack's depth are the
-/// fixture's own, restated by every executor, and are not observations
-/// of anything. They stay legal here, which the last assertion pins.
+/// Revision 7 closes the remaining distinction: even the request-derived
+/// script size and initial depth are absent on infrastructure responses,
+/// making every resource member uniformly null when no run occurred.
 #[test]
-fn an_infrastructure_response_may_still_carry_interpreter_figures() {
+fn an_infrastructure_response_carries_no_resource_figures() {
     let observed = NativeResourceObservation {
-        script_bytes: 33,
-        initial_stack_items: 1,
+        script_bytes: Some(33),
+        initial_stack_items: Some(1),
         peak_stack_items: Some(4),
         peak_altstack_items: Some(0),
         maximum_element_bytes: Some(32),
@@ -405,19 +404,22 @@ fn an_infrastructure_response_may_still_carry_interpreter_figures() {
         );
     }
 
-    // The fixture's own figures are not observations and stay legal: a
-    // response that restates the script it was handed still says the run
-    // never happened.
+    // Revision 7 makes the infrastructure shape uniform. Even figures
+    // derivable from the request are omitted when no execution happened.
     let restated = NativeExecutionResponse {
         resources: NativeResourceObservation {
-            script_bytes: 33,
-            initial_stack_items: 1,
+            script_bytes: Some(33),
+            initial_stack_items: Some(1),
             ..NativeResourceObservation::default()
         },
         ..response
     };
     assert!(!restated.resources.observes_interpreter());
-    assert_eq!(validate_response_shape(&restated, &BTreeSet::new()), Ok(()));
+    assert!(restated.resources.has_any_observation());
+    assert_eq!(
+        validate_response_shape(&restated, &BTreeSet::new()),
+        Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation),
+    );
 }
 
 /// `G12-R14`, the normalization half: witness sizes are an observation.

@@ -1197,11 +1197,8 @@ pub(crate) fn resources_agree(
     observed: &NativeResourceObservation,
 ) -> bool {
     let rows = [
-        (expected.script_bytes, Some(observed.script_bytes)),
-        (
-            expected.initial_stack_items,
-            Some(observed.initial_stack_items),
-        ),
+        (expected.script_bytes, observed.script_bytes),
+        (expected.initial_stack_items, observed.initial_stack_items),
         (expected.peak_stack_items, observed.peak_stack_items),
         (expected.peak_altstack_items, observed.peak_altstack_items),
         (
@@ -1214,13 +1211,12 @@ pub(crate) fn resources_agree(
         ),
         (expected.transaction_weight, observed.transaction_weight),
     ];
-    rows.into_iter().all(|(stated, reported)| {
-        match (stated, reported) {
+    rows.into_iter()
+        .all(|(stated, reported)| match (stated, reported) {
             (ResourceExpectation::Exact(fixed), Some(seen)) => fixed == seen,
-            // Recorded-only, or a figure this executor cannot observe.
-            _ => true,
-        }
-    })
+            (ResourceExpectation::Exact(_), None) => false,
+            (ResourceExpectation::RecordedOnly, _) => true,
+        })
 }
 
 /// Which requirements one case bears on.

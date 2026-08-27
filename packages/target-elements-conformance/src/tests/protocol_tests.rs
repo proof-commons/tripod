@@ -5,10 +5,11 @@ use std::collections::BTreeSet;
 use target_elements::ExecutionDomain;
 
 use crate::protocol::{
-    ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, HandshakeRequest,
-    NATIVE_PROTOCOL_SCHEMA, NativeExecutionResponse, NativeResourceObservation, NativeVerdict,
-    ObservedFailureClass, ProtocolLimits, ProtocolPhase, ResponseShapeDefect, WireExecutionDomain,
-    validate_response_shape,
+    ConservationOpening, ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake,
+    HandshakeRequest, NATIVE_PROTOCOL_SCHEMA, NativeConservationResponse, NativeExecutionResponse,
+    NativeOperationResponse, NativePrototypeResponse, NativeResourceObservation, NativeVerdict,
+    ObservedFailureClass, ObservedOutcomeLayer, OperationCaseId, OperationStepKind, ProtocolLimits,
+    ProtocolPhase, ResponseShapeDefect, WireExecutionDomain, validate_response_shape,
 };
 
 fn handshake() -> ExecutorHandshake {
@@ -30,12 +31,26 @@ fn handshake() -> ExecutorHandshake {
     }
 }
 
+#[test]
+fn the_native_protocol_is_revision_seven() {
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 7);
+}
+
 /// One response, in whatever shape a test needs.
 fn response(
     verdict: NativeVerdict,
     observed_failure: Option<ObservedFailureClass>,
     final_stack: Option<Vec<Vec<u8>>>,
 ) -> NativeExecutionResponse {
+    let resources = if matches!(verdict, NativeVerdict::InfrastructureError) {
+        NativeResourceObservation::default()
+    } else {
+        NativeResourceObservation {
+            script_bytes: Some(33),
+            initial_stack_items: Some(1),
+            ..NativeResourceObservation::default()
+        }
+    };
     NativeExecutionResponse {
         schema: NATIVE_PROTOCOL_SCHEMA,
         case: crate::fixture::NativeCaseId::new(
@@ -47,8 +62,182 @@ fn response(
         final_stack,
         final_altstack: None,
         observed_failure,
+        resources,
+    }
+}
+
+/// One conservation response, with only observations its layer permits.
+fn conservation_response(layer: ObservedOutcomeLayer) -> NativeConservationResponse {
+    NativeConservationResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: crate::conservation::ConservationRowId {
+            ordinal: 1,
+            name: "revision-seven-shape".to_owned(),
+        },
+        observed_layer: layer,
+        observed_detail: None,
+        transaction_bytes: layer.is_target_verdict().then(|| vec![0x02]),
+        observed_value_commitments: Vec::new(),
+        observed_asset_commitments: Vec::new(),
+        observed_openings: Vec::new(),
+    }
+}
+
+/// One operation response, carrying no operation-specific observation.
+fn operation_response(layer: ObservedOutcomeLayer) -> NativeOperationResponse {
+    NativeOperationResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: OperationCaseId {
+            operation: OperationStepKind::Submit,
+            step: "revision-seven-shape".to_owned(),
+        },
+        observed_layer: layer,
+        observed_detail: None,
+        issued_asset: None,
+        funded_outputs: Vec::new(),
+        confidential_funded_outputs: Vec::new(),
+        mined_readback: None,
+        accepted_txid: None,
+        sponsor_witness: Vec::new(),
+        signature_bound_to: None,
         resources: NativeResourceObservation::default(),
     }
+}
+
+#[test]
+fn revision_seven_conservation_shapes_are_enforced_per_layer() {
+    assert_eq!(
+        conservation_response(ObservedOutcomeLayer::Accepted).validate_shape(),
+        Ok(()),
+        "accepted explicit transactions need no commitments or openings",
+    );
+    let mut accepted = conservation_response(ObservedOutcomeLayer::Accepted);
+    accepted.transaction_bytes = None;
+    assert_eq!(
+        accepted.validate_shape(),
+        Err(ResponseShapeDefect::AcceptedConservationOmitsTransaction),
+    );
+
+    for layer in [
+        ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+        ObservedOutcomeLayer::ScriptPathRejection,
+        ObservedOutcomeLayer::KeyPathRejection,
+        ObservedOutcomeLayer::RelayPolicyRejection,
+    ] {
+        let mut rejected = conservation_response(layer);
+        rejected.observed_openings = vec![ConservationOpening {
+            vout: 0,
+            amount_satoshis: 1,
+            asset: "aa".repeat(32),
+            amount_blinder: "bb".repeat(32),
+            asset_blinder: "cc".repeat(32),
+        }];
+        assert_eq!(
+            rejected.validate_shape(),
+            Err(ResponseShapeDefect::RefusedConservationCarriesOpenings),
+            "{layer:?} carried openings",
+        );
+    }
+
+    let mut rejected = conservation_response(ObservedOutcomeLayer::ConsensusRejectionBeforeScript);
+    rejected.observed_value_commitments = vec![vec![0x08; 33]];
+    rejected.observed_asset_commitments = vec![vec![0x0a; 33]];
+    assert_eq!(rejected.validate_shape(), Ok(()));
+}
+
+#[test]
+fn a_non_verdict_conservation_response_carries_no_observation() {
+    for layer in [
+        ObservedOutcomeLayer::FixtureConstructionFailure,
+        ObservedOutcomeLayer::ExecutorInfrastructureFailure,
+    ] {
+        let empty = conservation_response(layer);
+        assert_eq!(empty.validate_shape(), Ok(()));
+
+        let mut bytes = empty.clone();
+        bytes.transaction_bytes = Some(vec![0x02]);
+        assert_eq!(
+            bytes.validate_shape(),
+            Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation),
+        );
+
+        let mut commitments = empty;
+        commitments.observed_value_commitments = vec![vec![0x08; 33]];
+        assert_eq!(
+            commitments.validate_shape(),
+            Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation),
+        );
+    }
+}
+
+#[test]
+fn resource_fixture_members_are_required_but_nullable() {
+    let wire = serde_json::to_value(NativeResourceObservation::default())
+        .expect("a resource observation serializes");
+    assert_eq!(wire["script_bytes"], serde_json::Value::Null);
+    assert_eq!(wire["initial_stack_items"], serde_json::Value::Null);
+    let decoded: NativeResourceObservation =
+        serde_json::from_value(wire.clone()).expect("explicit null resource members decode");
+    assert_eq!(decoded.script_bytes, None);
+    assert_eq!(decoded.initial_stack_items, None);
+
+    for member in ["script_bytes", "initial_stack_items"] {
+        let mut omitted = wire.clone();
+        omitted
+            .as_object_mut()
+            .expect("the resource observation is an object")
+            .remove(member);
+        serde_json::from_value::<NativeResourceObservation>(omitted)
+            .expect_err("a required-nullable resource member was omitted");
+    }
+}
+
+#[test]
+fn primitive_and_prototype_verdicts_require_fixture_resources() {
+    let mut primitive = response(NativeVerdict::Accepted, None, None);
+    primitive.resources.script_bytes = None;
+    assert_eq!(
+        validate_response_shape(&primitive, &BTreeSet::new()),
+        Err(ResponseShapeDefect::ExecutionResponseOmitsFixtureResources),
+    );
+
+    let prototype = NativePrototypeResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: crate::prototype::PrototypeCaseId {
+            relation: crate::prototype::PrototypeRelation::WideFloorRelation,
+            name: "revision-seven-shape".to_owned(),
+        },
+        verdict: NativeVerdict::Rejected,
+        final_stack: None,
+        final_altstack: None,
+        observed_failure: None,
+        resources: NativeResourceObservation {
+            script_bytes: Some(33),
+            initial_stack_items: None,
+            ..NativeResourceObservation::default()
+        },
+    };
+    assert_eq!(
+        prototype.validate_shape(&BTreeSet::new()),
+        Err(ResponseShapeDefect::ExecutionResponseOmitsFixtureResources),
+    );
+}
+
+#[test]
+fn non_verdict_resource_records_are_uniformly_empty() {
+    let mut primitive = response(NativeVerdict::InfrastructureError, None, None);
+    primitive.resources.script_bytes = Some(33);
+    assert_eq!(
+        validate_response_shape(&primitive, &BTreeSet::new()),
+        Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation),
+    );
+
+    let mut operation = operation_response(ObservedOutcomeLayer::ExecutorInfrastructureFailure);
+    operation.resources.initial_stack_items = Some(1);
+    assert_eq!(
+        operation.validate_shape(),
+        Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation),
+    );
 }
 
 #[test]
@@ -257,11 +446,13 @@ fn the_handshake_request_states_this_harnesss_schema() {
 }
 
 #[test]
-fn this_harness_speaks_schema_six_and_no_earlier_one() {
-    // Stated as a value rather than left implicit. Schema 6 widens the
-    // observed-layer vocabulary with `key_path_rejection`. No record
-    // shape moves for it, and the break is real all the same: an earlier
-    // harness refuses a name it has never heard, so an adapter that has
+fn this_harness_speaks_schema_seven_and_no_earlier_one() {
+    // Stated as a value rather than left implicit. Schema 7 tightens the
+    // conservation response shapes and makes fixture resource figures
+    // required but nullable. Schema 6 widens the observed-layer
+    // vocabulary with `key_path_rejection`. No record shape moves for it,
+    // and the break is real all the same: an earlier harness refuses a
+    // name it has never heard, so an adapter that has
     // learned to tell a key-path refusal from a script-path one would
     // have its answer read as a transport failure rather than as the
     // verdict the target reached. Schema 5 declares the
@@ -283,7 +474,8 @@ fn this_harness_speaks_schema_six_and_no_earlier_one() {
     // implementations moving together: the adapter's constant of the
     // same name is what it is compared against in the field, and a bump
     // that reached only one side is the fault G12-R09 recorded.
-    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 6);
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 7);
+    assert_ne!(NATIVE_PROTOCOL_SCHEMA, 6);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 5);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 4);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 3);

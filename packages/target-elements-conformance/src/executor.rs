@@ -1280,6 +1280,10 @@ pub(crate) fn run_protocol(
     let handshake: ExecutorHandshake = read_message(reader, ProtocolPhase::Handshake, limits)?
         .ok_or(NativeConformanceError::ExecutorHandshakeFailed)?;
 
+    // Revision 7 keeps the exact-equality gate here, before capability
+    // selection, the environment record, and every execution request. A
+    // revision-6 executor therefore receives no revision-7 workload and
+    // no stored revision-6 response can enter a revision-7 transcript.
     if handshake.protocol_schema != NATIVE_PROTOCOL_SCHEMA {
         return Err(NativeConformanceError::UnsupportedProtocolSchema {
             offered: handshake.protocol_schema,

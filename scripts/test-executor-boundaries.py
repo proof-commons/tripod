@@ -250,6 +250,34 @@ def memory_diagnostics(module):
     return output, quarantine
 
 
+def executor_source() -> str:
+    """The adapter source used by static cross-language checks."""
+    with open(EXECUTOR_PATH, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def executor_function(name: str) -> str:
+    """One top-level adapter function, without importing the adapter."""
+    source = executor_source()
+    start = source.index("def %s(" % name)
+    following = re.search(r"^def [a-zA-Z_]", source[start + 1 :], re.MULTILINE)
+    if following is None:
+        return source[start:]
+    return source[start : start + 1 + following.start()]
+
+
+def harness_schema() -> int:
+    """The protocol revision the typed harness declares in Rust."""
+    with open(PROTOCOL_PATH, encoding="utf-8") as handle:
+        for line in handle:
+            match = re.match(
+                r"^pub const NATIVE_PROTOCOL_SCHEMA: u32 = (\d+);$", line
+            )
+            if match:
+                return int(match.group(1))
+    raise SystemExit("the harness declares no protocol revision")
+
+
 def adapter_bound(name: str) -> int:
     """One request bound, read from the adapter's own source."""
     with open(EXECUTOR_PATH, encoding="utf-8") as handle:
@@ -759,11 +787,11 @@ def test_zk_paths_and_loader_exceptions_reach_neither_file(failures) -> int:
 
 
 def test_a_wrong_revision_is_refused_before_any_node(failures) -> int:
-    """A revision this adapter does not speak ends the exchange."""
+    """The immediately previous revision ends the exchange."""
     fixture = Fixture(client_body="exit 1\n", node_seconds=0.1)
     try:
-        run = drive(fixture, json.dumps({"schema": SCHEMA + 1}).encode("utf-8") + b"\n")
-        failures.check(run.status != 0, "an unknown revision is refused")
+        run = drive(fixture, json.dumps({"schema": SCHEMA - 1}).encode("utf-8") + b"\n")
+        failures.check(run.status != 0, "the previous revision is refused")
         failures.equal(run.stderr, b"", "stderr stays empty on a revision refusal")
         failures.check(
             "protocol revision" in fixture.diagnostics(),
@@ -777,6 +805,58 @@ def test_a_wrong_revision_is_refused_before_any_node(failures) -> int:
 # --------------------------------------------------------------------------
 # The cross-language agreement the bounds rest on
 # --------------------------------------------------------------------------
+
+
+def test_the_schema_constants_agree_at_revision_seven(failures) -> int:
+    """Both implementations move in one revision and no other number."""
+    failures.equal(
+        harness_schema(),
+        SCHEMA,
+        "the adapter and typed harness declare different protocol revisions",
+    )
+    failures.equal(SCHEMA, 7, "the native protocol did not move to revision 7")
+    return 2
+
+
+def test_revision_seven_producer_shapes_are_stated_at_the_boundary(failures) -> int:
+    """The adapter guard and nullable writers are static source contracts."""
+    guard = executor_function("validate_conservation_body")
+    answer = executor_function("answer_conservation_row")
+    resources = executor_function("resources_for")
+    operation = executor_function("answer_operation_step")
+    operation_failure = executor_function("write_operation_failure")
+
+    failures.check(
+        'layer == "accepted" and body["transaction_bytes"] is None' in guard,
+        "the producer guard does not require bytes on acceptance",
+    )
+    failures.check(
+        'layer != "accepted" and body["observed_openings"]' in guard,
+        "the producer guard does not forbid openings off acceptance",
+    )
+    failures.check(
+        "layer in NON_VERDICT_LAYERS" in guard,
+        "the producer guard does not empty non-verdict observations",
+    )
+    failures.check(
+        "validate_conservation_body(response)\n    write_message(response)" in answer,
+        "the conservation response is written without the shape guard",
+    )
+    failures.check(
+        'if fixture else None' in resources,
+        "missing fixture resources are not serialized as null",
+    )
+    for writer_name, writer in (
+        ("operation", operation),
+        ("operation failure", operation_failure),
+    ):
+        failures.check(
+            '"script_bytes": None' in writer
+            and '"initial_stack_items": None' in writer,
+            "%s resources do not serialize both nullable figures as null"
+            % writer_name,
+        )
+    return 7
 
 
 def test_the_request_bounds_agree_across_the_two_implementations(failures) -> int:
@@ -887,7 +967,9 @@ TESTS = (
         "ZK paths and loader exceptions reach neither file",
         test_zk_paths_and_loader_exceptions_reach_neither_file,
     ),
-    ("a wrong revision is refused before any node", test_a_wrong_revision_is_refused_before_any_node),
+    ("the previous revision is refused before any node", test_a_wrong_revision_is_refused_before_any_node),
+    ("schema constants agree at revision seven", test_the_schema_constants_agree_at_revision_seven),
+    ("revision seven producer shapes are static", test_revision_seven_producer_shapes_are_stated_at_the_boundary),
     ("the request bounds agree across implementations", test_the_request_bounds_agree_across_the_two_implementations),
     ("both destinations are mandatory", test_both_destinations_are_mandatory),
     ("one file for two roles is refused", test_one_file_for_two_roles_is_refused),

@@ -473,8 +473,7 @@ COMMAND_NAME = "elements-native-executor"
 # builds and is not the node's version.
 ADAPTER_VERSION = "2.1.0"
 
-# The protocol revision this adapter speaks. It must match
-# NATIVE_PROTOCOL_SCHEMA in the conformance package.
+# This adapter speaks the revision declared by NATIVE_PROTOCOL_SCHEMA below.
 #
 # Revision 4 is where the two sides began describing the same exchange.
 # Under revision 3 this adapter wrote an observed_openings member the
@@ -500,7 +499,15 @@ ADAPTER_VERSION = "2.1.0"
 # arrive as a transport failure instead of as the verdict the target
 # actually reached, so the widening is numbered like every other break
 # here, and both sides bump in one change.
-NATIVE_PROTOCOL_SCHEMA = 6
+#
+# Revision 7 requires an accepted conservation response to carry its
+# transaction, forbids openings on every rejection, and leaves every
+# target observation empty on a non-verdict. It also makes the script-size
+# and initial-stack resource members required-but-nullable, so this adapter
+# writes both names and uses null where no fixture figure exists. Both
+# implementations move in this single change; revision-6 peers fail the
+# exact-equality handshake before receiving requests.
+NATIVE_PROTOCOL_SCHEMA = 7
 
 # The reviewed tapscript leaf version.
 TAPSCRIPT_LEAF_VERSION = 0xC4
@@ -1130,6 +1137,15 @@ POLICY_SCRIPT_PREFIX = "non-mandatory-script-verify-flag ("
 # rule is applied from one list rather than restated at each writer.
 NON_VERDICT_LAYERS = frozenset(
     {"fixture_construction_failure", "executor_infrastructure_failure"}
+)
+
+CONSERVATION_REJECTION_LAYERS = frozenset(
+    {
+        "consensus_rejection_before_script",
+        "script_path_rejection",
+        "key_path_rejection",
+        "relay_policy_rejection",
+    }
 )
 
 # The mapping documented in the module docstring. A key absent from this
@@ -6466,8 +6482,8 @@ def resources_for(fixture, weight) -> dict:
     turned "not observed" into a measurement of nothing.
     """
     return {
-        "script_bytes": len(fixture["script"]) if fixture else 0,
-        "initial_stack_items": len(fixture["initial_stack"]) if fixture else 0,
+        "script_bytes": len(fixture["script"]) if fixture else None,
+        "initial_stack_items": len(fixture["initial_stack"]) if fixture else None,
         "peak_stack_items": None,
         "peak_altstack_items": None,
         "maximum_element_bytes": None,
@@ -6930,9 +6946,44 @@ def answer_case(executor: CaseExecutor, request: dict) -> None:
             "final_stack": None,
             "final_altstack": None,
             "observed_failure": body["observed_failure"],
-            "resources": resources_for(fixture, body.get("transaction_weight")),
+            "resources": resources_for(
+                fixture if body["verdict"] != "infrastructure_error" else None,
+                body.get("transaction_weight"),
+            ),
         }
     )
+
+
+def validate_conservation_body(body: dict) -> None:
+    """Checks only the revision-7 shape of a producer-built response."""
+    members = (
+        "observed_layer",
+        "observed_detail",
+        "transaction_bytes",
+        "observed_value_commitments",
+        "observed_asset_commitments",
+        "observed_openings",
+    )
+    for member in members:
+        if member not in body:
+            raise FatalAdapterError(
+                "the conservation producer omitted required member %s" % member
+            )
+
+    layer = body["observed_layer"]
+    if layer not in CONSERVATION_REJECTION_LAYERS | NON_VERDICT_LAYERS | {"accepted"}:
+        raise FatalAdapterError("the conservation producer named an unknown layer")
+    if layer == "accepted" and body["transaction_bytes"] is None:
+        raise FatalAdapterError("the conservation producer accepted without transaction bytes")
+    if layer != "accepted" and body["observed_openings"]:
+        raise FatalAdapterError("the conservation producer rejected with output openings")
+    if layer in NON_VERDICT_LAYERS and (
+        body["transaction_bytes"] is not None
+        or body["observed_value_commitments"]
+        or body["observed_asset_commitments"]
+        or body["observed_openings"]
+    ):
+        raise FatalAdapterError("the conservation producer put observations on a non-verdict")
 
 
 def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -> None:
@@ -6985,18 +7036,18 @@ def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -
             "observed_openings": [],
         }
 
-    write_message(
-        {
-            "schema": NATIVE_PROTOCOL_SCHEMA,
-            "case": case,
-            "observed_layer": body["observed_layer"],
-            "observed_detail": body["observed_detail"],
-            "transaction_bytes": body["transaction_bytes"],
-            "observed_value_commitments": body["observed_value_commitments"],
-            "observed_asset_commitments": body["observed_asset_commitments"],
-            "observed_openings": body["observed_openings"],
-        }
-    )
+    response = {
+        "schema": NATIVE_PROTOCOL_SCHEMA,
+        "case": case,
+        "observed_layer": body["observed_layer"],
+        "observed_detail": body["observed_detail"],
+        "transaction_bytes": body["transaction_bytes"],
+        "observed_value_commitments": body["observed_value_commitments"],
+        "observed_asset_commitments": body["observed_asset_commitments"],
+        "observed_openings": body["observed_openings"],
+    }
+    validate_conservation_body(response)
+    write_message(response)
 
 
 def answer_normalization_row(executor: CaseExecutor, request: dict, case: dict) -> None:
@@ -7561,8 +7612,8 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
             # verdict, because a response that is not one may carry no
             # observation at all (`G12-R14`).
             "resources": {
-                "script_bytes": 0,
-                "initial_stack_items": 0,
+                "script_bytes": None,
+                "initial_stack_items": None,
                 "peak_stack_items": None,
                 "peak_altstack_items": None,
                 "maximum_element_bytes": None,
@@ -7600,8 +7651,8 @@ def write_operation_failure(case: dict, note: str) -> None:
             "sponsor_witness": [],
             "signature_bound_to": None,
             "resources": {
-                "script_bytes": 0,
-                "initial_stack_items": 0,
+                "script_bytes": None,
+                "initial_stack_items": None,
                 "peak_stack_items": None,
                 "peak_altstack_items": None,
                 "maximum_element_bytes": None,

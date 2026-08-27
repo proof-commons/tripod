@@ -1923,8 +1923,8 @@ mod tests {
 
     fn resources() -> NativeResourceObservation {
         NativeResourceObservation {
-            script_bytes: 0,
-            initial_stack_items: 0,
+            script_bytes: None,
+            initial_stack_items: None,
             peak_stack_items: None,
             peak_altstack_items: None,
             maximum_element_bytes: None,

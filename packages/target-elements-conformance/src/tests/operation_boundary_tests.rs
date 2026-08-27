@@ -333,6 +333,27 @@ fn drive(
 }
 
 #[test]
+fn a_revision_six_operation_record_cannot_enter_the_revision_seven_gate() {
+    let mut stored = funded("stored-revision-six", "aa00");
+    stored.schema = NATIVE_PROTOCOL_SCHEMA - 1;
+    stored.resources.script_bytes = Some(0);
+    stored.resources.initial_stack_items = Some(0);
+    let mut planner =
+        ScriptedPlan::new(vec![OperationStep::new("stored-revision-six", funding(1))]);
+
+    let (outcome, _sent) = drive(&mut planner, &operating_handshake(), &[stored]);
+    assert!(matches!(
+        outcome.expect_err("a revision-6 record is refused"),
+        NativeConformanceError::UnsupportedProtocolSchema { offered }
+            if offered == NATIVE_PROTOCOL_SCHEMA - 1,
+    ));
+    assert!(
+        planner.seen.is_empty(),
+        "the planner never classifies the refused record",
+    );
+}
+
+#[test]
 fn a_plan_states_its_second_step_out_of_the_first_answer() {
     let mut planner = InterleavingPlan { submitted: None };
     let (outcome, sent) = drive(
@@ -574,8 +595,8 @@ fn the_adapters_not_yet_implemented_refusal_is_a_declared_record() {
         "mined_readback": serde_json::Value::Null,
         "accepted_txid": serde_json::Value::Null,
         "resources": {
-            "script_bytes": 0,
-            "initial_stack_items": 0,
+            "script_bytes": serde_json::Value::Null,
+            "initial_stack_items": serde_json::Value::Null,
             "peak_stack_items": serde_json::Value::Null,
             "peak_altstack_items": serde_json::Value::Null,
             "maximum_element_bytes": serde_json::Value::Null,
@@ -867,8 +888,8 @@ fn the_adapters_confidential_refusal_is_a_declared_record() {
         "sponsor_witness": [],
         "signature_bound_to": serde_json::Value::Null,
         "resources": {
-            "script_bytes": 0,
-            "initial_stack_items": 0,
+            "script_bytes": serde_json::Value::Null,
+            "initial_stack_items": serde_json::Value::Null,
             "peak_stack_items": serde_json::Value::Null,
             "peak_altstack_items": serde_json::Value::Null,
             "maximum_element_bytes": serde_json::Value::Null,
