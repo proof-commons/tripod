@@ -717,7 +717,10 @@ mod tests {
         render_live_resource_report, validate_live_resource_report,
     };
     use crate::live_evidence::derive_live_evidence_plan;
-    use crate::live_measurements::LiveResourceRecord;
+    use crate::live_measurements::{
+        DimensionStanding, LiveResourceNonClaim, LiveResourceRecord,
+        UnauthorizingWitnessUsedForSizing,
+    };
     use crate::live_report::{
         LIVE_SAFETY_REPORT_SCHEMA, VolatileField, assemble_live_safety_report,
         render_live_safety_report, validate_live_safety_report,
@@ -785,6 +788,82 @@ mod tests {
         assert_eq!(census.compared(), 1);
         assert_eq!(census.agreements(), 1);
         assert_eq!(census.mismatches(), 0);
+    }
+
+    #[test]
+    fn synthetic_measurement_non_claims_have_one_canonical_spelling_each() {
+        let inventory = [
+            (
+                LiveResourceNonClaim::SyntheticPrivateConstructionSerializesNoProof,
+                "synthetic-private-construction-serializes-no-proof",
+            ),
+            (
+                LiveResourceNonClaim::NoTargetRunForTheseExactBytes(
+                    UnauthorizingWitnessUsedForSizing,
+                ),
+                "no-target-run-for-these-exact-bytes",
+            ),
+            (
+                LiveResourceNonClaim::NoRelayVerdictWithoutAConsensusOne,
+                "no-relay-verdict-without-a-consensus-one",
+            ),
+        ];
+
+        assert_eq!(
+            LiveResourceNonClaim::ALL,
+            inventory.map(|(reason, _)| reason),
+        );
+        for (reason, spelling) in inventory {
+            assert_eq!(reason.name(), spelling);
+            assert_eq!(LiveResourceNonClaim::from_name(spelling), reason);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown live resource non-claim spelling")]
+    fn an_unknown_synthetic_non_claim_spelling_panics() {
+        let _ = LiveResourceNonClaim::from_name("future-unrecognized-non-claim");
+    }
+
+    #[test]
+    fn synthetic_measurements_name_their_lane_local_limitations() {
+        let report = validated().report();
+        let verdict_reason = DimensionStanding::NotClaimable(
+            LiveResourceNonClaim::NoTargetRunForTheseExactBytes(UnauthorizingWitnessUsedForSizing),
+        );
+        let proof_reason = DimensionStanding::NotClaimable(
+            LiveResourceNonClaim::SyntheticPrivateConstructionSerializesNoProof,
+        );
+
+        for case in report.cases() {
+            for member in case.members() {
+                assert_eq!(
+                    member.standing(LiveResourceRecord::ConsensusVerdict),
+                    Some(verdict_reason),
+                );
+                if member.recipe().representation()
+                    == tapscript::upstream::LiveTransferRepresentationPlan::PrivateCommitted
+                {
+                    assert_eq!(
+                        member.standing(LiveResourceRecord::ConfidentialProofBytes),
+                        Some(proof_reason),
+                    );
+                }
+            }
+        }
+
+        assert!(
+            crate::live_private_restart::run_of_record::OUTPUT_WITNESS_PROOF_BYTES
+                .iter()
+                .all(|bytes| *bytes > 0),
+            "the separate proof-bearing run must continue to carry real proofs",
+        );
+    }
+
+    #[test]
+    fn the_synthetic_study_does_not_borrow_a_workspace_global_blocker() {
+        let source = include_str!("live_measurements.rs");
+        assert!(!source.contains("LiveInfrastructureBlocker"));
     }
 
     #[test]
