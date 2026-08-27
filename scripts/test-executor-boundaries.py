@@ -607,6 +607,109 @@ def test_an_unknown_diagnostic_outcome_is_fatal(failures) -> int:
     return 4
 
 
+def test_the_diagnostic_outcome_inventory_is_closed(failures) -> int:
+    """Every admitted outcome has one fixed rendered spelling."""
+    module = executor_module()
+    outcome = module.DiagnosticOutcome
+    inventory = {
+        outcome.RPC_CLIENT_FAILED: (
+            "rpc client failed; detail is elements-output record 7"
+        ),
+        outcome.FRAMEWORK_CONSTRUCTION_FAILED: (
+            "framework construction failed; detail is elements-output record 7"
+        ),
+        outcome.ADAPTER_TRANSACTION_REFUSED: (
+            "adapter-built transaction was refused; detail is elements-output record 7"
+        ),
+        outcome.MEMPOOL_REASON_QUARANTINED: (
+            "mempool refusal reason quarantined in elements-output record 7"
+        ),
+        outcome.TARGET_TRANSACTION_REFUSED: (
+            "target refused an adapter-built transaction; detail is "
+            "elements-output record 7"
+        ),
+        outcome.ACCEPTED_TRANSACTION_NOT_CONFIRMABLE: (
+            "accepted transaction was not confirmable; detail is "
+            "elements-output record 7"
+        ),
+        outcome.SYNTHETIC_PROOF_CORRUPTION_APPLIED: (
+            "synthetic proof corruption applied"
+        ),
+        outcome.UNCLASSIFIED_SCRIPT_ERROR: (
+            "rejected with an unclassified script error; detail is "
+            "elements-output record 7"
+        ),
+        outcome.FRAMEWORK_LOADED: "framework loaded",
+        outcome.CONFIDENTIAL_MATERIALIZER_READY: "confidential materializer ready",
+        outcome.CONFIDENTIAL_MATERIALIZER_INITIALIZATION_FAILED: (
+            "confidential materializer initialization failed"
+        ),
+        outcome.CONFIDENTIAL_MATERIALIZER_UNAVAILABLE: (
+            "confidential materializer unavailable"
+        ),
+        outcome.NODE_READY: "node ready",
+        outcome.REQUEST_STREAM_ENDED: (
+            "the request stream ended cleanly at a record boundary"
+        ),
+        outcome.CASE_ANSWERED: "case answered",
+        outcome.CONSERVATION_ROW_ANSWERED: "conservation row answered",
+        outcome.NORMALIZATION_ROW_ANSWERED: "normalization row answered",
+        outcome.LIFECYCLE_STEP_ANSWERED: "lifecycle step answered",
+        outcome.FIXTURE_CONSTRUCTION_FAILED: (
+            "fixture construction failed; detail is elements-output record 7"
+        ),
+        outcome.EXECUTOR_INFRASTRUCTURE_FAILED: (
+            "executor infrastructure failed; detail is elements-output record 7"
+        ),
+        outcome.HANDSHAKE_FIELD_CENSUS_FAILED: (
+            "fatal: handshake failed its field census; detail is "
+            "elements-output record 7"
+        ),
+        outcome.EXECUTION_REQUEST_FIELD_CENSUS_FAILED: (
+            "fatal: execution request failed its field census; detail is "
+            "elements-output record 7"
+        ),
+        outcome.PROTOCOL_REVISION_REFUSED: "fatal: protocol revision refused",
+        outcome.FRAMING_CLEAN_EOF: "fatal: request framing failure clean_eof",
+        outcome.FRAMING_BLANK_RECORD: "fatal: request framing failure blank_record",
+        outcome.FRAMING_MALFORMED_RECORD: (
+            "fatal: request framing failure malformed_record"
+        ),
+        outcome.FRAMING_OVERSIZED_RECORD: (
+            "fatal: request framing failure oversized_record"
+        ),
+        outcome.FRAMING_UNTERMINATED_RECORD: (
+            "fatal: request framing failure unterminated_record"
+        ),
+        outcome.JSON_DECODE_FAILED: (
+            "fatal: a JSON value this adapter read did not decode"
+        ),
+        outcome.FATAL_PROTOCOL_FAULT: (
+            "fatal: protocol fault; detail is elements-output record 7"
+        ),
+        outcome.UNRECOGNIZED_DIAGNOSTIC_OUTCOME: (
+            "fatal: unrecognized diagnostic outcome; detail is "
+            "elements-output record 7"
+        ),
+        outcome.TYPED_DIAGNOSTIC_CONTENT_REJECTED: (
+            "fatal: typed diagnostic content rejected"
+        ),
+    }
+
+    failures.equal(
+        set(inventory),
+        set(outcome),
+        "the known-outcome enumeration differs from the locked inventory",
+    )
+    for known, spelling in inventory.items():
+        failures.equal(
+            module.diagnostic_message(known, 7),
+            spelling,
+            "the %s spelling changed" % known.name,
+        )
+    return 1 + len(inventory)
+
+
 def test_zk_paths_and_loader_exceptions_reach_neither_file(failures) -> int:
     """Materializer diagnostics retain neither a path nor exception text."""
     module = executor_module()
@@ -767,6 +870,7 @@ TESTS = (
     ("an extra execution field cannot inject a typed line", test_an_extra_execution_field_cannot_inject_a_typed_line),
     ("the typed sink rejects line-bearing content", test_the_typed_sink_rejects_line_bearing_content),
     ("an unknown diagnostic outcome is fatal", test_an_unknown_diagnostic_outcome_is_fatal),
+    ("the diagnostic outcome inventory is closed", test_the_diagnostic_outcome_inventory_is_closed),
     ("ZK paths and loader exceptions reach neither file", test_zk_paths_and_loader_exceptions_reach_neither_file),
     ("a wrong revision is refused before any node", test_a_wrong_revision_is_refused_before_any_node),
     ("the request bounds agree across implementations", test_the_request_bounds_agree_across_the_two_implementations),
