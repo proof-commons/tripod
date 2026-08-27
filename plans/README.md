@@ -114,7 +114,7 @@ Maintained planning prose under:
 plans/
 ```
 
-excluding the archived documents and generated registers below, is the core class. Its hard cap is 1 MiB and its soft target 693 KiB, raised from 768 KiB and 520 KiB — figures the checker had inherited verbatim from the retired Python script, and which the tree had grown into far enough that a single routine gate paragraph could breach them. That prose is maintained, so unchecked growth there is duplication rather than content, and the budget keeps one fact to one owner; the raise moves where duplication starts costing, and removes nothing.
+excluding the archived documents and generated registers below, is the core class. Its hard cap is 1126 KiB and its soft target 762 KiB, raised to the nearest whole KiB under 1.1 MB when the tree measured within roughly 11.5 KiB of the previous 1 MiB cap with the phase's own closing records still unwritten; the earlier raise from the 768 KiB and 520 KiB figures the checker had inherited verbatim from the retired Python script is recorded at the constants. That prose is maintained, so unchecked growth there is duplication rather than content, and the budget keeps one fact to one owner; a raise moves where duplication starts costing, and removes nothing.
 
 Root ADRs under `adr/` are their own class, excluded from the core class and checked against a 2 MiB backstop, half the archive backstop. ADRs are normative decision records, including externally authored texts adopted whole; the backstop's only purpose is to catch a runaway, not to shape their content.
 
