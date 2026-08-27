@@ -392,7 +392,7 @@ impl ConfidentialFundingCloseoutReport {
 ///
 /// [`CloseoutRefusal::SponsorRowMoved`] for the class this guide may not
 /// move.
-pub fn moved_on_acceptance(
+pub const fn moved_on_acceptance(
     class: PositivePrivateClass,
     accepted_identity: RecordedAcceptance,
 ) -> Result<MovedMatrixRow, CloseoutRefusal> {
@@ -904,6 +904,26 @@ fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         .map_err(|_| CloseoutRefusal::SponsorRowMoved)
 }
 
+fn wave_six_matrix_delta() -> Result<Vec<MovedMatrixRow>, CloseoutRefusal> {
+    use crate::live_conservation_negatives::run_of_record as cn;
+    use crate::live_private_restart::run_of_record as run;
+
+    Ok(vec![
+        moved_on_acceptance(
+            PositivePrivateClass::OneToOne,
+            recorded_identity(run::accepted)?,
+        )?,
+        moved_on_acceptance(
+            PositivePrivateClass::BothCommitmentParityForms,
+            recorded_identity(run::parity_accepted)?,
+        )?,
+        moved_on_acceptance(
+            PositivePrivateClass::TargetCtConservation,
+            recorded_identity(cn::control_accepted)?,
+        )?,
+    ])
+}
+
 /// The follow-up evidence wave's closeout, as its runs settled it.
 ///
 /// # Errors
@@ -968,20 +988,7 @@ pub fn wave_six_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeout
             LiveInfrastructureBlocker::PredecessorConstructorAbsent,
         ]),
         pre_sighash_matrix_delta: 0,
-        wave5_matrix_delta: vec![
-            moved_on_acceptance(
-                PositivePrivateClass::OneToOne,
-                recorded_identity(run::accepted)?,
-            )?,
-            moved_on_acceptance(
-                PositivePrivateClass::BothCommitmentParityForms,
-                recorded_identity(run::parity_accepted)?,
-            )?,
-            moved_on_acceptance(
-                PositivePrivateClass::TargetCtConservation,
-                recorded_identity(cn::control_accepted)?,
-            )?,
-        ],
+        wave5_matrix_delta: wave_six_matrix_delta()?,
         exclusions: vec![
             "private-amounts".to_owned(),
             "fixture-openings".to_owned(),
@@ -1316,6 +1323,39 @@ fn wave_seven_target_facts() -> Vec<String> {
     ]
 }
 
+fn wave_seven_matrix_delta() -> Result<Vec<MovedMatrixRow>, CloseoutRefusal> {
+    use crate::live_conservation_negatives::run_of_record as cn;
+    use crate::live_multi_shapes::run_of_record as ms;
+    use crate::live_private_restart::run_of_record as run;
+
+    Ok(vec![
+        moved_on_acceptance(
+            PositivePrivateClass::OneToOne,
+            recorded_identity(run::accepted)?,
+        )?,
+        moved_on_acceptance(
+            PositivePrivateClass::BothCommitmentParityForms,
+            recorded_identity(run::parity_accepted)?,
+        )?,
+        moved_on_acceptance(
+            PositivePrivateClass::TargetCtConservation,
+            recorded_identity(cn::control_accepted)?,
+        )?,
+        moved_on_acceptance(
+            PositivePrivateClass::Split,
+            recorded_identity(ms::split_accepted)?,
+        )?,
+        moved_on_acceptance(
+            PositivePrivateClass::ManyToManyRepresentative,
+            recorded_identity(ms::many_to_many_accepted)?,
+        )?,
+        moved_on_acceptance(
+            PositivePrivateClass::SeveralDistinctOwners,
+            recorded_identity(ms::several_owners_accepted)?,
+        )?,
+    ])
+}
+
 /// The shape wave's closeout, as its runs settled it.
 ///
 /// # What the cleared set does and does not hold
@@ -1376,32 +1416,7 @@ pub fn wave_seven_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
             LiveInfrastructureBlocker::PredecessorConstructorAbsent,
         ]),
         pre_sighash_matrix_delta: 0,
-        wave5_matrix_delta: vec![
-            moved_on_acceptance(
-                PositivePrivateClass::OneToOne,
-                recorded_identity(run::accepted)?,
-            )?,
-            moved_on_acceptance(
-                PositivePrivateClass::BothCommitmentParityForms,
-                recorded_identity(run::parity_accepted)?,
-            )?,
-            moved_on_acceptance(
-                PositivePrivateClass::TargetCtConservation,
-                recorded_identity(cn::control_accepted)?,
-            )?,
-            moved_on_acceptance(
-                PositivePrivateClass::Split,
-                recorded_identity(ms::split_accepted)?,
-            )?,
-            moved_on_acceptance(
-                PositivePrivateClass::ManyToManyRepresentative,
-                recorded_identity(ms::many_to_many_accepted)?,
-            )?,
-            moved_on_acceptance(
-                PositivePrivateClass::SeveralDistinctOwners,
-                recorded_identity(ms::several_owners_accepted)?,
-            )?,
-        ],
+        wave5_matrix_delta: wave_seven_matrix_delta()?,
         exclusions: vec![
             "private-amounts".to_owned(),
             "fixture-openings".to_owned(),
