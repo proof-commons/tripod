@@ -567,6 +567,28 @@ pub enum PairTargetVerdict {
         /// How the nearest recorded run differs.
         because: &'static str,
     },
+    /// THIS MEMBER was submitted, and a target ACCEPTED it.
+    ///
+    /// The variant this type's own doc says does not exist, and the doc
+    /// was right for as long as it stood: no member had been submitted,
+    /// and a registry with a way to say one had would have been an
+    /// invitation to fill it with a shape sibling's acceptance.
+    ///
+    /// It is minted with the ONE pair whose members were submitted. The
+    /// pairs arc materialized this registry's own one-to-one fixture
+    /// twice and handed both materializations to one node against one
+    /// issued asset ([`crate::live_pair_arc`]). What separates it from
+    /// [`Self::NotSubmittedShapeAcceptedElsewhere`] is exactly the
+    /// distinction that member exists to draw, and the two are still
+    /// spelled apart: this one does NOT begin `not-submitted`, because
+    /// the half of that sentence which was equally true of every member
+    /// has stopped being true of these two.
+    Accepted {
+        /// The arc case that submitted it.
+        case: &'static str,
+        /// The identity the target computed for it.
+        accepted_identity: &'static str,
+    },
 }
 
 impl PairTargetVerdict {
@@ -584,6 +606,9 @@ impl PairTargetVerdict {
                 "not-submitted-shape-accepted-elsewhere"
             }
             Self::NotSubmittedNoRunOfThisShape { .. } => "not-submitted-no-run-of-this-shape",
+            // The one spelling that does not begin `not-submitted`,
+            // because the member it names was.
+            Self::Accepted { .. } => "accepted",
         }
     }
 }
@@ -858,13 +883,50 @@ pub enum PairShapeAcceptance {
         /// absence is a statement rather than a silence.
         because: &'static str,
     },
+    /// THIS MEMBER was submitted and accepted at this identity.
+    ///
+    /// The member this type's own doc says there is no way to say. There
+    /// was none while no member had been submitted, and the narrowness
+    /// was the point: a registry able to say a member was accepted, with
+    /// nothing that had been, would have been an invitation to file a
+    /// shape sibling's acceptance under it.
+    ///
+    /// One pair has changed that. The pairs arc materialized §16.1's
+    /// one-to-one fixture TWICE — this registry's own fixture, read from
+    /// the arc so there is only one — and submitted both materializations
+    /// to one node against one issued asset, both accepted
+    /// ([`crate::live_pair_arc::run_of_record`]). What may occupy this
+    /// member is a submission of the pair's own member and nothing else;
+    /// the four other pairs keep
+    /// [`Self::ObservedForThisShape`], which says less and is what is
+    /// true of them.
+    ObservedForThisMember {
+        /// The arc case that submitted it.
+        case: &'static str,
+        /// The identity the target computed for it.
+        accepted_identity: &'static str,
+    },
 }
 
 impl PairShapeAcceptance {
     /// Whether a run of this shape was accepted.
     #[must_use]
     pub const fn is_observed(self) -> bool {
-        matches!(self, Self::ObservedForThisShape { .. })
+        matches!(
+            self,
+            Self::ObservedForThisShape { .. } | Self::ObservedForThisMember { .. }
+        )
+    }
+
+    /// Whether the MEMBER itself was submitted and accepted.
+    ///
+    /// Strictly narrower than [`Self::is_observed`], and the two are kept
+    /// apart because the whole registry was built around the difference:
+    /// a member whose SHAPE was accepted is not a member that was
+    /// accepted, and no reader may slide from one to the other.
+    #[must_use]
+    pub const fn is_the_member_itself(self) -> bool {
+        matches!(self, Self::ObservedForThisMember { .. })
     }
 
     /// The identity, where there is one.
@@ -872,6 +934,9 @@ impl PairShapeAcceptance {
     pub const fn accepted_identity(self) -> Option<&'static str> {
         match self {
             Self::ObservedForThisShape {
+                accepted_identity, ..
+            }
+            | Self::ObservedForThisMember {
                 accepted_identity, ..
             } => Some(accepted_identity),
             Self::NoRunOfThisShape { .. } => None,
@@ -899,15 +964,37 @@ pub const fn recorded_acceptance(
     use PairShapeAcceptance as A;
 
     match (pair, representation) {
-        // 1 -> 1, sponsorless.
-        (P::OneToOne, Plan::Explicit) => A::ObservedForThisShape {
-            case: "explicit-one-to-one",
-            accepted_identity: crate::live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID,
+        // 1 -> 1, sponsorless -- and the ONE pair whose own MEMBERS have
+        // been submitted. The identities cited are the pairs arc's, and
+        // what they answer is narrower and stronger than every other arm
+        // here: not a run of the member's shape, but the member.
+        //
+        // The fall-through is what keeps that honest. The arc's run of
+        // record carries `None` until a run writes an identity, and this
+        // arm then cites the nearest recorded run OF THE SHAPE, which is
+        // exactly what every other arm cites and exactly what the pair
+        // had before the arc existed.
+        (P::OneToOne, Plan::Explicit) => match crate::live_pair_arc::run_of_record::EXPLICIT_MEMBER_ACCEPTED_IDENTITY {
+            Some(accepted_identity) => A::ObservedForThisMember {
+                case: "explicit-paired-one-to-one",
+                accepted_identity,
+            },
+            None => A::ObservedForThisShape {
+                case: "explicit-one-to-one",
+                accepted_identity:
+                    crate::live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID,
+            },
         },
-        (P::OneToOne, Plan::PrivateCommitted) => A::ObservedForThisShape {
-            case: "private-strict-one-to-one",
-            accepted_identity:
-                crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
+        (P::OneToOne, Plan::PrivateCommitted) => match crate::live_pair_arc::run_of_record::PRIVATE_MEMBER_ACCEPTED_IDENTITY {
+            Some(accepted_identity) => A::ObservedForThisMember {
+                case: "private-paired-one-to-one",
+                accepted_identity,
+            },
+            None => A::ObservedForThisShape {
+                case: "private-strict-one-to-one",
+                accepted_identity:
+                    crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
+            },
         },
         // 1 -> 2, both created outputs being RECEIPTS.
         (P::Split, Plan::Explicit) => A::ObservedForThisShape {
@@ -1113,6 +1200,25 @@ pub enum MinimalityConditionStanding {
         /// Why no recorded run has the shape.
         because: &'static str,
     },
+    /// BOTH MEMBERS were submitted to a real target and accepted, at
+    /// these identities.
+    ///
+    /// The standing [`Self::HoldsOnObservedShapeAcceptances`]'s own doc
+    /// says a reader will not find, and it was right until one pair's
+    /// members were submitted. This says what that one cannot: not that
+    /// two runs of the members' shapes were accepted, but that these two
+    /// materializations of THIS pair's one fixture were.
+    ///
+    /// Only the pairs arc's pair may occupy it. The other four keep the
+    /// weaker standing, which is what is true of them.
+    HoldsOnAcceptedMembers {
+        /// The identity the target computed for the accepted explicit
+        /// member.
+        explicit_identity: &'static str,
+        /// The identity the target computed for the accepted private
+        /// member.
+        private_identity: &'static str,
+    },
 }
 
 impl MinimalityConditionStanding {
@@ -1121,7 +1227,9 @@ impl MinimalityConditionStanding {
     pub const fn is_satisfied(self) -> bool {
         matches!(
             self,
-            Self::HoldsFirstParty | Self::HoldsOnObservedShapeAcceptances { .. }
+            Self::HoldsFirstParty
+                | Self::HoldsOnObservedShapeAcceptances { .. }
+                | Self::HoldsOnAcceptedMembers { .. }
         )
     }
 
@@ -1134,7 +1242,23 @@ impl MinimalityConditionStanding {
     /// and are never summed here.
     #[must_use]
     pub const fn rests_on_observation(self) -> bool {
-        matches!(self, Self::HoldsOnObservedShapeAcceptances { .. })
+        matches!(
+            self,
+            Self::HoldsOnObservedShapeAcceptances { .. } | Self::HoldsOnAcceptedMembers { .. }
+        )
+    }
+
+    /// Whether what satisfies it is an acceptance of the MEMBERS
+    /// themselves.
+    ///
+    /// Strictly narrower than [`Self::rests_on_observation`], and asked
+    /// separately for the reason that one is asked separately from
+    /// satisfaction: the two are different strengths of evidence, and a
+    /// report that summed them would let a reader take a shape sibling's
+    /// acceptance for a member's.
+    #[must_use]
+    pub const fn rests_on_accepted_members(self) -> bool {
+        matches!(self, Self::HoldsOnAcceptedMembers { .. })
     }
 
     /// The standing's wire spelling.
@@ -1146,6 +1270,7 @@ impl MinimalityConditionStanding {
             Self::AwaitsBothTargetVerdicts => "awaits-both-target-verdicts",
             Self::HoldsOnObservedShapeAcceptances { .. } => "holds-on-observed-shape-acceptances",
             Self::AwaitsARunOfThisShape { .. } => "awaits-a-run-of-this-shape",
+            Self::HoldsOnAcceptedMembers { .. } => "holds-on-accepted-members",
         }
     }
 }
@@ -1259,6 +1384,7 @@ impl MinimalityPairRow {
                 // attempted is not a component that does not exist.
                 MinimalityConditionStanding::HoldsFirstParty
                 | MinimalityConditionStanding::HoldsOnObservedShapeAcceptances { .. }
+                | MinimalityConditionStanding::HoldsOnAcceptedMembers { .. }
                 | MinimalityConditionStanding::AwaitsARunOfThisShape { .. }
                 | MinimalityConditionStanding::AwaitsBothTargetVerdicts => None,
             })
@@ -1306,12 +1432,15 @@ pub fn minimality_fixtures() -> Vec<SemanticTransferFixture> {
     use SponsorPresence as S;
 
     vec![
-        SemanticTransferFixture {
-            pair: P::OneToOne,
-            sources: vec![at(0, 500)],
-            destinations: vec![at(1, 500)],
-            sponsor: S::Absent,
-        },
+        // The one-to-one fixture is the PAIRS ARC's, read from the arc
+        // rather than restated here. This registry states five fixtures
+        // and submits none of them; the arc states one and submits both
+        // of its materializations, and if the two files each spelled a
+        // one-to-one fixture the workspace would have TWO of them — so
+        // the arc's members would be materializations of a fixture this
+        // registry's row is not about. There is one, and this is where
+        // the registry reads it.
+        crate::live_pair_arc::pair_arc_fixture(),
         SemanticTransferFixture {
             pair: P::Split,
             sources: vec![at(0, 900)],
@@ -1537,6 +1666,13 @@ fn materialize_member(
             PairShapeAcceptance::NoRunOfThisShape { because } => {
                 PairTargetVerdict::NotSubmittedNoRunOfThisShape { because }
             }
+            PairShapeAcceptance::ObservedForThisMember {
+                case,
+                accepted_identity,
+            } => PairTargetVerdict::Accepted {
+                case,
+                accepted_identity,
+            },
         },
     })
 }
@@ -1738,6 +1874,24 @@ fn resolve_conditions(
     let explicit_shape = recorded_acceptance(pair, LiveTransferRepresentationPlan::Explicit);
     let private_shape = recorded_acceptance(pair, LiveTransferRepresentationPlan::PrivateCommitted);
     let acceptance = match (explicit_shape, private_shape) {
+        // BOTH MEMBERS accepted, which only the pairs arc's pair reaches.
+        // It is matched FIRST because it is strictly stronger, and a
+        // fall-through order that let it be read as a shape acceptance
+        // would throw the distinction away at the one place it is worth
+        // something.
+        (
+            PairShapeAcceptance::ObservedForThisMember {
+                accepted_identity: explicit_identity,
+                ..
+            },
+            PairShapeAcceptance::ObservedForThisMember {
+                accepted_identity: private_identity,
+                ..
+            },
+        ) => Standing::HoldsOnAcceptedMembers {
+            explicit_identity,
+            private_identity,
+        },
         (
             PairShapeAcceptance::ObservedForThisShape {
                 accepted_identity: explicit_identity,
@@ -1758,6 +1912,25 @@ fn resolve_conditions(
         (_, PairShapeAcceptance::NoRunOfThisShape { because }) => Standing::AwaitsARunOfThisShape {
             lane: "private-committed",
             because,
+        },
+        // One member accepted and the other only shape-observed. No pair
+        // is in this state and the arm is not decoration: it is what
+        // keeps the registry from silently promoting a HALF-submitted
+        // pair to the stronger standing the moment a second arc is built
+        // and stops half way.
+        (
+            PairShapeAcceptance::ObservedForThisMember { .. },
+            PairShapeAcceptance::ObservedForThisShape { .. },
+        ) => Standing::AwaitsARunOfThisShape {
+            lane: "private-committed",
+            because: "the explicit member was submitted and accepted and the private member was not",
+        },
+        (
+            PairShapeAcceptance::ObservedForThisShape { .. },
+            PairShapeAcceptance::ObservedForThisMember { .. },
+        ) => Standing::AwaitsARunOfThisShape {
+            lane: "explicit",
+            because: "the private member was submitted and accepted and the explicit member was not",
         },
     };
 
@@ -2141,18 +2314,27 @@ mod tests {
                 row.private().predecessor().blocker(),
                 Some(LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded),
             );
-            // No member of any pair was submitted, and every verdict
-            // still says so — the variant names all begin `NotSubmitted`
-            // and there is no variant that says otherwise. What the
-            // verdict no longer does is name a cleared residual as the
-            // thing in the way.
+            // ONE pair's members were submitted, and the verdicts say
+            // exactly which. The one-to-one pair's two members carry
+            // `Accepted` on the arc's own identities; every other member
+            // still begins `NotSubmitted`, and the split is asserted in
+            // both directions so a verdict that spread would fail here.
+            let submitted = row.pair() == MinimalityPair::OneToOne;
             for member in row.members() {
-                assert!(matches!(
-                    member.verdict(),
-                    PairTargetVerdict::NotSubmittedShapeAcceptedElsewhere { .. }
-                        | PairTargetVerdict::NotSubmittedNoRunOfThisShape { .. },
-                ));
-                assert!(member.verdict().name().starts_with("not-submitted"));
+                if submitted {
+                    assert!(matches!(
+                        member.verdict(),
+                        PairTargetVerdict::Accepted { .. }
+                    ));
+                    assert_eq!(member.verdict().name(), "accepted");
+                } else {
+                    assert!(matches!(
+                        member.verdict(),
+                        PairTargetVerdict::NotSubmittedShapeAcceptedElsewhere { .. }
+                            | PairTargetVerdict::NotSubmittedNoRunOfThisShape { .. },
+                    ));
+                    assert!(member.verdict().name().starts_with("not-submitted"));
+                }
             }
         }
     }

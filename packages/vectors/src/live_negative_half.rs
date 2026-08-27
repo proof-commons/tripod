@@ -215,12 +215,20 @@ pub enum NegativeHalfGap {
     /// commitment rule and says nothing about the row. This is the
     /// ground the time-locked row was retyped first-party on.
     RefusalIsProgramGeneric,
-    /// The pair the row compares has never been submitted.
+    /// The pair the row compares has never been submitted. HISTORICAL,
+    /// and now VACATED.
     ///
-    /// The one positive row here. Two obstacles stand: the accepted
-    /// transactions on hand are independent ceremonies rather than one
-    /// fixture materialized twice, and no standing can hold a relation
-    /// over two identities.
+    /// It carried the one POSITIVE row of this register and named two
+    /// obstacles: the accepted transactions on hand were independent
+    /// ceremonies rather than one fixture materialized twice, and no
+    /// standing could hold a relation over two identities. Both are
+    /// closed. The pairs arc materializes ONE fixture twice and submits
+    /// both members to one node against one issued asset
+    /// ([`crate::live_pair_arc`]), and
+    /// [`crate::live_evidence::LiveRowStanding::PairedRelationObserved`]
+    /// is the standing minted to hold that relation.
+    /// The row left this register by being ANSWERED at its own site, and
+    /// the member is kept only as provenance.
     PairSubmissionCapabilityAbsent,
 }
 
@@ -275,15 +283,14 @@ use NegativeHalfGap as G;
 /// and the test below is what keeps the writing and the subtraction the
 /// same list.
 pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
-    // §15.2 — the one positive row no run has answered. It is here for
-    // the same reason the negatives are: a row waiting on a run is
-    // waiting on a run whatever its polarity, and a register that held
-    // only negatives would report the positive half complete.
-    entry(
-        "projection-equality-with-paired-explicit",
-        G::PairSubmissionCapabilityAbsent,
-        "§16.1 wants one fixture materialized twice, and the pair registry carries no accepted member while the pairs lane submits nothing, so no relation over two accepted identities exists to observe",
-    ),
+    // §15.2's one positive row has LEFT. It stood here while §16.1's
+    // pair could not be submitted; the pairs arc submitted both
+    // materializations of one fixture to one node against one issued
+    // asset, both were accepted, and the relation over the two
+    // identities is observed at the row's own site. It left by being
+    // ANSWERED and not by being deleted, which is the only way a row
+    // leaves this register.
+    //
     // §15.4 — the class, asset and constructor faults still waiting.
     //
     // The row that shared this section's head with a fifth
