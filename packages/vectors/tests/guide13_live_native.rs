@@ -1158,7 +1158,7 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
     use vectors::live_owner_signing_negatives::{
-        ConsensusMutantObservation, OwnerSigningNegativePlanner, render_owner_signing_negatives,
+        OwnerSigningNegativePlanner, render_owner_signing_negatives,
     };
 
     let executor =
@@ -1275,6 +1275,19 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
     // The seven consensus-conservation mutants were each built, submitted
     // and answered, and each declared a DISTINCT field range so no two
     // rows rest on one observation.
+    assert_consensus_mutants_separate(record);
+}
+
+/// The seven consensus-conservation mutants were each answered and each
+/// declared a distinct field range.
+///
+/// Split from the test body so the assertion the run rests on — that no
+/// two rows share one observation — is stated once and the test stays
+/// under the line bound.
+fn assert_consensus_mutants_separate(
+    record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
+) {
+    use vectors::live_owner_signing_negatives::ConsensusMutantObservation;
     let consensus = record.consensus_mutants();
     assert_eq!(consensus.len(), 7, "the seven consensus mutants were built");
     assert!(
