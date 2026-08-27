@@ -1,11 +1,13 @@
 # Phase 5 — Live Receipt Transfer · `phase:roadmap:live-transfer`
 
-> **Status:** Active — the candidate pipeline is complete, both typed
-> blockers the intermediate guide owned are discharged on observed
-> acceptances, the carried residual set is empty, and the exit campaign's
-> arcs are recorded in the backlog's sections 2.10 through 2.19. The
-> entry gate is satisfied: Phase 4 exited 2026-08-21, recorded in the
-> backlog's section 2.8.
+> **Status:** Exited — the amended exit gate is met on the assessment
+> re-recorded below: assessed at the binding-closeout wave's tip with the full closing gate green
+> and countersigned by the external adversarial review this card's
+> assessment cites, whose two remaining majors the binding-closeout wave
+> then closed. The exit campaign's arcs are recorded in the backlog's
+> sections 2.10 through 2.21; the owner flipped this status 2026-08-27.
+> The entry gate was satisfied by Phase 4's exit of 2026-08-21 (backlog
+> section 2.8).
 > **Entry:** (`gate:phase4:exit`)
 > **Packages:** realization, compiler, tapscript, linker, transaction, vectors
 > **Decision:** D005 value representation
