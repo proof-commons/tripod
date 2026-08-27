@@ -633,7 +633,7 @@ def test_the_diagnostic_outcome_inventory_is_closed(failures) -> int:
             "elements-output record 7"
         ),
         outcome.SYNTHETIC_PROOF_CORRUPTION_APPLIED: (
-            "synthetic proof corruption applied"
+            "synthetic proof corruption applied; detail is elements-output record 7"
         ),
         outcome.UNCLASSIFIED_SCRIPT_ERROR: (
             "rejected with an unclassified script error; detail is "
@@ -647,14 +647,20 @@ def test_the_diagnostic_outcome_inventory_is_closed(failures) -> int:
         outcome.CONFIDENTIAL_MATERIALIZER_UNAVAILABLE: (
             "confidential materializer unavailable"
         ),
-        outcome.NODE_READY: "node ready",
+        outcome.NODE_READY: "node ready; detail is elements-output record 7",
         outcome.REQUEST_STREAM_ENDED: (
             "the request stream ended cleanly at a record boundary"
         ),
-        outcome.CASE_ANSWERED: "case answered",
-        outcome.CONSERVATION_ROW_ANSWERED: "conservation row answered",
-        outcome.NORMALIZATION_ROW_ANSWERED: "normalization row answered",
-        outcome.LIFECYCLE_STEP_ANSWERED: "lifecycle step answered",
+        outcome.CASE_ANSWERED: "case answered; detail is elements-output record 7",
+        outcome.CONSERVATION_ROW_ANSWERED: (
+            "conservation row answered; detail is elements-output record 7"
+        ),
+        outcome.NORMALIZATION_ROW_ANSWERED: (
+            "normalization row answered; detail is elements-output record 7"
+        ),
+        outcome.LIFECYCLE_STEP_ANSWERED: (
+            "lifecycle step answered; detail is elements-output record 7"
+        ),
         outcome.FIXTURE_CONSTRUCTION_FAILED: (
             "fixture construction failed; detail is elements-output record 7"
         ),

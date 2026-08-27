@@ -1270,7 +1270,7 @@ def diagnostic_message(outcome: DiagnosticOutcome, record: int | None = None) ->
             "elements-output record %d" % record
         )
     if outcome is DiagnosticOutcome.SYNTHETIC_PROOF_CORRUPTION_APPLIED:
-        return "synthetic proof corruption applied"
+        return "synthetic proof corruption applied; detail is elements-output record %d" % record
     if outcome is DiagnosticOutcome.UNCLASSIFIED_SCRIPT_ERROR:
         return (
             "rejected with an unclassified script error; detail is "
@@ -1285,17 +1285,17 @@ def diagnostic_message(outcome: DiagnosticOutcome, record: int | None = None) ->
     if outcome is DiagnosticOutcome.CONFIDENTIAL_MATERIALIZER_UNAVAILABLE:
         return "confidential materializer unavailable"
     if outcome is DiagnosticOutcome.NODE_READY:
-        return "node ready"
+        return "node ready; detail is elements-output record %d" % record
     if outcome is DiagnosticOutcome.REQUEST_STREAM_ENDED:
         return "the request stream ended cleanly at a record boundary"
     if outcome is DiagnosticOutcome.CASE_ANSWERED:
-        return "case answered"
+        return "case answered; detail is elements-output record %d" % record
     if outcome is DiagnosticOutcome.CONSERVATION_ROW_ANSWERED:
-        return "conservation row answered"
+        return "conservation row answered; detail is elements-output record %d" % record
     if outcome is DiagnosticOutcome.NORMALIZATION_ROW_ANSWERED:
-        return "normalization row answered"
+        return "normalization row answered; detail is elements-output record %d" % record
     if outcome is DiagnosticOutcome.LIFECYCLE_STEP_ANSWERED:
-        return "lifecycle step answered"
+        return "lifecycle step answered; detail is elements-output record %d" % record
     if outcome is DiagnosticOutcome.FIXTURE_CONSTRUCTION_FAILED:
         return "fixture construction failed; detail is elements-output record %d" % record
     if outcome is DiagnosticOutcome.EXECUTOR_INFRASTRUCTURE_FAILED:
@@ -1482,10 +1482,79 @@ STREAMS = None
 DIAGNOSTICS_UNAVAILABLE_STATUS = 2
 
 
-def log(outcome: DiagnosticOutcome, record: int | None = None) -> None:
-    """Writes one closed-enum diagnostic line to the `--output` file."""
-    if STREAMS is not None:
+def diagnostic_record(message: str) -> int | None:
+    """Returns the quarantine record named at one known message's end."""
+    match = re.search(r"elements-output record ([0-9]+)$", message)
+    return int(match.group(1)) if match is not None else None
+
+
+def diagnostic_classification(message: str):
+    """Classifies one legacy call-site form into the closed outcome enum."""
+    if message == "framework loaded":
+        return DiagnosticOutcome.FRAMEWORK_LOADED, None, None
+    if message == "the request stream ended cleanly at a record boundary":
+        return DiagnosticOutcome.REQUEST_STREAM_ENDED, None, None
+    if message.startswith("node ready in "):
+        return DiagnosticOutcome.NODE_READY, None, "node startup detail"
+    if message.startswith("case answered in "):
+        return DiagnosticOutcome.CASE_ANSWERED, None, "case completion detail"
+    if message.startswith("row ") and " answered in " in message:
+        return DiagnosticOutcome.CONSERVATION_ROW_ANSWERED, None, "row completion detail"
+    if message.startswith("normalization row ") and " answered in " in message:
+        return DiagnosticOutcome.NORMALIZATION_ROW_ANSWERED, None, "normalization detail"
+    if message.startswith("lifecycle step ") and " answered in " in message:
+        return DiagnosticOutcome.LIFECYCLE_STEP_ANSWERED, None, "lifecycle detail"
+    if message.startswith("corrupted "):
+        return DiagnosticOutcome.SYNTHETIC_PROOF_CORRUPTION_APPLIED, None, "corruption detail"
+    if message.startswith("infrastructure error: "):
+        return DiagnosticOutcome.EXECUTOR_INFRASTRUCTURE_FAILED, None, "case failure"
+    if message.startswith("fixture construction failure: "):
+        return DiagnosticOutcome.FIXTURE_CONSTRUCTION_FAILED, None, "fixture failure"
+    if message.startswith("executor infrastructure failure: "):
+        return DiagnosticOutcome.EXECUTOR_INFRASTRUCTURE_FAILED, None, "executor failure"
+    if message.startswith("the target refused the "):
+        return DiagnosticOutcome.TARGET_TRANSACTION_REFUSED, None, "target refusal"
+    if message.startswith("the accepted transaction was not confirmable: "):
+        return (
+            DiagnosticOutcome.ACCEPTED_TRANSACTION_NOT_CONFIRMABLE,
+            None,
+            "confirmation failure",
+        )
+
+    record = diagnostic_record(message)
+    if record is None:
+        return None
+    if message.startswith("rpc "):
+        return DiagnosticOutcome.RPC_CLIENT_FAILED, record, None
+    if message.startswith("the framework raised "):
+        return DiagnosticOutcome.FRAMEWORK_CONSTRUCTION_FAILED, record, None
+    if message.startswith("the mempool's reason is "):
+        return DiagnosticOutcome.MEMPOOL_REASON_QUARANTINED, record, None
+    if message.startswith("rejected, with a script error "):
+        return DiagnosticOutcome.UNCLASSIFIED_SCRIPT_ERROR, record, None
+    if " transaction this adapter built was refused; " in message:
+        return DiagnosticOutcome.ADAPTER_TRANSACTION_REFUSED, record, None
+    return None
+
+
+def log(outcome: DiagnosticOutcome | str, record: int | None = None) -> None:
+    """Classifies and writes one closed-enum diagnostic outcome."""
+    if STREAMS is None:
+        return
+    if isinstance(outcome, DiagnosticOutcome):
         STREAMS.typed(outcome, record)
+        return
+    if not isinstance(outcome, str):
+        STREAMS.typed(outcome, record)
+        return
+    classification = diagnostic_classification(outcome)
+    if classification is None:
+        STREAMS.typed(outcome, record)
+        return
+    known, known_record, detail_subject = classification
+    if detail_subject is not None:
+        known_record = STREAMS.quarantine(detail_subject, outcome)
+    STREAMS.typed(known, known_record)
 
 
 def quarantined(subject: str, text: str) -> int:
@@ -2129,7 +2198,11 @@ class DisposableNode:
                 % (method, completed.returncode),
                 completed.stderr,
             )
-            log(DiagnosticOutcome.RPC_CLIENT_FAILED, record)
+            log(
+                "rpc %s failed with client exit status %d; the client's text "
+                "is elements-output record %d"
+                % (method, completed.returncode, record)
+            )
             raise AdapterError(
                 "rpc %s failed with client exit status %d; the client's stderr is "
                 "omitted from first-party records by contract"
@@ -2541,7 +2614,11 @@ class CaseExecutor:
                 % type(error).__name__,
                 str(error),
             )
-            log(DiagnosticOutcome.FRAMEWORK_CONSTRUCTION_FAILED, record)
+            log(
+                "the framework raised %s building a taproot commitment; its "
+                "message is elements-output record %d"
+                % (type(error).__name__, record)
+            )
             raise AdapterError(
                 "the framework built no taproot commitment for the stated "
                 "tree, raising %s" % type(error).__name__
@@ -3539,7 +3616,10 @@ class OperationExecutor:
                 "the %s transaction this adapter built, refused" % (note or "unnamed"),
                 raw,
             )
-            log(DiagnosticOutcome.ADAPTER_TRANSACTION_REFUSED, record)
+            log(
+                "the %s transaction this adapter built was refused; its bytes "
+                "are elements-output record %d" % (note or "unnamed", record)
+            )
             # The mempool's structured reason, which names the rule; the
             # block error names only the check that reported it.
             try:
@@ -3552,7 +3632,7 @@ class OperationExecutor:
                     % (note or "unnamed"),
                     json.dumps(answer),
                 )
-                log(DiagnosticOutcome.MEMPOOL_REASON_QUARANTINED, reason)
+                log("the mempool's reason is elements-output record %d" % reason)
             raise
         return transaction.rehash()
 
@@ -3847,8 +3927,7 @@ class OperationExecutor:
         try:
             answer = node.call("generateblock", MINING_DESCRIPTOR, json.dumps([raw]))
         except AdapterError as error:
-            record = quarantined("target transaction refusal", str(error))
-            log(DiagnosticOutcome.TARGET_TRANSACTION_REFUSED, record)
+            log("the target refused the %s transaction: %s" % (note, error))
             raise
         block_hash = answer["hash"] if isinstance(answer, dict) else answer
         block = node.call("getblock", block_hash)
@@ -4893,8 +4972,7 @@ class ConservationExecutor:
                 "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
             )
         except AdapterError as error:
-            record = quarantined("accepted transaction was not confirmable", error.note)
-            log(DiagnosticOutcome.ACCEPTED_TRANSACTION_NOT_CONFIRMABLE, record)
+            log("the accepted transaction was not confirmable: %s" % error.note)
             return []
         decoded = self.node.call("decoderawtransaction", raw)
         txid = decoded["txid"]
@@ -4963,7 +5041,7 @@ class ConservationExecutor:
             raise ConstructionError(
                 "the %s mutation did not survive serialization" % defect
             )
-        log(DiagnosticOutcome.SYNTHETIC_PROOF_CORRUPTION_APPLIED)
+        log("corrupted %s on outputs %s" % (defect, corrupted_indices))
         return corrupted
 
     def copy_commitment(self, raw: str) -> str:
@@ -6185,7 +6263,10 @@ def rejection(script_error: str) -> dict:
         # is what "not classified" means on the wire; the record number is
         # how an operator finds the message that needs a table entry.
         record = quarantined("unclassified script error", text)
-        log(DiagnosticOutcome.UNCLASSIFIED_SCRIPT_ERROR, record)
+        log(
+            "rejected, with a script error this adapter does not classify; "
+            "the message is elements-output record %d" % record
+        )
     return {"verdict": "rejected", "observed_failure": failure}
 
 
@@ -6430,7 +6511,7 @@ def serve(arguments) -> int:
     # place for an operator's directory layout than a first-party record
     # is -- the two files travel together, and a path written in either is
     # a path that has left this host.
-    log(DiagnosticOutcome.FRAMEWORK_LOADED)
+    log("framework loaded")
     name, version, revision = node_provenance(arguments.elementsd)
     network_id = identifier(arguments.network_id, "network")
     topics = [topic for topic in (arguments.included_local_topic or []) if topic]
@@ -6458,11 +6539,11 @@ def serve(arguments) -> int:
         # unreviewed string rather than interpolated into a typed line.
         record = quarantined("handshake field census", error.note)
         raise FatalAdapterError(
-            outcome=DiagnosticOutcome.HANDSHAKE_FIELD_CENSUS_FAILED,
-            record=record,
+            "the handshake failed its field census; the detail is "
+            "elements-output record %d" % record
         ) from None
     if handshake["schema"] != NATIVE_PROTOCOL_SCHEMA:
-        raise FatalAdapterError(outcome=DiagnosticOutcome.PROTOCOL_REVISION_REFUSED)
+        raise FatalAdapterError("the harness spoke a protocol revision this adapter does not")
 
     node = DisposableNode(
         arguments.elementsd, arguments.elements_cli, arguments.chain,
@@ -6483,6 +6564,7 @@ def serve(arguments) -> int:
             pass
 
     try:
+        started = time.monotonic()
         node.start()
         executor = CaseExecutor(node, messages, script, key_module)
         executor.prime()
@@ -6508,7 +6590,7 @@ def serve(arguments) -> int:
                 arguments.elementsd, arguments.zk_library
             )
             initialize_confidential_materializer(executor, library)
-        log(DiagnosticOutcome.NODE_READY)
+        log("node ready in %.1fs" % (time.monotonic() - started))
 
         write_message(
             {
@@ -6691,7 +6773,7 @@ def serve(arguments) -> int:
                 # record boundary, which is how the exchange finishes;
                 # every other way a record can end is a framing failure
                 # the reader has already raised.
-                log(DiagnosticOutcome.REQUEST_STREAM_ENDED)
+                log("the request stream ended cleanly at a record boundary")
                 break
             answer_case(executor, request)
     finally:
@@ -6797,14 +6879,11 @@ def answer_case(executor: CaseExecutor, request: dict) -> None:
                         "adapter advertised no tree materialization"
                     )
                 construction = parse_construction(construction)
+        started = time.monotonic()
         body = executor.execute(fixture, construction)
-        log(DiagnosticOutcome.CASE_ANSWERED)
+        log("case answered in %.2fs" % (time.monotonic() - started))
     except AdapterError as error:
-        log_quarantined(
-            DiagnosticOutcome.EXECUTOR_INFRASTRUCTURE_FAILED,
-            "case infrastructure failure",
-            error.note,
-        )
+        log("infrastructure error: %s" % error.note)
         body = {"verdict": "infrastructure_error", "observed_failure": None}
     write_message(
         {
@@ -6844,14 +6923,12 @@ def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -
         if not isinstance(subject, dict):
             raise AdapterError("the conservation request states no subject")
         require_keys(subject, ("inputs", "outputs", "defect"), "request.subject")
+        started = time.monotonic()
         body = executor.conservation.execute(case, subject)
-        log(DiagnosticOutcome.CONSERVATION_ROW_ANSWERED)
+        log("row %s answered in %.2fs as %s"
+            % (case.get("name"), time.monotonic() - started, body["observed_layer"]))
     except ConstructionError as error:
-        log_quarantined(
-            DiagnosticOutcome.FIXTURE_CONSTRUCTION_FAILED,
-            "conservation fixture construction failure",
-            error.note,
-        )
+        log("fixture construction failure: %s" % error.note)
         body = {
             "observed_layer": "fixture_construction_failure",
             "observed_detail": error.note,
@@ -6861,11 +6938,7 @@ def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -
             "observed_openings": [],
         }
     except AdapterError as error:
-        log_quarantined(
-            DiagnosticOutcome.EXECUTOR_INFRASTRUCTURE_FAILED,
-            "conservation executor infrastructure failure",
-            error.note,
-        )
+        log("executor infrastructure failure: %s" % error.note)
         body = {
             "observed_layer": "executor_infrastructure_failure",
             "observed_detail": error.note,
@@ -6914,14 +6987,13 @@ def answer_normalization_row(executor: CaseExecutor, request: dict, case: dict) 
         if not isinstance(subject, dict):
             raise AdapterError("the normalization request states no subject")
         require_keys(subject, ("claim", "mutation"), "request.subject")
+        started = time.monotonic()
         body = executor.normalization.execute(case, subject)
-        log(DiagnosticOutcome.NORMALIZATION_ROW_ANSWERED)
+        log("normalization row %s answered in %.2fs as %s"
+            % (case.get("normalization"), time.monotonic() - started,
+               body["observed_layer"]))
     except ConstructionError as error:
-        log_quarantined(
-            DiagnosticOutcome.FIXTURE_CONSTRUCTION_FAILED,
-            "normalization fixture construction failure",
-            error.note,
-        )
+        log("fixture construction failure: %s" % error.note)
         body = {
             "observed_layer": "fixture_construction_failure",
             "observed_detail": error.note,
@@ -6932,11 +7004,7 @@ def answer_normalization_row(executor: CaseExecutor, request: dict, case: dict) 
             "transaction_bytes": None,
         }
     except AdapterError as error:
-        log_quarantined(
-            DiagnosticOutcome.EXECUTOR_INFRASTRUCTURE_FAILED,
-            "normalization executor infrastructure failure",
-            error.note,
-        )
+        log("executor infrastructure failure: %s" % error.note)
         body = {
             "observed_layer": "executor_infrastructure_failure",
             "observed_detail": error.note,
@@ -7032,6 +7100,7 @@ def answer_lifecycle_step(executor: CaseExecutor, request: dict, case: dict) -> 
         if not isinstance(subject, dict):
             raise AdapterError("the lifecycle request states no subject")
         role = case.get("lifecycle")
+        started = time.monotonic()
         if role == "construct":
             require_keys(subject, ("claim", "supersede"), "request.subject")
             body = executor.lifecycle.construct(subject)
@@ -7042,21 +7111,14 @@ def answer_lifecycle_step(executor: CaseExecutor, request: dict, case: dict) -> 
             outcome = body["outcome"]
         else:
             raise AdapterError("the lifecycle request names no role this adapter runs")
-        log(DiagnosticOutcome.LIFECYCLE_STEP_ANSWERED)
+        log("lifecycle step %s answered in %.2fs as %s"
+            % (role, time.monotonic() - started, outcome))
     except ConstructionError as error:
-        log_quarantined(
-            DiagnosticOutcome.FIXTURE_CONSTRUCTION_FAILED,
-            "lifecycle fixture construction failure",
-            error.note,
-        )
+        log("fixture construction failure: %s" % error.note)
         body = {}
         outcome = "fixture_construction_failure"
     except AdapterError as error:
-        log_quarantined(
-            DiagnosticOutcome.EXECUTOR_INFRASTRUCTURE_FAILED,
-            "lifecycle executor infrastructure failure",
-            error.note,
-        )
+        log("executor infrastructure failure: %s" % error.note)
         body = {"detail": error.note}
         outcome = "executor_infrastructure_failure"
 
@@ -7381,11 +7443,7 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
             "this adapter was booted without a wallet and advertised no "
             "operation capability"
         )
-        log_quarantined(
-            DiagnosticOutcome.EXECUTOR_INFRASTRUCTURE_FAILED,
-            "operation executor infrastructure failure",
-            note,
-        )
+        log("executor infrastructure failure: %s" % note)
         write_operation_failure(case, note)
         return
 
@@ -7421,11 +7479,7 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
     except AdapterError as error:
         # The adapter could not perform the step. That is not a statement
         # about the transaction and must not be recorded as one.
-        log_quarantined(
-            DiagnosticOutcome.EXECUTOR_INFRASTRUCTURE_FAILED,
-            "operation executor infrastructure failure",
-            str(error),
-        )
+        log("executor infrastructure failure: %s" % error)
         write_operation_failure(case, str(error))
         return
 
@@ -7685,10 +7739,19 @@ def report_fatal(error: FatalAdapterError) -> None:
     if error.outcome is not None:
         log(error.outcome, error.record)
         return
+    detail = str(error)
+    if detail.startswith("the handshake failed its field census; "):
+        record = diagnostic_record(detail)
+        if record is not None:
+            log(DiagnosticOutcome.HANDSHAKE_FIELD_CENSUS_FAILED, record)
+            return
+    if detail == "the harness spoke a protocol revision this adapter does not":
+        log(DiagnosticOutcome.PROTOCOL_REVISION_REFUSED)
+        return
     log_quarantined(
         DiagnosticOutcome.FATAL_PROTOCOL_FAULT,
         "fatal protocol fault detail",
-        str(error),
+        detail,
     )
 
 
