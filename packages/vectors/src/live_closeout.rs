@@ -366,6 +366,7 @@ impl ConfidentialFundingCloseoutReport {
 /// let _ = moved_on_acceptance(PositivePrivateClass::OneToOne, "prose");
 /// ```
 ///
+#[must_use]
 pub const fn moved_on_acceptance(
     class: PositivePrivateClass,
     accepted_identity: RecordedAcceptance,
