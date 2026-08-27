@@ -1147,13 +1147,173 @@ impl ProofBearingRunOfRecordV2 {
     }
 }
 
-/// The V2 proof-bearing run-of-record state.
+/// Exact constants from the serialized V2 native run of record.
 ///
-/// The later serialized rerun replaces [`ProofBearingRunOfRecordV2::Pending`]
-/// with a record constructed only from that run's persisted transcript.
+/// Minted from the 2026-08-27 serialized native lane at tree `bf211dd9`
+/// against elements tip `b7fc5d080a`. The evidence source is
+/// `rerun-bf211dd.proof-bearing-observation`; its enclosing RUN-REPORT
+/// records 40 of 40 green at exit zero and 420.7 seconds wall time.
+mod v2_run_of_record {
+    use std::sync::OnceLock;
+
+    use super::{
+        AssetField, AssetId, BTreeMap, Digest32, ObservedOutcomeLayer,
+        PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION, ProofBearingCase,
+        ProofBearingConstructionControl, ProofBearingObservation, ProofBearingReverification,
+        ProofBearingRunOfRecord, RecordedConfidentialCoin, RecordedConstructionRefusals,
+        RecordedMaterializationRefusal, RecordedProofBearingConstructionRefusal, ValueField,
+        decode_hex,
+    };
+
+    const ISSUED_ASSET: &str = "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
+    const PREDECESSOR_DIGEST: &str =
+        "00da5ef7aaef159237ef5479b419abeee6307e913cc4e244f3226c64c5489262";
+    const COIN_ASSET_INTERNAL: &str =
+        "fb93ca056d92e29c27986a508f4bd3566f64ea04543f65aa51825fd8d4c84fd7";
+    const COIN_VALUES: [&str; 2] = [
+        "0828d616da18038066f8af4af94a5c6afa9195ece494b9520fc7c81916dc68f000",
+        "096543b29336752436d03b1bfc6e6cbc46b1667e203856c58ba0ec67f0d6a37071",
+    ];
+    const COIN_PROGRAMS: [&str; 2] = [
+        "5120508f7d2b9339123105ec650f9e93ae232b9e21b1d8781295d7a34a80acf8a235",
+        "512065078b646dd98a4bb31f69ae7264fe713a7b167605dfca99f451ce8639719136",
+    ];
+    const RANGEPROOF_BYTES: usize = 4174;
+    const SPENT_VALUE_PREFIXES: [u8; 2] = [0x08, 0x09];
+    const ACCEPTED_TXID: &str = "a176394a67fa839058b4efbba53f59af47899dab718a85251a1106f496671d86";
+    const WITNESS_TXID: &str = "2ddc8694242459a9e65d60616f9c4133f8eacf10332ef008319004bf85241c5e";
+    const RECOMPUTED_MESSAGE: &str =
+        "c7931addeeefa3e4ac4b67c9ee5cb5ab65f6de9409007e2415e8c749c61bd27f";
+    const SIGNATURE: &str = "582cc46a31e0111a7894a702d976741fb16711500bdcd719dcc16e211e89e39c\
+ebcdbb8675319b48b2e04fae3ca4fbcaa4030aa618f8d2b6084a6f45ba9b7408";
+    const REFUSAL_DETAIL: &str = "mandatory-script-verify-flag-failed (Invalid Schnorr signature)";
+    const SUBMITTED_BYTES: usize = 8993;
+    const MESSAGES: [(ProofBearingCase, &str); 4] = [
+        (
+            ProofBearingCase::ProofBearingVectorEmptied,
+            "16a454854658413c97c281b1f20c84cead7ee08cdf06ed0e0a8b19bb0de47c4d",
+        ),
+        (
+            ProofBearingCase::PreimageOnlySigner,
+            "94c5ed3bc5734102a6fa6949d54355dcced4763af838892ccf38868cbe8ed042",
+        ),
+        (
+            ProofBearingCase::AnotherProofBearingCandidate,
+            "7f56f606a9678dab6158e913778cbe8c6612d9aaab8b4fe5052f46ecd075f7a4",
+        ),
+        (ProofBearingCase::SelectedProfile, RECOMPUTED_MESSAGE),
+    ];
+
+    fn fixed<const N: usize>(text: &str) -> [u8; N] {
+        decode_hex(text)
+            .and_then(|bytes| bytes.try_into().ok())
+            .expect("the minted transcript literal has the required byte length")
+    }
+
+    fn coins() -> Vec<RecordedConfidentialCoin> {
+        COIN_VALUES
+            .iter()
+            .zip(COIN_PROGRAMS)
+            .map(|(value, program)| RecordedConfidentialCoin {
+                asset: AssetField::Explicit(AssetId::from_internal(fixed(COIN_ASSET_INTERNAL))),
+                value: ValueField::Commitment(fixed(value)),
+                program: decode_hex(program).expect("the minted coin program is hexadecimal"),
+                rangeproof_bytes: RANGEPROOF_BYTES,
+                matches_expectation: true,
+            })
+            .collect()
+    }
+
+    fn observations() -> Vec<ProofBearingObservation> {
+        ProofBearingCase::ALL
+            .iter()
+            .copied()
+            .map(|case| ProofBearingObservation {
+                case,
+                layer: if matches!(case, ProofBearingCase::SelectedProfile) {
+                    ObservedOutcomeLayer::Accepted
+                } else {
+                    ObservedOutcomeLayer::ScriptPathRejection
+                },
+                detail: case
+                    .is_negative_control()
+                    .then(|| REFUSAL_DETAIL.to_owned()),
+                accepted_txid: matches!(case, ProofBearingCase::SelectedProfile)
+                    .then(|| ACCEPTED_TXID.to_owned()),
+                submitted_bytes: SUBMITTED_BYTES,
+            })
+            .collect()
+    }
+
+    fn construction_refusals() -> RecordedConstructionRefusals {
+        RecordedConstructionRefusals::Captured(
+            ProofBearingConstructionControl::ALL
+                .iter()
+                .copied()
+                .map(|control| RecordedProofBearingConstructionRefusal {
+                    control,
+                    refusal: RecordedMaterializationRefusal::PredecessorOpeningMismatch,
+                })
+                .collect(),
+        )
+    }
+
+    fn reverification() -> ProofBearingReverification {
+        ProofBearingReverification {
+            accepted_txid: ACCEPTED_TXID.to_owned(),
+            witness_txid: WITNESS_TXID.to_owned(),
+            block_height: 6,
+            readback_matches_submission: true,
+            recomputed_message: fixed(RECOMPUTED_MESSAGE),
+            signature_from_readback: decode_hex(SIGNATURE)
+                .expect("the minted readback signature is hexadecimal"),
+            verified: Ok(()),
+            verifies_against_emptied_vector_message: false,
+        }
+    }
+
+    fn candidate_messages() -> BTreeMap<ProofBearingCase, Digest32> {
+        MESSAGES
+            .iter()
+            .map(|(case, message)| (*case, fixed(message)))
+            .collect()
+    }
+
+    fn build() -> ProofBearingRunOfRecord {
+        ProofBearingRunOfRecord {
+            schema_version: PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION,
+            issued_asset: ISSUED_ASSET.to_owned(),
+            predecessor_digest: fixed(PREDECESSOR_DIGEST),
+            coins: coins(),
+            output_witness_vector_length: 2,
+            output_witness_proof_bytes: vec![RANGEPROOF_BYTES, RANGEPROOF_BYTES],
+            spent_value_prefixes: SPENT_VALUE_PREFIXES.to_vec(),
+            observations: observations(),
+            construction_refusals: construction_refusals(),
+            reverification: reverification(),
+            candidate_messages: candidate_messages(),
+        }
+    }
+
+    pub(super) fn get() -> &'static ProofBearingRunOfRecord {
+        static RUN: OnceLock<ProofBearingRunOfRecord> = OnceLock::new();
+        RUN.get_or_init(build)
+    }
+}
+
+/// The recorded V2 proof-bearing run-of-record state.
+///
+/// Minted only from the persisted transcript named above. Returning the
+/// recorded variant flips both live equality gates from conditional to
+/// enforcing while retaining the typed state used by the renderer.
+///
+/// # Panics
+///
+/// Panics only if a committed transcript literal is not valid hexadecimal
+/// of its recorded byte length, which a caller cannot arrange.
 #[must_use]
-pub const fn construction_run_of_record_v2() -> ProofBearingRunOfRecordV2 {
-    ProofBearingRunOfRecordV2::Pending
+pub fn construction_run_of_record_v2() -> ProofBearingRunOfRecordV2 {
+    ProofBearingRunOfRecordV2::Recorded(v2_run_of_record::get())
 }
 
 // --- The owner's single-leaf tree --------------------------------------
@@ -2751,6 +2911,90 @@ fn recorded_bytes(text: &str) -> Vec<u8> {
 mod tests {
     use super::*;
 
+    const MINTED_RENDERED_LINES: &[&str] = &[
+        "issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb",
+        "predecessor_fixture_digest 00da5ef7aaef159237ef5479b419abeee6307e913cc4e244f3226c64c5489262",
+        "run_of_record_v2 recorded",
+        "run_of_record_projection ready schema_version 1",
+        "coin 0 asset explicit fb93ca056d92e29c27986a508f4bd3566f64ea04543f65aa51825fd8d4c84fd7",
+        "coin 0 value commitment 0828d616da18038066f8af4af94a5c6afa9195ece494b9520fc7c81916dc68f000",
+        "coin 0 program 5120508f7d2b9339123105ec650f9e93ae232b9e21b1d8781295d7a34a80acf8a235",
+        concat!(
+            "coin 0 value_form commitment program_bytes 34 ",
+            "predecessor_rangeproof_bytes 4174 node_fields_match_expectation true",
+        ),
+        "coin 1 asset explicit fb93ca056d92e29c27986a508f4bd3566f64ea04543f65aa51825fd8d4c84fd7",
+        "coin 1 value commitment 096543b29336752436d03b1bfc6e6cbc46b1667e203856c58ba0ec67f0d6a37071",
+        "coin 1 program 512065078b646dd98a4bb31f69ae7264fe713a7b167605dfca99f451ce8639719136",
+        concat!(
+            "coin 1 value_form commitment program_bytes 34 ",
+            "predecessor_rangeproof_bytes 4174 node_fields_match_expectation true",
+        ),
+        "output_witness_vector_length 2",
+        "output_witness 0 rangeproof_bytes 4174",
+        "output_witness 1 rangeproof_bytes 4174",
+        "spent_value_prefix 0 0x08",
+        "spent_value_prefix 1 0x09",
+        concat!(
+            "construction_control control-spent-value-as-the-ceremonys-expectation ",
+            "moved_term the spent output's value field, from the node's commitment to the ",
+            "ceremony's amount refusal_code predecessor-opening-mismatch live_refusal ",
+            "PredecessorOpeningMismatch { outpoint: Outpoint { txid: Txid([213, 210, 27, 55, ",
+            "227, 24, 92, 57, 222, 119, 186, 29, 24, 224, 62, 88, 113, 54, 186, 1, 131, 115, ",
+            "165, 46, 214, 152, 125, 0, 58, 228, 153, 219]), index: 0 } }",
+        ),
+        concat!(
+            "construction_control control-opening-of-the-other-output moved_term which ",
+            "registered opening the observed commitment is recomputed from refusal_code ",
+            "predecessor-opening-mismatch live_refusal PredecessorOpeningMismatch { outpoint: ",
+            "Outpoint { txid: Txid([213, 210, 27, 55, 227, 24, 92, 57, 222, 119, 186, 29, 24, ",
+            "224, 62, 88, 113, 54, 186, 1, 131, 115, 165, 46, 214, 152, 125, 0, 58, 228, 153, ",
+            "219]), index: 0 } }",
+        ),
+        "message control-proof-bearing-vector-emptied 16a454854658413c97c281b1f20c84cead7ee08cdf06ed0e0a8b19bb0de47c4d",
+        "message control-preimage-only-signer 94c5ed3bc5734102a6fa6949d54355dcced4763af838892ccf38868cbe8ed042",
+        "message control-another-proof-bearing-candidate 7f56f606a9678dab6158e913778cbe8c6612d9aaab8b4fe5052f46ecd075f7a4",
+        "message selected-profile-proof-bearing-authorization c7931addeeefa3e4ac4b67c9ee5cb5ab65f6de9409007e2415e8c749c61bd27f",
+        concat!(
+            "observed control-proof-bearing-vector-emptied negative_control true moved_term ",
+            "term 12, the output-witness hash, whose entries here are real range proofs layer ",
+            "ScriptPathRejection txid none submitted_bytes 8993 detail ",
+            "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
+        ),
+        concat!(
+            "observed control-preimage-only-signer negative_control true moved_term terms 10 and ",
+            "12 together, which is what a witnessless-serialization signer hashes layer ",
+            "ScriptPathRejection txid none submitted_bytes 8993 detail ",
+            "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
+        ),
+        concat!(
+            "observed control-another-proof-bearing-candidate negative_control true moved_term ",
+            "the successor fixture: a confidential amount cannot move without its commitment ",
+            "and its proof layer ScriptPathRejection txid none submitted_bytes 8993 detail ",
+            "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
+        ),
+        concat!(
+            "observed selected-profile-proof-bearing-authorization negative_control false ",
+            "moved_term nothing; this is the case under the selected profile layer Accepted txid ",
+            "a176394a67fa839058b4efbba53f59af47899dab718a85251a1106f496671d86 ",
+            "submitted_bytes 8993 detail none",
+        ),
+        "reverification accepted_txid a176394a67fa839058b4efbba53f59af47899dab718a85251a1106f496671d86",
+        "reverification witness_txid 2ddc8694242459a9e65d60616f9c4133f8eacf10332ef008319004bf85241c5e",
+        "reverification block_height 6",
+        "reverification readback_matches_submission true",
+        "reverification recomputed_message c7931addeeefa3e4ac4b67c9ee5cb5ab65f6de9409007e2415e8c749c61bd27f",
+        concat!(
+            "reverification signature_from_readback ",
+            "582cc46a31e0111a7894a702d976741fb16711500bdcd719dcc16e211e89e39c",
+            "ebcdbb8675319b48b2e04fae3ca4fbcaa4030aa618f8d2b6084a6f45ba9b7408",
+        ),
+        "reverification verifies_against_recomputed_message true",
+        "reverification outcome Ok(())",
+        "reverification verifies_against_emptied_vector_message false",
+        "observed_acceptance true",
+    ];
+
     fn synthetic_completed_live_record() -> ProofBearingObservationRecord {
         let asset = asset_of(RECORDED_ASSET).expect("the historical asset literal is valid");
         let owners = [
@@ -2932,10 +3176,104 @@ mod tests {
     }
 
     #[test]
-    fn the_recorded_coin_projection_is_internally_consistent() {
-        let live = synthetic_completed_live_record();
-        let recorded = ProofBearingRunOfRecord::try_from(&live)
-            .expect("the structurally complete live record projects");
+    fn the_legacy_literals_still_build_the_projection_fixture() {
+        assert!(ProofBearingRunOfRecord::try_from(&synthetic_completed_live_record()).is_ok());
+    }
+
+    fn minted_v2_run_of_record() -> &'static ProofBearingRunOfRecord {
+        let ProofBearingRunOfRecordV2::Recorded(recorded) = construction_run_of_record_v2() else {
+            panic!("the V2 run of record is still pending");
+        };
+        recorded
+    }
+
+    fn minted_completed_live_record() -> ProofBearingObservationRecord {
+        let recorded = minted_v2_run_of_record();
+        let txid = transaction::bytes::Txid::from_internal([
+            213, 210, 27, 55, 227, 24, 92, 57, 222, 119, 186, 29, 24, 224, 62, 88, 113, 54, 186, 1,
+            131, 115, 165, 46, 214, 152, 125, 0, 58, 228, 153, 219,
+        ]);
+        let coins: Vec<_> = recorded
+            .coins()
+            .iter()
+            .enumerate()
+            .map(|(index, coin)| ObservedConfidentialCoin {
+                outpoint: Outpoint::new(txid, u32::try_from(index).expect("the index fits"))
+                    .expect("the minted coin index is in range"),
+                asset: coin.asset(),
+                value: coin.value(),
+                program: coin.program().to_vec(),
+                rangeproof_bytes: coin.rangeproof_bytes(),
+                matches_expectation: coin.matches_expectation(),
+            })
+            .collect();
+        let first_outpoint = coins
+            .first()
+            .expect("the minted record has two coins")
+            .outpoint();
+        let construction_refusals = recorded
+            .construction_refusals()
+            .captured()
+            .expect("the minted record captures construction refusals")
+            .iter()
+            .map(|refusal| {
+                assert_eq!(
+                    refusal.refusal(),
+                    RecordedMaterializationRefusal::PredecessorOpeningMismatch
+                );
+                ProofBearingConstructionRefusal {
+                    control: refusal.control(),
+                    refusal: MaterializationRefusal::PredecessorOpeningMismatch {
+                        outpoint: first_outpoint,
+                    },
+                }
+            })
+            .collect();
+
+        ProofBearingObservationRecord {
+            issued_asset: Some(recorded.issued_asset().to_owned()),
+            predecessor_digest: Some(*recorded.predecessor_digest()),
+            coins,
+            output_witness_vector_length: Some(recorded.output_witness_vector_length()),
+            output_witness_proof_bytes: recorded.output_witness_proof_bytes().to_vec(),
+            spent_value_prefixes: recorded.spent_value_prefixes().to_vec(),
+            observations: recorded.observations().to_vec(),
+            construction_refusals,
+            reverification: Some(recorded.reverification().clone()),
+            candidate_messages: recorded.candidate_messages().clone(),
+            refusal: None,
+        }
+    }
+
+    #[test]
+    fn the_v2_run_of_record_is_recorded() {
+        assert!(matches!(
+            construction_run_of_record_v2(),
+            ProofBearingRunOfRecordV2::Recorded(_)
+        ));
+    }
+
+    #[test]
+    fn the_v2_construction_refusals_are_captured_in_ceremony_order() {
+        let recorded = minted_v2_run_of_record();
+        let refusals = recorded
+            .construction_refusals()
+            .captured()
+            .expect("the minted record captures its construction refusals");
+
+        assert_eq!(refusals.len(), ProofBearingConstructionControl::ALL.len());
+        for (refusal, control) in refusals.iter().zip(ProofBearingConstructionControl::ALL) {
+            assert_eq!(refusal.control(), *control);
+            assert_eq!(
+                refusal.refusal(),
+                RecordedMaterializationRefusal::PredecessorOpeningMismatch
+            );
+        }
+    }
+
+    #[test]
+    fn the_minted_recorded_coins_are_internally_consistent() {
+        let recorded = minted_v2_run_of_record();
         let issued_asset = asset_of(recorded.issued_asset()).expect("the recorded asset is valid");
         let owners = [
             OwnerLeaf::derive(&FIRST_SCALAR).expect("the first owner derives"),
@@ -2959,44 +3297,24 @@ mod tests {
             };
             assert_eq!(commitment.first(), Some(prefix));
             assert_eq!(coin.program(), owner.program.as_slice());
+            assert_eq!(coin.program().len(), 34);
         }
     }
 
     #[test]
-    fn the_report_emits_exact_recorded_coin_fields_and_outcomes() {
-        let live = synthetic_completed_live_record();
+    fn the_report_emits_the_minted_record_byte_for_byte() {
+        let live = minted_completed_live_record();
+        let projected = ProofBearingRunOfRecord::try_from(&live)
+            .expect("the minted renderer fixture projects completely");
         let rendered = render_proof_bearing_observation(&live);
 
-        for (index, coin) in live.coins().iter().enumerate() {
-            let AssetField::Explicit(asset) = coin.asset() else {
-                panic!("the synthetic asset is not explicit");
-            };
-            let ValueField::Commitment(commitment) = coin.value() else {
-                panic!("the synthetic value is not confidential");
-            };
-            assert!(rendered.contains(&format!(
-                "coin {index} asset explicit {}",
-                printed(asset.internal())
-            )));
-            assert!(rendered.contains(&format!(
-                "coin {index} value commitment {}",
-                printed(&commitment)
-            )));
+        assert_eq!(&projected, minted_v2_run_of_record());
+        for expected in MINTED_RENDERED_LINES {
             assert!(
-                rendered.contains(&format!("coin {index} program {}", printed(coin.program())))
+                rendered.lines().any(|line| line == *expected),
+                "the renderer omitted or changed `{expected}`",
             );
         }
-        for control in ProofBearingConstructionControl::ALL {
-            assert!(rendered.contains(&format!(
-                "construction_control {} moved_term {} refusal_code {}",
-                control.name(),
-                control.moved_term(),
-                RecordedMaterializationRefusal::PredecessorOpeningMismatch.code(),
-            )));
-        }
-        assert!(rendered.contains("reverification outcome Ok(())"));
-        assert!(rendered.contains("run_of_record_v2 pending"));
-        assert!(rendered.contains("run_of_record_projection ready schema_version 1"));
     }
 
     #[test]
