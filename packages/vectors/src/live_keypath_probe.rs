@@ -1300,6 +1300,87 @@ pub mod run_of_record {
     pub const WALL_SECONDS: f64 = 4.1;
 }
 
+/// The phase-B run of record: the same attempt, under its own name, with
+/// its control.
+///
+/// # Why there are two runs of record and not one amended one
+///
+/// Phase A's figures are what phase A observed, and the module above
+/// keeps them exactly as it wrote them — including the layer name that
+/// was the finding. Rewriting that constant to the name this vocabulary
+/// now has would replace a record of a run with a reconstruction of one,
+/// and the divergence phase A reported would vanish from the artifact
+/// that reported it.
+///
+/// # The probe re-ran BYTE-IDENTICALLY on every figure phase A recorded
+///
+/// The issued asset, the funded program, the output key, the merkle
+/// root, the signing key, the candidate key-path message, the submitted
+/// width, the witness census and the target's verbatim words all
+/// re-derived unchanged. So this module CITES them rather than copying
+/// them: two spellings of one measurement are two things that can
+/// disagree, and [`the_two_runs_are_one_ceremony_under_two_names`] is
+/// what holds the citation honest.
+///
+/// What is new is the NAME the verdict is filed under and the PAIR it is
+/// filed against.
+///
+/// # What the pair buys, and what it does not
+///
+/// The refusal is now attributable in the §15 register's own sense: the
+/// unmutated candidate was accepted on the same chain, the mutated one
+/// refused, and the two differ in the witness alone — measured off the
+/// witnessless serializations rather than asserted from the fact that
+/// one finalization built both.
+///
+/// It buys nothing whatever about the internal key. The signature the
+/// attempt offers is by a published test scalar that is not the output
+/// key, so the refusal is a target refusing a signature that does not
+/// verify. The residual discrete-log assumption stands exactly where it
+/// stood `(´[PLAN-rule:exclusions:nonclaims]´)`.
+///
+/// The target: Elements Core v28.99.0-b7fc5d080a7e, at the pinned tip
+/// the lane binds itself to, on a disposable development chain the run
+/// created and destroyed.
+pub mod run_of_record_phase_b {
+    /// The layer the adapter filed the verdict under, corrected.
+    ///
+    /// Recorded as the string the run produced, on the pattern phase A
+    /// set. The whole content of phase B is that this differs from
+    /// [`super::run_of_record::OBSERVED_LAYER`] while the words below do
+    /// not: the target said the same thing and the wire stopped
+    /// mis-naming it.
+    pub const OBSERVED_LAYER: &str = "KeyPathRejection";
+
+    /// What the target said when it refused the attempt, verbatim.
+    pub const REFUSAL_DETAIL: &str =
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)";
+
+    /// The identity the target gave the accepted control.
+    ///
+    /// The half of the pair a reader can check against a chain. The
+    /// refusal left no transaction to look up, which is what being
+    /// refused means.
+    pub const CONTROL_ACCEPTED_TXID: &str =
+        "0fcf267058e83e06e87a950bbeec920a15e3641ef7f76c55df0a8fff544e64c1";
+
+    /// How many bytes the control handed to the submission wire.
+    pub const CONTROL_SUBMITTED_BYTES: usize = 751;
+
+    /// How many items the control's single input carried.
+    ///
+    /// Three — signature, leaf script, control block — against the
+    /// attempt's one, which is the whole visible difference between the
+    /// pair.
+    pub const CONTROL_WITNESS_ITEMS: usize = 3;
+
+    /// Whether the pair differed in the witness ALONE, as measured.
+    pub const CONTROL_SHARES_THE_ATTEMPTS_WITNESSLESS_BYTES: bool = true;
+
+    /// The run's wall time.
+    pub const WALL_SECONDS: f64 = 5.1;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1380,6 +1461,33 @@ mod tests {
         // The verdict was a refusal, and the artifact says so in the
         // target's own words rather than in a mapped name.
         assert!(run::OBSERVED_DETAIL.contains("Invalid Schnorr signature"));
+    }
+
+    #[test]
+    fn the_two_runs_are_one_ceremony_under_two_names() {
+        // What phase B changed and what it did not, asserted rather than
+        // described. The TARGET said the same thing both times — the
+        // verbatim words are the same string — and the WIRE stopped
+        // filing them under a script-path name. A phase-B run whose
+        // words had moved would be a different observation reported
+        // under this name.
+        use super::{run_of_record as a, run_of_record_phase_b as b};
+
+        assert_eq!(b::REFUSAL_DETAIL, a::OBSERVED_DETAIL);
+        assert_ne!(b::OBSERVED_LAYER, a::OBSERVED_LAYER);
+        assert_eq!(a::OBSERVED_LAYER, "ScriptPathRejection");
+        assert_eq!(b::OBSERVED_LAYER, "KeyPathRejection");
+
+        // The pair. The control carries an identity a reader can look
+        // up, it is the script-path shape against the attempt's key-path
+        // one, and the two differ in the witness alone — which is the
+        // property that makes the refusal the row's rather than the
+        // candidate's.
+        assert_eq!(b::CONTROL_ACCEPTED_TXID.len(), 64);
+        assert_eq!(b::CONTROL_WITNESS_ITEMS, 3);
+        assert_eq!(a::WITNESS_ITEMS, 1);
+        assert!(b::CONTROL_SHARES_THE_ATTEMPTS_WITNESSLESS_BYTES);
+        assert!(b::CONTROL_SUBMITTED_BYTES > a::SUBMITTED_BYTES);
     }
 
     #[test]

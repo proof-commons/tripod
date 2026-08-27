@@ -1383,8 +1383,11 @@ fn assert_consensus_mutants_separate(
 /// The shape of a completed attempt: the deployment relinked before it
 /// funded, the node's own fields agreed with the ceremony's expectation,
 /// the constructor's internal key is the published point, the witness is
-/// the one-item shape, and the signing key is not the output key. What
-/// the target DECIDED is written into the artifact and asserted nowhere.
+/// the one-item shape, and the signing key is not the output key. It also
+/// asserts the PAIR: that the control offered after the attempt is the
+/// same candidate — measured off the two witnessless serializations — and
+/// that the two submissions drew different verdicts. WHICH verdict either
+/// drew is written into the artifact and asserted nowhere.
 #[test]
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
@@ -1518,9 +1521,44 @@ fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
         "the attempt was not answered",
     );
 
+    // The control was offered too, and it is the SAME candidate: the two
+    // witnessless serializations were compared byte for byte and the
+    // comparison is what is asserted, not the construction that produced
+    // them. A control that had been finalized over some other coin would
+    // be a second candidate wearing the control's name.
+    let control = record
+        .control()
+        .expect("the ceremony built the script-path control");
+    assert!(
+        control.shares_the_attempts_witnessless_bytes(),
+        "the control and the attempt are not one candidate",
+    );
+    assert_eq!(
+        control.witness_items(),
+        3,
+        "the control is not the script-path shape",
+    );
+    let control_observation = record
+        .control_observation()
+        .expect("the control was not answered");
+
+    // The two verdicts are DIFFERENT, which is the whole content of the
+    // pair. What each of them was stays recorded and unasserted, on the
+    // rule the attempt is read under: a node that had accepted the
+    // attempt, or refused the control, is a finding for a reader rather
+    // than a panic that hides the transcript.
+    assert_ne!(
+        record
+            .observation()
+            .expect("the attempt was answered")
+            .layer(),
+        control_observation.layer(),
+        "the attempt and its control drew one verdict, so the pair separates nothing",
+    );
+
     // The run says in its own bytes what it did not establish.
     assert!(rendered.contains("residual_internal_key_unspendability_stands true"));
-    assert!(rendered.contains("discharges_no_matrix_row true"));
+    assert!(rendered.contains("discharges_no_residual true"));
 }
 
 /// The restart order's fifth step, the split shape: one receipt in, three
