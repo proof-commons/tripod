@@ -1993,7 +1993,10 @@ pub mod run_of_record {
     pub const CONTROL_ARRANGEMENT: [u16; 2] = [0, 1];
 
     /// The run's wall time, in seconds.
-    pub const WALL_SECONDS: f64 = 8.3;
+    ///
+    /// Up from the pre-leaf-arrangement 8.3s: the ceremony now submits two
+    /// more mutants, the leaf-arrangement pair, before the control.
+    pub const WALL_SECONDS: f64 = 10.2;
 }
 
 #[cfg(test)]

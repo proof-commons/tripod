@@ -140,14 +140,18 @@ pub enum NegativeHalfGap {
     /// one-input shape — so the member now carries ZERO rows and is kept as
     /// provenance, the vocabulary the drive read off.
     ConsensusAnswersBeforeScript,
-    /// The explicit lane's witness mutation reaches item zero only.
+    /// No stage CORRUPTS a witness item past the signature payload.
     ///
-    /// The staged mutation replaces the signature payload and nothing
-    /// else; the leaf script and the control block are written after it,
-    /// and the attributability check is a width bound around a
-    /// signature. Reaching the rest of the stack needs that stage
-    /// generalized to a declared byte range, which is a prerequisite
-    /// rather than a refinement.
+    /// The §15.3 witness mutation replaces the signature payload and
+    /// nothing else, its attributability a width bound around a signature.
+    /// The owner-signing route's leaf-arrangement stage now writes the
+    /// whole stack — signature, leaf script and control block — but only
+    /// with COMMITTED values: it reveals a real leaf at a wrong position,
+    /// and the census refuses any control block that does not commit
+    /// before the node sees it. Corrupting item two into a MALFORMED
+    /// control block therefore needs a witness-byte-range surgery that
+    /// bypasses the commitment census and declares its own confined range,
+    /// which is a prerequisite rather than a refinement.
     WitnessSurgeryStageAbsent,
     /// No admitted shape can carry the fault.
     ///
@@ -278,7 +282,7 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     entry(
         "projection-equality-with-paired-explicit",
         G::PairSubmissionCapabilityAbsent,
-        "the pair registry carries no accepted member and the pairs lane submits nothing",
+        "§16.1 wants one fixture materialized twice, and the pair registry carries no accepted member while the pairs lane submits nothing, so no relation over two accepted identities exists to observe",
     ),
     // §15.4 — the class, asset and constructor faults still waiting.
     //
@@ -310,7 +314,7 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     entry(
         "malformed-control-path",
         G::WitnessSurgeryStageAbsent,
-        "the control block is witness item two and the staged mutation reaches item zero only",
+        "the leaf-arrangement stage writes witness item two but only a committed control block, the census refusing a malformed one before the node, so a corrupting witness-byte-range surgery reaching item two is still owed",
     ),
     // §15.5 — the value and partition faults still waiting. Several rows of
     // this section have LEFT this register: `malformed-rangeproof` and
