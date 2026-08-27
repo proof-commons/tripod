@@ -33,6 +33,10 @@
 //! returning a partial result, and a decoder that ignored a field would
 //! be returning one.
 
+use std::fmt;
+use std::fmt::Write as _;
+use std::str::FromStr;
+
 use crate::error::TransactionRefusal;
 
 /// How many bytes a transaction identifier occupies.
@@ -275,6 +279,42 @@ impl AssetId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Txid([u8; TXID_BYTES]);
 
+/// Why target-display text could not name a transaction identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransactionIdentityParseError {
+    /// A target transaction identity is exactly 32 displayed bytes.
+    WrongLength {
+        /// How many bytes the caller offered.
+        offered: usize,
+    },
+    /// One displayed byte is not an ASCII hexadecimal digit.
+    NonHexDigit {
+        /// The zero-based byte index of the invalid digit.
+        index: usize,
+    },
+}
+
+impl fmt::Display for TransactionIdentityParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::WrongLength { offered } => {
+                write!(
+                    formatter,
+                    "transaction identity has {offered} bytes, expected 64"
+                )
+            }
+            Self::NonHexDigit { index } => {
+                write!(
+                    formatter,
+                    "transaction identity has a non-hex digit at byte {index}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for TransactionIdentityParseError {}
+
 impl Txid {
     /// The identifier these internal-order bytes name.
     #[must_use]
@@ -286,6 +326,79 @@ impl Txid {
     #[must_use]
     pub const fn internal(&self) -> &[u8; TXID_BYTES] {
         &self.0
+    }
+
+    /// Parse the target's 64-digit transaction-identity display form.
+    ///
+    /// The target displays the internal bytes in reverse order. Either
+    /// ASCII hexadecimal case is accepted; rendering is canonical
+    /// lowercase.
+    ///
+    /// # Errors
+    ///
+    /// [`TransactionIdentityParseError::WrongLength`] unless `text` is
+    /// exactly 64 bytes, or [`TransactionIdentityParseError::NonHexDigit`]
+    /// at the first byte that is not an ASCII hexadecimal digit.
+    pub fn from_target_display(text: &str) -> Result<Self, TransactionIdentityParseError> {
+        if text.len() != TXID_BYTES * 2 {
+            return Err(TransactionIdentityParseError::WrongLength {
+                offered: text.len(),
+            });
+        }
+
+        let displayed = text.as_bytes();
+        let mut internal = [0_u8; TXID_BYTES];
+        for (displayed_index, (internal_byte, pair)) in internal
+            .iter_mut()
+            .rev()
+            .zip(displayed.chunks_exact(2))
+            .enumerate()
+        {
+            let high_index = displayed_index * 2;
+            let low_index = high_index + 1;
+            let high = hex_nibble(pair[0])
+                .ok_or(TransactionIdentityParseError::NonHexDigit { index: high_index })?;
+            let low = hex_nibble(pair[1])
+                .ok_or(TransactionIdentityParseError::NonHexDigit { index: low_index })?;
+            *internal_byte = (high << 4) | low;
+        }
+        Ok(Self(internal))
+    }
+
+    /// Render the target's canonical lowercase transaction identity.
+    #[must_use]
+    pub fn to_target_display(&self) -> String {
+        let mut displayed = String::with_capacity(TXID_BYTES * 2);
+        for byte in self.0.iter().rev() {
+            let _ = write!(displayed, "{byte:02x}");
+        }
+        displayed
+    }
+}
+
+impl FromStr for Txid {
+    type Err = TransactionIdentityParseError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        Self::from_target_display(text)
+    }
+}
+
+impl fmt::Display for Txid {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for byte in self.0.iter().rev() {
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+const fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
     }
 }
 
