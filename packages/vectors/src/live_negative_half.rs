@@ -14,7 +14,7 @@
 //! place for it to drift.
 //!
 //! This register is that list, held against the classifier by
-//! [`every_outstanding_row_is_registered`]. The test is set equality in
+//! `every_outstanding_row_is_registered`. The test is set equality in
 //! BOTH directions, which is what makes the register load-bearing rather
 //! than documentation: a row that moves to an observed standing and is
 //! left here fails the test, and a row that stays required without being
@@ -62,7 +62,7 @@ use crate::live_evidence::{LiveRowStanding, derive_live_evidence_plan};
 ///
 /// There is deliberately no member meaning `unassessed`. A row whose gap
 /// nobody has established does not get an entry, and a row without an
-/// entry fails [`every_outstanding_row_is_registered`], so the absence
+/// entry fails `every_outstanding_row_is_registered`, so the absence
 /// of that member is what makes the register's coverage total rather
 /// than aspirational.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

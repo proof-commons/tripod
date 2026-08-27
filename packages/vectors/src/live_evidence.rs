@@ -2560,10 +2560,14 @@ mod tests {
         // asks for a determinism observation rather than a submission,
         // and it is asserted below at the standing minted to hold one.
         //
-        // What remains is the projection-equality row, which needs both
-        // sides of its pair accepted AND an observation comparing their
-        // projections. Both sides of three pairs are now accepted; no
-        // run compares the projections, so the row stays.
+        // The projection-equality row USED to be described here as the
+        // one that remained, on the ground that it needs both sides of
+        // its pair accepted AND an observation comparing their
+        // projections, and that no run compared them. That ground held
+        // until the pairs arc submitted ONE fixture materialized twice
+        // to one node and compared the two acceptances' own projections.
+        // The row left this list at a standing of its own, and that
+        // standing is asserted below rather than described here.
         //
         // Private-merge USED to be in this list, described as structurally
         // unconstructible on this lane. It was never unconstructible: it
@@ -2801,8 +2805,12 @@ mod tests {
         // The two DRIVEN rows draw two DISTINCT verdicts — the coordinator
         // index EqualVerify and the member bound Verify — which is what
         // makes them one observation each rather than one shared. The typed
-        // partners are the two rows whose own mutants would draw those same
-        // two verdicts.
+        // partners are the two rows whose arrangements carry a SECOND
+        // failing input beside the clause their pair-partner already drove,
+        // and which therefore have no separating fact of their own. WHICH
+        // of the two failures a target would report for such a candidate is
+        // not settled by anything in this repository, and no verdict is
+        // predicted for them here.
         assert_ne!(
             crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_REJECT_DETAIL,
             crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_REJECT_DETAIL,

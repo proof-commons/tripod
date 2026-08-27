@@ -357,9 +357,13 @@ impl LeafArrangement {
         }
     }
 
-    /// The pair-partner this drive leaves typed: its own mutant would draw
-    /// the SAME verdict at the SAME clause, so its observation would
-    /// duplicate this one and it stays `TargetVerdictDoesNotSeparateTheRows`.
+    /// The pair-partner this drive leaves typed: its arrangement carries a
+    /// SECOND failing input beside the clause this row already drove, so it
+    /// has no separating fact of its own against this row and stays
+    /// `TargetVerdictDoesNotSeparateTheRows`. WHICH of its two failures a
+    /// target would report is NOT settled here — abort selection across a
+    /// multi-input candidate is the target's, and no in-repo source says —
+    /// so no exact verdict is predicted for it.
     const fn typed_partner(self) -> &'static str {
         match self {
             Self::TwoCoordinators => "wrong-coordinator",

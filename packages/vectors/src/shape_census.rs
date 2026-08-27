@@ -2150,7 +2150,7 @@ impl FormLimitation {
     /// never read as a taken one.
     ///
     /// Each removal is a named constant rather than an inline literal,
-    /// on [`TWO_OUTPUT_FLOOR_REMOVAL`]'s discipline: the census row that
+    /// on `TWO_OUTPUT_FLOOR_REMOVAL`'s discipline: the census row that
     /// cites a removal and the limitation that reports it must not be
     /// able to disagree about what happened.
     ///

@@ -1613,8 +1613,17 @@ fn assert_consensus_mutants_separate(
 /// the one-item shape, and the signing key is not the output key. It also
 /// asserts the PAIR: that the control offered after the attempt is the
 /// same candidate — measured off the two witnessless serializations — and
-/// that the two submissions drew different verdicts. WHICH verdict either
-/// drew is written into the artifact and asserted nowhere.
+/// that the two submissions drew different verdicts.
+///
+/// It also asserts the two verdicts THEMSELVES, against phase B's own run
+/// of record: the attempt's exact layer and the target's verbatim words,
+/// the control's acceptance and the identity it was accepted at. The
+/// earlier form recorded both and asserted neither, so that an unexpected
+/// layer reached a reader rather than a panic. That protection is kept
+/// where it belongs — the transcript is written to disk BEFORE any
+/// assertion here runs, so the artifact carries what the node said either
+/// way — and the lane now FAILS on the drifts the recorded constants
+/// exist to make checkable.
 #[test]
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
@@ -1732,23 +1741,17 @@ fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
         attempt.signing_public_key().as_slice(),
         "the attempt was signed by the output key, which is not this probe",
     );
-    // The submitted bytes carry a whole transaction and not only the
-    // witness item, which is the cheapest check that the attempt was
-    // assembled rather than merely signed.
-    assert!(
-        attempt.submitted_bytes().len() > attempt.witness_stack()[0].len(),
-        "the submitted bytes are no larger than the witness item",
-    );
-
-    // The target answered. What it answered is recorded and asserted
-    // nowhere: a probe that panicked on an unexpected layer would hide
-    // the one outcome most worth reading.
+    // The target answered, which is the precondition every assertion
+    // below rests on: a run that reached no verdict at all fails here,
+    // where the failure names what happened, rather than inside a
+    // comparison against a figure the run never produced.
     assert!(
         record.observation().is_some(),
         "the attempt was not answered",
     );
 
     assert_the_pair_is_one_candidate_answered_twice(record);
+    assert_the_verdicts_match_the_run_of_record(record);
 
     // The run says in its own bytes what it did not establish.
     assert!(rendered.contains("residual_internal_key_unspendability_stands true"));
@@ -1783,10 +1786,10 @@ fn assert_the_pair_is_one_candidate_answered_twice(
     );
 
     // The two verdicts are DIFFERENT, which is the whole content of the
-    // pair. What each of them was stays recorded and unasserted, on the
-    // rule the attempt is read under: a node that had accepted the
-    // attempt, or refused the control, is a finding for a reader rather
-    // than a panic that hides the transcript.
+    // pair. WHICH each of them was is bound separately, in
+    // [`assert_the_verdicts_match_the_run_of_record`]: inequality alone
+    // holds for an accepted attempt against a refused control just as it
+    // holds for the run that happened.
     let control_observation = record
         .control_observation()
         .expect("the control was not answered");
@@ -1797,6 +1800,128 @@ fn assert_the_pair_is_one_candidate_answered_twice(
             .layer(),
         control_observation.layer(),
         "the attempt and its control drew one verdict, so the pair separates nothing",
+    );
+}
+
+/// The two verdicts and the two candidates, held against phase B's run of
+/// record.
+///
+/// # Why this was unbound, and why binding it costs no report
+///
+/// The probe's first form recorded both verdicts and asserted neither, so
+/// that an unexpected layer would reach a reader instead of a panic. The
+/// rendered transcript is what delivers that, and it is written to disk
+/// BEFORE any assertion in this test runs — so nothing here costs the
+/// report on the day an answer changes. What the unasserted form actually
+/// left green was every drift the run of record exists to make checkable:
+/// an ACCEPTED attempt against a REFUSED control differ in layer just as
+/// the run that happened does, so the pair's one assertion passed on the
+/// exact inversion that makes the seventeenth refusal row unattributable.
+/// Each figure below is phase B's own, and each now fails on drift.
+fn assert_the_verdicts_match_the_run_of_record(
+    record: &vectors::live_keypath_probe::KeyPathProbeRecord,
+) {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+    use vectors::live_keypath_probe::{run_of_record, run_of_record_phase_b};
+
+    // One chain, one issuance: the asset the probe's own run recorded.
+    assert_eq!(
+        record.issued_asset(),
+        Some(run_of_record::ISSUED_ASSET),
+        "the probe ran against an asset the run of record does not carry",
+    );
+
+    let attempt = record
+        .attempt()
+        .expect("the ceremony built the key-path attempt");
+    assert_eq!(
+        attempt.submitted_bytes().len(),
+        run_of_record::SUBMITTED_BYTES,
+        "the attempt handed the node a different number of bytes",
+    );
+    assert_eq!(
+        attempt.witness_stack().len(),
+        run_of_record::WITNESS_ITEMS,
+        "the attempt is not the recorded one-item witness",
+    );
+    assert_eq!(
+        attempt.witness_stack()[0].len(),
+        run_of_record::WITNESS_ITEM_BYTES,
+        "the attempt's one witness item is not the recorded width",
+    );
+    // The bytes carry a whole transaction and not only the witness item,
+    // which is the cheapest check that the attempt was assembled rather
+    // than merely signed. Kept beside the recorded width it reads.
+    assert!(
+        attempt.submitted_bytes().len() > attempt.witness_stack()[0].len(),
+        "the submitted bytes are no larger than the witness item",
+    );
+
+    // The ATTEMPT's verdict, exactly. Phase B's whole content is the name
+    // the refusal is filed under, so the layer is asserted as the enum AND
+    // the recorded spelling is held against that enum: a constant that had
+    // drifted from the vocabulary would otherwise stay green beside it.
+    let observation = record.observation().expect("the attempt was answered");
+    assert_eq!(
+        observation.layer(),
+        ObservedOutcomeLayer::KeyPathRejection,
+        "the attempt was not refused at the key path",
+    );
+    assert_eq!(
+        format!("{:?}", observation.layer()),
+        run_of_record_phase_b::OBSERVED_LAYER,
+        "the recorded layer name is not the vocabulary's own spelling",
+    );
+    assert_eq!(
+        observation.detail(),
+        Some(run_of_record_phase_b::REFUSAL_DETAIL),
+        "the attempt drew words the run of record does not carry",
+    );
+    assert_eq!(
+        observation.accepted_txid(),
+        None,
+        "a refused attempt was given an accepted identity",
+    );
+
+    // The CONTROL's verdict, exactly. A refused control makes every
+    // refusal in the run unattributable, and its identity is the half of
+    // the pair a reader can check against a chain.
+    let control_observation = record
+        .control_observation()
+        .expect("the control was answered");
+    assert_eq!(
+        control_observation.layer(),
+        ObservedOutcomeLayer::Accepted,
+        "the control was not ACCEPTED, so the attempt's refusal is not attributable",
+    );
+    assert_eq!(
+        control_observation.accepted_txid(),
+        Some(run_of_record_phase_b::CONTROL_ACCEPTED_TXID),
+        "the control was accepted at an identity the run of record does not carry",
+    );
+
+    // The control's own bytes. This record carries no two-origin readback
+    // — the reverification the owner-signing ceremony records has no
+    // counterpart in this probe — so what stands in its place is the
+    // measured witnessless-bytes relation the pair rests on, held against
+    // the recorded value rather than against a literal.
+    let control = record
+        .control()
+        .expect("the ceremony built the script-path control");
+    assert_eq!(
+        control.submitted_bytes().len(),
+        run_of_record_phase_b::CONTROL_SUBMITTED_BYTES,
+        "the control handed the node a different number of bytes",
+    );
+    assert_eq!(
+        control.witness_items(),
+        run_of_record_phase_b::CONTROL_WITNESS_ITEMS,
+        "the control is not the recorded script-path witness census",
+    );
+    assert_eq!(
+        control.shares_the_attempts_witnessless_bytes(),
+        run_of_record_phase_b::CONTROL_SHARES_THE_ATTEMPTS_WITNESSLESS_BYTES,
+        "the pair no longer differs in the witness alone",
     );
 }
 
@@ -3467,11 +3592,6 @@ fn the_pairs_arc_submits_both_members_of_one_fixture_to_a_real_target() {
             member.member(),
         );
     }
-    assert_ne!(
-        ledger.explicit().accepted_txid(),
-        ledger.private().accepted_txid(),
-        "the two members are one transaction",
-    );
 
     // The relation, in the row's own terms.
     let observation = ledger.observation();
@@ -3498,7 +3618,105 @@ fn the_pairs_arc_submits_both_members_of_one_fixture_to_a_real_target() {
     );
     assert!(ledger.supports_the_projection_equality_row());
 
+    assert_the_arc_ledger_matches_the_run_of_record(record);
+
     // The run says in its own bytes what it did not establish.
     assert!(rendered.contains("evidences_no_negative_case true"));
     assert!(rendered.contains("builds_no_sponsor_region true"));
+}
+
+/// The arc's ledger, held against the identities and figures its own run
+/// of record carries.
+///
+/// # Why this was unbound, and why binding it costs no report
+///
+/// The assertions above recompute PROPERTIES — the acceptance bar, the
+/// projection relation, the disclosure asymmetry — and the strongest
+/// thing they said about identity was that the two accepted txids
+/// DIFFER. Two txids differ in every run, so the exact provenance the
+/// phase card and `PairedRelationObserved` cite could move while the
+/// lane and the static standing both stayed green. That is F3's
+/// silent-drift hazard on the row this arc answers. The transcript is
+/// written to disk BEFORE any assertion in this test runs, so binding
+/// these costs no report on the day a figure changes: the artifact
+/// carries what the node said either way, and the lane now FAILS instead
+/// of passing over a record nothing reads.
+fn assert_the_arc_ledger_matches_the_run_of_record(record: &vectors::live_pair_arc::PairArcRecord) {
+    use vectors::live_pair_arc::{REPRESENTATION_EQUIVALENCE_TERMS, run_of_record};
+
+    let ledger = record.ledger().expect("a completed arc writes a ledger");
+    assert_eq!(
+        record.ledger().is_some(),
+        run_of_record::A_PAIR_ARC_LEDGER_EXISTS,
+        "the flag the evidence matrix reads disagrees with the run",
+    );
+
+    // ONE asset, and the one the run of record names. §6.6's exact
+    // explicit U term is a claim about THIS asset, not about some asset.
+    assert_eq!(
+        ledger.issued_asset(),
+        run_of_record::PAIR_ISSUED_ASSET,
+        "the arc issued an asset the run of record does not carry",
+    );
+
+    // The two accepted identities, each against its own recorded
+    // constant. These are the figures the phase card prints and the
+    // paired-relation standing rests on, and they are what a reader
+    // checks against a chain.
+    assert_eq!(
+        Some(ledger.explicit().accepted_txid()),
+        run_of_record::EXPLICIT_MEMBER_ACCEPTED_IDENTITY,
+        "the explicit member was accepted at an identity the run of record does not carry",
+    );
+    assert_eq!(
+        Some(ledger.private().accepted_txid()),
+        run_of_record::PRIVATE_MEMBER_ACCEPTED_IDENTITY,
+        "the private member was accepted at an identity the run of record does not carry",
+    );
+    assert_ne!(
+        ledger.explicit().accepted_txid(),
+        ledger.private().accepted_txid(),
+        "the two members are one transaction",
+    );
+
+    // The two widths and the two weights, each the target's own figure.
+    // The eight-fold gap between them is the REPRESENTATION, and it is
+    // the measurement the arc exists to make.
+    assert_eq!(
+        ledger.explicit().submitted_bytes(),
+        run_of_record::EXPLICIT_MEMBER_SUBMITTED_BYTES,
+        "the explicit member handed the node a different number of bytes",
+    );
+    assert_eq!(
+        ledger.private().submitted_bytes(),
+        run_of_record::PRIVATE_MEMBER_SUBMITTED_BYTES,
+        "the private member handed the node a different number of bytes",
+    );
+    assert_eq!(
+        ledger.explicit().target_weight(),
+        Some(run_of_record::EXPLICIT_MEMBER_TARGET_WEIGHT),
+        "the target computed a weight for the explicit member the run of record does not carry",
+    );
+    assert_eq!(
+        ledger.private().target_weight(),
+        Some(run_of_record::PRIVATE_MEMBER_TARGET_WEIGHT),
+        "the target computed a weight for the private member the run of record does not carry",
+    );
+
+    // The withheld count, EXACTLY, and out of the full §6.6 term list
+    // rather than out of however many terms happened to be compared. Two
+    // of eleven is the whole disclosure-minimality claim: zero would mean
+    // the private representation published everything, and a shortened
+    // term list would let a compared-nothing run report the same two.
+    let observation = ledger.observation();
+    assert_eq!(
+        observation.terms().len(),
+        REPRESENTATION_EQUIVALENCE_TERMS.len(),
+        "the pair was compared on fewer §6.6 terms than the section names",
+    );
+    assert_eq!(
+        observation.terms_withheld_by_the_private_member(),
+        run_of_record::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER,
+        "the private member withheld a different number of terms than the run of record carries",
+    );
 }

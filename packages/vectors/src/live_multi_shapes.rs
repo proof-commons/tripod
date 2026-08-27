@@ -403,7 +403,7 @@ impl PrivateShape {
 
     /// How many receipts this shape consumes.
     ///
-    /// Read off [`Self::consumed`] rather than stated, so a shape whose
+    /// Read off `Self::consumed` rather than stated, so a shape whose
     /// consumed set changed cannot go on reporting the old width.
     #[must_use]
     pub const fn input_count(self) -> usize {
