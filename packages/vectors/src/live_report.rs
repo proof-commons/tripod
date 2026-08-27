@@ -902,6 +902,39 @@ fn parse_recorded_identity(
         .map_err(|_| LiveSafetyReportRefusal::MalformedRecordedIdentity { row })
 }
 
+fn recorded_observation_from_standing(
+    row: &'static str,
+    recorded: &RecordedObservation,
+) -> Result<LiveRecordedObservation, LiveSafetyReportRefusal> {
+    match recorded {
+        RecordedObservation::NativeAcceptance { accepted_identity } => {
+            Ok(LiveRecordedObservation::NativeAcceptance {
+                identity: parse_recorded_identity(row, accepted_identity)?,
+            })
+        }
+        RecordedObservation::NativeRefusal {
+            declared_boundary,
+            observed_layer,
+            control_identity,
+            refusal_detail,
+        } => Ok(LiveRecordedObservation::NativeRefusal {
+            declared_boundary: *declared_boundary,
+            observed_layer: *observed_layer,
+            control_identity: parse_recorded_identity(row, control_identity)?,
+            detail: refusal_detail,
+        }),
+        RecordedObservation::PairedRelation {
+            explicit_identity,
+            private_identity,
+            relation,
+        } => Ok(LiveRecordedObservation::PairedRelation {
+            explicit_identity: parse_recorded_identity(row, explicit_identity)?,
+            private_identity: parse_recorded_identity(row, private_identity)?,
+            relation,
+        }),
+    }
+}
+
 fn observations_from_plan(
     plan: &LiveTransferEvidencePlan,
 ) -> Result<Vec<LiveReportObservation>, LiveSafetyReportRefusal> {
@@ -910,34 +943,10 @@ fn observations_from_plan(
         let row = evidence.row().name();
         let observation = match evidence.standing() {
             LiveRowStanding::RecordedObservationUnbound(recorded) => {
-                let observation = match recorded {
-                    RecordedObservation::NativeAcceptance { accepted_identity } => {
-                        LiveRecordedObservation::NativeAcceptance {
-                            identity: parse_recorded_identity(row, accepted_identity)?,
-                        }
-                    }
-                    RecordedObservation::NativeRefusal {
-                        declared_boundary,
-                        observed_layer,
-                        control_identity,
-                        refusal_detail,
-                    } => LiveRecordedObservation::NativeRefusal {
-                        declared_boundary: *declared_boundary,
-                        observed_layer: *observed_layer,
-                        control_identity: parse_recorded_identity(row, control_identity)?,
-                        detail: refusal_detail,
-                    },
-                    RecordedObservation::PairedRelation {
-                        explicit_identity,
-                        private_identity,
-                        relation,
-                    } => LiveRecordedObservation::PairedRelation {
-                        explicit_identity: parse_recorded_identity(row, explicit_identity)?,
-                        private_identity: parse_recorded_identity(row, private_identity)?,
-                        relation,
-                    },
-                };
-                Some(LiveReportObservation::RecordedObservationUnbound { row, observation })
+                Some(LiveReportObservation::RecordedObservationUnbound {
+                    row,
+                    observation: recorded_observation_from_standing(row, recorded)?,
+                })
             }
             LiveRowStanding::DeterminismObserved {
                 recomputed,
@@ -1149,22 +1158,12 @@ fn validate_bound_observations(
     Ok(compared)
 }
 
-/// Validate one safety report against the plan it claims to be about.
-///
-/// §13.5's possible items, each recorded only after its comparison ran.
-/// Run-only items stay absent while the corpus has no transcript-grade
-/// run binding.
-///
-/// # Errors
-///
-/// [`LiveSafetyReportRefusal`], naming the first disagreement found in
-/// the order the checks are written.
-pub fn validate_live_safety_report(
-    report: LiveTransferSafetyReport,
+fn validate_report_envelope(
+    report: &LiveTransferSafetyReport,
     plan: &LiveTransferEvidencePlan,
     target: &TargetProjection,
-) -> Result<ValidatedLiveTransferSafetyReport, LiveSafetyReportRefusal> {
-    let mut progress = RecomputationProgress::default();
+    progress: &mut RecomputationProgress,
+) -> Result<(), LiveSafetyReportRefusal> {
     if report.schema != LIVE_SAFETY_REPORT_SCHEMA {
         return Err(LiveSafetyReportRefusal::UnsupportedSchema(report.schema));
     }
@@ -1193,7 +1192,14 @@ pub fn validate_live_safety_report(
         progress.mark(RecomputedItem::RequestResponseCensus);
         progress.mark(RecomputedItem::ExecutorProvenance);
     }
+    Ok(())
+}
 
+fn validate_report_observation_ledger(
+    report: &LiveTransferSafetyReport,
+    plan: &LiveTransferEvidencePlan,
+    progress: &mut RecomputationProgress,
+) -> Result<(), LiveSafetyReportRefusal> {
     let expected_observations = observations_from_plan(plan)?;
     if report.observations != expected_observations {
         return Err(LiveSafetyReportRefusal::ObservationsDiffer);
@@ -1212,8 +1218,14 @@ pub fn validate_live_safety_report(
         progress.mark(RecomputedItem::ResponseShape);
         progress.mark(RecomputedItem::TargetVerdictComparison);
     }
+    Ok(())
+}
 
-    let recomputed = plan.census();
+fn validate_report_summary(
+    report: &LiveTransferSafetyReport,
+    recomputed: LiveEvidenceCensus,
+    progress: &mut RecomputationProgress,
+) -> Result<(), LiveSafetyReportRefusal> {
     if report.census != recomputed {
         return Err(LiveSafetyReportRefusal::CensusDiffers(Box::new((
             report.census,
@@ -1233,9 +1245,11 @@ pub fn validate_live_safety_report(
         return Err(LiveSafetyReportRefusal::LifecycleDiffers);
     }
     progress.mark(RecomputedItem::Summary);
+    Ok(())
+}
 
-    let outstanding = plan
-        .rows()
+fn outstanding_rows(plan: &LiveTransferEvidencePlan) -> Vec<(&'static str, LiveRowStanding)> {
+    plan.rows()
         .iter()
         .filter(|row| {
             !row.standing().is_answered()
@@ -1245,13 +1259,35 @@ pub fn validate_live_safety_report(
                 )
         })
         .map(|row| (row.row().name(), row.standing().clone()))
-        .collect();
+        .collect()
+}
+
+/// Validate one safety report against the plan it claims to be about.
+///
+/// §13.5's possible items, each recorded only after its comparison ran.
+/// Run-only items stay absent while the corpus has no transcript-grade
+/// run binding.
+///
+/// # Errors
+///
+/// [`LiveSafetyReportRefusal`], naming the first disagreement found in
+/// the order the checks are written.
+pub fn validate_live_safety_report(
+    report: LiveTransferSafetyReport,
+    plan: &LiveTransferEvidencePlan,
+    target: &TargetProjection,
+) -> Result<ValidatedLiveTransferSafetyReport, LiveSafetyReportRefusal> {
+    let mut progress = RecomputationProgress::default();
+    validate_report_envelope(&report, plan, target, &mut progress)?;
+    validate_report_observation_ledger(&report, plan, &mut progress)?;
+    let recomputed = plan.census();
+    validate_report_summary(&report, recomputed, &mut progress)?;
 
     Ok(ValidatedLiveTransferSafetyReport {
         report,
         recomputed_items: progress.finish(),
         blockers: blocker_census(plan),
-        outstanding,
+        outstanding: outstanding_rows(plan),
     })
 }
 
@@ -1268,6 +1304,20 @@ pub fn validate_live_safety_report(
 pub fn render_live_safety_report(validated: &ValidatedLiveTransferSafetyReport) -> String {
     let report = &validated.report;
     let mut text = String::new();
+    let observation_census = ObservationCensus::from_observations(&report.observations);
+    render_report_header(&mut text, report, observation_census);
+    render_evidence_census(&mut text, report.census);
+    render_observation_census(&mut text, observation_census);
+    render_observations(&mut text, &report.observations);
+    render_validation_summary(&mut text, validated);
+    text
+}
+
+fn render_report_header(
+    text: &mut String,
+    report: &LiveTransferSafetyReport,
+    observation_census: ObservationCensus,
+) {
     let _ = writeln!(text, "schema {}", report.schema);
     let _ = writeln!(text, "role {}", report.role.name());
     let _ = writeln!(text, "operation transfer-live-receipts");
@@ -1281,115 +1331,99 @@ pub fn render_live_safety_report(validated: &ValidatedLiveTransferSafetyReport) 
     for representation in &report.representations {
         let _ = writeln!(text, "representation {representation:?}");
     }
-    let observation_census = ObservationCensus::from_observations(&report.observations);
     let _ = writeln!(
         text,
         "target_evidence {}",
         target_evidence_name(observation_census)
     );
     let _ = writeln!(text, "run_bindings {}", report.runs.len());
-    render_run_bindings(&mut text, &report.runs);
+    render_run_bindings(text, &report.runs);
+}
 
-    let _ = writeln!(text, "rows {}", report.census.rows());
+fn render_evidence_census(text: &mut String, census: LiveEvidenceCensus) {
+    let _ = writeln!(text, "rows {}", census.rows());
     let _ = writeln!(
         text,
         "first_party_discharged {}",
-        report.census.first_party_discharged()
+        census.first_party_discharged()
     );
     let _ = writeln!(
         text,
         "first_party_undischarged {}",
-        report.census.first_party_undischarged()
+        census.first_party_undischarged()
     );
-    let _ = writeln!(
-        text,
-        "native_run_required {}",
-        report.census.native_run_required()
-    );
+    let _ = writeln!(text, "native_run_required {}", census.native_run_required());
     let _ = writeln!(
         text,
         "recorded_observation_unbound {}",
-        report.census.recorded_observation_unbound()
+        census.recorded_observation_unbound()
     );
-    let _ = writeln!(
-        text,
-        "native_run_observed {}",
-        report.census.native_run_observed()
-    );
+    let _ = writeln!(text, "native_run_observed {}", census.native_run_observed());
     let _ = writeln!(
         text,
         "native_refusal_observed {}",
-        report.census.native_refusal_observed()
+        census.native_refusal_observed()
     );
     let _ = writeln!(
         text,
         "native_refusal_at_unexpected_boundary {}",
-        report.census.native_refusal_at_unexpected_boundary()
+        census.native_refusal_at_unexpected_boundary()
     );
     let _ = writeln!(
         text,
         "determinism_observed {}",
-        report.census.determinism_observed()
+        census.determinism_observed()
     );
     let _ = writeln!(
         text,
         "paired_relation_observed {}",
-        report.census.paired_relation_observed()
+        census.paired_relation_observed()
     );
     let _ = writeln!(
         text,
         "first_party_fact_observed {}",
-        report.census.first_party_fact_observed()
+        census.first_party_fact_observed()
     );
     let _ = writeln!(
         text,
         "infrastructure_blocked {}",
-        report.census.infrastructure_blocked()
+        census.infrastructure_blocked()
     );
-    let _ = writeln!(text, "report_layer {}", report.census.report_layer());
+    let _ = writeln!(text, "report_layer {}", census.report_layer());
     let _ = writeln!(
         text,
         "operation_vocabulary_closed {}",
-        report.census.vocabulary_closed()
+        census.vocabulary_closed()
     );
-    let _ = writeln!(text, "experimental {}", report.census.experimental());
+    let _ = writeln!(text, "experimental {}", census.experimental());
+}
 
-    let _ = writeln!(text, "observations {}", observation_census.total());
-    let _ = writeln!(text, "accepted {}", observation_census.accepted);
-    let _ = writeln!(text, "refused {}", observation_census.refused);
-    let _ = writeln!(text, "determinism {}", observation_census.determinism);
-    let _ = writeln!(
-        text,
-        "paired_relation {}",
-        observation_census.paired_relation
-    );
-    let _ = writeln!(
-        text,
-        "first_party_fact {}",
-        observation_census.first_party_fact
-    );
-    let _ = writeln!(
-        text,
-        "report_layer_observations {}",
-        observation_census.report_layer
-    );
+fn render_observation_census(text: &mut String, census: ObservationCensus) {
+    let _ = writeln!(text, "observations {}", census.total());
+    let _ = writeln!(text, "accepted {}", census.accepted);
+    let _ = writeln!(text, "refused {}", census.refused);
+    let _ = writeln!(text, "determinism {}", census.determinism);
+    let _ = writeln!(text, "paired_relation {}", census.paired_relation);
+    let _ = writeln!(text, "first_party_fact {}", census.first_party_fact);
+    let _ = writeln!(text, "report_layer_observations {}", census.report_layer);
     let _ = writeln!(
         text,
         "recorded_unbound_native_acceptance {}",
-        observation_census.unbound_acceptance
+        census.unbound_acceptance
     );
     let _ = writeln!(
         text,
         "recorded_unbound_native_refusal {}",
-        observation_census.unbound_refusal
+        census.unbound_refusal
     );
     let _ = writeln!(
         text,
         "recorded_unbound_paired_relation {}",
-        observation_census.unbound_paired_relation
+        census.unbound_paired_relation
     );
-    render_observations(&mut text, &report.observations);
+}
 
+fn render_validation_summary(text: &mut String, validated: &ValidatedLiveTransferSafetyReport) {
     for (blocker, rows) in &validated.blockers {
         let _ = writeln!(text, "blocker {blocker:?} {rows}");
     }
@@ -1400,19 +1434,22 @@ pub fn render_live_safety_report(validated: &ValidatedLiveTransferSafetyReport) 
         let _ = writeln!(text, "recomputed {item:?}");
     }
 
-    for exit in report.lifecycle.implemented() {
+    for exit in validated.report.lifecycle.implemented() {
         let _ = writeln!(text, "lifecycle_implemented {exit}");
     }
-    for exit in report.lifecycle.outstanding() {
+    for exit in validated.report.lifecycle.outstanding() {
         let _ = writeln!(text, "lifecycle_outstanding {exit}");
     }
     let _ = writeln!(
         text,
         "release_complete {}",
-        report.lifecycle.release_complete()
+        validated.report.lifecycle.release_complete()
     );
-    let _ = writeln!(text, "completeness {}", report.completeness.name());
-    text
+    let _ = writeln!(
+        text,
+        "completeness {}",
+        validated.report.completeness.name()
+    );
 }
 
 const fn target_evidence_name(census: ObservationCensus) -> &'static str {
@@ -1507,112 +1544,124 @@ fn render_run_bindings(text: &mut String, runs: &[LiveRunBinding]) {
 
 fn render_observations(text: &mut String, observations: &[LiveReportObservation]) {
     for observation in observations {
-        match observation {
-            LiveReportObservation::NativeAcceptance {
-                row,
-                run_id,
-                request_id,
-                identity,
-            } => {
-                let _ = writeln!(
-                    text,
-                    "observation {row} accepted run {run_id} request {request_id} identity {}",
-                    identity.to_target_display()
-                );
-            }
-            LiveReportObservation::NativeRefusal {
-                row,
-                run_id,
-                request_id,
-                declared_boundary,
-                observed_layer,
-                control_identity,
-                detail,
-            } => {
-                let _ = writeln!(
-                    text,
-                    "observation {row} refused run {run_id} request {request_id} declared {declared_boundary:?} observed {observed_layer:?} control {} detail {detail:?}",
-                    control_identity.to_target_display()
-                );
-            }
-            LiveReportObservation::PairedRelation {
-                row,
-                explicit_run_id,
-                explicit_request_id,
-                explicit_identity,
-                private_run_id,
-                private_request_id,
-                private_identity,
-                relation,
-            } => {
-                let _ = writeln!(
-                    text,
-                    "observation {row} paired-relation explicit-run {explicit_run_id} explicit-request {explicit_request_id} explicit-identity {} private-run {private_run_id} private-request {private_request_id} private-identity {} relation {relation:?}",
-                    explicit_identity.to_target_display(),
-                    private_identity.to_target_display()
-                );
-            }
-            LiveReportObservation::RecordedObservationUnbound { row, observation } => {
-                match observation {
-                    LiveRecordedObservation::NativeAcceptance { identity } => {
-                        let _ = writeln!(
-                            text,
-                            "observation {row} recorded-observation-unbound native-acceptance identity {}",
-                            identity.to_target_display()
-                        );
-                    }
-                    LiveRecordedObservation::NativeRefusal {
-                        declared_boundary,
-                        observed_layer,
-                        control_identity,
-                        detail,
-                    } => {
-                        let _ = writeln!(
-                            text,
-                            "observation {row} recorded-observation-unbound native-refusal declared {declared_boundary:?} observed {observed_layer:?} control {} detail {detail:?}",
-                            control_identity.to_target_display()
-                        );
-                    }
-                    LiveRecordedObservation::PairedRelation {
-                        explicit_identity,
-                        private_identity,
-                        relation,
-                    } => {
-                        let _ = writeln!(
-                            text,
-                            "observation {row} recorded-observation-unbound paired-relation explicit-identity {} private-identity {} relation {relation:?}",
-                            explicit_identity.to_target_display(),
-                            private_identity.to_target_display()
-                        );
-                    }
-                }
-            }
-            LiveReportObservation::Determinism {
-                row,
-                recomputed,
-                observed_by,
-            } => {
-                let _ = writeln!(
-                    text,
-                    "observation {row} determinism recomputed {recomputed:?} observed-by {observed_by:?}"
-                );
-            }
-            LiveReportObservation::FirstPartyFact {
-                row,
-                fact,
-                observed_by,
-            } => {
-                let _ = writeln!(
-                    text,
-                    "observation {row} first-party-fact fact {fact:?} observed-by {observed_by:?}"
-                );
-            }
-            LiveReportObservation::ReportLayer { row } => {
-                let _ = writeln!(
-                    text,
-                    "observation {row} report-layer validated-by canonical-bytes"
-                );
-            }
+        render_observation(text, observation);
+    }
+}
+
+fn render_observation(text: &mut String, observation: &LiveReportObservation) {
+    match observation {
+        LiveReportObservation::NativeAcceptance {
+            row,
+            run_id,
+            request_id,
+            identity,
+        } => {
+            let _ = writeln!(
+                text,
+                "observation {row} accepted run {run_id} request {request_id} identity {}",
+                identity.to_target_display()
+            );
+        }
+        LiveReportObservation::NativeRefusal {
+            row,
+            run_id,
+            request_id,
+            declared_boundary,
+            observed_layer,
+            control_identity,
+            detail,
+        } => {
+            let _ = writeln!(
+                text,
+                "observation {row} refused run {run_id} request {request_id} declared {declared_boundary:?} observed {observed_layer:?} control {} detail {detail:?}",
+                control_identity.to_target_display()
+            );
+        }
+        LiveReportObservation::PairedRelation {
+            row,
+            explicit_run_id,
+            explicit_request_id,
+            explicit_identity,
+            private_run_id,
+            private_request_id,
+            private_identity,
+            relation,
+        } => {
+            let _ = writeln!(
+                text,
+                "observation {row} paired-relation explicit-run {explicit_run_id} explicit-request {explicit_request_id} explicit-identity {} private-run {private_run_id} private-request {private_request_id} private-identity {} relation {relation:?}",
+                explicit_identity.to_target_display(),
+                private_identity.to_target_display()
+            );
+        }
+        LiveReportObservation::RecordedObservationUnbound { row, observation } => {
+            render_recorded_observation_unbound(text, row, observation);
+        }
+        LiveReportObservation::Determinism {
+            row,
+            recomputed,
+            observed_by,
+        } => {
+            let _ = writeln!(
+                text,
+                "observation {row} determinism recomputed {recomputed:?} observed-by {observed_by:?}"
+            );
+        }
+        LiveReportObservation::FirstPartyFact {
+            row,
+            fact,
+            observed_by,
+        } => {
+            let _ = writeln!(
+                text,
+                "observation {row} first-party-fact fact {fact:?} observed-by {observed_by:?}"
+            );
+        }
+        LiveReportObservation::ReportLayer { row } => {
+            let _ = writeln!(
+                text,
+                "observation {row} report-layer validated-by canonical-bytes"
+            );
+        }
+    }
+}
+
+fn render_recorded_observation_unbound(
+    text: &mut String,
+    row: &str,
+    observation: &LiveRecordedObservation,
+) {
+    match observation {
+        LiveRecordedObservation::NativeAcceptance { identity } => {
+            let _ = writeln!(
+                text,
+                "observation {row} recorded-observation-unbound native-acceptance identity {}",
+                identity.to_target_display()
+            );
+        }
+        LiveRecordedObservation::NativeRefusal {
+            declared_boundary,
+            observed_layer,
+            control_identity,
+            detail,
+        } => {
+            let _ = writeln!(
+                text,
+                "observation {row} recorded-observation-unbound native-refusal declared {declared_boundary:?} observed {observed_layer:?} control {} detail {detail:?}",
+                control_identity.to_target_display()
+            );
+        }
+        LiveRecordedObservation::PairedRelation {
+            explicit_identity,
+            private_identity,
+            relation,
+        } => {
+            let _ = writeln!(
+                text,
+                "observation {row} recorded-observation-unbound paired-relation explicit-identity {} private-identity {} relation {relation:?}",
+                explicit_identity.to_target_display(),
+                private_identity.to_target_display()
+            );
         }
     }
 }
