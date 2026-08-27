@@ -1352,7 +1352,7 @@ fn assert_mutant_and_control_match_the_record(
 
 /// Each leaf-arrangement row, the revealed-leaf arrangement the run of
 /// record declares for it, and the words the target answered it with.
-fn recorded_leaf_arrangements() -> [(&'static str, &'static [u16], &'static str); 2] {
+const fn recorded_leaf_arrangements() -> [(&'static str, &'static [u16], &'static str); 2] {
     use vectors::live_owner_signing_negatives::run_of_record;
     [
         (
@@ -1451,6 +1451,11 @@ fn assert_leaf_arrangements_drive(
     );
 }
 
+/// One consensus row's separating fact: the half-open witnessless byte
+/// range its surgery declared, together with the transaction shape the
+/// mutant handed the node.
+type ConsensusSeparator = ((usize, usize), (usize, usize));
+
 /// Each consensus row and the `(range, shape)` separator the run of record
 /// declares for it.
 ///
@@ -1458,7 +1463,7 @@ fn assert_leaf_arrangements_drive(
 /// by four distinct ranges; the two output-cardinality surgeries share the
 /// structural range `changed_range` cannot localize past the output-count
 /// varint and separate by shape; `omitted-source` separates by both.
-fn recorded_consensus_separators() -> [(&'static str, ((usize, usize), (usize, usize))); 7] {
+const fn recorded_consensus_separators() -> [(&'static str, ConsensusSeparator); 7] {
     use vectors::live_owner_signing_negatives::run_of_record;
     /// The control's own shape, which the four field surgeries keep.
     const KEPT: (usize, usize) = (2, 2);
