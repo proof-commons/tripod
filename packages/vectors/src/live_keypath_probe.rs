@@ -1319,7 +1319,7 @@ pub mod run_of_record {
 /// width, the witness census and the target's verbatim words all
 /// re-derived unchanged. So this module CITES them rather than copying
 /// them: two spellings of one measurement are two things that can
-/// disagree, and [`the_two_runs_are_one_ceremony_under_two_names`] is
+/// disagree, and `the_two_runs_are_one_ceremony_under_two_names` is
 /// what holds the citation honest.
 ///
 /// What is new is the NAME the verdict is filed under and the PAIR it is

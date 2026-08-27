@@ -275,12 +275,12 @@ pub enum ExplicitShape {
     /// semantic fixture" exists to forbid.
     ///
     /// It is the one shape whose funding amount is not
-    /// [`RECEIPT_AMOUNT`], and that is the fixture's doing: the private
+    /// `RECEIPT_AMOUNT`, and that is the fixture's doing: the private
     /// member has to consume a coin the confidential predecessor already
     /// carries, so the fixture takes that coin's amount and the EXPLICIT
     /// side — the side a funding step can be asked for any amount — is
     /// the one that follows. Every other shape keeps
-    /// [`RECEIPT_AMOUNT`] and therefore keeps its recorded bytes.
+    /// `RECEIPT_AMOUNT` and therefore keeps its recorded bytes.
     PairedOneToOne,
 }
 
@@ -366,7 +366,7 @@ impl ExplicitShape {
 
     /// What each of this shape's funded receipts holds.
     ///
-    /// [`RECEIPT_AMOUNT`] for every shape but the paired member, whose
+    /// `RECEIPT_AMOUNT` for every shape but the paired member, whose
     /// figure is the arc fixture's own source amount. The accessor exists
     /// so that the ONE shape whose amount the fixture fixes can say so
     /// without moving any other shape's bytes: fourteen shapes answer
