@@ -1522,11 +1522,63 @@ pub mod run_of_record {
     /// within: the mutated destination's program.
     pub const DECLARED_FIELD_RANGE: (usize, usize) = (132, 167);
 
-    /// How many bytes the mutant handed the node.
+    /// How many bytes the bare-u mutant handed the node.
     pub const MUTANT_SUBMITTED_BYTES: usize = 1152;
 
+    /// What the target said to every consensus-conservation mutant,
+    /// verbatim, at [`super::ObservedOutcomeLayer::ConsensusRejectionBeforeScript`].
+    ///
+    /// The seven mutants all break the explicit per-asset sum, and the
+    /// target folds each break into the one balance verdict — the internal
+    /// tally and surjection codes never leave `VerifyAmounts` — so the
+    /// WORDS are identical and it is the declared field range, or the
+    /// transaction shape for the structural rows, that tells the rows
+    /// apart. The same discipline the conservation ceremony's
+    /// proof-negatives rest on, on the explicit successor.
+    pub const CONSENSUS_MUTANT_REJECT_DETAIL: &str = "bad-txns-in-ne-out";
+
+    /// The witnessless field range and 2-in-2-out shape the
+    /// `wrong-explicit-asset` mutant declared: the first receipt's asset
+    /// identifier, rewritten to a different explicit asset.
+    pub const WRONG_EXPLICIT_ASSET_FIELD_RANGE: (usize, usize) = (90, 122);
+
+    /// The `confidential-asset-commitment` mutant's field range: the second
+    /// receipt's asset explicitness prefix, flipped from explicit to a
+    /// blinded commitment with no surjection proof.
+    pub const CONFIDENTIAL_ASSET_COMMITMENT_FIELD_RANGE: (usize, usize) = (167, 168);
+
+    /// The `output-total-one-below-input` mutant's field range: the first
+    /// receipt's explicit value, lowered by one.
+    pub const OUTPUT_TOTAL_ONE_BELOW_FIELD_RANGE: (usize, usize) = (130, 131);
+
+    /// The `output-total-one-above-input` mutant's field range: the second
+    /// receipt's explicit value, raised by one.
+    pub const OUTPUT_TOTAL_ONE_ABOVE_FIELD_RANGE: (usize, usize) = (208, 209);
+
+    /// The structural range the two output-cardinality mutants share, and
+    /// the shapes that separate them.
+    ///
+    /// `changed_range` cannot localize an insertion or a deletion past the
+    /// output-count varint, so `private-output-omitted` (a receipt removed)
+    /// and `hidden-private-u-output` (an output added) both declare this
+    /// range on the 2-in-2-out control. It is the SHAPE that separates
+    /// them — the removal leaves two inputs and ONE output, the addition
+    /// two inputs and THREE — which is the "distinct transaction structure"
+    /// the attributability rule admits beside a distinct field range.
+    pub const OUTPUT_CARDINALITY_FIELD_RANGE: (usize, usize) = (88, 245);
+    /// `private-output-omitted`'s shape: two inputs, one output.
+    pub const PRIVATE_OUTPUT_OMITTED_SHAPE: (usize, usize) = (2, 1);
+    /// `hidden-private-u-output`'s shape: two inputs, three outputs.
+    pub const HIDDEN_PRIVATE_U_OUTPUT_SHAPE: (usize, usize) = (2, 3);
+
+    /// The `omitted-source` mutant's field range and one-input shape: a
+    /// receipt input deleted, which drops the input sum.
+    pub const OMITTED_SOURCE_FIELD_RANGE: (usize, usize) = (5, 80);
+    /// `omitted-source`'s shape: one input, two outputs.
+    pub const OMITTED_SOURCE_SHAPE: (usize, usize) = (1, 2);
+
     /// The run's wall time, in seconds.
-    pub const WALL_SECONDS: f64 = 8.2;
+    pub const WALL_SECONDS: f64 = 8.3;
 }
 
 #[cfg(test)]
@@ -1548,5 +1600,41 @@ mod tests {
         assert_eq!(BARE_U_PROGRAM[0], 0x00, "the version byte is not zero");
         assert_eq!(BARE_U_PROGRAM[1], 0x14, "the push is not twenty bytes");
         assert_eq!(BARE_U_PROGRAM.len(), 22);
+    }
+
+    #[test]
+    fn the_seven_consensus_rows_declare_distinct_separators() {
+        // The run of record's own figures, checked to be pairwise distinct
+        // as (range, shape) pairs — the fact that makes the seven rows
+        // separable when the target draws one identical verdict for all of
+        // them. The four field surgeries keep the 2-in-2-out shape and
+        // separate by range; the three structural surgeries change the
+        // shape, which is what separates the two output-cardinality mutants
+        // that share the un-localizable structural range.
+        use super::run_of_record as run;
+        let field = |range| (range, (2_usize, 2_usize));
+        let separators = [
+            field(run::WRONG_EXPLICIT_ASSET_FIELD_RANGE),
+            field(run::CONFIDENTIAL_ASSET_COMMITMENT_FIELD_RANGE),
+            field(run::OUTPUT_TOTAL_ONE_BELOW_FIELD_RANGE),
+            field(run::OUTPUT_TOTAL_ONE_ABOVE_FIELD_RANGE),
+            (
+                run::OUTPUT_CARDINALITY_FIELD_RANGE,
+                run::PRIVATE_OUTPUT_OMITTED_SHAPE,
+            ),
+            (
+                run::OUTPUT_CARDINALITY_FIELD_RANGE,
+                run::HIDDEN_PRIVATE_U_OUTPUT_SHAPE,
+            ),
+            (run::OMITTED_SOURCE_FIELD_RANGE, run::OMITTED_SOURCE_SHAPE),
+        ];
+        let mut seen = std::collections::BTreeSet::new();
+        for separator in separators {
+            assert!(
+                seen.insert(separator),
+                "two consensus rows share the separator {separator:?}",
+            );
+        }
+        assert_eq!(seen.len(), 7, "the register drives seven consensus rows");
     }
 }

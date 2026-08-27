@@ -1446,6 +1446,39 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
             crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
             crate::live_owner_signing_negatives::run_of_record::MUTANT_REJECT_DETAIL,
         )),
+        // The seven conservation-breaking rows, answered by the SAME
+        // owner-signing negative run — each on its OWN consensus mutant,
+        // cut from the signed explicit control and offered before it. Each
+        // breaks the explicit per-asset sum in its own way (a wrong asset,
+        // a blinded asset with no surjection proof, a value one below and
+        // one above the total, an omitted destination, an added output, an
+        // omitted source), and the target folds every break into ONE
+        // balance verdict — `bad-txns-in-ne-out` at consensus before any
+        // script — so the WORDS are shared and it is the declared field
+        // range, or the transaction shape for the three structural rows,
+        // that separates the rows. This is the `private-ct-imbalance`
+        // discipline read across the explicit successor: a consensus
+        // verdict IS an attributable observation where a distinct field or
+        // a distinct shape earns the separating fact, and each row drove
+        // its own mutant so no two rest on one observation. The four field
+        // ranges (`WRONG_EXPLICIT_ASSET_FIELD_RANGE`,
+        // `CONFIDENTIAL_ASSET_COMMITMENT_FIELD_RANGE`,
+        // `OUTPUT_TOTAL_ONE_BELOW_FIELD_RANGE`,
+        // `OUTPUT_TOTAL_ONE_ABOVE_FIELD_RANGE`) are pairwise distinct on the
+        // 2-in-2-out shape; the two output-cardinality rows share the
+        // un-localizable structural range and separate by shape (two-in
+        // one-out against two-in three-out); `omitted-source` separates by
+        // its one-input shape and its own range.
+        "wrong-explicit-asset"
+        | "confidential-asset-commitment"
+        | "output-total-one-below-input"
+        | "output-total-one-above-input"
+        | "private-output-omitted"
+        | "hidden-private-u-output"
+        | "omitted-source" => Some((
+            crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            crate::live_owner_signing_negatives::run_of_record::CONSENSUS_MUTANT_REJECT_DETAIL,
+        )),
         _ => None,
     }
 }
@@ -2427,16 +2460,23 @@ mod tests {
         assert_eq!(
             answered,
             BTreeSet::from([
+                "confidential-asset-commitment",
                 "empty-signature",
+                "hidden-private-u-output",
                 "malformed-rangeproof",
                 "malformed-signature",
                 "missing-sponsor-authorization",
+                "omitted-source",
+                "output-total-one-above-input",
+                "output-total-one-below-input",
                 "private-ct-imbalance",
+                "private-output-omitted",
                 "vault-control-entitlement-or-bare-u-output",
+                "wrong-explicit-asset",
                 "wrong-private-blinding-balance",
             ]),
         );
-        assert_eq!(plan.census().native_refusal_observed(), 7);
+        assert_eq!(plan.census().native_refusal_observed(), 14);
 
         // THE THIRD ROW COMES FROM A DIFFERENT LANE and is held to the
         // same rule. Its mutant was offered first and its control
@@ -2583,7 +2623,7 @@ mod tests {
         // And it did NOT land in either target bucket. The separate
         // bucket's whole claim, made checkable.
         assert_eq!(plan.census().native_run_observed(), 24);
-        assert_eq!(plan.census().native_refusal_observed(), 7);
+        assert_eq!(plan.census().native_refusal_observed(), 14);
     }
 
     #[test]
