@@ -1655,26 +1655,110 @@ fn materialize_member(
         // the variant names keep the member's own status unambiguous.
         // Every one of them begins `NotSubmitted`, and there is no
         // variant that says otherwise.
-        verdict: match recorded_acceptance(fixture.pair, representation) {
-            PairShapeAcceptance::ObservedForThisShape {
-                case,
-                accepted_identity,
-            } => PairTargetVerdict::NotSubmittedShapeAcceptedElsewhere {
-                case,
-                accepted_identity,
-            },
-            PairShapeAcceptance::NoRunOfThisShape { because } => {
-                PairTargetVerdict::NotSubmittedNoRunOfThisShape { because }
-            }
-            PairShapeAcceptance::ObservedForThisMember {
-                case,
-                accepted_identity,
-            } => PairTargetVerdict::Accepted {
-                case,
-                accepted_identity,
-            },
-        },
+        verdict: member_verdict(fixture.pair, representation),
     })
+}
+
+/// Where §16.2's second condition stands for one pair.
+///
+/// Split out of the condition resolver because it is the one conjunct
+/// whose subject is a TARGET verdict rather than a property of the built
+/// members, and it is answered from the two lanes' runs of record.
+const fn acceptance_standing(pair: MinimalityPair) -> MinimalityConditionStanding {
+    use MinimalityConditionStanding as Standing;
+
+    let explicit_shape = recorded_acceptance(pair, LiveTransferRepresentationPlan::Explicit);
+    let private_shape = recorded_acceptance(pair, LiveTransferRepresentationPlan::PrivateCommitted);
+    match (explicit_shape, private_shape) {
+        // BOTH MEMBERS accepted, which only the pairs arc's pair reaches.
+        // It is matched FIRST because it is strictly stronger, and a
+        // fall-through order that let it be read as a shape acceptance
+        // would throw the distinction away at the one place it is worth
+        // something.
+        (
+            PairShapeAcceptance::ObservedForThisMember {
+                accepted_identity: explicit_identity,
+                ..
+            },
+            PairShapeAcceptance::ObservedForThisMember {
+                accepted_identity: private_identity,
+                ..
+            },
+        ) => Standing::HoldsOnAcceptedMembers {
+            explicit_identity,
+            private_identity,
+        },
+        (
+            PairShapeAcceptance::ObservedForThisShape {
+                accepted_identity: explicit_identity,
+                ..
+            },
+            PairShapeAcceptance::ObservedForThisShape {
+                accepted_identity: private_identity,
+                ..
+            },
+        ) => Standing::HoldsOnObservedShapeAcceptances {
+            explicit_identity,
+            private_identity,
+        },
+        (PairShapeAcceptance::NoRunOfThisShape { because }, _) => Standing::AwaitsARunOfThisShape {
+            lane: "explicit",
+            because,
+        },
+        (_, PairShapeAcceptance::NoRunOfThisShape { because }) => Standing::AwaitsARunOfThisShape {
+            lane: "private-committed",
+            because,
+        },
+        // One member accepted and the other only shape-observed. No pair
+        // is in this state and the arm is not decoration: it is what
+        // keeps the registry from silently promoting a HALF-submitted
+        // pair to the stronger standing the moment a second arc is built
+        // and stops half way.
+        (
+            PairShapeAcceptance::ObservedForThisMember { .. },
+            PairShapeAcceptance::ObservedForThisShape { .. },
+        ) => Standing::AwaitsARunOfThisShape {
+            lane: "private-committed",
+            because: "the explicit member was submitted and accepted and the private member was not",
+        },
+        (
+            PairShapeAcceptance::ObservedForThisShape { .. },
+            PairShapeAcceptance::ObservedForThisMember { .. },
+        ) => Standing::AwaitsARunOfThisShape {
+            lane: "explicit",
+            because: "the private member was submitted and accepted and the explicit member was not",
+        },
+    }
+}
+
+/// One member's target verdict, from what the runs of record recorded.
+///
+/// Split out of the materializer because it is a different question from
+/// building a member: what this answers is what a target said, and the
+/// materializer answers what this workspace can construct.
+const fn member_verdict(
+    pair: MinimalityPair,
+    representation: LiveTransferRepresentationPlan,
+) -> PairTargetVerdict {
+    match recorded_acceptance(pair, representation) {
+        PairShapeAcceptance::ObservedForThisShape {
+            case,
+            accepted_identity,
+        } => PairTargetVerdict::NotSubmittedShapeAcceptedElsewhere {
+            case,
+            accepted_identity,
+        },
+        PairShapeAcceptance::NoRunOfThisShape { because } => {
+            PairTargetVerdict::NotSubmittedNoRunOfThisShape { because }
+        }
+        PairShapeAcceptance::ObservedForThisMember {
+            case,
+            accepted_identity,
+        } => PairTargetVerdict::Accepted {
+            case,
+            accepted_identity,
+        },
+    }
 }
 
 /// One member's complete transaction weight, where every position can be
@@ -1871,68 +1955,7 @@ fn resolve_conditions(
     // §16.2's second condition, recomputed from the two lanes' runs of
     // record rather than declared. Both members' shapes must have been
     // accepted; a pair with one side unrun names the side.
-    let explicit_shape = recorded_acceptance(pair, LiveTransferRepresentationPlan::Explicit);
-    let private_shape = recorded_acceptance(pair, LiveTransferRepresentationPlan::PrivateCommitted);
-    let acceptance = match (explicit_shape, private_shape) {
-        // BOTH MEMBERS accepted, which only the pairs arc's pair reaches.
-        // It is matched FIRST because it is strictly stronger, and a
-        // fall-through order that let it be read as a shape acceptance
-        // would throw the distinction away at the one place it is worth
-        // something.
-        (
-            PairShapeAcceptance::ObservedForThisMember {
-                accepted_identity: explicit_identity,
-                ..
-            },
-            PairShapeAcceptance::ObservedForThisMember {
-                accepted_identity: private_identity,
-                ..
-            },
-        ) => Standing::HoldsOnAcceptedMembers {
-            explicit_identity,
-            private_identity,
-        },
-        (
-            PairShapeAcceptance::ObservedForThisShape {
-                accepted_identity: explicit_identity,
-                ..
-            },
-            PairShapeAcceptance::ObservedForThisShape {
-                accepted_identity: private_identity,
-                ..
-            },
-        ) => Standing::HoldsOnObservedShapeAcceptances {
-            explicit_identity,
-            private_identity,
-        },
-        (PairShapeAcceptance::NoRunOfThisShape { because }, _) => Standing::AwaitsARunOfThisShape {
-            lane: "explicit",
-            because,
-        },
-        (_, PairShapeAcceptance::NoRunOfThisShape { because }) => Standing::AwaitsARunOfThisShape {
-            lane: "private-committed",
-            because,
-        },
-        // One member accepted and the other only shape-observed. No pair
-        // is in this state and the arm is not decoration: it is what
-        // keeps the registry from silently promoting a HALF-submitted
-        // pair to the stronger standing the moment a second arc is built
-        // and stops half way.
-        (
-            PairShapeAcceptance::ObservedForThisMember { .. },
-            PairShapeAcceptance::ObservedForThisShape { .. },
-        ) => Standing::AwaitsARunOfThisShape {
-            lane: "private-committed",
-            because: "the explicit member was submitted and accepted and the private member was not",
-        },
-        (
-            PairShapeAcceptance::ObservedForThisShape { .. },
-            PairShapeAcceptance::ObservedForThisMember { .. },
-        ) => Standing::AwaitsARunOfThisShape {
-            lane: "explicit",
-            because: "the private member was submitted and accepted and the explicit member was not",
-        },
-    };
+    let acceptance = acceptance_standing(pair);
 
     BTreeMap::from([
         // Both members finalize. That is not an assumption here: the

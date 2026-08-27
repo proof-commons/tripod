@@ -533,7 +533,7 @@ impl AcceptedMember {
     /// Whether this member meets the acceptance bar every recorded run
     /// of this campaign meets.
     #[must_use]
-    pub fn meets_the_acceptance_bar(&self) -> bool {
+    pub const fn meets_the_acceptance_bar(&self) -> bool {
         self.accepted_txid.len() == 64
             && self.readback_matches_submission
             && self.every_input_verified
@@ -745,7 +745,7 @@ impl PairArcPlanner {
     }
 
     /// Record a refusal and stop.
-    fn refuse(&mut self, refusal: PairArcRefusal) -> PlanRefused {
+    const fn refuse(&mut self, refusal: PairArcRefusal) -> PlanRefused {
         if self.record.refusal.is_none() {
             self.record.refusal = Some(refusal);
         }
@@ -934,9 +934,8 @@ impl TargetOperationPlanner for PairArcPlanner {
                 private.next_step(None)
             }
             Half::Private => {
-                let private = match self.private.as_mut() {
-                    Some(private) => private,
-                    None => return Err(self.refuse(PairArcRefusal::SubstrateUnavailable)),
+                let Some(private) = self.private.as_mut() else {
+                    return Err(self.refuse(PairArcRefusal::SubstrateUnavailable));
                 };
                 let step = private.next_step(previous)?;
                 if let Some(step) = step {
@@ -1057,20 +1056,29 @@ fn destination_programs(
     Ok(programs)
 }
 
-/// Compare two accepted members' public protocol projections, term by
-/// §6.6 term.
+/// The premises the §6.6 comparison is made from.
 ///
-/// The comparison is the arc's whole observation, and it is written to be
-/// PRECISE rather than generous: a term the private member withholds is
-/// recorded as withheld, not as equal, and a term that disagrees is
-/// recorded as a disagreement rather than dropped.
-#[must_use]
-pub fn compare_public_protocol_projections(
+/// Split out of the comparison because they are a different job: these
+/// are read off the two projections and the arc's fixture, and the
+/// comparison below turns them into one standing per term. Keeping them
+/// apart is what lets a reader check each premise against the node's copy
+/// without reading eleven arms first.
+struct ComparisonPremises {
+    same_owners: bool,
+    same_asset: bool,
+    both_clean: bool,
+    consumed_agrees: bool,
+    owners_agree: bool,
+    amounts_agree_with_disclosure_asymmetry: bool,
+    sponsorless: bool,
+    single_input_owner: bool,
+}
+
+/// Read the premises off two projections and the arc's one fixture.
+fn comparison_premises(
     explicit: &PublicProtocolProjection,
     private: &PublicProtocolProjection,
-) -> ProjectionEqualityObservation {
-    use ProjectionTermStanding as S;
-
+) -> ComparisonPremises {
     let fixture = pair_arc_fixture();
     let expected = fixture.expected();
 
@@ -1110,6 +1118,43 @@ pub fn compare_public_protocol_projections(
                 .map(|endpoint| endpoint.owner())
                 .collect::<Vec<_>>();
 
+    ComparisonPremises {
+        same_owners,
+        same_asset,
+        both_clean,
+        consumed_agrees,
+        owners_agree,
+        amounts_agree_with_disclosure_asymmetry,
+        sponsorless: expected.sponsor() == SponsorPresence::Absent,
+        single_input_owner: expected.distinct_input_owners().len() == 1,
+    }
+}
+
+/// Compare two accepted members' public protocol projections, term by
+/// §6.6 term.
+///
+/// The comparison is the arc's whole observation, and it is written to be
+/// PRECISE rather than generous: a term the private member withholds is
+/// recorded as withheld, not as equal, and a term that disagrees is
+/// recorded as a disagreement rather than dropped.
+#[must_use]
+pub fn compare_public_protocol_projections(
+    explicit: &PublicProtocolProjection,
+    private: &PublicProtocolProjection,
+) -> ProjectionEqualityObservation {
+    use ProjectionTermStanding as S;
+
+    let ComparisonPremises {
+        same_owners,
+        same_asset,
+        both_clean,
+        consumed_agrees,
+        owners_agree,
+        amounts_agree_with_disclosure_asymmetry,
+        sponsorless,
+        single_input_owner,
+    } = comparison_premises(explicit, private);
+
     let terms = vec![
         // §6.6 term 1. The explicit member publishes the consumed
         // amounts through the coins it spends; the private member spends
@@ -1141,7 +1186,7 @@ pub fn compare_public_protocol_projections(
         // a field of either accepted transaction.
         (
             REPRESENTATION_EQUIVALENCE_TERMS[2],
-            if expected.distinct_input_owners().len() == 1 && consumed_agrees {
+            if single_input_owner && consumed_agrees {
                 S::EqualByPublicConstructorMetadata
             } else {
                 S::Disagrees
@@ -1211,7 +1256,7 @@ pub fn compare_public_protocol_projections(
         // neither copy carries a fee or a sponsor output.
         (
             REPRESENTATION_EQUIVALENCE_TERMS[9],
-            if expected.sponsor() == SponsorPresence::Absent && both_clean {
+            if sponsorless && both_clean {
                 S::AbsentFromBothMembers
             } else {
                 S::Disagrees
@@ -1550,18 +1595,20 @@ mod tests {
         // about. A recorded pair where the private half were the lighter
         // one, or withheld nothing, would mean the run did not build
         // what this module says it built.
-        assert!(
-            run_of_record::PRIVATE_MEMBER_TARGET_WEIGHT
-                > run_of_record::EXPLICIT_MEMBER_TARGET_WEIGHT,
+        let weights = (
+            run_of_record::EXPLICIT_MEMBER_TARGET_WEIGHT,
+            run_of_record::PRIVATE_MEMBER_TARGET_WEIGHT,
         );
-        assert!(
-            run_of_record::PRIVATE_MEMBER_SUBMITTED_BYTES
-                > run_of_record::EXPLICIT_MEMBER_SUBMITTED_BYTES,
+        assert!(weights.1 > weights.0);
+        let bytes = (
+            run_of_record::EXPLICIT_MEMBER_SUBMITTED_BYTES,
+            run_of_record::PRIVATE_MEMBER_SUBMITTED_BYTES,
         );
-        assert!(run_of_record::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER > 0);
+        assert!(bytes.1 > bytes.0);
+        let withheld = run_of_record::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER;
+        assert!(withheld > 0);
         assert!(
-            run_of_record::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER
-                < REPRESENTATION_EQUIVALENCE_TERMS.len(),
+            withheld < REPRESENTATION_EQUIVALENCE_TERMS.len(),
             "a pair that agreed on nothing publicly would be no equality at all",
         );
     }
