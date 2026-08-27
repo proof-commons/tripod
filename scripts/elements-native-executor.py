@@ -754,7 +754,41 @@ NORMALIZATION_HIDDEN_AMOUNT = 1_000_000
 # here is a secret, nothing here is retained, and nothing here authorizes
 # anything anywhere else.
 CONFIDENTIAL_DERIVATION_TAG = b"tripod/guide-ctf/derive/v1"
-CONFIDENTIAL_DIGEST_TAG = b"tripod/guide-ctf/fixture-digest/v1"
+CONFIDENTIAL_DIGEST_TAG = b"tripod/guide-ctf/fixture-digest/v2"
+
+# Static cross-language goldens for the v2 transcript. The Rust fixture
+# tests read these exact Python constants and hold both emitters to the
+# same bytes. The synthetic fixture uses two outputs, semantic amounts
+# one and two, programs 0x51 and 0x5253, asset bytes 0x11, parity seven,
+# and opening-field bytes 0x21/0x31/0x41 and 0x22/0x32/0x42 with
+# commitment prefixes 0x08 and 0x09.
+CONFIDENTIAL_DIGEST_V2_BYTE_IDENTITY_TRANSCRIPT_HEX = (
+    "0001000000126374662d76312f7674776f2d676f6c64656e0000000d627974655f6964656e74697479000000"
+    "216578706c696369745f61737365745f636f6e666964656e7469616c5f76616c75650000001763656e747261"
+    "6c5f7075626c69635f66697874757265730000001a67756964655f6374665f64657465726d696e6973746963"
+    "5f76310101000501000700000002000000000100000020111111111111111111111111111111111111111111"
+    "1111111111111111111111000000015100000000000000010000002021212121212121212121212121212121"
+    "2121212121212121212121212121212100000020313131313131313131313131313131313131313131313131"
+    "3131313131313131000000204141414141414141414141414141414141414141414141414141414141414141"
+    "0800000001020000002011111111111111111111111111111111111111111111111111111111111111110000"
+    "0002525300000000000000020000002022222222222222222222222222222222222222222222222222222222"
+    "2222222200000020323232323232323232323232323232323232323232323232323232323232323200000020"
+    "424242424242424242424242424242424242424242424242424242424242424209"
+)
+CONFIDENTIAL_DIGEST_V2_BYTE_IDENTITY_DIGEST_HEX = (
+    "296b23075195a1de37f5dbffb1fc02b46ba7aa29ba51fe33b36ee91fd9f39ca0"
+)
+CONFIDENTIAL_DIGEST_V2_RECORDED_RANDOMNESS_TRANSCRIPT_HEX = (
+    "0001000000126374662d76312f7674776f2d676f6c64656e000000137265636f726465645f72616e646f6d6e"
+    "657373000000216578706c696369745f61737365745f636f6e666964656e7469616c5f76616c756500000017"
+    "63656e7472616c5f7075626c69635f66697874757265730000001a67756964655f6374665f64657465726d69"
+    "6e69737469635f76310101000500000000020000000001000000201111111111111111111111111111111111"
+    "1111111111111111111111111111110000000151000000000000000100000001020000002011111111111111"
+    "111111111111111111111111111111111111111111111111110000000252530000000000000002"
+)
+CONFIDENTIAL_DIGEST_V2_RECORDED_RANDOMNESS_DIGEST_HEX = (
+    "06b54728306afe104eb1a681156e966ae648a7a60b2b76e080b43bcd1c979d80"
+)
 
 # The one digit in the handle grammar's whole spelling.
 CONFIDENTIAL_GRAMMAR_VERSION = 1
@@ -997,10 +1031,13 @@ def confidential_digest_transcript(
 
     The contract tag sits INSIDE the transcript rather than beside it,
     which is what makes a semantic-only recorded-randomness digest
-    impossible to mistake for a byte-identity one. The members that exist
-    only under byte identity -- the counter, the amounts, the openings,
-    and the resulting prefixes -- are written only when the openings are
-    there to write.
+    impossible to mistake for a byte-identity one. Semantic amounts are
+    written under BOTH contracts. Only the counter, openings, and
+    resulting prefixes are byte-identity material.
+
+    The input blinder sum is constructor-only material, enforced by the
+    conservation solve and node acceptance. It is not semantic transcript
+    material and is deliberately absent here.
     """
     parts = [struct.pack(">H", CONFIDENTIAL_GRAMMAR_VERSION)]
     confidential_framed(parts, handle.encode("utf-8"))
@@ -1022,9 +1059,9 @@ def confidential_digest_transcript(
         parts.append(bytes([CONFIDENTIAL_OUTPUT_ROLES[output["role"]]]))
         confidential_framed(parts, asset)
         confidential_framed(parts, programs[index])
+        parts.append(struct.pack(">Q", output["semantic_amount"]))
         if openings is not None:
             opening = openings[index]
-            parts.append(struct.pack(">Q", output["semantic_amount"]))
             confidential_framed(parts, opening["value_blinder"])
             confidential_framed(parts, opening["nonce_input"])
             confidential_framed(parts, opening["rangeproof_seed"])

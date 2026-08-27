@@ -74,7 +74,7 @@ pub const MINIMUM_CASE_NAME: usize = 3;
 pub const MAXIMUM_CASE_NAME: usize = 63;
 
 /// The tag the fixture digest is taken under.
-pub const FIXTURE_DIGEST_TAG: &str = "tripod/guide-ctf/fixture-digest/v1";
+pub const FIXTURE_DIGEST_TAG: &str = "tripod/guide-ctf/fixture-digest/v2";
 
 /// The tag every derived scalar is taken under.
 pub const DERIVATION_TAG: &str = "tripod/guide-ctf/derive/v1";
@@ -1370,7 +1370,12 @@ fn output_asset(
 /// impossible to mistake for a byte-identity one, and it is why the
 /// accepted semantic-only ruling costs one field rather than a second
 /// digest.
-fn digest_transcript(
+///
+/// `input_blinder_sum` is constructor-only material, enforced by the
+/// conservation solve and node acceptance. It is not semantic transcript
+/// material and is deliberately absent here.
+#[must_use]
+pub(crate) fn digest_transcript(
     manifest: &ConfidentialFixtureManifest,
     openings: &FixtureOpenings,
 ) -> Vec<u8> {
@@ -1413,23 +1418,19 @@ fn digest_transcript(
         // transcripts that differ in whether the block follows differ in
         // the role code at a fixed position, so the framing stays
         // unambiguous without costing a single existing digest.
-        if output.role.carries_an_opening() {
-            if let FixtureOpenings::Derived { openings, .. } = openings
-                && let Some(opening) = openings.get(index).and_then(Option::as_ref)
-            {
-                transcript.quad(output.semantic_amount);
-                transcript.framed(&opening.value_blinder);
-                transcript.framed(&opening.nonce_input);
-                transcript.framed(&opening.rangeproof_seed);
-                transcript.octet(opening.value_commitment[0]);
-            }
-        } else {
-            // An explicit output's value is public and on the wire, so it
-            // is bound under BOTH contracts rather than only where
-            // openings exist. Withholding it under recorded randomness
-            // would be treating a published amount as though it were part
-            // of a secret opening.
-            transcript.quad(output.semantic_amount);
+        //
+        // The amount is output SEMANTICS under both contracts. It is
+        // emitted before the opening block so a run-produced opening
+        // source cannot make the amount disappear with the opening.
+        transcript.quad(output.semantic_amount);
+        if output.role.carries_an_opening()
+            && let FixtureOpenings::Derived { openings, .. } = openings
+            && let Some(opening) = openings.get(index).and_then(Option::as_ref)
+        {
+            transcript.framed(&opening.value_blinder);
+            transcript.framed(&opening.nonce_input);
+            transcript.framed(&opening.rangeproof_seed);
+            transcript.octet(opening.value_commitment[0]);
         }
     }
     transcript.finish()

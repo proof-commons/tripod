@@ -16,12 +16,13 @@ use crate::commitment_oracle::commitment::read_scalar;
 use crate::commitment_oracle::curve::group_order;
 use crate::confidential_fixture::{
     ConfidentialFixtureManifest, ConfidentialFixtureOutput, ConfidentialFixtureRegistry,
-    DerivationRole, DerivationSource, DerivedOpening, FixtureDerivationProfile,
+    DerivationRole, DerivationSource, DerivedOpening, FIXTURE_DIGEST_TAG, FixtureDerivationProfile,
     FixtureDerivationRefusal, FixtureDiagnosticKind, FixtureOpenings, FixtureOutputRole,
     HandleGrammarDefect, MAX_PARITY_COUNTER, PublicDisposableTestMaterial, RegistrationRefusal,
-    TaggedHashDerivation, check_handle_grammar, predecessor_handle,
+    TaggedHashDerivation, check_handle_grammar, digest_transcript, predecessor_handle,
 };
 use crate::confidential_funding::FixtureResolutionRefused;
+use crate::constructor::tagged::tagged_hash;
 use crate::protocol::{
     ConfidentialFixtureDigest, ConfidentialFixtureHandle, ConfidentialFundingProfiles,
     FundingCustodyProfile, FundingMaterializerProfile, FundingRepresentationProfile,
@@ -337,6 +338,290 @@ fn a_recorded_randomness_case_carries_no_openings_and_a_different_digest() {
     assert!(matches!(resolved.openings(), FixtureOpenings::RunProduced));
     assert!(resolved.value_commitments().is_none());
     assert_ne!(reference, other);
+}
+
+fn registered_digest(manifest: ConfidentialFixtureManifest) -> ConfidentialFixtureDigest {
+    let handle = manifest.handle.clone();
+    let mut registry = ConfidentialFixtureRegistry::new();
+    registry.register(manifest).expect("the manifest registers");
+    *registry
+        .freeze()
+        .registered_digest(&handle)
+        .expect("the registry holds the digest")
+}
+
+fn recorded_manifest_for_opening_role(
+    role: FixtureOutputRole,
+) -> (ConfidentialFixtureManifest, usize) {
+    let (mut subject, output) = match role {
+        FixtureOutputRole::Primary => (manifest(), 0),
+        FixtureOutputRole::Balancing => (manifest(), 1),
+        FixtureOutputRole::SoleBalancing => (
+            sole_manifest("ctf-v1/digest-sole-balancing", NON_CANCELING_SUM),
+            0,
+        ),
+        FixtureOutputRole::SponsorChange { asset } => (
+            sponsored_change_manifest(
+                "ctf-v1/digest-sponsor-change",
+                FixtureOutputRole::SponsorChange { asset },
+            ),
+            1,
+        ),
+        FixtureOutputRole::BalancingSponsorChange { asset } => (
+            sole_blinded_change_manifest(
+                "ctf-v1/digest-balancing-sponsor-change",
+                FixtureOutputRole::BalancingSponsorChange { asset },
+                NON_CANCELING_SUM,
+            ),
+            2,
+        ),
+        FixtureOutputRole::Fee
+        | FixtureOutputRole::ExplicitDestination
+        | FixtureOutputRole::ExplicitSponsorChange { .. } => {
+            panic!("the regression covers only opening-bearing roles")
+        }
+    };
+    subject.profiles = profiles(ReproducibilityContract::RecordedRandomness);
+    (subject, output)
+}
+
+#[test]
+fn recorded_randomness_v2_binds_amounts_for_every_opening_bearing_role() {
+    let cases = [
+        ("primary", FixtureOutputRole::Primary),
+        ("balancing", FixtureOutputRole::Balancing),
+        ("sole-balancing", FixtureOutputRole::SoleBalancing),
+        (
+            "sponsor-change",
+            FixtureOutputRole::SponsorChange {
+                asset: RESERVE_ASSET,
+            },
+        ),
+        (
+            "balancing-sponsor-change",
+            FixtureOutputRole::BalancingSponsorChange {
+                asset: RESERVE_ASSET,
+            },
+        ),
+    ];
+    let mut collisions = Vec::new();
+    for (name, role) in cases {
+        let (baseline, output) = recorded_manifest_for_opening_role(role);
+        let mut mutated = baseline.clone();
+        mutated.outputs[output].semantic_amount += 1;
+        if registered_digest(baseline) == registered_digest(mutated) {
+            collisions.push(name);
+        }
+    }
+    assert!(
+        collisions.is_empty(),
+        "semantic amount drift collided for opening-bearing roles: {collisions:?}",
+    );
+}
+
+#[test]
+fn v2_binds_a_value_conserving_amount_mutation_under_both_contracts() {
+    let baseline = manifest();
+    let mut mutated = baseline.clone();
+    mutated.outputs[0].semantic_amount -= 1;
+    mutated.outputs[1].semantic_amount += 1;
+    for contract in ReproducibilityContract::ALL {
+        assert_ne!(
+            digest_under_contract(&baseline, contract),
+            digest_under_contract(&mutated, contract),
+        );
+    }
+}
+
+const PYTHON_EXECUTOR_SOURCE: &str =
+    include_str!("../../../../scripts/elements-native-executor.py");
+const RUST_FIXTURE_SOURCE: &str = include_str!("../confidential_fixture.rs");
+
+fn hex_of(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut encoded, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    encoded
+}
+
+fn python_digest_golden(name: &str) -> String {
+    let assignment = format!("{name} = (\n");
+    let (_, after_assignment) = PYTHON_EXECUTOR_SOURCE
+        .split_once(&assignment)
+        .expect("the Python source carries the named golden");
+    let (body, _) = after_assignment
+        .split_once("\n)")
+        .expect("the Python golden closes its tuple");
+    body.lines()
+        .map(str::trim)
+        .map(|line| {
+            line.strip_prefix('"')
+                .and_then(|line| line.strip_suffix('"'))
+                .expect("each Python golden line is one string literal")
+        })
+        .collect()
+}
+
+fn golden_manifest(contract: ReproducibilityContract) -> ConfidentialFixtureManifest {
+    ConfidentialFixtureManifest {
+        handle: ConfidentialFixtureHandle::new("ctf-v1/vtwo-golden".to_owned()),
+        material_class: PublicDisposableTestMaterial::EXPECTED,
+        derivation_profile: FixtureDerivationProfile::GuideCtfV1,
+        profiles: profiles(contract),
+        retry_limit: 5,
+        explicit_asset: [0x11; 32],
+        input_blinder_sum: [0x01; 32],
+        outputs: vec![
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::Primary,
+                semantic_amount: 1,
+                output_program: vec![0x51],
+            },
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::Balancing,
+                semantic_amount: 2,
+                output_program: vec![0x52, 0x53],
+            },
+        ],
+    }
+}
+
+const fn golden_opening(value: u8, nonce: u8, seed: u8, prefix: u8) -> DerivedOpening {
+    let mut value_commitment = [0_u8; 33];
+    value_commitment[0] = prefix;
+    DerivedOpening {
+        value_blinder: [value; 32],
+        nonce_input: [nonce; 32],
+        rangeproof_seed: [seed; 32],
+        value_commitment,
+    }
+}
+
+fn golden_openings() -> FixtureOpenings {
+    FixtureOpenings::Derived {
+        parity_counter: 7,
+        openings: vec![
+            Some(golden_opening(0x21, 0x31, 0x41, 0x08)),
+            Some(golden_opening(0x22, 0x32, 0x42, 0x09)),
+        ],
+    }
+}
+
+fn assert_python_golden(
+    contract: ReproducibilityContract,
+    openings: &FixtureOpenings,
+    transcript_name: &str,
+    digest_name: &str,
+) {
+    let transcript = digest_transcript(&golden_manifest(contract), openings);
+    assert_eq!(hex_of(&transcript), python_digest_golden(transcript_name));
+    assert_eq!(
+        hex_of(&tagged_hash(FIXTURE_DIGEST_TAG, &transcript)),
+        python_digest_golden(digest_name),
+    );
+}
+
+#[test]
+fn rust_and_python_share_v2_goldens_for_both_contracts() {
+    assert_python_golden(
+        ReproducibilityContract::ByteIdentity,
+        &golden_openings(),
+        "CONFIDENTIAL_DIGEST_V2_BYTE_IDENTITY_TRANSCRIPT_HEX",
+        "CONFIDENTIAL_DIGEST_V2_BYTE_IDENTITY_DIGEST_HEX",
+    );
+    assert_python_golden(
+        ReproducibilityContract::RecordedRandomness,
+        &FixtureOpenings::RunProduced,
+        "CONFIDENTIAL_DIGEST_V2_RECORDED_RANDOMNESS_TRANSCRIPT_HEX",
+        "CONFIDENTIAL_DIGEST_V2_RECORDED_RANDOMNESS_DIGEST_HEX",
+    );
+}
+
+type FixtureMutation = fn(&mut ConfidentialFixtureManifest);
+
+fn digest_under_contract(
+    manifest: &ConfidentialFixtureManifest,
+    contract: ReproducibilityContract,
+) -> ConfidentialFixtureDigest {
+    let mut subject = manifest.clone();
+    subject.profiles = profiles(contract);
+    registered_digest(subject)
+}
+
+#[test]
+fn semantic_mutations_change_the_digest_under_both_contracts() {
+    let mutations: [(&str, FixtureMutation); 5] = [
+        ("amount", |subject| subject.outputs[0].semantic_amount += 1),
+        ("role", |subject| {
+            subject.outputs[0].role = FixtureOutputRole::Balancing;
+            subject.outputs[1].role = FixtureOutputRole::Primary;
+        }),
+        ("asset", |subject| subject.explicit_asset[0] ^= 0x01),
+        ("program", |subject| {
+            subject.outputs[0].output_program.push(0x00);
+        }),
+        ("order", |subject| subject.outputs.swap(0, 1)),
+    ];
+    let baseline = manifest();
+    for contract in ReproducibilityContract::ALL {
+        let baseline_digest = digest_under_contract(&baseline, contract);
+        for (name, mutate) in mutations {
+            let mut mutated = baseline.clone();
+            mutate(&mut mutated);
+            assert_ne!(
+                baseline_digest,
+                digest_under_contract(&mutated, contract),
+                "{contract} failed to bind the {name} mutation",
+            );
+        }
+    }
+}
+
+#[test]
+fn the_reproducibility_profile_changes_the_digest_in_both_directions() {
+    let subject = manifest();
+    let byte_identity = digest_under_contract(&subject, ReproducibilityContract::ByteIdentity);
+    let recorded = digest_under_contract(&subject, ReproducibilityContract::RecordedRandomness);
+    assert_ne!(byte_identity, recorded);
+    assert_ne!(recorded, byte_identity);
+}
+
+#[test]
+fn constructor_only_input_sum_changes_openings_but_not_recorded_randomness_digest() {
+    let baseline = sole_manifest("ctf-v1/digest-input-sum-control", NON_CANCELING_SUM);
+    let mut mutated = baseline.clone();
+    mutated.input_blinder_sum[31] += 1;
+    assert_ne!(
+        digest_under_contract(&baseline, ReproducibilityContract::ByteIdentity),
+        digest_under_contract(&mutated, ReproducibilityContract::ByteIdentity),
+    );
+    assert_eq!(
+        digest_under_contract(&baseline, ReproducibilityContract::RecordedRandomness),
+        digest_under_contract(&mutated, ReproducibilityContract::RecordedRandomness),
+    );
+}
+
+#[test]
+fn v2_is_the_only_live_digest_emitter_on_both_sides() {
+    const V2_TAG: &str = "tripod/guide-ctf/fixture-digest/v2";
+    assert_eq!(FIXTURE_DIGEST_TAG, V2_TAG);
+    assert!(PYTHON_EXECUTOR_SOURCE.contains(&format!("CONFIDENTIAL_DIGEST_TAG = b\"{V2_TAG}\"")));
+
+    let deleted_tag = ["tripod/guide-ctf/fixture-digest/", "v1"].concat();
+    assert!(!RUST_FIXTURE_SOURCE.contains(&deleted_tag));
+    assert!(!PYTHON_EXECUTOR_SOURCE.contains(&deleted_tag));
+
+    for deleted_emitter in [
+        "digest_transcript_v1",
+        "fixture_digest_v1",
+        "confidential_digest_transcript_v1",
+    ] {
+        assert!(!RUST_FIXTURE_SOURCE.contains(deleted_emitter));
+        assert!(!PYTHON_EXECUTOR_SOURCE.contains(deleted_emitter));
+    }
 }
 
 #[test]

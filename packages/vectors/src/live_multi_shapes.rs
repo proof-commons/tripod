@@ -2270,7 +2270,7 @@ pub mod run_of_record {
 
     /// The split shape's successor fixture digest.
     pub const SPLIT_SUCCESSOR_DIGEST: &str =
-        "75d3cb8d99dff1f7fb5ad39dbf7fa1fe986896d7056d55020911acdf9eeea23f";
+        "52f9d832e9ff93070ea9849cd8d5f817746fdb8bc544e6d94207810e594014ca";
 
     /// The identity the target computed for the accepted split.
     ///
@@ -2293,7 +2293,7 @@ pub mod run_of_record {
 
     /// The many-to-many shape's successor fixture digest.
     pub const MANY_TO_MANY_SUCCESSOR_DIGEST: &str =
-        "4de73ff0bdece00b0a5f5959beba455adc9998ae2aaef65ffdaffec157a3cc6e";
+        "67ec9e516460e453fcc0bf6cfacfdc58141afefa0b4e4c2d3ff3c2d7a2495b98";
 
     /// The identity the target computed for the accepted many-to-many.
     ///
@@ -2317,7 +2317,7 @@ pub mod run_of_record {
 
     /// The several-distinct-owners shape's successor fixture digest.
     pub const SEVERAL_OWNERS_SUCCESSOR_DIGEST: &str =
-        "c80fc25c07cf59c969e8d0bd62edd9540b15731ec5fc548ad5d20c06dff39ec9";
+        "6d86b884565d6d4bc1f81fb6915dc91987d97a62e5a3ca896403ef6d4963e30c";
 
     /// The identity the target computed for the accepted
     /// several-distinct-owners transfer.
@@ -2371,7 +2371,7 @@ pub mod run_of_record {
 
     /// The strict one-to-one successor fixture's digest.
     pub const STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST: &str =
-        "b41dbdee47f2de2f6a9dec1e0c6ffc4c21e6e6a591828d5e793b82b11436f70d";
+        "7ec97a6e6cf6bf7e6c4308c007e55cf6ac799113abb3b93e3fb3d559c510ec14";
 
     /// How many bytes the strict one-to-one handed to the node.
     ///
@@ -2430,7 +2430,7 @@ pub mod run_of_record {
 
     /// The merge's successor fixture digest.
     pub const MERGE_SUCCESSOR_DIGEST: &str =
-        "e928537da63bae600cb1d8982dbd671b1c24ad4df71a697ba643492dad3c82fe";
+        "d4a4a2e4371a81d4d74ad2fbceef64303091496c374e11e2208c6d3bde1ea0d9";
 
     /// The identity the target computed for the accepted private merge.
     ///
@@ -2522,7 +2522,7 @@ pub mod run_of_record {
     /// rewritten to keep a test green destroys the claim the test exists
     /// to make.
     pub const FEE_BEARING_SUCCESSOR_DIGEST: &str =
-        "d08a306819cc5ad713b393ecd956f2b5b38c7eb46de20069e8780620d79ed0cf";
+        "bba4ea6e919b8619d75d035b5f6ee9e8aac3a87c00336c8a86c5973a84936bad";
 
     /// The identity a real node computed for the fee-bearing transfer.
     ///
@@ -2605,7 +2605,7 @@ pub mod run_of_record {
 
     /// The exit crossing's successor fixture digest.
     pub const EXIT_CROSSING_SUCCESSOR_DIGEST: &str =
-        "078d250e44da69d659c5351e5e77ccbf6497526e83bb709901480c00232efd07";
+        "013df551e2862b4018f2e9b2c2cc83174571234f1ad200605de66232514ea001";
 
     /// The identity the target computed for the accepted exit crossing.
     ///
@@ -2661,7 +2661,7 @@ pub mod run_of_record {
 
     /// The entry crossing's successor fixture digest.
     pub const ENTRY_CROSSING_SUCCESSOR_DIGEST: &str =
-        "8ad54b36e939dbdc59939a3fdf5a95210b520b5101697ecf8d53befa5048e7c1";
+        "7c3bda6049cb80635b0580148002c185eeee8ea48e67bfd1fd698e28a65b17c0";
 
     /// The identity the target computed for the accepted entry crossing.
     ///
@@ -2746,7 +2746,7 @@ pub mod run_of_record {
 
     /// The successor fixture digest the pure split registered.
     pub const PURE_SPLIT_SUCCESSOR_DIGEST: &str =
-        "af8d60ffa311847150f65df8fcbd94fd457c7db958c451dd29fa244efd4c78d7";
+        "2c8318413c8a726c6c65587d4c48d60af1ba82f1622152d216266c5858658671";
 
     /// The pure split's wall time, in seconds.
     pub const PURE_SPLIT_WALL_SECONDS: f64 = 14.1;
