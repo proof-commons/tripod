@@ -397,7 +397,11 @@ pub struct ProofFinalizedReceiptInput {
 impl ProofFinalizedReceiptInput {
     /// Freeze one receipt selection for a proof-bearing evidence record.
     #[must_use]
-    pub fn for_evidence(input_index: u32, leaf_script: Vec<u8>, control_block: Vec<u8>) -> Self {
+    pub const fn for_evidence(
+        input_index: u32,
+        leaf_script: Vec<u8>,
+        control_block: Vec<u8>,
+    ) -> Self {
         Self {
             input_index,
             leaf_script,
@@ -460,7 +464,7 @@ impl ProofFinalizedSigningCandidate {
     /// therefore have exactly one receipt record. That coverage and every
     /// record's commitment are checked by [`OwnerSigningCensus::from_proof_finalized`].
     #[must_use]
-    pub fn for_receipt_evidence(
+    pub const fn for_receipt_evidence(
         materialized: MaterializedConfidentialCandidate,
         receipts: Vec<ProofFinalizedReceiptInput>,
     ) -> Self {
@@ -1379,13 +1383,13 @@ fn check_finalized_receipt_coverage(
         })?;
         let signer = &materialized.signer_inputs()[position];
 
-        if let Some(outpoint) = receipt.finalized_outpoint {
-            if signer.outpoint() != outpoint {
-                return Err(OwnerCensusRefusal::FinalizedSigningInputMismatch {
-                    input_index: receipt.input_index,
-                    field: FinalizedSigningField::Outpoint,
-                });
-            }
+        if let Some(outpoint) = receipt.finalized_outpoint
+            && signer.outpoint() != outpoint
+        {
+            return Err(OwnerCensusRefusal::FinalizedSigningInputMismatch {
+                input_index: receipt.input_index,
+                field: FinalizedSigningField::Outpoint,
+            });
         }
 
         if let Some(spent) = &receipt.finalized_spent {
@@ -1416,11 +1420,11 @@ fn check_receipt_positions(
     sponsor_inputs: &[Outpoint],
 ) -> Result<(), OwnerCensusRefusal> {
     let inputs = candidate.inputs().len();
-    let receipt_count = inputs.checked_sub(sponsor_inputs.len()).ok_or(
+    let receipt_count = inputs.checked_sub(sponsor_inputs.len()).ok_or_else(|| {
         OwnerCensusRefusal::SigningInputIsNotAFinalizedReceipt {
             input_index: u32::try_from(inputs).unwrap_or(u32::MAX),
-        },
-    )?;
+        }
+    })?;
     let mut positions = BTreeSet::new();
 
     for receipt in receipts {
