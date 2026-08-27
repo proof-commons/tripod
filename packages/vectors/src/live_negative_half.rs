@@ -464,19 +464,27 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // `no-coordinator` (member leaf at both inputs, the one at input zero
     // failing the bound Verify), each the pair's single-failing-input
     // arrangement, recorded in `live_evidence` rather than here. The other
-    // half of each pair stays here because its own mutant would draw the
-    // SAME verdict at the SAME clause — its arrangement has a second
-    // failing input, so its observation would duplicate its pair-partner's
-    // and separate nothing: the copied-commitment precedent.
+    // half of each pair stays here on what the in-repo covenant reading
+    // ESTABLISHES and no more: its arrangement carries a SECOND failing
+    // input, so its candidate would fail the clause its pair-partner
+    // already drove AND another clause besides, and the separating fact
+    // this register admits — a distinct field, a distinct shape, a
+    // distinct arrangement drawing its own verdict — is not available to
+    // it. What is NOT claimed is which of the two failures the target
+    // would report: abort selection across a multi-input candidate is the
+    // target's, and no in-repo source settles it, so the earlier wording
+    // predicting the pair-partner's exact verdict words is withdrawn. The
+    // typing rests on the non-separation, which the covenant does
+    // establish: the copied-commitment precedent.
     entry(
         "wrong-coordinator",
         G::TargetVerdictDoesNotSeparateTheRows,
-        "its mutant aborts at the coordinator index check in the same OP_EQUALVERIFY words two-coordinators drove and observed, so its observation would duplicate that pair-partner's",
+        "its arrangement carries a second failing input beside the coordinator index check two-coordinators already drove, so it has no separating fact of its own against that pair-partner",
     ),
     entry(
         "member-coordinator-leaf-exchange",
         G::TargetVerdictDoesNotSeparateTheRows,
-        "its mutant aborts at the member bound check in the same OP_VERIFY words no-coordinator drove and observed, so its observation would duplicate that pair-partner's",
+        "its arrangement carries a second failing input beside the member bound check no-coordinator already drove, so it has no separating fact of its own against that pair-partner",
     ),
     entry(
         "receipt-sponsor-range-exchange",

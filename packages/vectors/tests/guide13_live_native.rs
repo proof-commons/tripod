@@ -1145,15 +1145,26 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
 /// bare-u output. The unmutated control is accepted afterwards on the same
 /// chain, which is what makes the mutant's refusal attributable.
 ///
-/// # What it asserts, and what it merely records
+/// # What it asserts, and why the standing changed
 ///
-/// What the target DECIDED is written into the artifact and asserted
-/// nowhere: a lane that asserted a refusal would fail rather than report on
-/// the day the honest answer changed. Two first-party construction facts
-/// ARE asserted — the mutant and the control were each submitted and
-/// answered, and the mutation stayed confined to the declared field, which
-/// is what makes the mutant's refusal attributable to that field and to no
-/// other.
+/// This run's verdicts are RECORDED as run-of-record constants, and a
+/// record nothing checks can drift silently — the standing an adversarial
+/// review found this lane resting on. So every verdict this ceremony's
+/// constants carry is now ASSERTED against them: each mutant's layer and
+/// verbatim detail, each declared separator, the control's ACCEPTANCE and
+/// its accepted identity, and the two-origin readback unconditionally. The
+/// lane fails if the control were rejected, if a mutant answered at the
+/// wrong layer, or if a detail, a range, a shape or an identity moved.
+///
+/// The reason this used to be left unasserted — that a lane which asserts a
+/// verdict fails rather than reports on the day the honest answer changes —
+/// is answered by the order of operations rather than by silence: the
+/// transcript and the wall time are written to disk BEFORE the first
+/// assertion runs, so the artifact carries what the node actually said
+/// either way, and a drift is reported AND failed rather than passed over.
+/// The first-party construction facts stay asserted beside them: the
+/// mutation is confined to its declared field, which is what makes the
+/// refusal attributable to that field and to no other.
 #[test]
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
@@ -1236,23 +1247,17 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
         "the node reported a coin the ceremony did not ask for",
     );
 
-    // The mutant and the control were each submitted and answered.
-    let mutant = record.mutant().expect("the mutant was built and submitted");
-    assert!(
-        mutant.observed_layer().is_some(),
-        "the bare-u mutant was not answered",
-    );
-    let control = record
-        .control()
-        .expect("the control was built and submitted");
-    assert!(
-        control.observed_layer().is_some(),
-        "the control was not answered",
-    );
+    // The mutant and the control were each submitted and answered, and each
+    // answered WHERE the run of record says, in the words it recorded.
+    assert_mutant_and_control_match_the_record(record);
 
     // The two candidates were signed over different messages: a mutant whose
     // message coincided with the control's would be signed over the same
     // bytes and the comparison would be vacuous.
+    let mutant = record.mutant().expect("the mutant was built and submitted");
+    let control = record
+        .control()
+        .expect("the control was built and submitted");
     assert_ne!(
         mutant.message(),
         control.message(),
@@ -1260,31 +1265,113 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
     );
     assert!(rendered.contains("messages_differ true"));
 
-    // Where the control was accepted, the bytes the node reported are the
-    // bytes it was handed.
-    if let Some(check) = control.reverification() {
-        assert!(
-            check.readback_matches_submission(),
-            "the bytes the node reported are not the bytes it was handed",
-        );
-    }
-
     // The run says in its own bytes what it did not establish.
     assert!(rendered.contains("each_row_by_its_own_mutant true"));
 
     // The seven consensus-conservation mutants were each built, submitted
-    // and answered, and each declared a DISTINCT field range so no two
-    // rows rest on one observation.
+    // and refused at consensus in the recorded words, and each declared the
+    // (range, shape) separator the run of record carries for its row, so no
+    // two rows rest on one observation.
     assert_consensus_mutants_separate(record);
 
     // The two leaf-arrangement mutants — one per collision pair — were each
-    // built, submitted and answered, and each declared a DISTINCT
-    // revealed-leaf arrangement so no two rows rest on one observation.
+    // built, submitted and refused at the script path in their recorded
+    // words, and each declared the revealed-leaf arrangement the run of
+    // record carries, so no two rows rest on one observation.
     assert_leaf_arrangements_drive(record);
 }
 
-/// The two leaf-arrangement mutants were each answered at the script layer
-/// and each declared a distinct revealed-leaf arrangement.
+/// The bare-u mutant and the control were each answered WHERE the run of
+/// record says, in the words it recorded, at the identity it names.
+///
+/// Split out so the test body stays under the line bound.
+///
+/// WHAT THIS REPLACED, and why. These facts were checked as "answered at
+/// SOME layer", with the control's readback checked only where a
+/// reverification happened to be present. That left the lane green on
+/// exactly the drifts the recorded constants exist to make checkable: a
+/// REJECTED control (which makes every refusal in the run unattributable),
+/// a mutant answered at the wrong layer, or a detail or an accepted
+/// identity that moved. The transcript is written to disk BEFORE any
+/// assertion in this test runs, so binding these costs no report on the day
+/// an answer changes — the artifact carries what the node said either way,
+/// and the lane now FAILS instead of passing over a record nothing reads.
+fn assert_mutant_and_control_match_the_record(
+    record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
+) {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+    use vectors::live_owner_signing_negatives::run_of_record;
+
+    let mutant = record.mutant().expect("the mutant was built and submitted");
+    assert_eq!(
+        mutant.observed_layer(),
+        Some(ObservedOutcomeLayer::ScriptPathRejection),
+        "the bare-u mutant was not refused at the script path",
+    );
+    assert_eq!(
+        mutant.observed_detail(),
+        Some(run_of_record::MUTANT_REJECT_DETAIL),
+        "the bare-u mutant drew words the run of record does not carry",
+    );
+    assert_eq!(
+        mutant.declared_field_range(),
+        run_of_record::DECLARED_FIELD_RANGE,
+        "the mutation did not stay in the range the run of record declares",
+    );
+    assert_eq!(
+        mutant.submitted_bytes(),
+        run_of_record::MUTANT_SUBMITTED_BYTES,
+        "the mutant handed the node a different number of bytes",
+    );
+
+    let control = record
+        .control()
+        .expect("the control was built and submitted");
+    assert_eq!(
+        control.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the control was not ACCEPTED, so no refusal in this run is attributable",
+    );
+    assert_eq!(
+        control.accepted_txid(),
+        Some(run_of_record::CONTROL_ACCEPTED_TXID),
+        "the control was accepted at an identity the run of record does not carry",
+    );
+
+    // Checked UNCONDITIONALLY. The control is asserted ACCEPTED just above,
+    // so an ABSENT two-origin check is itself the failure the conditional
+    // form used to skip.
+    let check = control
+        .reverification()
+        .expect("an accepted control carries its two-origin readback check");
+    assert!(
+        check.readback_matches_submission(),
+        "the bytes the node reported are not the bytes it was handed",
+    );
+}
+
+/// Each leaf-arrangement row, the revealed-leaf arrangement the run of
+/// record declares for it, and the words the target answered it with.
+const fn recorded_leaf_arrangements() -> [(&'static str, &'static [u16], &'static str); 2] {
+    use vectors::live_owner_signing_negatives::run_of_record;
+    [
+        (
+            "two-coordinators",
+            &run_of_record::TWO_COORDINATORS_ARRANGEMENT,
+            run_of_record::TWO_COORDINATORS_REJECT_DETAIL,
+        ),
+        (
+            "no-coordinator",
+            &run_of_record::NO_COORDINATOR_ARRANGEMENT,
+            run_of_record::NO_COORDINATOR_REJECT_DETAIL,
+        ),
+    ]
+}
+
+/// The two leaf-arrangement mutants were each refused at the script path in
+/// the recorded words, each declared the recorded revealed-leaf arrangement,
+/// and the two arrangements are distinct from each other and from the
+/// control's.
 ///
 /// Split out for the same reason the consensus assertion is: the fact the
 /// drive rests on — that one mutant per pair is a distinct candidate — is
@@ -1292,19 +1379,61 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
 fn assert_leaf_arrangements_drive(
     record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
 ) {
-    use vectors::live_owner_signing_negatives::LeafArrangementObservation;
+    use std::collections::BTreeSet;
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+    use vectors::live_owner_signing_negatives::{LeafArrangementObservation, run_of_record};
     let arrangements = record.leaf_arrangements();
     assert_eq!(
         arrangements.len(),
         2,
         "the two leaf-arrangement mutants — one per collision pair — were built",
     );
-    assert!(
-        arrangements
+    let recorded = recorded_leaf_arrangements();
+    // Set equality: the two built are exactly the two the run of record
+    // names, so a renamed or substituted row fails rather than passing as
+    // "two of something".
+    let built: BTreeSet<&str> = arrangements
+        .iter()
+        .map(LeafArrangementObservation::row)
+        .collect();
+    assert_eq!(
+        built,
+        recorded
             .iter()
-            .all(|mutant| mutant.observed_layer().is_some()),
-        "a leaf-arrangement mutant was not answered",
+            .map(|(row, ..)| *row)
+            .collect::<BTreeSet<_>>(),
+        "the leaf-arrangement mutants are not the two recorded rows",
     );
+    for mutant in arrangements {
+        let (_, arrangement, detail) = recorded
+            .iter()
+            .find(|(row, ..)| *row == mutant.row())
+            .expect("every built mutant is a recorded row");
+        assert_eq!(
+            mutant.observed_layer(),
+            Some(ObservedOutcomeLayer::ScriptPathRejection),
+            "{} was not refused at the script path",
+            mutant.row(),
+        );
+        assert_eq!(
+            mutant.revealed_arrangement(),
+            *arrangement,
+            "{} revealed an arrangement the run of record does not carry",
+            mutant.row(),
+        );
+        assert_eq!(
+            mutant.observed_detail(),
+            Some(*detail),
+            "{} drew words the run of record does not carry",
+            mutant.row(),
+        );
+        assert_ne!(
+            mutant.revealed_arrangement(),
+            run_of_record::CONTROL_ARRANGEMENT.as_slice(),
+            "{} reveals the control's own arrangement and rearranges nothing",
+            mutant.row(),
+        );
+    }
     // The separating fact is the revealed-leaf arrangement: the mutants keep
     // the control's witnessless serialization and differ only in which
     // committed leaf each input reveals, so a distinct arrangement per row
@@ -1322,8 +1451,70 @@ fn assert_leaf_arrangements_drive(
     );
 }
 
-/// The seven consensus-conservation mutants were each answered and each
-/// declared a distinct field range.
+/// One consensus row's separating fact: the half-open witnessless byte
+/// range its surgery declared, together with the transaction shape the
+/// mutant handed the node.
+type ConsensusSeparator = ((usize, usize), (usize, usize));
+
+/// Each consensus row and the `(range, shape)` separator the run of record
+/// declares for it.
+///
+/// The four field surgeries keep the control's 2-in-2-out shape and separate
+/// by four distinct ranges; the two output-cardinality surgeries share the
+/// structural range `changed_range` cannot localize past the output-count
+/// varint and separate by shape; `omitted-source` separates by both.
+const fn recorded_consensus_separators() -> [(&'static str, ConsensusSeparator); 7] {
+    use vectors::live_owner_signing_negatives::run_of_record;
+    /// The control's own shape, which the four field surgeries keep.
+    const KEPT: (usize, usize) = (2, 2);
+    [
+        (
+            "wrong-explicit-asset",
+            (run_of_record::WRONG_EXPLICIT_ASSET_FIELD_RANGE, KEPT),
+        ),
+        (
+            "confidential-asset-commitment",
+            (
+                run_of_record::CONFIDENTIAL_ASSET_COMMITMENT_FIELD_RANGE,
+                KEPT,
+            ),
+        ),
+        (
+            "output-total-one-below-input",
+            (run_of_record::OUTPUT_TOTAL_ONE_BELOW_FIELD_RANGE, KEPT),
+        ),
+        (
+            "output-total-one-above-input",
+            (run_of_record::OUTPUT_TOTAL_ONE_ABOVE_FIELD_RANGE, KEPT),
+        ),
+        (
+            "private-output-omitted",
+            (
+                run_of_record::OUTPUT_CARDINALITY_FIELD_RANGE,
+                run_of_record::PRIVATE_OUTPUT_OMITTED_SHAPE,
+            ),
+        ),
+        (
+            "hidden-private-u-output",
+            (
+                run_of_record::OUTPUT_CARDINALITY_FIELD_RANGE,
+                run_of_record::HIDDEN_PRIVATE_U_OUTPUT_SHAPE,
+            ),
+        ),
+        (
+            "omitted-source",
+            (
+                run_of_record::OMITTED_SOURCE_FIELD_RANGE,
+                run_of_record::OMITTED_SOURCE_SHAPE,
+            ),
+        ),
+    ]
+}
+
+/// The seven consensus-conservation mutants are the seven recorded rows,
+/// each refused at consensus before script in the recorded words, each on
+/// the separator the run of record declares for it, and the seven
+/// separators are pairwise distinct.
 ///
 /// Split from the test body so the assertion the run rests on — that no
 /// two rows share one observation — is stated once and the test stays
@@ -1331,15 +1522,51 @@ fn assert_leaf_arrangements_drive(
 fn assert_consensus_mutants_separate(
     record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
 ) {
+    use std::collections::BTreeSet;
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
-    use vectors::live_owner_signing_negatives::ConsensusMutantObservation;
+    use vectors::live_owner_signing_negatives::{ConsensusMutantObservation, run_of_record};
     let consensus = record.consensus_mutants();
     assert_eq!(consensus.len(), 7, "the seven consensus mutants were built");
-    assert!(
-        consensus.iter().all(|mutant| mutant.observed_layer()
-            == Some(ObservedOutcomeLayer::ConsensusRejectionBeforeScript)),
-        "a consensus mutant was not refused at consensus before script",
+    let recorded = recorded_consensus_separators();
+    // Set equality: the seven built are exactly the seven the run of record
+    // names, so a renamed or substituted row fails rather than passing as
+    // "seven of something".
+    let built: BTreeSet<&str> = consensus
+        .iter()
+        .map(ConsensusMutantObservation::row)
+        .collect();
+    assert_eq!(
+        built,
+        recorded
+            .iter()
+            .map(|(row, _)| *row)
+            .collect::<BTreeSet<_>>(),
+        "the consensus mutants are not the seven recorded rows",
     );
+    for mutant in consensus {
+        let (_, separator) = recorded
+            .iter()
+            .find(|(row, _)| *row == mutant.row())
+            .expect("every built mutant is a recorded row");
+        assert_eq!(
+            mutant.observed_layer(),
+            Some(ObservedOutcomeLayer::ConsensusRejectionBeforeScript),
+            "{} was not refused at consensus before script",
+            mutant.row(),
+        );
+        assert_eq!(
+            mutant.observed_detail(),
+            Some(run_of_record::CONSENSUS_MUTANT_REJECT_DETAIL),
+            "{} drew words the run of record does not carry",
+            mutant.row(),
+        );
+        assert_eq!(
+            mutant.separator(),
+            *separator,
+            "{} drifted off the separator the run of record declares",
+            mutant.row(),
+        );
+    }
     // The separating fact is the byte range together with the shape: the
     // four field surgeries keep the control's shape and separate by range,
     // the three structural surgeries separate by shape where the
