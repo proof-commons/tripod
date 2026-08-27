@@ -1420,6 +1420,24 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
             crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
             crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
         )),
+        // §15.4's script-path row, answered by the owner-signing negative
+        // ceremony's own run: the bare-u mutant offered FIRST and the
+        // unmutated control LAST, to one node on one chain. The mutant is
+        // re-signed over its own mutated bytes through the negative-evidence
+        // census, so it passes the leaf's signature gate and reaches the
+        // coordinator leaf's `InspectOutputScriptPubKey` version clause,
+        // which refuses it. The verdict reads as a generic script-verify
+        // failure and is attributed by the FIELD the mutant declared and
+        // stayed within — the mutated destination's program alone
+        // (`DECLARED_FIELD_RANGE`) — with the unmutated control accepted in
+        // the SAME run to make the difference the leaf measured this row's.
+        // The re-signing changes the witness too, by design; the declared
+        // range is measured over the WITNESSLESS serialization the message
+        // is taken over, where it does not reach.
+        "vault-control-entitlement-or-bare-u-output" => Some((
+            crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            crate::live_owner_signing_negatives::run_of_record::MUTANT_REJECT_DETAIL,
+        )),
         _ => None,
     }
 }
@@ -2405,10 +2423,11 @@ mod tests {
                 "malformed-rangeproof",
                 "malformed-signature",
                 "missing-sponsor-authorization",
+                "vault-control-entitlement-or-bare-u-output",
                 "wrong-private-blinding-balance",
             ]),
         );
-        assert_eq!(plan.census().native_refusal_observed(), 5);
+        assert_eq!(plan.census().native_refusal_observed(), 6);
 
         // THE THIRD ROW COMES FROM A DIFFERENT LANE and is held to the
         // same rule. Its mutant was offered first and its control

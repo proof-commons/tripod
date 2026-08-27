@@ -1035,25 +1035,28 @@ pub mod run_of_record {
     /// The unmutated vault-control-entitlement candidate, accepted after
     /// the bare-u mutant had been refused — which is what makes the
     /// mutant's refusal attributable rather than merely recorded.
-    pub const CONTROL_ACCEPTED_TXID: &str = "";
+    pub const CONTROL_ACCEPTED_TXID: &str =
+        "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029";
 
     /// What the target said to the bare-u-output mutant, verbatim.
     ///
     /// The coordinator leaf's `InspectOutputScriptPubKey` version clause,
     /// reached because the mutant is re-signed over its own bytes and its
     /// asset and value are unchanged, so the per-asset tally passes and the
-    /// leaf runs.
-    pub const MUTANT_REJECT_DETAIL: &str = "";
+    /// leaf runs. The verdict is the leaf's own `EQUALVERIFY`, observed at
+    /// the script layer rather than at consensus.
+    pub const MUTANT_REJECT_DETAIL: &str =
+        "mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)";
 
     /// The half-open witnessless byte range the mutant declared and stayed
     /// within: the mutated destination's program.
-    pub const DECLARED_FIELD_RANGE: (usize, usize) = (0, 0);
+    pub const DECLARED_FIELD_RANGE: (usize, usize) = (132, 167);
 
     /// How many bytes the mutant handed the node.
-    pub const MUTANT_SUBMITTED_BYTES: usize = 0;
+    pub const MUTANT_SUBMITTED_BYTES: usize = 1152;
 
     /// The run's wall time, in seconds.
-    pub const WALL_SECONDS: f64 = 0.0;
+    pub const WALL_SECONDS: f64 = 8.2;
 }
 
 #[cfg(test)]

@@ -229,11 +229,6 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // through the bundle link, and it is discharged first-party beside
     // its three siblings on the input recognition's own refusal.
     entry(
-        "vault-control-entitlement-or-bare-u-output",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "no request field names an output class and output assembly writes the linked program",
-    ),
-    entry(
         "wrong-explicit-asset",
         G::OwnerSigningOverForeignBytesAbsent,
         "output assembly writes the protocol asset unconditionally, with no field to state another",
