@@ -52,6 +52,33 @@
 //! two value fields, and the three structural changes are seven distinct
 //! regions of one transaction — and no two rows rest on one observation.
 //!
+//! # The leaf-arrangement rows this ceremony drives
+//!
+//! The four leaf-arrangement rows form TWO collision pairs, each drawing
+//! ONE verdict: the coordinator index check (`PushCurrentInputIndex; 0;
+//! EqualVerify`) and the member bound check (`... 1; GreaterThanOrEqual64;
+//! Verify`). So beside the field mutants this ceremony stages TWO
+//! leaf-arrangement mutants — one per pair, the arrangement whose only
+//! failing input is the leaf at the forbidden position. `two-coordinators`
+//! reveals the coordinator leaf at both inputs, so the coordinator running
+//! at input one fails the index EqualVerify; `no-coordinator` reveals a
+//! member leaf at both inputs, so the member running at input zero fails
+//! the bound Verify. The other half of each pair (`wrong-coordinator`,
+//! `member-coordinator-leaf-exchange`) stays typed because its own
+//! arrangement has a SECOND failing input, so its observation would
+//! duplicate its pair-partner's and separate nothing.
+//!
+//! These mutants move NO taptree. Both funded receipts are paid to one
+//! program, so both spent outputs commit to one taptree holding both the
+//! coordinator leaf and the member leaf; a leaf-arrangement mutant reveals
+//! an already-committed leaf at a different input, and the census's own
+//! recomputed `VerifyTaprootCommitment` accepts the rearranged control
+//! block because it commits against the same taproot output. Nothing but
+//! the witness changes, so the witnessless serialization stays the
+//! control's and the separating fact is the revealed-leaf ARRANGEMENT. Each
+//! input is re-signed over the rearranged census, so the candidate passes
+//! the signature gate and reaches the leaf's own index or bound clause.
+//!
 //! # Attribution is by mutated field, against a control on the same chain
 //!
 //! The mutant is offered FIRST and the unmutated control LAST, to one node
@@ -271,6 +298,144 @@ impl ConsensusSurgery {
     }
 }
 
+/// One leaf-arrangement surgery: which committed leaf each input reveals.
+///
+/// The control reveals the coordinator leaf at input zero and the member
+/// leaf at input one; each mutant collapses that arrangement to ONE role,
+/// so a leaf lands at a position its own covenant clause forbids. The
+/// mutation lives entirely in the WITNESS — the outputs, inputs, assets
+/// and values are the control's, so the witnessless serialization is
+/// byte-identical to the control's and the separating fact is the
+/// revealed-leaf arrangement itself, not a byte range.
+///
+/// Both funded receipts are paid to ONE program, so both spent outputs
+/// commit to ONE taptree that holds both the coordinator leaf and the
+/// member leaf. Revealing either leaf at either input therefore commits
+/// against the same taproot output — the census's own recomputed
+/// `VerifyTaprootCommitment` accepts the rearranged control block — so no
+/// leaf-arrangement mutant needs a taptree of its own and none moves the
+/// demonstration taptree's digest. Each input is re-signed over the
+/// rearranged census through the seam, so the candidate passes the
+/// signature gate and reaches the leaf's own index or bound clause.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LeafArrangement {
+    /// Reveal the COORDINATOR leaf at both inputs. Input zero's
+    /// coordinator is the control's and passes; input one's coordinator
+    /// leaf runs at index one and fails the coordinator index check
+    /// (`PushCurrentInputIndex; 0; EqualVerify`), the one input that
+    /// fails, so the verdict is unambiguously that clause's.
+    TwoCoordinators,
+    /// Reveal a MEMBER leaf at both inputs. Input one's member is the
+    /// control's and passes; input zero's member leaf runs at index zero
+    /// and fails the member bound's lower check (`... 1;
+    /// GreaterThanOrEqual64; Verify`), the one input that fails.
+    NoCoordinator,
+}
+
+/// Every leaf-arrangement surgery, in the order the ceremony submits them.
+const LEAF_ARRANGEMENTS: [LeafArrangement; 2] = [
+    LeafArrangement::TwoCoordinators,
+    LeafArrangement::NoCoordinator,
+];
+
+impl LeafArrangement {
+    /// The §15 row this surgery drives, spelled as the safety matrix names
+    /// it.
+    const fn row(self) -> &'static str {
+        match self {
+            Self::TwoCoordinators => "two-coordinators",
+            Self::NoCoordinator => "no-coordinator",
+        }
+    }
+
+    /// The pair-partner this drive leaves typed: its own mutant would draw
+    /// the SAME verdict at the SAME clause, so its observation would
+    /// duplicate this one and it stays `TargetVerdictDoesNotSeparateTheRows`.
+    const fn typed_partner(self) -> &'static str {
+        match self {
+            Self::TwoCoordinators => "wrong-coordinator",
+            Self::NoCoordinator => "member-coordinator-leaf-exchange",
+        }
+    }
+
+    /// The receipt POSITION whose leaf each input reveals. The control's
+    /// arrangement is `[0, 1]`; each mutant collapses it to one role. The
+    /// ceremony funds exactly two receipts, so the arrangement is two
+    /// positions wide.
+    const fn sources(self) -> [u16; RECEIPT_COUNT as usize] {
+        match self {
+            Self::TwoCoordinators => [0, 0],
+            Self::NoCoordinator => [1, 1],
+        }
+    }
+
+    /// The ceremony's own name for this surgery's submission step.
+    fn step_name(self) -> String {
+        format!("leaf-arrangement-{}", self.row())
+    }
+}
+
+/// One leaf-arrangement mutant, as this ceremony built, submitted and
+/// observed it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LeafArrangementObservation {
+    row: &'static str,
+    typed_partner: &'static str,
+    revealed_arrangement: Vec<u16>,
+    mutant_bytes: Vec<u8>,
+    submitted_bytes: usize,
+    message: Digest32,
+    observed_layer: Option<ObservedOutcomeLayer>,
+    observed_detail: Option<String>,
+}
+
+impl LeafArrangementObservation {
+    /// The §15 row this mutant drives.
+    #[must_use]
+    pub const fn row(&self) -> &'static str {
+        self.row
+    }
+
+    /// The pair-partner this drive leaves typed with the non-separation.
+    #[must_use]
+    pub const fn typed_partner(&self) -> &'static str {
+        self.typed_partner
+    }
+
+    /// The revealed-leaf arrangement: the source receipt position each
+    /// input reveals the leaf of. The separating fact, since the
+    /// witnessless serialization is the control's — a mutant's arrangement
+    /// is distinct from the control's `[0, 1]` and from every sibling's.
+    #[must_use]
+    pub fn revealed_arrangement(&self) -> &[u16] {
+        &self.revealed_arrangement
+    }
+
+    /// How many bytes this mutant handed the node.
+    #[must_use]
+    pub const fn submitted_bytes(&self) -> usize {
+        self.submitted_bytes
+    }
+
+    /// The message the rearranged input's signature was taken over.
+    #[must_use]
+    pub const fn message(&self) -> &Digest32 {
+        &self.message
+    }
+
+    /// The layer the target refused this mutant at, where it was observed.
+    #[must_use]
+    pub const fn observed_layer(&self) -> Option<ObservedOutcomeLayer> {
+        self.observed_layer
+    }
+
+    /// The node's own words, where it gave any.
+    #[must_use]
+    pub fn observed_detail(&self) -> Option<&str> {
+        self.observed_detail.as_deref()
+    }
+}
+
 /// One consensus mutant, as this ceremony built, submitted and observed
 /// it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -482,6 +647,7 @@ pub struct OwnerSigningNegativeRecord {
     coins: Vec<ObservedFundedCoin>,
     mutant: Option<MutantObservation>,
     consensus_mutants: Vec<ConsensusMutantObservation>,
+    leaf_arrangements: Vec<LeafArrangementObservation>,
     control: Option<ControlObservation>,
     refusal: Option<OwnerSigningNegativeRefusal>,
 }
@@ -491,6 +657,12 @@ impl OwnerSigningNegativeRecord {
     #[must_use]
     pub fn consensus_mutants(&self) -> &[ConsensusMutantObservation] {
         &self.consensus_mutants
+    }
+
+    /// The leaf-arrangement mutants, in the order they ran.
+    #[must_use]
+    pub fn leaf_arrangements(&self) -> &[LeafArrangementObservation] {
+        &self.leaf_arrangements
     }
 
     /// The asset identity the target chose.
@@ -542,6 +714,11 @@ impl OwnerSigningNegativeRecord {
             "discharges each row by its OWN mutant: the bare-u program surgery is the script-path \
              row's, and each consensus surgery breaks conservation in its own field so its refusal \
              separates by a distinct declared range rather than sharing one observation",
+            "drives ONE leaf-arrangement row per collision pair and moves no taptree: \
+             two-coordinators and no-coordinator each reveal a committed leaf at a forbidden \
+             position and are refused at the covenant's own index or bound clause, while \
+             wrong-coordinator and member-coordinator-leaf-exchange stay typed because their own \
+             mutants would draw the same verdict at the same clause",
             "claims nothing about any deployment but the one this run created and destroyed",
         ]
     }
@@ -560,6 +737,9 @@ enum Stage {
     /// Submit the consensus-conservation mutant at this index, before the
     /// control so its coins stay unspent for the acceptance.
     ConsensusMutant(usize),
+    /// Submit the leaf-arrangement mutant at this index, before the control
+    /// so its coins stay unspent for the acceptance.
+    LeafArrangement(usize),
     /// Submit the unmutated control, last, which is what consumes them.
     Control,
     /// Nothing further.
@@ -978,6 +1158,14 @@ impl OwnerSigningNegativePlanner {
         // is confined to its own witnessless byte range, measured here.
         self.record.consensus_mutants = build_consensus_mutants(&control_bytes)?;
 
+        // The leaf-arrangement mutants rearrange which committed leaf each
+        // input reveals and re-sign over the rearranged census, so each
+        // passes the signature gate and is refused at the covenant's own
+        // index or bound clause. Both spent outputs commit to one taptree
+        // holding both leaves, so the rearrangement reuses committed leaves
+        // and moves no digest.
+        self.record.leaf_arrangements = self.build_leaf_arrangements(&finalized, &spent_outputs)?;
+
         // The control's bytes are stashed on the control record's message
         // check; the bytes themselves are rebuilt for the control step so
         // the ceremony holds one pending submission at a time.
@@ -1005,6 +1193,145 @@ impl OwnerSigningNegativePlanner {
         let mutant = self.record.consensus_mutants.get(index)?;
         Some(OperationStep::new(
             &CONSENSUS_SURGERIES[index].step_name(),
+            OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                transaction_bytes: mutant.mutant_bytes.clone(),
+            })),
+        ))
+    }
+
+    /// Build every leaf-arrangement mutant from the finalized candidate.
+    ///
+    /// Each mutant reuses the finalized receipts' own committed leaf
+    /// scripts and control blocks, rearranged across the inputs, and is
+    /// re-signed over the rearranged census. Nothing but the witness
+    /// changes, so the witnessless serialization stays the control's and
+    /// the separating fact is the arrangement.
+    fn build_leaf_arrangements(
+        &self,
+        finalized: &FinalizedLiveTransfer,
+        spent_outputs: &[transaction::live_census::SpentOutputCensusEntry],
+    ) -> Result<Vec<LeafArrangementObservation>, OwnerSigningNegativeRefusal> {
+        let mut mutants = Vec::with_capacity(LEAF_ARRANGEMENTS.len());
+        for arrangement in LEAF_ARRANGEMENTS {
+            let (mutant_bytes, message) =
+                self.build_leaf_arrangement(finalized, spent_outputs, arrangement)?;
+            mutants.push(LeafArrangementObservation {
+                row: arrangement.row(),
+                typed_partner: arrangement.typed_partner(),
+                revealed_arrangement: arrangement.sources().to_vec(),
+                submitted_bytes: mutant_bytes.len(),
+                mutant_bytes,
+                message,
+                observed_layer: None,
+                observed_detail: None,
+            });
+        }
+        Ok(mutants)
+    }
+
+    /// One leaf-arrangement mutant's submittable bytes and the message its
+    /// REARRANGED input's signature was taken over.
+    ///
+    /// Every input's witness is rebuilt: its revealed leaf is the leaf of
+    /// the receipt the arrangement names for that position, its control
+    /// block that receipt's, and its signature re-taken over the rearranged
+    /// census so the candidate passes the signature gate. The message
+    /// recorded is the rearranged input's, so it differs from the control's
+    /// at that input and the comparison is not vacuous.
+    fn build_leaf_arrangement(
+        &self,
+        finalized: &FinalizedLiveTransfer,
+        spent_outputs: &[transaction::live_census::SpentOutputCensusEntry],
+        arrangement: LeafArrangement,
+    ) -> Result<(Vec<u8>, Digest32), OwnerSigningNegativeRefusal> {
+        let candidate = finalized.protected().clone();
+        let sources = arrangement.sources();
+
+        let mut requests = Vec::with_capacity(finalized.receipts().len());
+        for record in finalized.receipts() {
+            let revealed = revealed_leaf(finalized, &sources, record.position())?;
+            requests.push(OwnerSigningInputRequest::new(
+                u32::from(record.position()),
+                leaf_hash(LeafVersion::TAPSCRIPT, revealed.leaf_script()),
+                LeafVersion::TAPSCRIPT,
+                OWNER_CODESEPARATOR_POSITION,
+                AnnexDisposition::Absent,
+                IssuanceDisposition::Absent,
+                revealed.control_block().to_vec(),
+            ));
+        }
+
+        let census = Self::census(
+            candidate.clone(),
+            spent_outputs.to_vec(),
+            self.genesis_block_hash,
+            &requests,
+        )?;
+
+        let material = signing_material(&FIRST_SCALAR)
+            .map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
+        let mut witnesses = candidate.witnesses().to_vec();
+        let mut rearranged_message = None;
+        for record in finalized.receipts() {
+            let position = usize::from(record.position());
+            let revealed = revealed_leaf(finalized, &sources, record.position())?;
+            let input = census
+                .signing_inputs()
+                .iter()
+                .find(|entry| entry.input_index() == u32::from(record.position()))
+                .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+            let message =
+                candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown);
+            // The rearranged input is the one whose revealed leaf is not its
+            // own position's: its message differs from the control's, which
+            // is what makes the mutant a distinct candidate.
+            if rearranged_message.is_none()
+                && sources.get(position).copied() != Some(record.position())
+            {
+                rearranged_message = Some(message);
+            }
+            let signature = material
+                .sign(&message, &SIGNING_AUXILIARY)
+                .map_err(|_| OwnerSigningNegativeRefusal::SigningRefused)?
+                .to_vec();
+            let witness = InputWitness::new(vec![
+                signature,
+                revealed.leaf_script().to_vec(),
+                revealed.control_block().to_vec(),
+            ]);
+            *witnesses
+                .get_mut(position)
+                .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)? = witness;
+        }
+
+        let assembled = TargetTransaction::with_output_witnesses(
+            candidate.version(),
+            candidate.inputs().to_vec(),
+            candidate.outputs().to_vec(),
+            candidate.lock_time(),
+            witnesses,
+            candidate.output_witnesses().to_vec(),
+        )
+        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+
+        let message =
+            rearranged_message.ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+        Ok((assembled.encode(), message))
+    }
+
+    /// Record what the target did with one leaf-arrangement mutant.
+    fn settle_leaf_arrangement(&mut self, index: usize, response: &NativeOperationResponse) {
+        if let Some(mutant) = self.record.leaf_arrangements.get_mut(index) {
+            mutant.observed_layer = Some(response.observed_layer);
+            mutant.observed_detail.clone_from(&response.observed_detail);
+        }
+    }
+
+    /// The submission step for one leaf-arrangement mutant.
+    fn leaf_arrangement_step(&self, index: usize) -> Option<OperationStep> {
+        let mutant = self.record.leaf_arrangements.get(index)?;
+        Some(OperationStep::new(
+            &LEAF_ARRANGEMENTS[index].step_name(),
             OperationSubject::Submission(Box::new(TargetSubmissionSubject {
                 transaction_bytes: mutant.mutant_bytes.clone(),
             })),
@@ -1063,6 +1390,14 @@ impl TargetOperationPlanner for OwnerSigningNegativePlanner {
                     self.stage = if index + 1 < self.record.consensus_mutants.len() {
                         Stage::ConsensusMutant(index + 1)
                     } else {
+                        Stage::LeafArrangement(0)
+                    };
+                }
+                Stage::LeafArrangement(index) => {
+                    self.settle_leaf_arrangement(index, response);
+                    self.stage = if index + 1 < self.record.leaf_arrangements.len() {
+                        Stage::LeafArrangement(index + 1)
+                    } else {
                         Stage::Control
                     };
                 }
@@ -1100,6 +1435,10 @@ impl TargetOperationPlanner for OwnerSigningNegativePlanner {
                 || Err(self.refuse(OwnerSigningNegativeRefusal::CandidateNotConstructible)),
                 |step| Ok(Some(step)),
             ),
+            Stage::LeafArrangement(index) => self.leaf_arrangement_step(index).map_or_else(
+                || Err(self.refuse(OwnerSigningNegativeRefusal::CandidateNotConstructible)),
+                |step| Ok(Some(step)),
+            ),
             Stage::Control => match self.stage_control() {
                 Ok(bytes) => {
                     self.pending = Some(PendingSubmission {
@@ -1131,6 +1470,28 @@ fn explicit_destination_program(abi: &CandidateLiveTransferAbi) -> Result<Vec<u8
         .instance()
         .program()
         .to_vec())
+}
+
+/// The receipt whose committed leaf a leaf-arrangement input reveals.
+///
+/// Looked up by the source POSITION the arrangement names rather than by
+/// list index, so the mapping does not rest on the order the receipts
+/// happen to arrive in. Both funded receipts commit to one taptree holding
+/// both leaves, so any receipt's leaf is spendable at any input against the
+/// shared taproot output.
+fn revealed_leaf<'a>(
+    finalized: &'a FinalizedLiveTransfer,
+    sources: &[u16],
+    position: u16,
+) -> Result<&'a transaction::ReceiptInputRecord, OwnerSigningNegativeRefusal> {
+    let source = *sources
+        .get(usize::from(position))
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    finalized
+        .receipts()
+        .iter()
+        .find(|record| record.position() == source)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)
 }
 
 /// One candidate with a single output's program rewritten, asset, value
@@ -1446,6 +1807,21 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
         ));
     }
 
+    for mutant in record.leaf_arrangements() {
+        lines.push(format!(
+            "leaf_arrangement row {} arrangement {:?} typed_partner {} submitted_bytes {} message {} layer {} detail {}",
+            mutant.row(),
+            mutant.revealed_arrangement(),
+            mutant.typed_partner(),
+            mutant.submitted_bytes(),
+            printed(mutant.message().as_slice()),
+            mutant
+                .observed_layer()
+                .map_or_else(|| "none".to_owned(), |layer| format!("{layer:?}")),
+            mutant.observed_detail().unwrap_or("none"),
+        ));
+    }
+
     if let Some(control) = record.control() {
         lines.push(format!(
             "control submitted_bytes {} message {} layer {} txid {} detail {}",
@@ -1577,6 +1953,45 @@ pub mod run_of_record {
     /// `omitted-source`'s shape: one input, two outputs.
     pub const OMITTED_SOURCE_SHAPE: (usize, usize) = (1, 2);
 
+    /// What the target said to the `two-coordinators` leaf-arrangement
+    /// mutant, verbatim.
+    ///
+    /// The coordinator leaf revealed at input one runs the coordinator
+    /// index check `PushCurrentInputIndex; 0; EqualVerify` at index one and
+    /// fails it — the one input that fails, the other being the control's
+    /// valid coordinator. Reached because the mutant is re-signed over its
+    /// rearranged census and its shape and amounts are the control's, so
+    /// the per-asset tally passes and the leaf runs. The verdict READS the
+    /// same OP_EQUALVERIFY as the bare-u mutant, at a different clause, and
+    /// the rows separate by their distinct mutation — a second coordinator
+    /// leaf against a rewritten output program.
+    pub const TWO_COORDINATORS_REJECT_DETAIL: &str =
+        "mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)";
+
+    /// The `two-coordinators` mutant's revealed-leaf arrangement: the
+    /// coordinator leaf (receipt position zero) at BOTH inputs.
+    pub const TWO_COORDINATORS_ARRANGEMENT: [u16; 2] = [0, 0];
+
+    /// What the target said to the `no-coordinator` leaf-arrangement
+    /// mutant, verbatim.
+    ///
+    /// The member leaf revealed at input zero runs the member bound's lower
+    /// check `... 1; GreaterThanOrEqual64; Verify` at index zero and fails
+    /// it — the one input that fails, the other being the control's valid
+    /// member. The verdict is an OP_VERIFY, which tells this row from the
+    /// two coordinator-index rows that draw OP_EQUALVERIFY.
+    pub const NO_COORDINATOR_REJECT_DETAIL: &str =
+        "mandatory-script-verify-flag-failed (Script failed an OP_VERIFY operation)";
+
+    /// The `no-coordinator` mutant's revealed-leaf arrangement: the member
+    /// leaf (receipt position one) at BOTH inputs.
+    pub const NO_COORDINATOR_ARRANGEMENT: [u16; 2] = [1, 1];
+
+    /// The control's own revealed-leaf arrangement: the coordinator leaf at
+    /// input zero, the member leaf at input one. Each mutant's arrangement
+    /// is distinct from this and from the other's.
+    pub const CONTROL_ARRANGEMENT: [u16; 2] = [0, 1];
+
     /// The run's wall time, in seconds.
     pub const WALL_SECONDS: f64 = 8.3;
 }
@@ -1590,6 +2005,46 @@ mod tests {
         assert_eq!(changed_range(&[0, 1, 2, 3, 4], &[0, 1, 9, 3, 4]), (2, 3));
         assert_eq!(changed_range(&[0, 1, 2, 3, 4], &[0, 1, 3, 4]), (2, 3));
         assert_eq!(changed_range(&[7, 7], &[7, 7]), (2, 2));
+    }
+
+    #[test]
+    fn the_leaf_arrangements_declare_distinct_reveal_orders() {
+        // Each driven row's arrangement is distinct from the control's and
+        // from its sibling's, which is what makes the two leaf-arrangement
+        // mutants distinct candidates when their verdicts read as a plain
+        // OP_EQUALVERIFY or OP_VERIFY. The control reveals coordinator then
+        // member; two-coordinators collapses to coordinator at both, and
+        // no-coordinator to member at both.
+        use super::run_of_record as run;
+        let arrangements = [
+            run::CONTROL_ARRANGEMENT,
+            run::TWO_COORDINATORS_ARRANGEMENT,
+            run::NO_COORDINATOR_ARRANGEMENT,
+        ];
+        let mut seen = std::collections::BTreeSet::new();
+        for arrangement in arrangements {
+            assert!(
+                seen.insert(arrangement),
+                "two leaf arrangements share the reveal order {arrangement:?}",
+            );
+        }
+        // The two driven verdicts are distinct clauses: the coordinator
+        // index EqualVerify and the member bound Verify.
+        assert_ne!(
+            run::TWO_COORDINATORS_REJECT_DETAIL,
+            run::NO_COORDINATOR_REJECT_DETAIL,
+            "the two leaf-arrangement rows draw one verdict",
+        );
+        // The ceremony's own map from arrangement to row matches the run of
+        // record's constants.
+        assert_eq!(
+            super::LeafArrangement::TwoCoordinators.sources(),
+            run::TWO_COORDINATORS_ARRANGEMENT,
+        );
+        assert_eq!(
+            super::LeafArrangement::NoCoordinator.sources(),
+            run::NO_COORDINATOR_ARRANGEMENT,
+        );
     }
 
     #[test]

@@ -1276,6 +1276,50 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
     // and answered, and each declared a DISTINCT field range so no two
     // rows rest on one observation.
     assert_consensus_mutants_separate(record);
+
+    // The two leaf-arrangement mutants — one per collision pair — were each
+    // built, submitted and answered, and each declared a DISTINCT
+    // revealed-leaf arrangement so no two rows rest on one observation.
+    assert_leaf_arrangements_drive(record);
+}
+
+/// The two leaf-arrangement mutants were each answered at the script layer
+/// and each declared a distinct revealed-leaf arrangement.
+///
+/// Split out for the same reason the consensus assertion is: the fact the
+/// drive rests on — that one mutant per pair is a distinct candidate — is
+/// stated once and the test body stays under the line bound.
+fn assert_leaf_arrangements_drive(
+    record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
+) {
+    use vectors::live_owner_signing_negatives::LeafArrangementObservation;
+    let arrangements = record.leaf_arrangements();
+    assert_eq!(
+        arrangements.len(),
+        2,
+        "the two leaf-arrangement mutants — one per collision pair — were built",
+    );
+    assert!(
+        arrangements
+            .iter()
+            .all(|mutant| mutant.observed_layer().is_some()),
+        "a leaf-arrangement mutant was not answered",
+    );
+    // The separating fact is the revealed-leaf arrangement: the mutants keep
+    // the control's witnessless serialization and differ only in which
+    // committed leaf each input reveals, so a distinct arrangement per row
+    // is what keeps no two rows resting on one observation.
+    let mut arrangements: Vec<Vec<u16>> = arrangements
+        .iter()
+        .map(|mutant| LeafArrangementObservation::revealed_arrangement(mutant).to_vec())
+        .collect();
+    arrangements.sort_unstable();
+    arrangements.dedup();
+    assert_eq!(
+        arrangements.len(),
+        record.leaf_arrangements().len(),
+        "two leaf-arrangement mutants share a revealed-leaf arrangement and do not separate",
+    );
 }
 
 /// The seven consensus-conservation mutants were each answered and each

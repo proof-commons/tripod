@@ -1479,6 +1479,33 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
             crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
             crate::live_owner_signing_negatives::run_of_record::CONSENSUS_MUTANT_REJECT_DETAIL,
         )),
+        // ONE driven row of each leaf-arrangement collision pair, answered
+        // by the SAME owner-signing negative run. The four rows form two
+        // pairs drawing one verdict each — the coordinator index check and
+        // the member bound check — so one mutant per pair is driven and the
+        // other stays typed (`TargetVerdictDoesNotSeparateTheRows`) because
+        // its own mutant would draw the same verdict at the same clause.
+        // `two-coordinators` reveals the coordinator leaf at both inputs, so
+        // the coordinator running at input one fails the index EqualVerify —
+        // the one input that fails, the other being the control's valid
+        // coordinator; `no-coordinator` reveals a member leaf at both
+        // inputs, so the member running at input zero fails the bound's
+        // lower Verify. Each mutant is a distinct candidate: the outputs,
+        // assets and values are the control's, so the witnessless
+        // serialization is byte-identical and the separating fact is the
+        // revealed-leaf ARRANGEMENT — a role at a forbidden position — which
+        // is what tells the driven row from the bare-u mutant that reads the
+        // same OP_EQUALVERIFY and from every sibling. No taptree moved: both
+        // funded coins commit to one tree holding both leaves, so the
+        // rearrangement reuses committed leaves.
+        "two-coordinators" => Some((
+            crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_REJECT_DETAIL,
+        )),
+        "no-coordinator" => Some((
+            crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_REJECT_DETAIL,
+        )),
         _ => None,
     }
 }
@@ -2466,17 +2493,19 @@ mod tests {
                 "malformed-rangeproof",
                 "malformed-signature",
                 "missing-sponsor-authorization",
+                "no-coordinator",
                 "omitted-source",
                 "output-total-one-above-input",
                 "output-total-one-below-input",
                 "private-ct-imbalance",
                 "private-output-omitted",
+                "two-coordinators",
                 "vault-control-entitlement-or-bare-u-output",
                 "wrong-explicit-asset",
                 "wrong-private-blinding-balance",
             ]),
         );
-        assert_eq!(plan.census().native_refusal_observed(), 14);
+        assert_eq!(plan.census().native_refusal_observed(), 16);
 
         // THE THIRD ROW COMES FROM A DIFFERENT LANE and is held to the
         // same rule. Its mutant was offered first and its control
@@ -2514,6 +2543,69 @@ mod tests {
         ] {
             assert_ne!(detail, witness::REFUSAL_UNDER_CONTROL_FIRST_ORDER);
         }
+    }
+
+    #[test]
+    fn the_four_leaf_arrangement_rows_collapse_to_two_observations() {
+        // The R-5 collapse, pinned: the four leaf-arrangement rows form two
+        // collision pairs, and each pair draws ONE verdict, so exactly two
+        // rows are DRIVEN to an observed refusal and exactly two stay typed
+        // as not-separated. Driving all four would read one observation onto
+        // two rows twice; typing all four would leave a drivable refusal
+        // unrecorded. This holds the split against the classifier.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let standing = |name: &str| {
+            plan.rows()
+                .iter()
+                .find(|row| row.row().name() == name)
+                .map(|row| row.standing())
+                .unwrap_or_else(|| panic!("{name} is not a matrix row"))
+        };
+
+        // PAIR 1, the coordinator index check: two-coordinators is driven,
+        // wrong-coordinator stays typed.
+        assert!(
+            matches!(
+                standing("two-coordinators"),
+                LiveRowStanding::NativeRefusalObserved { .. }
+            ),
+            "two-coordinators was not driven to an observed refusal",
+        );
+        assert!(
+            matches!(
+                standing("wrong-coordinator"),
+                LiveRowStanding::NativeRunRequired(_)
+            ),
+            "wrong-coordinator did not stay typed as still required",
+        );
+
+        // PAIR 2, the member bound check: no-coordinator is driven,
+        // member-coordinator-leaf-exchange stays typed.
+        assert!(
+            matches!(
+                standing("no-coordinator"),
+                LiveRowStanding::NativeRefusalObserved { .. }
+            ),
+            "no-coordinator was not driven to an observed refusal",
+        );
+        assert!(
+            matches!(
+                standing("member-coordinator-leaf-exchange"),
+                LiveRowStanding::NativeRunRequired(_)
+            ),
+            "member-coordinator-leaf-exchange did not stay typed as still required",
+        );
+
+        // The two DRIVEN rows draw two DISTINCT verdicts — the coordinator
+        // index EqualVerify and the member bound Verify — which is what
+        // makes them one observation each rather than one shared. The typed
+        // partners are the two rows whose own mutants would draw those same
+        // two verdicts.
+        assert_ne!(
+            crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_REJECT_DETAIL,
+            crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_REJECT_DETAIL,
+            "the two driven leaf-arrangement rows draw one verdict",
+        );
     }
 
     #[test]

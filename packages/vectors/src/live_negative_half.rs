@@ -429,30 +429,29 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         G::FacetNeedsADifferentTransaction,
         "the successor emits no transition certificate, so there is none to omit without building a certificate-bearing transaction first",
     ),
-    // The four leaf-arrangement rows. The covenant DOES introspect its
-    // own input index, so these are not commitment-generic — and that is
-    // what makes the collision the finding rather than a guess: the
-    // coordinator fragment and the member fragment abort at different
-    // opcodes, giving two verdicts for four rows.
+    // The two typed halves of the leaf-arrangement collision pairs. The
+    // covenant DOES introspect its own input index, so these are not
+    // commitment-generic: the coordinator fragment aborts at an index
+    // EqualVerify and the member fragment at a bound Verify, two verdicts
+    // for four rows. ONE row of each pair is DRIVEN through the
+    // owner-signing route — `two-coordinators` (coordinator leaf at both
+    // inputs, the one at input one failing the index EqualVerify) and
+    // `no-coordinator` (member leaf at both inputs, the one at input zero
+    // failing the bound Verify), each the pair's single-failing-input
+    // arrangement, recorded in `live_evidence` rather than here. The other
+    // half of each pair stays here because its own mutant would draw the
+    // SAME verdict at the SAME clause — its arrangement has a second
+    // failing input, so its observation would duplicate its pair-partner's
+    // and separate nothing: the copied-commitment precedent.
     entry(
         "wrong-coordinator",
         G::TargetVerdictDoesNotSeparateTheRows,
-        "aborts at the coordinator index check, in the same words two-coordinators draws",
-    ),
-    entry(
-        "two-coordinators",
-        G::TargetVerdictDoesNotSeparateTheRows,
-        "aborts at the coordinator index check, in the same words wrong-coordinator draws",
-    ),
-    entry(
-        "no-coordinator",
-        G::TargetVerdictDoesNotSeparateTheRows,
-        "aborts at the member bound check, in the same words the leaf exchange draws",
+        "its mutant aborts at the coordinator index check in the same OP_EQUALVERIFY words two-coordinators drove and observed, so its observation would duplicate that pair-partner's",
     ),
     entry(
         "member-coordinator-leaf-exchange",
         G::TargetVerdictDoesNotSeparateTheRows,
-        "aborts at the member bound check, in the same words no-coordinator draws",
+        "its mutant aborts at the member bound check in the same OP_VERIFY words no-coordinator drove and observed, so its observation would duplicate that pair-partner's",
     ),
     entry(
         "receipt-sponsor-range-exchange",
