@@ -339,6 +339,95 @@ fn a_recorded_randomness_case_carries_no_openings_and_a_different_digest() {
     assert_ne!(reference, other);
 }
 
+fn registered_digest(manifest: ConfidentialFixtureManifest) -> ConfidentialFixtureDigest {
+    let handle = manifest.handle.clone();
+    let mut registry = ConfidentialFixtureRegistry::new();
+    registry.register(manifest).expect("the manifest registers");
+    *registry
+        .freeze()
+        .registered_digest(&handle)
+        .expect("the registry holds the digest")
+}
+
+fn recorded_manifest_for_opening_role(
+    role: FixtureOutputRole,
+) -> (ConfidentialFixtureManifest, usize) {
+    let (mut subject, output) = match role {
+        FixtureOutputRole::Primary => (manifest(), 0),
+        FixtureOutputRole::Balancing => (manifest(), 1),
+        FixtureOutputRole::SoleBalancing => (
+            sole_manifest("ctf-v1/digest-sole-balancing", NON_CANCELING_SUM),
+            0,
+        ),
+        FixtureOutputRole::SponsorChange { asset } => (
+            sponsored_change_manifest(
+                "ctf-v1/digest-sponsor-change",
+                FixtureOutputRole::SponsorChange { asset },
+            ),
+            1,
+        ),
+        FixtureOutputRole::BalancingSponsorChange { asset } => (
+            sole_blinded_change_manifest(
+                "ctf-v1/digest-balancing-sponsor-change",
+                FixtureOutputRole::BalancingSponsorChange { asset },
+                NON_CANCELING_SUM,
+            ),
+            2,
+        ),
+        FixtureOutputRole::Fee
+        | FixtureOutputRole::ExplicitDestination
+        | FixtureOutputRole::ExplicitSponsorChange { .. } => {
+            panic!("the regression covers only opening-bearing roles")
+        }
+    };
+    subject.profiles = profiles(ReproducibilityContract::RecordedRandomness);
+    (subject, output)
+}
+
+#[test]
+fn recorded_randomness_v2_binds_amounts_for_every_opening_bearing_role() {
+    let cases = [
+        ("primary", FixtureOutputRole::Primary),
+        ("balancing", FixtureOutputRole::Balancing),
+        ("sole-balancing", FixtureOutputRole::SoleBalancing),
+        (
+            "sponsor-change",
+            FixtureOutputRole::SponsorChange {
+                asset: RESERVE_ASSET,
+            },
+        ),
+        (
+            "balancing-sponsor-change",
+            FixtureOutputRole::BalancingSponsorChange {
+                asset: RESERVE_ASSET,
+            },
+        ),
+    ];
+    let mut collisions = Vec::new();
+    for (name, role) in cases {
+        let (baseline, output) = recorded_manifest_for_opening_role(role);
+        let mut mutated = baseline.clone();
+        mutated.outputs[output].semantic_amount += 1;
+        if registered_digest(baseline) == registered_digest(mutated) {
+            collisions.push(name);
+        }
+    }
+    assert!(
+        collisions.is_empty(),
+        "semantic amount drift collided for opening-bearing roles: {collisions:?}",
+    );
+}
+
+#[test]
+fn recorded_randomness_v2_binds_a_value_conserving_amount_mutation() {
+    let mut baseline = manifest();
+    baseline.profiles = profiles(ReproducibilityContract::RecordedRandomness);
+    let mut mutated = baseline.clone();
+    mutated.outputs[0].semantic_amount -= 1;
+    mutated.outputs[1].semantic_amount += 1;
+    assert_ne!(registered_digest(baseline), registered_digest(mutated));
+}
+
 #[test]
 fn the_material_class_is_the_one_the_construction_side_states() {
     // The registry's class and the construction side's non-claim are
