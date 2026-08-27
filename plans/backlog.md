@@ -648,6 +648,35 @@ history](history/backlog-history.md), so a reference to §5.9 or to its
 label resolves there. Guide-12 preflight dispositions themselves are
 owned by the guide’s own table.
 
+### 5.10 Phase-5 closing-arc adversarial review · `tab:backlog:findings-r5`
+
+An external adversarial review of the phase-5 closing arc, archived at [plans/reviews/review-9-0.5.17-dev.md](reviews/review-9-0.5.17-dev.md). It performed no build, no test and no node run; its evidence is the tree it read.
+
+Its central verdict was that the exit gate could not be signed: two of the fifteen rows asserted more than the tree supports. The owner accepted both of its gate amendments, and the `T5-071` gate-repair wave executed them and remediated every finding. EVERY ROW BELOW WAS RECOMPUTED AT THE WAVE'S OWN BASE BEFORE ANY REPAIR — a review is evidence about the tree it names, not an instruction — and the recomputation moved two figures the review reported, because the handoff arc that landed between the reviewed tip and the wave's base answered two more rows.
+
+| ID | Finding | Priority | Verified at source | Status |
+|---|---|---:|---|---|
+| `R5-001` | Exit-gate row 4 asserted "complete safety evidence" and "eighty-one observed or first-party-established" beside a canonical completeness predicate the classifier reports as FALSE. | P0 | YES | DONE |
+| `R5-002` | Exit-gate row 12 asserted that mixed-program vectors reject, where the architecture can state no such vector and no layer ever produced a verdict. | P0 | YES | DONE |
+| `R5-003` | The native owner-signing lane did not bind the recorded refusal details, the control's acceptance, or the run-of-record constants. | P1 | YES | DONE |
+| `R5-004` | The two typed leaf-partner grounds predicted the exact verdict words an unbuilt mutant would draw, which no in-repo source establishes. | P1 | YES | DONE |
+| `R5-005` | Comments claimed seven distinct field ranges where two rows share one and separate by shape, and a non-claim called the bare-u mutant the only script-path verdict. | P2 | YES | DONE |
+| `R5-006` | Section 2.20's filed process finding named the wrong separating fact for the eighth same-verdict row. | P2 | YES | DONE |
+| `R5-007` | The gate record said nine waves closed while five of them still read ACTIVE. | P2 | YES | DONE |
+| `R5-008` | The closing assessment re-minted the exit-gate colon-label in prose instead of citing it, which the register validator refuses as a duplicate mint. | P2 | YES | DONE (hotfixed) |
+| `R5-009` | The orchestrator's exit-time record claimed both plans validators clean at the reviewed tip while validator 2 was in fact RED there with the `R5-008` duplicate mint — a false green in the records. | P1 | YES | DONE |
+| `R5-010` | Section 15.4's `key-path-escape` row declared a script-path boundary a key-path spend can never reach. Recorded as an ERRATUM rather than a review finding. | P1 | YES | DONE |
+
+**`R5-001` and `R5-002` are the two amendments.** Both NARROW what the gate claims; neither adds evidence, and no row of the matrix moved to make either true. Row 4 now states the explicit disposition standard in the row itself and says in the same breath that this is not section 13.5's answered-bar, which is false and honestly so. Row 12 now states operation-vocabulary closure with its three architectural grounds and records that nothing was ever submitted and nothing ever refused. The exit assessment is re-recorded against both.
+
+**The corrected arithmetic**, recomputed at the wave's base rather than taken from the review: the 108-row matrix is 82 ANSWERED (34 first-party discharged, 24 native-run observed, 17 native-refusal observed, 1 determinism, 1 paired relation, 3 first-party fact, 2 report-layer) + 1 VOCABULARY-CLOSED, which `is_answered` reports false for and which section 4.2 puts outside the coverage denominator, + 25 STILL REQUIRED. The review computed 80 + 1 + 27 at the reviewed tip; the difference is the handoff arc, which minted the paired-relation standing and answered the key-path row. The claim the review refuted — "eighty-one observed or first-party-established" — was wrong on both sides of the ruling: it counted a vocabulary-closed row as established, and it is superseded by a recomputation rather than repeated with a new total.
+
+**`R5-003`** was the review's sharpest finding and the repair only ADDS binding. The lane accepted any observed layer for the bare-u mutant and the control, checked the control's readback only where a reverification happened to be present, and checked the consensus and leaf mutants without reference to the recorded detail, the accepted identity, or the recorded separators — so it would have stayed green with a REJECTED control, which makes every refusal in the run unattributable. Each verdict the ceremony's `run_of_record` constants carry is now asserted against them, with row-set equality both ways. No constant moved and no existing assertion weakened. The reason the lane had left them unasserted — that a lane asserting a verdict fails rather than reports when the honest answer changes — is answered by the order of operations: the transcript is written to disk before the first assertion runs.
+
+**`R5-004`** is the honest half of a typed stop. The in-repo covenant establishes that the two partners' arrangements carry a SECOND failing input and therefore have no separating fact of their own against the partner already driven; it does not establish which of the two failures a target reports for a multi-input candidate, and the register said it did. The prediction is withdrawn at all four sites that carried it and the typing is unchanged.
+
+**`R5-009` is the orchestrator's own finding against its own records**, filed here rather than left in a report. The exit-time record asserted both plans validators clean at the reviewed tip; validator 2 was RED there, refusing the duplicate mint `R5-008` names. Two independent reproductions stand: `T5-069` reproduced it byte-identically at that tip, and a direct server run of the validator against the reviewed tip reproduced it again. The lesson is filed with the finding — a validator reported green without a run to point at is a claim, and the exit record made one.
+
 ### Guide-11 execution wave records (archived)
 
 The three Guide-11 execution wave records — CT fixtures and the
