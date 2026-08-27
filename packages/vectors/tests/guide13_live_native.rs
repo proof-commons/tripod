@@ -1,13 +1,13 @@
 //! The live-transfer lane: one candidate run against a real node.
 //!
-//! # Why this is an ignored test rather than a gate
+//! # Why these gates are ignored in the ordinary suite
 //!
 //! It needs a live Elements node, so it cannot run in an ordinary lane,
-//! and what it produces is a transcript rather than a verdict. The whole
-//! workspace suite stays green without a node present, which is what the
-//! `#[ignore]` buys: the evidence this wave commits is the *report*
-//! artifacts and the tests that validate them, and none of those needs
-//! the node to be re-run.
+//! and the whole workspace suite stays green without a node present.
+//! The `#[ignore]` separates this serialized native lane from ordinary
+//! tests; it does not make every native result observation-only. Where a
+//! committed run of record supplies active evidence, its own carrier may
+//! be a strict reproduction gate after it writes the fresh artifacts.
 //!
 //! Run it as:
 //!
@@ -19,13 +19,14 @@
 //!   cargo test -p tripod-vectors --test guide13_live_native -- --ignored --nocapture
 //! ```
 //!
-//! # Nothing here decides what the run should have found
+//! # Recorded verdicts fail closed at their own gates
 //!
-//! The assertions are about the *shape* of a run that completed: that the
-//! ceremony reached the node, that every step it asked for was answered,
-//! and that the transcript records an observation per step. What the node
-//! decided is written down and asserted nowhere — a lane that asserted a
-//! verdict would fail rather than report when the honest answer changed
+//! Most assertions are about the *shape* of a run that completed. The
+//! private-restart carrier additionally binds the fresh in-memory record
+//! to every stable field of its committed run of record. A changed honest
+//! answer is written to the transcript first and then leaves that gate
+//! red; superseding it requires an explicit decision recorded as a new
+//! forward record, never an overwrite of history
 //! `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
 //!
 //! # And nothing here discharges a matrix row
@@ -718,7 +719,9 @@ fn assert_owner_observation_matches_run_of_record(
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
     use vectors::live_proof_bearing_observation::{
-        ProofBearingObservationPlanner, render_proof_bearing_observation,
+        PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION, ProofBearingObservationPlanner,
+        ProofBearingRunOfRecord, ProofBearingRunOfRecordV2, construction_run_of_record_v2,
+        render_proof_bearing_observation,
     };
 
     let executor =
@@ -780,7 +783,141 @@ fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
 
     outcome.expect("the ceremony reached the target");
 
+    assert_construction_refusals_match_the_run_of_record(record);
+    match construction_run_of_record_v2() {
+        ProofBearingRunOfRecordV2::Pending => {
+            let projection = ProofBearingRunOfRecord::try_from(record)
+                .expect("the completed V2 ceremony projects before constants are minted");
+            assert_eq!(
+                projection.schema_version(),
+                PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION
+            );
+            assert!(rendered.contains("run_of_record_v2 pending"));
+            assert!(rendered.contains("run_of_record_projection ready"));
+        }
+        ProofBearingRunOfRecordV2::Recorded(expected) => {
+            assert_proof_bearing_record_matches_run_of_record(record, expected);
+        }
+    }
     check_proof_bearing_record(record, &rendered);
+}
+
+/// Bind every live construction refusal to the V2 run of record where
+/// the constants exist.
+///
+/// The live-only relations do not wait for those constants: every
+/// refusal must project to the stable vocabulary, the controls must be
+/// exactly the closed control census in order, and every full refusal
+/// must name the first consumed coin.
+///
+/// # Panics
+///
+/// If the completed live record omits a coin or control, carries an
+/// unrecognized refusal, names the wrong consumed coin, or differs from
+/// a recorded V2 refusal vector.
+fn assert_construction_refusals_match_the_run_of_record(
+    record: &vectors::live_proof_bearing_observation::ProofBearingObservationRecord,
+) {
+    use transaction::live_materialize::MaterializationRefusal;
+    use vectors::live_proof_bearing_observation::{
+        ProofBearingConstructionControl, ProofBearingRunOfRecordV2,
+        RecordedProofBearingConstructionRefusal, construction_run_of_record_v2,
+    };
+
+    let projected = record
+        .construction_refusals()
+        .iter()
+        .map(RecordedProofBearingConstructionRefusal::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .expect("every live construction refusal has a stable archival reason");
+    let controls: Vec<_> = projected
+        .iter()
+        .map(RecordedProofBearingConstructionRefusal::control)
+        .collect();
+    assert_eq!(
+        controls.as_slice(),
+        ProofBearingConstructionControl::ALL,
+        "the live construction-control census drifted",
+    );
+
+    let first_outpoint = record
+        .coins()
+        .first()
+        .expect("the completed ceremony consumed a predecessor coin")
+        .outpoint();
+    for refusal in record.construction_refusals() {
+        let MaterializationRefusal::PredecessorOpeningMismatch { outpoint } = refusal.refusal()
+        else {
+            panic!("a construction control drew an unrecognized live refusal");
+        };
+        assert_eq!(
+            *outpoint, first_outpoint,
+            "a construction refusal names a coin other than the first consumed coin",
+        );
+    }
+
+    if let ProofBearingRunOfRecordV2::Recorded(expected) = construction_run_of_record_v2() {
+        let expected = expected
+            .construction_refusals()
+            .captured()
+            .expect("the V2 record captures construction refusals");
+        assert_eq!(
+            projected.as_slice(),
+            expected,
+            "the live construction refusals drifted from the complete V2 vector",
+        );
+    }
+}
+
+/// Bind the live coins, reverification, and candidate messages to the
+/// exact V2 archival record.
+///
+/// # Panics
+///
+/// If the live record is incomplete or any projected V2 field differs
+/// from the recorded value.
+fn assert_proof_bearing_record_matches_run_of_record(
+    actual: &vectors::live_proof_bearing_observation::ProofBearingObservationRecord,
+    expected: &vectors::live_proof_bearing_observation::ProofBearingRunOfRecord,
+) {
+    use vectors::live_proof_bearing_observation::ProofBearingRunOfRecord;
+
+    let projected = ProofBearingRunOfRecord::try_from(actual)
+        .expect("the completed live ceremony projects to the archival schema");
+    assert_eq!(projected.schema_version(), expected.schema_version());
+    assert_eq!(projected.issued_asset(), expected.issued_asset());
+    assert_eq!(
+        projected.predecessor_digest(),
+        expected.predecessor_digest()
+    );
+    assert_eq!(
+        projected.coins(),
+        expected.coins(),
+        "a node-reported coin field drifted from V2",
+    );
+    assert_eq!(
+        projected.output_witness_vector_length(),
+        expected.output_witness_vector_length()
+    );
+    assert_eq!(
+        projected.output_witness_proof_bytes(),
+        expected.output_witness_proof_bytes()
+    );
+    assert_eq!(
+        projected.spent_value_prefixes(),
+        expected.spent_value_prefixes()
+    );
+    assert_eq!(projected.observations(), expected.observations());
+    assert_eq!(
+        projected.reverification(),
+        expected.reverification(),
+        "the exact reverification outcome drifted from V2",
+    );
+    assert_eq!(
+        projected.candidate_messages(),
+        expected.candidate_messages(),
+        "a candidate message drifted from V2",
+    );
 }
 
 /// Everything the completed proof-bearing ceremony owes its reader.
@@ -887,6 +1024,61 @@ fn check_proof_bearing_record(
     assert!(rendered.contains("discharges_no_matrix_row true"));
 }
 
+// Bind the freshly written private-restart transcript to every stable
+// field of its committed run of record. Wall time is intentionally absent:
+// it is machine telemetry rather than a reproducible result.
+fn assert_private_restart_matches_the_run_of_record(
+    record: &vectors::live_private_restart::PrivateRestartRecord,
+    consumed: vectors::live_private_restart::ConsumedReceipt,
+) {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+    use vectors::live_private_restart::{ConsumedReceipt, run_of_record as run};
+
+    let (successor_digest, accepted_txid, commitment_prefix) = match consumed {
+        ConsumedReceipt::Primary => (
+            run::SUCCESSOR_DIGEST,
+            run::ACCEPTED_TXID,
+            run::CONSUMED_COMMITMENT_PREFIX,
+        ),
+        ConsumedReceipt::Balancing => (
+            run::PARITY_SUCCESSOR_DIGEST,
+            run::PARITY_ACCEPTED_TXID,
+            run::PARITY_CONSUMED_COMMITMENT_PREFIX,
+        ),
+    };
+
+    assert_eq!(record.issued_asset(), Some(run::ISSUED_ASSET));
+    assert_eq!(
+        record.predecessor_digest(),
+        Some(identifier(run::PREDECESSOR_DIGEST)),
+    );
+    assert_eq!(
+        record.successor_digest(),
+        Some(identifier(successor_digest)),
+    );
+    assert_eq!(record.consumed_receipt(), Some(consumed.name()));
+    assert_eq!(record.consumed_commitment_prefix(), Some(commitment_prefix),);
+    assert_eq!(record.receipt_leaves(), run::RECEIPT_LEAVES);
+    assert_eq!(
+        record.output_witness_proof_bytes(),
+        &run::OUTPUT_WITNESS_PROOF_BYTES,
+    );
+    assert_eq!(record.submitted_bytes(), run::SUBMITTED_BYTES);
+    assert_eq!(
+        record.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+    );
+    assert_eq!(record.accepted_txid(), Some(accepted_txid));
+    assert!(record.produced_an_accepted_control());
+
+    let reverification = record
+        .reverification()
+        .expect("the accepted run carries unconditional reverification");
+    assert_eq!(reverification.accepted_txid(), accepted_txid);
+    assert!(reverification.readback_matches_submission());
+    assert!(reverification.verified());
+}
+
 /// The restart order's first step, against a real node.
 ///
 /// # What this run is for
@@ -897,19 +1089,17 @@ fn check_proof_bearing_record(
 /// negative case, no mutation, no parity pair, because the order forbids
 /// them until this one accepts.
 ///
-/// # What it asserts, and what it merely records
+/// # What it asserts, after preserving the fresh record
 ///
-/// It asserts the shape of a completed ceremony — that the run reached
-/// the node, that the confidential funding step created the predecessor
-/// the ceremony asked for, and that a candidate was built and submitted.
-/// What the node decided is written into the artifact and asserted
-/// nowhere: a lane that asserted an acceptance would fail rather than
-/// report on the day the honest answer changed.
+/// It writes the transcript, timing, and any executor refusal first, then
+/// asserts the exact committed asset, fixture digests, receipt and parity,
+/// proof and submission sizes, accepted layer and identity, and
+/// unconditional readback reverification. A changed honest answer remains
+/// preserved in the artifacts while this reproduction gate fails.
 ///
-/// The one content assertion is the two-origin agreement, and only where
-/// an acceptance was observed. A run that accepted a candidate and could
-/// not verify the witness it read back against its own recomputed
-/// message has found something, and must say so by failing.
+/// Superseding a changed result requires an explicit decision recorded
+/// as a new forward run of record. This test never rewrites the
+/// historical constants to accommodate drift.
 ///
 /// # It moves nothing by running
 ///
@@ -1017,6 +1207,8 @@ fn run_one_private_control(
         panic!("the restart ceremony refused before the node: {refusal:?}");
     }
     outcome.expect("the ceremony reached the target");
+
+    assert_private_restart_matches_the_run_of_record(record, consumed);
 
     // The predecessor is confidential and is the one the ceremony asked
     // for. A divergence is a finding about the funding boundary.

@@ -1454,17 +1454,26 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
             {
                 return Err(LiveFaultRefusal::ControlNotConstructible);
             }
+            let control = OwnerSigningCensus::from_explicit_finalized(
+                &target, &finalized, deployment, &curve,
+            );
+            let malformed = control.as_ref().ok().map(|census| {
+                OwnerSigningCensus::over_foreign_bytes_for_negative_evidence(
+                    &target,
+                    finalized.protected().clone(),
+                    finalized.protected_bytes().to_vec(),
+                    finalized.protected().output_witnesses().to_vec(),
+                    census.spent_outputs().to_vec(),
+                    deployment,
+                    &swapped,
+                    &curve,
+                )
+            });
             Ok(Staged {
-                control: OwnerSigningCensus::from_explicit_finalized(
-                    &target, &finalized, deployment, &honest, &curve,
-                )
-                .err()
-                .map(ObservedFaultRefusal::Census),
-                malformed: OwnerSigningCensus::from_explicit_finalized(
-                    &target, &finalized, deployment, &swapped, &curve,
-                )
-                .err()
-                .map(ObservedFaultRefusal::Census),
+                control: control.err().map(ObservedFaultRefusal::Census),
+                malformed: malformed
+                    .and_then(Result::err)
+                    .map(ObservedFaultRefusal::Census),
             })
         }
         M::MoveValueBetweenDestinationsAfterSigning => {

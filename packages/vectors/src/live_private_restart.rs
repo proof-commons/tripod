@@ -58,20 +58,21 @@
 //! conflict is reported as a divergence rather than repaired, because
 //! this module does not own either rule.
 //!
-//! # Nothing here decides what the node should have found
+//! # The native carrier binds this record exactly
 //!
-//! The observation is a layer and the node's own words. The one thing
-//! that IS asserted is the two-origin agreement where an acceptance was
-//! observed, on the pattern the two existing observation ceremonies set:
-//! a run that accepted a candidate and then could not verify the witness
-//! it read back against its own recomputed message has found something,
-//! and must fail rather than write a false line.
+//! The ignored private-restart tests write their fresh artifacts first and
+//! then assert every stable field against [`run_of_record`]: exact accepted
+//! layer and identity, fixture digests, receipt parity, byte and proof
+//! counts, and unconditional readback reverification. A changed honest
+//! result therefore remains recorded while the reproduction gate fails.
+//! Superseding it requires an explicit decision recorded as a new
+//! forward record; the historical constants are never overwritten to
+//! make a rerun green.
 
 use std::collections::BTreeMap;
 
 use linker::OwnerParameter;
 use linker::live_backend::{LiveTransferComposition, LiveTransferRepresentationPlan};
-use target_elements::LeafVersion;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::owner_key_oracle::verify_owner_signature;
 use target_elements_conformance::protocol::{
@@ -80,11 +81,14 @@ use target_elements_conformance::protocol::{
     OperationSubject, TargetConfidentialFundingSubject, TargetFundingSubject,
     TargetSubmissionSubject,
 };
+use transaction::LiveDeployment;
 use transaction::bytes::{
     AssetField, AssetId, COMMITMENT_BYTES, InputWitness, Outpoint, TargetTransaction, ValueField,
 };
 use transaction::live_abi::CandidateLiveTransferAbi;
-use transaction::live_census::{OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest};
+use transaction::live_census::{
+    OwnerCensusRefusal, OwnerSigningCensus, ProofFinalizedSigningCandidate,
+};
 use transaction::live_construct::{
     PrivateDestinationOpening, PrivateInputOpening, PrivateLiveFinalization, PrivateLiveOpenings,
     finalize_private_live_transfer, private_sponsor_witnesses,
@@ -100,9 +104,8 @@ use transaction::live_request::{
     RequestedForm, SponsorChangeRequest,
 };
 use transaction::sponsor::SponsorCapability;
-use transaction::taproot::{Digest32, leaf_hash};
+use transaction::taproot::Digest32;
 use transaction::view::{PublicConstructionView, PublicOutputView};
-use transaction::{AnnexDisposition, IssuanceDisposition, LiveDeployment};
 
 use crate::confidential_materializer::{
     FirstPartyCommitmentCheck, ReferenceConfidentialMaterializer,
@@ -1342,35 +1345,15 @@ pub(crate) fn assemble_control(
 ) -> Result<BuiltControl, PrivateRestartRefusal> {
     let materialized = finalization.materialized();
 
-    // Each receipt's signing request is built from the leaf THAT INPUT
-    // executes, which the finalization supplies. A ceremony that chose
-    // its own leaf would be authorizing a different program than the one
-    // the coin pays to.
-    let requests: Vec<OwnerSigningInputRequest> = finalization
-        .receipts()
-        .iter()
-        .map(|record| {
-            OwnerSigningInputRequest::new(
-                u32::from(record.position()),
-                leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
-                LeafVersion::TAPSCRIPT,
-                transaction::OWNER_CODESEPARATOR_POSITION,
-                AnnexDisposition::Absent,
-                IssuanceDisposition::Absent,
-                record.control_block().to_vec(),
-            )
-        })
-        .collect();
-
     let target = reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?;
     let curve = crate::live_capability::OracleLiveCurve::new(
         reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?,
     );
+    let finalized_signing = ProofFinalizedSigningCandidate::from_private_finalization(finalization);
     let census = OwnerSigningCensus::from_proof_finalized(
         &target,
-        materialized,
+        &finalized_signing,
         LiveDeployment::new(genesis_block_hash),
-        &requests,
         &curve,
     )
     .map_err(PrivateRestartRefusal::CensusRefused)?;
@@ -1729,6 +1712,8 @@ pub mod run_of_record {
     pub const ACCEPTED_TXID: &str =
         "4571a077826d45f64402a5c83ac9c0454fe42cf53b75f7aac2c8d07b574ad152";
 
+    crate::recorded_acceptance::mint_recorded_acceptance!(accepted, ACCEPTED_TXID);
+
     /// How many bytes were handed to the node.
     pub const SUBMITTED_BYTES: usize = 9_136;
 
@@ -1767,6 +1752,8 @@ pub mod run_of_record {
     /// takes both to say that both parities were exercised.
     pub const PARITY_ACCEPTED_TXID: &str =
         "45f1c5669cdc868f5612f6b18b2e285b791d7f093e45b2d28147eac63427dd95";
+
+    crate::recorded_acceptance::mint_recorded_acceptance!(parity_accepted, PARITY_ACCEPTED_TXID);
 
     /// The commitment prefix the second run's consumed coin carried.
     pub const PARITY_CONSUMED_COMMITMENT_PREFIX: u8 = 0x09;

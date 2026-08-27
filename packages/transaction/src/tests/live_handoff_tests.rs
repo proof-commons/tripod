@@ -29,13 +29,15 @@ use tapscript::authorization::selected_owner_profile;
 use target_elements::{ReviewedElementsTapscriptDefinition, TargetContractVersion};
 
 use super::ctf_materialize_tests::{valid_two_owner_with_spent_program, valid_with_spent_program};
-use super::live_census_tests::{CensusCurve, GENESIS, committed_program, signing_request};
+use super::live_census_tests::{
+    CensusCurve, GENESIS, finalized_committed_program, finalized_signing_candidate,
+};
 use super::reviewed_target;
 use crate::bytes::{OutputWitness, TargetTransaction};
 use crate::live_accepted::{AcceptedResultRefusal, OfferedOwnerAuthorization};
 use crate::live_census::{
     LiveDeployment, OWNER_SIGHASH_TYPE_BYTE, OWNER_SIGNATURE_BYTES, OwnerCensusRefusal,
-    OwnerSigningInputRequest,
+    ProofFinalizedSigningCandidate,
 };
 use crate::live_handoff::{
     FullyAuthorizedCandidate, SighashHandoffRefusal, SigningStarted, SubmitReadyPrivateCandidate,
@@ -72,12 +74,12 @@ fn answer(input_index: u32) -> OfferedOwnerAuthorization {
 
 /// The one-owner materialized candidate every single-input case uses.
 fn one_owner(target: &ReviewedElementsTapscriptDefinition) -> MaterializedConfidentialCandidate {
-    valid_with_spent_program(committed_program(target))
+    valid_with_spent_program(finalized_committed_program(target))
 }
 
 /// The two-owner materialized candidate the multi-owner cases use.
 fn two_owner(target: &ReviewedElementsTapscriptDefinition) -> MaterializedConfidentialCandidate {
-    valid_two_owner_with_spent_program(&committed_program(target))
+    valid_two_owner_with_spent_program(&finalized_committed_program(target))
 }
 
 /// One opened handoff over `materialized`, with one request per input.
@@ -95,18 +97,9 @@ fn try_open(
     materialized: &MaterializedConfidentialCandidate,
     established: &EstablishedOwnerSighashProfile,
 ) -> Result<SigningStarted, SighashHandoffRefusal> {
-    let requests: Vec<OwnerSigningInputRequest> = (0..materialized.signer_inputs().len())
-        .map(|index| signing_request(u32::try_from(index).expect("the fixture index is in range")))
-        .collect();
+    let finalized = finalized_signing_candidate(materialized.clone());
 
-    SigningStarted::open(
-        target,
-        materialized,
-        deployment(),
-        &requests,
-        &CensusCurve,
-        established,
-    )
+    SigningStarted::open(target, &finalized, deployment(), &CensusCurve, established)
 }
 
 /// One fully authorized candidate, every required owner having answered.
@@ -261,8 +254,8 @@ fn the_bytes_are_still_the_freezes_own_at_every_later_state() {
 fn a_witness_pinned_to_another_revision_is_refused_by_the_open_gate() {
     let target = reviewed_target();
     let materialized = one_owner(&target);
+    let finalized = finalized_signing_candidate(materialized);
     let established = established_profile(&target);
-    let requests = [signing_request(0)];
 
     // V1 is a typed historical revision and the witness is pinned to the
     // real reviewed V2 capability. The test-only entry supplies the stale
@@ -272,9 +265,8 @@ fn a_witness_pinned_to_another_revision_is_refused_by_the_open_gate() {
     assert_eq!(
         SigningStarted::open_with_capability_revision_for_test(
             &target,
-            &materialized,
+            &finalized,
             deployment(),
-            &requests,
             &CensusCurve,
             &established,
             TargetContractVersion::V1,
@@ -435,29 +427,26 @@ fn the_accepted_results_own_complaints_keep_their_own_words() {
 
 #[test]
 fn a_candidate_that_cannot_be_censused_keeps_the_censuss_own_words() {
-    // The other wrapper. A signing request for an input the candidate
-    // does not have is a census complaint and never reached the first
-    // arrow, so it is not one of the four handoff states.
+    // The other wrapper. A missing finalized receipt is a census
+    // complaint and never reaches the first arrow, so it is not one of
+    // the four handoff states.
     let target = reviewed_target();
     let materialized = one_owner(&target);
+    let finalized = ProofFinalizedSigningCandidate::for_receipt_evidence(materialized, Vec::new());
 
     let refusal = SigningStarted::open(
         &target,
-        &materialized,
+        &finalized,
         deployment(),
-        &[signing_request(9)],
         &CensusCurve,
         &established_profile(&target),
     )
-    .expect_err("a request for an input the candidate does not have");
+    .expect_err("a candidate missing its finalized receipt does not open");
 
     assert_eq!(
         refusal,
         SighashHandoffRefusal::TheCandidateCouldNotBeCensused(
-            OwnerCensusRefusal::SigningInputOutOfRange {
-                input_index: 9,
-                inputs: 1,
-            },
+            OwnerCensusRefusal::MissingFinalizedSigningInput { input_index: 0 },
         ),
     );
 }

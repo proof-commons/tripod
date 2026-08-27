@@ -48,6 +48,7 @@ mod observed_boundary;
 pub mod operation;
 pub mod plan;
 pub mod projection;
+pub mod recorded_acceptance;
 pub mod render;
 pub mod report;
 pub mod resource_study;
@@ -168,6 +169,7 @@ pub use plan::{
     CompactAshEvidencePlan, NegativeObservability, PlanCensus, RequiredTargetWork,
     derive_evidence_plan,
 };
+pub use recorded_acceptance::RecordedAcceptance;
 pub use render::{render_refused_run, render_validated_report};
 pub use report::{
     OPERATION_REPORT_SCHEMA, ProjectionVerdict, ReportValidationRefusal,

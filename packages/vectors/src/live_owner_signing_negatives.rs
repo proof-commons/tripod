@@ -1024,12 +1024,10 @@ impl OwnerSigningNegativePlanner {
         let curve = OracleLiveCurve::new(
             reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?,
         );
-        let requests = Self::requests(finalized);
         let census = OwnerSigningCensus::from_explicit_finalized(
             &target,
             finalized,
             LiveDeployment::new(self.genesis_block_hash),
-            &requests,
             &curve,
         )
         .map_err(OwnerSigningNegativeRefusal::CensusRefused)?;
@@ -1901,6 +1899,8 @@ pub mod run_of_record {
     /// mutant's refusal attributable rather than merely recorded.
     pub const CONTROL_ACCEPTED_TXID: &str =
         "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029";
+
+    crate::recorded_acceptance::mint_recorded_acceptance!(control_accepted, CONTROL_ACCEPTED_TXID);
 
     /// What the target said to the bare-u-output mutant, verbatim.
     ///

@@ -16,7 +16,7 @@
 
 use crate::bytes::{
     AssetField, AssetId, InputWitness, NonceField, TargetInput, TargetOutput, TargetTransaction,
-    Txid, ValueField, compact_size,
+    TransactionIdentityParseError, Txid, ValueField, compact_size,
 };
 use crate::error::TransactionRefusal;
 use crate::tests::{CLOSED_ASSET, PINNED_PROGRAM, RESERVE_ASSET, SPONSOR_CHANGE_PROGRAM};
@@ -25,6 +25,59 @@ use crate::tests::{CLOSED_ASSET, PINNED_PROGRAM, RESERVE_ASSET, SPONSOR_CHANGE_P
 const FIRST_TXID: [u8; 32] = [0xaa; 32];
 const SECOND_TXID: [u8; 32] = [0xbb; 32];
 const SPONSOR_TXID: [u8; 32] = [0xdd; 32];
+
+#[test]
+fn target_display_transaction_identities_reject_every_malformed_class() {
+    for (text, expected) in [
+        (
+            String::new(),
+            TransactionIdentityParseError::WrongLength { offered: 0 },
+        ),
+        (
+            "0".repeat(63),
+            TransactionIdentityParseError::WrongLength { offered: 63 },
+        ),
+        (
+            "0".repeat(65),
+            TransactionIdentityParseError::WrongLength { offered: 65 },
+        ),
+        (
+            "this is prose".to_owned(),
+            TransactionIdentityParseError::WrongLength { offered: 13 },
+        ),
+        (
+            "!".repeat(64),
+            TransactionIdentityParseError::NonHexDigit { index: 0 },
+        ),
+        (
+            format!("{}g{}", "0".repeat(31), "0".repeat(32)),
+            TransactionIdentityParseError::NonHexDigit { index: 31 },
+        ),
+    ] {
+        assert_eq!(Txid::from_target_display(&text), Err(expected));
+    }
+}
+
+#[test]
+fn target_display_transaction_identities_reverse_into_internal_order() {
+    let displayed = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+    let parsed = Txid::from_target_display(displayed).expect("the identity is valid hex");
+    let expected = std::array::from_fn(|index| 31 - u8::try_from(index).expect("the index fits"));
+
+    assert_eq!(*parsed.internal(), expected);
+    assert_eq!(parsed.to_target_display(), displayed);
+    assert_eq!(parsed.to_string(), displayed);
+}
+
+#[test]
+fn target_display_transaction_identities_round_trip_and_canonicalize_case() {
+    let uppercase = "A0A1A2A3A4A5A6A7A8A9AAABACADAEAFB0B1B2B3B4B5B6B7B8B9BABBBCBDBEBF";
+    let parsed: Txid = uppercase.parse().expect("uppercase hex is accepted");
+    let canonical = uppercase.to_ascii_lowercase();
+
+    assert_eq!(parsed.to_target_display(), canonical);
+    assert_eq!(parsed.to_string().parse(), Ok(parsed));
+}
 
 /// The script-path witness stack of the fixture: a leaf program and a
 /// control block, standing in for the real ones so that the encoding is

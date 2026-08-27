@@ -952,6 +952,8 @@ pub mod run_of_record {
     pub const CONTROL_ACCEPTED_TXID: &str =
         "4571a077826d45f64402a5c83ac9c0454fe42cf53b75f7aac2c8d07b574ad152";
 
+    crate::recorded_acceptance::mint_recorded_acceptance!(control_accepted, CONTROL_ACCEPTED_TXID);
+
     /// How many bytes the accepted control submitted.
     pub const CONTROL_SUBMITTED_BYTES: usize = 9_136;
 
