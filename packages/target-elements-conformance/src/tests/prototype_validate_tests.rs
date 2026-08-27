@@ -327,7 +327,10 @@ fn an_edited_fixture_projection_is_refused() {
 #[test]
 fn an_edited_observation_is_refused() {
     let (target, matrix, transcript, mut report) = report_over(ExecutorTrust::ReviewedNonMock);
-    report.cases[0].observed.resources.script_bytes += 1;
+    let Some(script_bytes) = report.cases[0].observed.resources.script_bytes.as_mut() else {
+        panic!("a target verdict carries its fixture figures");
+    };
+    *script_bytes += 1;
     assert!(matches!(
         revalidate(&target, &matrix, &transcript, report),
         Err(NativeConformanceError::PrototypeCaseOutcomeMismatch(_)),

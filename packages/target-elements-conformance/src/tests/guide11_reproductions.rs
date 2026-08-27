@@ -129,8 +129,8 @@ fn other_binding(target: &ReviewedElementsTapscriptDefinition) -> ReviewedDevelo
 /// What an honest executor reporting no interpreter stack would answer.
 fn contract_answer(case: NativeCaseId, fixture: &PrimitiveFixture) -> NativeExecutionResponse {
     let resources = NativeResourceObservation {
-        script_bytes: fixture.script().len() as u64,
-        initial_stack_items: fixture.initial_stack().len() as u64,
+        script_bytes: Some(fixture.script().len() as u64),
+        initial_stack_items: Some(fixture.initial_stack().len() as u64),
         ..NativeResourceObservation::default()
     };
     match fixture.expected() {
@@ -1316,8 +1316,8 @@ fn g11_r05_the_augmented_census_route_to_the_gate_is_closed() {
             final_altstack: None,
             observed_failure: Some(ObservedFailureClass::EvaluatedFalse),
             resources: NativeResourceObservation {
-                script_bytes: extra.script().len() as u64,
-                initial_stack_items: 0,
+                script_bytes: Some(extra.script().len() as u64),
+                initial_stack_items: Some(0),
                 ..NativeResourceObservation::default()
             },
         },

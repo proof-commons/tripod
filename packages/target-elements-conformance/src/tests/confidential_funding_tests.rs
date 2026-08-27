@@ -309,7 +309,7 @@ fn the_valid_exchange_binds_every_output_from_the_decoded_bytes() {
 }
 
 #[test]
-fn a_revision_four_executor_is_refused_rather_than_translated_for() {
+fn the_previous_revision_executor_is_refused_rather_than_translated_for() {
     let mut handshake = confidential_handshake();
     handshake.protocol_schema = NATIVE_PROTOCOL_SCHEMA - 1;
     assert_eq!(

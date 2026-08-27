@@ -10,8 +10,9 @@ use crate::claim::{ClaimRegistry, NativeEvidenceClaim, claim_registry};
 use crate::error::NativeConformanceError;
 use crate::executor::{ExecutionTranscript, ExecutorTrust, TranscriptParts};
 use crate::fixture::{
-    CanonicalPrimitiveFixtureSet, EnforcementLayer, ExpectedPrimitiveOutcome, NativeCaseGroup,
-    NativeCaseId, canonical_fixture_set,
+    CanonicalPrimitiveFixtureSet, EnforcementLayer, ExpectedPrimitiveOutcome,
+    ExpectedResourceObservation, NativeCaseGroup, NativeCaseId, ResourceExpectation,
+    canonical_fixture_set,
 };
 use crate::protocol::{
     NATIVE_PROTOCOL_SCHEMA, NativeExecutionResponse, NativeResourceObservation, NativeVerdict,
@@ -22,7 +23,7 @@ use crate::report::{
 };
 use crate::validate::{
     EvidencePlan, NativeReportValidationInputs, evaluate, gate, guide_nine_evidence_plan,
-    validate_native_report,
+    resources_agree, validate_native_report,
 };
 
 use super::support::{
@@ -129,8 +130,8 @@ fn expected_answer(
     fixture: &crate::fixture::PrimitiveFixture,
 ) -> NativeExecutionResponse {
     let resources = NativeResourceObservation {
-        script_bytes: fixture.script().len() as u64,
-        initial_stack_items: fixture.initial_stack().len() as u64,
+        script_bytes: Some(fixture.script().len() as u64),
+        initial_stack_items: Some(fixture.initial_stack().len() as u64),
         ..NativeResourceObservation::default()
     };
     match fixture.expected() {
@@ -153,6 +154,24 @@ fn expected_answer(
             resources,
         },
     }
+}
+
+#[test]
+fn an_exact_resource_expectation_never_agrees_with_absence() {
+    let recorded = ResourceExpectation::RecordedOnly;
+    let expected = ExpectedResourceObservation {
+        script_bytes: ResourceExpectation::Exact(33),
+        initial_stack_items: recorded,
+        peak_stack_items: recorded,
+        peak_altstack_items: recorded,
+        maximum_element_bytes: recorded,
+        validation_budget_used: recorded,
+        transaction_weight: recorded,
+    };
+    assert!(!resources_agree(
+        expected,
+        &NativeResourceObservation::default(),
+    ));
 }
 
 #[test]

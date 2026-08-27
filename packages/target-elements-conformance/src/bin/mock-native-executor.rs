@@ -632,8 +632,8 @@ fn answer(
     // measurements of an execution — which is why a mock that measures
     // nothing may still state them.
     let resources = NativeResourceObservation {
-        script_bytes: request.subject.script.len() as u64,
-        initial_stack_items: request.subject.initial_stack.len() as u64,
+        script_bytes: Some(request.subject.script.len() as u64),
+        initial_stack_items: Some(request.subject.initial_stack.len() as u64),
         ..NativeResourceObservation::default()
     };
 
@@ -814,8 +814,8 @@ fn answer_prototype(
     };
 
     let resources = NativeResourceObservation {
-        script_bytes: request.subject.script.len() as u64,
-        initial_stack_items: request.subject.initial_stack.len() as u64,
+        script_bytes: Some(request.subject.script.len() as u64),
+        initial_stack_items: Some(request.subject.initial_stack.len() as u64),
         ..NativeResourceObservation::default()
     };
 

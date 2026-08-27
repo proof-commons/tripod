@@ -333,6 +333,27 @@ fn drive(
 }
 
 #[test]
+fn a_revision_six_operation_record_cannot_enter_the_revision_seven_gate() {
+    let mut stored = funded("stored-revision-six", "aa00");
+    stored.schema = NATIVE_PROTOCOL_SCHEMA - 1;
+    stored.resources.script_bytes = Some(0);
+    stored.resources.initial_stack_items = Some(0);
+    let mut planner =
+        ScriptedPlan::new(vec![OperationStep::new("stored-revision-six", funding(1))]);
+
+    let (outcome, _sent) = drive(&mut planner, &operating_handshake(), &[stored]);
+    assert!(matches!(
+        outcome.expect_err("a revision-6 record is refused"),
+        NativeConformanceError::UnsupportedProtocolSchema { offered }
+            if offered == NATIVE_PROTOCOL_SCHEMA - 1,
+    ));
+    assert!(
+        planner.seen.is_empty(),
+        "the planner never classifies the refused record",
+    );
+}
+
+#[test]
 fn a_plan_states_its_second_step_out_of_the_first_answer() {
     let mut planner = InterleavingPlan { submitted: None };
     let (outcome, sent) = drive(

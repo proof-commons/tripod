@@ -76,7 +76,7 @@
 
 use std::collections::BTreeSet;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::conservation::{ConservationRowId, ConservationSubject};
 use crate::fixture::{NativeCaseId, PrimitiveExecutionSubject};
@@ -87,6 +87,21 @@ use crate::normalization::{
 use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutionSubject};
 
 /// The protocol revision this harness speaks.
+///
+/// # Revision 7 makes absence and conservation shapes truthful
+///
+/// A conservation acceptance now carries the transaction bytes its
+/// evidence needs, every rejection omits openings that only accepted
+/// outputs can produce, and a non-verdict carries no target observation.
+/// The script-size and initial-stack resource members become
+/// required-but-nullable: both names remain mandatory on the wire, while
+/// JSON null records that no fixture figure exists. Revision 6 peers
+/// cannot state those meanings, so exact handshake equality refuses them
+/// before either side sends an execution request.
+///
+/// Both implementations move together. Revision-6 reports remain
+/// immutable artifacts of their own exchange; revision 7 neither
+/// translates nor relabels them.
 ///
 /// # Revision 6 widens the observed-layer vocabulary
 ///
@@ -199,7 +214,7 @@ use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutio
 /// Revision 2 itself added the environment observation, the separated
 /// executor provenance roles, the bounded-record contract, and strict
 /// framing, and was refused for revision 1 on the same ground.
-pub const NATIVE_PROTOCOL_SCHEMA: u32 = 6;
+pub const NATIVE_PROTOCOL_SCHEMA: u32 = 7;
 
 /// Which part of the exchange the harness was in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -1019,6 +1034,15 @@ pub enum ResponseShapeDefect {
     /// A response reporting infrastructure trouble carried a target
     /// observation, which is a claim about a run that did not happen.
     InfrastructureResponseCarriesObservation,
+    /// An accepted conservation response omitted the materialized
+    /// transaction its evidence requires.
+    AcceptedConservationOmitsTransaction,
+    /// A rejected conservation response carried openings that only
+    /// accepted outputs can produce.
+    RefusedConservationCarriesOpenings,
+    /// A primitive or prototype verdict omitted fixture-derived resource
+    /// figures that every such execution restates.
+    ExecutionResponseOmitsFixtureResources,
     /// A stack was reported by an executor that said it observes none.
     StackWithoutAdvertisedReporting,
     /// A stack was omitted by an executor that said it observes one.
@@ -1083,6 +1107,15 @@ impl std::fmt::Display for ResponseShapeDefect {
             }
             Self::InfrastructureResponseCarriesObservation => {
                 "an infrastructure-error response carried a target observation"
+            }
+            Self::AcceptedConservationOmitsTransaction => {
+                "an accepted conservation response omitted its transaction"
+            }
+            Self::RefusedConservationCarriesOpenings => {
+                "a refused conservation response carried output openings"
+            }
+            Self::ExecutionResponseOmitsFixtureResources => {
+                "an execution verdict omitted fixture-derived resource figures"
             }
             Self::StackWithoutAdvertisedReporting => {
                 "a stack was reported by an executor that observes none"
@@ -1176,21 +1209,25 @@ fn validate_observation_shape(
         NativeVerdict::InfrastructureError => {
             // A run that did not happen observed nothing, so every field
             // describing what the target did must be absent. The
-            // interpreter figures are part of that, and the line between
-            // them and the fixture's own restated script size and
-            // initial depth is already drawn by `observes_interpreter`
-            // rather than redrawn here.
+            // Resource figures are part of that uniformly under revision
+            // 7, including script size and initial depth that could have
+            // been derived from the request but were not observed in an
+            // execution.
             //
             // The advertised-observation rule below never sees this arm,
             // so the refusal cannot be left to it: an executor that
             // advertises resource observation would otherwise be allowed
             // to report a peak stack depth for a run it never made.
-            if names_failure || reports_stack || reports_altstack || observed.observes_interpreter()
+            if names_failure || reports_stack || reports_altstack || observed.has_any_observation()
             {
                 return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
             }
             return Ok(());
         }
+    }
+
+    if observed.script_bytes.is_none() || observed.initial_stack_items.is_none() {
+        return Err(ResponseShapeDefect::ExecutionResponseOmitsFixtureResources);
     }
 
     for (advertised, reported) in [(stacks, reports_stack), (altstacks, reports_altstack)] {
@@ -1445,13 +1482,30 @@ impl NativeConservationResponse {
     /// [`ResponseShapeDefect`] where the response is not a shape the
     /// protocol defines.
     pub const fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
-        if !self.observed_layer.is_target_verdict()
-            && (self.transaction_bytes.is_some()
-                || !self.observed_value_commitments.is_empty()
-                || !self.observed_asset_commitments.is_empty()
-                || !self.observed_openings.is_empty())
-        {
-            return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
+        match self.observed_layer {
+            ObservedOutcomeLayer::Accepted => {
+                if self.transaction_bytes.is_none() {
+                    return Err(ResponseShapeDefect::AcceptedConservationOmitsTransaction);
+                }
+            }
+            ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+            | ObservedOutcomeLayer::ScriptPathRejection
+            | ObservedOutcomeLayer::KeyPathRejection
+            | ObservedOutcomeLayer::RelayPolicyRejection => {
+                if !self.observed_openings.is_empty() {
+                    return Err(ResponseShapeDefect::RefusedConservationCarriesOpenings);
+                }
+            }
+            ObservedOutcomeLayer::FixtureConstructionFailure
+            | ObservedOutcomeLayer::ExecutorInfrastructureFailure => {
+                if self.transaction_bytes.is_some()
+                    || !self.observed_value_commitments.is_empty()
+                    || !self.observed_asset_commitments.is_empty()
+                    || !self.observed_openings.is_empty()
+                {
+                    return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
+                }
+            }
         }
         Ok(())
     }
@@ -2879,7 +2933,7 @@ impl NativeOperationResponse {
                 || authorizes
                 || creates_confidential_coins
                 || reads_back
-                || self.resources.observes_interpreter()
+                || self.resources.has_any_observation()
             {
                 Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation)
             } else {
@@ -3241,9 +3295,11 @@ pub enum ObservedFailureClass {
 #[serde(deny_unknown_fields)]
 pub struct NativeResourceObservation {
     /// The script's size in bytes.
-    pub script_bytes: u64,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub script_bytes: Option<u64>,
     /// How many items the initial stack held.
-    pub initial_stack_items: u64,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub initial_stack_items: Option<u64>,
     /// The deepest the main stack became, where the executor sees it.
     pub peak_stack_items: Option<u64>,
     /// The deepest the alternate stack became, where the executor sees
@@ -3260,12 +3316,20 @@ pub struct NativeResourceObservation {
 }
 
 impl NativeResourceObservation {
+    /// Whether any of the seven resource figures was reported.
+    #[must_use]
+    pub const fn has_any_observation(&self) -> bool {
+        self.script_bytes.is_some()
+            || self.initial_stack_items.is_some()
+            || self.observes_interpreter()
+    }
+
     /// Whether any figure only an interpreter can see was reported.
     ///
     /// The script's size and the initial stack's depth are the fixture's
-    /// own and are restated by every executor. The rest are observations
-    /// of an execution in progress, and an executor that says it makes
-    /// none may not report one.
+    /// own and are restated with every target verdict. The rest are
+    /// observations of an execution in progress, and an executor that
+    /// says it makes none may not report one.
     #[must_use]
     pub const fn observes_interpreter(&self) -> bool {
         self.peak_stack_items.is_some()
@@ -3274,4 +3338,16 @@ impl NativeResourceObservation {
             || self.validation_budget_used.is_some()
             || self.transaction_weight.is_some()
     }
+}
+
+/// Deserializes an explicitly present nullable member.
+///
+/// Attaching this callback without a Serde default makes a missing member
+/// an error while preserving JSON null as [`None`].
+fn deserialize_required_nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
 }

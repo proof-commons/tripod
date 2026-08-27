@@ -28,10 +28,12 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::conservation::{
-    ClosureObligation, ConservationDefect, ConservationRowId, DeterminismLevel,
+    ClosureObligation, ConservationDefect, ConservationRow, ConservationRowId, DeterminismLevel,
     ExpectedOutcomeLayer, RowDeferral,
 };
-use crate::protocol::ObservedOutcomeLayer;
+use crate::protocol::{
+    NATIVE_PROTOCOL_SCHEMA, NativeConservationResponse, ObservedOutcomeLayer, ResponseShapeDefect,
+};
 
 /// What this report claims to be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -63,6 +65,31 @@ pub enum RowVerdict {
     NotTargetEvidence,
     /// The row was never executed.
     Deferred,
+}
+
+/// Why a native conservation response cannot enter a report.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ConservationIngestionDefect {
+    /// The response belongs to another native protocol revision.
+    UnsupportedProtocolSchema {
+        /// The revision the response declared.
+        offered: u32,
+    },
+    /// The response names a different row from the one being ingested.
+    ResponseCaseMismatch {
+        /// The row the report is ingesting.
+        expected: ConservationRowId,
+        /// The row the response names.
+        observed: ConservationRowId,
+    },
+    /// The response contradicts revision 7's conservation semantics.
+    SelfContradictoryResponse {
+        /// The row the response names.
+        row: ConservationRowId,
+        /// The contradiction the protocol found.
+        defect: ResponseShapeDefect,
+    },
 }
 
 /// One row's result.
@@ -128,6 +155,27 @@ pub struct ConservationReport {
 }
 
 impl ConservationReport {
+    /// Ingests one native response before adding its classified outcome.
+    ///
+    /// This is the production report path: the response passes schema,
+    /// identity, and revision-7 shape validation before its observed layer
+    /// is compared with the row's expectation. An error leaves the report
+    /// unchanged.
+    ///
+    /// # Errors
+    ///
+    /// [`ConservationIngestionDefect`] if the response belongs to another
+    /// revision or row, or contradicts the protocol's conservation shape.
+    pub fn ingest_response(
+        &mut self,
+        row: &ConservationRow,
+        response: NativeConservationResponse,
+    ) -> Result<(), ConservationIngestionDefect> {
+        let outcome = ingest_conservation_response(row, response)?;
+        self.rows.push(outcome);
+        Ok(())
+    }
+
     /// How many rows fell into each verdict.
     #[must_use]
     pub fn tally(&self) -> BTreeMap<RowVerdict, usize> {
@@ -163,9 +211,110 @@ impl ConservationReport {
     }
 }
 
+/// Validates and classifies one conservation response.
+///
+/// Shape validation precedes the evidence comparison. This function is
+/// kept separate from [`ConservationReport::ingest_response`] so callers
+/// assembling another typed artifact cannot bypass the same gate merely
+/// because their destination is not a [`ConservationReport`].
+///
+/// # Errors
+///
+/// [`ConservationIngestionDefect`] if the response belongs to another
+/// revision or row, or contradicts the protocol's conservation shape.
+pub fn ingest_conservation_response(
+    row: &ConservationRow,
+    response: NativeConservationResponse,
+) -> Result<RowOutcome, ConservationIngestionDefect> {
+    if response.schema != NATIVE_PROTOCOL_SCHEMA {
+        return Err(ConservationIngestionDefect::UnsupportedProtocolSchema {
+            offered: response.schema,
+        });
+    }
+    if response.case != row.id {
+        return Err(ConservationIngestionDefect::ResponseCaseMismatch {
+            expected: row.id.clone(),
+            observed: response.case,
+        });
+    }
+    response.validate_shape().map_err(|defect| {
+        ConservationIngestionDefect::SelfContradictoryResponse {
+            row: row.id.clone(),
+            defect,
+        }
+    })?;
+
+    let verdict = classify_response(row.expected_layer, response.observed_layer);
+    Ok(RowOutcome {
+        id: row.id.clone(),
+        defect: row.defect,
+        expected_layer: row.expected_layer,
+        observed_layer: Some(response.observed_layer),
+        observed_detail: response.observed_detail,
+        verdict,
+        deferral: row.deferral,
+        closure_obligation: row.closure_obligation,
+        materialized_transaction: response.transaction_bytes.as_deref().map(hexadecimal),
+    })
+}
+
+/// Classifies a response whose schema, identity, and shape are validated.
+const fn classify_response(
+    expected: ExpectedOutcomeLayer,
+    observed: ObservedOutcomeLayer,
+) -> RowVerdict {
+    if !observed.is_target_verdict() {
+        return RowVerdict::NotTargetEvidence;
+    }
+    if expected_layer_agrees(expected, observed) {
+        RowVerdict::Agrees
+    } else {
+        RowVerdict::Disagrees
+    }
+}
+
+/// Whether one expected layer names the observed target verdict.
+const fn expected_layer_agrees(
+    expected: ExpectedOutcomeLayer,
+    observed: ObservedOutcomeLayer,
+) -> bool {
+    match expected {
+        ExpectedOutcomeLayer::Accepted => matches!(observed, ObservedOutcomeLayer::Accepted),
+        ExpectedOutcomeLayer::ConsensusRejectionBeforeScript => {
+            matches!(
+                observed,
+                ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+            )
+        }
+        ExpectedOutcomeLayer::ScriptPathRejection => {
+            matches!(observed, ObservedOutcomeLayer::ScriptPathRejection)
+        }
+        ExpectedOutcomeLayer::RelayPolicyRejection => {
+            matches!(observed, ObservedOutcomeLayer::RelayPolicyRejection)
+        }
+    }
+}
+
+/// Lowercase hexadecimal for transaction bytes retained in the report.
+#[must_use]
+fn hexadecimal(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(DIGITS[usize::from(*byte >> 4)]));
+        encoded.push(char::from(DIGITS[usize::from(*byte & 0x0f)]));
+    }
+    encoded
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::conservation::canonical_conservation_matrix;
+    use crate::protocol::{
+        NATIVE_PROTOCOL_SCHEMA, NativeConservationResponse, ResponseShapeDefect,
+    };
 
     fn row(
         ordinal: u32,
@@ -198,6 +347,59 @@ mod tests {
             observed_network: "11".to_owned(),
             rows,
         }
+    }
+
+    #[test]
+    fn typed_ingestion_validates_shape_before_classifying_evidence() {
+        let row = canonical_conservation_matrix()
+            .into_iter()
+            .next()
+            .expect("the matrix carries an accepted row");
+        let response = NativeConservationResponse {
+            schema: NATIVE_PROTOCOL_SCHEMA,
+            case: row.id.clone(),
+            observed_layer: ObservedOutcomeLayer::Accepted,
+            observed_detail: None,
+            transaction_bytes: None,
+            observed_value_commitments: Vec::new(),
+            observed_asset_commitments: Vec::new(),
+            observed_openings: Vec::new(),
+        };
+        let mut document = report(Vec::new());
+        assert_eq!(
+            document.ingest_response(&row, response),
+            Err(ConservationIngestionDefect::SelfContradictoryResponse {
+                row: row.id,
+                defect: ResponseShapeDefect::AcceptedConservationOmitsTransaction,
+            }),
+        );
+        assert!(document.rows.is_empty());
+    }
+
+    #[test]
+    fn typed_ingestion_classifies_only_a_validated_response() {
+        let row = canonical_conservation_matrix()
+            .into_iter()
+            .next()
+            .expect("the matrix carries an accepted row");
+        let response = NativeConservationResponse {
+            schema: NATIVE_PROTOCOL_SCHEMA,
+            case: row.id.clone(),
+            observed_layer: ObservedOutcomeLayer::Accepted,
+            observed_detail: None,
+            transaction_bytes: Some(vec![0x02]),
+            observed_value_commitments: Vec::new(),
+            observed_asset_commitments: Vec::new(),
+            observed_openings: Vec::new(),
+        };
+        let mut document = report(Vec::new());
+        document
+            .ingest_response(&row, response)
+            .expect("a valid accepted response enters the report");
+        let ingested = document.rows.first().expect("the response entered");
+        assert_eq!(ingested.verdict, RowVerdict::Agrees);
+        assert!(ingested.establishes_target_fact());
+        assert_eq!(ingested.materialized_transaction.as_deref(), Some("02"));
     }
 
     #[test]
