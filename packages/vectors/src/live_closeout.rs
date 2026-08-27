@@ -35,18 +35,20 @@
 //! acceptance is a row whose mover can be named — a class, and the
 //! target-computed identity the acceptance was observed at — and a delta
 //! that carried only its own size would be a number a reader has to
-//! take on trust. So [`MovedMatrixRow`] carries the identity, and the
-//! sponsor class cannot appear in the delta at all: it is refused by
-//! name, because that row is blocked by a residual this guide does not
-//! clear (tab:guide-ctf-exec:row-delta).
+//! take on trust. So [`MovedMatrixRow`] carries the identity. Every
+//! current [`PositivePrivateClass`] is admissible; the provenance token,
+//! rather than a class prohibition, is the boundary that keeps an
+//! unobserved row out (tab:guide-ctf-exec:row-delta).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::live_evidence::LiveInfrastructureBlocker;
-use crate::live_restart::{RestartLedger, RestartStep};
+use crate::live_restart::{
+    RecordedStepResult, RestartLedger, RestartLedgerStatus, RestartOrderRefusal, RestartStep,
+};
 use crate::live_roles::{
-    CandidateEvidenceRole, CeremonyEvidenceRoles, CeremonyEvidenceRolesBuilder, RoleEvidence,
-    RoleGround,
+    CandidateEvidenceRole, CeremonyEvidenceRoles, CeremonyEvidenceRolesBuilder,
+    EvidenceAssemblyRefusal, RoleEvidence, RoleGround,
 };
 use crate::recorded_acceptance::RecordedAcceptance;
 use transaction::{TransactionIdentityParseError, Txid};
@@ -74,11 +76,8 @@ pub enum PositivePrivateClass {
     ProjectionEqualityWithPairedExplicit,
     /// Private sponsor values.
     ///
-    /// Present in the census and forbidden in the delta. The census has
-    /// to be able to NAME it — a row that could not be named could not
-    /// be refused either — and
-    /// [`CloseoutRefusal::SponsorRowMoved`] is what happens when it is
-    /// offered.
+    /// Admissible on the same terms as every other current class: it
+    /// moves only on a provenance-bearing recorded acceptance.
     PrivateSponsorValues,
 }
 
@@ -96,42 +95,6 @@ impl PositivePrivateClass {
         Self::ProjectionEqualityWithPairedExplicit,
         Self::PrivateSponsorValues,
     ];
-
-    /// Whether this guide may move the class at all.
-    ///
-    /// All ten, now. For most of this guide's life it was nine, and the
-    /// tenth — [`Self::PrivateSponsorValues`] — was held shut twice
-    /// over, each time on a ground that was true when it was written.
-    ///
-    /// First it was blocked by
-    /// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`], which
-    /// this guide did not clear. That residual cleared elsewhere on an
-    /// observed acceptance and the class still could not enter, because
-    /// the accepted sponsored control was EXPLICIT and this class asks
-    /// for confidential sponsor values: an acceptance of an explicit
-    /// sponsored control answers nothing about a confidential one.
-    ///
-    /// # What opened it
-    ///
-    /// A run of ITS OWN SHAPE, which is the only thing that could. A
-    /// sponsored private successor — a blinded sponsor coin in at an
-    /// explicit asset, blinded receipt destinations, a COMMITTED sponsor
-    /// change, and an explicit reserve fee outside both balance
-    /// equations — was built through the private construction lane
-    /// against ONE registered case declaring two assets across its
-    /// positions, and a real node accepted and mined it. The bytes it
-    /// reported back are the bytes it was handed, an owner's signature
-    /// verified against a message recomputed independently of the
-    /// candidate, and the sponsor's committed change was located in the
-    /// MINED bytes rather than assumed from what was sent.
-    ///
-    /// The identity is `sponsored_run_of_record::SPONSORED_PRIVATE_TXID`
-    /// and the gate is held to it by a test, so this function and the
-    /// run that opened it cannot drift apart.
-    #[must_use]
-    pub const fn may_enter_the_delta(self) -> bool {
-        true
-    }
 
     /// The class's wire spelling, which is the safety matrix's own row
     /// name where the matrix has one.
@@ -226,8 +189,11 @@ pub enum CloseoutRefusal {
         /// How many rows the closeout claimed moved before it.
         offered: usize,
     },
-    /// The sponsor row was entered into the delta.
-    SponsorRowMoved,
+    /// The restart ledger refused an entry, with its exact cause.
+    RestartOrder(RestartOrderRefusal),
+    /// The evidence-role map refused an entry or incomplete closeout,
+    /// with its exact cause.
+    EvidenceAssembly(EvidenceAssemblyRefusal),
     /// The delta names one class twice.
     ClassMovedTwice(PositivePrivateClass),
     /// The disposition disagrees with the ledger it was built beside.
@@ -238,9 +204,21 @@ pub enum CloseoutRefusal {
     DispositionDisagreesWithTheLedger {
         /// What the closeout claimed.
         claimed: CloseoutDisposition,
-        /// Where the ledger says the order actually stopped.
-        ledger_stopped_at: Option<RestartStep>,
+        /// The lifecycle state derived from the ledger.
+        ledger_status: RestartLedgerStatus,
     },
+}
+
+impl From<RestartOrderRefusal> for CloseoutRefusal {
+    fn from(source: RestartOrderRefusal) -> Self {
+        Self::RestartOrder(source)
+    }
+}
+
+impl From<EvidenceAssemblyRefusal> for CloseoutRefusal {
+    fn from(source: EvidenceAssemblyRefusal) -> Self {
+        Self::EvidenceAssembly(source)
+    }
 }
 
 /// The residual confidential funding clears, and the only one.
@@ -388,27 +366,37 @@ impl ConfidentialFundingCloseoutReport {
 /// let _ = moved_on_acceptance(PositivePrivateClass::OneToOne, "prose");
 /// ```
 ///
-/// # Errors
-///
-/// [`CloseoutRefusal::SponsorRowMoved`] for the class this guide may not
-/// move.
+#[must_use]
 pub const fn moved_on_acceptance(
     class: PositivePrivateClass,
     accepted_identity: RecordedAcceptance,
-) -> Result<MovedMatrixRow, CloseoutRefusal> {
-    if !class.may_enter_the_delta() {
-        return Err(CloseoutRefusal::SponsorRowMoved);
-    }
-    Ok(MovedMatrixRow {
+) -> MovedMatrixRow {
+    MovedMatrixRow {
         class,
         accepted_identity: accepted_identity.accepted_identity(),
-    })
+    }
 }
 
 fn recorded_identity(
     mint: fn() -> Result<RecordedAcceptance, TransactionIdentityParseError>,
 ) -> Result<RecordedAcceptance, CloseoutRefusal> {
     mint().map_err(CloseoutRefusal::MalformedRecordedIdentity)
+}
+
+fn settle_role(
+    builder: &mut CeremonyEvidenceRolesBuilder,
+    role: CandidateEvidenceRole,
+    ground: RoleGround,
+) -> Result<(), CloseoutRefusal> {
+    builder.settle(role, RoleEvidence::new(role, ground))?;
+    Ok(())
+}
+
+fn complete_roles(
+    builder: CeremonyEvidenceRolesBuilder,
+) -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
+    let roles = builder.complete()?;
+    Ok(roles)
 }
 
 /// Validate a closeout.
@@ -451,28 +439,31 @@ pub fn validate_closeout(
         });
     }
 
-    // 4. The sponsor row is not in the delta, and no class is twice.
+    // 4. Every current class is admissible, and no class is twice.
     let mut seen = BTreeSet::new();
     for row in &parts.wave5_matrix_delta {
-        if !row.class().may_enter_the_delta() {
-            return Err(CloseoutRefusal::SponsorRowMoved);
-        }
         if !seen.insert(row.class()) {
             return Err(CloseoutRefusal::ClassMovedTwice(row.class()));
         }
     }
 
     // 5. The disposition is the ledger's, not the author's.
-    let ledger_stopped_at = parts.ledger.stopped_at();
-    let agrees = match (&parts.disposition, ledger_stopped_at) {
-        (CloseoutDisposition::Completed, None) => true,
-        (CloseoutDisposition::TypedStopped { step, .. }, Some(stopped)) => *step == stopped,
+    let ledger_status = parts.ledger.status();
+    let agrees = match (&parts.disposition, ledger_status) {
+        (CloseoutDisposition::Completed, RestartLedgerStatus::Completed) => true,
+        (
+            CloseoutDisposition::TypedStopped { step, blocker },
+            RestartLedgerStatus::Stopped {
+                step: actual_step,
+                blocker: actual_blocker,
+            },
+        ) => *step == actual_step && *blocker == actual_blocker,
         _ => false,
     };
     if !agrees {
         return Err(CloseoutRefusal::DispositionDisagreesWithTheLedger {
             claimed: parts.disposition,
-            ledger_stopped_at,
+            ledger_status,
         });
     }
 
@@ -501,47 +492,41 @@ pub fn validate_closeout(
 /// observations.
 fn wave_five_ledger() -> Result<RestartLedger, CloseoutRefusal> {
     use crate::live_private_restart::run_of_record as run;
-    use crate::live_restart::{RestartStep, RestartStepResult};
+    use crate::live_restart::RestartStep;
 
     let mut ledger = RestartLedger::new();
-    ledger
-        .record(
-            RestartStep::AcceptedSponsorlessControl,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![run::ACCEPTED_TXID.to_owned()],
-                established: "one sponsorless private one-to-one receipt-covenant control, \
-                              accepted, its witness verified from the node's own copy against \
-                              an independently recomputed message"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::BothParitySuccessors,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![
-                    run::ACCEPTED_TXID.to_owned(),
-                    run::PARITY_ACCEPTED_TXID.to_owned(),
-                ],
-                established: "both admitted commitment parities, each consumed in its own \
-                              complete accepted successor"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::TargetCtConservation,
-            RestartStepResult::StoppedTyped {
-                blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
-                because: "a conservation claim needs a refused non-conserving case beside the \
-                          accepted conserving one, and the non-conserving case is the fourth \
-                          step's wrong-blinder mutation, which this wave did not run"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+    ledger.record(
+        RestartStep::AcceptedSponsorlessControl,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![run::ACCEPTED_TXID.to_owned()],
+            established: "one sponsorless private one-to-one receipt-covenant control, \
+                          accepted, its witness verified from the node's own copy against \
+                          an independently recomputed message"
+                .to_owned(),
+        },
+    )?;
+    ledger.record(
+        RestartStep::BothParitySuccessors,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![
+                run::ACCEPTED_TXID.to_owned(),
+                run::PARITY_ACCEPTED_TXID.to_owned(),
+            ],
+            established: "both admitted commitment parities, each consumed in its own \
+                          complete accepted successor"
+                .to_owned(),
+        },
+    )?;
+    ledger.record(
+        RestartStep::TargetCtConservation,
+        RecordedStepResult::StoppedTyped {
+            blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
+            because: "a conservation claim needs a refused non-conserving case beside the \
+                      accepted conserving one, and the non-conserving case is the fourth \
+                      step's wrong-blinder mutation, which this wave did not run"
+                .to_owned(),
+        },
+    )?;
     Ok(ledger)
 }
 
@@ -557,12 +542,7 @@ fn wave_five_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
     use crate::live_restart::RestartStep;
 
     let mut roles = CeremonyEvidenceRolesBuilder::new();
-    let settle = |builder: &mut CeremonyEvidenceRolesBuilder, role, ground| {
-        builder
-            .settle(role, RoleEvidence::new(role, ground))
-            .map_err(|_| CloseoutRefusal::SponsorRowMoved)
-    };
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Funding,
         RoleGround::ObservedAcceptance {
@@ -572,7 +552,7 @@ fn wave_five_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::OwnerSignature,
         RoleGround::ObservedAcceptance {
@@ -582,7 +562,7 @@ fn wave_five_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Safety,
         RoleGround::ObservedAcceptance {
@@ -592,37 +572,35 @@ fn wave_five_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::CtConservation,
         RoleGround::OrderNotReached {
             stopped_before_step: RestartStep::TargetCtConservation.number(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Minimality,
         RoleGround::OrderNotReached {
             stopped_before_step: RestartStep::TargetCtConservation.number(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Resource,
         RoleGround::OutsideThisCeremony {
             owned_by: "the live-transfer resource study".to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Lifecycle,
         RoleGround::OutsideThisCeremony {
             owned_by: "the lifecycle report".to_owned(),
         },
     )?;
-    roles
-        .complete()
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)
+    complete_roles(roles)
 }
 
 /// The confidential-funding guide's closeout, as this wave's runs
@@ -677,11 +655,11 @@ pub fn wave_five_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeou
             moved_on_acceptance(
                 PositivePrivateClass::OneToOne,
                 recorded_identity(run::accepted)?,
-            )?,
+            ),
             moved_on_acceptance(
                 PositivePrivateClass::BothCommitmentParityForms,
                 recorded_identity(run::parity_accepted)?,
-            )?,
+            ),
         ],
         exclusions: vec![
             "private-amounts".to_owned(),
@@ -742,82 +720,72 @@ pub fn wave_five_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeou
 fn wave_six_ledger() -> Result<RestartLedger, CloseoutRefusal> {
     use crate::live_conservation_negatives::run_of_record as cn;
     use crate::live_private_restart::run_of_record as run;
-    use crate::live_restart::{RestartStep, RestartStepResult};
+    use crate::live_restart::RestartStep;
 
     let mut ledger = RestartLedger::new();
-    ledger
-        .record(
-            RestartStep::AcceptedSponsorlessControl,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![run::ACCEPTED_TXID.to_owned()],
-                established: "one sponsorless private one-to-one receipt-covenant control, \
-                              re-run on a fresh chain, accepted, its witness verified from the \
-                              node's own copy against an independently recomputed message"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::BothParitySuccessors,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![
-                    run::ACCEPTED_TXID.to_owned(),
-                    run::PARITY_ACCEPTED_TXID.to_owned(),
-                ],
-                established: "both admitted commitment parities, each consumed in its own \
-                              complete accepted successor, re-run on fresh chains and \
-                              reproducing the prior identities byte for byte"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::TargetCtConservation,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
-                established: "target CT conservation, recorded against a balance-valid accepted \
-                              control as its conserving half and one wrong-blinder mutant's \
-                              balance-layer refusal as its non-conserving half. DISCLOSURE: the \
-                              non-conserving half is the SAME observed run the fourth step \
-                              records as its wrong-blinder proof-negative — one observed run, not \
-                              two — so a reader of two accepted ledger entries does not \
-                              double-count it as two observations"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::ProofNegatives,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
-                established: "wrong-blinder, missing-rangeproof, and malformed-rangeproof, all \
-                              three submitted to the mempool boundary and refused at \
-                              ConsensusRejectionBeforeScript with the one identical string \
-                              bad-txns-in-ne-out, each attributed by its mutated field against \
-                              the accepted control rather than by a target layer the three could \
-                              differ on. The wrong-blinder case is the same observed refusal the \
-                              third step records as conservation's non-conserving half"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::RemainingPositiveShapes,
-            RestartStepResult::StoppedTyped {
-                blocker: LiveInfrastructureBlocker::MultiOutputShapeConstructorAbsent,
-                because: "the remaining positive shapes — split, many-to-many, several distinct \
-                          owners — need multi-output and multi-input fixtures this wave does not \
-                          build, and private-merge is additionally structurally unconstructible \
-                          under the registry's two-output rule; a following wave builds the \
-                          fixtures and moves each shape on its own observed acceptance"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+    ledger.record(
+        RestartStep::AcceptedSponsorlessControl,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![run::ACCEPTED_TXID.to_owned()],
+            established: "one sponsorless private one-to-one receipt-covenant control, \
+                          re-run on a fresh chain, accepted, its witness verified from the \
+                          node's own copy against an independently recomputed message"
+                .to_owned(),
+        },
+    )?;
+    ledger.record(
+        RestartStep::BothParitySuccessors,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![
+                run::ACCEPTED_TXID.to_owned(),
+                run::PARITY_ACCEPTED_TXID.to_owned(),
+            ],
+            established: "both admitted commitment parities, each consumed in its own \
+                          complete accepted successor, re-run on fresh chains and \
+                          reproducing the prior identities byte for byte"
+                .to_owned(),
+        },
+    )?;
+    ledger.record(
+        RestartStep::TargetCtConservation,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
+            established: "target CT conservation, recorded against a balance-valid accepted \
+                          control as its conserving half and one wrong-blinder mutant's \
+                          balance-layer refusal as its non-conserving half. DISCLOSURE: the \
+                          non-conserving half is the SAME observed run the fourth step \
+                          records as its wrong-blinder proof-negative — one observed run, not \
+                          two — so a reader of two accepted ledger entries does not \
+                          double-count it as two observations"
+                .to_owned(),
+        },
+    )?;
+    ledger.record(
+        RestartStep::ProofNegatives,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
+            established: "wrong-blinder, missing-rangeproof, and malformed-rangeproof, all \
+                          three submitted to the mempool boundary and refused at \
+                          ConsensusRejectionBeforeScript with the one identical string \
+                          bad-txns-in-ne-out, each attributed by its mutated field against \
+                          the accepted control rather than by a target layer the three could \
+                          differ on. The wrong-blinder case is the same observed refusal the \
+                          third step records as conservation's non-conserving half"
+                .to_owned(),
+        },
+    )?;
+    ledger.record(
+        RestartStep::RemainingPositiveShapes,
+        RecordedStepResult::StoppedTyped {
+            blocker: LiveInfrastructureBlocker::MultiOutputShapeConstructorAbsent,
+            because: "the remaining positive shapes — split, many-to-many, several distinct \
+                      owners — need multi-output and multi-input fixtures this wave does not \
+                      build, and private-merge is additionally structurally unconstructible \
+                      under the registry's two-output rule; a following wave builds the \
+                      fixtures and moves each shape on its own observed acceptance"
+                .to_owned(),
+        },
+    )?;
     Ok(ledger)
 }
 
@@ -832,12 +800,7 @@ fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
     use crate::live_restart::RestartStep;
 
     let mut roles = CeremonyEvidenceRolesBuilder::new();
-    let settle = |builder: &mut CeremonyEvidenceRolesBuilder, role, ground| {
-        builder
-            .settle(role, RoleEvidence::new(role, ground))
-            .map_err(|_| CloseoutRefusal::SponsorRowMoved)
-    };
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Funding,
         RoleGround::ObservedAcceptance {
@@ -847,7 +810,7 @@ fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::OwnerSignature,
         RoleGround::ObservedAcceptance {
@@ -857,7 +820,7 @@ fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Safety,
         RoleGround::ObservedAcceptance {
@@ -867,7 +830,7 @@ fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::CtConservation,
         RoleGround::ObservedAcceptance {
@@ -878,30 +841,28 @@ fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Minimality,
         RoleGround::OrderNotReached {
             stopped_before_step: RestartStep::MinimalityPairs.number(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Resource,
         RoleGround::OutsideThisCeremony {
             owned_by: "the live-transfer resource study".to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Lifecycle,
         RoleGround::OutsideThisCeremony {
             owned_by: "the lifecycle report".to_owned(),
         },
     )?;
-    roles
-        .complete()
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)
+    complete_roles(roles)
 }
 
 fn wave_six_matrix_delta() -> Result<Vec<MovedMatrixRow>, CloseoutRefusal> {
@@ -912,15 +873,15 @@ fn wave_six_matrix_delta() -> Result<Vec<MovedMatrixRow>, CloseoutRefusal> {
         moved_on_acceptance(
             PositivePrivateClass::OneToOne,
             recorded_identity(run::accepted)?,
-        )?,
+        ),
         moved_on_acceptance(
             PositivePrivateClass::BothCommitmentParityForms,
             recorded_identity(run::parity_accepted)?,
-        )?,
+        ),
         moved_on_acceptance(
             PositivePrivateClass::TargetCtConservation,
             recorded_identity(cn::control_accepted)?,
-        )?,
+        ),
     ])
 }
 
@@ -1068,24 +1029,22 @@ pub fn wave_six_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeout
 /// prose is read as of its own wave, and a reader wanting the current
 /// standing reads `carried_residuals` instead.
 fn wave_seven_ledger() -> Result<RestartLedger, CloseoutRefusal> {
-    use crate::live_restart::{RestartStep, RestartStepResult};
+    use crate::live_restart::RestartStep;
 
     let mut ledger = wave_seven_steps_one_to_five()?;
-    ledger
-        .record(
-            RestartStep::SponsorCases,
-            RestartStepResult::StoppedTyped {
-                blocker: LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
-                because: "the sponsor cases run only after their independent signer dependency \
-                          closes by observation, and it has not: no target has accepted a control \
-                          carrying a sponsor owner's authorization. The dependency is not this \
-                          guide's to close, the private-sponsor-values row may not move, and step \
-                          seven's disclosure-minimality pairs follow this step in the mandatory \
-                          order and are therefore not reached"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+    ledger.record(
+        RestartStep::SponsorCases,
+        RecordedStepResult::StoppedTyped {
+            blocker: LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
+            because: "the sponsor cases run only after their independent signer dependency \
+                      closes by observation, and it has not: no target has accepted a control \
+                      carrying a sponsor owner's authorization. The dependency is not this \
+                      guide's to close, the private-sponsor-values row may not move, and step \
+                      seven's disclosure-minimality pairs follow this step in the mandatory \
+                      order and are therefore not reached"
+                .to_owned(),
+        },
+    )?;
     Ok(ledger)
 }
 
@@ -1106,88 +1065,78 @@ fn wave_seven_steps_one_to_five() -> Result<RestartLedger, CloseoutRefusal> {
     use crate::live_conservation_negatives::run_of_record as cn;
     use crate::live_multi_shapes::run_of_record as ms;
     use crate::live_private_restart::run_of_record as run;
-    use crate::live_restart::{RestartStep, RestartStepResult};
+    use crate::live_restart::RestartStep;
 
     let mut ledger = RestartLedger::new();
-    ledger
-        .record(
-            RestartStep::AcceptedSponsorlessControl,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![run::ACCEPTED_TXID.to_owned()],
-                established: "one sponsorless private one-to-one receipt-covenant control, \
-                              accepted, its witness verified from the node's own copy against an \
-                              independently recomputed message"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::BothParitySuccessors,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![
-                    run::ACCEPTED_TXID.to_owned(),
-                    run::PARITY_ACCEPTED_TXID.to_owned(),
-                ],
-                established: "both admitted commitment parities, each consumed in its own \
-                              complete accepted successor"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::TargetCtConservation,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
-                established: "target CT conservation, recorded against a balance-valid accepted \
-                              control as its conserving half and one wrong-blinder mutant's \
-                              balance-layer refusal as its non-conserving half. DISCLOSURE: the \
-                              non-conserving half is the SAME observed run the fourth step \
-                              records as its wrong-blinder proof-negative — one observed run, not \
-                              two"
+    ledger.record(
+        RestartStep::AcceptedSponsorlessControl,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![run::ACCEPTED_TXID.to_owned()],
+            established: "one sponsorless private one-to-one receipt-covenant control, \
+                          accepted, its witness verified from the node's own copy against an \
+                          independently recomputed message"
                 .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::ProofNegatives,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
-                established: "wrong-blinder, missing-rangeproof, and malformed-rangeproof, all \
-                              three submitted to the mempool boundary and refused at \
-                              ConsensusRejectionBeforeScript with the one identical string \
-                              bad-txns-in-ne-out, each attributed by its mutated field"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::RemainingPositiveShapes,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![
-                    ms::SPLIT_ACCEPTED_TXID.to_owned(),
-                    ms::MANY_TO_MANY_ACCEPTED_TXID.to_owned(),
-                    ms::SEVERAL_OWNERS_ACCEPTED_TXID.to_owned(),
-                ],
-                established: "THREE remaining positive private shapes, each built as its own \
-                              multi-output or multi-input fixture and each accepted by a real \
-                              node on its own shape: a split of one receipt into three outputs, a \
-                              representative many-to-many of two receipts into three outputs, and \
-                              a two-receipt transfer under two distinct owners into two outputs. \
-                              Every one carries a verified readback witness. DISCLOSURE: \
-                              private-merge did NOT run and is not unbuilt but UNCONSTRUCTIBLE — \
-                              a merge is one output and the registry refuses fewer than two, \
-                              because a confidential balance needs a balancing output — so its \
-                              row stays unmoved and the predicate conflict is filed as a guide \
-                              erratum rather than resolved here. An accepted fifth step is \
-                              therefore three shapes of four, not four of four"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+        },
+    )?;
+    ledger.record(
+        RestartStep::BothParitySuccessors,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![
+                run::ACCEPTED_TXID.to_owned(),
+                run::PARITY_ACCEPTED_TXID.to_owned(),
+            ],
+            established: "both admitted commitment parities, each consumed in its own \
+                          complete accepted successor"
+                .to_owned(),
+        },
+    )?;
+    ledger.record(
+        RestartStep::TargetCtConservation,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
+            established: "target CT conservation, recorded against a balance-valid accepted \
+                          control as its conserving half and one wrong-blinder mutant's \
+                          balance-layer refusal as its non-conserving half. DISCLOSURE: the \
+                          non-conserving half is the SAME observed run the fourth step \
+                          records as its wrong-blinder proof-negative — one observed run, not \
+                          two"
+            .to_owned(),
+        },
+    )?;
+    ledger.record(
+        RestartStep::ProofNegatives,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
+            established: "wrong-blinder, missing-rangeproof, and malformed-rangeproof, all \
+                          three submitted to the mempool boundary and refused at \
+                          ConsensusRejectionBeforeScript with the one identical string \
+                          bad-txns-in-ne-out, each attributed by its mutated field"
+                .to_owned(),
+        },
+    )?;
+    ledger.record(
+        RestartStep::RemainingPositiveShapes,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![
+                ms::SPLIT_ACCEPTED_TXID.to_owned(),
+                ms::MANY_TO_MANY_ACCEPTED_TXID.to_owned(),
+                ms::SEVERAL_OWNERS_ACCEPTED_TXID.to_owned(),
+            ],
+            established: "THREE remaining positive private shapes, each built as its own \
+                          multi-output or multi-input fixture and each accepted by a real \
+                          node on its own shape: a split of one receipt into three outputs, a \
+                          representative many-to-many of two receipts into three outputs, and \
+                          a two-receipt transfer under two distinct owners into two outputs. \
+                          Every one carries a verified readback witness. DISCLOSURE: \
+                          private-merge did NOT run and is not unbuilt but UNCONSTRUCTIBLE — \
+                          a merge is one output and the registry refuses fewer than two, \
+                          because a confidential balance needs a balancing output — so its \
+                          row stays unmoved and the predicate conflict is filed as a guide \
+                          erratum rather than resolved here. An accepted fifth step is \
+                          therefore three shapes of four, not four of four"
+                .to_owned(),
+        },
+    )?;
     Ok(ledger)
 }
 
@@ -1203,12 +1152,7 @@ fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
     use crate::live_restart::RestartStep;
 
     let mut roles = CeremonyEvidenceRolesBuilder::new();
-    let settle = |builder: &mut CeremonyEvidenceRolesBuilder, role, ground| {
-        builder
-            .settle(role, RoleEvidence::new(role, ground))
-            .map_err(|_| CloseoutRefusal::SponsorRowMoved)
-    };
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Funding,
         RoleGround::ObservedAcceptance {
@@ -1218,7 +1162,7 @@ fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::OwnerSignature,
         RoleGround::ObservedAcceptance {
@@ -1230,7 +1174,7 @@ fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Safety,
         RoleGround::ObservedAcceptance {
@@ -1241,7 +1185,7 @@ fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::CtConservation,
         RoleGround::ObservedAcceptance {
@@ -1251,30 +1195,28 @@ fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Minimality,
         RoleGround::OrderNotReached {
             stopped_before_step: RestartStep::MinimalityPairs.number(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Resource,
         RoleGround::OutsideThisCeremony {
             owned_by: "the live-transfer resource study".to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Lifecycle,
         RoleGround::OutsideThisCeremony {
             owned_by: "the lifecycle report".to_owned(),
         },
     )?;
-    roles
-        .complete()
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)
+    complete_roles(roles)
 }
 
 /// The target facts the shape wave observed.
@@ -1332,27 +1274,27 @@ fn wave_seven_matrix_delta() -> Result<Vec<MovedMatrixRow>, CloseoutRefusal> {
         moved_on_acceptance(
             PositivePrivateClass::OneToOne,
             recorded_identity(run::accepted)?,
-        )?,
+        ),
         moved_on_acceptance(
             PositivePrivateClass::BothCommitmentParityForms,
             recorded_identity(run::parity_accepted)?,
-        )?,
+        ),
         moved_on_acceptance(
             PositivePrivateClass::TargetCtConservation,
             recorded_identity(cn::control_accepted)?,
-        )?,
+        ),
         moved_on_acceptance(
             PositivePrivateClass::Split,
             recorded_identity(ms::split_accepted)?,
-        )?,
+        ),
         moved_on_acceptance(
             PositivePrivateClass::ManyToManyRepresentative,
             recorded_identity(ms::many_to_many_accepted)?,
-        )?,
+        ),
         moved_on_acceptance(
             PositivePrivateClass::SeveralDistinctOwners,
             recorded_identity(ms::several_owners_accepted)?,
-        )?,
+        ),
     ])
 }
 
@@ -1495,20 +1437,19 @@ pub fn wave_seven_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
 fn wave_eight_ledger() -> Result<RestartLedger, CloseoutRefusal> {
     use crate::live_explicit_shapes::run_of_record as ex;
     use crate::live_multi_shapes::run_of_record as ms;
-    use crate::live_restart::{RestartStep, RestartStepResult};
+    use crate::live_restart::RestartStep;
     use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
 
     let mut ledger = wave_seven_steps_one_to_five()?;
-    ledger
-        .record(
-            RestartStep::SponsorCases,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![
-                    sp::SPONSORED_ACCEPTED_TXID.to_owned(),
-                    sp::SPONSORED_CHANGE_ACCEPTED_TXID.to_owned(),
-                    sp::SPONSORED_PRIVATE_TXID.to_owned(),
-                ],
-                established: "the sponsor cases, entered only after their independent signer \
+    ledger.record(
+        RestartStep::SponsorCases,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![
+                sp::SPONSORED_ACCEPTED_TXID.to_owned(),
+                sp::SPONSORED_CHANGE_ACCEPTED_TXID.to_owned(),
+                sp::SPONSORED_PRIVATE_TXID.to_owned(),
+            ],
+            established: "the sponsor cases, entered only after their independent signer \
                               dependency closed BY OBSERVATION, which is the condition this step \
                               names: a real node accepted a control carrying a sponsor owner's \
                               authorization. Three cases behind it -- the change-absent explicit \
@@ -1518,23 +1459,21 @@ fn wave_eight_ledger() -> Result<RestartLedger, CloseoutRefusal> {
                               the private construction lane at a blinded sponsor coin with \
                               committed change. The private-sponsor-values row moves on the last \
                               of these and cites it"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
-    ledger
-        .record(
-            RestartStep::MinimalityPairs,
-            RestartStepResult::Accepted {
-                accepted_identities: vec![
-                    ex::ONE_TO_ONE_ACCEPTED_TXID.to_owned(),
-                    ms::STRICT_ONE_TO_ONE_ACCEPTED_TXID.to_owned(),
-                    ex::MERGE_ACCEPTED_TXID.to_owned(),
-                    ms::MERGE_ACCEPTED_TXID.to_owned(),
-                    ex::SEVERAL_TO_SEVERAL_ACCEPTED_TXID.to_owned(),
-                    ms::SEVERAL_OWNERS_ACCEPTED_TXID.to_owned(),
-                ],
-                established: "the disclosure-minimality pairs, entered after step six discharged \
+                .to_owned(),
+        },
+    )?;
+    ledger.record(
+        RestartStep::MinimalityPairs,
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![
+                ex::ONE_TO_ONE_ACCEPTED_TXID.to_owned(),
+                ms::STRICT_ONE_TO_ONE_ACCEPTED_TXID.to_owned(),
+                ex::MERGE_ACCEPTED_TXID.to_owned(),
+                ms::MERGE_ACCEPTED_TXID.to_owned(),
+                ex::SEVERAL_TO_SEVERAL_ACCEPTED_TXID.to_owned(),
+                ms::SEVERAL_OWNERS_ACCEPTED_TXID.to_owned(),
+            ],
+            established: "the disclosure-minimality pairs, entered after step six discharged \
                               and reached through the mandatory order rather than around it. \
                               THREE of the five paired cases have a recorded acceptance of BOTH \
                               members' shapes -- one-to-one, merge, and many-to-many -- and each \
@@ -1558,10 +1497,9 @@ fn wave_eight_ledger() -> Result<RestartLedger, CloseoutRefusal> {
                               transaction and its paired accepted explicit one; the equality this \
                               workspace holds is first-party, over registry members that never \
                               reached a target"
-                    .to_owned(),
-            },
-        )
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)?;
+                .to_owned(),
+        },
+    )?;
     Ok(ledger)
 }
 
@@ -1635,36 +1573,36 @@ pub fn wave_eight_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
             moved_on_acceptance(
                 PositivePrivateClass::OneToOne,
                 recorded_identity(run::accepted)?,
-            )?,
+            ),
             moved_on_acceptance(
                 PositivePrivateClass::BothCommitmentParityForms,
                 recorded_identity(run::parity_accepted)?,
-            )?,
+            ),
             moved_on_acceptance(
                 PositivePrivateClass::TargetCtConservation,
                 recorded_identity(cn::control_accepted)?,
-            )?,
+            ),
             moved_on_acceptance(
                 PositivePrivateClass::Split,
                 recorded_identity(ms::split_accepted)?,
-            )?,
+            ),
             moved_on_acceptance(
                 PositivePrivateClass::ManyToManyRepresentative,
                 recorded_identity(ms::many_to_many_accepted)?,
-            )?,
+            ),
             moved_on_acceptance(
                 PositivePrivateClass::SeveralDistinctOwners,
                 recorded_identity(ms::several_owners_accepted)?,
-            )?,
+            ),
             // The two this wave adds.
             moved_on_acceptance(
                 PositivePrivateClass::Merge,
                 recorded_identity(ms::merge_accepted)?,
-            )?,
+            ),
             moved_on_acceptance(
                 PositivePrivateClass::PrivateSponsorValues,
                 recorded_identity(sp::sponsored_private_accepted)?,
-            )?,
+            ),
         ],
         exclusions: vec![
             "private-amounts".to_owned(),
@@ -1738,12 +1676,7 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
     use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
 
     let mut roles = CeremonyEvidenceRolesBuilder::new();
-    let settle = |builder: &mut CeremonyEvidenceRolesBuilder, role, ground| {
-        builder
-            .settle(role, RoleEvidence::new(role, ground))
-            .map_err(|_| CloseoutRefusal::SponsorRowMoved)
-    };
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Funding,
         RoleGround::ObservedAcceptance {
@@ -1753,7 +1686,7 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::OwnerSignature,
         RoleGround::ObservedAcceptance {
@@ -1765,7 +1698,7 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Safety,
         RoleGround::ObservedAcceptance {
@@ -1777,7 +1710,7 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::CtConservation,
         RoleGround::ObservedAcceptance {
@@ -1789,7 +1722,7 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Minimality,
         RoleGround::ObservedAcceptance {
@@ -1801,23 +1734,21 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
                 .to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Resource,
         RoleGround::OutsideThisCeremony {
             owned_by: "the live-transfer resource study".to_owned(),
         },
     )?;
-    settle(
+    settle_role(
         &mut roles,
         CandidateEvidenceRole::Lifecycle,
         RoleGround::OutsideThisCeremony {
             owned_by: "the lifecycle report".to_owned(),
         },
     )?;
-    roles
-        .complete()
-        .map_err(|_| CloseoutRefusal::SponsorRowMoved)
+    complete_roles(roles)
 }
 
 #[cfg(test)]
@@ -1828,7 +1759,11 @@ mod tests {
         validate_closeout,
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
-    use crate::live_restart::{RestartLedger, RestartStep, RestartStepResult};
+    use crate::live_restart::{
+        RecordedStepResult, RenderedStepResult, RestartLedger, RestartLedgerStatus,
+        RestartOrderRefusal, RestartStep,
+    };
+    use crate::live_roles::{CandidateEvidenceRole, EvidenceAssemblyRefusal};
     use std::collections::{BTreeMap, BTreeSet};
 
     fn assert_exact_moved_identities(
@@ -1957,7 +1892,7 @@ mod tests {
         assert_eq!(seven_entries.len(), RestartStep::ALL.len());
         assert_eq!(
             seven_entries[RestartStep::MinimalityPairs.number() as usize - 1].1,
-            RestartStepResult::NotReached,
+            RenderedStepResult::NotReached,
         );
 
         // And the order carried to its end by a LATER wave, which is
@@ -2016,7 +1951,7 @@ mod tests {
         let rendered = report.render();
         assert!(rendered.contains("restart_step 7"));
         let seventh = &report.parts().ledger.entries()[6].1;
-        let RestartStepResult::Accepted { established, .. } = seventh else {
+        let RenderedStepResult::Accepted { established, .. } = seventh else {
             panic!("the seventh step did not accept");
         };
         assert!(established.contains("three pairs of five, not five of five"));
@@ -2029,7 +1964,7 @@ mod tests {
         ledger
             .record(
                 RestartStep::AcceptedSponsorlessControl,
-                RestartStepResult::StoppedTyped {
+                RecordedStepResult::StoppedTyped {
                     blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
                     because: "no control was submitted".to_owned(),
                 },
@@ -2272,7 +2207,7 @@ mod tests {
         assert_eq!(
             ledger.record(
                 RestartStep::MinimalityPairs,
-                RestartStepResult::Accepted {
+                RecordedStepResult::Accepted {
                     accepted_identities: vec!["ab".repeat(32)],
                     established: "a pair that never had an entry condition".to_owned(),
                 },
@@ -2318,8 +2253,7 @@ mod tests {
         let recorded =
             crate::live_sponsor_shapes::sponsored_run_of_record::sponsored_private_accepted()
                 .expect("the committed identity parses");
-        let moved = moved_on_acceptance(PositivePrivateClass::PrivateSponsorValues, recorded)
-            .expect("the row moves on the acceptance of its own shape");
+        let moved = moved_on_acceptance(PositivePrivateClass::PrivateSponsorValues, recorded);
         assert_eq!(moved.class(), PositivePrivateClass::PrivateSponsorValues);
         assert_eq!(
             moved.accepted_identity().to_string(),
@@ -2332,10 +2266,18 @@ mod tests {
         // Counted over the whole vocabulary rather than asserted of the
         // one that changed, so a class added later with no run behind it
         // is caught here.
-        assert!(
-            PositivePrivateClass::ALL
+        let recorded = crate::live_private_restart::run_of_record::accepted()
+            .expect("the committed primary identity parses");
+        let moved: Vec<_> = PositivePrivateClass::ALL
+            .into_iter()
+            .map(|class| moved_on_acceptance(class, recorded))
+            .collect();
+        assert_eq!(
+            moved
                 .iter()
-                .all(|class| class.may_enter_the_delta()),
+                .map(super::MovedMatrixRow::class)
+                .collect::<Vec<_>>(),
+            PositivePrivateClass::ALL,
         );
     }
 
@@ -2388,9 +2330,132 @@ mod tests {
             validate_closeout(offered).err(),
             Some(CloseoutRefusal::DispositionDisagreesWithTheLedger {
                 claimed: CloseoutDisposition::Completed,
-                ledger_stopped_at: Some(RestartStep::AcceptedSponsorlessControl),
+                ledger_status: RestartLedgerStatus::Stopped {
+                    step: RestartStep::AcceptedSponsorlessControl,
+                    blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
+                },
             }),
         );
+    }
+
+    fn accepted_result(step: RestartStep) -> RecordedStepResult {
+        RecordedStepResult::Accepted {
+            accepted_identities: vec![step.name().to_owned()],
+            established: format!("{} accepted", step.name()),
+        }
+    }
+
+    fn completed_ledger() -> RestartLedger {
+        let mut ledger = RestartLedger::new();
+        for step in RestartStep::ALL {
+            ledger
+                .record(step, accepted_result(step))
+                .expect("the ordered acceptance records");
+        }
+        ledger
+    }
+
+    #[test]
+    fn completed_refuses_an_empty_ledger() {
+        let mut offered = parts(RestartLedger::new());
+        offered.disposition = CloseoutDisposition::Completed;
+        assert_eq!(
+            validate_closeout(offered).err(),
+            Some(CloseoutRefusal::DispositionDisagreesWithTheLedger {
+                claimed: CloseoutDisposition::Completed,
+                ledger_status: RestartLedgerStatus::InProgress {
+                    expected: RestartStep::AcceptedSponsorlessControl,
+                },
+            }),
+        );
+    }
+
+    #[test]
+    fn completed_refuses_an_accepted_prefix() {
+        let mut ledger = RestartLedger::new();
+        ledger
+            .record(
+                RestartStep::AcceptedSponsorlessControl,
+                accepted_result(RestartStep::AcceptedSponsorlessControl),
+            )
+            .expect("the first acceptance records");
+        let mut offered = parts(ledger);
+        offered.disposition = CloseoutDisposition::Completed;
+        assert_eq!(
+            validate_closeout(offered).err(),
+            Some(CloseoutRefusal::DispositionDisagreesWithTheLedger {
+                claimed: CloseoutDisposition::Completed,
+                ledger_status: RestartLedgerStatus::InProgress {
+                    expected: RestartStep::BothParitySuccessors,
+                },
+            }),
+        );
+    }
+
+    #[test]
+    fn completed_accepts_all_seven_ordered_acceptances() {
+        let mut offered = parts(completed_ledger());
+        offered.disposition = CloseoutDisposition::Completed;
+        validate_closeout(offered).expect("the complete ledger agrees with completion");
+    }
+
+    #[test]
+    fn a_typed_stop_requires_the_exact_step_and_blocker() {
+        let mut different_blocker = parts(stopped_ledger());
+        different_blocker.disposition = CloseoutDisposition::TypedStopped {
+            step: RestartStep::AcceptedSponsorlessControl,
+            blocker: LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
+        };
+        assert!(matches!(
+            validate_closeout(different_blocker),
+            Err(CloseoutRefusal::DispositionDisagreesWithTheLedger { .. }),
+        ));
+
+        let mut different_step = parts(stopped_ledger());
+        different_step.disposition = CloseoutDisposition::TypedStopped {
+            step: RestartStep::BothParitySuccessors,
+            blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
+        };
+        assert!(matches!(
+            validate_closeout(different_step),
+            Err(CloseoutRefusal::DispositionDisagreesWithTheLedger { .. }),
+        ));
+    }
+
+    #[test]
+    fn closeout_wrappers_preserve_restart_order_causes() {
+        for source in [
+            RestartOrderRefusal::OutOfOrder {
+                attempted: RestartStep::ProofNegatives,
+                expected: RestartStep::AcceptedSponsorlessControl,
+            },
+            RestartOrderRefusal::AfterStop {
+                attempted: RestartStep::MinimalityPairs,
+                stopped_at: RestartStep::SponsorCases,
+            },
+        ] {
+            assert_eq!(
+                CloseoutRefusal::from(source.clone()),
+                CloseoutRefusal::RestartOrder(source),
+            );
+        }
+    }
+
+    #[test]
+    fn closeout_wrappers_preserve_evidence_assembly_causes() {
+        for source in [
+            EvidenceAssemblyRefusal::RoleSubstitution {
+                offered_role: CandidateEvidenceRole::Funding,
+                required_role: CandidateEvidenceRole::Safety,
+            },
+            EvidenceAssemblyRefusal::RoleSettledTwice(CandidateEvidenceRole::Lifecycle),
+            EvidenceAssemblyRefusal::RoleUnsettled(CandidateEvidenceRole::Resource),
+        ] {
+            assert_eq!(
+                CloseoutRefusal::from(source.clone()),
+                CloseoutRefusal::EvidenceAssembly(source),
+            );
+        }
     }
 
     #[test]
@@ -2401,14 +2466,12 @@ mod tests {
                 PositivePrivateClass::OneToOne,
                 crate::live_private_restart::run_of_record::accepted()
                     .expect("the committed primary identity parses"),
-            )
-            .expect("a movable class"),
+            ),
             moved_on_acceptance(
                 PositivePrivateClass::OneToOne,
                 crate::live_private_restart::run_of_record::parity_accepted()
                     .expect("the committed parity identity parses"),
-            )
-            .expect("a movable class"),
+            ),
         ];
         assert_eq!(
             validate_closeout(offered).err(),

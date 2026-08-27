@@ -2771,7 +2771,7 @@ mod tests {
         }
     }
 
-    /// The registry claim and the gate move TOGETHER, on a run.
+    /// The registry claim and the row move TOGETHER, on a run.
     ///
     /// Asserted rather than left to the doc comments, because these are
     /// the facts that must not drift apart. For most of this arc the
@@ -2783,7 +2783,7 @@ mod tests {
     ///
     /// All three are true now and each was established separately: the
     /// registry states the case, a node accepted a candidate built from
-    /// it, and the gate opened in the same commit as the observation.
+    /// it, and that recorded acceptance moves the row.
     #[test]
     fn the_sponsored_private_successor_is_registrable_and_its_row_may_move() {
         const {
@@ -2792,25 +2792,21 @@ mod tests {
                 "the registry states a two-asset case and the flag was not moved with it",
             );
         }
-        assert!(
-            crate::live_closeout::PositivePrivateClass::PrivateSponsorValues.may_enter_the_delta(),
-            "the sponsor row is shut while its own shape has been accepted",
-        );
-        // The gate opened ON an acceptance, and this is the identity it
-        // opened on. A gate opened with no run behind it would pass the
-        // assertion above and fail here.
+        // The row moves ON an acceptance, and this is the identity it
+        // moves on.
         assert_eq!(
             sponsored_run_of_record::SPONSORED_PRIVATE_TXID.len(),
             64,
             "the accepted identity is not a transaction identity",
         );
-        assert!(
-            crate::live_closeout::moved_on_acceptance(
-                crate::live_closeout::PositivePrivateClass::PrivateSponsorValues,
-                sponsored_run_of_record::sponsored_private_accepted()
-                    .expect("the committed sponsored-private identity parses"),
-            )
-            .is_ok(),
+        let moved = crate::live_closeout::moved_on_acceptance(
+            crate::live_closeout::PositivePrivateClass::PrivateSponsorValues,
+            sponsored_run_of_record::sponsored_private_accepted()
+                .expect("the committed sponsored-private identity parses"),
+        );
+        assert_eq!(
+            moved.class(),
+            crate::live_closeout::PositivePrivateClass::PrivateSponsorValues,
             "the row the acceptance was for cannot be moved on it",
         );
     }

@@ -129,9 +129,23 @@ impl RestartStep {
     }
 }
 
-/// How one step came out.
+/// A step result that may be stored in a restart ledger.
+///
+/// A rendered placeholder cannot cross this boundary:
+///
+/// ```compile_fail
+/// use vectors::live_restart::{RenderedStepResult, RestartLedger, RestartStep};
+///
+/// let mut ledger = RestartLedger::new();
+/// ledger
+///     .record(
+///         RestartStep::AcceptedSponsorlessControl,
+///         RenderedStepResult::NotReached,
+///     )
+///     .unwrap();
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RestartStepResult {
+pub enum RecordedStepResult {
     /// The step ran and its own acceptance condition was observed.
     Accepted {
         /// The target-computed identities the step's acceptance rests
@@ -143,7 +157,8 @@ pub enum RestartStepResult {
     /// The step did not accept, and the reason is a carried blocker
     /// rather than a target verdict about the step's subject.
     ///
-    /// This is the honest stop. Every later step is `NotReached`.
+    /// This is the honest stop. Every later step renders as
+    /// [`RenderedStepResult::NotReached`].
     StoppedTyped {
         /// The blocker.
         blocker: LiveInfrastructureBlocker,
@@ -151,16 +166,81 @@ pub enum RestartStepResult {
         /// than left for a reader to infer.
         because: String,
     },
-    /// The order stopped before this step.
-    NotReached,
 }
 
-impl RestartStepResult {
+impl RecordedStepResult {
     /// Whether the order may continue past a step with this result.
     #[must_use]
     pub const fn continues(&self) -> bool {
         matches!(self, Self::Accepted { .. })
     }
+}
+
+/// A step result as a report may display it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RenderedStepResult {
+    /// The step ran and its own acceptance condition was observed.
+    Accepted {
+        /// The target-computed identities the step's acceptance rests
+        /// on, in the order the step submitted them.
+        accepted_identities: Vec<String>,
+        /// What the step established, in the step's own words.
+        established: String,
+    },
+    /// The step did not accept, and the reason is a carried blocker.
+    StoppedTyped {
+        /// The blocker.
+        blocker: LiveInfrastructureBlocker,
+        /// Why this blocker stops this step.
+        because: String,
+    },
+    /// The order stopped before this step.
+    NotReached,
+}
+
+impl RenderedStepResult {
+    /// Whether the order continued past a displayed step.
+    #[must_use]
+    pub const fn continues(&self) -> bool {
+        matches!(self, Self::Accepted { .. })
+    }
+}
+
+impl From<RecordedStepResult> for RenderedStepResult {
+    fn from(recorded: RecordedStepResult) -> Self {
+        match recorded {
+            RecordedStepResult::Accepted {
+                accepted_identities,
+                established,
+            } => Self::Accepted {
+                accepted_identities,
+                established,
+            },
+            RecordedStepResult::StoppedTyped { blocker, because } => {
+                Self::StoppedTyped { blocker, because }
+            }
+        }
+    }
+}
+
+/// The lifecycle state derived from the ledger entries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RestartLedgerStatus {
+    /// The order is waiting for one named step.
+    InProgress {
+        /// The next admissible step.
+        expected: RestartStep,
+    },
+    /// The order stopped at a typed blocker.
+    Stopped {
+        /// The step that stopped.
+        step: RestartStep,
+        /// The blocker recorded at that step.
+        blocker: LiveInfrastructureBlocker,
+    },
+    /// All seven ordered steps were accepted.
+    Completed,
 }
 
 /// What goes wrong when the order is recorded badly.
@@ -182,13 +262,17 @@ pub enum RestartOrderRefusal {
         /// Where the order stopped.
         stopped_at: RestartStep,
     },
+    /// A step was offered after all seven ordered steps had accepted.
+    AlreadyComplete {
+        /// The step the caller tried to record.
+        attempted: RestartStep,
+    },
 }
 
 /// The restart order, under execution.
 #[derive(Clone, Debug, Default)]
 pub struct RestartLedger {
-    entries: Vec<(RestartStep, RestartStepResult)>,
-    stopped_at: Option<RestartStep>,
+    entries: Vec<(RestartStep, RecordedStepResult)>,
 }
 
 impl RestartLedger {
@@ -201,10 +285,45 @@ impl RestartLedger {
     /// The step the order is waiting for, where it is still running.
     #[must_use]
     pub fn expected_step(&self) -> Option<RestartStep> {
-        if self.stopped_at.is_some() {
-            return None;
+        match self.status() {
+            RestartLedgerStatus::InProgress { expected } => Some(expected),
+            RestartLedgerStatus::Stopped { .. } | RestartLedgerStatus::Completed => None,
         }
-        RestartStep::ALL.get(self.entries.len()).copied()
+    }
+
+    /// The lifecycle state derived from the recorded entries alone.
+    #[must_use]
+    pub fn status(&self) -> RestartLedgerStatus {
+        if let Some((step, blocker)) = self.entries.iter().find_map(|(step, result)| {
+            if let RecordedStepResult::StoppedTyped { blocker, .. } = result {
+                Some((*step, *blocker))
+            } else {
+                None
+            }
+        }) {
+            return RestartLedgerStatus::Stopped { step, blocker };
+        }
+
+        let completed = self.entries.len() == RestartStep::ALL.len()
+            && self.entries.iter().zip(RestartStep::ALL).all(
+                |((recorded_step, result), expected_step)| {
+                    *recorded_step == expected_step && result.continues()
+                },
+            );
+        if completed {
+            return RestartLedgerStatus::Completed;
+        }
+
+        let expected = RestartStep::ALL
+            .into_iter()
+            .find(|step| {
+                !self
+                    .entries
+                    .iter()
+                    .any(|(recorded_step, _)| recorded_step == step)
+            })
+            .unwrap_or(RestartStep::AcceptedSponsorlessControl);
+        RestartLedgerStatus::InProgress { expected }
     }
 
     /// Record `result` for `step`.
@@ -212,39 +331,36 @@ impl RestartLedger {
     /// # Errors
     ///
     /// [`RestartOrderRefusal::OutOfOrder`] where `step` is not the step
-    /// the order is waiting for, and [`RestartOrderRefusal::AfterStop`]
-    /// where the order has already stopped.
-    ///
-    /// # Panics
-    ///
-    /// Never: a ledger that has neither stopped nor recorded all seven
-    /// steps always expects one, and the two conditions are checked
-    /// above in that order.
+    /// the order is waiting for, [`RestartOrderRefusal::AfterStop`]
+    /// where the order has already stopped, and
+    /// [`RestartOrderRefusal::AlreadyComplete`] where all seven steps
+    /// have already accepted.
     pub fn record(
         &mut self,
         step: RestartStep,
-        result: RestartStepResult,
+        result: RecordedStepResult,
     ) -> Result<(), RestartOrderRefusal> {
-        if let Some(stopped_at) = self.stopped_at {
-            return Err(RestartOrderRefusal::AfterStop {
-                attempted: step,
-                stopped_at,
-            });
-        }
-        let expected = self
-            .expected_step()
-            .expect("a ledger that has not stopped and is not full expects a step");
+        let expected = match self.status() {
+            RestartLedgerStatus::Stopped {
+                step: stopped_at, ..
+            } => {
+                return Err(RestartOrderRefusal::AfterStop {
+                    attempted: step,
+                    stopped_at,
+                });
+            }
+            RestartLedgerStatus::Completed => {
+                return Err(RestartOrderRefusal::AlreadyComplete { attempted: step });
+            }
+            RestartLedgerStatus::InProgress { expected } => expected,
+        };
         if step != expected {
             return Err(RestartOrderRefusal::OutOfOrder {
                 attempted: step,
                 expected,
             });
         }
-        let continues = result.continues();
         self.entries.push((step, result));
-        if !continues {
-            self.stopped_at = Some(step);
-        }
         Ok(())
     }
 
@@ -261,18 +377,22 @@ impl RestartLedger {
 
     /// Where the order stopped, if it did.
     #[must_use]
-    pub const fn stopped_at(&self) -> Option<RestartStep> {
-        self.stopped_at
+    pub fn stopped_at(&self) -> Option<RestartStep> {
+        if let RestartLedgerStatus::Stopped { step, .. } = self.status() {
+            Some(step)
+        } else {
+            None
+        }
     }
 
     /// Every step and its result, with the unreached steps written in as
-    /// [`RestartStepResult::NotReached`] rather than omitted.
+    /// [`RenderedStepResult::NotReached`] rather than omitted.
     ///
     /// Omitting them would leave a report whose length depended on how
     /// far the run got, which is the shape in which a stopped run reads
     /// as a shorter complete one.
     #[must_use]
-    pub fn entries(&self) -> Vec<(RestartStep, RestartStepResult)> {
+    pub fn entries(&self) -> Vec<(RestartStep, RenderedStepResult)> {
         RestartStep::ALL
             .into_iter()
             .map(|step| {
@@ -280,8 +400,8 @@ impl RestartLedger {
                     .entries
                     .iter()
                     .find(|(recorded, _)| *recorded == step)
-                    .map(|(_, result)| result.clone());
-                (step, recorded.unwrap_or(RestartStepResult::NotReached))
+                    .map(|(_, result)| RenderedStepResult::from(result.clone()));
+                (step, recorded.unwrap_or(RenderedStepResult::NotReached))
             })
             .collect()
     }
@@ -590,14 +710,15 @@ pub fn attribute_proof_negative(
 #[cfg(test)]
 mod tests {
     use super::{
-        BalanceValidControl, ProofNegativeAttributionRefusal, ProofNegativeCase, RestartLedger,
-        RestartOrderRefusal, RestartStep, RestartStepResult, attribute_proof_negative,
+        BalanceValidControl, ProofNegativeAttributionRefusal, ProofNegativeCase,
+        RecordedStepResult, RenderedStepResult, RestartLedger, RestartLedgerStatus,
+        RestartOrderRefusal, RestartStep, attribute_proof_negative,
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
-    fn accepted(identity: &str) -> RestartStepResult {
-        RestartStepResult::Accepted {
+    fn accepted(identity: &str) -> RecordedStepResult {
+        RecordedStepResult::Accepted {
             accepted_identities: vec![identity.to_owned()],
             established: "a control accepted".to_owned(),
         }
@@ -625,13 +746,20 @@ mod tests {
         ledger
             .record(
                 RestartStep::BothParitySuccessors,
-                RestartStepResult::StoppedTyped {
+                RecordedStepResult::StoppedTyped {
                     blocker: LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
                     because: "no signer is wired".to_owned(),
                 },
             )
             .expect("the stop records");
         assert_eq!(ledger.stopped_at(), Some(RestartStep::BothParitySuccessors));
+        assert_eq!(
+            ledger.status(),
+            RestartLedgerStatus::Stopped {
+                step: RestartStep::BothParitySuccessors,
+                blocker: LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
+            },
+        );
         assert_eq!(
             ledger.record(RestartStep::TargetCtConservation, accepted("bb")),
             Err(RestartOrderRefusal::AfterStop {
@@ -646,9 +774,51 @@ mod tests {
         assert!(
             entries[2..]
                 .iter()
-                .all(|(_, result)| *result == RestartStepResult::NotReached)
+                .all(|(_, result)| *result == RenderedStepResult::NotReached)
         );
         assert!(ledger.has_accepted_control());
+    }
+
+    #[test]
+    fn a_full_ledger_refuses_an_eighth_record_without_panicking() {
+        let mut ledger = RestartLedger::new();
+        for step in RestartStep::ALL {
+            ledger
+                .record(step, accepted(step.name()))
+                .expect("the ordered acceptance records");
+        }
+        assert_eq!(ledger.status(), RestartLedgerStatus::Completed);
+        assert_eq!(
+            ledger.record(
+                RestartStep::AcceptedSponsorlessControl,
+                accepted("an eighth acceptance"),
+            ),
+            Err(RestartOrderRefusal::AlreadyComplete {
+                attempted: RestartStep::AcceptedSponsorlessControl,
+            }),
+        );
+    }
+
+    #[test]
+    fn stop_status_excludes_ledger_owned_commentary() {
+        fn stopped(because: &str) -> RestartLedger {
+            let mut ledger = RestartLedger::new();
+            ledger
+                .record(
+                    RestartStep::AcceptedSponsorlessControl,
+                    RecordedStepResult::StoppedTyped {
+                        blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
+                        because: because.to_owned(),
+                    },
+                )
+                .expect("the stop records");
+            ledger
+        }
+
+        assert_eq!(
+            stopped("first explanation").status(),
+            stopped("different explanation").status(),
+        );
     }
 
     #[test]
