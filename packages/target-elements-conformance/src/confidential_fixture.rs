@@ -1423,15 +1423,14 @@ pub(crate) fn digest_transcript(
         // emitted before the opening block so a run-produced opening
         // source cannot make the amount disappear with the opening.
         transcript.quad(output.semantic_amount);
-        if output.role.carries_an_opening() {
-            if let FixtureOpenings::Derived { openings, .. } = openings
-                && let Some(opening) = openings.get(index).and_then(Option::as_ref)
-            {
-                transcript.framed(&opening.value_blinder);
-                transcript.framed(&opening.nonce_input);
-                transcript.framed(&opening.rangeproof_seed);
-                transcript.octet(opening.value_commitment[0]);
-            }
+        if output.role.carries_an_opening()
+            && let FixtureOpenings::Derived { openings, .. } = openings
+            && let Some(opening) = openings.get(index).and_then(Option::as_ref)
+        {
+            transcript.framed(&opening.value_blinder);
+            transcript.framed(&opening.nonce_input);
+            transcript.framed(&opening.rangeproof_seed);
+            transcript.octet(opening.value_commitment[0]);
         }
     }
     transcript.finish()

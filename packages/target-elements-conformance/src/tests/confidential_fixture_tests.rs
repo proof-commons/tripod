@@ -489,7 +489,7 @@ fn golden_manifest(contract: ReproducibilityContract) -> ConfidentialFixtureMani
     }
 }
 
-fn golden_opening(value: u8, nonce: u8, seed: u8, prefix: u8) -> DerivedOpening {
+const fn golden_opening(value: u8, nonce: u8, seed: u8, prefix: u8) -> DerivedOpening {
     let mut value_commitment = [0_u8; 33];
     value_commitment[0] = prefix;
     DerivedOpening {
