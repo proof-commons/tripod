@@ -2046,10 +2046,10 @@ mod byte_identity_tests {
     /// The fee-bearing recorded v1 digest and accepted identity remain one historical observation,
     /// while the live v2 fixture identity is checked separately.
     ///
-    /// The historical pair does not move and is not live-revalidated. Fixture-digest v2 binds
-    /// amounts unconditionally, so the same fixture now has a distinct forward digest. No node is
-    /// claimed to have accepted a candidate under v2; that would require a new run and observation
-    /// pair.
+    /// The historical pair does not move and is not live-revalidated. Under owner ruling Q19,
+    /// fixture-digest v2 binds amounts unconditionally, so the same fixture now has a distinct
+    /// forward digest. No node is claimed to have accepted a candidate under v2; that would require
+    /// a new run and observation pair.
     #[test]
     fn the_fee_bearing_digest_and_its_acceptance_belong_to_one_run() {
         let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
