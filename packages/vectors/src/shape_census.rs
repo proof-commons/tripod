@@ -1715,25 +1715,28 @@ impl TransferForm {
             // so removing the absorber does not reach the corner: the
             // sponsor's change is still there and the tally still
             // balances on it. What the cell loses is not possibility but
-            // a SOLVING role, because the change is not one -- so the
-            // stripped cell is admitted by the target and refused here,
-            // which is the register's central distinction appearing in a
-            // place nobody had looked.
+            // a SOLVING role -- a wall of this workspace's model that
+            // stood until the solving member learned the sponsor change,
+            // and the register recorded the two facts separately the
+            // whole time.
             (RepresentationAxis::ExitCrossing, true) => Some(
                 "The declared absorber, and BESIDE it the sponsor's committed change, which is a \
                  blinded output the tally counts like any other. So this cell does not reach the \
                  fully-unblinding corner when the absorber is taken away -- the change still holds \
                  the sum and consensus still admits the form. What the stripped cell loses is a \
-                 SOLVING role, which is this workspace's model rather than the target's, and the \
-                 register records the two separately.",
+                 SOLVING role, which is this workspace's model rather than the target's; the \
+                 registry can now state the solving role on the change, and the stripped cell is \
+                 expressible and unrun rather than unsupported.",
             ),
             (RepresentationAxis::FullUnblinding, true) => Some(
                 "The sponsor's COMMITTED change, and nothing else in the transaction. This is the \
                  corner the product found: a form whose destinations are wholly explicit is \
                  possible after all when a committed sponsor change is present, because the tally \
                  counts blinded outputs and does not care that this one belongs to the sponsor \
-                 rather than to a recipient. The registry cannot state it -- the change is not a \
-                 SOLVING role -- which is a first-party wall and not the target's.",
+                 rather than to a recipient. The registry could not state it while the change was \
+                 not a SOLVING role -- a first-party wall, censused and then removed by the \
+                 balancing sponsor-change member, so the cell now registers and nothing has \
+                 offered one.",
             ),
             (RepresentationAxis::FullUnblinding, false) => None,
             (_, _) => Some(
@@ -1865,6 +1868,64 @@ impl TransferForm {
     }
 }
 
+/// The sponsor-change role wall's removal, recorded once.
+///
+/// One constant rather than two literals, on
+/// [`TWO_OUTPUT_FLOOR_REMOVAL`]'s discipline: the census rows the
+/// removal freed and the limitation that reports it must not be able to
+/// disagree about what happened.
+///
+/// Its `proven_by` is `None`, and the reason is the fee role's reason
+/// under T5-042 exactly. The fixture vocabulary really does express an
+/// explicit sponsor change now — its own reserve asset, no opening, a
+/// required program — and no node has been offered one, because the
+/// projection between the registry and a candidate has not learned the
+/// role. That wall is censused as its own limitation,
+/// [`FormLimitation::ProjectionCarriesOnlyTheCommittedSponsorChange`],
+/// rather than folded into this record: a vocabulary that can express a
+/// shape and a chain that has accepted one are different facts, and
+/// this register exists to keep them apart.
+const SPONSOR_CHANGE_ROLE_REMOVAL: LimitationRemoval = LimitationRemoval {
+    row: "T5-063",
+    change: "The fixture output role vocabulary gained an EXPLICIT sponsor-change member beside \
+             the committed one, at transcript code 7 -- the next unused code, so no manifest \
+             registered before it hashes a byte differently. It carries its own reserve asset \
+             through the same one-seam accessor the committed member rides, and it carries NO \
+             opening, so the empty-program clause reads it as a payment back to a real owner \
+             and the parity rule counts it as solving nothing. Nothing was relaxed: every \
+             clause reads on the role predicates it always read on, a programless explicit \
+             change draws the same refusal a programless destination draws, and a manifest \
+             that does not name the member registers exactly as before.",
+    proven_by: None,
+};
+
+/// The solving-role wall's removal, recorded once.
+///
+/// One constant rather than two literals, on
+/// [`TWO_OUTPUT_FLOOR_REMOVAL`]'s discipline, and its `proven_by` is
+/// `None` for the reason the sponsor-change removal's is: the same
+/// projection stands between the registry and a candidate for both
+/// freed roles, censused once at
+/// [`FormLimitation::ProjectionCarriesOnlyTheCommittedSponsorChange`].
+const SOLVING_SPONSOR_CHANGE_REMOVAL: LimitationRemoval = LimitationRemoval {
+    row: "T5-063",
+    change: "The fixture output role vocabulary gained `BalancingSponsorChange`, at transcript \
+             code 8 -- the next unused code, so no manifest registered before it hashes a byte \
+             differently, and taken as a ROLE rather than as the filed path's manifest-level \
+             alternative precisely because a manifest field would have shifted every registered \
+             digest. It is the committed change's arithmetic under the balancing election: its \
+             own reserve asset through the same one-seam accessor, an opening the registry \
+             derives, a commitment built against its own asset generator, and a blinder SOLVED \
+             from the others -- so a form whose only blinded output is the sponsor's change can \
+             name which output solves. Nothing was relaxed: the uniqueness clause counts the \
+             member exactly as it counts the old solving roles, a committed change that does \
+             not declare it still draws `BalancingRoleNotUnique` with found zero, and the \
+             degeneracy warning travels with the role -- `DegenerateBalancingScalar` stands \
+             load-bearing, refusing the sole solved output over a zero consumed sum that would \
+             hide nothing.",
+    proven_by: None,
+};
+
 /// A first-party convention that refuses a CELL of the product.
 ///
 /// Minted beside [`Limitation`] rather than inside it, and the
@@ -1885,6 +1946,15 @@ pub enum FormLimitation {
     /// explicit-change form runs on the explicit lane, where there is no
     /// fixture registry to state anything in. The cell exists all the
     /// same, and consensus admits several of its instances.
+    ///
+    /// # REMOVED, under T5-063
+    ///
+    /// The member doc above describes the wall as it stood, which is
+    /// what a member doc is for. The vocabulary now carries the
+    /// explicit member the filed path named, [`Self::removal`] carries
+    /// the record, and the cells the wall held were re-verdicted by the
+    /// unchanged cascade — most to expressible-and-unrun, which is a
+    /// freed cell nobody has offered and not a claim about a chain.
     RegistryHasOnlyACommittedSponsorChangeRole,
     /// No output of the manifest SOLVES, though consensus admits the
     /// form.
@@ -1897,6 +1967,15 @@ pub enum FormLimitation {
     /// a solving role. So a form whose only blinded output is the
     /// sponsor's change is possible on the target and unstateable here,
     /// which is exactly the shape of gap this register exists to name.
+    ///
+    /// # REMOVED, under T5-063
+    ///
+    /// The member doc above describes the wall as it stood. The
+    /// vocabulary now carries a balancing sponsor-change member — the
+    /// filed path's first alternative, taken as a role so no digest
+    /// moved — [`Self::removal`] carries the record, and the six cells
+    /// the wall held were re-verdicted by the unchanged cascade to
+    /// expressible-and-unrun.
     NoSolvingRoleOutsideTheDestinations,
     /// The fee-bearing shape member lives only in the SECOND deployment.
     ///
@@ -1909,6 +1988,25 @@ pub enum FormLimitation {
     /// was built against, and a reader who did not know that would
     /// mis-read every fee-bearing row.
     FeeMemberOnlyInTheFeeBearingDeployment,
+    /// The materializer's projection carries ONE sponsor role and it is
+    /// the committed change.
+    ///
+    /// The wall the sponsor-change removal UNCOVERED, exactly as the
+    /// two-output floor's removal uncovered the canceling predecessor
+    /// and the fee role's uncovered the absent fee projection. The
+    /// registry now states the freed sponsor-change vocabulary and
+    /// admits its manifests; the projection between the registry and a
+    /// candidate refuses a role with no member in the view's own
+    /// vocabulary rather than substituting one, so a freed form
+    /// registers, derives and digests and no candidate can carry it
+    /// toward a node.
+    ///
+    /// It is censused as its own limitation with its own path rather
+    /// than folded into the removal's story, and it holds no cell of
+    /// the census: the freed cells are EXPRESSIBLE at the registry and
+    /// unrun, which is the fee shape's exact standing between T5-042
+    /// and T5-045, and their rows name this wall as where a run stops.
+    ProjectionCarriesOnlyTheCommittedSponsorChange,
 }
 
 impl FormLimitation {
@@ -1918,20 +2016,30 @@ impl FormLimitation {
         match self {
             Self::RegistryHasOnlyACommittedSponsorChangeRole => {
                 "packages/target-elements-conformance/src/confidential_fixture.rs, the \
-                 `FixtureOutputRole` vocabulary, whose only sponsor member is `SponsorChange` and \
-                 whose `carries_an_opening` is TRUE for it -- a committed change and no other kind"
+                 `FixtureOutputRole` vocabulary, whose only sponsor member WAS `SponsorChange` \
+                 with `carries_an_opening` TRUE -- a committed change and no other kind, which is \
+                 the vocabulary as it stood when the wall was censused; the explicit member that \
+                 ended it is recorded in the removal"
             }
             Self::NoSolvingRoleOutsideTheDestinations => {
                 "packages/target-elements-conformance/src/confidential_fixture.rs, the \
-                 `solves_the_balance` clause of `register_with_source`, which requires exactly one \
-                 solving role and counts `Balancing` and `SoleBalancing` alone; `SponsorChange` \
-                 carries an opening and does not solve"
+                 `solves_the_balance` clause of `register_with_source`, which requires exactly \
+                 one solving role and COUNTED `Balancing` and `SoleBalancing` alone -- the \
+                 vocabulary as it stood when the wall was censused; `SponsorChange` carries an \
+                 opening and does not solve, and the solving member that ended the wall is \
+                 recorded in the removal"
             }
             Self::FeeMemberOnlyInTheFeeBearingDeployment => {
                 "packages/tapscript/src/live_shape.rs, the `SponsorlessFeeBeyondBound` conjunct of \
                  `LiveTransferShape::checked`, which refuses a sponsorless fee-bearing shape \
                  whenever the bounds carry `FeePresence::Absent` -- true of \
                  `demonstration_live_shape_set` and false of `fee_bearing_live_shape_set`"
+            }
+            Self::ProjectionCarriesOnlyTheCommittedSponsorChange => {
+                "packages/vectors/src/live_proof_bearing_observation.rs, the closed-view arm of \
+                 `project`, which refuses a registry role with no member in the materializer's \
+                 own vocabulary rather than substituting one -- reached by every manifest \
+                 declaring a sponsor-change role the view has not learned"
             }
         }
     }
@@ -1962,6 +2070,16 @@ impl FormLimitation {
                  That is a cost the workspace chose deliberately and would choose again; what it \
                  is not is a statement that the shapes are unsupported."
             }
+            Self::ProjectionCarriesOnlyTheCommittedSponsorChange => {
+                "The committed-output materializer's view. Its role vocabulary was written member \
+                 by member as ceremonies needed them -- the committed destinations first, then \
+                 the fee, the committed sponsor change and the explicit destination, each under \
+                 its own wave -- and its closed-view arm refuses a registry role with no place \
+                 here rather than silently substituting one, which is the honest stop the fee \
+                 role's own history demanded. A freed sponsor-change member arrives at a \
+                 vocabulary that has not learned it; nothing decided against the role, and no \
+                 decision was recorded because none was made."
+            }
         }
     }
 
@@ -1991,6 +2109,15 @@ impl FormLimitation {
                  this register now does. A single deployment carrying both would cost every \
                  recorded digest in the workspace and buy a convenience."
             }
+            Self::ProjectionCarriesOnlyTheCommittedSponsorChange => {
+                "Carry the freed roles through the projection as the fee role was carried under \
+                 T5-045: the view gains a member per freed role, stating what each role's own \
+                 facts require -- an explicit sponsor change emits an explicit value, its own \
+                 reserve asset and no opening, and a solving sponsor change reaches the view's \
+                 solving dispatch carrying its own asset. Behind the projection a ceremony still \
+                 owes a stage that asks for a freed form by name, which is a second absence and \
+                 not this one."
+            }
         }
     }
 
@@ -2005,8 +2132,39 @@ impl FormLimitation {
     pub const fn removal_is_wanted(self) -> bool {
         match self {
             Self::RegistryHasOnlyACommittedSponsorChangeRole
-            | Self::NoSolvingRoleOutsideTheDestinations => true,
+            | Self::NoSolvingRoleOutsideTheDestinations
+            | Self::ProjectionCarriesOnlyTheCommittedSponsorChange => true,
             Self::FeeMemberOnlyInTheFeeBearingDeployment => false,
+        }
+    }
+
+    /// How this limitation was structurally removed, where it has been.
+    ///
+    /// The fourth stage of the ruling's arc, which this enum carried the
+    /// first three of and not this one: [`Limitation::removal`] has
+    /// answered the question for the enumeration's walls since their
+    /// removals were taken, and the product's walls had `refused_at`,
+    /// `convention`, `removal_path` and no place to record a path
+    /// TAKEN. `None` is the honest answer for a limitation still
+    /// standing, and the accessor exists precisely so a filed path can
+    /// never read as a taken one.
+    ///
+    /// Each removal is a named constant rather than an inline literal,
+    /// on [`TWO_OUTPUT_FLOOR_REMOVAL`]'s discipline: the census row that
+    /// cites a removal and the limitation that reports it must not be
+    /// able to disagree about what happened.
+    ///
+    /// The deployment split will answer `None` for as long as it
+    /// stands, which by [`Self::removal_is_wanted`] is deliberate and
+    /// indefinite: a limitation the workspace would choose again is
+    /// still a limitation, and it still owes this answer.
+    #[must_use]
+    pub const fn removal(self) -> Option<LimitationRemoval> {
+        match self {
+            Self::RegistryHasOnlyACommittedSponsorChangeRole => Some(SPONSOR_CHANGE_ROLE_REMOVAL),
+            Self::NoSolvingRoleOutsideTheDestinations => Some(SOLVING_SPONSOR_CHANGE_REMOVAL),
+            Self::FeeMemberOnlyInTheFeeBearingDeployment
+            | Self::ProjectionCarriesOnlyTheCommittedSponsorChange => None,
         }
     }
 }
@@ -2396,19 +2554,26 @@ const fn the_layer_that_refuses(form: TransferForm) -> Option<FormLimitation> {
         return None;
     }
 
-    // A sponsor taking EXPLICIT change back cannot be written as a
-    // confidential manifest: the vocabulary's one sponsor role carries an
-    // opening, which an explicit output does not have.
-    if form.sponsor.change_outputs() > 0 && !form.sponsor.change_is_committed() {
-        return Some(FormLimitation::RegistryHasOnlyACommittedSponsorChangeRole);
-    }
+    // A sponsor taking EXPLICIT change used to be unstateable here: the
+    // vocabulary's one sponsor role carried an opening, which an
+    // explicit output does not have. The clause that returned
+    // `RegistryHasOnlyACommittedSponsorChangeRole` for those cells is
+    // GONE because the wall is: the vocabulary gained the explicit
+    // member under T5-063, the registry admits the manifests, and this
+    // function mirrors the registry rather than remembering it. The
+    // recompute test drives every freed cell into the live registry and
+    // requires the admission this absence claims.
 
-    // A form whose only blinded output is the sponsor's committed change
-    // has no SOLVING role, though the tally is perfectly happy with it.
-    if form.representation.blinded_destinations(form.created) == 0 && form.blinded_outputs() > 0 {
-        return Some(FormLimitation::NoSolvingRoleOutsideTheDestinations);
-    }
-
+    // A form whose only blinded output is the sponsor's committed
+    // change used to have no SOLVING role, though the tally was
+    // perfectly happy with it. That clause is GONE for the reason the
+    // sponsor-change clause above is: the vocabulary gained the
+    // balancing sponsor-change member under T5-063, the solving role
+    // can be stated on the change, and the registry admits the
+    // manifests. No registry convention refuses a consensus-possible
+    // confidential cell any more; this function is kept as the seam
+    // where the next wall a wave meets would be recorded, and the
+    // recompute test holds its emptiness against the live registry.
     None
 }
 
@@ -2418,6 +2583,28 @@ const fn the_layer_that_refuses(form: TransferForm) -> Option<FormLimitation> {
 /// whose stopping layer could not be named would be one the register did
 /// not actually understand.
 const fn stops_at(form: TransferForm) -> &'static str {
+    // The cells the two sponsor-change removals freed, whose stopping
+    // layer is one step past the registry and is a REFUSAL rather than
+    // an absence: a cell whose manifest needs the explicit member, or
+    // needs the solving member because its only blinded output is the
+    // sponsor's change. Scoped off the explicit lane, whose sponsored
+    // cells never went near the confidential materializer and stop at
+    // the ceremony like the rest of the sponsor axis.
+    if !matches!(form.representation, RepresentationAxis::HomogeneousExplicit)
+        && ((form.sponsor.change_outputs() > 0 && !form.sponsor.change_is_committed())
+            || (form.sponsor.change_is_committed()
+                && form.representation.blinded_destinations(form.created) == 0))
+    {
+        return "The materializer's projection. The registry states the freed sponsor-change \
+                vocabulary -- the explicit member, and the balancing member that lets the \
+                solving role sit on a sponsor change -- and admits the manifest; the \
+                projection's closed view has no place for either role and refuses it by name \
+                rather than substituting one, so no candidate can carry the form toward a node \
+                until the view learns the members -- the same layer the fee role stopped at \
+                between its registry removal under T5-042 and its projection removal under \
+                T5-045. Behind that, no ceremony asks for the form: every sponsored ceremony \
+                this workspace has funds committed change or none.";
+    }
     // Crossing composed with a sponsor: the sharpest cell of the
     // product, because every layer already states it and no layer has
     // ever been asked. The composition is one axis and the sponsor is
@@ -3347,13 +3534,13 @@ mod tests {
     /// one.
     ///
     /// `None` for the cells the confidential registry is not the
-    /// authority on: the wholly explicit lane registers nothing, and a
-    /// sponsor taking EXPLICIT change has no role to be stated as.
+    /// authority on: the wholly explicit lane registers nothing. A
+    /// sponsor taking EXPLICIT change used to be a second such case --
+    /// no role to be stated as -- and is now DRIVEN, because the
+    /// vocabulary gained the role and an authority that answers must be
+    /// asked.
     fn recomputed_form_refusal(form: TransferForm) -> DrivenRegistry {
         if matches!(form.representation, RepresentationAxis::HomogeneousExplicit) {
-            return DrivenRegistry::NotItsAuthority;
-        }
-        if form.sponsor.change_outputs() > 0 && !form.sponsor.change_is_committed() {
             return DrivenRegistry::NotItsAuthority;
         }
 
@@ -3391,10 +3578,27 @@ mod tests {
                 output_program: vec![0x51_u8],
             });
         }
-        if form.sponsor.change_is_committed() {
+        if form.sponsor.change_outputs() > 0 {
             outputs.push(ConfidentialFixtureOutput {
-                role: FixtureOutputRole::SponsorChange {
-                    asset: CENSUS_RESERVE_ASSET,
+                // The change states the role its own axis says: the
+                // explicit member -- the first removal's whole yield --
+                // where the remainder is published; the SOLVING member
+                // -- the second removal's -- where the change is the
+                // manifest's only blinded output and must be the one
+                // that solves; and the plain committed member
+                // everywhere else.
+                role: if !form.sponsor.change_is_committed() {
+                    FixtureOutputRole::ExplicitSponsorChange {
+                        asset: CENSUS_RESERVE_ASSET,
+                    }
+                } else if blinded == 0 {
+                    FixtureOutputRole::BalancingSponsorChange {
+                        asset: CENSUS_RESERVE_ASSET,
+                    }
+                } else {
+                    FixtureOutputRole::SponsorChange {
+                        asset: CENSUS_RESERVE_ASSET,
+                    }
                 },
                 semantic_amount: 100_000_000_u64,
                 output_program: vec![0x51_u8],
@@ -3607,10 +3811,13 @@ mod tests {
                 // The case the test discovered. Exactly one thing can
                 // survive an absorber's removal and still hold the sum,
                 // and it is the sponsor's committed change -- a blinded
-                // output the tally counts and the registry will not
-                // solve for. So the cell stays POSSIBLE and becomes
-                // unstateable here, which is a different wall from the
-                // corner's and belongs to a different party.
+                // output the tally counts. The stripped cell used to be
+                // unstateable here, because the registry would not
+                // solve for a sponsor change; the solving member's
+                // removal ended that, so the cell is now EXPRESSIBLE
+                // and unrun -- freed by a vocabulary and offered by
+                // nobody, which are different facts and recorded as
+                // such.
                 assert!(
                     stripped.sponsor.change_is_committed(),
                     "{} survives its absorber's removal on something other than a committed \
@@ -3622,12 +3829,10 @@ mod tests {
                     "{} still has the sponsor's change to land on",
                     stripped.handle(),
                 );
-                assert_eq!(
-                    counterpart,
-                    FormVerdict::UnsupportedHere {
-                        limitation: FormLimitation::NoSolvingRoleOutsideTheDestinations,
-                    },
-                    "{} is admitted by the tally and refused by our own model",
+                assert!(
+                    matches!(counterpart, FormVerdict::ExpressibleAndUnrun { .. }),
+                    "{} is admitted by the tally and stateable since the solving-role removal: \
+                     {counterpart:?}",
                     stripped.handle(),
                 );
             }
@@ -3750,19 +3955,6 @@ mod tests {
                             refusal: FixtureDerivationRefusal::DegenerateBalancingScalar,
                         }),
                         "{} hides nothing, so the registry must say so by name",
-                        form.handle(),
-                    );
-                    refused += 1;
-                }
-                FormVerdict::UnsupportedHere {
-                    limitation: FormLimitation::NoSolvingRoleOutsideTheDestinations,
-                } => {
-                    assert_eq!(
-                        recomputed,
-                        DrivenRegistry::Refused(RegistrationRefusal::BalancingRoleNotUnique {
-                            found: 0
-                        }),
-                        "{} has no solving role, so the registry must refuse on that",
                         form.handle(),
                     );
                     refused += 1;
@@ -3972,31 +4164,58 @@ mod tests {
         assert!(accepted.blinder_sum_is_absorbable());
     }
 
-    /// The registry has ONE sponsor role and it is the committed change.
+    /// The registry states THREE sponsor roles now, and the structural
+    /// facts behind both removed walls are asked of the vocabulary
+    /// rather than remembered about it.
     ///
-    /// The structural fact behind the explicit-change cells' limitation,
-    /// asked of the vocabulary rather than remembered about it. A role
-    /// that owned an asset and carried no opening would be an explicit
-    /// sponsor change and would make those cells stateable; none does.
+    /// This test used to hold the opposite: ONE sponsor role, committed
+    /// and non-solving, and no explicit role owning an asset — which
+    /// was both walls as vocabulary facts. Each wall came down by
+    /// exactly the member the old assertions described as missing, so
+    /// the test now states the vocabulary that ended them.
     #[test]
-    fn the_only_sponsor_role_the_registry_states_is_a_committed_change() {
-        let change = FixtureOutputRole::SponsorChange {
+    fn the_sponsor_change_roles_state_both_removals_as_vocabulary_facts() {
+        let committed = FixtureOutputRole::SponsorChange {
             asset: CENSUS_RESERVE_ASSET,
         };
-        assert_eq!(change.own_asset(), Some(CENSUS_RESERVE_ASSET));
+        assert_eq!(committed.own_asset(), Some(CENSUS_RESERVE_ASSET));
         assert!(
-            change.carries_an_opening(),
-            "the one sponsor role is a COMMITTED change",
-        );
-        assert!(
-            !change.solves_the_balance(),
-            "and it does not solve, which is why a form whose only blinded output is the \
-             sponsor's change has no solving role to name",
+            committed.carries_an_opening(),
+            "the committed change hides the sponsor's remainder",
         );
 
-        // The roles that carry no opening own no asset, which is the
-        // other half of the same absence: there is no explicit output in
-        // the vocabulary that can be denominated in the reserve asset.
+        // The removal's member: an explicit sponsor change that owns an
+        // asset and carries NO opening, which is the role the old wall
+        // consisted of nobody being able to state.
+        let explicit = FixtureOutputRole::ExplicitSponsorChange {
+            asset: CENSUS_RESERVE_ASSET,
+        };
+        assert_eq!(explicit.own_asset(), Some(CENSUS_RESERVE_ASSET));
+        assert!(
+            !explicit.carries_an_opening(),
+            "the explicit change publishes the sponsor's remainder",
+        );
+
+        // The second removal's member: the solving role, stated on a
+        // sponsor change. Committed like the plain change, solving like
+        // the balancing destination, so a form whose only blinded
+        // output is the sponsor's change can name which output solves.
+        let solving = FixtureOutputRole::BalancingSponsorChange {
+            asset: CENSUS_RESERVE_ASSET,
+        };
+        assert_eq!(solving.own_asset(), Some(CENSUS_RESERVE_ASSET));
+        assert!(solving.carries_an_opening());
+        assert!(solving.solves_the_balance());
+
+        // And the members the walls consisted of not having stay what
+        // they are: neither the plain committed change nor the explicit
+        // one solves, which is why the solving member had to be a THIRD
+        // role rather than a reading of either.
+        assert!(!committed.solves_the_balance());
+        assert!(!explicit.solves_the_balance());
+
+        // The non-sponsor explicit roles still own no asset: the
+        // reserve-asset seam is the sponsor pair's alone.
         for role in [
             FixtureOutputRole::Fee,
             FixtureOutputRole::ExplicitDestination,
@@ -4005,7 +4224,7 @@ mod tests {
             assert_eq!(
                 role.own_asset(),
                 None,
-                "no explicit role carries an asset of its own",
+                "no non-sponsor explicit role carries an asset of its own",
             );
         }
     }
@@ -4031,22 +4250,112 @@ mod tests {
             assert_ne!(limitation.convention(), "", "the convention is explained");
             assert_ne!(limitation.removal_path(), "", "a path is described");
         }
+        // NO wall holds a cell any more, and the emptiness is the
+        // wave's result rather than a loosening: the two walls that
+        // asked removal were taken down along their filed paths and the
+        // cascade re-verdicted what they held. Each limitation is still
+        // labeled, pinned and explained -- the standing test next door
+        // holds all four stages -- and a wall that held cells yesterday
+        // citing none today is the removal working rather than the
+        // register forgetting.
         assert!(
-            cited.contains(&FormLimitation::RegistryHasOnlyACommittedSponsorChangeRole),
-            "the explicit sponsor change is a cell the confidential registry cannot state",
+            cited.is_empty(),
+            "no named layer refuses a consensus-possible cell any more: {cited:?}",
         );
-        assert!(
-            cited.contains(&FormLimitation::NoSolvingRoleOutsideTheDestinations),
-            "a form whose only blinded output is the sponsor's change has no solving role",
-        );
-        assert!(
-            FormLimitation::RegistryHasOnlyACommittedSponsorChangeRole.removal_is_wanted(),
-            "the missing explicit sponsor role is a wall worth removing",
-        );
+        for wall in [
+            FormLimitation::RegistryHasOnlyACommittedSponsorChangeRole,
+            FormLimitation::NoSolvingRoleOutsideTheDestinations,
+        ] {
+            assert!(
+                wall.removal().is_some(),
+                "{wall:?} held cells and records what ended it",
+            );
+        }
         assert!(
             !FormLimitation::FeeMemberOnlyInTheFeeBearingDeployment.removal_is_wanted(),
             "the deployment split is a wall this workspace would choose again, and is recorded \
              all the same",
+        );
+    }
+
+    /// Every form limitation carries the ruling's whole arc, and one
+    /// still standing claims NO removal.
+    ///
+    /// The fourth stage, held structurally the way the enumeration's own
+    /// walls hold it. `removal_path` says what WOULD end a limitation
+    /// and `removal` says what DID, and the two must not be able to
+    /// collapse: a filed path reading as a taken one is exactly the
+    /// failure the accessor was minted to prevent.
+    #[test]
+    fn a_form_limitation_still_standing_claims_no_removal() {
+        let all = [
+            FormLimitation::RegistryHasOnlyACommittedSponsorChangeRole,
+            FormLimitation::NoSolvingRoleOutsideTheDestinations,
+            FormLimitation::FeeMemberOnlyInTheFeeBearingDeployment,
+            FormLimitation::ProjectionCarriesOnlyTheCommittedSponsorChange,
+        ];
+        for limitation in all {
+            // The first three stages, present for every member whether
+            // or not the fourth has been reached.
+            assert_ne!(limitation.refused_at(), "", "the refusing row is named");
+            assert_ne!(limitation.convention(), "", "the convention is explained");
+            assert_ne!(limitation.removal_path(), "", "a path is filed");
+            // And where the fourth is recorded, it is a whole record.
+            if let Some(removal) = limitation.removal() {
+                assert_ne!(removal.row, "", "the removing row is named");
+                assert_ne!(removal.change, "", "the structural change is stated");
+            }
+        }
+
+        // The pinned state, moved by the same commits that moved the
+        // walls. BOTH walls that asked removal are REMOVED; the
+        // deployment split stands on purpose; and the projection wall
+        // the removals uncovered stands as its own limitation rather
+        // than as a footnote to either removal's story.
+        let removed: Vec<FormLimitation> = all
+            .into_iter()
+            .filter(|limitation| limitation.removal().is_some())
+            .collect();
+        assert_eq!(
+            removed,
+            vec![
+                FormLimitation::RegistryHasOnlyACommittedSponsorChangeRole,
+                FormLimitation::NoSolvingRoleOutsideTheDestinations,
+            ],
+            "the two walls that asked removal record theirs",
+        );
+
+        // Both proofs are honestly ABSENT: the registry expresses the
+        // freed forms and nothing has carried one to a node, because
+        // the projection wall stands between. A vocabulary that can
+        // express a shape and a chain that has accepted one are
+        // different facts.
+        for limitation in removed {
+            assert_eq!(
+                limitation.removal().and_then(|removal| removal.proven_by),
+                None,
+                "{limitation:?}'s removal is real at the registry and unproven at a chain",
+            );
+        }
+
+        // The deployment split answers `None` for as long as it stands,
+        // and it stands on purpose: `removal_is_wanted` is false for it,
+        // so a removal recorded there would be a contradiction and not
+        // progress.
+        assert_eq!(
+            FormLimitation::FeeMemberOnlyInTheFeeBearingDeployment.removal(),
+            None,
+            "a limitation the workspace would choose again records no removal",
+        );
+
+        // And the uncovered wall asks removal and has not had one: the
+        // register's clearest lesson, met again and recorded the same
+        // way.
+        assert!(FormLimitation::ProjectionCarriesOnlyTheCommittedSponsorChange.removal_is_wanted());
+        assert_eq!(
+            FormLimitation::ProjectionCarriesOnlyTheCommittedSponsorChange.removal(),
+            None,
+            "the projection wall stands, uncovered and censused rather than folded in",
         );
     }
 
@@ -4077,12 +4386,20 @@ mod tests {
             ("not-a-form-of-this-space", 282),
             // Consensus admits it, this workspace states it, nothing has
             // built one. The honest answer for most of the space, and by
-            // the ruling's own terms a complete one.
-            ("expressible-unrun", 79),
+            // the ruling's own terms a complete one. The count moved by
+            // THIRTY-SIX when the two walls that asked removal came
+            // down -- thirty freed by the explicit sponsor-change
+            // member, six by the balancing one. A freed cell is a cell
+            // nobody has offered, and this is the standing that says so.
+            ("expressible-unrun", 115),
             // The tally forbids it, derived.
             ("impossible-derived", 49),
-            // Consensus admits it and a named layer here refuses it.
-            ("unsupported-here", 36),
+            // Unsupported-here holds NO cell and therefore no key: the
+            // census counts what occurs, and after the two removals no
+            // named layer refuses a consensus-possible cell. The
+            // standing is kept in the vocabulary for the next wall a
+            // wave meets, and the map equality holds the emptiness --
+            // a cell arriving here would add the key back and fail.
             // A node accepted one: the nine enumerated blinded shapes and
             // the FOUR sponsored forms, which had no census row anywhere
             // before this one. The fourth arrived while this register was

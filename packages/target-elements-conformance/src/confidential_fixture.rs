@@ -243,7 +243,8 @@ pub enum FixtureOutputRole {
     ///
     /// # Why the ASSET rides in the role
     ///
-    /// This is the one role whose asset is not the manifest's. A
+    /// This was the first role whose asset is not the manifest's, and
+    /// the explicit sponsor change below now rides the same seam. A
     /// sponsored successor pays the protocol asset to its receipts and
     /// the RESERVE asset to its sponsor change, so a manifest carrying a
     /// single `explicit_asset` cannot describe it — which is exactly the
@@ -339,6 +340,120 @@ pub enum FixtureOutputRole {
     /// Its blinder is the all-zero one every explicit value is committed
     /// with, and it joins the recheck's sum like every other slot.
     ExplicitDestination,
+    /// A sponsor's change whose value is EXPLICIT, carrying its OWN
+    /// asset.
+    ///
+    /// The output a sponsored successor returns the sponsor's unspent
+    /// remainder to when the sponsor takes that remainder in the open.
+    /// The committed member above was minted for the form that had to
+    /// run, and the explicit-change form ran on the explicit lane,
+    /// where there is no fixture registry to state anything in — so for
+    /// as long as this vocabulary had ONE sponsor role, a confidential
+    /// manifest whose sponsor takes explicit change could not be stated
+    /// at all. That absence was a recorded first-party limitation of
+    /// the form census, and this member is its removal, taken along the
+    /// path the census filed.
+    ///
+    /// # What the role is, in the three predicates' terms
+    ///
+    /// The explicit corner of the sponsor pair. Its asset rides in the
+    /// role exactly as the committed member's does, because the
+    /// remainder is denominated in the sponsor's reserve whether or not
+    /// it is hidden. It carries NO opening — an explicit value has no
+    /// blinder to derive, no nonce, no proof seed and no commitment —
+    /// so the empty-program clause and the parity rule read it as the
+    /// explicit output it is: it must state a real program like any
+    /// payment back to a real owner, and it contributes a zero blinder
+    /// to the solve and can never be the output that absorbs the input
+    /// blinder sum.
+    ///
+    /// # It moves no recorded digest
+    ///
+    /// Under transcript code 7, which is the next unused one, and
+    /// nothing else. The asset field is sourced from
+    /// [`Self::own_asset`] under a role code no manifest registered
+    /// before it could carry, the absence of the opening block is
+    /// already decided by [`Self::carries_an_opening`] with no presence
+    /// flag, and the explicit amount rides the framing the fee and the
+    /// explicit destination already ride. It is the same argument every
+    /// member since [`Self::SoleBalancing`] was added under, for the
+    /// same reason: every recorded digest here is evidence a run
+    /// against a pinned node produced, and moving one to keep a test
+    /// green would be re-recording evidence.
+    ///
+    /// # What this role does not do
+    ///
+    /// It solves nothing and hides nothing. A sponsor taking explicit
+    /// change has published its remainder; where the sponsor's own coin
+    /// is committed and no output anywhere in the transaction blinds,
+    /// the target refuses the whole form on the tally — a consensus
+    /// fact the census records in the target's own words and this
+    /// vocabulary does not restate. The registry admits the role
+    /// wherever a manifest states it, and the tally's verdict stays the
+    /// census's question rather than this file's.
+    ///
+    /// The registry places no cardinality rule on the role, for the
+    /// reason it places none on [`Self::SponsorChange`]: every
+    /// sponsored shape this workspace has censused carries at most one
+    /// sponsor change, and that is an observation about the shapes
+    /// built rather than a rule the target states.
+    ExplicitSponsorChange {
+        /// The reserve asset this output carries, framed into the
+        /// transcript in the position the manifest's asset occupies for
+        /// every other role.
+        asset: [u8; 32],
+    },
+    /// A sponsor's committed change that SOLVES the balance.
+    ///
+    /// The member that lets the SOLVING role be stated on a sponsor
+    /// change. The balancing-output model was written when every
+    /// blinded output was a destination, so a form whose only blinded
+    /// output is the sponsor's change — possible on the target, whose
+    /// tally counts blinded outputs and does not know what a
+    /// destination is — had no solving role to name and could not
+    /// register. That was a recorded first-party limitation of the form
+    /// census, and this member is its removal, taken along the filed
+    /// path's first alternative: a second sponsor-change member whose
+    /// `solves_the_balance` is true, rather than a manifest-level
+    /// statement that would have shifted every registered digest.
+    ///
+    /// # What it is, against the two members it sits between
+    ///
+    /// It is [`Self::SponsorChange`]'s arithmetic under
+    /// [`Self::Balancing`]'s election. Like the committed change it
+    /// carries the sponsor's reserve asset in the role and an opening
+    /// the registry derives, and its commitment is built against its
+    /// OWN asset generator; like the balancing output its blinder is
+    /// SOLVED from the others rather than derived, and the uniqueness
+    /// clause counts it — a manifest declaring it beside another
+    /// solving role draws `BalancingRoleNotUnique` with the count of
+    /// two, exactly as two `Balancing` outputs always have.
+    ///
+    /// # The degeneracy warning travels WITH the role
+    ///
+    /// A sole solved output over a zero consumed sum hides nothing: the
+    /// solve returns that zero unchanged and the commitment is exactly
+    /// the value times its asset generator. The registry's existing
+    /// [`FixtureDerivationRefusal::DegenerateBalancingScalar`] refusal
+    /// is what catches it, left standing and load-bearing here exactly
+    /// as the sole-balancing form left it, so the freed form is
+    /// buildable only over coins whose blinders do not cancel.
+    ///
+    /// # It moves no recorded digest
+    ///
+    /// Under transcript code 8, which is the next unused one, and
+    /// nothing else — the same argument every member since
+    /// [`Self::SoleBalancing`] was added under. A manifest-level
+    /// "which output solves" field was the filed path's other
+    /// alternative and is the WRONG shape while a role can say it: the
+    /// role code already rides in every output's transcript, and a
+    /// manifest field would have shifted every registered digest.
+    BalancingSponsorChange {
+        /// The reserve asset this output carries, framed into the
+        /// transcript in the position the manifest's asset occupies for
+        /// every other role.
+        asset: [u8; 32],
+    },
 }
 
 impl FixtureOutputRole {
@@ -355,20 +470,26 @@ impl FixtureOutputRole {
             Self::Fee => 4,
             Self::SponsorChange { .. } => 5,
             Self::ExplicitDestination => 6,
+            Self::ExplicitSponsorChange { .. } => 7,
+            Self::BalancingSponsorChange { .. } => 8,
         }
     }
 
     /// The asset this role carries in place of the manifest's, if any.
     ///
-    /// `Some` for [`Self::SponsorChange`] alone. Every other role takes
-    /// the manifest's single `explicit_asset`, and this accessor is the
-    /// ONE seam through which a role may say otherwise — so a reader
+    /// `Some` for the sponsor-change members alone — committed,
+    /// explicit, and solving, whose remainders are denominated in the
+    /// sponsor's reserve whichever they are. Every other role takes the
+    /// manifest's single `explicit_asset`, and this accessor is the ONE
+    /// seam through which a role may say otherwise — so a reader
     /// checking that no existing digest moved has one place to look
     /// rather than every asset use in the file.
     #[must_use]
     pub const fn own_asset(self) -> Option<[u8; 32]> {
         match self {
-            Self::SponsorChange { asset } => Some(asset),
+            Self::SponsorChange { asset }
+            | Self::ExplicitSponsorChange { asset }
+            | Self::BalancingSponsorChange { asset } => Some(asset),
             Self::Primary
             | Self::Balancing
             | Self::SoleBalancing
@@ -385,28 +506,34 @@ impl FixtureOutputRole {
     #[must_use]
     pub const fn solves_the_balance(self) -> bool {
         match self {
-            Self::Balancing | Self::SoleBalancing => true,
-            Self::Primary | Self::Fee | Self::SponsorChange { .. } | Self::ExplicitDestination => {
-                false
-            }
+            Self::Balancing | Self::SoleBalancing | Self::BalancingSponsorChange { .. } => true,
+            Self::Primary
+            | Self::Fee
+            | Self::SponsorChange { .. }
+            | Self::ExplicitDestination
+            | Self::ExplicitSponsorChange { .. } => false,
         }
     }
 
     /// Whether this role's output carries a derived opening at all.
     ///
-    /// False for [`Self::Fee`] alone. An explicit output has no blinder
-    /// to derive, no nonce to derive, no proof to seed and no commitment
-    /// to compute, and the registry records that absence as an absence.
+    /// False for the explicit roles — the fee, the explicit
+    /// destination, and the explicit sponsor change. An explicit output
+    /// has no blinder to derive, no nonce to derive, no proof to seed
+    /// and no commitment to compute, and the registry records that
+    /// absence as an absence.
     ///
     /// True for [`Self::SponsorChange`], whose whole point is that the
     /// sponsor's remainder is committed rather than published.
     #[must_use]
     pub const fn carries_an_opening(self) -> bool {
         match self {
-            Self::Primary | Self::Balancing | Self::SoleBalancing | Self::SponsorChange { .. } => {
-                true
-            }
-            Self::Fee | Self::ExplicitDestination => false,
+            Self::Primary
+            | Self::Balancing
+            | Self::SoleBalancing
+            | Self::SponsorChange { .. }
+            | Self::BalancingSponsorChange { .. } => true,
+            Self::Fee | Self::ExplicitDestination | Self::ExplicitSponsorChange { .. } => false,
         }
     }
 
@@ -424,7 +551,9 @@ impl FixtureOutputRole {
             | Self::Balancing
             | Self::SoleBalancing
             | Self::SponsorChange { .. }
-            | Self::ExplicitDestination => false,
+            | Self::ExplicitDestination
+            | Self::ExplicitSponsorChange { .. }
+            | Self::BalancingSponsorChange { .. } => false,
         }
     }
 }
@@ -438,6 +567,8 @@ impl std::fmt::Display for FixtureOutputRole {
             Self::Fee => "fee",
             Self::SponsorChange { .. } => "sponsor change",
             Self::ExplicitDestination => "explicit destination",
+            Self::ExplicitSponsorChange { .. } => "explicit sponsor change",
+            Self::BalancingSponsorChange { .. } => "balancing sponsor change",
         };
         formatter.write_str(text)
     }
@@ -677,9 +808,9 @@ pub struct ConfidentialFixtureManifest {
     /// The explicit protocol asset every protocol output carries.
     ///
     /// Every output takes it EXCEPT one whose role names an asset of its
-    /// own — today [`FixtureOutputRole::SponsorChange`] alone, whose
-    /// remainder is denominated in the sponsor's reserve rather than in
-    /// the protocol asset the receipts carry.
+    /// own — today the sponsor-change members, whose remainders are
+    /// denominated in the sponsor's reserve rather than in the protocol
+    /// asset the receipts carry.
     pub explicit_asset: [u8; 32],
     /// The value blinder the funding inputs contribute, as a scalar.
     ///
@@ -725,8 +856,9 @@ pub enum FixtureOpenings {
         ///
         /// The vector is indexed by output position and never compacted,
         /// so an entry's index is its output's index. `None` is an
-        /// explicit output — today only a fee — and it is `None` rather
-        /// than a zero-filled [`DerivedOpening`] on purpose: a record of
+        /// explicit output — a fee, an explicit destination, or an
+        /// explicit sponsor change — and it is `None` rather than a
+        /// zero-filled [`DerivedOpening`] on purpose: a record of
         /// zeroes reads like an opening, and an explicit output does not
         /// have one to read.
         openings: Vec<Option<DerivedOpening>>,
