@@ -1770,12 +1770,102 @@ fn hex(bytes: [u8; 32]) -> String {
     })
 }
 
+/// Forward expectations under the sole live fixture-digest v2 algorithm.
+///
+/// These are fixture identities, not run observations. Each awaits a node-accepted v2 run before
+/// it can pair with an accepted identity as historical evidence.
+#[cfg(test)]
+mod forward_fixture_digest_v2 {
+    /// The private-split successor fixture's forward digest under fixture-digest v2.
+    ///
+    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
+    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
+    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    pub const SPLIT_SUCCESSOR_DIGEST: &str =
+        "52f9d832e9ff93070ea9849cd8d5f817746fdb8bc544e6d94207810e594014ca";
+
+    /// The many-to-many successor fixture's forward digest under fixture-digest v2.
+    ///
+    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
+    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
+    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    pub const MANY_TO_MANY_SUCCESSOR_DIGEST: &str =
+        "67ec9e516460e453fcc0bf6cfacfdc58141afefa0b4e4c2d3ff3c2d7a2495b98";
+
+    /// The several-distinct-owners successor fixture's forward digest under fixture-digest v2.
+    ///
+    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
+    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
+    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    pub const SEVERAL_OWNERS_SUCCESSOR_DIGEST: &str =
+        "6d86b884565d6d4bc1f81fb6915dc91987d97a62e5a3ca896403ef6d4963e30c";
+
+    /// The strict one-to-one successor fixture's forward digest under fixture-digest v2.
+    ///
+    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
+    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
+    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    pub const STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST: &str =
+        "7ec97a6e6cf6bf7e6c4308c007e55cf6ac799113abb3b93e3fb3d559c510ec14";
+
+    /// The fee-bearing successor fixture's forward digest under fixture-digest v2.
+    ///
+    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
+    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
+    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    pub const FEE_BEARING_SUCCESSOR_DIGEST: &str =
+        "bba4ea6e919b8619d75d035b5f6ee9e8aac3a87c00336c8a86c5973a84936bad";
+
+    /// The private-merge successor fixture's forward digest under fixture-digest v2.
+    ///
+    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
+    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
+    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    pub const MERGE_SUCCESSOR_DIGEST: &str =
+        "d4a4a2e4371a81d4d74ad2fbceef64303091496c374e11e2208c6d3bde1ea0d9";
+
+    /// The exit-crossing successor fixture's forward digest under fixture-digest v2.
+    ///
+    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
+    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
+    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    pub const EXIT_CROSSING_SUCCESSOR_DIGEST: &str =
+        "013df551e2862b4018f2e9b2c2cc83174571234f1ad200605de66232514ea001";
+
+    /// The entry-crossing successor fixture's forward digest under fixture-digest v2.
+    ///
+    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
+    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
+    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    pub const ENTRY_CROSSING_SUCCESSOR_DIGEST: &str =
+        "7c3bda6049cb80635b0580148002c185eeee8ea48e67bfd1fd698e28a65b17c0";
+
+    /// The pure-split successor fixture's forward digest under fixture-digest v2.
+    ///
+    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
+    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
+    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    pub const PURE_SPLIT_SUCCESSOR_DIGEST: &str =
+        "2c8318413c8a726c6c65587d4c48d60af1ba82f1622152d216266c5858658671";
+
+    /// The paired one-to-one successor fixture's forward digest under fixture-digest v2.
+    ///
+    /// This fixture's v1 run recorded an accepted identity but no fixture digest, so there is no
+    /// historical v1 sibling to rewrite or revalidate. Algorithm v2 binds amounts unconditionally;
+    /// forward runs bind here. No node acceptance under v2 is claimed.
+    pub const PAIRED_ONE_TO_ONE_SUCCESSOR_DIGEST: &str =
+        "e8a824533192cd400e97343d3e5ca69d71fe1138d740723b24b87cc7bf2fd796";
+}
+
 #[cfg(test)]
 mod byte_identity_tests {
-    use super::{MultiShapePlanner, PrivateShape, hex, run_of_record as run};
+    use super::{
+        MultiShapePlanner, PrivateShape, forward_fixture_digest_v2 as forward_v2, hex,
+        run_of_record as run,
+    };
 
-    /// Every shape that ran BEFORE this wave still registers its
-    /// successor under the digest that run recorded.
+    /// Every pre-wave shape registers its successor under the forward digest for the live v2
+    /// algorithm.
     ///
     /// # What this is a check on
     ///
@@ -1789,32 +1879,37 @@ mod byte_identity_tests {
     /// later -- and a perturbed derivation is a different fixture wearing
     /// the same handle.
     ///
-    /// The digests below were written down by ceremonies that ran against
-    /// a pinned node before any of it. Recomputing them re-derives every
-    /// blinder, every nonce input, every range-proof seed and every
-    /// commitment prefix of four fixtures whose successors a target
-    /// ACCEPTED, so the claim that nothing moved is a running check
-    /// rather than a sentence in a commit message.
+    /// Recomputing the live v2 identities re-derives every blinder, every nonce input, every
+    /// range-proof seed, and every commitment prefix. A derivation drift still lands here before it
+    /// lands on a chain; the algorithm move itself is represented by separate forward pins rather
+    /// than by rewriting or live-revalidating the recorded v1 digests.
     ///
-    /// The predecessor half of the same claim is checked by the sibling
-    /// test in the private-restart module, which holds the dual-parity
-    /// predecessor and both one-to-one successors to their own recorded
-    /// digests.
+    /// Four accepted identities remain paired with their immutable recorded v1 digests. The paired
+    /// arc recorded an accepted identity but no v1 fixture digest, so its forward pin has no
+    /// historical digest sibling. The predecessor half is checked by the sibling test in the
+    /// private-restart module.
     #[test]
-    fn the_shapes_that_ran_before_this_wave_register_under_their_recorded_digests() {
+    fn the_pre_wave_shapes_register_under_their_forward_v2_digests() {
         // The genesis identity is not a term of any fixture digest, and
         // this test would fail loudly if it became one.
         let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
-        for (shape, expected) in [
-            (PrivateShape::Split, run::SPLIT_SUCCESSOR_DIGEST),
-            (PrivateShape::ManyToMany, run::MANY_TO_MANY_SUCCESSOR_DIGEST),
+        for (shape, expected_v2) in [
+            (PrivateShape::Split, forward_v2::SPLIT_SUCCESSOR_DIGEST),
+            (
+                PrivateShape::ManyToMany,
+                forward_v2::MANY_TO_MANY_SUCCESSOR_DIGEST,
+            ),
             (
                 PrivateShape::SeveralDistinctOwners,
-                run::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
+                forward_v2::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
             ),
             (
                 PrivateShape::StrictOneToOne,
-                run::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST,
+                forward_v2::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST,
+            ),
+            (
+                PrivateShape::PairedOneToOne,
+                forward_v2::PAIRED_ONE_TO_ONE_SUCCESSOR_DIGEST,
             ),
         ] {
             let mut planner =
@@ -1828,19 +1923,54 @@ mod byte_identity_tests {
                     .successor_digest()
                     .map(hex)
                     .expect("the successor registered"),
-                expected,
-                "{}'s successor fixture drifted from the run of record",
+                expected_v2,
+                "{}'s successor fixture drifted from its forward v2 pin",
                 shape.name(),
+            );
+        }
+
+        // Owner ruling Q19: v2 binds amounts unconditionally, so every fixture with a recorded v1
+        // digest must differ from that historical sibling. Per Q21 these compare static pins; they
+        // do not revalidate v1 with a legacy algorithm.
+        for (shape, digest_v2, recorded_v1) in [
+            (
+                "private-split",
+                forward_v2::SPLIT_SUCCESSOR_DIGEST,
+                run::SPLIT_SUCCESSOR_DIGEST,
+            ),
+            (
+                "many-to-many",
+                forward_v2::MANY_TO_MANY_SUCCESSOR_DIGEST,
+                run::MANY_TO_MANY_SUCCESSOR_DIGEST,
+            ),
+            (
+                "several-distinct-owners",
+                forward_v2::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
+                run::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
+            ),
+            (
+                "strict-one-to-one",
+                forward_v2::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST,
+                run::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST,
+            ),
+        ] {
+            assert_ne!(
+                digest_v2, recorded_v1,
+                "owner ruling Q19 requires {shape}'s amount-bearing fixture digest to move in v2",
             );
         }
     }
 
-    /// The two shapes this wave added record their own digests, and they
-    /// are not each other's and not anybody else's.
+    /// The five amount-bearing shapes with forward pins carry their own live v2 digests, and no
+    /// shape collides with another.
     ///
     /// A new fixture that happened to derive an existing case's digest
     /// would mean the handle is not a term of the transcript, which is a
     /// defect and not a coincidence.
+    ///
+    /// Each accepted identity and recorded v1 digest remains the immutable pair from its historical
+    /// run. The v2 pin names the same fixture under the live algorithm and awaits its own accepted
+    /// run before it can become half of a new observation pair.
     #[test]
     fn the_shapes_this_wave_added_carry_digests_of_their_own() {
         let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
@@ -1870,34 +2000,56 @@ mod byte_identity_tests {
             "two shapes registered the same successor fixture: {digests:?}",
         );
 
-        // And the two new ones are the ones their runs recorded.
-        assert_eq!(digests[4], run::FEE_BEARING_SUCCESSOR_DIGEST);
-        assert_eq!(digests[5], run::MERGE_SUCCESSOR_DIGEST);
-        assert_eq!(digests[6], run::EXIT_CROSSING_SUCCESSOR_DIGEST);
-        assert_eq!(digests[7], run::ENTRY_CROSSING_SUCCESSOR_DIGEST);
-        // The pure split is index EIGHT because it was appended, and it
-        // is pinned here for the reason the fee-bearing digest is: a
-        // node has accepted a candidate built against this fixture, so
-        // the digest and the identity are two halves of one observation
-        // and moving either alone would leave the register citing a run
-        // that produced the other.
-        assert_eq!(digests[8], run::PURE_SPLIT_SUCCESSOR_DIGEST);
+        assert_eq!(digests[4], forward_v2::FEE_BEARING_SUCCESSOR_DIGEST);
+        assert_eq!(digests[5], forward_v2::MERGE_SUCCESSOR_DIGEST);
+        assert_eq!(digests[6], forward_v2::EXIT_CROSSING_SUCCESSOR_DIGEST);
+        assert_eq!(digests[7], forward_v2::ENTRY_CROSSING_SUCCESSOR_DIGEST);
+        assert_eq!(digests[8], forward_v2::PURE_SPLIT_SUCCESSOR_DIGEST);
+
+        // Owner ruling Q19: v2 binds amounts unconditionally, so every amount-bearing fixture's
+        // digest must differ from its recorded v1 sibling. Per Q21 these compare static pins; they
+        // do not revalidate v1 with a legacy algorithm.
+        for (shape, digest_v2, recorded_v1) in [
+            (
+                "fee-bearing",
+                forward_v2::FEE_BEARING_SUCCESSOR_DIGEST,
+                run::FEE_BEARING_SUCCESSOR_DIGEST,
+            ),
+            (
+                "merge",
+                forward_v2::MERGE_SUCCESSOR_DIGEST,
+                run::MERGE_SUCCESSOR_DIGEST,
+            ),
+            (
+                "exit-crossing",
+                forward_v2::EXIT_CROSSING_SUCCESSOR_DIGEST,
+                run::EXIT_CROSSING_SUCCESSOR_DIGEST,
+            ),
+            (
+                "entry-crossing",
+                forward_v2::ENTRY_CROSSING_SUCCESSOR_DIGEST,
+                run::ENTRY_CROSSING_SUCCESSOR_DIGEST,
+            ),
+            (
+                "pure-split",
+                forward_v2::PURE_SPLIT_SUCCESSOR_DIGEST,
+                run::PURE_SPLIT_SUCCESSOR_DIGEST,
+            ),
+        ] {
+            assert_ne!(
+                digest_v2, recorded_v1,
+                "owner ruling Q19 requires {shape}'s amount-bearing fixture digest to move in v2",
+            );
+        }
     }
 
-    /// The fee-bearing digest now carries an acceptance, and the two are
-    /// checked against each other rather than side by side.
+    /// The fee-bearing recorded v1 digest and accepted identity remain one historical observation,
+    /// while the live v2 fixture identity is checked separately.
     ///
-    /// This figure moved three times while the fee axis was being built,
-    /// and every move was free for one reason: no node had accepted the
-    /// fixture, so re-recording it restated nothing. That reason has now
-    /// expired. A node has accepted a candidate built against THIS
-    /// deployment, so the digest and the identity are two halves of one
-    /// observation and moving either alone would leave the register
-    /// citing a run that produced the other.
-    ///
-    /// So the freedom the earlier commits used is closed here
-    /// deliberately: from now on a change that moves this digest must
-    /// move the identity with it, which means running the shape again.
+    /// The historical pair does not move and is not live-revalidated. Under owner ruling Q19,
+    /// fixture-digest v2 binds amounts unconditionally, so the same fixture now has a distinct
+    /// forward digest. No node is claimed to have accepted a candidate under v2; that would require
+    /// a new run and observation pair.
     #[test]
     fn the_fee_bearing_digest_and_its_acceptance_belong_to_one_run() {
         let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
@@ -1906,16 +2058,16 @@ mod byte_identity_tests {
         planner
             .settle_asset(run::ISSUED_ASSET)
             .expect("the fee-bearing successor registers");
-        let digest = planner
+        let digest_v2 = planner
             .record()
             .successor_digest()
             .map(hex)
             .expect("the ceremony recorded a successor digest");
 
         assert_eq!(
-            digest,
-            run::FEE_BEARING_SUCCESSOR_DIGEST,
-            "the fee-bearing fixture re-registers under the digest its accepted run recorded",
+            digest_v2,
+            forward_v2::FEE_BEARING_SUCCESSOR_DIGEST,
+            "the fee-bearing fixture registers under its forward v2 digest",
         );
 
         // The acceptance is present, is the identity the register cites,
@@ -2255,6 +2407,10 @@ mod tests {
 /// It re-runs nothing and proves nothing by existing. What it does is
 /// make the run's own answer quotable.
 ///
+/// Fixture digests recorded under algorithm v1 remain immutable run data. Each accepted identity
+/// and recorded v1 digest are the two halves of one historical observation; forward v2 fixture
+/// identities live separately and await their own node-accepted runs.
+///
 /// The target: Elements Core v28.99.0-b7fc5d080a7e, at the pinned tip the
 /// lane binds itself to, on a disposable development chain the run
 /// created and destroyed. All three shapes ran serialized against one
@@ -2268,9 +2424,12 @@ pub mod run_of_record {
     pub const ISSUED_ASSET: &str =
         "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
 
-    /// The split shape's successor fixture digest.
+    /// The split shape's recorded successor fixture digest under fixture-digest v1.
+    ///
+    /// This value and `SPLIT_ACCEPTED_TXID` are the immutable halves of one historical observation.
+    /// The same fixture's forward v2 digest is separate and awaits its own node-accepted run.
     pub const SPLIT_SUCCESSOR_DIGEST: &str =
-        "52f9d832e9ff93070ea9849cd8d5f817746fdb8bc544e6d94207810e594014ca";
+        "43e15876204c04feecc0dc49387479288923392c9b6c3a0cc7be14e35edd4d99";
 
     /// The identity the target computed for the accepted split.
     ///
@@ -2291,9 +2450,13 @@ pub mod run_of_record {
     /// The split's wall time, in seconds.
     pub const SPLIT_WALL_SECONDS: f64 = 12.9;
 
-    /// The many-to-many shape's successor fixture digest.
+    /// The many-to-many shape's recorded successor fixture digest under fixture-digest v1.
+    ///
+    /// This value and `MANY_TO_MANY_ACCEPTED_TXID` are the immutable halves of one historical
+    /// observation. The same fixture's forward v2 digest is separate and awaits its own
+    /// node-accepted run.
     pub const MANY_TO_MANY_SUCCESSOR_DIGEST: &str =
-        "67ec9e516460e453fcc0bf6cfacfdc58141afefa0b4e4c2d3ff3c2d7a2495b98";
+        "31162852b1f393b74be3bfa9ef2f44bacd17d0126947911937d5ae708792f421";
 
     /// The identity the target computed for the accepted many-to-many.
     ///
@@ -2315,9 +2478,14 @@ pub mod run_of_record {
     /// The many-to-many's wall time, in seconds.
     pub const MANY_TO_MANY_WALL_SECONDS: f64 = 13.9;
 
-    /// The several-distinct-owners shape's successor fixture digest.
+    /// The several-distinct-owners shape's recorded successor fixture digest under fixture-digest
+    /// v1.
+    ///
+    /// This value and `SEVERAL_OWNERS_ACCEPTED_TXID` are the immutable halves of one historical
+    /// observation. The same fixture's forward v2 digest is separate and awaits its own
+    /// node-accepted run.
     pub const SEVERAL_OWNERS_SUCCESSOR_DIGEST: &str =
-        "6d86b884565d6d4bc1f81fb6915dc91987d97a62e5a3ca896403ef6d4963e30c";
+        "cfecf21f58fcc4d0571cccb701915f09025a7c8066415fd4d82f62839aba7dcc";
 
     /// The identity the target computed for the accepted
     /// several-distinct-owners transfer.
@@ -2369,9 +2537,13 @@ pub mod run_of_record {
         STRICT_ONE_TO_ONE_ACCEPTED_TXID
     );
 
-    /// The strict one-to-one successor fixture's digest.
+    /// The strict one-to-one's recorded successor fixture digest under fixture-digest v1.
+    ///
+    /// This value and `STRICT_ONE_TO_ONE_ACCEPTED_TXID` are the immutable halves of one historical
+    /// observation. The same fixture's forward v2 digest is separate and awaits its own
+    /// node-accepted run.
     pub const STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST: &str =
-        "7ec97a6e6cf6bf7e6c4308c007e55cf6ac799113abb3b93e3fb3d559c510ec14";
+        "00d0179914058b9a1f59ec71de77b3dfd4f48928313a9d52f41f12f003d735b2";
 
     /// How many bytes the strict one-to-one handed to the node.
     ///
@@ -2428,9 +2600,12 @@ pub mod run_of_record {
 
     // --- The private merge: the row this wave moves --------------------
 
-    /// The merge's successor fixture digest.
+    /// The merge's recorded successor fixture digest under fixture-digest v1.
+    ///
+    /// This value and `MERGE_ACCEPTED_TXID` are the immutable halves of one historical observation.
+    /// The same fixture's forward v2 digest is separate and awaits its own node-accepted run.
     pub const MERGE_SUCCESSOR_DIGEST: &str =
-        "d4a4a2e4371a81d4d74ad2fbceef64303091496c374e11e2208c6d3bde1ea0d9";
+        "f1bf90b46d16a814c0a1069bb8fa2ab9ea9708141fb7454d7e6c7720484588aa";
 
     /// The identity the target computed for the accepted private merge.
     ///
@@ -2493,36 +2668,13 @@ pub mod run_of_record {
 
     // --- The fee-bearing shape: ACCEPTED, after three refusals ---------
 
-    /// The fee-bearing one-to-one's successor fixture digest.
+    /// The fee-bearing one-to-one's recorded successor fixture digest under fixture-digest v1.
     ///
-    /// The fixture registered, derived and PROJECTED. Recording the digest
-    /// is recording that much and no more.
-    ///
-    /// # This figure MOVED with the fee axis, and it is the only one that
-    /// did
-    ///
-    /// The fee-bearing ceremony links against the fee-bearing shape
-    /// vocabulary rather than the demonstration one, and a candidate's
-    /// shape set becomes one coordinator leaf per shape: the extra member
-    /// changes the taptree root, the root tweaks the taproot output key,
-    /// and that key is the destination program this fixture's manifest is
-    /// digested over. So the digest had to move, and moving it costs no
-    /// evidence for a reason that is checkable rather than asserted --
-    /// this fixture never carried an acceptance, so nothing a node did is
-    /// being restated.
-    ///
-    /// Every OTHER recorded digest re-derives unchanged, and that is a
-    /// running check rather than a claim made here: the four shapes that
-    /// ran before the removals wave re-register under their own recorded
-    /// digests, and the dual-parity predecessor and both one-to-one
-    /// successors under theirs. Not one of those tests was touched to
-    /// accommodate this figure. Had any of them moved, the correct
-    /// response would have been to revert the design and never to
-    /// re-record them: they are what pinned nodes did, and a digest
-    /// rewritten to keep a test green destroys the claim the test exists
-    /// to make.
+    /// This value and `FEE_BEARING_SUCCESSOR_IDENTITY` are the immutable halves of one historical
+    /// observation. The same fixture's forward v2 digest is separate and awaits its own
+    /// node-accepted run.
     pub const FEE_BEARING_SUCCESSOR_DIGEST: &str =
-        "bba4ea6e919b8619d75d035b5f6ee9e8aac3a87c00336c8a86c5973a84936bad";
+        "32d0a5a76d75c91fab564731e19f29518b4dda492a830f3d4b9ee578ea25f3f8";
 
     /// The identity a real node computed for the fee-bearing transfer.
     ///
@@ -2603,9 +2755,13 @@ pub mod run_of_record {
 
     // --- The exit crossing: representation crossed at a real node -------
 
-    /// The exit crossing's successor fixture digest.
+    /// The exit crossing's recorded successor fixture digest under fixture-digest v1.
+    ///
+    /// This value and `EXIT_CROSSING_ACCEPTED_TXID` are the immutable halves of one historical
+    /// observation. The same fixture's forward v2 digest is separate and awaits its own
+    /// node-accepted run.
     pub const EXIT_CROSSING_SUCCESSOR_DIGEST: &str =
-        "013df551e2862b4018f2e9b2c2cc83174571234f1ad200605de66232514ea001";
+        "9c2b302c4becdff2ed90545006f0d371e69e0a7eabce71c33a2a8cbe60f44fbe";
 
     /// The identity the target computed for the accepted exit crossing.
     ///
@@ -2659,9 +2815,13 @@ pub mod run_of_record {
 
     // --- The entry crossing: the other direction, at a real node --------
 
-    /// The entry crossing's successor fixture digest.
+    /// The entry crossing's recorded successor fixture digest under fixture-digest v1.
+    ///
+    /// This value and `ENTRY_CROSSING_ACCEPTED_TXID` are the immutable halves of one historical
+    /// observation. The same fixture's forward v2 digest is separate and awaits its own
+    /// node-accepted run.
     pub const ENTRY_CROSSING_SUCCESSOR_DIGEST: &str =
-        "7c3bda6049cb80635b0580148002c185eeee8ea48e67bfd1fd698e28a65b17c0";
+        "2a2d580164d9ce541b9892d0ab6692e4c0770f8458b0534a2dc2f8e3af08da3f";
 
     /// The identity the target computed for the accepted entry crossing.
     ///
@@ -2744,9 +2904,13 @@ pub mod run_of_record {
     /// The weight the target reported for the pure split.
     pub const PURE_SPLIT_TARGET_WEIGHT: u64 = 10_096;
 
-    /// The successor fixture digest the pure split registered.
+    /// The pure split's recorded successor fixture digest under fixture-digest v1.
+    ///
+    /// This value and `PURE_SPLIT_ACCEPTED_TXID` are the immutable halves of one historical
+    /// observation. The same fixture's forward v2 digest is separate and awaits its own
+    /// node-accepted run.
     pub const PURE_SPLIT_SUCCESSOR_DIGEST: &str =
-        "2c8318413c8a726c6c65587d4c48d60af1ba82f1622152d216266c5858658671";
+        "e9a68f1d3d93350fdf02f879f392e4b86f57ad3295cda42735c301564bd9c3a3";
 
     /// The pure split's wall time, in seconds.
     pub const PURE_SPLIT_WALL_SECONDS: f64 = 14.1;
