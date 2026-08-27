@@ -245,6 +245,18 @@ pub struct SemanticEndpoint {
 }
 
 impl SemanticEndpoint {
+    /// One endpoint: a published owner index and an exact amount.
+    ///
+    /// Public because the pairs ARC states its own fixture in its own
+    /// module and has to state it in THIS type. A second endpoint type
+    /// would be a second definition of what a semantic fixture is, and
+    /// §16.1's requirement that both members begin from one fixture is
+    /// checkable only while there is one.
+    #[must_use]
+    pub const fn new(owner: usize, amount: u64) -> Self {
+        Self { owner, amount }
+    }
+
     /// Which published owner holds it, by index.
     #[must_use]
     pub const fn owner(self) -> usize {
@@ -277,6 +289,29 @@ pub struct SemanticTransferFixture {
 }
 
 impl SemanticTransferFixture {
+    /// One fixture, stated by a caller that materializes it itself.
+    ///
+    /// The registry below states five of these and submits none of them.
+    /// The pairs arc states ONE and submits both of its materializations,
+    /// so the constructor is public — and it is the same constructor, so
+    /// the arc's fixture is the same KIND of object the registry's are
+    /// and answers [`Self::expected`] and
+    /// [`ExpectedTransferSemantics::conserves`] the same way.
+    #[must_use]
+    pub const fn stated(
+        pair: MinimalityPair,
+        sources: Vec<SemanticEndpoint>,
+        destinations: Vec<SemanticEndpoint>,
+        sponsor: SponsorPresence,
+    ) -> Self {
+        Self {
+            pair,
+            sources,
+            destinations,
+            sponsor,
+        }
+    }
+
     /// The pair this fixture is the origin of.
     #[must_use]
     pub const fn pair(&self) -> MinimalityPair {

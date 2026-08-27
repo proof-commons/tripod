@@ -172,6 +172,22 @@ impl ShapeOwner {
     }
 }
 
+/// The published owner a semantic fixture's owner INDEX names.
+///
+/// The deployment publishes two owners and a fixture states an index, so
+/// this is the whole of the map between the two vocabularies. Anything
+/// past the second is the second: the arc's fixture uses indices zero and
+/// one, and a fixture that used a third would be refused by the linker
+/// rather than silently mapped here — no third owner's constructor is in
+/// this deployment's ABI at all.
+const fn published_shape_owner(index: usize) -> ShapeOwner {
+    if index == 0 {
+        ShapeOwner::First
+    } else {
+        ShapeOwner::Second
+    }
+}
+
 /// How a shape divides the consumed total among its destinations.
 ///
 /// Two rules and no third, because §15.1 asks for exactly two things:
@@ -243,6 +259,29 @@ pub enum ExplicitShape {
     /// widening those bounds would move its committed taptree and every
     /// digest recorded against it.
     SelfPaidFee,
+    /// The EXPLICIT member of the pairs arc's §16.1 one-to-one pair.
+    ///
+    /// The fifteenth shape and the second that is not a §15.1 row. It is
+    /// not a class of the explicit positive table at all: it is one
+    /// materialization of ONE semantic fixture whose other
+    /// materialization the private lane builds, and the two are a pair
+    /// only because everything about them that is not the representation
+    /// plan is read off that one fixture (§16.1).
+    ///
+    /// So its owners, its cardinalities and its AMOUNT are derived from
+    /// [`crate::live_pair_arc::pair_arc_fixture`] rather than written
+    /// here. A literal copied into this file would be a second author's
+    /// statement of the fixture, which is the substitution §16.1's "one
+    /// semantic fixture" exists to forbid.
+    ///
+    /// It is the one shape whose funding amount is not
+    /// [`RECEIPT_AMOUNT`], and that is the fixture's doing: the private
+    /// member has to consume a coin the confidential predecessor already
+    /// carries, so the fixture takes that coin's amount and the EXPLICIT
+    /// side — the side a funding step can be asked for any amount — is
+    /// the one that follows. Every other shape keeps
+    /// [`RECEIPT_AMOUNT`] and therefore keeps its recorded bytes.
+    PairedOneToOne,
 }
 
 impl ExplicitShape {
@@ -262,6 +301,11 @@ impl ExplicitShape {
         Self::MaximumInputs,
         Self::MaximumOutputs,
         Self::SelfPaidFee,
+        // APPENDED, and the position is load-bearing for the same reason
+        // the private lane's own appended shape says: this array is read
+        // positionally by tests that pin recorded bytes at an index, so a
+        // shape added after a run goes on the end.
+        Self::PairedOneToOne,
     ];
 
     /// The §15.1 row this shape is the shape of, where it is one.
@@ -276,7 +320,12 @@ impl ExplicitShape {
     #[must_use]
     pub const fn row_name(self) -> Option<&'static str> {
         match self {
-            Self::SelfPaidFee => None,
+            // Neither is a §15.1 class. The self-paying shape answers the
+            // owner fee matrix; the paired member answers §16.1, whose
+            // subject is a PAIR rather than a positive class, and naming
+            // a row here would borrow one for a run that did not answer
+            // it.
+            Self::SelfPaidFee | Self::PairedOneToOne => None,
             Self::OneToOne => Some("one-input-to-one-output"),
             Self::SplitIntoTwo => Some("one-input-split-into-two"),
             Self::MergedIntoOne => Some("several-inputs-merged-into-one"),
@@ -311,6 +360,25 @@ impl ExplicitShape {
             Self::MaximumInputs => "explicit-maximum-inputs",
             Self::MaximumOutputs => "explicit-maximum-outputs",
             Self::SelfPaidFee => "explicit-self-paid-fee",
+            Self::PairedOneToOne => "explicit-paired-one-to-one",
+        }
+    }
+
+    /// What each of this shape's funded receipts holds.
+    ///
+    /// [`RECEIPT_AMOUNT`] for every shape but the paired member, whose
+    /// figure is the arc fixture's own source amount. The accessor exists
+    /// so that the ONE shape whose amount the fixture fixes can say so
+    /// without moving any other shape's bytes: fourteen shapes answer
+    /// with the constant they always funded with.
+    #[must_use]
+    pub fn funded_amount(self) -> u64 {
+        match self {
+            Self::PairedOneToOne => crate::live_pair_arc::pair_arc_fixture()
+                .sources()
+                .first()
+                .map_or(RECEIPT_AMOUNT, |endpoint| endpoint.amount()),
+            _ => RECEIPT_AMOUNT,
         }
     }
 
@@ -329,6 +397,7 @@ impl ExplicitShape {
             | Self::Sponsorless
             | Self::SeveralDestinationOwners
             | Self::SelfPaidFee
+            | Self::PairedOneToOne
             | Self::MaximumOutputs => (1, 0),
             Self::MergedIntoOne
             | Self::SeveralToSeveral
@@ -344,6 +413,15 @@ impl ExplicitShape {
     #[must_use]
     pub fn destination_owners(self) -> Vec<ShapeOwner> {
         match self {
+            // The paired member reads its destinations off the arc's one
+            // fixture rather than off a literal here, which is what makes
+            // it a MATERIALIZATION of that fixture rather than a shape
+            // that happens to resemble one.
+            Self::PairedOneToOne => crate::live_pair_arc::pair_arc_fixture()
+                .destinations()
+                .iter()
+                .map(|endpoint| published_shape_owner(endpoint.owner()))
+                .collect(),
             // The single-destination shapes, spelled in one arm: what
             // separates them is their INPUT side or the order their
             // receipts are offered in, and none of that is here.
@@ -737,6 +815,16 @@ impl ExplicitShapeRecord {
         self.shape
     }
 
+    /// The disposable asset this run issued and relinked against.
+    ///
+    /// Read by a caller that has to hand the SAME asset to a second
+    /// ceremony: §6.6 asks a §16.1 pair's two members to carry one exact
+    /// explicit `U`, and a second issuance would be a second asset.
+    #[must_use]
+    pub fn issued_asset(&self) -> Option<&str> {
+        self.issued_asset.as_deref()
+    }
+
     /// The coins the node funded.
     #[must_use]
     pub fn coins(&self) -> &[ObservedShapeCoin] {
@@ -1008,7 +1096,7 @@ impl ExplicitShapePlanner {
                 },
                 output_program: self.program_for(owner)?,
                 outputs: count,
-                amount_per_output: RECEIPT_AMOUNT,
+                amount_per_output: self.shape.funded_amount(),
             })),
         ))
     }
@@ -1055,8 +1143,9 @@ impl ExplicitShapePlanner {
             .and_then(asset_of)
             .ok_or(ExplicitShapeRefusal::IssuanceNamedNoAsset)?;
         let program = self.program_for(owner)?;
+        let expected_amount = self.shape.funded_amount();
         for funded in &response.funded_outputs {
-            let coin = observed_coin(funded, expected_asset, &program, owner)?;
+            let coin = observed_coin(funded, expected_asset, &program, owner, expected_amount)?;
             self.record.coins.push(coin);
         }
         Ok(())
@@ -1598,13 +1687,14 @@ fn observed_coin(
     expected_asset: AssetId,
     expected_program: &[u8],
     owner: ShapeOwner,
+    expected_amount: u64,
 ) -> Result<ObservedShapeCoin, ExplicitShapeRefusal> {
     let outpoint =
         outpoint_of(&funded.outpoint).ok_or(ExplicitShapeRefusal::MalformedFundedOutput)?;
     let asset = asset_of(&funded.asset).ok_or(ExplicitShapeRefusal::MalformedFundedOutput)?;
     let program = decode_hex(&funded.script).ok_or(ExplicitShapeRefusal::MalformedFundedOutput)?;
     let matches_expectation = asset == expected_asset
-        && funded.amount_satoshis == RECEIPT_AMOUNT
+        && funded.amount_satoshis == expected_amount
         && program == expected_program;
     Ok(ObservedShapeCoin {
         outpoint,
@@ -2051,6 +2141,13 @@ impl ExplicitShape {
             Self::MaximumInputs => Some(run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID),
             Self::MaximumOutputs => Some(run_of_record::MAXIMUM_OUTPUTS_ACCEPTED_TXID),
             Self::SelfPaidFee => run_of_record::SELF_PAID_FEE_ACCEPTED_IDENTITY,
+            // The arc's own run, cited from the arc's module rather than
+            // copied here: the identity belongs to the ledger that
+            // observed it, and this lane's own run of record never
+            // submitted this shape.
+            Self::PairedOneToOne => {
+                crate::live_pair_arc::run_of_record::EXPLICIT_MEMBER_ACCEPTED_IDENTITY
+            }
         }
     }
 }
@@ -2073,18 +2170,20 @@ mod tests {
             .filter_map(|shape| shape.row_name())
             .collect();
         assert_eq!(rows.len(), 13);
-        assert_eq!(ExplicitShape::ALL.len(), 14);
+        assert_eq!(ExplicitShape::ALL.len(), 15);
 
-        // And EXACTLY one shape names no row. The count is asserted
+        // And exactly TWO shapes name no row. The count is asserted
         // rather than left implied, because the interesting failure is a
-        // second shape quietly acquiring the absent case: §15.1's table
+        // third shape quietly acquiring the absent case: §15.1's table
         // is complete, so a shape naming no row is a claim about the
-        // matrix and every one of them has to be deliberate.
+        // matrix and every one of them has to be deliberate. The two are
+        // the self-paying shape, which answers the owner fee matrix, and
+        // the arc's paired member, which answers §16.1.
         let rowless = ExplicitShape::ALL
             .iter()
             .filter(|shape| shape.row_name().is_none())
             .count();
-        assert_eq!(rowless, 1);
+        assert_eq!(rowless, 2);
     }
 
     #[test]

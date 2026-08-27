@@ -31,6 +31,7 @@ vectors_source_files = files(
   'src/live_negative_half.rs',
   'src/live_owner_observation.rs',
   'src/live_owner_signing_negatives.rs',
+  'src/live_pair_arc.rs',
   'src/live_pairs.rs',
   'src/live_plan.rs',
   'src/live_private_restart.rs',

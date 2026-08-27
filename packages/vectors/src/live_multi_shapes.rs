@@ -273,6 +273,27 @@ pub enum PrivateShape {
     /// nothing. Both this registry and Elements' own wallet refuse that,
     /// for the same reason, and neither is a protocol rule.
     EntryCrossing,
+    /// The PRIVATE member of the pairs arc's §16.1 one-to-one pair.
+    ///
+    /// One confidential receipt consumed and one created, and in that it
+    /// is the strict one-to-one's shape. What makes it a different member
+    /// of this enum is not its width: it is that every parameter it has
+    /// is READ OFF the arc's one semantic fixture
+    /// ([`crate::live_pair_arc::pair_arc_fixture`]) rather than written
+    /// here, and the explicit lane's paired member reads the same
+    /// fixture. §16.1's load-bearing requirement is that a pair begins
+    /// from ONE fixture materialized twice, and two shapes stated
+    /// independently by two authors do not satisfy it however alike they
+    /// come out — which is precisely the substitution the pair registry's
+    /// `NotSubmittedShapeAcceptedElsewhere` verdict exists to deny.
+    ///
+    /// It consumes the dual-parity predecessor's PRIMARY coin, and the
+    /// fixture's source amount is that coin's amount for the reason the
+    /// explicit member's funding amount follows the fixture: the
+    /// confidential side spends a coin a registered predecessor already
+    /// carries, and the explicit side's funding step can be asked for any
+    /// amount.
+    PairedOneToOne,
 }
 
 impl PrivateShape {
@@ -286,7 +307,7 @@ impl PrivateShape {
     /// exists to catch drift report drift that did not happen. A shape
     /// added after a run is appended, so the indices a run wrote down
     /// keep meaning what they meant.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Split,
         Self::ManyToMany,
         Self::SeveralDistinctOwners,
@@ -296,6 +317,7 @@ impl PrivateShape {
         Self::ExitCrossing,
         Self::EntryCrossing,
         Self::PureSplit,
+        Self::PairedOneToOne,
     ];
 
     /// The ceremony's own name for the shape, used as the report
@@ -312,6 +334,7 @@ impl PrivateShape {
             Self::PrivateMerge => "private-merge",
             Self::ExitCrossing => "private-exit-crossing",
             Self::EntryCrossing => "private-entry-crossing",
+            Self::PairedOneToOne => "private-paired-one-to-one",
         }
     }
 
@@ -358,15 +381,39 @@ impl PrivateShape {
             // moved, and would claim the three-output run and this one
             // are the same shape -- which is the very fact the pair's
             // failing conjunct records.
+            //
+            // The arc's paired member shares the arm for a THIRD reason.
+            // §15.2 carries `projection-equality-with-paired-explicit`
+            // and this shape is half of what answers it — but a row is
+            // moved by a RELATION over both members' acceptances and not
+            // by either acceptance alone, so the member cannot name the
+            // row. The arc's ledger moves it, and naming it here would
+            // let one half of a pair move a row about the pair.
             Self::StrictOneToOne
             | Self::OneToOneWithFee
             | Self::ExitCrossing
             | Self::EntryCrossing
-            | Self::PureSplit => None,
+            | Self::PureSplit
+            | Self::PairedOneToOne => None,
             // The merge DOES have a row, and it is the only shape of
             // these that has one.
             Self::PrivateMerge => Some("private-merge"),
         }
+    }
+
+    /// How many receipts this shape consumes.
+    ///
+    /// Read off [`Self::consumed`] rather than stated, so a shape whose
+    /// consumed set changed cannot go on reporting the old width.
+    #[must_use]
+    pub const fn input_count(self) -> usize {
+        self.consumed().len()
+    }
+
+    /// How many outputs this shape creates.
+    #[must_use]
+    pub fn output_count(self) -> usize {
+        self.destinations().len()
     }
 
     /// The successor fixture's handle, its own per shape so a digest drift
@@ -392,6 +439,7 @@ impl PrivateShape {
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
+            | Self::PairedOneToOne
             | Self::OneToOneWithFee => PredecessorShape::DualParity,
             // The entry crossing names one too, and never funds it. Its
             // consumed coins are explicit and belong to no confidential
@@ -424,6 +472,7 @@ impl PrivateShape {
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
+            | Self::PairedOneToOne
             | Self::PrivateMerge
             | Self::ExitCrossing
             | Self::EntryCrossing => LiveShapeVocabulary::Demonstration,
@@ -452,6 +501,7 @@ impl PrivateShape {
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
+            | Self::PairedOneToOne
             | Self::OneToOneWithFee
             | Self::PrivateMerge => LiveTransferComposition::HomogeneousPrivate,
             Self::ExitCrossing => LiveTransferComposition::ExitUnblinding,
@@ -499,6 +549,7 @@ impl PrivateShape {
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
+            | Self::PairedOneToOne
             | Self::OneToOneWithFee
             | Self::PrivateMerge
             | Self::EntryCrossing => 0,
@@ -523,6 +574,7 @@ impl PrivateShape {
             | Self::ManyToMany
             | Self::SeveralDistinctOwners
             | Self::StrictOneToOne
+            | Self::PairedOneToOne
             | Self::PrivateMerge
             | Self::ExitCrossing
             | Self::EntryCrossing => 0,
@@ -537,6 +589,7 @@ impl PrivateShape {
             Self::Split
             | Self::PureSplit
             | Self::StrictOneToOne
+            | Self::PairedOneToOne
             | Self::OneToOneWithFee
             | Self::EntryCrossing => &[ConsumedReceipt::Primary],
             // The merge consumes the same two INDICES the two-input
@@ -659,6 +712,23 @@ impl PrivateShape {
             // blinder sum ITSELF -- which is why the pair must not cancel
             // and why this shape spends the same predecessor the merge
             // does.
+            // Read off the arc's ONE fixture, endpoint for endpoint. The
+            // form is SOLE-BALANCING for the reason the strict
+            // one-to-one's is: a single output has nothing beside it to
+            // absorb anything, so its blinder is forced to the consumed
+            // coin's own. A fixture stating a second destination would
+            // not materialize here, and the arc's own test is what holds
+            // the fixture to the shape this arm can build rather than
+            // leaving the agreement to be assumed.
+            Self::PairedOneToOne => crate::live_pair_arc::pair_arc_fixture()
+                .destinations()
+                .iter()
+                .map(|endpoint| Destination {
+                    scalar: crate::live_pair_arc::published_scalar(endpoint.owner()),
+                    amount: endpoint.amount(),
+                    role: FixtureOutputRole::SoleBalancing,
+                })
+                .collect(),
             // ONE explicit receipt in, TWO blinded destinations out.
             // The floor of two is the registry's own arithmetic and not
             // a preference: an explicit input contributes a zero
@@ -974,6 +1044,39 @@ impl MultiShapePlanner {
             spent_owner_bytes: None,
             record,
         })
+    }
+
+    /// The ceremony for one shape against an asset ALREADY issued.
+    ///
+    /// # Why a second entry point rather than a flag
+    ///
+    /// Because it is a different ceremony. [`Self::for_shape`] runs a
+    /// whole chain's worth of steps starting with an issuance, and a run
+    /// that has to share an asset with something else cannot issue one:
+    /// two issuances are two assets, and §6.6 requires a pair's two
+    /// members to carry the SAME exact explicit `U`. The pairs arc is the
+    /// caller, and its explicit member issues.
+    ///
+    /// The stage machine is otherwise untouched — the issuance stage is
+    /// SETTLED here rather than skipped, so everything downstream of it
+    /// sees exactly the state an issuing run leaves.
+    ///
+    /// # Errors
+    ///
+    /// [`VectorError::LiveSubstrateUnavailable`] where the reviewed
+    /// target does not build or the deployment does not link against the
+    /// named asset.
+    pub fn for_shape_against_issued_asset(
+        shape: PrivateShape,
+        printed_genesis_identity: Digest32,
+        printed_asset: &str,
+    ) -> Result<Self, VectorError> {
+        let mut planner = Self::for_shape(shape, printed_genesis_identity)?;
+        planner
+            .settle_asset(printed_asset)
+            .map_err(|_| VectorError::LiveSubstrateUnavailable)?;
+        planner.stage = Stage::Fund;
+        Ok(planner)
     }
 
     /// The transcript.
