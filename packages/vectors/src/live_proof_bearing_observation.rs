@@ -2453,13 +2453,9 @@ fn reverification_lines(record: &ProofBearingObservationRecord) -> Vec<String> {
     lines
 }
 
-/// One run's transcript, as the report artifact carries it.
-///
-/// Lines rather than a structure, on the pattern the existing native
-/// lanes set. Every line is a fact the run observed or a value it
-/// computed, and no line is a verdict about whether the run went well.
-#[must_use]
-pub fn render_proof_bearing_observation(record: &ProofBearingObservationRecord) -> String {
+/// The record identity, V2 state, and projection status at the head of
+/// the transcript.
+fn record_header_lines(record: &ProofBearingObservationRecord) -> Vec<String> {
     let mut lines = vec!["role owner-sighash-proof-bearing-observation-run".to_owned()];
     lines.push(format!(
         "issued_asset {}",
@@ -2482,7 +2478,12 @@ pub fn render_proof_bearing_observation(record: &ProofBearingObservationRecord) 
         )),
         Err(refusal) => lines.push(format!("run_of_record_projection refused {refusal:?}")),
     }
+    lines
+}
 
+/// The exact node-reported fields for every predecessor coin.
+fn coin_lines(record: &ProofBearingObservationRecord) -> Vec<String> {
+    let mut lines = Vec::new();
     for (index, coin) in record.coins().iter().enumerate() {
         match coin.asset() {
             AssetField::Explicit(asset) => lines.push(format!(
@@ -2522,6 +2523,18 @@ pub fn render_proof_bearing_observation(record: &ProofBearingObservationRecord) 
             coin.matches_expectation(),
         ));
     }
+    lines
+}
+
+/// One run's transcript, as the report artifact carries it.
+///
+/// Lines rather than a structure, on the pattern the existing native
+/// lanes set. Every line is a fact the run observed or a value it
+/// computed, and no line is a verdict about whether the run went well.
+#[must_use]
+pub fn render_proof_bearing_observation(record: &ProofBearingObservationRecord) -> String {
+    let mut lines = record_header_lines(record);
+    lines.extend(coin_lines(record));
 
     lines.push(format!(
         "output_witness_vector_length {}",
