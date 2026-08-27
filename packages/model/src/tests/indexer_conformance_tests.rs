@@ -153,7 +153,9 @@ fn identical_event_sets_produce_identical_query() {
     )
     .unwrap();
 
-    compare_attestation_indexers(&expected, &candidate, [ADDRESS_A, ADDRESS_B]).unwrap();
+    let expected_zero = ExpectedZeroAttestationAddresses::validate(&expected, [ADDRESS_B]).unwrap();
+
+    compare_attestation_indexers(&expected, &candidate, &expected_zero).unwrap();
 }
 
 #[test]
@@ -204,8 +206,10 @@ fn offsetting_burn_recognition_is_detected() {
     );
 
     // The combined conformance comparison therefore fails.
+    let expected_zero = ExpectedZeroAttestationAddresses::validate(&expected, [ADDRESS_B]).unwrap();
+
     assert_eq!(
-        compare_attestation_indexers(&expected, &candidate, [ADDRESS_A]),
+        compare_attestation_indexers(&expected, &candidate, &expected_zero),
         Err(DifferentialError::EventCountMismatch),
     );
 }
@@ -340,6 +344,37 @@ impl IndependentAttestationIndexer for WrongAggregateCandidate {
     }
 }
 
+/// A candidate that agrees on raw events but fabricates a nonzero
+/// query for one chosen address.
+struct FabricatedNonzeroCandidate {
+    indexer: ReferenceIndexer,
+    fabricated_address: AttestationAddress,
+}
+
+impl AttestationQueryProvider for FabricatedNonzeroCandidate {
+    fn context(&self) -> AttestationContext {
+        self.indexer.context()
+    }
+
+    fn query(&self, address: AttestationAddress) -> Result<AttestationQueryResult, Guard> {
+        if address != self.fabricated_address {
+            return self.indexer.query(address);
+        }
+
+        let mut query = self.indexer.query(ADDRESS_A)?;
+
+        query.address = address;
+
+        Ok(query)
+    }
+}
+
+impl IndependentAttestationIndexer for FabricatedNonzeroCandidate {
+    fn event_snapshot(&self) -> Result<AttestationEventSnapshot, Guard> {
+        self.indexer.event_snapshot()
+    }
+}
+
 #[test]
 fn query_mismatch_with_equal_event_snapshot_is_detected() {
     let (_world, expected) = indexed_burn_world();
@@ -359,8 +394,104 @@ fn query_mismatch_with_equal_event_snapshot_is_detected() {
         Err(DifferentialError::QueryMismatch),
     );
 
+    let expected_zero = ExpectedZeroAttestationAddresses::validate(&expected, [ADDRESS_B]).unwrap();
+
+    // Before the repair, the equivalent call with an empty iterator
+    // returned `Ok(())`: ADDRESS_A was never queried. The typed witness
+    // is mandatory now, while ADDRESS_A is derived from the snapshot.
     assert_eq!(
-        compare_attestation_indexers(&expected, &candidate, [ADDRESS_A]),
+        compare_attestation_indexers(&expected, &candidate, &expected_zero),
+        Err(DifferentialError::QueryMismatch),
+    );
+}
+
+#[test]
+fn empty_address_census_is_refused() {
+    let expected = synthetic_indexer(&[], &[]);
+
+    assert_eq!(
+        ExpectedZeroAttestationAddresses::validate(&expected, []),
+        Err(DifferentialError::EmptyAddressCensus),
+    );
+
+    let candidate = expected.clone();
+
+    let empty = ExpectedZeroAttestationAddresses::empty_for_test(expected.context());
+
+    assert_eq!(
+        compare_attestation_indexers(&expected, &candidate, &empty),
+        Err(DifferentialError::EmptyAddressCensus),
+    );
+}
+
+#[test]
+fn expected_zero_validation_is_context_bound_and_requires_zero() {
+    let (_world, expected) = indexed_burn_world();
+
+    let expected_zero = ExpectedZeroAttestationAddresses::validate(&expected, [ADDRESS_B]).unwrap();
+
+    assert_eq!(
+        ExpectedZeroAttestationAddresses::validate(&expected, [ADDRESS_A]),
+        Err(DifferentialError::ExpectedZeroAddressNotZero),
+    );
+
+    let other = synthetic_indexer(&[], &[]);
+
+    assert_eq!(
+        compare_attestation_indexers(&other, &other, &expected_zero),
+        Err(DifferentialError::ContextMismatch),
+    );
+}
+
+#[test]
+fn expected_zero_address_is_queried_on_the_candidate() {
+    let (_world, expected) = indexed_burn_world();
+
+    let candidate = FabricatedNonzeroCandidate {
+        indexer: expected.clone(),
+        fabricated_address: ADDRESS_B,
+    };
+
+    let expected_zero = ExpectedZeroAttestationAddresses::validate(&expected, [ADDRESS_B]).unwrap();
+
+    assert_eq!(
+        compare_attestation_indexers(&expected, &candidate, &expected_zero),
+        Err(DifferentialError::QueryMismatch),
+    );
+}
+
+#[test]
+fn overclaiming_burn_addresses_are_in_the_derived_census() {
+    let overclaim = BurnTransaction {
+        txid: txid(2),
+        block_hash: block_hash(1),
+        order: CanonicalOrder {
+            height: 1,
+            tx_index: 1,
+        },
+        ash_value: sat(10),
+        records: vec![BurnRecord {
+            record_index: 0,
+            address: ADDRESS_B,
+            amount: sat(11),
+        }],
+    };
+
+    let expected = synthetic_indexer(&[], &[accepted_burn(1, 1, 0, 10, ADDRESS_A), overclaim]);
+
+    assert!(expected.query(ADDRESS_B).unwrap().terms.is_empty());
+
+    let candidate = FabricatedNonzeroCandidate {
+        indexer: expected.clone(),
+        fabricated_address: ADDRESS_B,
+    };
+
+    let expected_zero =
+        ExpectedZeroAttestationAddresses::validate(&expected, [AttestationAddress([99_u8; 32])])
+            .unwrap();
+
+    assert_eq!(
+        compare_attestation_indexers(&expected, &candidate, &expected_zero),
         Err(DifferentialError::QueryMismatch),
     );
 }

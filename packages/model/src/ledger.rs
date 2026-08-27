@@ -1930,6 +1930,7 @@ impl UntrustedIndexerFixture {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DifferentialError {
     ContextMismatch,
+    EmptyAddressCensus,
     EventSnapshotFailure,
     EventCountMismatch,
     EventOrderMismatch,
@@ -1937,6 +1938,7 @@ pub enum DifferentialError {
     EventPayloadMismatch,
     QueryValidationFailure,
     QueryMismatch,
+    ExpectedZeroAddressNotZero,
     ReceiptAccountingProjectionMismatch,
 }
 
@@ -1944,6 +1946,7 @@ impl fmt::Display for DifferentialError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::ContextMismatch => "attestation contexts differ",
+            Self::EmptyAddressCensus => "attestation address census is empty",
             Self::EventSnapshotFailure => "candidate could not produce an event snapshot",
             Self::EventCountMismatch => "recognized attestation event counts differ",
             Self::EventOrderMismatch => "recognized attestation event orders differ",
@@ -1951,6 +1954,9 @@ impl fmt::Display for DifferentialError {
             Self::EventPayloadMismatch => "recognized attestation event payloads differ",
             Self::QueryValidationFailure => "an indexer produced a semantically invalid query",
             Self::QueryMismatch => "canonical attestation query bytes differ",
+            Self::ExpectedZeroAddressNotZero => {
+                "an expected-zero attestation address produced a nonzero query"
+            }
             Self::ReceiptAccountingProjectionMismatch => {
                 "receipt-accounting audit projections differ"
             }
@@ -2088,18 +2094,86 @@ pub fn compare_attestation_query(
     Ok(())
 }
 
+/// A validated, context-bound census of addresses whose expected query
+/// result is zero.
+///
+/// Fields are private so combined conformance can rely on
+/// [`Self::validate`] having checked both non-vacuity and every query.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExpectedZeroAttestationAddresses {
+    context: AttestationContext,
+    addresses: BTreeSet<AttestationAddress>,
+}
+
+impl ExpectedZeroAttestationAddresses {
+    /// Validates at least one expected-zero address against `expected`.
+    pub fn validate(
+        expected: &ReferenceIndexer,
+        addresses: impl IntoIterator<Item = AttestationAddress>,
+    ) -> Result<Self, DifferentialError> {
+        let addresses: BTreeSet<_> = addresses.into_iter().collect();
+
+        if addresses.is_empty() {
+            return Err(DifferentialError::EmptyAddressCensus);
+        }
+
+        for address in &addresses {
+            let query = expected
+                .query(*address)
+                .map_err(|_| DifferentialError::QueryValidationFailure)?;
+
+            validate_query(&query).map_err(|_| DifferentialError::QueryValidationFailure)?;
+
+            if !query.terms.is_empty() {
+                return Err(DifferentialError::ExpectedZeroAddressNotZero);
+            }
+        }
+
+        Ok(Self {
+            context: expected.context(),
+            addresses,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn empty_for_test(context: AttestationContext) -> Self {
+        Self {
+            context,
+            addresses: BTreeSet::new(),
+        }
+    }
+}
+
+fn snapshot_addresses(snapshot: &AttestationEventSnapshot) -> BTreeSet<AttestationAddress> {
+    snapshot
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            RecognizedAttestationEvent::Burn(burn) => Some(burn),
+            RecognizedAttestationEvent::GenesisClear(_) | RecognizedAttestationEvent::Clear(_) => {
+                None
+            }
+        })
+        .flat_map(|burn| &burn.records)
+        .map(|record| record.address)
+        .collect()
+}
+
 // ´rule:verification:compare-attestation-indexers´
 //
 // Combined conformance: neither comparison subsumes the other. For a
 // complete finite fixture, compare every address appearing in the
-// union of both raw event snapshots, plus addresses with expected zero
-// results. For deployment evidence the candidate must be a separately
-// implemented tool, not another `ReferenceIndexer`.
+// union of both raw event snapshots, plus at least one address with an
+// expected zero result. For deployment evidence the candidate must be
+// a separately implemented tool, not another `ReferenceIndexer`.
+//
+// Any future conformance report must bind the full canonical address
+// list in this deterministic order, not only its digest or count.
 
 pub fn compare_attestation_indexers(
     expected: &ReferenceIndexer,
     candidate: &impl IndependentAttestationIndexer,
-    addresses: impl IntoIterator<Item = AttestationAddress>,
+    expected_zero: &ExpectedZeroAttestationAddresses,
 ) -> Result<(), DifferentialError> {
     let expected_snapshot = expected
         .event_snapshot()
@@ -2110,6 +2184,20 @@ pub fn compare_attestation_indexers(
         .map_err(|_| DifferentialError::EventSnapshotFailure)?;
 
     compare_attestation_events(&expected_snapshot, &candidate_snapshot)?;
+
+    if expected_zero.context != expected.context() {
+        return Err(DifferentialError::ContextMismatch);
+    }
+
+    let mut addresses = snapshot_addresses(&expected_snapshot);
+
+    addresses.extend(snapshot_addresses(&candidate_snapshot));
+
+    addresses.extend(expected_zero.addresses.iter().copied());
+
+    if addresses.is_empty() {
+        return Err(DifferentialError::EmptyAddressCensus);
+    }
 
     for address in addresses {
         compare_attestation_query(expected, candidate, address)?;

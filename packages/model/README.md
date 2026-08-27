@@ -327,11 +327,15 @@ Types: `ReferenceIndexer`, `IndependentAttestationIndexer`,
 `BurnTransaction`, `ClearEntry`, `ClearId`, `AttestationContext`,
 `AttestationTerm`, `AttestationQueryProvider`, `AttestationQueryResult`,
 `AttestationEventId`, `AttestationEventSnapshot`, `OrderedAttestationEvent`,
-`RecognizedAttestationEvent`, `IndexerDiagnosticSnapshot`, `ExactRational`.
+`RecognizedAttestationEvent`, `ExpectedZeroAttestationAddresses`,
+`IndexerDiagnosticSnapshot`, `ExactRational`.
 Codec: `encode_varint` / `decode_varint`, `encode_biguint` / `decode_biguint`,
 `serialize_query` / `deserialize_query`. Checks: `validate_event_index`,
 `validate_query`, `compare_attestation_events`, `compare_attestation_query`,
-`compare_attestation_indexers`, `expected_architecture_manifest_hash`.
+`compare_attestation_indexers(expected, candidate, &expected_zero)`,
+`expected_architecture_manifest_hash`. The combined comparison derives its
+canonical address census from both raw event snapshots and requires a
+validated, nonempty expected-zero witness.
 Constants: `ATTESTATION_SCHEMA_VERSION`, `ATTESTATION_QUERY_DOMAIN`.
 
 ### Harness surfaces (`maintenance`, `quiescence`, `audit`, `property`)
