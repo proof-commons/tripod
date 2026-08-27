@@ -1260,13 +1260,22 @@ def diagnostic_message(outcome: DiagnosticOutcome, record: int | None = None) ->
     if outcome is DiagnosticOutcome.MEMPOOL_REASON_QUARANTINED:
         return "mempool refusal reason quarantined in elements-output record %d" % record
     if outcome is DiagnosticOutcome.TARGET_TRANSACTION_REFUSED:
-        return "target refused an adapter-built transaction; detail is elements-output record %d" % record
+        return (
+            "target refused an adapter-built transaction; detail is "
+            "elements-output record %d" % record
+        )
     if outcome is DiagnosticOutcome.ACCEPTED_TRANSACTION_NOT_CONFIRMABLE:
-        return "accepted transaction was not confirmable; detail is elements-output record %d" % record
+        return (
+            "accepted transaction was not confirmable; detail is "
+            "elements-output record %d" % record
+        )
     if outcome is DiagnosticOutcome.SYNTHETIC_PROOF_CORRUPTION_APPLIED:
         return "synthetic proof corruption applied"
     if outcome is DiagnosticOutcome.UNCLASSIFIED_SCRIPT_ERROR:
-        return "rejected with an unclassified script error; detail is elements-output record %d" % record
+        return (
+            "rejected with an unclassified script error; detail is "
+            "elements-output record %d" % record
+        )
     if outcome is DiagnosticOutcome.FRAMEWORK_LOADED:
         return "framework loaded"
     if outcome is DiagnosticOutcome.CONFIDENTIAL_MATERIALIZER_READY:
@@ -1292,9 +1301,15 @@ def diagnostic_message(outcome: DiagnosticOutcome, record: int | None = None) ->
     if outcome is DiagnosticOutcome.EXECUTOR_INFRASTRUCTURE_FAILED:
         return "executor infrastructure failed; detail is elements-output record %d" % record
     if outcome is DiagnosticOutcome.HANDSHAKE_FIELD_CENSUS_FAILED:
-        return "fatal: handshake failed its field census; detail is elements-output record %d" % record
+        return (
+            "fatal: handshake failed its field census; detail is "
+            "elements-output record %d" % record
+        )
     if outcome is DiagnosticOutcome.EXECUTION_REQUEST_FIELD_CENSUS_FAILED:
-        return "fatal: execution request failed its field census; detail is elements-output record %d" % record
+        return (
+            "fatal: execution request failed its field census; detail is "
+            "elements-output record %d" % record
+        )
     if outcome is DiagnosticOutcome.PROTOCOL_REVISION_REFUSED:
         return "fatal: protocol revision refused"
     if outcome is DiagnosticOutcome.FRAMING_CLEAN_EOF:
@@ -1312,7 +1327,10 @@ def diagnostic_message(outcome: DiagnosticOutcome, record: int | None = None) ->
     if outcome is DiagnosticOutcome.FATAL_PROTOCOL_FAULT:
         return "fatal: protocol fault; detail is elements-output record %d" % record
     if outcome is DiagnosticOutcome.UNRECOGNIZED_DIAGNOSTIC_OUTCOME:
-        return "fatal: unrecognized diagnostic outcome; detail is elements-output record %d" % record
+        return (
+            "fatal: unrecognized diagnostic outcome; detail is "
+            "elements-output record %d" % record
+        )
     if outcome is DiagnosticOutcome.TYPED_DIAGNOSTIC_CONTENT_REJECTED:
         return "fatal: typed diagnostic content rejected"
     raise ValueError("unrecognized diagnostic outcome")

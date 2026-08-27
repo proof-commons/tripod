@@ -867,11 +867,20 @@ TESTS = (
     ("a record past the bound is refused", test_a_record_past_the_bound_is_refused_without_unbounded_reading),
     ("a stream that ends inside a record", test_a_stream_that_ends_inside_a_record),
     ("an extra handshake field is refused", test_an_extra_handshake_field_is_refused),
-    ("an extra execution field cannot inject a typed line", test_an_extra_execution_field_cannot_inject_a_typed_line),
-    ("the typed sink rejects line-bearing content", test_the_typed_sink_rejects_line_bearing_content),
+    (
+        "an extra execution field cannot inject a typed line",
+        test_an_extra_execution_field_cannot_inject_a_typed_line,
+    ),
+    (
+        "the typed sink rejects line-bearing content",
+        test_the_typed_sink_rejects_line_bearing_content,
+    ),
     ("an unknown diagnostic outcome is fatal", test_an_unknown_diagnostic_outcome_is_fatal),
     ("the diagnostic outcome inventory is closed", test_the_diagnostic_outcome_inventory_is_closed),
-    ("ZK paths and loader exceptions reach neither file", test_zk_paths_and_loader_exceptions_reach_neither_file),
+    (
+        "ZK paths and loader exceptions reach neither file",
+        test_zk_paths_and_loader_exceptions_reach_neither_file,
+    ),
     ("a wrong revision is refused before any node", test_a_wrong_revision_is_refused_before_any_node),
     ("the request bounds agree across implementations", test_the_request_bounds_agree_across_the_two_implementations),
     ("both destinations are mandatory", test_both_destinations_are_mandatory),
