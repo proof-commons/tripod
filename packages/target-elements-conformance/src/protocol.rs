@@ -88,6 +88,22 @@ use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutio
 
 /// The protocol revision this harness speaks.
 ///
+/// # Revision 6 widens the observed-layer vocabulary
+///
+/// [`ObservedOutcomeLayer::KeyPathRejection`] is a value a revision-5
+/// harness cannot read. The record SHAPES are untouched — same members,
+/// same types, same defaulting — and the change is still breaking, for
+/// the reason a widened vocabulary always is: the adapter now answers
+/// with a name the older reader refuses, and the older reader's refusal
+/// would surface as a transport failure rather than as the verdict the
+/// target actually reached.
+///
+/// Numbering it is what keeps that from being discovered at a
+/// mis-parsed answer. The two implementations bump together, as every
+/// earlier revision here did; a revision only one side moved to
+/// reproduces the two-sided disagreement the mechanism exists to end
+/// `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
+///
 /// # Revision 5 states the confidential funding arm
 ///
 /// The confidential funding step adds an untagged [`OperationSubject`]
@@ -183,7 +199,7 @@ use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutio
 /// Revision 2 itself added the environment observation, the separated
 /// executor provenance roles, the bounded-record contract, and strict
 /// framing, and was refused for revision 1 on the same ground.
-pub const NATIVE_PROTOCOL_SCHEMA: u32 = 5;
+pub const NATIVE_PROTOCOL_SCHEMA: u32 = 6;
 
 /// Which part of the exchange the harness was in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -1205,7 +1221,7 @@ fn validate_observation_shape(
 /// all — recording it as one manufactures a consensus fact out of a bug
 /// in the test harness.
 ///
-/// So the six layers stay distinct, and the classification is the
+/// So the seven layers stay distinct, and the classification is the
 /// adapter's *observation* — which RPC refused, at what stage — never the
 /// row's expectation. The executor is never told what was expected, so it
 /// has nothing to classify toward.
@@ -1239,6 +1255,35 @@ pub enum ObservedOutcomeLayer {
     ConsensusRejectionBeforeScript,
     /// The target ran the script path and it failed.
     ScriptPathRejection,
+    /// The target refused a KEY-PATH spend, where no script ran at all.
+    ///
+    /// # Why this is not [`Self::ScriptPathRejection`]
+    ///
+    /// The two reach the mempool in the same clothes — a taproot
+    /// key-path signature failure carries the same mandatory-script
+    /// prefix a leaf failure does — and they are different events. A
+    /// key-path spend supplies a signature and nothing else: no leaf
+    /// script and no control block, so no covenant clause executed and
+    /// no opcode ran. Filing such a refusal as a script-path rejection
+    /// says a script this workspace wrote was reached and refused, which
+    /// is a claim about a covenant that was never asked.
+    ///
+    /// The internal-key unspendability probe met exactly that. Phase A
+    /// recorded its refusal under the script-path name because this
+    /// vocabulary had no other, and reported it in its own run of record
+    /// rather than working around it; this member is the repair phase B
+    /// owns.
+    ///
+    /// # What it does NOT establish
+    ///
+    /// That the target refused a key-path spend, and nothing more. It
+    /// says nothing whatever about who knows the internal key's discrete
+    /// logarithm: a refused signature is a signature that did not
+    /// verify, which is what any target answers for any key anyone does
+    /// not hold. The residual discrete-log assumption on the published
+    /// unspendable point stands unchanged
+    /// `(´[PLAN-rule:exclusions:nonclaims]´)`.
+    KeyPathRejection,
     /// The target would relay-refuse an otherwise consensus-valid
     /// transaction.
     RelayPolicyRejection,
@@ -1249,8 +1294,8 @@ pub enum ObservedOutcomeLayer {
 impl ObservedOutcomeLayer {
     /// Whether this layer is a verdict the target actually reached.
     ///
-    /// The two non-verdicts are the whole reason the vocabulary is six
-    /// values rather than four, and every consumer that turns a layer
+    /// The two non-verdicts are the whole reason the vocabulary is seven
+    /// values rather than five, and every consumer that turns a layer
     /// into evidence must ask this first.
     #[must_use]
     pub const fn is_target_verdict(&self) -> bool {
@@ -1258,6 +1303,7 @@ impl ObservedOutcomeLayer {
             Self::FixtureConstructionFailure | Self::ExecutorInfrastructureFailure => false,
             Self::ConsensusRejectionBeforeScript
             | Self::ScriptPathRejection
+            | Self::KeyPathRejection
             | Self::RelayPolicyRejection
             | Self::Accepted => true,
         }
@@ -1271,6 +1317,7 @@ impl std::fmt::Display for ObservedOutcomeLayer {
             Self::ExecutorInfrastructureFailure => "executor infrastructure failure",
             Self::ConsensusRejectionBeforeScript => "consensus rejection before script",
             Self::ScriptPathRejection => "script-path rejection",
+            Self::KeyPathRejection => "key-path rejection",
             Self::RelayPolicyRejection => "relay-policy rejection",
             Self::Accepted => "accepted",
         };

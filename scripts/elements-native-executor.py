@@ -316,6 +316,16 @@ Verdict mapping
 formats a script failure as `mandatory-script-verify-flag-failed (TEXT)` at
 consensus level and `non-mandatory-script-verify-flag (TEXT)` at policy
 level, where TEXT is `ScriptErrorString` from `src/script/script_error.cpp`.
+
+That wrapper does not by itself say a script ran. A taproot key-path
+signature failure wears the same one, and a key-path spend offers no leaf
+script and no control block, so no covenant clause executes. The wrapper
+therefore opens the question and `observed_key_path_spend` settles it, from
+the witness the bytes carry and the program each spent output pays: a
+witness-version-one program with a one-item witness at every input is
+reported as `key_path_rejection`, and anything else as
+`script_path_rejection`. Both are read back from the node; nothing is
+inferred from what the caller wanted.
 Anything else -- a missing input, a fee-rate refusal, a value-conservation
 failure -- is this adapter failing to build a transaction, not the target
 reaching a verdict, and is reported as `infrastructure_error`.
@@ -481,7 +491,15 @@ ADAPTER_VERSION = "2.1.0"
 # with silence in exactly the members a confidential answer lives in.
 # Both implementations move together for the same recorded reason, and
 # this file's constant is one half of that single change.
-NATIVE_PROTOCOL_SCHEMA = 5
+#
+# Revision 6 widens the observed-layer vocabulary with
+# `key_path_rejection`. No record shape moves; what moves is the set of
+# values `observed_layer` may carry, and a revision-5 harness refuses a
+# name it has never heard rather than reading it. That refusal would
+# arrive as a transport failure instead of as the verdict the target
+# actually reached, so the widening is numbered like every other break
+# here, and both sides bump in one change.
+NATIVE_PROTOCOL_SCHEMA = 6
 
 # The reviewed tapscript leaf version.
 TAPSCRIPT_LEAF_VERSION = 0xC4
@@ -4218,6 +4236,15 @@ class OperationExecutor:
 
         A script verdict is neither: the script ran and failed, which is
         the same fact at either layer.
+
+        # And a script verdict is not always a SCRIPT verdict
+
+        The mandatory-script wrapper is also what a taproot KEY-PATH
+        signature failure wears, and no script runs on that path at all.
+        So the wrapper opens the question rather than settling it, and
+        `observed_key_path_spend` settles it from the witness and the
+        spent programs -- an observation about the bytes submitted, never
+        an expectation the caller supplied.
         """
         raw = subject["transaction_bytes"].hex()
         answer = self.executor.node.call("testmempoolaccept", json.dumps([raw]))
@@ -4249,8 +4276,11 @@ class OperationExecutor:
             raise AdapterError("the node rejected without naming a reason")
         for prefix in (POLICY_SCRIPT_PREFIX, CONSENSUS_SCRIPT_PREFIX):
             if script_error_in(reason, prefix) is not None:
+                key_path = observed_key_path_spend(self.executor.node, raw)
                 return {
-                    "observed_layer": "script_path_rejection",
+                    "observed_layer": (
+                        "key_path_rejection" if key_path else "script_path_rejection"
+                    ),
                     "observed_detail": reason,
                     "accepted_txid": None,
                     "transaction_weight": self.executor.weight_of(raw),
@@ -4310,8 +4340,15 @@ class OperationExecutor:
             mempool_reason is None
             and script_error_in(error.client_detail, CONSENSUS_SCRIPT_PREFIX) is not None
         ):
+            # The same wrapper opens the same question here, and it is
+            # settled the same way, from the bytes rather than from the
+            # string. Reading it at one of the two sites only would leave
+            # the misfiling alive on the other.
+            key_path = raw is not None and observed_key_path_spend(self.executor.node, raw)
             return {
-                "observed_layer": "script_path_rejection",
+                "observed_layer": (
+                    "key_path_rejection" if key_path else "script_path_rejection"
+                ),
                 "observed_detail": detail,
                 "accepted_txid": None,
                 "transaction_weight": weight,
@@ -4810,11 +4847,21 @@ class ConservationExecutor:
         transaction from one consensus will not have.
 
           relay accepts                      -> accepted
-          relay names a mandatory script err  -> script-path rejection
+          relay names a mandatory script err  -> script-path rejection,
+                                                 or key-path rejection
+                                                 where the bytes are
+                                                 observed to have run no
+                                                 script at all
           relay names any other consensus
             reason, and a block also refuses  -> consensus rejection
                                                  before script
           relay refuses, a block takes it     -> relay-policy rejection
+
+        The key-path arm is unreachable from a conservation row -- every
+        candidate this lane materializes reveals a leaf and a control
+        block -- and it is asked here anyway, because one rule spelled
+        twice is two rules that can disagree, which is the lesson
+        `script_error_in` was extracted for.
 
         Nothing here consults an expectation, because none was sent.
         """
@@ -4829,6 +4876,8 @@ class ConservationExecutor:
             raise AdapterError("the node rejected without naming a reason")
 
         if relay_reason.startswith(CONSENSUS_SCRIPT_PREFIX):
+            if observed_key_path_spend(self.node, raw):
+                return "key_path_rejection", relay_reason
             return "script_path_rejection", relay_reason
 
         # Whether the refusal is consensus or merely standardness is
@@ -5858,6 +5907,85 @@ def script_error_in(text: str, prefix: str):
     # is reported as unreadable rather than repaired by guessing where
     # the message ended.
     return None
+
+
+def observed_key_path_spend(node, raw: str) -> bool:
+    """Whether EVERY input of these bytes took the taproot key path.
+
+    # The wire fact this exists to stop misreporting
+
+    Elements answers a taproot key-path signature failure with the same
+    `mandatory-script-verify-flag-failed (...)` wrapper it answers a leaf
+    failure with, so the reject reason alone cannot tell the two apart.
+    Classifying on that string alone files a key-path refusal as
+    `script_path_rejection`, which claims a covenant script was reached
+    and refused when none was offered at all. The internal-key
+    unspendability probe met exactly that and reported it rather than
+    working around it; this function is the observation that repairs it.
+
+    # It OBSERVES, and never infers from an expectation
+
+    Nothing here is told what the caller intended. Two facts are read
+    back from the node -- the witness the bytes actually carry, and the
+    program each spent output actually pays -- and a key-path spend is
+    the conjunction of them: a witness-version-one program, and a witness
+    of exactly one item once an annex is set aside. A one-item witness
+    alone is not enough, because at a version-zero P2WSH input that one
+    item IS the script and a script does run.
+
+    # Silence is not a claim
+
+    Where a spent output cannot be read back, or a witness cannot be, the
+    shape was not observed and this answers False. The caller then
+    reports what it reported before, which understates rather than
+    invents: an unobserved key path is not evidence of a script path, and
+    the honest cost of that is carried by the caller's own record rather
+    than by a guess made here.
+    """
+    try:
+        decoded = node.call("decoderawtransaction", raw)
+    except AdapterError:
+        return False
+    if not isinstance(decoded, dict):
+        return False
+    inputs = decoded.get("vin")
+    if not isinstance(inputs, list) or not inputs:
+        return False
+
+    for entry in inputs:
+        if not isinstance(entry, dict):
+            return False
+        witness = entry.get("txinwitness")
+        if not isinstance(witness, list) or not witness:
+            return False
+        # An annex is the trailing item beginning 0x50, and it is set
+        # aside before the count is read because it is not a stack item
+        # the target executes. This workspace builds none; the rule is
+        # written anyway so that a candidate carrying one is classified
+        # by what it spends rather than by an item nobody ran.
+        items = list(witness)
+        if len(items) >= 2 and isinstance(items[-1], str) and items[-1][:2] == "50":
+            items = items[:-1]
+        if len(items) != 1:
+            return False
+
+        txid = entry.get("txid")
+        index = entry.get("vout")
+        if not isinstance(txid, str) or isinstance(index, bool) or not isinstance(index, int):
+            return False
+        try:
+            spent = node.call("gettxout", txid, str(index))
+        except AdapterError:
+            return False
+        if not isinstance(spent, dict):
+            return False
+        program = spent.get("scriptPubKey", {}).get("hex")
+        # Witness version one, thirty-two byte program: the only shape
+        # whose one-item witness is a key-path spend.
+        if not isinstance(program, str) or len(program) != 68 or program[:4] != "5120":
+            return False
+
+    return True
 
 
 def rejection(script_error: str) -> dict:

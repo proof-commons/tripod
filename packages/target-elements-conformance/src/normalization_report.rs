@@ -113,6 +113,16 @@ pub const fn derive_refusal(
         // script-path rejection. On this path the script being run is the
         // owner's authorization, so the two names describe one event.
         ObservedOutcomeLayer::ScriptPathRejection => Some(RefusalLayer::TargetSignature),
+        // A key-path refusal is a signature the target judged and found
+        // invalid, with no leaf script in the offering at all, so it
+        // lands at the same refusal layer for a plainer reason than its
+        // neighbour does. No normalization row builds a key-path spend —
+        // every claim here is an owner authorization over a leaf — so
+        // nothing reaches this arm today, and it is written out rather
+        // than folded into a catch-all: a wildcard would absorb the next
+        // added layer silently, which is what this vocabulary exists to
+        // prevent.
+        ObservedOutcomeLayer::KeyPathRejection => Some(RefusalLayer::TargetSignature),
         // A transaction the target would not relay is not a refusal of
         // the claim, and is reported as its own thing rather than folded
         // into either neighbour: no row expects it, so it surfaces as a
