@@ -2360,6 +2360,21 @@ mod tests {
         }
     }
 
+    /// The paired relation's own shape, checked apart from the loop.
+    ///
+    /// The assertion a reader wants most is that the two identities are
+    /// DIFFERENT: one identity recorded twice would be one transaction,
+    /// and a relation over one transaction is not a relation.
+    fn assert_paired_relation(explicit: &str, private: &str, relation: &str) {
+        assert_eq!(explicit.len(), 64);
+        assert_eq!(private.len(), 64);
+        assert_ne!(
+            explicit, private,
+            "the standing names one transaction twice"
+        );
+        assert_ne!(relation.len(), 0, "the standing observed nothing");
+    }
+
     #[test]
     fn exactly_the_positive_rows_a_run_answered_are_answered() {
         // The wave's delta, held as a test rather than written in a
@@ -2451,15 +2466,7 @@ mod tests {
                     private_identity,
                     relation,
                 } => {
-                    assert_eq!(explicit_identity.len(), 64, "{}", row.row());
-                    assert_eq!(private_identity.len(), 64, "{}", row.row());
-                    assert_ne!(
-                        explicit_identity,
-                        private_identity,
-                        "{} names one transaction twice",
-                        row.row(),
-                    );
-                    assert_ne!(relation.len(), 0, "{} observed nothing", row.row());
+                    assert_paired_relation(explicit_identity, private_identity, relation);
                     assert!(row.standing().is_answered());
                     by_paired_relation.insert(row.row().name());
                 }

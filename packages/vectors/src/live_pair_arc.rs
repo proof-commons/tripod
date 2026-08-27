@@ -1056,6 +1056,37 @@ fn destination_programs(
     Ok(programs)
 }
 
+/// What the two accepted copies agree about STRUCTURALLY.
+///
+/// Read off the node's own copies and nothing else: which owners the
+/// receipt outputs were created for, which asset every output names, and
+/// whether either copy carries an output that is neither a published
+/// owner's receipt nor the fee role.
+struct ShapeAgreement {
+    same_owners: bool,
+    same_asset: bool,
+    both_clean: bool,
+}
+
+/// What the two accepted copies agree about SEMANTICALLY.
+///
+/// Held against the arc's one fixture rather than against each other
+/// alone, because §16.2's third condition asks that both projections
+/// equal the EXPECTED transfer and not merely that they equal one
+/// another. Two members that agreed with each other and with no fixture
+/// would satisfy the weaker reading and none of the guide's.
+struct SemanticAgreement {
+    consumed_agrees: bool,
+    owners_agree: bool,
+    amounts_agree_with_disclosure_asymmetry: bool,
+}
+
+/// What the arc's one fixture itself declares.
+struct FixtureDeclaration {
+    sponsorless: bool,
+    single_input_owner: bool,
+}
+
 /// The premises the §6.6 comparison is made from.
 ///
 /// Split out of the comparison because they are a different job: these
@@ -1064,14 +1095,9 @@ fn destination_programs(
 /// apart is what lets a reader check each premise against the node's copy
 /// without reading eleven arms first.
 struct ComparisonPremises {
-    same_owners: bool,
-    same_asset: bool,
-    both_clean: bool,
-    consumed_agrees: bool,
-    owners_agree: bool,
-    amounts_agree_with_disclosure_asymmetry: bool,
-    sponsorless: bool,
-    single_input_owner: bool,
+    shape: ShapeAgreement,
+    semantics: SemanticAgreement,
+    fixture: FixtureDeclaration,
 }
 
 /// Read the premises off two projections and the arc's one fixture.
@@ -1085,13 +1111,15 @@ fn comparison_premises(
     // The two sides' shapes, as the node's copies report them.
     let same_width = explicit.consumed_positions == private.consumed_positions
         && explicit.receipt_outputs == private.receipt_outputs;
-    let same_owners = explicit.destination_owners == private.destination_owners;
-    let same_asset =
-        explicit.explicit_asset.is_some() && explicit.explicit_asset == private.explicit_asset;
-    let both_clean = explicit.unrecognized_outputs == 0
-        && private.unrecognized_outputs == 0
-        && explicit.fee_outputs == 0
-        && private.fee_outputs == 0;
+    let shape = ShapeAgreement {
+        same_owners: explicit.destination_owners == private.destination_owners,
+        same_asset: explicit.explicit_asset.is_some()
+            && explicit.explicit_asset == private.explicit_asset,
+        both_clean: explicit.unrecognized_outputs == 0
+            && private.unrecognized_outputs == 0
+            && explicit.fee_outputs == 0
+            && private.fee_outputs == 0,
+    };
 
     // The explicit member's published amounts are the fixture's; the
     // private member's are absent, which is the point of the pair.
@@ -1106,28 +1134,148 @@ fn comparison_premises(
         .iter()
         .all(Option::is_none)
         && !private.published_destination_amounts.is_empty();
-    let amounts_agree_with_disclosure_asymmetry =
-        explicit_amounts_are_the_fixtures && private_withholds;
 
-    let consumed_agrees = same_width && explicit.consumed_positions == expected.consumed_receipts();
-    let owners_agree = same_owners
-        && explicit.destination_owners
-            == fixture
-                .destinations()
-                .iter()
-                .map(|endpoint| endpoint.owner())
-                .collect::<Vec<_>>();
+    let semantics = SemanticAgreement {
+        consumed_agrees: same_width && explicit.consumed_positions == expected.consumed_receipts(),
+        owners_agree: shape.same_owners
+            && explicit.destination_owners
+                == fixture
+                    .destinations()
+                    .iter()
+                    .map(|endpoint| endpoint.owner())
+                    .collect::<Vec<_>>(),
+        amounts_agree_with_disclosure_asymmetry: explicit_amounts_are_the_fixtures
+            && private_withholds,
+    };
 
     ComparisonPremises {
-        same_owners,
-        same_asset,
-        both_clean,
-        consumed_agrees,
-        owners_agree,
-        amounts_agree_with_disclosure_asymmetry,
-        sponsorless: expected.sponsor() == SponsorPresence::Absent,
-        single_input_owner: expected.distinct_input_owners().len() == 1,
+        shape,
+        semantics,
+        fixture: FixtureDeclaration {
+            sponsorless: expected.sponsor() == SponsorPresence::Absent,
+            single_input_owner: expected.distinct_input_owners().len() == 1,
+        },
     }
+}
+
+/// §6.6's first six terms: the ones the two members AGREE about, each
+/// with the standing that says how the agreement was found.
+fn agreement_terms(premises: &ComparisonPremises) -> Vec<(&'static str, ProjectionTermStanding)> {
+    use ProjectionTermStanding as S;
+
+    let semantics = &premises.semantics;
+    let shape = &premises.shape;
+    let withheld = semantics.amounts_agree_with_disclosure_asymmetry;
+
+    vec![
+        // Term 1. The explicit member publishes the consumed amounts
+        // through the coins it spends; the private member spends
+        // commitments. The counts agree in both copies and the exact
+        // values are published on one side only.
+        (
+            REPRESENTATION_EQUIVALENCE_TERMS[0],
+            if semantics.consumed_agrees && withheld {
+                S::EqualAndWithheldByThePrivateMember
+            } else {
+                S::Disagrees
+            },
+        ),
+        // Term 2. The OWNERS agree in both copies — the destination
+        // programs are the deployment's own and were matched in each
+        // accepted transaction — and the VALUES are published by the
+        // explicit member alone.
+        (
+            REPRESENTATION_EQUIVALENCE_TERMS[1],
+            if semantics.owners_agree && withheld {
+                S::EqualAndWithheldByThePrivateMember
+            } else {
+                S::Disagrees
+            },
+        ),
+        // Term 3. Public constructor metadata: the fixture states one
+        // source owner and both ceremonies fund that owner's
+        // constructor, which is public data about a program rather than
+        // a field of either accepted transaction.
+        (
+            REPRESENTATION_EQUIVALENCE_TERMS[2],
+            if premises.fixture.single_input_owner && semantics.consumed_agrees {
+                S::EqualByPublicConstructorMetadata
+            } else {
+                S::Disagrees
+            },
+        ),
+        // Term 4. Every receipt output of both members sits at a
+        // published owner's LIVE receipt destination program under that
+        // member's own plan, matched in the node's copy.
+        (
+            REPRESENTATION_EQUIVALENCE_TERMS[3],
+            if shape.same_owners && shape.both_clean {
+                S::EqualInTheNodesOwnCopy
+            } else {
+                S::Disagrees
+            },
+        ),
+        // Term 5. One explicit asset, and the SAME one, read out of both
+        // accepted copies. This is the term one issuance buys: two runs
+        // would carry two assets and this term would disagree.
+        (
+            REPRESENTATION_EQUIVALENCE_TERMS[4],
+            if shape.same_asset {
+                S::EqualInTheNodesOwnCopy
+            } else {
+                S::Disagrees
+            },
+        ),
+        // Term 6. Both accepted, which is a target verdict about the
+        // authorization each carried; the arc's ledger additionally holds
+        // each member to a witness verified against a recomputed message.
+        (
+            REPRESENTATION_EQUIVALENCE_TERMS[5],
+            S::EqualInTheNodesOwnCopy,
+        ),
+    ]
+}
+
+/// §6.6's remaining five terms: the structures neither member carries,
+/// and the one flow term the shared asset settles.
+fn absence_terms(premises: &ComparisonPremises) -> Vec<(&'static str, ProjectionTermStanding)> {
+    use ProjectionTermStanding as S;
+
+    let shape = &premises.shape;
+    // Terms 7, 8 and 11. Nothing but receipt outputs of published owners
+    // appears in either copy, and the decoder refuses an issuance or
+    // peg-in input outright — so a copy that decoded carries none.
+    let absent = if shape.both_clean {
+        S::AbsentFromBothMembers
+    } else {
+        S::Disagrees
+    };
+
+    vec![
+        (REPRESENTATION_EQUIVALENCE_TERMS[6], absent),
+        (REPRESENTATION_EQUIVALENCE_TERMS[7], absent),
+        // Term 9. One asset in both copies, so nothing flowed laterally
+        // into another family.
+        (
+            REPRESENTATION_EQUIVALENCE_TERMS[8],
+            if shape.same_asset && shape.both_clean {
+                S::EqualInTheNodesOwnCopy
+            } else {
+                S::Disagrees
+            },
+        ),
+        // Term 10. The fixture declares no sponsor region and neither
+        // copy carries a fee or a sponsor output.
+        (
+            REPRESENTATION_EQUIVALENCE_TERMS[9],
+            if premises.fixture.sponsorless && shape.both_clean {
+                S::AbsentFromBothMembers
+            } else {
+                S::Disagrees
+            },
+        ),
+        (REPRESENTATION_EQUIVALENCE_TERMS[10], absent),
+    ]
 }
 
 /// Compare two accepted members' public protocol projections, term by
@@ -1142,135 +1290,9 @@ pub fn compare_public_protocol_projections(
     explicit: &PublicProtocolProjection,
     private: &PublicProtocolProjection,
 ) -> ProjectionEqualityObservation {
-    use ProjectionTermStanding as S;
-
-    let ComparisonPremises {
-        same_owners,
-        same_asset,
-        both_clean,
-        consumed_agrees,
-        owners_agree,
-        amounts_agree_with_disclosure_asymmetry,
-        sponsorless,
-        single_input_owner,
-    } = comparison_premises(explicit, private);
-
-    let terms = vec![
-        // §6.6 term 1. The explicit member publishes the consumed
-        // amounts through the coins it spends; the private member spends
-        // commitments. The counts agree in both copies and the exact
-        // values are published on one side only.
-        (
-            REPRESENTATION_EQUIVALENCE_TERMS[0],
-            if consumed_agrees && amounts_agree_with_disclosure_asymmetry {
-                S::EqualAndWithheldByThePrivateMember
-            } else {
-                S::Disagrees
-            },
-        ),
-        // §6.6 term 2. The OWNERS agree in both copies — the destination
-        // programs are the deployment's own and were matched in each
-        // accepted transaction — and the VALUES are published by the
-        // explicit member alone.
-        (
-            REPRESENTATION_EQUIVALENCE_TERMS[1],
-            if owners_agree && amounts_agree_with_disclosure_asymmetry {
-                S::EqualAndWithheldByThePrivateMember
-            } else {
-                S::Disagrees
-            },
-        ),
-        // §6.6 term 3. Public constructor metadata: the fixture states
-        // one source owner and both ceremonies fund that owner's
-        // constructor, which is public data about a program rather than
-        // a field of either accepted transaction.
-        (
-            REPRESENTATION_EQUIVALENCE_TERMS[2],
-            if single_input_owner && consumed_agrees {
-                S::EqualByPublicConstructorMetadata
-            } else {
-                S::Disagrees
-            },
-        ),
-        // §6.6 term 4. Every receipt output of both members sits at a
-        // published owner's LIVE receipt destination program under that
-        // member's own plan, matched in the node's copy.
-        (
-            REPRESENTATION_EQUIVALENCE_TERMS[3],
-            if same_owners && both_clean {
-                S::EqualInTheNodesOwnCopy
-            } else {
-                S::Disagrees
-            },
-        ),
-        // §6.6 term 5. One explicit asset, and the SAME one, read out of
-        // both accepted copies. This is the term one issuance buys: two
-        // runs would carry two assets and this term would disagree.
-        (
-            REPRESENTATION_EQUIVALENCE_TERMS[4],
-            if same_asset {
-                S::EqualInTheNodesOwnCopy
-            } else {
-                S::Disagrees
-            },
-        ),
-        // §6.6 term 6. Both accepted, which is a target verdict about
-        // the authorization each carried; the arc's ledger additionally
-        // holds each member to a witness verified against a recomputed
-        // message.
-        (
-            REPRESENTATION_EQUIVALENCE_TERMS[5],
-            S::EqualInTheNodesOwnCopy,
-        ),
-        // §6.6 terms 7, 8 and 11. Nothing but receipt outputs of
-        // published owners appears in either copy, and the decoder
-        // refuses an issuance or peg-in input outright — so a copy that
-        // decoded carries none.
-        (
-            REPRESENTATION_EQUIVALENCE_TERMS[6],
-            if both_clean {
-                S::AbsentFromBothMembers
-            } else {
-                S::Disagrees
-            },
-        ),
-        (
-            REPRESENTATION_EQUIVALENCE_TERMS[7],
-            if both_clean {
-                S::AbsentFromBothMembers
-            } else {
-                S::Disagrees
-            },
-        ),
-        // §6.6 term 9. One asset in both copies, so nothing flowed
-        // laterally into another family.
-        (
-            REPRESENTATION_EQUIVALENCE_TERMS[8],
-            if same_asset && both_clean {
-                S::EqualInTheNodesOwnCopy
-            } else {
-                S::Disagrees
-            },
-        ),
-        // §6.6 term 10. The fixture declares no sponsor region and
-        // neither copy carries a fee or a sponsor output.
-        (
-            REPRESENTATION_EQUIVALENCE_TERMS[9],
-            if sponsorless && both_clean {
-                S::AbsentFromBothMembers
-            } else {
-                S::Disagrees
-            },
-        ),
-        (
-            REPRESENTATION_EQUIVALENCE_TERMS[10],
-            if both_clean {
-                S::AbsentFromBothMembers
-            } else {
-                S::Disagrees
-            },
-        ),
-    ];
+    let premises = comparison_premises(explicit, private);
+    let mut terms = agreement_terms(&premises);
+    terms.extend(absence_terms(&premises));
 
     ProjectionEqualityObservation {
         terms,
