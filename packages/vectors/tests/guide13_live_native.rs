@@ -1741,14 +1741,6 @@ fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
         attempt.signing_public_key().as_slice(),
         "the attempt was signed by the output key, which is not this probe",
     );
-    // The submitted bytes carry a whole transaction and not only the
-    // witness item, which is the cheapest check that the attempt was
-    // assembled rather than merely signed.
-    assert!(
-        attempt.submitted_bytes().len() > attempt.witness_stack()[0].len(),
-        "the submitted bytes are no larger than the witness item",
-    );
-
     // The target answered, which is the precondition every assertion
     // below rests on: a run that reached no verdict at all fails here,
     // where the failure names what happened, rather than inside a
@@ -1856,6 +1848,13 @@ fn assert_the_verdicts_match_the_run_of_record(
         attempt.witness_stack()[0].len(),
         run_of_record::WITNESS_ITEM_BYTES,
         "the attempt's one witness item is not the recorded width",
+    );
+    // The bytes carry a whole transaction and not only the witness item,
+    // which is the cheapest check that the attempt was assembled rather
+    // than merely signed. Kept beside the recorded width it reads.
+    assert!(
+        attempt.submitted_bytes().len() > attempt.witness_stack()[0].len(),
+        "the submitted bytes are no larger than the witness item",
     );
 
     // The ATTEMPT's verdict, exactly. Phase B's whole content is the name
@@ -3593,11 +3592,6 @@ fn the_pairs_arc_submits_both_members_of_one_fixture_to_a_real_target() {
             member.member(),
         );
     }
-    assert_ne!(
-        ledger.explicit().accepted_txid(),
-        ledger.private().accepted_txid(),
-        "the two members are one transaction",
-    );
 
     // The relation, in the row's own terms.
     let observation = ledger.observation();
@@ -3678,6 +3672,11 @@ fn assert_the_arc_ledger_matches_the_run_of_record(record: &vectors::live_pair_a
         Some(ledger.private().accepted_txid()),
         run_of_record::PRIVATE_MEMBER_ACCEPTED_IDENTITY,
         "the private member was accepted at an identity the run of record does not carry",
+    );
+    assert_ne!(
+        ledger.explicit().accepted_txid(),
+        ledger.private().accepted_txid(),
+        "the two members are one transaction",
     );
 
     // The two widths and the two weights, each the target's own figure.
