@@ -50,36 +50,44 @@ use serde::Serialize;
 /// `combined_bytes` and added `adr_hard_cap_bytes` to [`PlansReport`].
 pub const PLANS_REPORT_SCHEMA: u32 = 3;
 
-/// Ceiling for the maintained-prose budget (1 MiB).
+/// Ceiling for the maintained-prose budget (1126 KiB).
 ///
-/// Raised from 768 KiB by owner ruling. The old pair was inherited
-/// verbatim from the retired `scripts/check_plans.py`, which stated no
-/// derivation for it, so the ruling's own derivation governs: the hard
-/// cap goes to a round 1 MiB and the soft target rises by the same
-/// ratio.
+/// Raised from 1 MiB by owner ruling ("we can raise the cap to
+/// 1.1 mb"): the hard cap goes to 1126 KiB, 1153024 bytes — the
+/// nearest whole KiB not exceeding 1.1 MB — because every constant in
+/// this budget is a whole number of KiB, and the soft target rises by
+/// the same ratio.
 ///
 /// What motivated the raise is a measurement rather than a preference.
-/// On 2026-08-25 the maintained tree measured 787489 bytes against the
-/// 768 KiB cap — over it, reached while recording one routine gate
-/// paragraph. A guardrail that a single paragraph of ordinary record
-/// keeping can breach has stopped sizing the tree and started sizing
-/// the sentence, and the repository has grown substantially since the
-/// figure was set. The cap still exists to catch duplication, so it is
-/// raised rather than removed.
-const HARD_CAP_BYTES: u64 = 1024 * 1024;
-/// Advisory target for the maintained-prose budget (693 KiB).
+/// On 2026-08-26 the maintained tree measured 1036814 bytes against
+/// the 1048576-byte cap — roughly 11.5 KiB of headroom — with the
+/// phase's own closing records still unwritten: the section-2.20 gate
+/// record, the row-by-row exit assessment, and the exit record. A cap
+/// that cannot absorb the phase's closing records has started sizing
+/// the sentence again. The cap still exists to catch duplication, so
+/// it is raised rather than removed.
 ///
-/// The old 520 KiB scaled by the same ratio the hard cap took is
-/// 532480 * 1048576 / 786432 = 709973 bytes exactly. That is rounded
-/// DOWN to 693 KiB, 709632 bytes — the nearest whole KiB below it, 341
-/// bytes under the exact figure — because every constant in this
-/// budget is a whole number of KiB and rounding down keeps the advisory
-/// strictly no weaker than the proportion asks.
+/// The previous raise, kept as provenance: the pair went from 768 KiB
+/// to 1 MiB by owner ruling. The old pair was inherited verbatim from
+/// the retired `scripts/check_plans.py`, which stated no derivation
+/// for it, so the ruling's own derivation governed: the hard cap went
+/// to a round 1 MiB and the soft target rose by the same ratio, after
+/// the maintained tree measured 787489 bytes against the 768 KiB cap
+/// on 2026-08-25 — over it, reached while recording one routine gate
+/// paragraph.
+const HARD_CAP_BYTES: u64 = 1126 * 1024;
+/// Advisory target for the maintained-prose budget (762 KiB).
+///
+/// The old 693 KiB scaled by the same ratio the hard cap took is
+/// 693 * 1126 / 1024 = 762.06 KiB. That is rounded DOWN to 762 KiB,
+/// 780288 bytes — the nearest whole KiB below it — because every
+/// constant in this budget is a whole number of KiB and rounding down
+/// keeps the advisory strictly no weaker than the proportion asks.
 ///
 /// Exceeding this is a warning and never a failure: it is the tree
 /// saying it is getting heavy, which is a thing an author should know
 /// and not a thing that should stop a commit.
-const SOFT_TARGET_BYTES: u64 = 693 * 1024;
+const SOFT_TARGET_BYTES: u64 = 762 * 1024;
 
 /// Ceiling for the root-ADR budget (2 MiB).
 ///
@@ -1154,8 +1162,8 @@ mod tests {
 
     #[test]
     fn weight_class_caps_match_the_budget_rule() {
-        assert_eq!(SOFT_TARGET_BYTES, 693 * 1024);
-        assert_eq!(HARD_CAP_BYTES, 1024 * 1024);
+        assert_eq!(SOFT_TARGET_BYTES, 762 * 1024);
+        assert_eq!(HARD_CAP_BYTES, 1126 * 1024);
         assert_eq!(ADR_HARD_CAP_BYTES, 2 * 1024 * 1024);
         assert_eq!(ARCHIVE_HARD_CAP_BYTES, 4 * 1024 * 1024);
         assert_eq!(ADR_HARD_CAP_BYTES * 2, ARCHIVE_HARD_CAP_BYTES);
