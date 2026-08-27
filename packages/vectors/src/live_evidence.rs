@@ -2672,6 +2672,7 @@ mod tests {
                 "confidential-asset-commitment",
                 "empty-signature",
                 "hidden-private-u-output",
+                "key-path-escape",
                 "malformed-rangeproof",
                 "malformed-signature",
                 "missing-sponsor-authorization",
@@ -2687,7 +2688,20 @@ mod tests {
                 "wrong-private-blinding-balance",
             ]),
         );
-        assert_eq!(plan.census().native_refusal_observed(), 16);
+        assert_eq!(plan.census().native_refusal_observed(), 17);
+
+        // THE KEY-PATH ROW COMES FROM A THIRD LANE and is held to the
+        // same rule as the rest. Its control is the probe's own, accepted
+        // on the probe's own chain, so it cites neither of the two
+        // controls this test already separates; and its pair is tighter
+        // than either of them, the attempt and the control being ONE
+        // candidate whose witnessless serializations were compared byte
+        // for byte rather than argued to be equal.
+        assert_ne!(
+            crate::live_keypath_probe::run_of_record_phase_b::CONTROL_ACCEPTED_TXID,
+            witness::CONTROL_ACCEPTED_TXID,
+            "the key-path negative cites the witness lane's control",
+        );
 
         // THE THIRD ROW COMES FROM A DIFFERENT LANE and is held to the
         // same rule. Its mutant was offered first and its control
@@ -2899,7 +2913,7 @@ mod tests {
         // And it did NOT land in either target bucket. The separate
         // bucket's whole claim, made checkable.
         assert_eq!(plan.census().native_run_observed(), 24);
-        assert_eq!(plan.census().native_refusal_observed(), 16);
+        assert_eq!(plan.census().native_refusal_observed(), 17);
     }
 
     #[test]
