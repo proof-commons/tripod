@@ -711,12 +711,217 @@ pub enum LiveProgramRefusal {
         /// What the fragment builder reported.
         cause: TapscriptError,
     },
+    /// A recipe named a component record that was not built.
+    RecipePatternMissing {
+        /// The missing component record.
+        pattern: LiveTransferPatternId,
+    },
+    /// A coordinator recipe selected no value-obligation fragment.
+    RecipeValueComponentMissing,
+    /// The component union did not carry FinalTruth's base requirements.
+    FinalTruthDependenciesMissing,
+    /// A concrete coordinator placement did not match its recipe.
+    CoordinatorPlacementInvalid {
+        /// What the placement validator reported.
+        cause: PlacementDefect,
+    },
 }
 
 impl From<TapscriptError> for LiveProgramRefusal {
     fn from(cause: TapscriptError) -> Self {
         Self::FragmentRefused { cause }
     }
+}
+
+/// One fragment and the component-pattern record that describes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LiveProgramComponent {
+    fragment: LiveFragmentId,
+    pattern: Option<LiveTransferPatternId>,
+}
+
+impl LiveProgramComponent {
+    const fn new(fragment: LiveFragmentId, pattern: Option<LiveTransferPatternId>) -> Self {
+        Self { fragment, pattern }
+    }
+}
+
+/// The single composition recipe for one emitted live program.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LiveProgramRecipe {
+    role: LiveProgramRole,
+    components: Vec<LiveProgramComponent>,
+}
+
+/// Whether one recipe carries a stated component-pattern record.
+fn recipe_selects_pattern(recipe: &LiveProgramRecipe, pattern: LiveTransferPatternId) -> bool {
+    recipe
+        .components
+        .iter()
+        .any(|component| component.pattern == Some(pattern))
+}
+
+/// The one value-obligation fragment a coordinator recipe selected.
+fn recipe_value_fragment(recipe: &LiveProgramRecipe) -> Result<LiveFragmentId, LiveProgramRefusal> {
+    recipe
+        .components
+        .iter()
+        .map(|component| component.fragment)
+        .find(|fragment| {
+            matches!(
+                fragment,
+                LiveFragmentId::ExplicitConservation
+                    | LiveFragmentId::PrivateDestinationForm
+                    | LiveFragmentId::CrossingDestinationForm
+            )
+        })
+        .ok_or(LiveProgramRefusal::RecipeValueComponentMissing)
+}
+
+/// Select every fragment one concrete live program walks, in byte order.
+fn live_program_recipe(
+    constructor: &StaticLiveReceiptConstructor,
+    role: LiveProgramRole,
+    shape: LiveTransferShape,
+) -> Result<LiveProgramRecipe, LiveProgramRefusal> {
+    use LiveFragmentId as Fragment;
+    use LiveTransferPatternId as Pattern;
+
+    if !constructor.shapes().admits(shape) {
+        return Err(LiveProgramRefusal::ShapeNotAdmitted { shape });
+    }
+
+    let components = match role {
+        LiveProgramRole::Coordinator => {
+            let value = match constructor.composition() {
+                LiveTransferComposition::HomogeneousExplicit => LiveProgramComponent::new(
+                    Fragment::ExplicitConservation,
+                    Some(Pattern::LiveExplicitConservationV1),
+                ),
+                LiveTransferComposition::HomogeneousPrivate
+                | LiveTransferComposition::EntryBlinding => LiveProgramComponent::new(
+                    Fragment::PrivateDestinationForm,
+                    Some(Pattern::LivePrivateDestinationFormV1),
+                ),
+                LiveTransferComposition::ExitUnblinding => LiveProgramComponent::new(
+                    Fragment::CrossingDestinationForm,
+                    Some(Pattern::LiveCrossingDestinationFormV1),
+                ),
+            };
+            vec![
+                LiveProgramComponent::new(
+                    Fragment::CoordinatorRole,
+                    Some(Pattern::LiveCoordinatorRoleV1),
+                ),
+                LiveProgramComponent::new(Fragment::Cardinality, Some(Pattern::LiveShapeV1)),
+                LiveProgramComponent::new(
+                    Fragment::LocalRecognition,
+                    Some(Pattern::LiveInputRecognitionV1),
+                ),
+                LiveProgramComponent::new(
+                    Fragment::OwnerAuthorization,
+                    Some(Pattern::LiveOwnerAuthorizationV1),
+                ),
+                LiveProgramComponent::new(
+                    Fragment::DestinationClosure,
+                    Some(Pattern::LiveDestinationClosureV1),
+                ),
+                LiveProgramComponent::new(
+                    Fragment::SponsorIsolation,
+                    emits_isolation_fragment(shape).then_some(Pattern::LiveSponsorIsolationV1),
+                ),
+                LiveProgramComponent::new(
+                    Fragment::IssuanceAbsence,
+                    Some(Pattern::LiveIssuanceAbsenceV1),
+                ),
+                value,
+                LiveProgramComponent::new(Fragment::FinalTruth, None),
+            ]
+        }
+        LiveProgramRole::Member => {
+            if !has_member_position(shape) {
+                return Err(LiveProgramRefusal::ShapeHasNoMemberPosition { shape });
+            }
+            vec![
+                LiveProgramComponent::new(Fragment::MemberRole, Some(Pattern::LiveMemberRoleV1)),
+                LiveProgramComponent::new(
+                    Fragment::LocalRecognition,
+                    Some(Pattern::LiveInputRecognitionV1),
+                ),
+                LiveProgramComponent::new(
+                    Fragment::OwnerAuthorization,
+                    Some(Pattern::LiveOwnerAuthorizationV1),
+                ),
+                LiveProgramComponent::new(Fragment::FinalTruth, None),
+            ]
+        }
+    };
+
+    Ok(LiveProgramRecipe { role, components })
+}
+
+/// Build one fragment selected by a live-program recipe.
+fn build_live_fragment(
+    target: &ReviewedElementsTapscriptDefinition,
+    symbols: &LiveTransferSymbols,
+    constructor: &StaticLiveReceiptConstructor,
+    shape: LiveTransferShape,
+    fragment: LiveFragmentId,
+) -> Result<TapscriptProgram, LiveProgramRefusal> {
+    Ok(match fragment {
+        LiveFragmentId::CoordinatorRole => coordinator_role_fragment(target)?,
+        LiveFragmentId::MemberRole => live_member_role_fragment(target, shape.receipt_inputs())?,
+        LiveFragmentId::Cardinality => live_cardinality_fragment(target, shape)?,
+        LiveFragmentId::LocalRecognition => {
+            local_recognition_fragment(target, symbols, constructor.representation())?
+        }
+        LiveFragmentId::OwnerAuthorization => {
+            owner_authorization_fragment(target, constructor.owner())?
+        }
+        LiveFragmentId::DestinationClosure => destination_closure_fragment(target, symbols, shape)?,
+        LiveFragmentId::ExplicitConservation => explicit_conservation_fragment(target, shape)?,
+        LiveFragmentId::PrivateDestinationForm => private_destination_form_fragment(target, shape)?,
+        LiveFragmentId::CrossingDestinationForm => {
+            crossing_destination_form_fragment(target, shape)?
+        }
+        LiveFragmentId::SponsorIsolation => {
+            live_sponsor_isolation_fragment(target, symbols, shape)?
+        }
+        LiveFragmentId::IssuanceAbsence => issuance_absence_fragment(target, shape)?,
+        LiveFragmentId::FinalTruth => final_truth_fragment(target)?,
+    })
+}
+
+/// Compose bytes and their fragment trace by walking one recipe once.
+fn compose_live_program(
+    target: &ReviewedElementsTapscriptDefinition,
+    symbols: &LiveTransferSymbols,
+    constructor: &StaticLiveReceiptConstructor,
+    shape: LiveTransferShape,
+    recipe: &LiveProgramRecipe,
+) -> Result<(TapscriptProgram, Vec<LiveFragmentId>), LiveProgramRefusal> {
+    let expected_anchor = match recipe.role {
+        LiveProgramRole::Coordinator => LiveFragmentId::CoordinatorRole,
+        LiveProgramRole::Member => LiveFragmentId::MemberRole,
+    };
+    debug_assert_eq!(
+        recipe
+            .components
+            .first()
+            .map(|component| component.fragment),
+        Some(expected_anchor),
+    );
+    let mut instructions = Vec::new();
+    let mut trace = Vec::with_capacity(recipe.components.len());
+
+    for component in &recipe.components {
+        let fragment =
+            build_live_fragment(target, symbols, constructor, shape, component.fragment)?;
+        instructions.extend_from_slice(fragment.instructions());
+        trace.push(component.fragment);
+    }
+
+    Ok((TapscriptProgram::new(instructions)?, trace))
 }
 
 /// The whole coordinator program for one admitted shape (§10.3).
@@ -730,7 +935,7 @@ impl From<TapscriptError> for LiveProgramRefusal {
 /// §10.7 and §10.8, which every representation owes; then the selected
 /// representation's own value obligation; then the canonical true item.
 ///
-/// # The one slot the two representations fill differently
+/// # The one slot the four compositions fill differently
 ///
 /// The destination closure, the sponsor isolation and the issuance
 /// absence read assets, programs and issuance fields, and none of those
@@ -739,12 +944,17 @@ impl From<TapscriptError> for LiveProgramRefusal {
 /// - the explicit coordinator carries §10.5's conservation, which sums
 ///   both sides and requires them equal, and which establishes each
 ///   destination's explicit form on the way to reading it;
-/// - the private coordinator carries §6.3's destination form check, which
+/// - private and entry-blinding coordinators carry §6.3's confidential
+///   destination form check, which
 ///   establishes the same form fact for the confidential representation
-///   and stops there. §10.6 admits no amount inspection, so the equation
-///   over those commitments is the target's own rule
-///   ([`ExternalEvidenceRole::ConfidentialValueConservation`]) and no
-///   fragment here claims it.
+///   and stops there;
+/// - the exit-unblinding coordinator carries §6.5's positional crossing
+///   form check.
+///
+/// §10.6 admits no private amount inspection, so the equation over those
+/// commitments is the target's own rule
+/// ([`ExternalEvidenceRole::ConfidentialValueConservation`]) and no
+/// fragment here claims it.
 ///
 /// Neither coordinator carries both, and neither carries neither: a
 /// coordinator with no value obligation at all would be reading value
@@ -762,57 +972,8 @@ pub fn live_coordinator_program(
     constructor: &StaticLiveReceiptConstructor,
     shape: LiveTransferShape,
 ) -> Result<TapscriptProgram, LiveProgramRefusal> {
-    if !constructor.shapes().admits(shape) {
-        return Err(LiveProgramRefusal::ShapeNotAdmitted { shape });
-    }
-
-    let mut instructions = coordinator_role_fragment(target)?.instructions().to_vec();
-    instructions.extend_from_slice(live_cardinality_fragment(target, shape)?.instructions());
-    instructions.extend_from_slice(local_pair(target, symbols, constructor)?.instructions());
-    instructions
-        .extend_from_slice(destination_closure_fragment(target, symbols, shape)?.instructions());
-    instructions
-        .extend_from_slice(live_sponsor_isolation_fragment(target, symbols, shape)?.instructions());
-    instructions.extend_from_slice(issuance_absence_fragment(target, shape)?.instructions());
-    // Exhaustive rather than an `if`: a composition added to §6.5 stops
-    // this compiling until its value obligation is decided, which is the
-    // only mechanism that keeps a coordinator from being emitted with
-    // the slot silently empty.
-    //
-    // Dispatched on the COMPOSITION and not on the consumed plan, and
-    // that is the whole of what crossing changes here. The obligation
-    // this slot carries has always been about the side the transfer
-    // CREATES -- the consumed side's form is `local_pair`'s, at the
-    // input this leaf is running under -- and while both sides were one
-    // plan the two questions had one answer.
-    match constructor.composition() {
-        LiveTransferComposition::HomogeneousExplicit => {
-            instructions
-                .extend_from_slice(explicit_conservation_fragment(target, shape)?.instructions());
-        }
-        // Both compositions whose created side is wholly confidential
-        // owe the same obligation, and neither may owe more. A
-        // conservation fragment reads created amounts, and under either
-        // of these every created amount is a commitment.
-        LiveTransferComposition::HomogeneousPrivate | LiveTransferComposition::EntryBlinding => {
-            instructions.extend_from_slice(
-                private_destination_form_fragment(target, shape)?.instructions(),
-            );
-        }
-        // The created side is explicit at every position but the
-        // declared absorber, so the obligation is positional. It is
-        // still a FORM obligation and not a conservation one: the
-        // consumed amounts are commitments, so no fragment may read
-        // them and no equality may be claimed over them.
-        LiveTransferComposition::ExitUnblinding => {
-            instructions.extend_from_slice(
-                crossing_destination_form_fragment(target, shape)?.instructions(),
-            );
-        }
-    }
-    instructions.extend_from_slice(final_truth_fragment(target)?.instructions());
-
-    Ok(TapscriptProgram::new(instructions)?)
+    let recipe = live_program_recipe(constructor, LiveProgramRole::Coordinator, shape)?;
+    compose_live_program(target, symbols, constructor, shape, &recipe).map(|(program, _)| program)
 }
 
 /// The whole member program for one receipt-input count (§10.3).
@@ -843,35 +1004,21 @@ pub fn live_member_program(
             shape: smallest_shape(constructor),
         });
     };
-    if receipt_inputs <= 1 {
-        return Err(LiveProgramRefusal::ShapeHasNoMemberPosition { shape });
-    }
-
-    let mut instructions = live_member_role_fragment(target, receipt_inputs)?
-        .instructions()
-        .to_vec();
-    instructions.extend_from_slice(local_pair(target, symbols, constructor)?.instructions());
-    instructions.extend_from_slice(final_truth_fragment(target)?.instructions());
-
-    Ok(TapscriptProgram::new(instructions)?)
+    let recipe = live_program_recipe(constructor, LiveProgramRole::Member, shape)?;
+    compose_live_program(target, symbols, constructor, shape, &recipe).map(|(program, _)| program)
 }
 
-/// The local recognition and authorization pair every receipt input
-/// runs (§10.3).
-fn local_pair(
+/// The fragment trace recorded by the same walk that composes a program.
+#[cfg(test)]
+pub(crate) fn live_program_fragment_trace(
     target: &ReviewedElementsTapscriptDefinition,
     symbols: &LiveTransferSymbols,
     constructor: &StaticLiveReceiptConstructor,
-) -> Result<TapscriptProgram, TapscriptError> {
-    let mut instructions =
-        local_recognition_fragment(target, symbols, constructor.representation())?
-            .instructions()
-            .to_vec();
-    instructions.extend_from_slice(
-        owner_authorization_fragment(target, constructor.owner())?.instructions(),
-    );
-
-    TapscriptProgram::new(instructions)
+    role: LiveProgramRole,
+    shape: LiveTransferShape,
+) -> Result<Vec<LiveFragmentId>, LiveProgramRefusal> {
+    let recipe = live_program_recipe(constructor, role, shape)?;
+    compose_live_program(target, symbols, constructor, shape, &recipe).map(|(_, trace)| trace)
 }
 
 /// The narrowest shape a constructor admits.
@@ -930,18 +1077,25 @@ census_enum! {
         ExplicitConservation,
         /// The private destination value form of §6.3 and §10.6.
         ///
-        /// The private coordinator's, and only its own. The explicit plan
-        /// settles the same fact inside
+        /// The homogeneous-private and entry-blinding coordinators', and
+        /// only theirs. The explicit composition settles the same fact inside
         /// [`LiveFragmentId::ExplicitConservation`], which establishes a
         /// destination's explicit form before narrowing its payload — so
-        /// a coordinator carrying both would be testing one field twice,
-        /// and one carrying neither would be reading a value field it had
-        /// never established was a value field.
+        /// one of those coordinators carrying both would be testing one
+        /// field twice, and one carrying neither would be reading a value
+        /// field it had never established was a value field.
         ///
         /// Not a conservation fragment. It compares forms and drops every
         /// payload, and the value equation stays
         /// [`ExternalEvidenceRole::ConfidentialValueConservation`]'s.
         PrivateDestinationForm,
+        /// The positional destination value form of an exit crossing.
+        ///
+        /// Every created value is explicit save the declared absorber,
+        /// which remains confidential. Like the homogeneous private form,
+        /// this establishes form and not conservation; the equation across
+        /// the private consumed side remains external target evidence.
+        CrossingDestinationForm,
         /// The sponsor isolation of §10.7.
         SponsorIsolation,
         /// The issuance absence of §10.8.
@@ -1132,28 +1286,21 @@ impl GlobalCheckPlacement {
 
 /// The coordinator's slot census (§10.3).
 ///
-/// Every one of §10.3's eleven checks, with what this candidate emits
-/// towards it, what owes the remainder, and what the target itself owes.
-/// Six are settled whole. Three are settled in part, and the remainder
-/// between them is [`OutstandingGlobalPattern`]'s single member, the
-/// exact program bytes of a destination's constructor, which no in-script
-/// comparison can reach. Two are settled as far as a program can settle
-/// them, with the private plan's value equation named as
-/// [`ExternalEvidenceRole::ConfidentialValueConservation`].
+/// Every one of §10.3's eleven checks for one concrete constructor and
+/// shape, with what that coordinator's recipe emits, what owes the
+/// remainder, and what the target itself owes. The value-related slots
+/// name exactly the selected explicit, private, or crossing fragment;
+/// alternative composition branches are absent and fail validation if
+/// inserted.
 ///
-/// # Which two, and why the conservation slot is not one verdict short
+/// The destination-constructor identity remains
+/// [`OutstandingGlobalPattern`]'s single member because no in-script
+/// comparison can reach those exact bytes. Confidential-value
+/// conservation is external only when the selected composition consumes
+/// or creates confidential values; homogeneous explicit carries no such
+/// external claim.
 ///
-/// [`CoordinatorGlobalCheck::RepresentationSpecificConservation`] is one:
-/// the explicit plan's half is emitted whole and the private plan's half
-/// is the closure around an equation the target decides.
-/// [`CoordinatorGlobalCheck::DestructionAbsent`] is the other, and it is
-/// there for the same reason rather than a new one — nothing is destroyed
-/// when the value that entered left and left through the family, and
-/// under the private plan the first half of that is the target's rule.
-/// Naming the external requirement on only the conservation slot would
-/// have left destruction claiming from bytes that do not reach it.
-///
-/// # Why three of the absences are Partial and one is not
+/// # Why three of the absences remain partial
 ///
 /// A root, a reserve, a projected event, or a burn record would have to
 /// occupy a position, and every position is held by exactly one family
@@ -1166,147 +1313,145 @@ impl GlobalCheckPlacement {
 /// pass the bytes this candidate emits. So the two families whose members
 /// could wear that shape are Partial, and issuance, which is a field
 /// rather than a position and is tested on every input, is not.
-#[must_use]
-pub fn coordinator_placements() -> BTreeMap<CoordinatorGlobalCheck, GlobalCheckPlacement> {
-    use CoordinatorGlobalCheck as Check;
+///
+/// # Errors
+///
+/// [`LiveProgramRefusal::ShapeNotAdmitted`] when `shape` is outside the
+/// constructor, or [`LiveProgramRefusal::CoordinatorPlacementInvalid`]
+/// if any claimed fragment is absent from the concrete recipe.
+pub fn coordinator_placements(
+    constructor: &StaticLiveReceiptConstructor,
+    shape: LiveTransferShape,
+) -> Result<BTreeMap<CoordinatorGlobalCheck, GlobalCheckPlacement>, LiveProgramRefusal> {
     use ExternalEvidenceRole as External;
+    use LiveFragmentId as Fragment;
+
+    let recipe = live_program_recipe(constructor, LiveProgramRole::Coordinator, shape)?;
+    let value_fragment = recipe_value_fragment(&recipe)?;
+    let emitted = recipe
+        .components
+        .iter()
+        .map(|component| component.fragment)
+        .collect::<BTreeSet<_>>();
+    let confidential_external = (value_fragment != Fragment::ExplicitConservation)
+        .then_some(BTreeSet::from([External::ConfidentialValueConservation]))
+        .unwrap_or_default();
+
+    let placements = CoordinatorGlobalCheck::ALL
+        .iter()
+        .map(|check| {
+            (
+                *check,
+                coordinator_placement(*check, value_fragment, &confidential_external),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    validate_coordinator_placements(&placements, &emitted)
+        .map_err(|cause| LiveProgramRefusal::CoordinatorPlacementInvalid { cause })?;
+    Ok(placements)
+}
+
+/// Build one concrete placement from the recipe-selected value branch.
+fn coordinator_placement(
+    check: CoordinatorGlobalCheck,
+    value_fragment: LiveFragmentId,
+    confidential_external: &BTreeSet<ExternalEvidenceRole>,
+) -> GlobalCheckPlacement {
+    use CoordinatorGlobalCheck as Check;
     use LiveFragmentId as Fragment;
     use OutstandingGlobalPattern as Pattern;
 
-    CoordinatorGlobalCheck::ALL
-        .iter()
-        .map(|check| {
-            let (emitted, outstanding, external): (&[Fragment], &[Pattern], &[External]) =
-                match check {
-                    // The target's own counts against the shape's. Nothing
-                    // else is needed and nothing else is owed.
-                    Check::ExactInputAndOutputCounts => (&[Fragment::Cardinality], &[], &[]),
-                    // The counts pin where each region ends, the two role
-                    // fragments account for every receipt position, §10.7
-                    // accounts for the sponsor suffix, and §10.4 accounts for
-                    // the destination range. No position is left over.
-                    Check::CompleteProtocolRanges => (
-                        &[
-                            Fragment::Cardinality,
-                            Fragment::CoordinatorRole,
-                            Fragment::MemberRole,
-                            Fragment::DestinationClosure,
-                            Fragment::SponsorIsolation,
-                        ],
-                        &[],
-                        &[],
-                    ),
-                    // Every destination is a taproot output carrying the
-                    // protocol asset, and every other output carries the
-                    // reserve asset. Which live-receipt constructor a
-                    // destination is under is the residual.
-                    Check::LiveClassOutputClosure => (
-                        &[
-                            Fragment::DestinationClosure,
-                            Fragment::SponsorIsolation,
-                            Fragment::Cardinality,
-                        ],
-                        &[Pattern::DestinationConstructorIdentity],
-                        &[],
-                    ),
-                    // The input side is the recognition fragment's exact
-                    // symbol comparison; the output side is the destination
-                    // closure's, and the reserve asset at every other output
-                    // position is what makes it a closure rather than a test.
-                    Check::ExplicitAssetClosure => (
-                        &[
-                            Fragment::LocalRecognition,
-                            Fragment::DestinationClosure,
-                            Fragment::SponsorIsolation,
-                            Fragment::Cardinality,
-                        ],
-                        &[],
-                        &[],
-                    ),
-                    // Both plans, each by its own route. The explicit plan
-                    // sums the two sides and requires them equal. The private
-                    // plan establishes the representation closure — every
-                    // receipt input and every destination in the confidential
-                    // form — and leaves the equation over those commitments
-                    // to the target's own confidential-transaction rule,
-                    // which is where §10.6 puts it and where no fragment of
-                    // this crate may claim to have put it instead.
-                    Check::RepresentationSpecificConservation => (
-                        &[
-                            Fragment::ExplicitConservation,
-                            Fragment::PrivateDestinationForm,
-                            Fragment::LocalRecognition,
-                            Fragment::Cardinality,
-                        ],
-                        &[],
-                        &[External::ConfidentialValueConservation],
-                    ),
-                    Check::SponsorIsolation => (
-                        &[Fragment::SponsorIsolation, Fragment::Cardinality],
-                        &[],
-                        &[],
-                    ),
-                    // A root or a projected event would need a position, and
-                    // every position is classified — conclusively outside the
-                    // destination range, and up to the constructor's identity
-                    // inside it.
-                    Check::RootsAbsent | Check::SpecializedEventsAbsent => (
-                        &[
-                            Fragment::Cardinality,
-                            Fragment::DestinationClosure,
-                            Fragment::SponsorIsolation,
-                        ],
-                        &[Pattern::DestinationConstructorIdentity],
-                        &[],
-                    ),
-                    Check::IssuanceAbsent => (&[Fragment::IssuanceAbsence], &[], &[]),
-                    // Nothing is destroyed when the value that entered left,
-                    // and left through the family. The second half is the
-                    // output closure's and the exact counts'. The first half
-                    // is the value equation, which the explicit plan emits
-                    // and the private plan leaves to the target — so the
-                    // external requirement is named here too, rather than the
-                    // slot claiming from bytes the private coordinator does
-                    // not carry.
-                    Check::DestructionAbsent => (
-                        &[
-                            Fragment::ExplicitConservation,
-                            Fragment::PrivateDestinationForm,
-                            Fragment::DestinationClosure,
-                            Fragment::SponsorIsolation,
-                            Fragment::Cardinality,
-                        ],
-                        &[],
-                        &[External::ConfidentialValueConservation],
-                    ),
-                    // Input 0 is the coordinator, members are the nonzero
-                    // receipt positions, the destinations are the output
-                    // prefix, and the sponsor roles follow in the order §10.7
-                    // tests them at. The counts fix where each region ends.
-                    Check::ExactRoleOrder => (
-                        &[
-                            Fragment::CoordinatorRole,
-                            Fragment::MemberRole,
-                            Fragment::Cardinality,
-                            Fragment::DestinationClosure,
-                            Fragment::SponsorIsolation,
-                        ],
-                        &[],
-                        &[],
-                    ),
-                };
+    let (emitted, outstanding, external) = match check {
+        Check::ExactInputAndOutputCounts => (
+            BTreeSet::from([Fragment::Cardinality]),
+            BTreeSet::new(),
+            BTreeSet::new(),
+        ),
+        Check::CompleteProtocolRanges => (
+            BTreeSet::from([
+                Fragment::Cardinality,
+                Fragment::CoordinatorRole,
+                Fragment::DestinationClosure,
+                Fragment::SponsorIsolation,
+            ]),
+            BTreeSet::new(),
+            BTreeSet::new(),
+        ),
+        Check::LiveClassOutputClosure => (
+            BTreeSet::from([
+                Fragment::DestinationClosure,
+                Fragment::SponsorIsolation,
+                Fragment::Cardinality,
+            ]),
+            BTreeSet::from([Pattern::DestinationConstructorIdentity]),
+            BTreeSet::new(),
+        ),
+        Check::ExplicitAssetClosure => (
+            BTreeSet::from([
+                Fragment::LocalRecognition,
+                Fragment::DestinationClosure,
+                Fragment::SponsorIsolation,
+                Fragment::Cardinality,
+            ]),
+            BTreeSet::new(),
+            BTreeSet::new(),
+        ),
+        Check::RepresentationSpecificConservation => (
+            BTreeSet::from([
+                value_fragment,
+                Fragment::LocalRecognition,
+                Fragment::Cardinality,
+            ]),
+            BTreeSet::new(),
+            confidential_external.clone(),
+        ),
+        Check::SponsorIsolation => (
+            BTreeSet::from([Fragment::SponsorIsolation, Fragment::Cardinality]),
+            BTreeSet::new(),
+            BTreeSet::new(),
+        ),
+        Check::RootsAbsent | Check::SpecializedEventsAbsent => (
+            BTreeSet::from([
+                Fragment::Cardinality,
+                Fragment::DestinationClosure,
+                Fragment::SponsorIsolation,
+            ]),
+            BTreeSet::from([Pattern::DestinationConstructorIdentity]),
+            BTreeSet::new(),
+        ),
+        Check::IssuanceAbsent => (
+            BTreeSet::from([Fragment::IssuanceAbsence]),
+            BTreeSet::new(),
+            BTreeSet::new(),
+        ),
+        Check::DestructionAbsent => (
+            BTreeSet::from([
+                value_fragment,
+                Fragment::DestinationClosure,
+                Fragment::SponsorIsolation,
+                Fragment::Cardinality,
+            ]),
+            BTreeSet::new(),
+            confidential_external.clone(),
+        ),
+        Check::ExactRoleOrder => (
+            BTreeSet::from([
+                Fragment::CoordinatorRole,
+                Fragment::Cardinality,
+                Fragment::DestinationClosure,
+                Fragment::SponsorIsolation,
+            ]),
+            BTreeSet::new(),
+            BTreeSet::new(),
+        ),
+    };
 
-            (
-                *check,
-                GlobalCheckPlacement {
-                    check: *check,
-                    emitted: emitted.iter().copied().collect(),
-                    outstanding: outstanding.iter().copied().collect(),
-                    external: external.iter().copied().collect(),
-                },
-            )
-        })
-        .collect()
+    GlobalCheckPlacement {
+        check,
+        emitted,
+        outstanding,
+        external,
+    }
 }
 
 /// Why a coordinator slot census does not stand up.
@@ -1424,68 +1569,27 @@ pub fn validate_coordinator_placements(
     Ok(())
 }
 
-/// The fragments one program role carries, for one representation.
+/// The fragments one concrete program carries.
 ///
-/// Derived from the role rather than from the instruction list, because
-/// the fragments are concatenated and their boundaries do not survive
-/// the concatenation. It is the emitter's own account of what it built,
-/// and [`validate_coordinator_placements`] is what keeps a slot from
-/// claiming a fragment no role carries.
+/// An exact projection of the recipe the emitter walks. Fragment
+/// boundaries do not survive concatenation, so deriving the census from
+/// that recipe is what keeps the metadata and the instruction stream on
+/// one dispatch.
 ///
-/// The representation is a parameter and not a constant because one slot
-/// depends on it: §10.5's conservation reads amounts and §10.6 admits
-/// none, so each coordinator carries its own representation's value
-/// obligation and never the other's.
-#[must_use]
+/// # Errors
+///
+/// The constructor must admit `shape`, and a member role requires a
+/// nonzero receipt position.
 pub fn emitted_fragments(
+    constructor: &StaticLiveReceiptConstructor,
     role: LiveProgramRole,
-    representation: LiveTransferRepresentationPlan,
-) -> BTreeSet<LiveFragmentId> {
-    let anchor = match role {
-        LiveProgramRole::Coordinator => LiveFragmentId::CoordinatorRole,
-        LiveProgramRole::Member => LiveFragmentId::MemberRole,
-    };
-    let mut fragments = BTreeSet::from([
-        anchor,
-        LiveFragmentId::LocalRecognition,
-        LiveFragmentId::OwnerAuthorization,
-        LiveFragmentId::FinalTruth,
-    ]);
-    if role == LiveProgramRole::Coordinator {
-        fragments.extend([
-            LiveFragmentId::Cardinality,
-            LiveFragmentId::DestinationClosure,
-            LiveFragmentId::SponsorIsolation,
-            LiveFragmentId::IssuanceAbsence,
-            match representation {
-                LiveTransferRepresentationPlan::Explicit => LiveFragmentId::ExplicitConservation,
-                LiveTransferRepresentationPlan::PrivateCommitted => {
-                    LiveFragmentId::PrivateDestinationForm
-                }
-            },
-        ]);
-    }
-    fragments
-}
-
-/// Every fragment some live-transfer program carries.
-///
-/// The union over both roles and both representations, which is what a
-/// slot census is validated against: a check answered by the member role
-/// is answered even though the coordinator does not carry that fragment,
-/// and the same holds across the two representations.
-#[must_use]
-pub fn every_emitted_fragment() -> BTreeSet<LiveFragmentId> {
-    let mut fragments = BTreeSet::new();
-    for role in [LiveProgramRole::Coordinator, LiveProgramRole::Member] {
-        for representation in [
-            LiveTransferRepresentationPlan::Explicit,
-            LiveTransferRepresentationPlan::PrivateCommitted,
-        ] {
-            fragments.extend(emitted_fragments(role, representation));
-        }
-    }
-    fragments
+    shape: LiveTransferShape,
+) -> Result<BTreeSet<LiveFragmentId>, LiveProgramRefusal> {
+    Ok(live_program_recipe(constructor, role, shape)?
+        .components
+        .into_iter()
+        .map(|component| component.fragment)
+        .collect())
 }
 
 // --- The two levels of §1.6 -------------------------------------------
@@ -2325,6 +2429,85 @@ pub fn build_live_pattern(
     })
 }
 
+/// Exact dependency unions for one composed program.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LivePatternDependencies {
+    sources: BTreeSet<RequiredSourceKind>,
+    evidence: BTreeSet<TargetEvidenceRequirementId>,
+}
+
+/// Every authored component-record projection of one recipe.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LiveComposedMetadata {
+    dependencies: LivePatternDependencies,
+    disclosure: BTreeSet<LiveDisclosure>,
+    residuals: BTreeSet<RecognitionResidual>,
+}
+
+/// Union exactly the dependency records selected by one recipe.
+fn composed_dependencies(
+    recipe: &LiveProgramRecipe,
+    patterns: &BTreeMap<LiveTransferPatternId, LiveTransferPattern>,
+) -> Result<LivePatternDependencies, LiveProgramRefusal> {
+    let mut sources = BTreeSet::new();
+    let mut evidence = BTreeSet::new();
+
+    for component in &recipe.components {
+        let Some(id) = component.pattern else {
+            continue;
+        };
+        let pattern = patterns
+            .get(&id)
+            .ok_or(LiveProgramRefusal::RecipePatternMissing { pattern: id })?;
+        sources.extend(pattern.sources().iter().copied());
+        evidence.extend(pattern.evidence().iter().copied());
+    }
+
+    let final_truth_is_covered = [
+        TargetEvidenceRequirementId::OpcodeSemantics,
+        TargetEvidenceRequirementId::EncodingSemantics,
+    ]
+    .into_iter()
+    .all(|requirement| evidence.contains(&requirement));
+    if recipe
+        .components
+        .iter()
+        .any(|component| component.fragment == LiveFragmentId::FinalTruth)
+        && !final_truth_is_covered
+    {
+        return Err(LiveProgramRefusal::FinalTruthDependenciesMissing);
+    }
+
+    Ok(LivePatternDependencies { sources, evidence })
+}
+
+/// Project disclosure and residuals from the same component records.
+fn composed_metadata(
+    recipe: &LiveProgramRecipe,
+    patterns: &BTreeMap<LiveTransferPatternId, LiveTransferPattern>,
+) -> Result<LiveComposedMetadata, LiveProgramRefusal> {
+    let dependencies = composed_dependencies(recipe, patterns)?;
+    let mut disclosure = BTreeSet::new();
+    let mut residuals = BTreeSet::new();
+
+    for component in &recipe.components {
+        let Some(id) = component.pattern else {
+            continue;
+        };
+        let pattern = patterns
+            .get(&id)
+            .ok_or(LiveProgramRefusal::RecipePatternMissing { pattern: id })?;
+        disclosure.extend(pattern.disclosure().iter().copied());
+        residuals.extend(pattern.residuals().iter().copied());
+    }
+
+    Ok(LiveComposedMetadata {
+        dependencies,
+        disclosure,
+        residuals,
+    })
+}
+
 /// Every live-transfer pattern, for one constructor and one shape.
 ///
 /// Exactly [`patterns_for`]'s identities, each built by walking its own
@@ -2362,6 +2545,16 @@ pub fn live_transfer_patterns(
     if !constructor.shapes().admits(shape) {
         return Err(LiveProgramRefusal::ShapeNotAdmitted { shape });
     }
+    let coordinator_recipe = live_program_recipe(constructor, LiveProgramRole::Coordinator, shape)?;
+    let member_recipe = if has_member_position(shape) {
+        Some(live_program_recipe(
+            constructor,
+            LiveProgramRole::Member,
+            shape,
+        )?)
+    } else {
+        None
+    };
 
     let empty = AbstractStackState::from_main(Vec::new());
     let witnessed = live_program_precondition(target);
@@ -2516,8 +2709,8 @@ pub fn live_transfer_patterns(
         )?,
     );
 
-    match constructor.composition() {
-        LiveTransferComposition::HomogeneousExplicit => {
+    match recipe_value_fragment(&coordinator_recipe)? {
+        LiveFragmentId::ExplicitConservation => {
             let conservation = explicit_conservation_fragment(target, shape)?;
             patterns.insert(
                 Id::LiveExplicitConservationV1,
@@ -2549,7 +2742,7 @@ pub fn live_transfer_patterns(
                 )?,
             );
         }
-        LiveTransferComposition::HomogeneousPrivate | LiveTransferComposition::EntryBlinding => {
+        LiveFragmentId::PrivateDestinationForm => {
             let form = private_destination_form_fragment(target, shape)?;
             patterns.insert(
                 Id::LivePrivateDestinationFormV1,
@@ -2589,7 +2782,7 @@ pub fn live_transfer_patterns(
                 )?,
             );
         }
-        LiveTransferComposition::ExitUnblinding => {
+        LiveFragmentId::CrossingDestinationForm => {
             let form = crossing_destination_form_fragment(target, shape)?;
             patterns.insert(
                 Id::LiveCrossingDestinationFormV1,
@@ -2631,9 +2824,10 @@ pub fn live_transfer_patterns(
                 )?,
             );
         }
+        _ => return Err(LiveProgramRefusal::RecipeValueComponentMissing),
     }
 
-    if emits_isolation_fragment(shape) {
+    if recipe_selects_pattern(&coordinator_recipe, Id::LiveSponsorIsolationV1) {
         let isolation = live_sponsor_isolation_fragment(target, symbols, shape)?;
         // Every clause this fragment can emit reads the reserve asset,
         // and the fee clause additionally reads the destination count to
@@ -2701,47 +2895,25 @@ pub fn live_transfer_patterns(
         )?,
     );
 
-    // The composed programs carry the §10.9 claim, which is about a
-    // whole program rather than about a fragment of one: exactly one
-    // canonical true item, no surviving non-aborting failure, and no
-    // signature form that verifies nothing.
-    let mut coordinator_disclosure = BTreeSet::from([
-        Disclose::ProtocolAsset,
-        Disclose::OwnerPublicKey,
-        Disclose::ValueRepresentationForm,
-        Disclose::TransactionCounts,
-        Disclose::ReceiptOutputCount,
-        Disclose::DestinationProgramVersion,
-    ]);
-    if emits_isolation_fragment(shape) {
-        coordinator_disclosure.extend([Disclose::ReserveAsset, Disclose::TargetFeeRole]);
-    }
-    if has_sponsor_region(shape) {
-        coordinator_disclosure.insert(Disclose::SponsorChangeRole);
-    }
-    if constructor.representation() == LiveTransferRepresentationPlan::Explicit {
-        coordinator_disclosure
-            .extend([Disclose::ReceiptInputCount, Disclose::SemanticAmountDomain]);
-    }
+    // The composed programs carry §10.9's whole-program claim. Every
+    // adjacent metadata set is projected from the same recipe that
+    // composes the bytes; no shared composed literal survives.
+    let coordinator_program =
+        compose_live_program(target, symbols, constructor, shape, &coordinator_recipe)?.0;
+    let coordinator_metadata = composed_metadata(&coordinator_recipe, &patterns)?;
     let mut composed = vec![(
         Id::LiveCoordinatorProgramV1,
-        live_coordinator_program(target, symbols, constructor, shape)?,
-        coordinator_disclosure,
+        coordinator_program,
+        coordinator_metadata,
     )];
-    if has_member_position(shape) {
-        composed.push((
-            Id::LiveMemberProgramV1,
-            live_member_program(target, symbols, constructor, shape.receipt_inputs())?,
-            BTreeSet::from([
-                Disclose::ProtocolAsset,
-                Disclose::OwnerPublicKey,
-                Disclose::ValueRepresentationForm,
-                Disclose::ReceiptInputCount,
-            ]),
-        ));
+    if let Some(member_recipe) = member_recipe {
+        let member_program =
+            compose_live_program(target, symbols, constructor, shape, &member_recipe)?.0;
+        let member_metadata = composed_metadata(&member_recipe, &patterns)?;
+        composed.push((Id::LiveMemberProgramV1, member_program, member_metadata));
     }
 
-    for (id, program, disclosure) in composed {
+    for (id, program, metadata) in composed {
         patterns.insert(
             id,
             build_live_pattern(
@@ -2752,28 +2924,10 @@ pub fn live_transfer_patterns(
                 witnessed.clone(),
                 Witness::OwnerSignature,
                 Build::CommittedOwnerRequired,
-                disclosure,
-                BTreeSet::from([
-                    Source::AuthenticatedInputObject,
-                    Source::AuthenticatedFamilyCensus,
-                    Source::InputOwnerWitness,
-                ]),
-                BTreeSet::from([
-                    Residual::FieldFormSettledOnlyOnTheTarget,
-                    Residual::LinkedDestinationConstructorIdentity,
-                    Residual::OwnerKeyCurvePointMembership,
-                ]),
-                introspection
-                    .into_iter()
-                    .chain([
-                        Evidence::InputIntrospectionSemantics,
-                        Evidence::TransactionIntrospectionSemantics,
-                        Evidence::ComparisonSemantics,
-                        Evidence::ConversionSemantics,
-                        Evidence::SignatureSemantics,
-                        Evidence::SighashSemantics,
-                    ])
-                    .collect(),
+                metadata.disclosure,
+                metadata.dependencies.sources,
+                metadata.residuals,
+                metadata.dependencies.evidence,
             )?,
         );
     }

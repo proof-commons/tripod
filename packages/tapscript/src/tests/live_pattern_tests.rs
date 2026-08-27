@@ -9,9 +9,9 @@
 //! wrong width could not exist. The §1.8 negatives are not read off a
 //! table: every mutation the census names is applied to the emitted
 //! fragment, the mutant is walked, and the outcome the walk reports is
-//! required to be the one the census claims. And the §10.3 slot census
-//! is validated against the fragments a real coordinator and a real
-//! member program are built from, rather than against a second list.
+//! required to be the one the census claims. And each §10.3 slot census
+//! is validated against the recipe of its one concrete coordinator,
+//! rather than against a vocabulary union.
 //!
 //! # The owner keys below are public test material
 //!
@@ -23,13 +23,15 @@
 //! package's business, and this module's subject is which forms the
 //! emitted bytes leave reachable.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU8;
 
 use compiler::live_transfer_plan::{LiveTransferComposition, LiveTransferRepresentationPlan};
+use compiler::operation_plan::RequiredSourceKind;
 use compiler::target::ExternalEvidenceRole;
 use target_elements::{
     EncodingClass, FailureCause, OpcodeId, PayloadWidth, ReviewedElementsTapscriptDefinition,
+    TargetEvidenceRequirementId,
 };
 
 use super::{live_transfer_plan, live_transfer_symbols, reviewed_target};
@@ -45,19 +47,22 @@ use crate::live_constructor::{
 };
 use crate::live_pattern::{
     CoordinatorGlobalCheck, FinalStackDefect, GlobalCheckPlacement, GlobalCheckStatus,
-    LiveFragmentId, LiveProgramRefusal, LiveTransferPatternId, LiveTransferSymbols,
-    LiveWitnessRole, NegativeDisposition, OutstandingGlobalPattern, OwnerAssignmentRejection,
-    OwnerKeyMutation, OwnerKeyMutationGate, OwnerKeyMutationOutcome, OwnerKeyOracle,
-    PlacementDefect, ReceiptOwnerAssignment, RecognitionCarrier, RecognitionResidual,
-    RecognizedFact, coordinator_placements, emitted_fragments, every_emitted_fragment,
+    LiveDisclosure, LiveFragmentId, LiveProgramRefusal, LiveTransferPattern, LiveTransferPatternId,
+    LiveTransferSymbols, LiveWitnessRole, NegativeDisposition, OutstandingGlobalPattern,
+    OwnerAssignmentRejection, OwnerKeyMutation, OwnerKeyMutationGate, OwnerKeyMutationOutcome,
+    OwnerKeyOracle, PlacementDefect, ReceiptOwnerAssignment, RecognitionCarrier,
+    RecognitionResidual, RecognizedFact, coordinator_placements, emitted_fragments,
     final_stack_defects, has_member_position, live_coordinator_program, live_member_program,
-    live_owner_profile_disposition, live_program_precondition, live_transfer_patterns,
-    local_recognition_fragment, mutated_owner_authorization_fragment, mutation_gate,
-    negative_disposition, owner_authorization_fragment, owner_authorization_precondition,
-    owner_key_mutation_outcome, owner_key_obligation, patterns_for, patterns_for_composition,
-    recognition_establishments, validate_coordinator_placements,
+    live_owner_profile_disposition, live_program_fragment_trace, live_program_precondition,
+    live_transfer_patterns, local_recognition_fragment, mutated_owner_authorization_fragment,
+    mutation_gate, negative_disposition, owner_authorization_fragment,
+    owner_authorization_precondition, owner_key_mutation_outcome, owner_key_obligation,
+    patterns_for, patterns_for_composition, recognition_establishments,
+    validate_coordinator_placements,
 };
-use crate::live_plan::{has_sponsor_region, live_sponsor_isolation_fragment};
+use crate::live_plan::{
+    emits_isolation_fragment, has_sponsor_region, live_sponsor_isolation_fragment,
+};
 use crate::live_private::prefix_mask;
 use crate::live_shape::{LiveTransferShape, demonstration_live_shape_set};
 use crate::pattern::final_truth_fragment;
@@ -193,6 +198,32 @@ fn composing(composition: LiveTransferComposition) -> StaticLiveReceiptConstruct
         static_transfer_leaf_set(composition.consumed(), &shapes),
     )
     .expect("the reference composition derives")
+}
+
+/// Union the four authored metadata sets for selected component records.
+fn component_metadata(
+    patterns: &BTreeMap<LiveTransferPatternId, LiveTransferPattern>,
+    ids: &BTreeSet<LiveTransferPatternId>,
+) -> (
+    BTreeSet<RequiredSourceKind>,
+    BTreeSet<TargetEvidenceRequirementId>,
+    BTreeSet<LiveDisclosure>,
+    BTreeSet<RecognitionResidual>,
+) {
+    let mut sources = BTreeSet::new();
+    let mut evidence = BTreeSet::new();
+    let mut disclosure = BTreeSet::new();
+    let mut residuals = BTreeSet::new();
+
+    for id in ids {
+        let pattern = &patterns[id];
+        sources.extend(pattern.sources().iter().copied());
+        evidence.extend(pattern.evidence().iter().copied());
+        disclosure.extend(pattern.disclosure().iter().copied());
+        residuals.extend(pattern.residuals().iter().copied());
+    }
+
+    (sources, evidence, disclosure, residuals)
 }
 
 /// Whether `whole` carries `part` as a contiguous run.
@@ -754,13 +785,23 @@ fn a_shape_the_constructor_does_not_admit_is_refused() {
 
 #[test]
 fn every_global_check_is_either_emitted_or_owed() {
-    validate_coordinator_placements(&coordinator_placements(), &every_emitted_fragment())
-        .expect("the slot census stands up");
+    for composition in LiveTransferComposition::ALL.iter().copied() {
+        let constructor = composing(composition);
+        let subject = shape(2);
+        let placements = coordinator_placements(&constructor, subject)
+            .expect("the concrete slot census stands up");
+        let emitted = emitted_fragments(&constructor, LiveProgramRole::Coordinator, subject)
+            .expect("the coordinator recipe projects");
+
+        validate_coordinator_placements(&placements, &emitted)
+            .expect("the concrete slot census validates against its recipe");
+    }
 }
 
 #[test]
 fn the_slot_census_still_reports_everything_this_candidate_does_not_build() {
-    let placements = coordinator_placements();
+    let subject = shape(2);
+    let placements = coordinator_placements(&explicit(), subject).expect("the census builds");
     let owed = placements
         .values()
         .flat_map(crate::live_pattern::GlobalCheckPlacement::outstanding)
@@ -790,7 +831,9 @@ fn the_private_value_equation_is_named_as_external_evidence_and_carried_by_no_fr
     // pattern ID may ever be minted — and it still emits the closure that
     // rule applies to, which is what keeps it from being a slot the
     // coordinator does not reach at all.
-    let placements = coordinator_placements();
+    let constructor = constructor(LiveTransferRepresentationPlan::PrivateCommitted);
+    let placements =
+        coordinator_placements(&constructor, shape(2)).expect("the private census builds");
     let slot = &placements[&CoordinatorGlobalCheck::RepresentationSpecificConservation];
 
     assert_eq!(
@@ -802,11 +845,54 @@ fn the_private_value_equation_is_named_as_external_evidence_and_carried_by_no_fr
         slot.status(),
         GlobalCheckStatus::EstablishedWithExternalEvidence,
     );
-    // Both representations' value obligations are emitted towards it, so
-    // the slot does not go quiet whichever plan is selected.
+    // Only this composition's value obligation is emitted towards it.
     let emitted = slot.emitted().collect::<BTreeSet<_>>();
-    assert!(emitted.contains(&LiveFragmentId::ExplicitConservation));
+    assert!(!emitted.contains(&LiveFragmentId::ExplicitConservation));
     assert!(emitted.contains(&LiveFragmentId::PrivateDestinationForm));
+}
+
+#[test]
+fn coordinator_value_placements_follow_each_concrete_composition() {
+    for composition in LiveTransferComposition::ALL.iter().copied() {
+        let constructor = composing(composition);
+        let placements = coordinator_placements(&constructor, shape(2))
+            .expect("the concrete coordinator census builds");
+        let expected_fragment = match composition {
+            LiveTransferComposition::HomogeneousExplicit => LiveFragmentId::ExplicitConservation,
+            LiveTransferComposition::HomogeneousPrivate
+            | LiveTransferComposition::EntryBlinding => LiveFragmentId::PrivateDestinationForm,
+            LiveTransferComposition::ExitUnblinding => LiveFragmentId::CrossingDestinationForm,
+        };
+        let expected_external = if composition == LiveTransferComposition::HomogeneousExplicit {
+            BTreeSet::new()
+        } else {
+            BTreeSet::from([ExternalEvidenceRole::ConfidentialValueConservation])
+        };
+
+        for check in [
+            CoordinatorGlobalCheck::RepresentationSpecificConservation,
+            CoordinatorGlobalCheck::DestructionAbsent,
+        ] {
+            let placement = &placements[&check];
+            let selected = placement
+                .emitted()
+                .filter(|fragment| {
+                    matches!(
+                        fragment,
+                        LiveFragmentId::ExplicitConservation
+                            | LiveFragmentId::PrivateDestinationForm
+                            | LiveFragmentId::CrossingDestinationForm
+                    )
+                })
+                .collect::<BTreeSet<_>>();
+
+            assert_eq!(selected, BTreeSet::from([expected_fragment]));
+            assert_eq!(
+                placement.external_evidence().collect::<BTreeSet<_>>(),
+                expected_external,
+            );
+        }
+    }
 }
 
 #[test]
@@ -815,7 +901,10 @@ fn a_check_the_target_is_asked_to_carry_whole_is_refused() {
     // consensus behaviour is a slot the coordinator does not close, and a
     // census recording one would be the local program claiming a target
     // rule because the target eventually accepts.
-    let mut placements = coordinator_placements();
+    let constructor = constructor(LiveTransferRepresentationPlan::PrivateCommitted);
+    let subject = shape(2);
+    let mut placements =
+        coordinator_placements(&constructor, subject).expect("the private census builds");
     placements.insert(
         CoordinatorGlobalCheck::RepresentationSpecificConservation,
         GlobalCheckPlacement::new(
@@ -827,7 +916,11 @@ fn a_check_the_target_is_asked_to_carry_whole_is_refused() {
     );
 
     assert_eq!(
-        validate_coordinator_placements(&placements, &every_emitted_fragment()),
+        validate_coordinator_placements(
+            &placements,
+            &emitted_fragments(&constructor, LiveProgramRole::Coordinator, subject)
+                .expect("the coordinator recipe projects"),
+        ),
         Err(PlacementDefect::ExternalEvidenceWithoutClosure {
             check: CoordinatorGlobalCheck::RepresentationSpecificConservation,
         }),
@@ -836,7 +929,9 @@ fn a_check_the_target_is_asked_to_carry_whole_is_refused() {
 
 #[test]
 fn every_check_not_settled_whole_names_what_owes_it_or_what_carries_it() {
-    let placements = coordinator_placements();
+    let constructor = constructor(LiveTransferRepresentationPlan::PrivateCommitted);
+    let placements =
+        coordinator_placements(&constructor, shape(2)).expect("the private census builds");
     let by_status = |wanted: GlobalCheckStatus| {
         placements
             .values()
@@ -882,32 +977,63 @@ fn every_check_not_settled_whole_names_what_owes_it_or_what_carries_it() {
 }
 
 #[test]
-fn a_slot_claiming_a_fragment_no_role_emits_is_refused() {
-    // The validator has teeth: a census may not claim credit for bytes
-    // nothing emits.
-    let defect = validate_coordinator_placements(
-        &coordinator_placements(),
-        &BTreeSet::from([LiveFragmentId::FinalTruth]),
-    )
-    .expect_err("a slot claims fragments this set does not hold");
+fn a_value_slot_claiming_an_alternative_composition_branch_is_refused() {
+    for composition in LiveTransferComposition::ALL.iter().copied() {
+        let constructor = composing(composition);
+        let subject = shape(2);
+        let mut placements =
+            coordinator_placements(&constructor, subject).expect("the concrete census builds");
+        let slot = &placements[&CoordinatorGlobalCheck::RepresentationSpecificConservation];
+        let mut claimed = slot.emitted().collect::<BTreeSet<_>>();
+        let outstanding = slot.outstanding().collect();
+        let external = slot.external_evidence().collect();
+        let alternative = match composition {
+            LiveTransferComposition::HomogeneousExplicit => LiveFragmentId::PrivateDestinationForm,
+            LiveTransferComposition::HomogeneousPrivate
+            | LiveTransferComposition::EntryBlinding => LiveFragmentId::ExplicitConservation,
+            LiveTransferComposition::ExitUnblinding => LiveFragmentId::PrivateDestinationForm,
+        };
+        claimed.insert(alternative);
+        placements.insert(
+            CoordinatorGlobalCheck::RepresentationSpecificConservation,
+            GlobalCheckPlacement::new(
+                CoordinatorGlobalCheck::RepresentationSpecificConservation,
+                claimed,
+                outstanding,
+                external,
+            ),
+        );
+        let emitted = emitted_fragments(&constructor, LiveProgramRole::Coordinator, subject)
+            .expect("the coordinator recipe projects");
 
-    assert!(matches!(defect, PlacementDefect::FragmentNotEmitted { .. }));
+        assert_eq!(
+            validate_coordinator_placements(&placements, &emitted),
+            Err(PlacementDefect::FragmentNotEmitted {
+                check: CoordinatorGlobalCheck::RepresentationSpecificConservation,
+                fragment: alternative,
+            }),
+        );
+    }
 }
 
 #[test]
 fn the_coordinator_role_carries_the_counts_and_the_member_role_does_not() {
-    let explicit_plan = LiveTransferRepresentationPlan::Explicit;
+    let constructor = explicit();
+    let subject = shape(2);
     assert!(
-        emitted_fragments(LiveProgramRole::Coordinator, explicit_plan)
+        emitted_fragments(&constructor, LiveProgramRole::Coordinator, subject)
+            .expect("the coordinator recipe projects")
             .contains(&LiveFragmentId::Cardinality),
     );
     assert!(
-        !emitted_fragments(LiveProgramRole::Member, explicit_plan)
+        !emitted_fragments(&constructor, LiveProgramRole::Member, subject)
+            .expect("the member recipe projects")
             .contains(&LiveFragmentId::Cardinality)
     );
     // Both perform the local pair, which is §10.3's own sentence.
     for role in [LiveProgramRole::Coordinator, LiveProgramRole::Member] {
-        let fragments = emitted_fragments(role, explicit_plan);
+        let fragments =
+            emitted_fragments(&constructor, role, subject).expect("the concrete recipe projects");
         assert!(fragments.contains(&LiveFragmentId::LocalRecognition));
         assert!(fragments.contains(&LiveFragmentId::OwnerAuthorization));
     }
@@ -916,7 +1042,8 @@ fn the_coordinator_role_carries_the_counts_and_the_member_role_does_not() {
 #[test]
 fn entry_blinding_census_names_the_created_private_form() {
     let constructor = composing(LiveTransferComposition::EntryBlinding);
-    let fragments = emitted_fragments(LiveProgramRole::Coordinator, constructor.representation());
+    let fragments = emitted_fragments(&constructor, LiveProgramRole::Coordinator, shape(2))
+        .expect("the entry recipe projects");
 
     assert!(fragments.contains(&LiveFragmentId::PrivateDestinationForm));
     assert!(!fragments.contains(&LiveFragmentId::ExplicitConservation));
@@ -925,9 +1052,64 @@ fn entry_blinding_census_names_the_created_private_form() {
 #[test]
 fn exit_unblinding_census_does_not_name_the_homogeneous_private_form() {
     let constructor = composing(LiveTransferComposition::ExitUnblinding);
-    let fragments = emitted_fragments(LiveProgramRole::Coordinator, constructor.representation());
+    let fragments = emitted_fragments(&constructor, LiveProgramRole::Coordinator, shape(2))
+        .expect("the exit recipe projects");
 
     assert!(!fragments.contains(&LiveFragmentId::PrivateDestinationForm));
+    assert!(fragments.contains(&LiveFragmentId::CrossingDestinationForm));
+    assert!(
+        LiveFragmentId::ALL.contains(&LiveFragmentId::CrossingDestinationForm),
+        "the crossing fragment belongs to the vocabulary",
+    );
+}
+
+#[test]
+fn actual_program_trace_equals_the_recipe_census_for_every_composition() {
+    let target = reviewed_target();
+    let symbols = symbols();
+
+    for composition in LiveTransferComposition::ALL.iter().copied() {
+        let constructor = composing(composition);
+        for subject in [shape(2), sponsored_shape(2)] {
+            for role in [LiveProgramRole::Coordinator, LiveProgramRole::Member] {
+                let trace =
+                    live_program_fragment_trace(&target, &symbols, &constructor, role, subject)
+                        .expect("the actual program composes");
+                let census = emitted_fragments(&constructor, role, subject)
+                    .expect("the same recipe projects");
+
+                assert_eq!(trace.iter().copied().collect::<BTreeSet<_>>(), census);
+                assert_eq!(trace.len(), census.len(), "the trace repeats a fragment");
+            }
+        }
+    }
+}
+
+#[test]
+fn every_coordinator_recipe_selects_exactly_one_value_fragment() {
+    let value_fragments = [
+        LiveFragmentId::ExplicitConservation,
+        LiveFragmentId::PrivateDestinationForm,
+        LiveFragmentId::CrossingDestinationForm,
+    ];
+
+    for composition in LiveTransferComposition::ALL.iter().copied() {
+        let constructor = composing(composition);
+        let fragments = emitted_fragments(&constructor, LiveProgramRole::Coordinator, shape(2))
+            .expect("the coordinator recipe projects");
+        let selected = value_fragments
+            .into_iter()
+            .filter(|fragment| fragments.contains(fragment))
+            .collect::<Vec<_>>();
+        let expected = match composition {
+            LiveTransferComposition::HomogeneousExplicit => LiveFragmentId::ExplicitConservation,
+            LiveTransferComposition::HomogeneousPrivate
+            | LiveTransferComposition::EntryBlinding => LiveFragmentId::PrivateDestinationForm,
+            LiveTransferComposition::ExitUnblinding => LiveFragmentId::CrossingDestinationForm,
+        };
+
+        assert_eq!(selected, vec![expected], "{composition:?} value selection");
+    }
 }
 
 // --- §1.6: three signatures from one owner are not three owners -------
@@ -1185,6 +1367,165 @@ fn the_private_plan_gets_its_own_value_record_rather_than_the_explicit_one() {
             );
         }
     }
+}
+
+#[test]
+fn composed_metadata_equals_the_exact_component_record_unions() {
+    for composition in LiveTransferComposition::ALL.iter().copied() {
+        let constructor = composing(composition);
+        for subject in [shape(2), sponsored_shape(2)] {
+            let patterns =
+                live_transfer_patterns(&reviewed_target(), &symbols(), &constructor, subject)
+                    .expect("the composition census builds");
+            let mut coordinator_ids = patterns_for_composition(subject, composition);
+            for composed_or_member in [
+                LiveTransferPatternId::LiveCoordinatorProgramV1,
+                LiveTransferPatternId::LiveMemberProgramV1,
+                LiveTransferPatternId::LiveMemberRoleV1,
+            ] {
+                coordinator_ids.remove(&composed_or_member);
+            }
+            let expected = component_metadata(&patterns, &coordinator_ids);
+            let coordinator = &patterns[&LiveTransferPatternId::LiveCoordinatorProgramV1];
+
+            assert_eq!(
+                coordinator.sources(),
+                &expected.0,
+                "{composition:?} sources"
+            );
+            assert_eq!(
+                coordinator.evidence(),
+                &expected.1,
+                "{composition:?} evidence"
+            );
+            assert_eq!(
+                coordinator.disclosure(),
+                &expected.2,
+                "{composition:?} disclosure"
+            );
+            assert_eq!(
+                coordinator.residuals(),
+                &expected.3,
+                "{composition:?} residuals"
+            );
+
+            let member_ids = BTreeSet::from([
+                LiveTransferPatternId::LiveMemberRoleV1,
+                LiveTransferPatternId::LiveInputRecognitionV1,
+                LiveTransferPatternId::LiveOwnerAuthorizationV1,
+            ]);
+            let expected = component_metadata(&patterns, &member_ids);
+            let member = &patterns[&LiveTransferPatternId::LiveMemberProgramV1];
+
+            assert_eq!(
+                member.sources(),
+                &expected.0,
+                "{composition:?} member sources"
+            );
+            assert_eq!(
+                member.evidence(),
+                &expected.1,
+                "{composition:?} member evidence"
+            );
+            assert_eq!(
+                member.disclosure(),
+                &expected.2,
+                "{composition:?} member disclosure"
+            );
+            assert_eq!(
+                member.residuals(),
+                &expected.3,
+                "{composition:?} member residuals"
+            );
+        }
+    }
+}
+
+#[test]
+fn composed_dependency_sets_are_pinned_per_composition() {
+    use RequiredSourceKind as Source;
+    use TargetEvidenceRequirementId as Evidence;
+
+    let member_sources = BTreeSet::from([
+        Source::AuthenticatedInputObject,
+        Source::AuthenticatedFamilyCensus,
+        Source::InputOwnerWitness,
+    ]);
+    let member_evidence = BTreeSet::from([
+        Evidence::OpcodeSemantics,
+        Evidence::EncodingSemantics,
+        Evidence::InputIntrospectionSemantics,
+        Evidence::ComparisonSemantics,
+        Evidence::ConversionSemantics,
+        Evidence::SignatureSemantics,
+        Evidence::SighashSemantics,
+    ]);
+
+    for composition in LiveTransferComposition::ALL.iter().copied() {
+        let constructor = composing(composition);
+        for subject in [shape(2), sponsored_shape(2)] {
+            let patterns =
+                live_transfer_patterns(&reviewed_target(), &symbols(), &constructor, subject)
+                    .expect("the composition census builds");
+            let coordinator = &patterns[&LiveTransferPatternId::LiveCoordinatorProgramV1];
+            let member = &patterns[&LiveTransferPatternId::LiveMemberProgramV1];
+            let mut coordinator_sources = BTreeSet::from([
+                Source::AuthenticatedInputObject,
+                Source::AuthenticatedFamilyCensus,
+                Source::InputOwnerWitness,
+                Source::AuthenticatedOutputObject,
+            ]);
+            let mut coordinator_evidence = BTreeSet::from([
+                Evidence::OpcodeSemantics,
+                Evidence::EncodingSemantics,
+                Evidence::InputIntrospectionSemantics,
+                Evidence::OutputIntrospectionSemantics,
+                Evidence::TransactionIntrospectionSemantics,
+                Evidence::ComparisonSemantics,
+                Evidence::SignatureSemantics,
+                Evidence::SighashSemantics,
+                Evidence::IssuanceIntrospection,
+            ]);
+            if composition == LiveTransferComposition::HomogeneousExplicit {
+                coordinator_sources.insert(Source::AuthenticatedConsensusValue);
+                coordinator_evidence.insert(Evidence::ArithmeticSemantics);
+            }
+            if composition != LiveTransferComposition::HomogeneousExplicit
+                || emits_isolation_fragment(subject)
+            {
+                coordinator_evidence.insert(Evidence::ConfidentialValueConservation);
+            }
+            if emits_isolation_fragment(subject) {
+                coordinator_evidence.insert(Evidence::FeeOutputForm);
+            }
+
+            assert_eq!(coordinator.sources(), &coordinator_sources);
+            assert_eq!(coordinator.evidence(), &coordinator_evidence);
+            assert!(
+                !coordinator
+                    .evidence()
+                    .contains(&Evidence::ConversionSemantics)
+            );
+            assert_eq!(member.sources(), &member_sources);
+            assert_eq!(member.evidence(), &member_evidence);
+            assert!(
+                !member
+                    .evidence()
+                    .contains(&Evidence::TransactionIntrospectionSemantics)
+            );
+        }
+    }
+}
+
+#[test]
+fn entry_blinding_disclosure_excludes_explicit_amount_domain_claims() {
+    let constructor = composing(LiveTransferComposition::EntryBlinding);
+    let patterns = live_transfer_patterns(&reviewed_target(), &symbols(), &constructor, shape(2))
+        .expect("the entry census builds");
+    let disclosure = patterns[&LiveTransferPatternId::LiveCoordinatorProgramV1].disclosure();
+
+    assert!(!disclosure.contains(&LiveDisclosure::ReceiptInputCount));
+    assert!(!disclosure.contains(&LiveDisclosure::SemanticAmountDomain));
 }
 
 #[test]
