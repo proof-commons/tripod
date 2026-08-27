@@ -2426,9 +2426,15 @@ fn preflight(
     fixtures: &FrozenConfidentialFixtureView,
     checker: &dyn IndependentCommitmentCheck,
 ) -> Result<OpeningBindingCensus, MaterializationRefusal> {
-    // Five: the profiles, first, because an unsupported combination is
-    // cheaper to refuse than anything below it and refusing it late would
-    // mean doing work under a profile this build does not implement.
+    // The signer ABI admits positions 0 through u16::MAX. Refuse a
+    // larger census before uniqueness checks or any cryptographic work.
+    if intent.inputs().len() > usize::from(u16::MAX) + 1 {
+        return Err(MaterializationRefusal::SignerInputCensusExceedsPositionDomain);
+    }
+
+    // Five: the profiles, before every remaining clause, because an
+    // unsupported combination must not reach work under a profile this
+    // build does not implement.
     if matches!(
         intent.profiles().materializer_profile,
         ConfidentialMaterializerProfile::PerOutputValueCapability
@@ -2832,7 +2838,7 @@ fn signer_inputs(
 
 /// Convert one signer-input index to its admitted position.
 fn signer_input_position(index: usize) -> Result<u16, MaterializationRefusal> {
-    Ok(u16::try_from(index).unwrap_or(u16::MAX))
+    u16::try_from(index).map_err(|_| MaterializationRefusal::SignerInputCensusExceedsPositionDomain)
 }
 
 /// Whether a byte string contains one thirty-two byte scalar.
