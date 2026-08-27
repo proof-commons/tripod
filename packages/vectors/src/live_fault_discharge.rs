@@ -1971,7 +1971,7 @@ mod tests {
         assert_eq!(
             validators.len(),
             LIVE_FAULT_VALIDATOR_COUNT,
-            "every owning entry point",
+            "every owning entry point"
         );
     }
 
