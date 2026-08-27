@@ -34,6 +34,7 @@ use tapscript::authorization::{
     DimensionRefusal, DimensionRole, OwnerProfileDisposition, selected_owner_profile,
 };
 use target_elements::{SighashDimension, UnreviewedGround, reviewed_elements_tapscript};
+use vectors::live_owner_observation::run_of_record::SELECTED_PROFILE_ACCEPTED_TXID;
 
 /// The reviewed contract's sighash capability.
 fn capability() -> target_elements::SighashCapability {
@@ -71,8 +72,8 @@ fn every_required_dimension_rests_on_the_run_that_was_observed() {
     // both halves of the accepted evidence ruling are read off it: the
     // source citation, and the observation that exercised it.
     //
-    // The transaction identity is the one the Wave-3 ceremony recorded,
-    // written as a literal so that a reviewed set grown against some
+    // The transaction identity is imported from the Wave-3 ceremony's
+    // provenance-correct run record, so a reviewed set grown against some
     // other run fails here.
     let profile = selected_owner_profile();
     let capability = capability();
@@ -87,7 +88,7 @@ fn every_required_dimension_rests_on_the_run_that_was_observed() {
         assert!(!ground.citation().terms().is_empty(), "{dimension:?}");
         assert_eq!(
             ground.exercised_by().observation().accepted_transaction(),
-            "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029",
+            SELECTED_PROFILE_ACCEPTED_TXID,
             "{dimension:?} rests on the run that was observed",
         );
         walked += 1;
