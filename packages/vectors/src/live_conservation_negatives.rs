@@ -1171,10 +1171,10 @@ mod tests {
                 renderer_transaction([0x09; 33])
             }
             ProofNegativeCase::MissingRangeproof => {
-                renderer_transaction_with_proof([0x08; 33], Vec::new())
+                renderer_transaction_with_proof([0x08; 33], vec![0xff_u8, 2, 3])
             }
             ProofNegativeCase::MalformedRangeproof => {
-                renderer_transaction_with_proof([0x08; 33], vec![0xff_u8, 2, 3])
+                renderer_transaction_with_proof([0x08; 33], vec![1_u8, 0xff, 3])
             }
         };
         MutantObservation {
