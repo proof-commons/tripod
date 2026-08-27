@@ -1158,7 +1158,7 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
     use vectors::live_owner_signing_negatives::{
-        OwnerSigningNegativePlanner, render_owner_signing_negatives,
+        ConsensusMutantObservation, OwnerSigningNegativePlanner, render_owner_signing_negatives,
     };
 
     let executor =
@@ -1270,7 +1270,30 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
     }
 
     // The run says in its own bytes what it did not establish.
-    assert!(rendered.contains("discharges_only_its_own_row true"));
+    assert!(rendered.contains("each_row_by_its_own_mutant true"));
+
+    // The seven consensus-conservation mutants were each built, submitted
+    // and answered, and each declared a DISTINCT field range so no two
+    // rows rest on one observation.
+    let consensus = record.consensus_mutants();
+    assert_eq!(consensus.len(), 7, "the seven consensus mutants were built");
+    assert!(
+        consensus
+            .iter()
+            .all(|mutant| mutant.observed_layer().is_some()),
+        "a consensus mutant was not answered",
+    );
+    let mut ranges: Vec<(usize, usize)> = consensus
+        .iter()
+        .map(ConsensusMutantObservation::declared_field_range)
+        .collect();
+    ranges.sort_unstable();
+    ranges.dedup();
+    assert_eq!(
+        ranges.len(),
+        consensus.len(),
+        "two consensus mutants share a declared field range and do not separate",
+    );
 }
 
 /// One KEY-PATH spend attempt against a funded explicit constructor.
