@@ -45,20 +45,27 @@
 //!
 //! The rule says a proof-negative mutates exactly one field of the
 //! control. That is checked against the bytes rather than trusted: the
-//! attribution is given the control's frozen bytes, the mutant's bytes,
-//! and the byte range the named field occupies in the control, and it
-//! refuses when any byte outside that range moved. Insertions and
-//! deletions are handled by comparing a common prefix and a common
-//! suffix, so a removed range proof is a change inside the range and not
-//! a change to everything after it.
+//! case derives a typed serialized-field locator, the canonical encoder
+//! locates that field independently in the control and mutant, and the
+//! attribution refuses unless the field differs while the exact prefixes
+//! and suffixes outside both located ranges match. A removed range proof
+//! therefore has different control and mutant ranges without turning the
+//! shifted suffix into a second mutation.
 //!
 //! # Nothing here submits, mutates, or observes
 //!
 //! This module records an order and attributes an outcome. The runs are
 //! the ceremony's and the layers are the target's.
 
+use std::ops::Range;
+
 use crate::live_evidence::LiveInfrastructureBlocker;
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
+use transaction::TransactionRefusal;
+use transaction::bytes::{
+    SerializedFieldLocationRefusal, SerializedFieldLocator, SerializedOutputField,
+    TargetTransaction,
+};
 
 /// The seven steps, in the order the guide fixes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -474,30 +481,6 @@ impl BalanceValidControl {
     }
 }
 
-/// The one field a proof-negative moved.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum MutatedField {
-    /// The value blinder of one output.
-    ValueBlinder,
-    /// The value commitment of one output, replaced to commit a value the
-    /// transaction's balance does not close.
-    ValueCommitment,
-    /// The range-proof bytes of one output-witness entry.
-    RangeproofBytes,
-}
-
-impl MutatedField {
-    /// The field's wire spelling.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::ValueBlinder => "value-blinder",
-            Self::ValueCommitment => "value-commitment",
-            Self::RangeproofBytes => "rangeproof-bytes",
-        }
-    }
-}
-
 /// A confidential value-fault proof-negative.
 ///
 /// [`Self::ALL`] is the three the restart's fourth step runs. The
@@ -519,7 +502,7 @@ pub enum ProofNegativeCase {
     ///
     /// Distinct from [`Self::WrongBlinder`]: the value is wrong rather than
     /// its blinder, and the conservation lane places it at a DIFFERENT
-    /// output so its declared field range separates it from the
+    /// output so its located field range separates it from the
     /// wrong-blinder mutant they otherwise share a verdict with.
     PrivateCtImbalance,
 }
@@ -536,18 +519,19 @@ impl ProofNegativeCase {
         Self::MalformedRangeproof,
     ];
 
-    /// The single field this case mutates.
+    /// The single serialized field this case mutates.
     ///
     /// Two cases share a field and that is not a collision: "absent" and
     /// "present and wrong" are two mutations of the same range-proof
     /// bytes, and the rule is one field per case rather than one case
     /// per field.
     #[must_use]
-    pub const fn mutated_field(self) -> MutatedField {
+    pub const fn serialized_field(self) -> SerializedOutputField {
         match self {
-            Self::WrongBlinder => MutatedField::ValueBlinder,
-            Self::MissingRangeproof | Self::MalformedRangeproof => MutatedField::RangeproofBytes,
-            Self::PrivateCtImbalance => MutatedField::ValueCommitment,
+            Self::WrongBlinder | Self::PrivateCtImbalance => SerializedOutputField::ValueCommitment,
+            Self::MissingRangeproof | Self::MalformedRangeproof => {
+                SerializedOutputField::RangeproofBytes
+            }
         }
     }
 
@@ -563,6 +547,91 @@ impl ProofNegativeCase {
     }
 }
 
+/// One typed proof-negative mutation.
+///
+/// Its case derives its serialized field, so callers can select an output
+/// but cannot pair the case with a different field kind.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProofNegativeMutation {
+    case: ProofNegativeCase,
+    locator: SerializedFieldLocator,
+    mutant: TargetTransaction,
+}
+
+impl ProofNegativeMutation {
+    /// A mutation at `output_index`, with its field derived from `case`.
+    #[must_use]
+    pub fn at_output(
+        case: ProofNegativeCase,
+        output_index: usize,
+        mutant: TargetTransaction,
+    ) -> Self {
+        Self {
+            case,
+            locator: SerializedFieldLocator::new(output_index, case.serialized_field()),
+            mutant,
+        }
+    }
+
+    /// The proof-negative case.
+    #[must_use]
+    pub const fn case(&self) -> ProofNegativeCase {
+        self.case
+    }
+
+    /// The case-derived serialized-field locator.
+    #[must_use]
+    pub const fn locator(&self) -> SerializedFieldLocator {
+        self.locator
+    }
+
+    /// The structured mutant transaction.
+    #[must_use]
+    pub const fn mutant(&self) -> &TargetTransaction {
+        &self.mutant
+    }
+}
+
+/// One mutation field located independently in control and mutant bytes.
+///
+/// Its fields are private and it has no public range-taking constructor,
+/// so reversed, empty, and out-of-bounds ranges are not public inputs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocatedMutationField {
+    locator: SerializedFieldLocator,
+    control_range: Range<usize>,
+    mutant_range: Range<usize>,
+}
+
+impl LocatedMutationField {
+    /// The output and serialized field selected by the mutation.
+    #[must_use]
+    pub const fn locator(&self) -> SerializedFieldLocator {
+        self.locator
+    }
+
+    /// The field's half-open range in the control encoding.
+    #[must_use]
+    pub const fn control_range(&self) -> &Range<usize> {
+        &self.control_range
+    }
+
+    /// The field's half-open range in the mutant encoding.
+    #[must_use]
+    pub const fn mutant_range(&self) -> &Range<usize> {
+        &self.mutant_range
+    }
+}
+
+/// Which independently encoded transaction failed field location.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SerializedMutationSide {
+    /// The accepted balance-valid control.
+    Control,
+    /// The structured mutant.
+    Mutant,
+}
+
 /// What refuses a proof-negative attribution.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProofNegativeAttributionRefusal {
@@ -573,32 +642,42 @@ pub enum ProofNegativeAttributionRefusal {
         /// What the control's own submission actually observed.
         observed_layer: ObservedOutcomeLayer,
     },
-    /// The mutant differs from the control outside the declared field.
-    ///
-    /// This module's own member, and it is here because the guide's rule
-    /// says "exactly one field" and a rule nobody checks is a comment.
-    /// The reported bounds are in the control's byte coordinates.
-    MutationOutsideDeclaredField {
-        /// The field the case declared it was mutating.
-        field: MutatedField,
-        /// The declared range's start, inclusive.
-        declared_start: usize,
-        /// The declared range's end, exclusive.
-        declared_end: usize,
-        /// The first byte index at which the two actually differ.
-        observed_start: usize,
-        /// One past the last control byte the difference covers.
-        observed_end: usize,
+    /// The accepted control's frozen bytes do not decode exactly.
+    ControlDecodingFailure {
+        /// The transaction decoder's typed refusal.
+        refusal: TransactionRefusal,
     },
-    /// The mutant's bytes equal the control's. Nothing was mutated, so
-    /// whatever the target said is a second observation of the control.
-    MutantIdenticalToControl,
+    /// The selected serialized field is absent from one encoding.
+    SerializedFieldAbsent {
+        /// The output and field that were selected.
+        locator: SerializedFieldLocator,
+        /// Which encoding lacks the field.
+        side: SerializedMutationSide,
+    },
+    /// The selected output's value form cannot carry the field.
+    SerializedFieldWrongKind {
+        /// The output and field that were selected.
+        locator: SerializedFieldLocator,
+        /// Which encoding has the wrong field kind.
+        side: SerializedMutationSide,
+    },
+    /// The independently located field bytes did not change.
+    LocatedFieldUnchanged {
+        /// The output and field that were checked.
+        locator: SerializedFieldLocator,
+    },
+    /// Bytes outside the independently located field also changed.
+    MutationOutsideLocatedField {
+        /// The selected field's control and mutant locations.
+        located_field: LocatedMutationField,
+    },
 }
 
 /// One proof-negative, attributed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProofNegativeAttribution {
     case: ProofNegativeCase,
+    located_field: LocatedMutationField,
     control_identity: String,
     observed_layer: ObservedOutcomeLayer,
     detail: Option<String>,
@@ -613,8 +692,14 @@ impl ProofNegativeAttribution {
 
     /// The one field the case moved.
     #[must_use]
-    pub const fn mutated_field(&self) -> MutatedField {
-        self.case.mutated_field()
+    pub const fn serialized_field(&self) -> SerializedOutputField {
+        self.located_field.locator.field()
+    }
+
+    /// The field located independently in the control and mutant.
+    #[must_use]
+    pub const fn located_field(&self) -> &LocatedMutationField {
+        &self.located_field
     }
 
     /// The accepted control this mutant was derived from.
@@ -645,83 +730,261 @@ impl ProofNegativeAttribution {
 
 /// Attribute one proof-negative to the layer that refused it.
 ///
-/// `declared_field_range` is the half-open byte range, in the control's
-/// coordinates, that the mutated field occupies.
+/// The former raw-range call is intentionally unavailable:
+///
+/// ```compile_fail
+/// use target_elements_conformance::protocol::ObservedOutcomeLayer;
+/// use vectors::live_restart::{
+///     BalanceValidControl, ProofNegativeCase, attribute_proof_negative,
+/// };
+///
+/// let control = BalanceValidControl::from_observed(
+///     ObservedOutcomeLayer::Accepted,
+///     "control",
+///     [0_u8, 1, 2],
+/// )?;
+/// attribute_proof_negative(
+///     &control,
+///     ProofNegativeCase::WrongBlinder,
+///     (0, usize::MAX),
+///     &[9_u8, 1, 2],
+///     ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+///     None,
+/// )?;
+/// # Ok::<(), vectors::live_restart::ProofNegativeAttributionRefusal>(())
+/// ```
 ///
 /// # Errors
 ///
-/// [`ProofNegativeAttributionRefusal::MutantIdenticalToControl`] where
-/// nothing moved, and
-/// [`ProofNegativeAttributionRefusal::MutationOutsideDeclaredField`]
-/// where something outside the declared field did.
+/// [`ProofNegativeAttributionRefusal::ControlDecodingFailure`] when the
+/// control bytes are not one exact transaction,
+/// [`ProofNegativeAttributionRefusal::SerializedFieldAbsent`] or
+/// [`ProofNegativeAttributionRefusal::SerializedFieldWrongKind`] when the
+/// selected field cannot be located,
+/// [`ProofNegativeAttributionRefusal::LocatedFieldUnchanged`] when the
+/// selected field did not move, and
+/// [`ProofNegativeAttributionRefusal::MutationOutsideLocatedField`] when
+/// bytes outside it also moved.
 pub fn attribute_proof_negative(
     control: &BalanceValidControl,
-    case: ProofNegativeCase,
-    declared_field_range: (usize, usize),
-    mutant_bytes: &[u8],
+    mutation: &ProofNegativeMutation,
     observed_layer: ObservedOutcomeLayer,
     detail: Option<String>,
 ) -> Result<ProofNegativeAttribution, ProofNegativeAttributionRefusal> {
     let control_bytes = control.frozen_bytes();
-    if control_bytes == mutant_bytes {
-        return Err(ProofNegativeAttributionRefusal::MutantIdenticalToControl);
+    let control_transaction = TargetTransaction::decode(control_bytes)
+        .map_err(|refusal| ProofNegativeAttributionRefusal::ControlDecodingFailure { refusal })?;
+    let control_location = control_transaction
+        .locate_serialized_field(mutation.locator)
+        .map_err(|refusal| location_refusal(SerializedMutationSide::Control, refusal))?;
+    let mutant_bytes = mutation.mutant.encode();
+    let mutant_location = mutation
+        .mutant
+        .locate_serialized_field(mutation.locator)
+        .map_err(|refusal| location_refusal(SerializedMutationSide::Mutant, refusal))?;
+    let located_field = LocatedMutationField {
+        locator: mutation.locator,
+        control_range: control_location.range().clone(),
+        mutant_range: mutant_location.range().clone(),
+    };
+
+    if !located_field_differs(control_bytes, &mutant_bytes, &located_field) {
+        return Err(ProofNegativeAttributionRefusal::LocatedFieldUnchanged {
+            locator: mutation.locator,
+        });
     }
-
-    // The common prefix and the common suffix bound the change from
-    // both ends, so an insertion or a deletion is a change inside a
-    // range rather than a change to everything downstream of it.
-    let prefix = control_bytes
-        .iter()
-        .zip(mutant_bytes)
-        .take_while(|(left, right)| left == right)
-        .count();
-    let suffix = control_bytes
-        .iter()
-        .rev()
-        .zip(mutant_bytes.iter().rev())
-        .take_while(|(left, right)| left == right)
-        .count()
-        .min(control_bytes.len() - prefix)
-        .min(mutant_bytes.len().saturating_sub(prefix));
-    let observed_start = prefix;
-    let observed_end = control_bytes.len() - suffix;
-
-    let (declared_start, declared_end) = declared_field_range;
-    if observed_start < declared_start || observed_end > declared_end {
-        return Err(
-            ProofNegativeAttributionRefusal::MutationOutsideDeclaredField {
-                field: case.mutated_field(),
-                declared_start,
-                declared_end,
-                observed_start,
-                observed_end,
-            },
-        );
+    if !outside_located_field_matches(control_bytes, &mutant_bytes, &located_field) {
+        return Err(ProofNegativeAttributionRefusal::MutationOutsideLocatedField { located_field });
     }
 
     Ok(ProofNegativeAttribution {
-        case,
+        case: mutation.case,
+        located_field,
         control_identity: control.accepted_identity().to_owned(),
         observed_layer,
         detail,
     })
 }
 
+fn location_refusal(
+    side: SerializedMutationSide,
+    refusal: SerializedFieldLocationRefusal,
+) -> ProofNegativeAttributionRefusal {
+    let locator = refusal.locator();
+    match refusal {
+        SerializedFieldLocationRefusal::OutputAbsent { .. }
+        | SerializedFieldLocationRefusal::FieldAbsent { .. } => {
+            ProofNegativeAttributionRefusal::SerializedFieldAbsent { locator, side }
+        }
+        SerializedFieldLocationRefusal::WrongFieldKind { .. } => {
+            ProofNegativeAttributionRefusal::SerializedFieldWrongKind { locator, side }
+        }
+    }
+}
+
+fn located_field_differs(control: &[u8], mutant: &[u8], located: &LocatedMutationField) -> bool {
+    control
+        .get(located.control_range.clone())
+        .zip(mutant.get(located.mutant_range.clone()))
+        .is_some_and(|(control_field, mutant_field)| control_field != mutant_field)
+}
+
+fn outside_located_field_matches(
+    control: &[u8],
+    mutant: &[u8],
+    located: &LocatedMutationField,
+) -> bool {
+    let prefixes_match = control
+        .get(..located.control_range.start)
+        .zip(mutant.get(..located.mutant_range.start))
+        .is_some_and(|(control_prefix, mutant_prefix)| control_prefix == mutant_prefix);
+    let suffixes_match = control
+        .get(located.control_range.end..)
+        .zip(mutant.get(located.mutant_range.end..))
+        .is_some_and(|(control_suffix, mutant_suffix)| control_suffix == mutant_suffix);
+    prefixes_match && suffixes_match
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        BalanceValidControl, ProofNegativeAttributionRefusal, ProofNegativeCase,
-        RecordedStepResult, RenderedStepResult, RestartLedger, RestartLedgerStatus,
-        RestartOrderRefusal, RestartStep, attribute_proof_negative,
+        BalanceValidControl, ProofNegativeAttribution, ProofNegativeAttributionRefusal,
+        ProofNegativeCase, ProofNegativeMutation, RecordedStepResult, RenderedStepResult,
+        RestartLedger, RestartLedgerStatus, RestartOrderRefusal, RestartStep,
+        SerializedMutationSide, attribute_proof_negative,
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
+    use transaction::bytes::{
+        AssetField, AssetId, COMMITMENT_BYTES, InputWitness, NonceField, Outpoint, OutputWitness,
+        SerializedOutputField, TargetInput, TargetOutput, TargetTransaction, Txid, ValueField,
+    };
+
+    const CONTROL_COMMITMENT: [u8; COMMITMENT_BYTES] = [0x08; COMMITMENT_BYTES];
+    const MUTANT_COMMITMENT: [u8; COMMITMENT_BYTES] = [0x09; COMMITMENT_BYTES];
 
     fn accepted(identity: &str) -> RecordedStepResult {
         RecordedStepResult::Accepted {
             accepted_identities: vec![identity.to_owned()],
             established: "a control accepted".to_owned(),
         }
+    }
+
+    fn confidential_transaction(
+        commitments: [[u8; COMMITMENT_BYTES]; 2],
+        range_proofs: [Vec<u8>; 2],
+    ) -> TargetTransaction {
+        let outputs = commitments
+            .into_iter()
+            .map(|commitment| {
+                TargetOutput::new(
+                    AssetField::Explicit(AssetId::from_internal([0x11; 32])),
+                    ValueField::Commitment(commitment),
+                    NonceField::Null,
+                    vec![0x51],
+                )
+            })
+            .collect();
+        let output_witnesses = range_proofs
+            .into_iter()
+            .map(OutputWitness::range_proof_only)
+            .collect();
+        TargetTransaction::with_output_witnesses(
+            2,
+            vec![TargetInput::new(
+                Outpoint::new(Txid::from_internal([0x22; 32]), 0)
+                    .expect("the fixture outpoint is in range"),
+                u32::MAX,
+            )],
+            outputs,
+            0,
+            vec![InputWitness::new(Vec::new())],
+            output_witnesses,
+        )
+        .expect("the confidential fixture is structurally complete")
+    }
+
+    fn confidential_control() -> TargetTransaction {
+        confidential_transaction(
+            [CONTROL_COMMITMENT, CONTROL_COMMITMENT],
+            [vec![1_u8, 2, 3, 4], vec![5_u8, 6, 7]],
+        )
+    }
+
+    fn rebuild(
+        transaction: &TargetTransaction,
+        outputs: Vec<TargetOutput>,
+        output_witnesses: Vec<OutputWitness>,
+    ) -> TargetTransaction {
+        TargetTransaction::with_output_witnesses(
+            transaction.version(),
+            transaction.inputs().to_vec(),
+            outputs,
+            transaction.lock_time(),
+            transaction.witnesses().to_vec(),
+            output_witnesses,
+        )
+        .expect("the mutation preserves the transaction census")
+    }
+
+    fn replace_value_commitment(
+        transaction: &TargetTransaction,
+        output_index: usize,
+        commitment: [u8; COMMITMENT_BYTES],
+    ) -> TargetTransaction {
+        let mut outputs = transaction.outputs().to_vec();
+        let output = outputs
+            .get_mut(output_index)
+            .expect("the fixture output exists");
+        *output = TargetOutput::new(
+            output.asset(),
+            ValueField::Commitment(commitment),
+            output.nonce(),
+            output.program().to_vec(),
+        );
+        rebuild(
+            transaction,
+            outputs,
+            transaction.output_witnesses().to_vec(),
+        )
+    }
+
+    fn replace_range_proof(
+        transaction: &TargetTransaction,
+        output_index: usize,
+        range_proof: Vec<u8>,
+    ) -> TargetTransaction {
+        let mut output_witnesses = transaction.output_witnesses().to_vec();
+        let witness = output_witnesses
+            .get_mut(output_index)
+            .expect("the fixture output witness exists");
+        *witness = OutputWitness::new(witness.surjection_proof().to_vec(), range_proof);
+        rebuild(
+            transaction,
+            transaction.outputs().to_vec(),
+            output_witnesses,
+        )
+    }
+
+    fn accepted_control(transaction: &TargetTransaction) -> BalanceValidControl {
+        BalanceValidControl::from_observed(
+            ObservedOutcomeLayer::Accepted,
+            "accepted-control",
+            transaction.encode(),
+        )
+        .expect("the fixture records an accepted control")
+    }
+
+    fn attribute(
+        control: &BalanceValidControl,
+        mutation: &ProofNegativeMutation,
+    ) -> Result<ProofNegativeAttribution, ProofNegativeAttributionRefusal> {
+        attribute_proof_negative(
+            control,
+            mutation,
+            ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+            None,
+        )
     }
 
     #[test]
@@ -840,89 +1103,210 @@ mod tests {
     }
 
     #[test]
-    fn a_mutation_reaching_outside_its_declared_field_is_refused() {
-        let control = BalanceValidControl::from_observed(
-            ObservedOutcomeLayer::Accepted,
-            "cc",
-            [0_u8, 1, 2, 3, 4, 5, 6, 7],
-        )
-        .expect("an accepted control builds");
-
-        // Inside the declared range: accepted.
-        let inside = [0_u8, 1, 9, 9, 4, 5, 6, 7];
-        let attribution = attribute_proof_negative(
-            &control,
-            ProofNegativeCase::MalformedRangeproof,
-            (2, 4),
-            &inside,
-            ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
-            None,
-        )
-        .expect("a single-field mutation attributes");
-        assert_eq!(attribution.control_identity(), "cc");
-        assert!(attribution.observed_layer().is_target_verdict());
-
-        // One byte outside it: refused, with both ranges reported.
-        let outside = [0_u8, 1, 9, 9, 4, 5, 6, 8];
-        assert_eq!(
-            attribute_proof_negative(
-                &control,
-                ProofNegativeCase::MalformedRangeproof,
-                (2, 4),
-                &outside,
-                ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
-                None,
-            ),
-            Err(
-                ProofNegativeAttributionRefusal::MutationOutsideDeclaredField {
-                    field: ProofNegativeCase::MalformedRangeproof.mutated_field(),
-                    declared_start: 2,
-                    declared_end: 4,
-                    observed_start: 2,
-                    observed_end: 8,
-                }
-            ),
-        );
-    }
-
-    #[test]
-    fn a_removed_field_is_a_change_inside_its_range_and_not_after_it() {
-        // The missing-rangeproof case shortens the bytes. A comparison
-        // that only walked forwards would call every later byte changed
-        // and refuse a mutation that is in fact confined.
-        let control = BalanceValidControl::from_observed(
-            ObservedOutcomeLayer::Accepted,
-            "dd",
-            [0_u8, 1, 2, 3, 4, 5],
-        )
-        .expect("an accepted control builds");
-        let removed = [0_u8, 1, 4, 5];
-        attribute_proof_negative(
-            &control,
-            ProofNegativeCase::MissingRangeproof,
-            (2, 4),
-            &removed,
-            ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
-            None,
-        )
-        .expect("a deletion inside the declared range attributes");
-    }
-
-    #[test]
-    fn an_unmutated_mutant_is_a_second_look_at_the_control() {
-        let control =
-            BalanceValidControl::from_observed(ObservedOutcomeLayer::Accepted, "ee", [7_u8, 7])
-                .expect("an accepted control builds");
-        assert_eq!(
-            attribute_proof_negative(
-                &control,
+    fn all_four_honest_mutants_attribute_to_their_located_fields() {
+        let transaction = confidential_control();
+        let control = accepted_control(&transaction);
+        let mutations = [
+            ProofNegativeMutation::at_output(
                 ProofNegativeCase::WrongBlinder,
-                (0, 2),
-                &[7_u8, 7],
-                ObservedOutcomeLayer::Accepted,
-                None,
+                0,
+                replace_value_commitment(&transaction, 0, MUTANT_COMMITMENT),
             ),
-            Err(ProofNegativeAttributionRefusal::MutantIdenticalToControl),
+            ProofNegativeMutation::at_output(
+                ProofNegativeCase::MissingRangeproof,
+                0,
+                replace_range_proof(&transaction, 0, Vec::new()),
+            ),
+            ProofNegativeMutation::at_output(
+                ProofNegativeCase::MalformedRangeproof,
+                0,
+                replace_range_proof(&transaction, 0, vec![9_u8, 2, 3, 4]),
+            ),
+            ProofNegativeMutation::at_output(
+                ProofNegativeCase::PrivateCtImbalance,
+                1,
+                replace_value_commitment(&transaction, 1, MUTANT_COMMITMENT),
+            ),
+        ];
+
+        for mutation in mutations {
+            let attribution = attribute(&control, &mutation)
+                .expect("a mutation confined to its located field attributes");
+            assert_eq!(attribution.case(), mutation.case());
+            assert_eq!(
+                attribution.serialized_field(),
+                mutation.case().serialized_field()
+            );
+            assert_eq!(attribution.located_field().locator(), mutation.locator());
+            assert_eq!(attribution.control_identity(), "accepted-control");
+            assert!(attribution.observed_layer().is_target_verdict());
+        }
+    }
+
+    #[test]
+    fn missing_rangeproof_deletion_keeps_distinct_prefix_inclusive_ranges() {
+        let transaction = confidential_control();
+        let control = accepted_control(&transaction);
+        let mutation = ProofNegativeMutation::at_output(
+            ProofNegativeCase::MissingRangeproof,
+            0,
+            replace_range_proof(&transaction, 0, Vec::new()),
         );
+        let attribution = attribute(&control, &mutation)
+            .expect("deleting only the located range proof attributes");
+        let located = attribution.located_field();
+
+        assert_eq!(located.control_range().start, located.mutant_range().start);
+        assert_eq!(located.control_range().len(), 5);
+        assert_eq!(located.mutant_range().len(), 1);
+        assert_eq!(
+            &transaction.encode()[located.control_range().clone()],
+            &[4_u8, 1, 2, 3, 4],
+        );
+        assert_eq!(
+            &mutation.mutant().encode()[located.mutant_range().clone()],
+            &[0_u8],
+        );
+    }
+
+    #[test]
+    fn an_unchanged_selected_field_refuses_case_and_output_mismatches() {
+        let transaction = confidential_control();
+        let control = accepted_control(&transaction);
+        let commitment_mutant = replace_value_commitment(&transaction, 0, MUTANT_COMMITMENT);
+        for mutation in [
+            ProofNegativeMutation::at_output(
+                ProofNegativeCase::MissingRangeproof,
+                0,
+                commitment_mutant.clone(),
+            ),
+            ProofNegativeMutation::at_output(ProofNegativeCase::WrongBlinder, 1, commitment_mutant),
+        ] {
+            assert_eq!(
+                attribute(&control, &mutation),
+                Err(ProofNegativeAttributionRefusal::LocatedFieldUnchanged {
+                    locator: mutation.locator(),
+                }),
+            );
+        }
+    }
+
+    #[test]
+    fn a_second_changed_field_refuses_an_otherwise_selected_mutation() {
+        let transaction = confidential_control();
+        let control = accepted_control(&transaction);
+        let first_changed = replace_value_commitment(&transaction, 0, MUTANT_COMMITMENT);
+        let two_changed = replace_value_commitment(&first_changed, 1, MUTANT_COMMITMENT);
+        let mutation =
+            ProofNegativeMutation::at_output(ProofNegativeCase::WrongBlinder, 0, two_changed);
+
+        assert!(matches!(
+            attribute(&control, &mutation),
+            Err(ProofNegativeAttributionRefusal::MutationOutsideLocatedField { .. })
+        ));
+    }
+
+    #[test]
+    fn decoding_and_location_failures_stay_typed() {
+        let transaction = confidential_control();
+        let ordinary_mutation = ProofNegativeMutation::at_output(
+            ProofNegativeCase::WrongBlinder,
+            0,
+            replace_value_commitment(&transaction, 0, MUTANT_COMMITMENT),
+        );
+        let malformed_control = BalanceValidControl::from_observed(
+            ObservedOutcomeLayer::Accepted,
+            "malformed-control",
+            [1_u8, 2, 3],
+        )
+        .expect("the observed acceptance constructs the frozen control");
+        assert!(matches!(
+            attribute(&malformed_control, &ordinary_mutation),
+            Err(ProofNegativeAttributionRefusal::ControlDecodingFailure { .. })
+        ));
+
+        let control = accepted_control(&transaction);
+        let absent = ProofNegativeMutation::at_output(
+            ProofNegativeCase::WrongBlinder,
+            2,
+            ordinary_mutation.mutant().clone(),
+        );
+        assert_eq!(
+            attribute(&control, &absent),
+            Err(ProofNegativeAttributionRefusal::SerializedFieldAbsent {
+                locator: absent.locator(),
+                side: SerializedMutationSide::Control,
+            }),
+        );
+
+        let mut explicit_outputs = transaction.outputs().to_vec();
+        let output = explicit_outputs
+            .first_mut()
+            .expect("the fixture output exists");
+        *output = TargetOutput::new(
+            output.asset(),
+            ValueField::Explicit(7),
+            output.nonce(),
+            output.program().to_vec(),
+        );
+        let mut explicit_witnesses = transaction.output_witnesses().to_vec();
+        explicit_witnesses[0] = OutputWitness::empty();
+        let explicit = rebuild(&transaction, explicit_outputs, explicit_witnesses);
+        let explicit_control = accepted_control(&explicit);
+        let wrong_kind =
+            ProofNegativeMutation::at_output(ProofNegativeCase::WrongBlinder, 0, explicit);
+        assert_eq!(
+            attribute(&explicit_control, &wrong_kind),
+            Err(ProofNegativeAttributionRefusal::SerializedFieldWrongKind {
+                locator: wrong_kind.locator(),
+                side: SerializedMutationSide::Control,
+            }),
+        );
+    }
+
+    #[test]
+    fn proof_negative_cases_name_the_serialized_fields_they_change() {
+        assert_eq!(
+            ProofNegativeCase::WrongBlinder.serialized_field(),
+            SerializedOutputField::ValueCommitment,
+        );
+        assert_eq!(
+            ProofNegativeCase::PrivateCtImbalance.serialized_field(),
+            SerializedOutputField::ValueCommitment,
+        );
+        assert_eq!(
+            ProofNegativeCase::MissingRangeproof.serialized_field(),
+            SerializedOutputField::RangeproofBytes,
+        );
+        assert_eq!(
+            ProofNegativeCase::MalformedRangeproof.serialized_field(),
+            SerializedOutputField::RangeproofBytes,
+        );
+    }
+
+    #[test]
+    fn commitment_cases_carry_distinct_output_locators_and_ranges() {
+        let transaction = confidential_control();
+        let wrong_blinder = ProofNegativeMutation::at_output(
+            ProofNegativeCase::WrongBlinder,
+            0,
+            replace_value_commitment(&transaction, 0, MUTANT_COMMITMENT),
+        );
+        let imbalance = ProofNegativeMutation::at_output(
+            ProofNegativeCase::PrivateCtImbalance,
+            1,
+            replace_value_commitment(&transaction, 1, MUTANT_COMMITMENT),
+        );
+        let wrong_location = transaction
+            .locate_serialized_field(wrong_blinder.locator())
+            .expect("the first value commitment is serialized");
+        let imbalance_location = transaction
+            .locate_serialized_field(imbalance.locator())
+            .expect("the second value commitment is serialized");
+
+        assert_ne!(wrong_blinder.locator(), imbalance.locator());
+        assert_eq!(wrong_location.range().len(), COMMITMENT_BYTES);
+        assert_eq!(imbalance_location.range().len(), COMMITMENT_BYTES);
+        assert_ne!(wrong_location.range(), imbalance_location.range());
     }
 }

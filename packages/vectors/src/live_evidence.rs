@@ -1679,9 +1679,10 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // internal Pedersen-tally and range-proof codes are discarded
         // inside the target's own `VerifyAmounts` and never leave it, so
         // one verdict covers both mutations and the LAYER cannot be what
-        // separates these rows. The FIELD is: each row's mutant declared
-        // a byte range and was checked to have stayed inside it by
-        // `attribute_proof_negative` rather than by assertion —
+        // separates these rows. The FIELD is: each row's case derives a
+        // typed output locator, and `attribute_proof_negative` asks the
+        // canonical encoder to locate it independently in control and
+        // mutant before checking the exact bytes outside both ranges —
         // `RANGEPROOF_FIELD_RANGE` for `malformed-rangeproof` and
         // `WRONG_BLINDER_FIELD_RANGE` for `wrong-private-blinding-balance`.
         // Two rows move on ONE run because each drove its OWN mutant,
@@ -1701,7 +1702,7 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // balances, placed at the SECOND output. It declares the same
         // `AmountMismatch` class and draws the same `bad-txns-in-ne-out`
         // words, and it is NOT one observation counted twice: its mutant is
-        // its own, and its declared field range is the second output's
+        // its own, and its located field range is the second output's
         // value commitment (`PRIVATE_CT_IMBALANCE_FIELD_RANGE`, 215..248),
         // disjoint from the wrong blinder's (81..114). Two rows move on the
         // same run because each drove its own mutant at its own field,
