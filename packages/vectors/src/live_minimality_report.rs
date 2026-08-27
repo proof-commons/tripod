@@ -700,7 +700,7 @@ pub fn resolve_failure_modes(
 
     BTreeMap::from([
         // Whether a target rejects the private materialization is a
-        // target's answer, and no member of any pair was submitted.
+        // target's answer.
         //
         // Re-pointed. This named the digest blocker, which is cleared:
         // the digest is computed and two ceremonies carry observed
@@ -716,10 +716,15 @@ pub fn resolve_failure_modes(
         //
         // What is known is stronger than "awaiting" and weaker than
         // "never rejects": every run of a pair member's shape that a
-        // target has been asked about was ACCEPTED, and two pairs'
-        // private shapes have not been run at all. The pairs that have
-        // not are named in the registry, each on §16.2's acceptance
-        // conjunct, so the standing does not have to carry them here.
+        // target has been asked about was ACCEPTED, and ONE pair's own
+        // MEMBERS have since been submitted and accepted too. It stays
+        // at this standing rather than moving to a stronger one because
+        // the mode is about what a target does to a private
+        // materialization in general, and four pairs' private
+        // materializations have still never been offered to one — what
+        // was offered for them is a run of the shape. The registry
+        // spells which is which per pair, so the standing does not have
+        // to carry it here.
         (
             Mode::PrivateMaterializationRejects,
             Standing::NotRejectedOnAnyObservedRun,
@@ -1291,14 +1296,17 @@ mod tests {
         // census supports it and for no other reason: the weaker token
         // stood while any pair was short, and no pair is short.
         //
-        // What the stronger token does NOT say is that any pair MEMBER
-        // was submitted. None was, and `PairTargetVerdict` carries no
-        // variant that could say otherwise; what each member cites is
-        // an acceptance of its own SHAPE, which is this workspace's rule
-        // for moving a row and is a narrower fact than §16.2's words.
-        // The registry spells that difference at every one of these
-        // identities, and this token inherits the narrowness rather
-        // than escaping it.
+        // What the stronger token does NOT say is that every pair
+        // MEMBER was submitted. ONE pair's were: the pairs arc
+        // materialized §16.1's one-to-one fixture twice and a node
+        // accepted both members, and `PairTargetVerdict::Accepted` is
+        // the variant that says so — the only spelling in that type
+        // which does not begin `not-submitted`. The OTHER FOUR pairs
+        // cite an acceptance of each member's own SHAPE, which is this
+        // workspace's rule for moving a row and is a narrower fact than
+        // §16.2's words. The registry spells the difference at every one
+        // of these identities, and this token inherits the narrowness of
+        // the four rather than escaping it on the strength of the one.
         let target = projection();
         let report = assemble_live_minimality_report(target.clone()).expect("the report assembles");
         assert_eq!(

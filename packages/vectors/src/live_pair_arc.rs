@@ -1525,4 +1525,75 @@ mod tests {
             && run_of_record::PRIVATE_MEMBER_ACCEPTED_IDENTITY.is_some();
         assert_eq!(run_of_record::A_PAIR_ARC_LEDGER_EXISTS, both);
     }
+
+    #[test]
+    fn the_recorded_identities_are_two_distinct_target_identities() {
+        // What the arc's whole claim rests on, checked rather than read.
+        // One identity recorded twice would be one transaction, and a
+        // relation over one transaction is not a relation.
+        let explicit = run_of_record::EXPLICIT_MEMBER_ACCEPTED_IDENTITY.expect("the arc has run");
+        let private = run_of_record::PRIVATE_MEMBER_ACCEPTED_IDENTITY.expect("the arc has run");
+        for identity in [explicit, private, run_of_record::PAIR_ISSUED_ASSET] {
+            assert_eq!(identity.len(), 64);
+            assert!(identity.chars().all(|digit| digit.is_ascii_hexdigit()));
+        }
+        assert_ne!(explicit, private);
+    }
+
+    #[test]
+    fn the_private_member_is_wider_and_withholds_what_the_explicit_one_publishes() {
+        // The disclosure measurement, as two recorded figures and a
+        // count. The private member is the heavier of the two because a
+        // blinded output carries a range proof and an explicit one
+        // carries nothing, and it withholds terms the explicit member
+        // publishes — which is the whole of what the pair is evidence
+        // about. A recorded pair where the private half were the lighter
+        // one, or withheld nothing, would mean the run did not build
+        // what this module says it built.
+        assert!(
+            run_of_record::PRIVATE_MEMBER_TARGET_WEIGHT
+                > run_of_record::EXPLICIT_MEMBER_TARGET_WEIGHT,
+        );
+        assert!(
+            run_of_record::PRIVATE_MEMBER_SUBMITTED_BYTES
+                > run_of_record::EXPLICIT_MEMBER_SUBMITTED_BYTES,
+        );
+        assert!(run_of_record::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER > 0);
+        assert!(
+            run_of_record::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER
+                < REPRESENTATION_EQUIVALENCE_TERMS.len(),
+            "a pair that agreed on nothing publicly would be no equality at all",
+        );
+    }
+
+    #[test]
+    fn the_registry_reads_the_arc_as_the_one_pair_whose_members_were_submitted() {
+        use crate::live_pairs::{PairShapeAcceptance, recorded_acceptance};
+        use compiler::live_transfer_plan::LiveTransferRepresentationPlan as Plan;
+
+        // The registry and the arc, held together. The one-to-one pair's
+        // two members cite the arc's identities and the four others cite
+        // an acceptance of a SHAPE, and the split is asserted in both
+        // directions so a citation that spread would fail here.
+        for plan in [Plan::Explicit, Plan::PrivateCommitted] {
+            let acceptance = recorded_acceptance(MinimalityPair::OneToOne, plan);
+            assert!(acceptance.is_the_member_itself(), "{plan:?}");
+            assert!(matches!(
+                acceptance,
+                PairShapeAcceptance::ObservedForThisMember { .. }
+            ));
+        }
+        for pair in MinimalityPair::ALL {
+            if *pair == MinimalityPair::OneToOne {
+                continue;
+            }
+            for plan in [Plan::Explicit, Plan::PrivateCommitted] {
+                assert!(
+                    !recorded_acceptance(*pair, plan).is_the_member_itself(),
+                    "{} cites a member submission the arc did not make",
+                    pair.name(),
+                );
+            }
+        }
+    }
 }
