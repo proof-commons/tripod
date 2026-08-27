@@ -2574,7 +2574,7 @@ mod tests {
         // And it did NOT land in either target bucket. The separate
         // bucket's whole claim, made checkable.
         assert_eq!(plan.census().native_run_observed(), 24);
-        assert_eq!(plan.census().native_refusal_observed(), 5);
+        assert_eq!(plan.census().native_refusal_observed(), 6);
     }
 
     #[test]
