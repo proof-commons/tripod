@@ -1050,14 +1050,24 @@ mod tests {
 
         let (private_rows, private_answered, private_blocked) =
             board[&LiveSafetySection::PositivePrivate];
-        // Nine of ten. Eight moved on acceptances of their own shapes,
-        // the last of those being the sponsored PRIVATE successor; the
-        // ninth is the openings row, answered by the determinism
-        // observation its own §11.2 gate asks for rather than by a
-        // target verdict. The tenth is projection-equality, which needs
-        // an observation comparing two accepted transactions'
-        // projections and has none.
-        assert_eq!(private_answered, 9, "the private table's answered count");
+        // TEN of ten, and the three ways they were answered are three
+        // different kinds of evidence. Eight moved on acceptances of
+        // their own shapes, the last of those being the sponsored
+        // PRIVATE successor. The ninth is the openings row, answered by
+        // the determinism observation its own §11.2 gate asks for rather
+        // than by a target verdict. The tenth is projection-equality,
+        // and it moved LAST and on neither: the pairs arc materialized
+        // one §16.1 fixture twice, a node accepted both members, and the
+        // relation over the two identities is what the row asks for.
+        //
+        // THE PRIVATE TABLE IS NOW COMPLETE. The count is spelled rather
+        // than derived so that a row moved by an edit and not by a run
+        // fails here.
+        assert_eq!(private_answered, 10, "the private table's answered count");
+        assert_eq!(
+            private_answered, private_rows,
+            "the private table is complete, and a row added to it without a run fails here",
+        );
         assert_eq!(private_blocked, 0);
         assert_eq!(private_rows, 10);
         assert_eq!(LiveSafetyPolarity::ALL.len(), 2);
