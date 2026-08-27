@@ -69,9 +69,8 @@
 //! restart wave (task:guide-ctf-exec:wave5) and a value that could
 //! submit itself would let this wave's exit be claimed by running it.
 
-use std::collections::BTreeSet;
-
-use target_elements::{ReviewedElementsTapscriptDefinition, SighashDimension};
+use linker::live_backend::EstablishedOwnerSighashProfile;
+use target_elements::{ReviewedElementsTapscriptDefinition, TargetContractVersion};
 
 use crate::bytes::TargetTransaction;
 use crate::live_accepted::{
@@ -82,41 +81,6 @@ use crate::live_census::{
 };
 use crate::live_materialize::{MaterializedConfidentialCandidate, ProofFinalizedRegion};
 use crate::live_taproot::LiveCurveCapability;
-
-// --- The acceptance the handoff reads ----------------------------------
-
-/// What the separately reviewed owner-sighash work reports about its own
-/// profile.
-///
-/// A trait defined here and implemented outside, on the pattern this
-/// crate's other cryptographic collaborators already follow
-/// (rule:guide-ctf-exec:dependency-directions): the profile, its
-/// dimension roles, and its assessment live in the backend package this
-/// crate deliberately does not depend on, and the answer reaches the
-/// handoff as a value rather than as an edge.
-///
-/// # Why the answer is a set and not a boolean
-///
-/// Because the refusal has to be able to say WHICH required dimension is
-/// unestablished. A boolean would make an incomplete review
-/// indistinguishable from a review that reached everything except the
-/// one dimension a candidate actually needs, and the handoff would be
-/// refusing without being able to name what would repair it.
-///
-/// The empty set is the accepted state, and it is the RECOMPUTED empty
-/// set: an implementor is expected to assess the selected profile
-/// against the reviewed contract on every call, not to return a stored
-/// verdict. Nothing here can enforce that, exactly as nothing can
-/// enforce that a curve capability really does curve arithmetic, and the
-/// obligation is stated where the implementor will read it.
-pub trait OwnerProfileAcceptance {
-    /// The required sighash dimensions the reviewed contract does not
-    /// establish, in census order.
-    ///
-    /// Empty exactly when the selected profile's disposition recomputes
-    /// to established.
-    fn unestablished_required_dimensions(&self) -> BTreeSet<SighashDimension>;
-}
 
 // --- The refusals ------------------------------------------------------
 
@@ -138,18 +102,17 @@ pub trait OwnerProfileAcceptance {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SighashHandoffRefusal {
-    /// The selected owner-sighash profile's disposition does not
-    /// recompute to established.
+    /// The established profile was minted against another capability
+    /// revision.
     ///
-    /// The gate of task:guide-ctf-exec:wave4's entry condition, read
-    /// at every handoff rather than once at a wave boundary. A profile
-    /// that stopped being established between two runs is a profile no
-    /// candidate may be handed to, and a stored answer could not have
-    /// noticed.
-    ProfileNotAccepted {
-        /// The required dimensions the review does not establish, in
-        /// census order.
-        unestablished: BTreeSet<SighashDimension>,
+    /// Establishment is a snapshot, not a timeless fact. A witness
+    /// outlives no capability revision, so a handoff under a different
+    /// revision must mint a new witness from that reviewed capability.
+    OwnerProfileCapabilityRevisionMismatch {
+        /// The revision the establishment witness was minted against.
+        established_against: TargetContractVersion,
+        /// The reviewed capability revision the handoff is using now.
+        current: TargetContractVersion,
     },
     /// An authorization is not about this candidate.
     ///
@@ -214,6 +177,26 @@ impl From<OwnerCensusRefusal> for SighashHandoffRefusal {
 /// (rule:guide-ctf-exec:pending-sighash-result). A second type carrying
 /// the same fields would be a second spelling of the boundary, and the
 /// two spellings would be free to disagree.
+///
+/// # Caller-authored establishment is unrepresentable
+///
+/// The former public acceptance trait admitted an implementation that
+/// returned an empty missing-dimension set. That implementation no longer
+/// type-checks because the trait no longer exists:
+///
+/// ```compile_fail
+/// use std::collections::BTreeSet;
+/// use target_elements::SighashDimension;
+/// use transaction::live_handoff::OwnerProfileAcceptance;
+///
+/// struct EmptyAcceptance;
+///
+/// impl OwnerProfileAcceptance for EmptyAcceptance {
+///     fn unestablished_required_dimensions(&self) -> BTreeSet<SighashDimension> {
+///         BTreeSet::new()
+///     }
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SigningStarted {
     request: OwnerSigningCensus,
@@ -229,16 +212,15 @@ impl SigningStarted {
     /// only after its own freeze, so proof finalization precedes the
     /// asking by construction.
     ///
-    /// The acceptance is read FIRST, before the census is assembled. A
-    /// candidate censused under an unestablished profile would have
-    /// produced a well-formed request nobody may answer, and the work of
-    /// building it would have made the refusal look like a late
-    /// discovery rather than an entry condition.
+    /// The witness revision is checked FIRST, before the census is
+    /// assembled. A stale establishment snapshot must not produce a
+    /// well-formed request under a capability it never reviewed.
     ///
     /// # Errors
     ///
-    /// [`SighashHandoffRefusal::ProfileNotAccepted`] when the selected
-    /// profile's disposition does not recompute to established, and
+    /// [`SighashHandoffRefusal::OwnerProfileCapabilityRevisionMismatch`]
+    /// when the witness was minted against another capability revision,
+    /// and
     /// [`SighashHandoffRefusal::TheCandidateCouldNotBeCensused`] at the
     /// first census clause the request fails.
     pub fn open(
@@ -247,11 +229,36 @@ impl SigningStarted {
         deployment: LiveDeployment,
         requests: &[OwnerSigningInputRequest],
         curve: &dyn LiveCurveCapability,
-        acceptance: &dyn OwnerProfileAcceptance,
+        established: &EstablishedOwnerSighashProfile,
     ) -> Result<Self, SighashHandoffRefusal> {
-        let unestablished = acceptance.unestablished_required_dimensions();
-        if !unestablished.is_empty() {
-            return Err(SighashHandoffRefusal::ProfileNotAccepted { unestablished });
+        let current = target.definition().version();
+        Self::open_at_capability_revision(
+            target,
+            materialized,
+            deployment,
+            requests,
+            curve,
+            established,
+            current,
+        )
+    }
+
+    fn open_at_capability_revision(
+        target: &ReviewedElementsTapscriptDefinition,
+        materialized: &MaterializedConfidentialCandidate,
+        deployment: LiveDeployment,
+        requests: &[OwnerSigningInputRequest],
+        curve: &dyn LiveCurveCapability,
+        established: &EstablishedOwnerSighashProfile,
+        current: TargetContractVersion,
+    ) -> Result<Self, SighashHandoffRefusal> {
+        if established.capability_revision() != current {
+            return Err(
+                SighashHandoffRefusal::OwnerProfileCapabilityRevisionMismatch {
+                    established_against: established.capability_revision(),
+                    current,
+                },
+            );
         }
 
         let request = OwnerSigningCensus::from_proof_finalized(
@@ -263,6 +270,27 @@ impl SigningStarted {
         )?;
 
         Ok(Self { request })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn open_with_capability_revision_for_test(
+        target: &ReviewedElementsTapscriptDefinition,
+        materialized: &MaterializedConfidentialCandidate,
+        deployment: LiveDeployment,
+        requests: &[OwnerSigningInputRequest],
+        curve: &dyn LiveCurveCapability,
+        established: &EstablishedOwnerSighashProfile,
+        current: TargetContractVersion,
+    ) -> Result<Self, SighashHandoffRefusal> {
+        Self::open_at_capability_revision(
+            target,
+            materialized,
+            deployment,
+            requests,
+            curve,
+            established,
+            current,
+        )
     }
 
     /// The request handed out, whole.

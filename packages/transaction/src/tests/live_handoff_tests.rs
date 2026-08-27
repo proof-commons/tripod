@@ -23,12 +23,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use linker::live_backend::EstablishedOwnerSighashProfile;
 use sha2::{Digest as _, Sha256};
-use tapscript::authorization::{OwnerProfileDisposition, selected_owner_profile};
-use target_elements::{
-    ReviewedElementsTapscriptDefinition, SighashCapability, SighashDimension,
-    SighashSourceCitation, UnreviewedGround, reviewed_elements_tapscript,
-};
+use tapscript::authorization::selected_owner_profile;
+use target_elements::{ReviewedElementsTapscriptDefinition, TargetContractVersion};
 
 use super::ctf_materialize_tests::{valid_two_owner_with_spent_program, valid_with_spent_program};
 use super::live_census_tests::{CensusCurve, GENESIS, committed_program, signing_request};
@@ -40,8 +38,7 @@ use crate::live_census::{
     OwnerSigningInputRequest,
 };
 use crate::live_handoff::{
-    FullyAuthorizedCandidate, OwnerProfileAcceptance, SighashHandoffRefusal, SigningStarted,
-    SubmitReadyPrivateCandidate,
+    FullyAuthorizedCandidate, SighashHandoffRefusal, SigningStarted, SubmitReadyPrivateCandidate,
 };
 use crate::live_materialize::{
     MaterializedConfidentialCandidate, ProofFinalizedRegion, ProofFinalizedSignerInput,
@@ -49,78 +46,13 @@ use crate::live_materialize::{
 
 // --- Fixtures ----------------------------------------------------------
 
-/// The reviewed contract's sighash capability, unmodified.
-fn capability() -> SighashCapability {
-    reviewed_elements_tapscript()
-        .expect("the reviewed contract validates")
-        .definition()
-        .authorization()
-        .sighash()
-        .clone()
-}
-
-/// The required dimensions one capability leaves unestablished, through
-/// the selected profile's own assessment.
-///
-/// The recomputation and not a restatement of it: the profile is the
-/// backend's, the capability is the reviewed contract's, and this
-/// function only translates the two-member disposition into the set the
-/// handoff's seam takes.
-fn unestablished(capability: &SighashCapability) -> BTreeSet<SighashDimension> {
-    match selected_owner_profile().assess(capability) {
-        OwnerProfileDisposition::Established => BTreeSet::new(),
-        OwnerProfileDisposition::ReviewIncomplete { unreviewed } => unreviewed,
-    }
-}
-
-/// The real acceptance: the selected profile assessed against the
-/// reviewed contract, on every call.
-struct ReviewedAcceptance;
-
-impl OwnerProfileAcceptance for ReviewedAcceptance {
-    fn unestablished_required_dimensions(&self) -> BTreeSet<SighashDimension> {
-        unestablished(&capability())
-    }
-}
-
-/// A capability that establishes nothing, built rather than mutated.
-///
-/// The real one is ESTABLISHED and this file does not touch it. What is
-/// needed to reach the refusal is a capability that is not, and the
-/// honest way to have one is to build a separate value: every dimension
-/// classified, none of them reviewed, so the selected profile's own
-/// assessment reports the required set unestablished and the refusal
-/// fires on a recomputation rather than on a hand-written answer.
-///
-/// The ground is the one the vocabulary records as carried by nothing
-/// today, and the citation says in its own text that it is a stand-in,
-/// so this value cannot be mistaken for a classification of the target.
-fn capability_that_establishes_nothing() -> SighashCapability {
-    let citation = SighashSourceCitation::new(
-        "no terms: this capability is a test stand-in",
-        "no source: this capability is a test stand-in",
-        "a synthetic capability built by the handoff tests",
-    );
-
-    SighashCapability::new(
-        [],
-        SighashDimension::ALL.iter().map(|dimension| {
-            (
-                *dimension,
-                UnreviewedGround::NoCandidateThisArcBuildsCarriesTheSubject(citation),
-            )
-        }),
-        [],
-    )
-}
-
-/// That capability, as an acceptance the handoff can read.
-struct UnacceptedProfile;
-
-impl OwnerProfileAcceptance for UnacceptedProfile {
-    fn unestablished_required_dimensions(&self) -> BTreeSet<SighashDimension> {
-        unestablished(&capability_that_establishes_nothing())
-    }
+/// The selected profile established against `target` and pinned to its
+/// reviewed capability revision.
+fn established_profile(
+    target: &ReviewedElementsTapscriptDefinition,
+) -> EstablishedOwnerSighashProfile {
+    EstablishedOwnerSighashProfile::establish(selected_owner_profile(), target)
+        .expect("the reviewed capability establishes every required dimension")
 }
 
 /// The deployment every case below runs against.
@@ -153,7 +85,7 @@ fn open(
     target: &ReviewedElementsTapscriptDefinition,
     materialized: &MaterializedConfidentialCandidate,
 ) -> SigningStarted {
-    try_open(target, materialized, &ReviewedAcceptance)
+    try_open(target, materialized, &established_profile(target))
         .expect("the accepted profile and the materialized candidate open a handoff")
 }
 
@@ -161,7 +93,7 @@ fn open(
 fn try_open(
     target: &ReviewedElementsTapscriptDefinition,
     materialized: &MaterializedConfidentialCandidate,
-    acceptance: &dyn OwnerProfileAcceptance,
+    established: &EstablishedOwnerSighashProfile,
 ) -> Result<SigningStarted, SighashHandoffRefusal> {
     let requests: Vec<OwnerSigningInputRequest> = (0..materialized.signer_inputs().len())
         .map(|index| signing_request(u32::try_from(index).expect("the fixture index is in range")))
@@ -173,7 +105,7 @@ fn try_open(
         deployment(),
         &requests,
         &CensusCurve,
-        acceptance,
+        established,
     )
 }
 
@@ -326,38 +258,34 @@ fn the_bytes_are_still_the_freezes_own_at_every_later_state() {
 // --- Deliverable 3: the handoff states and their refusals -------------
 
 #[test]
-fn an_unaccepted_profile_refuses_before_the_candidate_is_censused() {
+fn a_witness_pinned_to_another_revision_is_refused_by_the_open_gate() {
     let target = reviewed_target();
     let materialized = one_owner(&target);
+    let established = established_profile(&target);
+    let requests = [signing_request(0)];
 
-    // The real profile is established, so the refusal is reached through
-    // a capability built for the purpose rather than by disturbing the
-    // reviewed one. What fires is the profile's own assessment: the
-    // synthetic capability reviews nothing, so every required dimension
-    // comes back unestablished.
-    let refusal =
-        try_open(&target, &materialized, &UnacceptedProfile).expect_err("an unaccepted profile");
-
-    let SighashHandoffRefusal::ProfileNotAccepted {
-        unestablished: named,
-    } = refusal
-    else {
-        panic!("an unaccepted profile is refused as one");
-    };
-
-    // The required set, whole. Six is the count the reviewed contract's
-    // own verdict rests on, asserted as a literal so that a profile whose
-    // required set changed underneath this file fails here rather than
-    // reading as the same refusal.
-    assert_eq!(named.len(), 6);
+    // V1 is a typed historical revision and the witness is pinned to the
+    // real reviewed V2 capability. The test-only entry supplies the stale
+    // snapshot condition to the same private implementation `open` calls;
+    // production `open` always reads `current` from its reviewed target.
+    assert_eq!(established.capability_revision(), TargetContractVersion::V2);
     assert_eq!(
-        named,
-        selected_owner_profile().required().collect::<BTreeSet<_>>(),
+        SigningStarted::open_with_capability_revision_for_test(
+            &target,
+            &materialized,
+            deployment(),
+            &requests,
+            &CensusCurve,
+            &established,
+            TargetContractVersion::V1,
+        ),
+        Err(
+            SighashHandoffRefusal::OwnerProfileCapabilityRevisionMismatch {
+                established_against: TargetContractVersion::V2,
+                current: TargetContractVersion::V1,
+            },
+        ),
     );
-
-    // And the real capability is untouched: the same assessment over the
-    // reviewed contract still establishes the profile.
-    assert!(unestablished(&capability()).is_empty());
 }
 
 #[test]
@@ -519,7 +447,7 @@ fn a_candidate_that_cannot_be_censused_keeps_the_censuss_own_words() {
         deployment(),
         &[signing_request(9)],
         &CensusCurve,
-        &ReviewedAcceptance,
+        &established_profile(&target),
     )
     .expect_err("a request for an input the candidate does not have");
 
@@ -545,8 +473,8 @@ fn every_handoff_refusal_variant_is_reached_by_a_test_in_this_file() {
     // vocabulary has not grown past the cases the file names.
     let named = |refusal: &SighashHandoffRefusal| -> &'static str {
         match refusal {
-            SighashHandoffRefusal::ProfileNotAccepted { .. } => {
-                "an_unaccepted_profile_refuses_before_the_candidate_is_censused"
+            SighashHandoffRefusal::OwnerProfileCapabilityRevisionMismatch { .. } => {
+                "a_witness_pinned_to_another_revision_is_refused_by_the_open_gate"
             }
             SighashHandoffRefusal::WrongCandidate => {
                 "an_answer_bound_to_a_moved_proof_is_the_wrong_candidate"
@@ -693,36 +621,21 @@ fn the_submit_ready_candidate_has_one_reproducible_identity() {
     );
 }
 
-// --- The seam's own honesty -------------------------------------------
+// --- The witness's own honesty ----------------------------------------
 
 #[test]
-fn the_acceptance_is_asked_every_time_rather_than_once() {
-    // The seam takes no stored answer and keeps none. An implementor
-    // that changed its mind between two handoffs changes both, which is
-    // the property that makes the gate a gate rather than a wave-entry
-    // note.
-    struct Counting {
-        calls: std::cell::Cell<usize>,
-    }
-
-    impl OwnerProfileAcceptance for Counting {
-        fn unestablished_required_dimensions(&self) -> BTreeSet<SighashDimension> {
-            self.calls.set(self.calls.get() + 1);
-            BTreeSet::new()
-        }
-    }
-
+fn one_establishment_witness_opens_two_handoffs_under_its_revision() {
+    // Establishment is minted once and carried as a value, not recomputed
+    // through a caller-implemented callback on every handoff. Reuse is
+    // valid only while the reviewed capability revision still matches.
     let target = reviewed_target();
     let materialized = one_owner(&target);
-    let counting = Counting {
-        calls: std::cell::Cell::new(0),
-    };
+    let established = established_profile(&target);
 
-    let _first = try_open(&target, &materialized, &counting)
+    let _first = try_open(&target, &materialized, &established)
         .expect("an established profile opens a handoff");
-    let _second = try_open(&target, &materialized, &counting).expect("and opens a second one");
-
-    assert_eq!(counting.calls.get(), 2);
+    let _second = try_open(&target, &materialized, &established)
+        .expect("the same witness opens another handoff under the same revision");
 }
 
 #[test]

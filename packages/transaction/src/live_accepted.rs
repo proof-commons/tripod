@@ -60,7 +60,7 @@
 //! became six; every member of it was already established by the review;
 //! and the recomputation reports the profile established.
 //!
-//! The consuming guide's `ProfileNotAccepted` is the refusal that reads
+//! The consuming guide's profile-establishment gate is what reads
 //! that recomputation, and it belongs to that guide's handoff rather than
 //! to this type (def:guide-ctf-exec:handoff-states). So what changed
 //! for a value of this type is nothing about the value: it was well
