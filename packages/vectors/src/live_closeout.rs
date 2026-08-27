@@ -1834,7 +1834,7 @@ mod tests {
         let rendered = report.render();
         for (class, identity) in expected {
             let line = format!("moved_row {} on {identity}", class.name());
-            assert!(rendered.lines().any(|rendered| rendered == line));
+            assert!(rendered.lines().any(|rendered| rendered == line.as_str()));
         }
     }
 

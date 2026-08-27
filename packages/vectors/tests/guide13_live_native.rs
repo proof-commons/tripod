@@ -925,7 +925,7 @@ fn assert_private_restart_matches_the_run_of_record(
     assert_eq!(record.receipt_leaves(), run::RECEIPT_LEAVES);
     assert_eq!(
         record.output_witness_proof_bytes(),
-        run::OUTPUT_WITNESS_PROOF_BYTES,
+        &run::OUTPUT_WITNESS_PROOF_BYTES,
     );
     assert_eq!(record.submitted_bytes(), run::SUBMITTED_BYTES);
     assert_eq!(
