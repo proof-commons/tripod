@@ -1287,25 +1287,30 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
 fn assert_consensus_mutants_separate(
     record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
 ) {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
     use vectors::live_owner_signing_negatives::ConsensusMutantObservation;
     let consensus = record.consensus_mutants();
     assert_eq!(consensus.len(), 7, "the seven consensus mutants were built");
     assert!(
-        consensus
-            .iter()
-            .all(|mutant| mutant.observed_layer().is_some()),
-        "a consensus mutant was not answered",
+        consensus.iter().all(|mutant| mutant.observed_layer()
+            == Some(ObservedOutcomeLayer::ConsensusRejectionBeforeScript)),
+        "a consensus mutant was not refused at consensus before script",
     );
-    let mut ranges: Vec<(usize, usize)> = consensus
+    // The separating fact is the byte range together with the shape: the
+    // four field surgeries keep the control's shape and separate by range,
+    // the three structural surgeries separate by shape where the
+    // output-count varint defeats a localized range. The tuple is distinct
+    // across all seven, so no two rows rest on one observation.
+    let mut separators: Vec<((usize, usize), (usize, usize))> = consensus
         .iter()
-        .map(ConsensusMutantObservation::declared_field_range)
+        .map(ConsensusMutantObservation::separator)
         .collect();
-    ranges.sort_unstable();
-    ranges.dedup();
+    separators.sort_unstable();
+    separators.dedup();
     assert_eq!(
-        ranges.len(),
+        separators.len(),
         consensus.len(),
-        "two consensus mutants share a declared field range and do not separate",
+        "two consensus mutants share a range-and-shape separator and do not separate",
     );
 }
 

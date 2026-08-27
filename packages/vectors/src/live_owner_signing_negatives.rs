@@ -277,6 +277,8 @@ impl ConsensusSurgery {
 pub struct ConsensusMutantObservation {
     row: &'static str,
     declared_field_range: (usize, usize),
+    input_count: usize,
+    output_count: usize,
     mutant_bytes: Vec<u8>,
     submitted_bytes: usize,
     observed_layer: Option<ObservedOutcomeLayer>,
@@ -295,6 +297,24 @@ impl ConsensusMutantObservation {
     #[must_use]
     pub const fn declared_field_range(&self) -> (usize, usize) {
         self.declared_field_range
+    }
+
+    /// The mutant's transaction shape: its input and output counts. The
+    /// field surgeries keep the control's shape and separate by their byte
+    /// range; the structural surgeries change the shape, and it is the
+    /// shape that separates them where their byte ranges cannot be
+    /// localized past the output-count varint.
+    #[must_use]
+    pub const fn shape(&self) -> (usize, usize) {
+        (self.input_count, self.output_count)
+    }
+
+    /// The separating fact this mutant declares: its byte range together
+    /// with its shape. Distinct across every driven row, so no two rows
+    /// rest on one observation.
+    #[must_use]
+    pub const fn separator(&self) -> ((usize, usize), (usize, usize)) {
+        (self.declared_field_range, self.shape())
     }
 
     /// How many bytes this mutant handed the node.
@@ -1330,6 +1350,8 @@ fn build_consensus_mutants(
         mutants.push(ConsensusMutantObservation {
             row: surgery.row(),
             declared_field_range: declared,
+            input_count: mutant.inputs().len(),
+            output_count: mutant.outputs().len(),
             submitted_bytes: mutant_bytes.len(),
             mutant_bytes,
             observed_layer: None,
@@ -1410,10 +1432,12 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
 
     for mutant in record.consensus_mutants() {
         lines.push(format!(
-            "consensus_mutant row {} declared_range {}..{} submitted_bytes {} layer {} detail {}",
+            "consensus_mutant row {} declared_range {}..{} shape {}in-{}out submitted_bytes {} layer {} detail {}",
             mutant.row(),
             mutant.declared_field_range().0,
             mutant.declared_field_range().1,
+            mutant.shape().0,
+            mutant.shape().1,
             mutant.submitted_bytes(),
             mutant
                 .observed_layer()
