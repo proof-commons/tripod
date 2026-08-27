@@ -35,6 +35,7 @@
 
 use std::fmt;
 use std::fmt::Write as _;
+use std::ops::Range;
 use std::str::FromStr;
 
 use crate::error::TransactionRefusal;
@@ -115,6 +116,141 @@ pub const OUTPOINT_INDEX_MASK: u32 = 0x3fff_ffff;
 /// Provenance: `WITNESS_SCALE_FACTOR` (`src/consensus/consensus.h`),
 /// used by `GetTransactionWeight` (`src/consensus/validation.h`).
 pub const WITNESS_SCALE_FACTOR: u64 = 4;
+
+/// A serialized field belonging to one transaction output.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SerializedOutputField {
+    /// The output's confidential value commitment.
+    ValueCommitment,
+    /// The output witness's range-proof length prefix and payload.
+    RangeproofBytes,
+}
+
+impl SerializedOutputField {
+    /// The field's wire spelling.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ValueCommitment => "value-commitment",
+            Self::RangeproofBytes => "rangeproof-bytes",
+        }
+    }
+}
+
+/// Which output field to locate in a serialized transaction.
+///
+/// The fields are private so callers can select an output and a field,
+/// but cannot claim a byte range for either one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SerializedFieldLocator {
+    output_index: usize,
+    field: SerializedOutputField,
+}
+
+impl SerializedFieldLocator {
+    /// A locator for `field` at `output_index`.
+    #[must_use]
+    pub const fn new(output_index: usize, field: SerializedOutputField) -> Self {
+        Self {
+            output_index,
+            field,
+        }
+    }
+
+    /// The output's position in transaction order.
+    #[must_use]
+    pub const fn output_index(self) -> usize {
+        self.output_index
+    }
+
+    /// The serialized field selected at that output.
+    #[must_use]
+    pub const fn field(self) -> SerializedOutputField {
+        self.field
+    }
+}
+
+/// A serialized output field and its encoder-derived byte range.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocatedSerializedField {
+    locator: SerializedFieldLocator,
+    range: Range<usize>,
+}
+
+impl LocatedSerializedField {
+    /// The output and field that were located.
+    #[must_use]
+    pub const fn locator(&self) -> SerializedFieldLocator {
+        self.locator
+    }
+
+    /// The half-open range in the transaction's serialized bytes.
+    #[must_use]
+    pub const fn range(&self) -> &Range<usize> {
+        &self.range
+    }
+}
+
+/// Why a serialized output field could not be located.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SerializedFieldLocationRefusal {
+    /// The selected output does not exist.
+    OutputAbsent {
+        /// The requested output and field.
+        locator: SerializedFieldLocator,
+    },
+    /// The selected output has a value form that cannot carry the field.
+    WrongFieldKind {
+        /// The requested output and field.
+        locator: SerializedFieldLocator,
+    },
+    /// The field is not present in this transaction's serialization.
+    FieldAbsent {
+        /// The requested output and field.
+        locator: SerializedFieldLocator,
+    },
+}
+
+impl SerializedFieldLocationRefusal {
+    /// The request that could not be located.
+    #[must_use]
+    pub const fn locator(&self) -> SerializedFieldLocator {
+        match self {
+            Self::OutputAbsent { locator }
+            | Self::WrongFieldKind { locator }
+            | Self::FieldAbsent { locator } => *locator,
+        }
+    }
+}
+
+/// Encoder instrumentation for one requested field.
+struct SerializedFieldProbe {
+    locator: SerializedFieldLocator,
+    range: Option<Range<usize>>,
+}
+
+impl SerializedFieldProbe {
+    const fn new(locator: SerializedFieldLocator) -> Self {
+        Self {
+            locator,
+            range: None,
+        }
+    }
+
+    fn record(
+        probe: &mut Option<Self>,
+        output_index: usize,
+        field: SerializedOutputField,
+        range: Range<usize>,
+    ) {
+        let Some(probe) = probe.as_mut() else {
+            return;
+        };
+        if probe.locator.output_index == output_index && probe.locator.field == field {
+            probe.range = Some(range);
+        }
+    }
+}
 
 // --- Compact size -----------------------------------------------------
 
@@ -664,8 +800,28 @@ impl TargetOutput {
     /// second opinion about it, free to drift from the bytes this crate
     /// actually produces.
     pub(crate) fn encode(&self, bytes: &mut Vec<u8>) {
+        let mut probe = None;
+        self.encode_at(bytes, 0, &mut probe);
+    }
+
+    fn encode_at(
+        &self,
+        bytes: &mut Vec<u8>,
+        output_index: usize,
+        probe: &mut Option<SerializedFieldProbe>,
+    ) {
         encode_asset_field(bytes, self.asset);
+        let value_start = bytes.len();
         encode_value_field(bytes, self.value);
+        let value_end = bytes.len();
+        if matches!(self.value, ValueField::Commitment(_)) {
+            SerializedFieldProbe::record(
+                probe,
+                output_index,
+                SerializedOutputField::ValueCommitment,
+                value_start..value_end,
+            );
+        }
         match self.nonce {
             NonceField::Null => bytes.push(NULL_PREFIX),
             NonceField::Commitment(commitment) => bytes.extend_from_slice(&commitment),
@@ -898,10 +1054,28 @@ impl OutputWitness {
     }
 
     fn encode(&self, bytes: &mut Vec<u8>) {
+        let mut probe = None;
+        self.encode_at(bytes, 0, &mut probe);
+    }
+
+    fn encode_at(
+        &self,
+        bytes: &mut Vec<u8>,
+        output_index: usize,
+        probe: &mut Option<SerializedFieldProbe>,
+    ) {
         bytes.extend_from_slice(&compact_size(self.surjection_proof.len() as u64));
         bytes.extend_from_slice(&self.surjection_proof);
+        let rangeproof_start = bytes.len();
         bytes.extend_from_slice(&compact_size(self.range_proof.len() as u64));
         bytes.extend_from_slice(&self.range_proof);
+        let rangeproof_end = bytes.len();
+        SerializedFieldProbe::record(
+            probe,
+            output_index,
+            SerializedOutputField::RangeproofBytes,
+            rangeproof_start..rangeproof_end,
+        );
     }
 }
 
@@ -1085,6 +1259,41 @@ impl TargetTransaction {
                 .any(|witness| !witness.is_empty())
     }
 
+    /// Locate one output field in this transaction's serialized bytes.
+    ///
+    /// The range comes from the same output and output-witness encoders
+    /// [`Self::encode`] uses. In particular, a range-proof field begins
+    /// before its `CompactSize` length prefix and ends after its payload.
+    ///
+    /// # Errors
+    ///
+    /// [`SerializedFieldLocationRefusal::OutputAbsent`] when the selected
+    /// output does not exist,
+    /// [`SerializedFieldLocationRefusal::WrongFieldKind`] when its value
+    /// form cannot carry the selected field, or
+    /// [`SerializedFieldLocationRefusal::FieldAbsent`] when the field is
+    /// not present in this transaction's serialization.
+    pub fn locate_serialized_field(
+        &self,
+        locator: SerializedFieldLocator,
+    ) -> Result<LocatedSerializedField, SerializedFieldLocationRefusal> {
+        let Some(output) = self.outputs.get(locator.output_index) else {
+            return Err(SerializedFieldLocationRefusal::OutputAbsent { locator });
+        };
+        if !matches!(output.value, ValueField::Commitment(_)) {
+            return Err(SerializedFieldLocationRefusal::WrongFieldKind { locator });
+        }
+
+        let with_witness = self.has_witness();
+        if locator.field == SerializedOutputField::RangeproofBytes && !with_witness {
+            return Err(SerializedFieldLocationRefusal::FieldAbsent { locator });
+        }
+        let (_, range) = self.serialize_with_locator(with_witness, Some(locator));
+        range
+            .map(|range| LocatedSerializedField { locator, range })
+            .ok_or(SerializedFieldLocationRefusal::FieldAbsent { locator })
+    }
+
     /// The exact target bytes, witness included.
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
@@ -1102,7 +1311,16 @@ impl TargetTransaction {
     }
 
     fn serialize(&self, with_witness: bool) -> Vec<u8> {
+        self.serialize_with_locator(with_witness, None).0
+    }
+
+    fn serialize_with_locator(
+        &self,
+        with_witness: bool,
+        locator: Option<SerializedFieldLocator>,
+    ) -> (Vec<u8>, Option<Range<usize>>) {
         let mut bytes = Vec::new();
+        let mut probe = locator.map(SerializedFieldProbe::new);
         bytes.extend_from_slice(&self.version.to_le_bytes());
         bytes.push(if with_witness {
             WITNESS_FLAG
@@ -1114,17 +1332,19 @@ impl TargetTransaction {
             input.encode(&mut bytes);
         }
         bytes.extend_from_slice(&compact_size(self.outputs.len() as u64));
-        for output in &self.outputs {
-            output.encode(&mut bytes);
+        for (output_index, output) in self.outputs.iter().enumerate() {
+            output.encode_at(&mut bytes, output_index, &mut probe);
         }
         bytes.extend_from_slice(&self.lock_time.to_le_bytes());
         if with_witness {
             for witness in &self.witnesses {
                 witness.encode(&mut bytes);
             }
-            bytes.extend_from_slice(&self.output_witness_bytes());
+            for (output_index, witness) in self.output_witnesses.iter().enumerate() {
+                witness.encode_at(&mut bytes, output_index, &mut probe);
+            }
         }
-        bytes
+        (bytes, probe.and_then(|probe| probe.range))
     }
 
     /// The serialized output-witness vector alone, one entry per

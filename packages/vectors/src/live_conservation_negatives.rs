@@ -1,5 +1,5 @@
 //! The restart order's third and fourth steps: target CT conservation
-//! recorded against a balance-valid control, and the three proof-negatives
+//! recorded against a balance-valid control, and the proof-negatives
 //! run from that control.
 //!
 //! # What this ceremony is, and why it is one ceremony
@@ -30,17 +30,17 @@
 //!
 //! # Why the mutants are submitted before the control
 //!
-//! All four candidates spend the same predecessor coin. A rejected mutant
+//! All five candidates spend the same predecessor coin. A rejected mutant
 //! never mines and never spends anything — `testmempoolaccept` is a dry run
 //! and the consensus retry cannot include a consensus-invalid transaction —
-//! so submitting the three mutants first leaves the coin unspent for the
+//! so submitting the four mutants first leaves the coin unspent for the
 //! control, which is accepted and mined last. Submitting the control first
 //! would spend the coin and every mutant would then be refused for a
 //! missing input rather than for its mutation.
 //!
 //! # Attribution is by mutated field, not by target layer
 //!
-//! The target emits one identical refusal for all three mutations —
+//! The target emits one identical refusal for all four mutations —
 //! `bad-txns-in-ne-out` / "value in != value out"
 //! (`src/consensus/tx_verify.cpp:250-251`), because the internal
 //! `SCRIPT_ERR_PEDERSEN_TALLY` and `SCRIPT_ERR_RANGEPROOF` codes are
@@ -50,7 +50,7 @@
 //! attributed by the construction field it moved — the value-commitment
 //! field for the wrong blinder, the range-proof bytes for the two
 //! range-proof cases — through [`attribute_proof_negative`], which refuses
-//! a mutant that changed anything outside its declared field. The guide's
+//! a mutant that changed anything outside its located field. The guide's
 //! own "each attributed to its own layer" wording is undischargeable from
 //! this target and is filed as an erratum; it is not repaired here.
 //!
@@ -84,7 +84,7 @@ use crate::live_private_restart::{
 };
 use crate::live_restart::{
     BalanceValidControl, ProofNegativeAttribution, ProofNegativeAttributionRefusal,
-    ProofNegativeCase, attribute_proof_negative,
+    ProofNegativeCase, ProofNegativeMutation, attribute_proof_negative,
 };
 
 /// The ceremony's own name for the balance-valid control submission.
@@ -106,7 +106,7 @@ const MUTATED_OUTPUT: usize = 0;
 /// precisely because it is not [`MUTATED_OUTPUT`]: the imbalance mutant and
 /// the wrong-blinder mutant both replace a 33-byte value commitment and
 /// both draw the balance failure, so placing them at the same output would
-/// give them the same declared field range and leave the record unable to
+/// give them the same located field range and leave the record unable to
 /// tell `private-ct-imbalance` from `wrong-private-blinding-balance`. At
 /// different outputs the two ranges differ, which is what separates the two
 /// rows. The change output carries its own value commitment and range
@@ -142,8 +142,7 @@ pub enum ConservationNegativeRefusal {
     FundingCreatedNoPredecessor,
     /// The balance-valid control would not construct.
     ControlNotConstructible(String),
-    /// A proof-negative mutant reached outside its declared field, or was
-    /// identical to the control.
+    /// A proof-negative mutant did not differ only at its located field.
     MutantNotAttributable(ProofNegativeAttributionRefusal),
     /// The wrong-blinder commitment would not recompute.
     WrongBlinderNotRecomputable,
@@ -152,9 +151,7 @@ pub enum ConservationNegativeRefusal {
 /// One proof-negative, as this ceremony submitted and observed it.
 #[derive(Clone, Debug)]
 pub struct MutantObservation {
-    case: ProofNegativeCase,
-    declared_field_range: (usize, usize),
-    mutant_bytes: Vec<u8>,
+    mutation: ProofNegativeMutation,
     submitted_bytes: usize,
     observed_layer: Option<ObservedOutcomeLayer>,
     observed_detail: Option<String>,
@@ -164,14 +161,7 @@ impl MutantObservation {
     /// The proof-negative case.
     #[must_use]
     pub const fn case(&self) -> ProofNegativeCase {
-        self.case
-    }
-
-    /// The half-open byte range, in the control's coordinates, that the
-    /// case declared it was mutating.
-    #[must_use]
-    pub const fn declared_field_range(&self) -> (usize, usize) {
-        self.declared_field_range
+        self.mutation.case()
     }
 
     /// The layer the target refused the mutant at, where it was observed.
@@ -191,8 +181,8 @@ impl MutantObservation {
     /// # Errors
     ///
     /// Every member of [`ProofNegativeAttributionRefusal`]: the control
-    /// was not accepted, the mutant reached outside its declared field, or
-    /// it was identical to the control.
+    /// was not accepted, the selected field could not be located or did not
+    /// change, or bytes outside that field also changed.
     pub fn attribute(
         &self,
         control: &BalanceValidControl,
@@ -200,14 +190,7 @@ impl MutantObservation {
         let layer = self
             .observed_layer
             .unwrap_or(ObservedOutcomeLayer::Accepted);
-        attribute_proof_negative(
-            control,
-            self.case,
-            self.declared_field_range,
-            &self.mutant_bytes,
-            layer,
-            self.observed_detail.clone(),
-        )
+        attribute_proof_negative(control, &self.mutation, layer, self.observed_detail.clone())
     }
 }
 
@@ -274,7 +257,7 @@ impl ConservationNegativeRecord {
         self.reverification.as_ref()
     }
 
-    /// The three proof-negatives, in the order they ran.
+    /// The four proof-negatives, in the order they ran.
     #[must_use]
     pub fn mutants(&self) -> &[MutantObservation] {
         &self.mutants
@@ -302,7 +285,7 @@ impl ConservationNegativeRecord {
     }
 }
 
-/// The stage machine: issue, fund, three mutants, then the control.
+/// The stage machine: issue, fund, four mutants, then the control.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stage {
     /// Issue the disposable asset the deployment is linked against.
@@ -385,7 +368,7 @@ impl ConservationNegativePlanner {
         Ok(())
     }
 
-    /// Take the funded coins and build the control and its three mutants.
+    /// Take the funded coins and build the control and its four mutants.
     fn settle_funding(
         &mut self,
         response: &NativeOperationResponse,
@@ -474,26 +457,23 @@ impl ConservationNegativePlanner {
     fn mutant_step(&self, index: usize) -> Option<OperationStep> {
         let mutant = self.record.mutants.get(index)?;
         Some(OperationStep::new(
-            mutant.case.name(),
+            mutant.case().name(),
             OperationSubject::Submission(Box::new(TargetSubmissionSubject {
-                transaction_bytes: mutant.mutant_bytes.clone(),
+                transaction_bytes: mutant.mutation.mutant().encode(),
             })),
         ))
     }
 }
 
-/// Build the three proof-negative mutants from the structured control.
+/// Build the four proof-negative mutants from the structured control.
 ///
-/// Each mutates exactly one field. The declared field range is computed by
-/// substituting a sentinel into the control and diffing, so the range is
-/// the field's real serialized extent rather than a hand-derived offset.
+/// Each mutation carries only its case, output index, and structured mutant.
+/// Attribution asks the canonical encoder to locate the derived field.
 fn build_mutants(
     control: &TargetTransaction,
     asset: AssetId,
     consumed: ConsumedReceipt,
 ) -> Result<Vec<MutantObservation>, ConservationNegativeRefusal> {
-    let control_bytes = control.encode();
-
     // The wrong-blinder mutant: recompute the mutated output's value
     // commitment under a blinder that is not its own, a valid commitment
     // to the same value whose blinding factor does not close the balance.
@@ -506,27 +486,14 @@ fn build_mutants(
         .recompute(asset, amount, &WRONG_VALUE_BLINDER)
         .ok_or(ConservationNegativeRefusal::WrongBlinderNotRecomputable)?;
     let wrong_bytes = *wrong.bytes();
-    let wrong_blinder_mutant = replace_output_value(control, MUTATED_OUTPUT, wrong_bytes)?.encode();
-
-    // The declared value-commitment field: substitute a sentinel that
-    // differs in every one of the 33 bytes, so the diff is the whole field.
-    let sentinel_commitment = commitment_sentinel(control, MUTATED_OUTPUT)?;
-    let sentinel_bytes =
-        replace_output_value(control, MUTATED_OUTPUT, sentinel_commitment)?.encode();
-    let value_field_range = changed_range(&control_bytes, &sentinel_bytes);
+    let wrong_blinder_mutant = replace_output_value(control, MUTATED_OUTPUT, wrong_bytes)?;
 
     // The two range-proof mutants: empty the bytes, and corrupt them in
     // place. The commitments are untouched, so the balance check passes and
     // the range-proof check is the one that fails.
-    let missing_mutant = replace_output_range_proof(control, MUTATED_OUTPUT, Vec::new())?.encode();
+    let missing_mutant = replace_output_range_proof(control, MUTATED_OUTPUT, Vec::new())?;
     let malformed_bytes = corrupt_range_proof(control, MUTATED_OUTPUT)?;
-    let malformed_mutant =
-        replace_output_range_proof(control, MUTATED_OUTPUT, malformed_bytes)?.encode();
-
-    // The declared range-proof field: substitute an empty range proof and
-    // diff, so the declared range covers the length prefix the emptying
-    // moves as well as the bytes the corruption moves.
-    let range_field_range = changed_range(&control_bytes, &missing_mutant);
+    let malformed_mutant = replace_output_range_proof(control, MUTATED_OUTPUT, malformed_bytes)?;
 
     // The private-ct-imbalance mutant: at the SENDER's change output, a
     // value commitment to a value one unit above the change the control
@@ -534,7 +501,7 @@ fn build_mutants(
     // left in place, because the balance check is queued before it
     // (`src/confidential_validation.cpp:364`), so the tally is what fails
     // rather than the proof. Placed at IMBALANCE_OUTPUT rather than
-    // MUTATED_OUTPUT so its declared field range separates it from the
+    // MUTATED_OUTPUT so its located field range separates it from the
     // wrong-blinder mutant they otherwise share a verdict with.
     let imbalance_amount = consumed.split()[1]
         .checked_add(1)
@@ -542,74 +509,44 @@ fn build_mutants(
     let imbalance = checker
         .recompute(asset, imbalance_amount, &WRONG_VALUE_BLINDER)
         .ok_or(ConservationNegativeRefusal::WrongBlinderNotRecomputable)?;
-    let imbalance_mutant =
-        replace_output_value(control, IMBALANCE_OUTPUT, *imbalance.bytes())?.encode();
-    let imbalance_sentinel = commitment_sentinel(control, IMBALANCE_OUTPUT)?;
-    let imbalance_sentinel_bytes =
-        replace_output_value(control, IMBALANCE_OUTPUT, imbalance_sentinel)?.encode();
-    let imbalance_field_range = changed_range(&control_bytes, &imbalance_sentinel_bytes);
+    let imbalance_mutant = replace_output_value(control, IMBALANCE_OUTPUT, *imbalance.bytes())?;
 
     Ok(vec![
-        MutantObservation {
-            case: ProofNegativeCase::WrongBlinder,
-            declared_field_range: value_field_range,
-            submitted_bytes: wrong_blinder_mutant.len(),
-            mutant_bytes: wrong_blinder_mutant,
-            observed_layer: None,
-            observed_detail: None,
-        },
-        MutantObservation {
-            case: ProofNegativeCase::MissingRangeproof,
-            declared_field_range: range_field_range,
-            submitted_bytes: missing_mutant.len(),
-            mutant_bytes: missing_mutant,
-            observed_layer: None,
-            observed_detail: None,
-        },
-        MutantObservation {
-            case: ProofNegativeCase::PrivateCtImbalance,
-            declared_field_range: imbalance_field_range,
-            submitted_bytes: imbalance_mutant.len(),
-            mutant_bytes: imbalance_mutant,
-            observed_layer: None,
-            observed_detail: None,
-        },
-        MutantObservation {
-            case: ProofNegativeCase::MalformedRangeproof,
-            declared_field_range: range_field_range,
-            submitted_bytes: malformed_mutant.len(),
-            mutant_bytes: malformed_mutant,
-            observed_layer: None,
-            observed_detail: None,
-        },
+        mutant_observation(
+            ProofNegativeCase::WrongBlinder,
+            MUTATED_OUTPUT,
+            wrong_blinder_mutant,
+        ),
+        mutant_observation(
+            ProofNegativeCase::MissingRangeproof,
+            MUTATED_OUTPUT,
+            missing_mutant,
+        ),
+        mutant_observation(
+            ProofNegativeCase::PrivateCtImbalance,
+            IMBALANCE_OUTPUT,
+            imbalance_mutant,
+        ),
+        mutant_observation(
+            ProofNegativeCase::MalformedRangeproof,
+            MUTATED_OUTPUT,
+            malformed_mutant,
+        ),
     ])
 }
 
-/// A commitment that differs from the mutated output's own in every byte,
-/// for locating the value-commitment field by diffing.
-fn commitment_sentinel(
-    control: &TargetTransaction,
-    output: usize,
-) -> Result<[u8; COMMITMENT_BYTES], ConservationNegativeRefusal> {
-    let value = control
-        .outputs()
-        .get(output)
-        .map(TargetOutput::value)
-        .ok_or_else(|| {
-            ConservationNegativeRefusal::ControlNotConstructible(
-                "the mutated output is absent".to_owned(),
-            )
-        })?;
-    let ValueField::Commitment(original) = value else {
-        return Err(ConservationNegativeRefusal::ControlNotConstructible(
-            "the mutated output is not confidential".to_owned(),
-        ));
-    };
-    let mut sentinel = [0_u8; COMMITMENT_BYTES];
-    for (index, byte) in original.iter().enumerate() {
-        sentinel[index] = !byte;
+fn mutant_observation(
+    case: ProofNegativeCase,
+    output_index: usize,
+    mutant: TargetTransaction,
+) -> MutantObservation {
+    let submitted_bytes = mutant.encode().len();
+    MutantObservation {
+        mutation: ProofNegativeMutation::at_output(case, output_index, mutant),
+        submitted_bytes,
+        observed_layer: None,
+        observed_detail: None,
     }
-    Ok(sentinel)
 }
 
 /// The control with one output's value commitment replaced.
@@ -693,31 +630,6 @@ fn rebuild(
             "the mutant will not serialize".to_owned(),
         )
     })
-}
-
-/// The half-open range, in the control's coordinates, over which two byte
-/// strings differ.
-///
-/// The common prefix and suffix bound the change from both ends, so an
-/// insertion or a deletion is a change inside a range rather than a change
-/// to everything downstream of it — the same computation
-/// [`attribute_proof_negative`] uses, exposed here so the declared field
-/// range is measured rather than asserted.
-fn changed_range(control: &[u8], mutant: &[u8]) -> (usize, usize) {
-    let prefix = control
-        .iter()
-        .zip(mutant)
-        .take_while(|(left, right)| left == right)
-        .count();
-    let suffix = control
-        .iter()
-        .rev()
-        .zip(mutant.iter().rev())
-        .take_while(|(left, right)| left == right)
-        .count()
-        .min(control.len() - prefix)
-        .min(mutant.len().saturating_sub(prefix));
-    (prefix, control.len() - suffix)
 }
 
 impl TargetOperationPlanner for ConservationNegativePlanner {
@@ -878,23 +790,34 @@ pub fn render_conservation_negatives(record: &ConservationNegativeRecord) -> Str
     }
     let control = record.balance_valid_control();
     for mutant in record.mutants() {
+        let attribution = control.as_ref().map(|control| mutant.attribute(control));
+        let located_range = attribution
+            .as_ref()
+            .and_then(|result| result.as_ref().ok())
+            .map_or_else(
+                || "none".to_owned(),
+                |attribution| {
+                    let range = attribution.located_field().control_range();
+                    format!("{}..{}", range.start, range.end)
+                },
+            );
+        let locator = mutant.mutation.locator();
         let _ = writeln!(
             out,
-            "mutant {} field {} declared_range {}..{} submitted_bytes {} observed_layer {} detail {}",
+            "mutant case {} serialized_field {} output {} located_range {} submitted_bytes {} observed_layer {} detail {}",
             mutant.case().name(),
-            mutant.case().mutated_field().name(),
-            mutant.declared_field_range().0,
-            mutant.declared_field_range().1,
+            locator.field().name(),
+            locator.output_index(),
+            located_range,
             mutant.submitted_bytes,
             mutant
                 .observed_layer()
                 .map_or_else(|| "none".to_owned(), |layer| format!("{layer:?}")),
             mutant.observed_detail().unwrap_or("none"),
         );
-        let attribution = control.as_ref().map(|control| mutant.attribute(control));
         let _ = writeln!(
             out,
-            "mutant {} attribution {}",
+            "mutant case {} attribution {}",
             mutant.case().name(),
             match attribution {
                 Some(Ok(_)) => "attributed".to_owned(),
@@ -945,7 +868,7 @@ pub mod run_of_record {
     /// control.
     ///
     /// The conserving half of step three's conservation record and the
-    /// control step four's three mutants are derived from. Byte-identical
+    /// control step four's four mutants are derived from. Byte-identical
     /// to the one-to-one control's own run of record, because the ceremony
     /// is deterministic: two independent runs on two fresh chains produced
     /// this same identity.
@@ -1002,17 +925,35 @@ pub mod run_of_record {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProofNegativeCase, changed_range, run_of_record as run};
+    use super::{
+        ConservationNegativeRecord, MutantObservation, ProofNegativeCase, ProofNegativeMutation,
+        render_conservation_negatives, run_of_record as run,
+    };
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+    use transaction::bytes::{
+        AssetField, AssetId, InputWitness, NonceField, Outpoint, OutputWitness, TargetInput,
+        TargetOutput, TargetTransaction, Txid, ValueField,
+    };
 
-    #[test]
-    fn changed_range_bounds_a_mutation_from_both_ends() {
-        // A single-byte change in the middle is a one-byte range, not
-        // everything downstream of it.
-        assert_eq!(changed_range(&[0, 1, 2, 3, 4], &[0, 1, 9, 3, 4]), (2, 3));
-        // A deletion is a change inside a range, not a change to the tail.
-        assert_eq!(changed_range(&[0, 1, 2, 3, 4], &[0, 1, 3, 4]), (2, 3));
-        // Identical inputs change nothing.
-        assert_eq!(changed_range(&[7, 7], &[7, 7]), (2, 2));
+    fn renderer_transaction(commitment: [u8; 33]) -> TargetTransaction {
+        TargetTransaction::with_output_witnesses(
+            2,
+            vec![TargetInput::new(
+                Outpoint::new(Txid::from_internal([0x22; 32]), 0)
+                    .expect("the fixture outpoint is in range"),
+                u32::MAX,
+            )],
+            vec![TargetOutput::new(
+                AssetField::Explicit(AssetId::from_internal([0x11; 32])),
+                ValueField::Commitment(commitment),
+                NonceField::Null,
+                vec![0x51],
+            )],
+            0,
+            vec![InputWitness::new(Vec::new())],
+            vec![OutputWitness::range_proof_only(vec![1_u8, 2, 3])],
+        )
+        .expect("the renderer fixture is structurally complete")
     }
 
     #[test]
@@ -1026,6 +967,9 @@ mod tests {
         assert_eq!(run::PREDECESSOR_DIGEST.len(), 64);
         assert_ne!(run::PREDECESSOR_DIGEST, run::SUCCESSOR_DIGEST);
         assert_eq!(run::CONSUMED_COMMITMENT_PREFIX, 0x08);
+        assert_eq!(run::WRONG_BLINDER_FIELD_RANGE, (81, 114));
+        assert_eq!(run::PRIVATE_CT_IMBALANCE_FIELD_RANGE, (215, 248));
+        assert_eq!(run::RANGEPROOF_FIELD_RANGE, (781, 4_958));
 
         let (wb_start, wb_end) = run::WRONG_BLINDER_FIELD_RANGE;
         assert_eq!(
@@ -1062,12 +1006,44 @@ mod tests {
     #[test]
     fn the_two_range_proof_cases_share_a_field_and_the_wrong_blinder_does_not() {
         assert_eq!(
-            ProofNegativeCase::MissingRangeproof.mutated_field(),
-            ProofNegativeCase::MalformedRangeproof.mutated_field(),
+            ProofNegativeCase::MissingRangeproof.serialized_field(),
+            ProofNegativeCase::MalformedRangeproof.serialized_field(),
         );
         assert_ne!(
-            ProofNegativeCase::WrongBlinder.mutated_field(),
-            ProofNegativeCase::MissingRangeproof.mutated_field(),
+            ProofNegativeCase::WrongBlinder.serialized_field(),
+            ProofNegativeCase::MissingRangeproof.serialized_field(),
         );
+    }
+
+    #[test]
+    fn forward_renderer_names_case_and_serialized_field_truthfully() {
+        let control = renderer_transaction([0x08; 33]);
+        let mutant = renderer_transaction([0x09; 33]);
+        let submitted_bytes = mutant.encode().len();
+        let mutation = ProofNegativeMutation::at_output(ProofNegativeCase::WrongBlinder, 0, mutant);
+        let location = control
+            .locate_serialized_field(mutation.locator())
+            .expect("the renderer fixture's commitment is serialized");
+        let record = ConservationNegativeRecord {
+            control_bytes: Some(control.encode()),
+            control_observed_layer: Some(ObservedOutcomeLayer::Accepted),
+            control_accepted_txid: Some("accepted-control".to_owned()),
+            mutants: vec![MutantObservation {
+                mutation,
+                submitted_bytes,
+                observed_layer: None,
+                observed_detail: None,
+            }],
+            ..ConservationNegativeRecord::default()
+        };
+
+        let rendered = render_conservation_negatives(&record);
+        let expected = format!(
+            "mutant case wrong-blinder serialized_field value-commitment output 0 located_range {}..{}",
+            location.range().start,
+            location.range().end,
+        );
+        assert!(rendered.contains(&expected));
+        assert!(!rendered.contains("field value-blinder"));
     }
 }
