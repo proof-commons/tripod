@@ -347,12 +347,10 @@ impl Txid {
         }
 
         let displayed = text.as_bytes();
+        let (pairs, _) = displayed.as_chunks::<2>();
         let mut internal = [0_u8; TXID_BYTES];
-        for (displayed_index, (internal_byte, pair)) in internal
-            .iter_mut()
-            .rev()
-            .zip(displayed.chunks_exact(2))
-            .enumerate()
+        for (displayed_index, (internal_byte, pair)) in
+            internal.iter_mut().rev().zip(pairs).enumerate()
         {
             let high_index = displayed_index * 2;
             let low_index = high_index + 1;
