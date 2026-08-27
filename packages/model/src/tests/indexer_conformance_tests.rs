@@ -479,7 +479,7 @@ fn overclaiming_burn_addresses_are_in_the_derived_census() {
 
     let expected = synthetic_indexer(&[], &[accepted_burn(1, 1, 0, 10, ADDRESS_A), overclaim]);
 
-    assert!(expected.query(ADDRESS_B).unwrap().terms.is_empty());
+    assert_eq!(expected.query(ADDRESS_B).unwrap().terms, Vec::new());
 
     let candidate = FabricatedNonzeroCandidate {
         indexer: expected.clone(),
