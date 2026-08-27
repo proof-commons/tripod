@@ -499,8 +499,8 @@ fn wave_five_ledger() -> Result<RestartLedger, CloseoutRefusal> {
         RecordedStepResult::Accepted {
             accepted_identities: vec![run::ACCEPTED_TXID.to_owned()],
             established: "one sponsorless private one-to-one receipt-covenant control, \
-                              accepted, its witness verified from the node's own copy against \
-                              an independently recomputed message"
+                          accepted, its witness verified from the node's own copy against \
+                          an independently recomputed message"
                 .to_owned(),
         },
     )?;
@@ -512,7 +512,7 @@ fn wave_five_ledger() -> Result<RestartLedger, CloseoutRefusal> {
                 run::PARITY_ACCEPTED_TXID.to_owned(),
             ],
             established: "both admitted commitment parities, each consumed in its own \
-                              complete accepted successor"
+                          complete accepted successor"
                 .to_owned(),
         },
     )?;
@@ -521,8 +521,8 @@ fn wave_five_ledger() -> Result<RestartLedger, CloseoutRefusal> {
         RecordedStepResult::StoppedTyped {
             blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
             because: "a conservation claim needs a refused non-conserving case beside the \
-                          accepted conserving one, and the non-conserving case is the fourth \
-                          step's wrong-blinder mutation, which this wave did not run"
+                      accepted conserving one, and the non-conserving case is the fourth \
+                      step's wrong-blinder mutation, which this wave did not run"
                 .to_owned(),
         },
     )?;
@@ -727,8 +727,8 @@ fn wave_six_ledger() -> Result<RestartLedger, CloseoutRefusal> {
         RecordedStepResult::Accepted {
             accepted_identities: vec![run::ACCEPTED_TXID.to_owned()],
             established: "one sponsorless private one-to-one receipt-covenant control, \
-                              re-run on a fresh chain, accepted, its witness verified from the \
-                              node's own copy against an independently recomputed message"
+                          re-run on a fresh chain, accepted, its witness verified from the \
+                          node's own copy against an independently recomputed message"
                 .to_owned(),
         },
     )?;
@@ -740,8 +740,8 @@ fn wave_six_ledger() -> Result<RestartLedger, CloseoutRefusal> {
                 run::PARITY_ACCEPTED_TXID.to_owned(),
             ],
             established: "both admitted commitment parities, each consumed in its own \
-                              complete accepted successor, re-run on fresh chains and \
-                              reproducing the prior identities byte for byte"
+                          complete accepted successor, re-run on fresh chains and \
+                          reproducing the prior identities byte for byte"
                 .to_owned(),
         },
     )?;
@@ -750,12 +750,12 @@ fn wave_six_ledger() -> Result<RestartLedger, CloseoutRefusal> {
         RecordedStepResult::Accepted {
             accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
             established: "target CT conservation, recorded against a balance-valid accepted \
-                              control as its conserving half and one wrong-blinder mutant's \
-                              balance-layer refusal as its non-conserving half. DISCLOSURE: the \
-                              non-conserving half is the SAME observed run the fourth step \
-                              records as its wrong-blinder proof-negative — one observed run, not \
-                              two — so a reader of two accepted ledger entries does not \
-                              double-count it as two observations"
+                          control as its conserving half and one wrong-blinder mutant's \
+                          balance-layer refusal as its non-conserving half. DISCLOSURE: the \
+                          non-conserving half is the SAME observed run the fourth step \
+                          records as its wrong-blinder proof-negative — one observed run, not \
+                          two — so a reader of two accepted ledger entries does not \
+                          double-count it as two observations"
                 .to_owned(),
         },
     )?;
@@ -764,12 +764,12 @@ fn wave_six_ledger() -> Result<RestartLedger, CloseoutRefusal> {
         RecordedStepResult::Accepted {
             accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
             established: "wrong-blinder, missing-rangeproof, and malformed-rangeproof, all \
-                              three submitted to the mempool boundary and refused at \
-                              ConsensusRejectionBeforeScript with the one identical string \
-                              bad-txns-in-ne-out, each attributed by its mutated field against \
-                              the accepted control rather than by a target layer the three could \
-                              differ on. The wrong-blinder case is the same observed refusal the \
-                              third step records as conservation's non-conserving half"
+                          three submitted to the mempool boundary and refused at \
+                          ConsensusRejectionBeforeScript with the one identical string \
+                          bad-txns-in-ne-out, each attributed by its mutated field against \
+                          the accepted control rather than by a target layer the three could \
+                          differ on. The wrong-blinder case is the same observed refusal the \
+                          third step records as conservation's non-conserving half"
                 .to_owned(),
         },
     )?;
@@ -778,10 +778,10 @@ fn wave_six_ledger() -> Result<RestartLedger, CloseoutRefusal> {
         RecordedStepResult::StoppedTyped {
             blocker: LiveInfrastructureBlocker::MultiOutputShapeConstructorAbsent,
             because: "the remaining positive shapes — split, many-to-many, several distinct \
-                          owners — need multi-output and multi-input fixtures this wave does not \
-                          build, and private-merge is additionally structurally unconstructible \
-                          under the registry's two-output rule; a following wave builds the \
-                          fixtures and moves each shape on its own observed acceptance"
+                      owners — need multi-output and multi-input fixtures this wave does not \
+                      build, and private-merge is additionally structurally unconstructible \
+                      under the registry's two-output rule; a following wave builds the \
+                      fixtures and moves each shape on its own observed acceptance"
                 .to_owned(),
         },
     )?;
@@ -1036,11 +1036,11 @@ fn wave_seven_ledger() -> Result<RestartLedger, CloseoutRefusal> {
         RecordedStepResult::StoppedTyped {
             blocker: LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
             because: "the sponsor cases run only after their independent signer dependency \
-                          closes by observation, and it has not: no target has accepted a control \
-                          carrying a sponsor owner's authorization. The dependency is not this \
-                          guide's to close, the private-sponsor-values row may not move, and step \
-                          seven's disclosure-minimality pairs follow this step in the mandatory \
-                          order and are therefore not reached"
+                      closes by observation, and it has not: no target has accepted a control \
+                      carrying a sponsor owner's authorization. The dependency is not this \
+                      guide's to close, the private-sponsor-values row may not move, and step \
+                      seven's disclosure-minimality pairs follow this step in the mandatory \
+                      order and are therefore not reached"
                 .to_owned(),
         },
     )?;
@@ -1072,8 +1072,8 @@ fn wave_seven_steps_one_to_five() -> Result<RestartLedger, CloseoutRefusal> {
         RecordedStepResult::Accepted {
             accepted_identities: vec![run::ACCEPTED_TXID.to_owned()],
             established: "one sponsorless private one-to-one receipt-covenant control, \
-                              accepted, its witness verified from the node's own copy against an \
-                              independently recomputed message"
+                          accepted, its witness verified from the node's own copy against an \
+                          independently recomputed message"
                 .to_owned(),
         },
     )?;
@@ -1085,7 +1085,7 @@ fn wave_seven_steps_one_to_five() -> Result<RestartLedger, CloseoutRefusal> {
                 run::PARITY_ACCEPTED_TXID.to_owned(),
             ],
             established: "both admitted commitment parities, each consumed in its own \
-                              complete accepted successor"
+                          complete accepted successor"
                 .to_owned(),
         },
     )?;
@@ -1094,11 +1094,11 @@ fn wave_seven_steps_one_to_five() -> Result<RestartLedger, CloseoutRefusal> {
         RecordedStepResult::Accepted {
             accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
             established: "target CT conservation, recorded against a balance-valid accepted \
-                              control as its conserving half and one wrong-blinder mutant's \
-                              balance-layer refusal as its non-conserving half. DISCLOSURE: the \
-                              non-conserving half is the SAME observed run the fourth step \
-                              records as its wrong-blinder proof-negative — one observed run, not \
-                              two"
+                          control as its conserving half and one wrong-blinder mutant's \
+                          balance-layer refusal as its non-conserving half. DISCLOSURE: the \
+                          non-conserving half is the SAME observed run the fourth step \
+                          records as its wrong-blinder proof-negative — one observed run, not \
+                          two"
             .to_owned(),
         },
     )?;
@@ -1107,9 +1107,9 @@ fn wave_seven_steps_one_to_five() -> Result<RestartLedger, CloseoutRefusal> {
         RecordedStepResult::Accepted {
             accepted_identities: vec![cn::CONTROL_ACCEPTED_TXID.to_owned()],
             established: "wrong-blinder, missing-rangeproof, and malformed-rangeproof, all \
-                              three submitted to the mempool boundary and refused at \
-                              ConsensusRejectionBeforeScript with the one identical string \
-                              bad-txns-in-ne-out, each attributed by its mutated field"
+                          three submitted to the mempool boundary and refused at \
+                          ConsensusRejectionBeforeScript with the one identical string \
+                          bad-txns-in-ne-out, each attributed by its mutated field"
                 .to_owned(),
         },
     )?;
@@ -1122,17 +1122,17 @@ fn wave_seven_steps_one_to_five() -> Result<RestartLedger, CloseoutRefusal> {
                 ms::SEVERAL_OWNERS_ACCEPTED_TXID.to_owned(),
             ],
             established: "THREE remaining positive private shapes, each built as its own \
-                              multi-output or multi-input fixture and each accepted by a real \
-                              node on its own shape: a split of one receipt into three outputs, a \
-                              representative many-to-many of two receipts into three outputs, and \
-                              a two-receipt transfer under two distinct owners into two outputs. \
-                              Every one carries a verified readback witness. DISCLOSURE: \
-                              private-merge did NOT run and is not unbuilt but UNCONSTRUCTIBLE — \
-                              a merge is one output and the registry refuses fewer than two, \
-                              because a confidential balance needs a balancing output — so its \
-                              row stays unmoved and the predicate conflict is filed as a guide \
-                              erratum rather than resolved here. An accepted fifth step is \
-                              therefore three shapes of four, not four of four"
+                          multi-output or multi-input fixture and each accepted by a real \
+                          node on its own shape: a split of one receipt into three outputs, a \
+                          representative many-to-many of two receipts into three outputs, and \
+                          a two-receipt transfer under two distinct owners into two outputs. \
+                          Every one carries a verified readback witness. DISCLOSURE: \
+                          private-merge did NOT run and is not unbuilt but UNCONSTRUCTIBLE — \
+                          a merge is one output and the registry refuses fewer than two, \
+                          because a confidential balance needs a balancing output — so its \
+                          row stays unmoved and the predicate conflict is filed as a guide \
+                          erratum rather than resolved here. An accepted fifth step is \
+                          therefore three shapes of four, not four of four"
                 .to_owned(),
         },
     )?;
