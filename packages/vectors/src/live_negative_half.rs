@@ -140,14 +140,18 @@ pub enum NegativeHalfGap {
     /// one-input shape — so the member now carries ZERO rows and is kept as
     /// provenance, the vocabulary the drive read off.
     ConsensusAnswersBeforeScript,
-    /// The explicit lane's witness mutation reaches item zero only.
+    /// No stage CORRUPTS a witness item past the signature payload.
     ///
-    /// The staged mutation replaces the signature payload and nothing
-    /// else; the leaf script and the control block are written after it,
-    /// and the attributability check is a width bound around a
-    /// signature. Reaching the rest of the stack needs that stage
-    /// generalized to a declared byte range, which is a prerequisite
-    /// rather than a refinement.
+    /// The §15.3 witness mutation replaces the signature payload and
+    /// nothing else, its attributability a width bound around a signature.
+    /// The owner-signing route's leaf-arrangement stage now writes the
+    /// whole stack — signature, leaf script and control block — but only
+    /// with COMMITTED values: it reveals a real leaf at a wrong position,
+    /// and the census refuses any control block that does not commit
+    /// before the node sees it. Corrupting item two into a MALFORMED
+    /// control block therefore needs a witness-byte-range surgery that
+    /// bypasses the commitment census and declares its own confined range,
+    /// which is a prerequisite rather than a refinement.
     WitnessSurgeryStageAbsent,
     /// No admitted shape can carry the fault.
     ///
@@ -278,7 +282,7 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     entry(
         "projection-equality-with-paired-explicit",
         G::PairSubmissionCapabilityAbsent,
-        "the pair registry carries no accepted member and the pairs lane submits nothing",
+        "§16.1 wants one fixture materialized twice, and the pair registry carries no accepted member while the pairs lane submits nothing, so no relation over two accepted identities exists to observe",
     ),
     // §15.4 — the class, asset and constructor faults still waiting.
     //
@@ -310,7 +314,7 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     entry(
         "malformed-control-path",
         G::WitnessSurgeryStageAbsent,
-        "the control block is witness item two and the staged mutation reaches item zero only",
+        "the leaf-arrangement stage writes witness item two but only a committed control block, the census refusing a malformed one before the node, so a corrupting witness-byte-range surgery reaching item two is still owed",
     ),
     // §15.5 — the value and partition faults still waiting. Several rows of
     // this section have LEFT this register: `malformed-rangeproof` and
@@ -429,30 +433,29 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         G::FacetNeedsADifferentTransaction,
         "the successor emits no transition certificate, so there is none to omit without building a certificate-bearing transaction first",
     ),
-    // The four leaf-arrangement rows. The covenant DOES introspect its
-    // own input index, so these are not commitment-generic — and that is
-    // what makes the collision the finding rather than a guess: the
-    // coordinator fragment and the member fragment abort at different
-    // opcodes, giving two verdicts for four rows.
+    // The two typed halves of the leaf-arrangement collision pairs. The
+    // covenant DOES introspect its own input index, so these are not
+    // commitment-generic: the coordinator fragment aborts at an index
+    // EqualVerify and the member fragment at a bound Verify, two verdicts
+    // for four rows. ONE row of each pair is DRIVEN through the
+    // owner-signing route — `two-coordinators` (coordinator leaf at both
+    // inputs, the one at input one failing the index EqualVerify) and
+    // `no-coordinator` (member leaf at both inputs, the one at input zero
+    // failing the bound Verify), each the pair's single-failing-input
+    // arrangement, recorded in `live_evidence` rather than here. The other
+    // half of each pair stays here because its own mutant would draw the
+    // SAME verdict at the SAME clause — its arrangement has a second
+    // failing input, so its observation would duplicate its pair-partner's
+    // and separate nothing: the copied-commitment precedent.
     entry(
         "wrong-coordinator",
         G::TargetVerdictDoesNotSeparateTheRows,
-        "aborts at the coordinator index check, in the same words two-coordinators draws",
-    ),
-    entry(
-        "two-coordinators",
-        G::TargetVerdictDoesNotSeparateTheRows,
-        "aborts at the coordinator index check, in the same words wrong-coordinator draws",
-    ),
-    entry(
-        "no-coordinator",
-        G::TargetVerdictDoesNotSeparateTheRows,
-        "aborts at the member bound check, in the same words the leaf exchange draws",
+        "its mutant aborts at the coordinator index check in the same OP_EQUALVERIFY words two-coordinators drove and observed, so its observation would duplicate that pair-partner's",
     ),
     entry(
         "member-coordinator-leaf-exchange",
         G::TargetVerdictDoesNotSeparateTheRows,
-        "aborts at the member bound check, in the same words no-coordinator draws",
+        "its mutant aborts at the member bound check in the same OP_VERIFY words no-coordinator drove and observed, so its observation would duplicate that pair-partner's",
     ),
     entry(
         "receipt-sponsor-range-exchange",
