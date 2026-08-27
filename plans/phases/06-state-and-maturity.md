@@ -1,6 +1,11 @@
 # Phase 6 — STATE Constructor and Maturity Announcement · `phase:roadmap:state-maturity`
 
-> **Status:** Planned
+> **Status:** Active — opened by the owner 2026-08-27 as the roadmap's
+> current phase when Phase 5 exited; both entry conditions hold — the
+> amended phase-5 exit gate is met on its countersigned assessment, and
+> the STATE-constructor research decision is accepted. No execution
+> guide is chartered yet: the Guide-14 drafting decision is the owner's
+> and remains open.
 > **Entry:** (`gate:phase5:exit`) and accepted STATE-constructor decision
 > **Packages:** tapscript, linker, transaction, vectors
 > **Operation:** `announce-maturity`

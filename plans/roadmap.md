@@ -39,7 +39,7 @@ The order is intentional:
 ## Status · `phase:roadmap:current`
 
 ```text
-Current: Phase 5 - Live receipt transfer
+Current: Phase 6 - STATE constructor and maturity announcement
 ```
 
 ## Phase index · `tab:roadmap:phases`
