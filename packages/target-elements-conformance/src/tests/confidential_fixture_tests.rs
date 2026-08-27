@@ -1121,11 +1121,12 @@ fn the_new_role_moves_no_recorded_digest_because_it_rides_a_new_code() {
         FixtureOutputRole::Fee,
         FixtureOutputRole::SponsorChange { asset: ASSET },
         FixtureOutputRole::ExplicitDestination,
+        FixtureOutputRole::ExplicitSponsorChange { asset: ASSET },
     ]
     .map(FixtureOutputRole::transcript_code);
     assert_eq!(
         codes,
-        [1, 2, 3, 4, 5, 6],
+        [1, 2, 3, 4, 5, 6, 7],
         "codes are stable and the new one is next"
     );
 
@@ -1136,4 +1137,143 @@ fn the_new_role_moves_no_recorded_digest_because_it_rides_a_new_code() {
     assert!(!role.carries_an_opening());
     assert!(!role.requires_an_empty_program());
     assert_eq!(role.own_asset(), None, "it takes the manifest's asset");
+}
+
+// --- The explicit sponsor change, and the wall it removes -------------
+
+/// The reserve asset a sponsor's change is denominated in.
+///
+/// Public disposable test material under ADR-015; it names no chain. It
+/// differs from `ASSET` because the whole point of a sponsor region is
+/// that it moves a DIFFERENT asset.
+const RESERVE_ASSET: [u8; 32] = [0x5c; 32];
+
+/// A sponsored confidential manifest: one blinded destination, the
+/// sponsor's change under `change`, and the fee.
+fn sponsored_change_manifest(
+    handle: &str,
+    change: FixtureOutputRole,
+) -> ConfidentialFixtureManifest {
+    ConfidentialFixtureManifest {
+        handle: ConfidentialFixtureHandle::new(handle.to_owned()),
+        material_class: PublicDisposableTestMaterial::EXPECTED,
+        derivation_profile: FixtureDerivationProfile::GuideCtfV1,
+        profiles: profiles(ReproducibilityContract::ByteIdentity),
+        retry_limit: MAX_PARITY_COUNTER,
+        explicit_asset: ASSET,
+        input_blinder_sum: NON_CANCELING_SUM,
+        outputs: vec![
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::Balancing,
+                semantic_amount: 300_000_000,
+                output_program: vec![0x51],
+            },
+            ConfidentialFixtureOutput {
+                role: change,
+                semantic_amount: 200_000_000,
+                output_program: vec![0x52],
+            },
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::Fee,
+                semantic_amount: 100_000_000,
+                output_program: Vec::new(),
+            },
+        ],
+    }
+}
+
+#[test]
+fn an_explicit_sponsor_change_registers_and_carries_no_opening() {
+    // The wall this member removes: for as long as the vocabulary's one
+    // sponsor role was the committed change, a confidential manifest
+    // whose sponsor takes explicit change could not be stated at all.
+    // It now registers by NAMING the role, which is the whole of the
+    // change -- nothing is inferred from a count or an amount.
+    let mut registry = ConfidentialFixtureRegistry::new();
+    registry
+        .register(sponsored_change_manifest(
+            "ctf-v1/explicit-sponsor-change",
+            FixtureOutputRole::ExplicitSponsorChange {
+                asset: RESERVE_ASSET,
+            },
+        ))
+        .expect("a sponsored manifest taking explicit change registers");
+    let frozen = registry.freeze();
+    let handle = ConfidentialFixtureHandle::new("ctf-v1/explicit-sponsor-change".to_owned());
+    let digest = *frozen
+        .registered_digest(&handle)
+        .expect("the registry holds its own digest");
+    let resolved = frozen.resolve(&handle, &digest).expect("it resolves");
+
+    let FixtureOpenings::Derived { openings, .. } = resolved.openings() else {
+        panic!("byte identity derives openings");
+    };
+    assert_eq!(openings.len(), 3, "three outputs, three opening slots");
+    assert!(
+        openings[1].is_none(),
+        "an explicit sponsor change carries NO opening, recorded as an absence",
+    );
+
+    // The parity rule read it as the explicit output it is: it
+    // contributed a zero blinder, so the solved balancing blinder is
+    // the input blinder sum itself, nothing having been derived to
+    // subtract.
+    let balancing = openings[0]
+        .as_ref()
+        .expect("the blinded destination carries the one opening");
+    assert_eq!(
+        balancing.value_blinder, NON_CANCELING_SUM,
+        "the explicit change contributes zero to the solve",
+    );
+
+    // And the asset seam is the role's, not the manifest's.
+    let change = FixtureOutputRole::ExplicitSponsorChange {
+        asset: RESERVE_ASSET,
+    };
+    assert_eq!(change.own_asset(), Some(RESERVE_ASSET));
+    assert!(!change.carries_an_opening());
+    assert!(!change.solves_the_balance());
+    assert!(!change.requires_an_empty_program());
+}
+
+#[test]
+fn an_explicit_sponsor_change_is_held_to_the_clauses_of_an_explicit_output() {
+    // The removal is a narrowing, not a relaxation: the new member is
+    // read by the existing clauses exactly as its predicates answer,
+    // and no clause was loosened to admit it.
+    //
+    // The empty-program clause reads it as a payment back to a real
+    // owner, so a programless one draws the same refusal a programless
+    // destination draws.
+    let mut programless = sponsored_change_manifest(
+        "ctf-v1/explicit-change-programless",
+        FixtureOutputRole::ExplicitSponsorChange {
+            asset: RESERVE_ASSET,
+        },
+    );
+    programless.outputs[1].output_program = Vec::new();
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(programless)
+            .expect_err("an explicit sponsor change with no program is refused"),
+        RegistrationRefusal::OutputProgramEmpty { output: 1 },
+    );
+
+    // And the parity rule counts it as solving NOTHING: a manifest
+    // whose outputs are the explicit change, an explicit destination
+    // and the fee has no solving role and draws the refusal such a
+    // manifest has always drawn, with the same count.
+    let mut unsolved = sponsored_change_manifest(
+        "ctf-v1/explicit-change-unsolved",
+        FixtureOutputRole::ExplicitSponsorChange {
+            asset: RESERVE_ASSET,
+        },
+    );
+    unsolved.outputs[0].role = FixtureOutputRole::ExplicitDestination;
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(unsolved)
+            .expect_err("no output solves the balance"),
+        RegistrationRefusal::BalancingRoleNotUnique { found: 0 },
+    );
 }

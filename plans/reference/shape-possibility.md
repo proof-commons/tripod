@@ -115,13 +115,15 @@ So the register also states the PRODUCT of the four axes those eleven shapes are
 | Status | What it means | Cells |
 |---|---|---|
 | Not a form of this space | The axes contradict, and the contradiction is named | 282 |
-| Expressible and unrun | Consensus admits it, this workspace states it, nothing has built one | 79 |
+| Expressible and unrun | Consensus admits it, this workspace states it, nothing has built one | 109 |
 | Impossible, derived | The tally forbids it | 49 |
-| Unsupported here | Consensus admits it and a named layer here refuses it | 36 |
+| Unsupported here | Consensus admits it and a named layer here refuses it | 6 |
 | Supported and run | A node accepted one, and the cell cites its identity | 13 |
 | Stated in another register | Answered by the register that owns it, rather than twice | 12 |
 | Refused to protect hiding | The tally is content and the one blinded output would hide nothing | 8 |
 | Impossible, observed | Built, offered to a node, and refused on the balance rule itself | 1 |
+
+Thirty cells moved from unsupported-here to expressible-and-unrun when the sponsor-change role wall was removed under T5-063, recorded at (`rule:shapes:sponsor-change-role`); the six that remain are the solving-role wall's. The freed cells were re-verdicted by the unchanged cascade rather than relabeled — a freed cell is a cell nobody has offered, and the standing says so.
 
 Two hundred and eighty-two of the four hundred and eighty are combinations of axes that contradict, so the space this register answers about is the remaining one hundred and ninety-eight — and every one of them carries a verdict. The largest single contradiction is a sponsor region beside no fee output: a sponsor region is DEFINED by the fee it funds, the reviewed shape vocabulary derives the fee's presence from a nonzero sponsor-input count and refuses the combination by name, so a sponsored form paying no fee is not a form this space can state. Nothing about consensus forbids one. It is a definition, and the register says which.
 
@@ -322,6 +324,24 @@ Its proof census is two range proofs for two blinded destinations, and the count
 **What the entry direction needed, and it was not consensus.** Three first-party readings, each of which had conflated a side with the transaction. A consumed receipt could not be stated without naming a registered confidential fixture output, though an explicit coin has no opening to name. The randomness rule keyed on the request's plan rather than on the side being blinded, and so refused randomness to the one transfer that most needs it. And the opening-binding census counted verified references against every input rather than against the inputs that have them.
 
 **Revising this limitation touches:** the compiler's representation plan and its deferral census, the constructor and the leaf roles keyed by representation, the coordinator's value-obligation dispatch and the positional fragment, the deployment's seating of constructors at table keys, the construction lane's two lookups, the fixture registry's output role vocabulary and the materializer's, the shape census's output axes, and guide §6.5 — which is exercised rather than amended, its own escape clause being what the ruling took.
+
+## The sponsor-change role · `rule:shapes:sponsor-change-role`
+
+**Refused.** A confidential manifest whose sponsor takes EXPLICIT change back could not be stated at all. The fixture output role vocabulary's one sponsor member was the committed change, whose carries_an_opening is true, and an explicit output has no opening to carry — so the thirty consensus-possible cells of the product whose sponsor takes explicit change on a confidential lane were unsupported here, refused by a vocabulary rather than by any clause anybody wrote.
+
+**Refused at.** packages/target-elements-conformance/src/confidential_fixture.rs, the FixtureOutputRole vocabulary as it stood: one sponsor member, committed, and no other kind.
+
+**Convention.** The lane a form runs on decides which registry states it. An explicit sponsor change belongs to the explicit lane, which registers nothing, so the confidential registry was given the one sponsor role the confidential lane needed. Nothing decided against the other; no decision was recorded because none was made — the sentence this register has now written five times.
+
+**Removal path, TAKEN under T5-063.** Give the vocabulary an explicit sponsor-change member beside the committed one, carrying its own asset exactly as the committed member does and carrying no opening, so the empty-program clause and the parity rule read it as the explicit output it is. That is what was built, and nothing else: the member rides transcript code 7, the next unused one, its reserve asset travels through the same one-seam accessor the committed member rides, and no manifest registered before it hashes a byte differently — the declaration rides in a role code the transcript already emits per output, which is the same property that let the committed member, the fee, the sole-balancing form and the explicit destination land without moving a recorded digest.
+
+The removal is a narrowing and not a relaxation, held by driving rather than argued. A programless explicit change draws the same refusal a programless destination draws; a manifest whose outputs are the explicit change, an explicit destination and a fee draws the refusal such a manifest has always drawn, with the same count of zero solving roles; and a manifest that does not name the member registers exactly as before. Nothing that was refused registers now unless it says which role it means.
+
+**And no freed cell has run, which is a different sentence.** The thirty cells re-verdicted to expressible-and-unrun by the unchanged cascade, and the removal's proof of a chain acceptance is deliberately absent — the T5-042 precedent exactly. A freed manifest registers, derives and digests; nothing between the registry and a node has learned the role.
+
+**The wall behind the wall, censused rather than folded in.** The materializer's projection carries one sponsor role and it is the committed change. Its closed-view arm refuses a registry role with no member in the view's own vocabulary rather than substituting one — the honest stop the fee role's history demanded, since a substitution would solve a blinder for an output that publishes its amount. The census records it as its own limitation with its own path: carry the freed roles through the projection as the fee role was carried under T5-045, and behind that a ceremony still owes a stage that asks for a freed form by name, which is a second absence and not the same one. Removing a wall does not always reveal open ground; this register has now recorded that lesson four times, and recording it is the point.
+
+**Revising this limitation touches:** this section; the vocabulary member and its five predicate accessors, together with the digest-stability test that pins the transcript codes; the census's layer derivation, its drive helper and the three tests that pin the freed counts; the projection's closed-view arm, which is the uncovered wall's own site; and the census row for the projection limitation, which a later removal moves exactly as this one moved the sponsor-change row.
 
 ## What the register does not claim · `rem:shapes:non-claims`
 
