@@ -718,7 +718,9 @@ fn assert_owner_observation_matches_run_of_record(
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
     use vectors::live_proof_bearing_observation::{
-        ProofBearingObservationPlanner, render_proof_bearing_observation,
+        PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION, ProofBearingObservationPlanner,
+        ProofBearingRunOfRecord, ProofBearingRunOfRecordV2, construction_run_of_record_v2,
+        render_proof_bearing_observation,
     };
 
     let executor =
@@ -780,7 +782,141 @@ fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
 
     outcome.expect("the ceremony reached the target");
 
+    assert_construction_refusals_match_the_run_of_record(record);
+    match construction_run_of_record_v2() {
+        ProofBearingRunOfRecordV2::Pending => {
+            let projection = ProofBearingRunOfRecord::try_from(record)
+                .expect("the completed V2 ceremony projects before constants are minted");
+            assert_eq!(
+                projection.schema_version(),
+                PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION
+            );
+            assert!(rendered.contains("run_of_record_v2 pending"));
+            assert!(rendered.contains("run_of_record_projection ready"));
+        }
+        ProofBearingRunOfRecordV2::Recorded(expected) => {
+            assert_proof_bearing_record_matches_run_of_record(record, expected);
+        }
+    }
     check_proof_bearing_record(record, &rendered);
+}
+
+/// Bind every live construction refusal to the V2 run of record where
+/// the constants exist.
+///
+/// The live-only relations do not wait for those constants: every
+/// refusal must project to the stable vocabulary, the controls must be
+/// exactly the closed control census in order, and every full refusal
+/// must name the first consumed coin.
+///
+/// # Panics
+///
+/// If the completed live record omits a coin or control, carries an
+/// unrecognized refusal, names the wrong consumed coin, or differs from
+/// a recorded V2 refusal vector.
+fn assert_construction_refusals_match_the_run_of_record(
+    record: &vectors::live_proof_bearing_observation::ProofBearingObservationRecord,
+) {
+    use transaction::live_materialize::MaterializationRefusal;
+    use vectors::live_proof_bearing_observation::{
+        ProofBearingConstructionControl, ProofBearingRunOfRecordV2,
+        RecordedProofBearingConstructionRefusal, construction_run_of_record_v2,
+    };
+
+    let projected = record
+        .construction_refusals()
+        .iter()
+        .map(RecordedProofBearingConstructionRefusal::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .expect("every live construction refusal has a stable archival reason");
+    let controls: Vec<_> = projected
+        .iter()
+        .map(RecordedProofBearingConstructionRefusal::control)
+        .collect();
+    assert_eq!(
+        controls.as_slice(),
+        ProofBearingConstructionControl::ALL,
+        "the live construction-control census drifted",
+    );
+
+    let first_outpoint = record
+        .coins()
+        .first()
+        .expect("the completed ceremony consumed a predecessor coin")
+        .outpoint();
+    for refusal in record.construction_refusals() {
+        let MaterializationRefusal::PredecessorOpeningMismatch { outpoint } = refusal.refusal()
+        else {
+            panic!("a construction control drew an unrecognized live refusal");
+        };
+        assert_eq!(
+            *outpoint, first_outpoint,
+            "a construction refusal names a coin other than the first consumed coin",
+        );
+    }
+
+    if let ProofBearingRunOfRecordV2::Recorded(expected) = construction_run_of_record_v2() {
+        let expected = expected
+            .construction_refusals()
+            .captured()
+            .expect("the V2 record captures construction refusals");
+        assert_eq!(
+            projected.as_slice(),
+            expected,
+            "the live construction refusals drifted from the complete V2 vector",
+        );
+    }
+}
+
+/// Bind the live coins, reverification, and candidate messages to the
+/// exact V2 archival record.
+///
+/// # Panics
+///
+/// If the live record is incomplete or any projected V2 field differs
+/// from the recorded value.
+fn assert_proof_bearing_record_matches_run_of_record(
+    actual: &vectors::live_proof_bearing_observation::ProofBearingObservationRecord,
+    expected: &vectors::live_proof_bearing_observation::ProofBearingRunOfRecord,
+) {
+    use vectors::live_proof_bearing_observation::ProofBearingRunOfRecord;
+
+    let projected = ProofBearingRunOfRecord::try_from(actual)
+        .expect("the completed live ceremony projects to the archival schema");
+    assert_eq!(projected.schema_version(), expected.schema_version());
+    assert_eq!(projected.issued_asset(), expected.issued_asset());
+    assert_eq!(
+        projected.predecessor_digest(),
+        expected.predecessor_digest()
+    );
+    assert_eq!(
+        projected.coins(),
+        expected.coins(),
+        "a node-reported coin field drifted from V2",
+    );
+    assert_eq!(
+        projected.output_witness_vector_length(),
+        expected.output_witness_vector_length()
+    );
+    assert_eq!(
+        projected.output_witness_proof_bytes(),
+        expected.output_witness_proof_bytes()
+    );
+    assert_eq!(
+        projected.spent_value_prefixes(),
+        expected.spent_value_prefixes()
+    );
+    assert_eq!(projected.observations(), expected.observations());
+    assert_eq!(
+        projected.reverification(),
+        expected.reverification(),
+        "the exact reverification outcome drifted from V2",
+    );
+    assert_eq!(
+        projected.candidate_messages(),
+        expected.candidate_messages(),
+        "a candidate message drifted from V2",
+    );
 }
 
 /// Everything the completed proof-bearing ceremony owes its reader.
