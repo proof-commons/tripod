@@ -1699,11 +1699,11 @@ pub mod run_of_record {
 
     /// The predecessor fixture's digest.
     pub const PREDECESSOR_DIGEST: &str =
-        "1d5dc685de3ab2cd6d9baee7169993c0f7ab5df20a48a4bfb553ce9ec51f39fc";
+        "7fb3e6666f7574af9d9a295b6d9412f38817faf02c97b020752dc57709f0ae8b";
 
     /// The successor fixture's digest.
     pub const SUCCESSOR_DIGEST: &str =
-        "f28590a2c927b62e356dd7f79bc450d51917135ecc99c6c4bba2053b06d48fcc";
+        "414b7c3c514e5846398e5199e43789c07eda8865ef488e062b424d456997eeb1";
 
     /// The identity the target computed for the accepted control.
     ///
@@ -1742,7 +1742,7 @@ pub mod run_of_record {
     /// blinders and split different amounts. A pair of runs whose
     /// successor digests agreed would be one run reported twice.
     pub const PARITY_SUCCESSOR_DIGEST: &str =
-        "6b80d64e5692745ce4dbfa0fb6fcf36e5ef27c3c452afad49d11de0a2ac54748";
+        "f56b971cffea21a748b509a9b8aa7ccb0764ba6ce208438405a4025d35342c55";
 
     /// The identity the target computed for the second parity's
     /// accepted successor.

@@ -753,7 +753,7 @@ NORMALIZATION_HIDDEN_AMOUNT = 1_000_000
 # here is a secret, nothing here is retained, and nothing here authorizes
 # anything anywhere else.
 CONFIDENTIAL_DERIVATION_TAG = b"tripod/guide-ctf/derive/v1"
-CONFIDENTIAL_DIGEST_TAG = b"tripod/guide-ctf/fixture-digest/v1"
+CONFIDENTIAL_DIGEST_TAG = b"tripod/guide-ctf/fixture-digest/v2"
 
 # The one digit in the handle grammar's whole spelling.
 CONFIDENTIAL_GRAMMAR_VERSION = 1
@@ -996,10 +996,13 @@ def confidential_digest_transcript(
 
     The contract tag sits INSIDE the transcript rather than beside it,
     which is what makes a semantic-only recorded-randomness digest
-    impossible to mistake for a byte-identity one. The members that exist
-    only under byte identity -- the counter, the amounts, the openings,
-    and the resulting prefixes -- are written only when the openings are
-    there to write.
+    impossible to mistake for a byte-identity one. Semantic amounts are
+    written under BOTH contracts. Only the counter, openings, and
+    resulting prefixes are byte-identity material.
+
+    The input blinder sum is constructor-only material, enforced by the
+    conservation solve and node acceptance. It is not semantic transcript
+    material and is deliberately absent here.
     """
     parts = [struct.pack(">H", CONFIDENTIAL_GRAMMAR_VERSION)]
     confidential_framed(parts, handle.encode("utf-8"))
@@ -1021,9 +1024,9 @@ def confidential_digest_transcript(
         parts.append(bytes([CONFIDENTIAL_OUTPUT_ROLES[output["role"]]]))
         confidential_framed(parts, asset)
         confidential_framed(parts, programs[index])
+        parts.append(struct.pack(">Q", output["semantic_amount"]))
         if openings is not None:
             opening = openings[index]
-            parts.append(struct.pack(">Q", output["semantic_amount"]))
             confidential_framed(parts, opening["value_blinder"])
             confidential_framed(parts, opening["nonce_input"])
             confidential_framed(parts, opening["rangeproof_seed"])
