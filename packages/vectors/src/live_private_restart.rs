@@ -58,14 +58,16 @@
 //! conflict is reported as a divergence rather than repaired, because
 //! this module does not own either rule.
 //!
-//! # Nothing here decides what the node should have found
+//! # The native carrier binds this record exactly
 //!
-//! The observation is a layer and the node's own words. The one thing
-//! that IS asserted is the two-origin agreement where an acceptance was
-//! observed, on the pattern the two existing observation ceremonies set:
-//! a run that accepted a candidate and then could not verify the witness
-//! it read back against its own recomputed message has found something,
-//! and must fail rather than write a false line.
+//! The ignored private-restart tests write their fresh artifacts first and
+//! then assert every stable field against [`run_of_record`]: exact accepted
+//! layer and identity, fixture digests, receipt parity, byte and proof
+//! counts, and unconditional readback reverification. A changed honest
+//! result therefore remains recorded while the reproduction gate fails.
+//! Superseding it requires an explicit decision recorded as a new
+//! forward record; the historical constants are never overwritten to
+//! make a rerun green.
 
 use std::collections::BTreeMap;
 
@@ -1710,6 +1712,8 @@ pub mod run_of_record {
     pub const ACCEPTED_TXID: &str =
         "4571a077826d45f64402a5c83ac9c0454fe42cf53b75f7aac2c8d07b574ad152";
 
+    crate::recorded_acceptance::mint_recorded_acceptance!(accepted, ACCEPTED_TXID);
+
     /// How many bytes were handed to the node.
     pub const SUBMITTED_BYTES: usize = 9_136;
 
@@ -1748,6 +1752,8 @@ pub mod run_of_record {
     /// takes both to say that both parities were exercised.
     pub const PARITY_ACCEPTED_TXID: &str =
         "45f1c5669cdc868f5612f6b18b2e285b791d7f093e45b2d28147eac63427dd95";
+
+    crate::recorded_acceptance::mint_recorded_acceptance!(parity_accepted, PARITY_ACCEPTED_TXID);
 
     /// The commitment prefix the second run's consumed coin carried.
     pub const PARITY_CONSUMED_COMMITMENT_PREFIX: u8 = 0x09;

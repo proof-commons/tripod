@@ -1,13 +1,13 @@
 //! The live-transfer lane: one candidate run against a real node.
 //!
-//! # Why this is an ignored test rather than a gate
+//! # Why these gates are ignored in the ordinary suite
 //!
 //! It needs a live Elements node, so it cannot run in an ordinary lane,
-//! and what it produces is a transcript rather than a verdict. The whole
-//! workspace suite stays green without a node present, which is what the
-//! `#[ignore]` buys: the evidence this wave commits is the *report*
-//! artifacts and the tests that validate them, and none of those needs
-//! the node to be re-run.
+//! and the whole workspace suite stays green without a node present.
+//! The `#[ignore]` separates this serialized native lane from ordinary
+//! tests; it does not make every native result observation-only. Where a
+//! committed run of record supplies active evidence, its own carrier may
+//! be a strict reproduction gate after it writes the fresh artifacts.
 //!
 //! Run it as:
 //!
@@ -19,13 +19,14 @@
 //!   cargo test -p tripod-vectors --test guide13_live_native -- --ignored --nocapture
 //! ```
 //!
-//! # Nothing here decides what the run should have found
+//! # Recorded verdicts fail closed at their own gates
 //!
-//! The assertions are about the *shape* of a run that completed: that the
-//! ceremony reached the node, that every step it asked for was answered,
-//! and that the transcript records an observation per step. What the node
-//! decided is written down and asserted nowhere — a lane that asserted a
-//! verdict would fail rather than report when the honest answer changed
+//! Most assertions are about the *shape* of a run that completed. The
+//! private-restart carrier additionally binds the fresh in-memory record
+//! to every stable field of its committed run of record. A changed honest
+//! answer is written to the transcript first and then leaves that gate
+//! red; superseding it requires an explicit decision recorded as a new
+//! forward record, never an overwrite of history
 //! `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
 //!
 //! # And nothing here discharges a matrix row
@@ -1023,6 +1024,61 @@ fn check_proof_bearing_record(
     assert!(rendered.contains("discharges_no_matrix_row true"));
 }
 
+// Bind the freshly written private-restart transcript to every stable
+// field of its committed run of record. Wall time is intentionally absent:
+// it is machine telemetry rather than a reproducible result.
+fn assert_private_restart_matches_the_run_of_record(
+    record: &vectors::live_private_restart::PrivateRestartRecord,
+    consumed: vectors::live_private_restart::ConsumedReceipt,
+) {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+    use vectors::live_private_restart::{ConsumedReceipt, run_of_record as run};
+
+    let (successor_digest, accepted_txid, commitment_prefix) = match consumed {
+        ConsumedReceipt::Primary => (
+            run::SUCCESSOR_DIGEST,
+            run::ACCEPTED_TXID,
+            run::CONSUMED_COMMITMENT_PREFIX,
+        ),
+        ConsumedReceipt::Balancing => (
+            run::PARITY_SUCCESSOR_DIGEST,
+            run::PARITY_ACCEPTED_TXID,
+            run::PARITY_CONSUMED_COMMITMENT_PREFIX,
+        ),
+    };
+
+    assert_eq!(record.issued_asset(), Some(run::ISSUED_ASSET));
+    assert_eq!(
+        record.predecessor_digest(),
+        Some(identifier(run::PREDECESSOR_DIGEST)),
+    );
+    assert_eq!(
+        record.successor_digest(),
+        Some(identifier(successor_digest)),
+    );
+    assert_eq!(record.consumed_receipt(), Some(consumed.name()));
+    assert_eq!(record.consumed_commitment_prefix(), Some(commitment_prefix),);
+    assert_eq!(record.receipt_leaves(), run::RECEIPT_LEAVES);
+    assert_eq!(
+        record.output_witness_proof_bytes(),
+        &run::OUTPUT_WITNESS_PROOF_BYTES,
+    );
+    assert_eq!(record.submitted_bytes(), run::SUBMITTED_BYTES);
+    assert_eq!(
+        record.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+    );
+    assert_eq!(record.accepted_txid(), Some(accepted_txid));
+    assert!(record.produced_an_accepted_control());
+
+    let reverification = record
+        .reverification()
+        .expect("the accepted run carries unconditional reverification");
+    assert_eq!(reverification.accepted_txid(), accepted_txid);
+    assert!(reverification.readback_matches_submission());
+    assert!(reverification.verified());
+}
+
 /// The restart order's first step, against a real node.
 ///
 /// # What this run is for
@@ -1033,19 +1089,17 @@ fn check_proof_bearing_record(
 /// negative case, no mutation, no parity pair, because the order forbids
 /// them until this one accepts.
 ///
-/// # What it asserts, and what it merely records
+/// # What it asserts, after preserving the fresh record
 ///
-/// It asserts the shape of a completed ceremony — that the run reached
-/// the node, that the confidential funding step created the predecessor
-/// the ceremony asked for, and that a candidate was built and submitted.
-/// What the node decided is written into the artifact and asserted
-/// nowhere: a lane that asserted an acceptance would fail rather than
-/// report on the day the honest answer changed.
+/// It writes the transcript, timing, and any executor refusal first, then
+/// asserts the exact committed asset, fixture digests, receipt and parity,
+/// proof and submission sizes, accepted layer and identity, and
+/// unconditional readback reverification. A changed honest answer remains
+/// preserved in the artifacts while this reproduction gate fails.
 ///
-/// The one content assertion is the two-origin agreement, and only where
-/// an acceptance was observed. A run that accepted a candidate and could
-/// not verify the witness it read back against its own recomputed
-/// message has found something, and must say so by failing.
+/// Superseding a changed result requires an explicit decision recorded
+/// as a new forward run of record. This test never rewrites the
+/// historical constants to accommodate drift.
 ///
 /// # It moves nothing by running
 ///
@@ -1153,6 +1207,8 @@ fn run_one_private_control(
         panic!("the restart ceremony refused before the node: {refusal:?}");
     }
     outcome.expect("the ceremony reached the target");
+
+    assert_private_restart_matches_the_run_of_record(record, consumed);
 
     // The predecessor is confidential and is the one the ceremony asked
     // for. A divergence is a finding about the funding boundary.

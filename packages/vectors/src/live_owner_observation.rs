@@ -308,6 +308,11 @@ pub mod run_of_record {
     pub const SELECTED_PROFILE_ACCEPTED_TXID: &str =
         "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029";
 
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        selected_profile_accepted,
+        SELECTED_PROFILE_ACCEPTED_TXID
+    );
+
     /// The accepted identity carried by the target readback that was
     /// reverified independently.
     pub const SELECTED_PROFILE_REVERIFICATION_IDENTITY: &str = SELECTED_PROFILE_ACCEPTED_TXID;

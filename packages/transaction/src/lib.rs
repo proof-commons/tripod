@@ -30,7 +30,7 @@ pub use abi::{
 };
 pub use bytes::{
     AssetField, AssetId, InputWitness, NonceField, Outpoint, TargetInput, TargetOutput,
-    TargetTransaction, Txid, ValueField, compact_size,
+    TargetTransaction, TransactionIdentityParseError, Txid, ValueField, compact_size,
 };
 pub use construct::{
     CandidateCompleteTransaction, ConstructionReport, RoleCensus, SettledResources, check_weight,
