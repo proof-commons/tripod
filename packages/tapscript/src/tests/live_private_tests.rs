@@ -307,10 +307,13 @@ fn every_fragment_the_soundness_census_names_is_one_a_private_program_emits() {
     // carry. Checked against the emitter's own account of both roles,
     // which is what `validate_coordinator_placements` checks the §10.3
     // slots against.
-    let private = LiveTransferRepresentationPlan::PrivateCommitted;
+    let constructor = constructor(LiveTransferRepresentationPlan::PrivateCommitted);
+    let subject = shape(2, 2, 0, Absent);
     let emitted = [LiveProgramRole::Coordinator, LiveProgramRole::Member]
         .into_iter()
-        .flat_map(|role| emitted_fragments(role, private))
+        .flat_map(|role| {
+            emitted_fragments(&constructor, role, subject).expect("the private recipe projects")
+        })
         .collect::<BTreeSet<_>>();
 
     for establishment in private_soundness_establishments().values() {
