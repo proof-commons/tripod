@@ -129,6 +129,26 @@ impl LiveSafetyPolarity {
     pub const ALL: &'static [Self] = &[Self::Positive, Self::Negative];
 }
 
+/// A property the canonical safety-report bytes must establish.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LiveReportRequirement {
+    /// The canonical report publishes no sponsor amount.
+    SponsorAmountAbsent,
+    /// The canonical report publishes no sponsor opening.
+    SponsorOpeningAbsent,
+}
+
+impl LiveReportRequirement {
+    /// The requirement's wire spelling.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::SponsorAmountAbsent => "sponsor-amount-absent",
+            Self::SponsorOpeningAbsent => "sponsor-opening-absent",
+        }
+    }
+}
+
 /// Why one §15 row names no relation-indexed requirement.
 ///
 /// Four distinct situations, kept apart because they call for four
@@ -164,7 +184,7 @@ pub enum LiveUnlinkedReason {
     /// indexed by it: the boundary is this workspace's own canonical
     /// serialization, and the evidence is a property of the bytes a
     /// report renders rather than of anything a transfer did.
-    ReportIsTheBoundary,
+    ReportIsTheBoundary(LiveReportRequirement),
 }
 
 /// What one §15 row intends to violate, or to preserve.
@@ -1422,14 +1442,14 @@ pub const SPONSOR_FAULTS: &[LiveSafetyRow] = &[
         "report-publishes-sponsor-amount",
         L::AbiLayout,
         B::ReportSemanticProjectionRejection,
-        LiveUnlinkedReason::ReportIsTheBoundary,
+        LiveUnlinkedReason::ReportIsTheBoundary(LiveReportRequirement::SponsorAmountAbsent),
     ),
     unlinked(
         S::SponsorFault,
         "report-publishes-sponsor-opening",
         L::AbiLayout,
         B::ReportSemanticProjectionRejection,
-        LiveUnlinkedReason::ReportIsTheBoundary,
+        LiveUnlinkedReason::ReportIsTheBoundary(LiveReportRequirement::SponsorOpeningAbsent),
     ),
     // RE-ATTRIBUTED, on the ruling. The row arrived declaring that
     // closed-asset conservation must refuse a balanced rearrangement,

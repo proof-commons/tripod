@@ -46,7 +46,7 @@ use crate::live_evidence::{
     LiveEvidenceCensus, LiveInfrastructureBlocker, LiveRowStanding, LiveTransferEvidencePlan,
     RecordedObservation, blocker_census,
 };
-use crate::live_safety::LiveSafetySection;
+use crate::live_safety::{LiveReportRequirement, LiveSafetySection};
 use crate::matrix::EvidenceBoundary;
 
 /// The schema of the canonical rendered safety report.
@@ -67,7 +67,13 @@ use crate::matrix::EvidenceBoundary;
 /// spelling. It also makes `failed` reachable. Schema 2 is hard-rejected:
 /// it has neither the ledger nor the boundary distinction and is never
 /// silently reinterpreted as evidence-bearing schema 3.
-pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 3;
+///
+/// Revision 4 separates report-layer requirements from observations,
+/// validates those requirements against the exact canonical bytes, and
+/// records required and observed report-layer census buckets separately.
+/// Schema 3 is hard-rejected because its plan-derived report observations
+/// are capability claims rather than validated evidence.
+pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 4;
 
 /// What a safety report is, said in the bytes.
 ///
@@ -363,11 +369,58 @@ pub enum LiveReportObservation {
         /// The site establishing it.
         observed_by: &'static str,
     },
-    /// A row answered by validation of the report layer itself.
-    ReportLayer {
-        /// The matrix row.
-        row: &'static str,
-    },
+}
+
+/// One report-layer property the evidence plan requires validation to check.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveReportLayerRequirement {
+    row: &'static str,
+    requirement: LiveReportRequirement,
+}
+
+impl LiveReportLayerRequirement {
+    /// The matrix row requiring the check.
+    #[must_use]
+    pub const fn row(&self) -> &'static str {
+        self.row
+    }
+
+    /// The exact property validation must establish.
+    #[must_use]
+    pub const fn requirement(&self) -> LiveReportRequirement {
+        self.requirement
+    }
+}
+
+/// One report-layer property established against canonical schema-4 bytes.
+///
+/// There is deliberately no public constructor. Values live only inside a
+/// [`ValidatedLiveTransferSafetyReport`] returned after disclosure validation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ValidatedReportLayerObservation {
+    row: &'static str,
+    requirement: LiveReportRequirement,
+    schema: u32,
+}
+
+impl ValidatedReportLayerObservation {
+    /// The matrix row this observation answers.
+    #[must_use]
+    pub const fn row(&self) -> &'static str {
+        self.row
+    }
+
+    /// The exact property observed in the canonical bytes.
+    #[must_use]
+    pub const fn requirement(&self) -> LiveReportRequirement {
+        self.requirement
+    }
+
+    /// The canonical schema whose bytes were checked.
+    #[must_use]
+    pub const fn schema(&self) -> u32 {
+        self.schema
+    }
 }
 
 /// The lifecycle obligations §13.2 makes the report carry (§17.1).
@@ -524,6 +577,7 @@ pub struct LiveTransferSafetyReport {
     representations: BTreeSet<LiveTransferRepresentationPlan>,
     runs: Vec<LiveRunBinding>,
     observations: Vec<LiveReportObservation>,
+    report_layer_requirements: Vec<LiveReportLayerRequirement>,
     lifecycle: LiveLifecycleStatus,
     census: LiveEvidenceCensus,
     completeness: LiveSafetyCompleteness,
@@ -564,6 +618,12 @@ impl LiveTransferSafetyReport {
     #[must_use]
     pub fn observations(&self) -> &[LiveReportObservation] {
         &self.observations
+    }
+
+    /// Every report-layer requirement in matrix order.
+    #[must_use]
+    pub fn report_layer_requirements(&self) -> &[LiveReportLayerRequirement] {
+        &self.report_layer_requirements
     }
 
     /// The lifecycle obligations.
@@ -608,11 +668,10 @@ pub enum LiveSafetyReportRefusal {
     /// The report's row census is not the one recomputed from the plan.
     ///
     /// Both censuses are boxed, as [`crate::live_resource_report`] boxes
-    /// its own pair and for the same reason: each is eight counts wide
-    /// and a refusal carrying two of them inline would make every
-    /// `Result` in this module pay for the one arm the happy path never
-    /// takes. The first member is what the report said and the second is
-    /// what the plan recomputes to.
+    /// its own pair and for the same reason: a refusal carrying two wide
+    /// aggregates inline would make every `Result` in this module pay for
+    /// the one arm the happy path never takes. The first member is what
+    /// the report said and the second is what the plan recomputes to.
     CensusDiffers(Box<(LiveEvidenceCensus, LiveEvidenceCensus)>),
     /// The report claims a completeness its own census does not support.
     CompletenessDiffers {
@@ -636,7 +695,8 @@ pub enum LiveSafetyReportRefusal {
     RunResponseDiffers(String),
     /// One run's executor provenance differs.
     RunExecutorProvenanceDiffers(String),
-    /// The report's row-level observations differ from the derived ledger.
+    /// The report's row-level observations or report requirements differ
+    /// from the derived ledger.
     ObservationsDiffer,
     /// The report's observation buckets do not cross-foot its census.
     ObservationCensusDiffers,
@@ -644,6 +704,13 @@ pub enum LiveSafetyReportRefusal {
     BoundObservationUnbacked {
         /// The matrix row carrying the invalid reference.
         row: &'static str,
+    },
+    /// A forbidden disclosure key is present in the canonical bytes.
+    ReportDisclosurePresent {
+        /// The matrix row whose requirement the key violates.
+        row: &'static str,
+        /// The forbidden canonical field key.
+        key: String,
     },
     /// The report's lifecycle status is not the candidate's.
     LifecycleDiffers,
@@ -657,13 +724,20 @@ pub enum LiveSafetyReportRefusal {
 /// the evidence plan. Its recomputation witness names only comparisons
 /// that actually ran; with no transcript-grade target run in the tree it
 /// establishes the preserved observations as unbound, not as target
-/// verdict evidence.
+/// verdict evidence. Its report-layer observations and canonical bytes are
+/// private fields minted together only after disclosure validation; there is
+/// no constructor or intermediate wrapper state that can omit
+/// [`RecomputedItem::DisclosureComparison`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedLiveTransferSafetyReport {
     report: LiveTransferSafetyReport,
+    report_layer_observations: Vec<ValidatedReportLayerObservation>,
+    census: LiveEvidenceCensus,
     recomputed_items: BTreeSet<RecomputedItem>,
     blockers: BTreeMap<LiveInfrastructureBlocker, usize>,
     outstanding: Vec<(&'static str, LiveRowStanding)>,
+    scoreboard: BTreeMap<LiveSafetySection, (usize, usize, usize)>,
+    canonical_bytes: String,
 }
 
 /// One of §13.5's fourteen recomputed items.
@@ -747,6 +821,18 @@ impl ValidatedLiveTransferSafetyReport {
         &self.report
     }
 
+    /// The report-layer observations minted by canonical-byte validation.
+    #[must_use]
+    pub fn report_layer_observations(&self) -> &[ValidatedReportLayerObservation] {
+        &self.report_layer_observations
+    }
+
+    /// The validated census, including report-layer observations.
+    #[must_use]
+    pub const fn census(&self) -> LiveEvidenceCensus {
+        self.census
+    }
+
     /// The §13.5 items this validation recomputed.
     #[must_use]
     pub const fn recomputed_items(&self) -> &BTreeSet<RecomputedItem> {
@@ -821,6 +907,7 @@ pub fn assemble_live_safety_report(
         // without manufacturing deployment or executor provenance.
         runs: Vec::new(),
         observations: observations_from_plan(plan)?,
+        report_layer_requirements: report_layer_requirements_from_plan(plan),
         lifecycle: LiveLifecycleStatus::candidate(),
         census,
         completeness: completeness_of(census),
@@ -834,7 +921,6 @@ struct ObservationCensus {
     determinism: usize,
     paired_relation: usize,
     first_party_fact: usize,
-    report_layer: usize,
     recorded_unbound: usize,
     unbound_acceptance: usize,
     unbound_refusal: usize,
@@ -865,7 +951,6 @@ impl ObservationCensus {
                 }
                 LiveReportObservation::Determinism { .. } => census.determinism += 1,
                 LiveReportObservation::FirstPartyFact { .. } => census.first_party_fact += 1,
-                LiveReportObservation::ReportLayer { .. } => census.report_layer += 1,
             }
         }
         census
@@ -877,7 +962,7 @@ impl ObservationCensus {
             && self.determinism == census.determinism_observed()
             && self.paired_relation == census.paired_relation_observed()
             && self.first_party_fact == census.first_party_fact_observed()
-            && self.report_layer == census.report_layer()
+            && census.report_layer_observed() == 0
             && self.recorded_unbound
                 == census.recorded_observation_unbound()
                     + census.native_refusal_at_unexpected_boundary()
@@ -889,7 +974,6 @@ impl ObservationCensus {
             + self.determinism
             + self.paired_relation
             + self.first_party_fact
-            + self.report_layer
             + self.recorded_unbound
     }
 }
@@ -963,9 +1047,7 @@ fn observations_from_plan(
                     observed_by,
                 })
             }
-            LiveRowStanding::ReportLayerAnswerable => {
-                Some(LiveReportObservation::ReportLayer { row })
-            }
+            LiveRowStanding::ReportLayerRequired(_) => None,
             // A future bound standing must arrive with a validated run binding;
             // silently inventing one from its row name would restore this defect.
             LiveRowStanding::NativeRunObserved { .. }
@@ -1001,6 +1083,21 @@ fn observations_from_plan(
     Ok(observations)
 }
 
+fn report_layer_requirements_from_plan(
+    plan: &LiveTransferEvidencePlan,
+) -> Vec<LiveReportLayerRequirement> {
+    plan.rows()
+        .iter()
+        .filter_map(|evidence| match evidence.standing() {
+            LiveRowStanding::ReportLayerRequired(requirement) => Some(LiveReportLayerRequirement {
+                row: evidence.row().name(),
+                requirement: *requirement,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
 #[derive(Debug, Default)]
 struct RecomputationProgress {
     completed: BTreeSet<RecomputedItem>,
@@ -1013,6 +1110,12 @@ impl RecomputationProgress {
 
     fn finish(self) -> BTreeSet<RecomputedItem> {
         self.completed
+    }
+
+    fn completed_with(&self, item: RecomputedItem) -> BTreeSet<RecomputedItem> {
+        let mut completed = self.completed.clone();
+        completed.insert(item);
+        completed
     }
 }
 
@@ -1151,8 +1254,7 @@ fn validate_bound_observations(
             }
             LiveReportObservation::RecordedObservationUnbound { .. }
             | LiveReportObservation::Determinism { .. }
-            | LiveReportObservation::FirstPartyFact { .. }
-            | LiveReportObservation::ReportLayer { .. } => {}
+            | LiveReportObservation::FirstPartyFact { .. } => {}
         }
     }
     Ok(compared)
@@ -1201,7 +1303,10 @@ fn validate_report_observation_ledger(
     progress: &mut RecomputationProgress,
 ) -> Result<(), LiveSafetyReportRefusal> {
     let expected_observations = observations_from_plan(plan)?;
-    if report.observations != expected_observations {
+    let expected_requirements = report_layer_requirements_from_plan(plan);
+    if report.observations != expected_observations
+        || report.report_layer_requirements != expected_requirements
+    {
         return Err(LiveSafetyReportRefusal::ObservationsDiffer);
     }
     progress.mark(RecomputedItem::CaseCensus);
@@ -1209,7 +1314,9 @@ fn validate_report_observation_ledger(
     progress.mark(RecomputedItem::MutationLinks);
 
     let observed = ObservationCensus::from_observations(&report.observations);
-    if !observed.cross_foots(plan.census()) {
+    if !observed.cross_foots(plan.census())
+        || report.report_layer_requirements.len() != plan.census().report_layer_required()
+    {
         return Err(LiveSafetyReportRefusal::ObservationCensusDiffers);
     }
 
@@ -1248,18 +1355,53 @@ fn validate_report_summary(
     Ok(())
 }
 
-fn outstanding_rows(plan: &LiveTransferEvidencePlan) -> Vec<(&'static str, LiveRowStanding)> {
+fn validated_outstanding_rows(
+    plan: &LiveTransferEvidencePlan,
+) -> Vec<(&'static str, LiveRowStanding)> {
     plan.rows()
         .iter()
         .filter(|row| {
             !row.standing().is_answered()
                 && !matches!(
                     row.standing(),
-                    LiveRowStanding::OperationVocabularyClosed | LiveRowStanding::Experimental
+                    LiveRowStanding::ReportLayerRequired(_)
+                        | LiveRowStanding::OperationVocabularyClosed
+                        | LiveRowStanding::Experimental
                 )
         })
         .map(|row| (row.row().name(), row.standing().clone()))
         .collect()
+}
+
+fn validated_section_scoreboard(
+    plan: &LiveTransferEvidencePlan,
+) -> BTreeMap<LiveSafetySection, (usize, usize, usize)> {
+    let mut board: BTreeMap<LiveSafetySection, (usize, usize, usize)> = LiveSafetySection::ALL
+        .iter()
+        .map(|section| (*section, (0, 0, 0)))
+        .collect();
+    for row in plan.rows() {
+        let entry = board.entry(row.row().section()).or_insert((0, 0, 0));
+        entry.0 += 1;
+        if row.standing().is_answered()
+            || matches!(row.standing(), LiveRowStanding::ReportLayerRequired(_))
+        {
+            entry.1 += 1;
+        }
+        if row.standing().is_infrastructure_error() {
+            entry.2 += 1;
+        }
+    }
+    board
+}
+
+struct CanonicalReportView<'a> {
+    report: &'a LiveTransferSafetyReport,
+    report_layer_requirements: &'a [LiveReportLayerRequirement],
+    census: LiveEvidenceCensus,
+    recomputed_items: &'a BTreeSet<RecomputedItem>,
+    blockers: &'a BTreeMap<LiveInfrastructureBlocker, usize>,
+    outstanding: &'a [(&'static str, LiveRowStanding)],
 }
 
 /// Validate one safety report against the plan it claims to be about.
@@ -1283,11 +1425,46 @@ pub fn validate_live_safety_report(
     let recomputed = plan.census();
     validate_report_summary(&report, recomputed, &mut progress)?;
 
+    let validated_census = recomputed
+        .with_validated_report_layer_observations(report.report_layer_requirements.len())
+        .ok_or(LiveSafetyReportRefusal::ObservationCensusDiffers)?;
+    let blockers = blocker_census(plan);
+    let outstanding = validated_outstanding_rows(plan);
+    let scoreboard = validated_section_scoreboard(plan);
+    // The candidate bytes must already contain the final recomputation
+    // witness, but `completed_with` does not mark progress. The real
+    // witness is marked only after these exact bytes pass disclosure
+    // validation, and those same bytes are then sealed into the wrapper.
+    let final_items = progress.completed_with(RecomputedItem::DisclosureComparison);
+    let canonical_bytes = render_canonical_report(&CanonicalReportView {
+        report: &report,
+        report_layer_requirements: &report.report_layer_requirements,
+        census: validated_census,
+        recomputed_items: &final_items,
+        blockers: &blockers,
+        outstanding: &outstanding,
+    });
+    validate_report_disclosures(&canonical_bytes, &report.report_layer_requirements)?;
+    progress.mark(RecomputedItem::DisclosureComparison);
+    let report_layer_observations = report
+        .report_layer_requirements
+        .iter()
+        .map(|requirement| ValidatedReportLayerObservation {
+            row: requirement.row,
+            requirement: requirement.requirement,
+            schema: LIVE_SAFETY_REPORT_SCHEMA,
+        })
+        .collect();
+
     Ok(ValidatedLiveTransferSafetyReport {
         report,
+        report_layer_observations,
+        census: validated_census,
         recomputed_items: progress.finish(),
-        blockers: blocker_census(plan),
-        outstanding: outstanding_rows(plan),
+        blockers,
+        outstanding,
+        scoreboard,
+        canonical_bytes,
     })
 }
 
@@ -1302,13 +1479,22 @@ pub fn validate_live_safety_report(
 /// Never: the sink is a `String`, whose writes cannot fail.
 #[must_use]
 pub fn render_live_safety_report(validated: &ValidatedLiveTransferSafetyReport) -> String {
-    let report = &validated.report;
+    validated.canonical_bytes.clone()
+}
+
+fn render_canonical_report(validated: &CanonicalReportView<'_>) -> String {
+    let report = validated.report;
     let mut text = String::new();
     let observation_census = ObservationCensus::from_observations(&report.observations);
     render_report_header(&mut text, report, observation_census);
-    render_evidence_census(&mut text, report.census);
-    render_observation_census(&mut text, observation_census);
+    render_evidence_census(&mut text, validated.census);
+    render_observation_census(
+        &mut text,
+        observation_census,
+        validated.report_layer_requirements.len(),
+    );
     render_observations(&mut text, &report.observations);
+    render_validated_report_layer_observations(&mut text, validated.report_layer_requirements);
     render_validation_summary(&mut text, validated);
     text
 }
@@ -1389,7 +1575,16 @@ fn render_evidence_census(text: &mut String, census: LiveEvidenceCensus) {
         "infrastructure_blocked {}",
         census.infrastructure_blocked()
     );
-    let _ = writeln!(text, "report_layer {}", census.report_layer());
+    let _ = writeln!(
+        text,
+        "report_layer_required {}",
+        census.report_layer_required()
+    );
+    let _ = writeln!(
+        text,
+        "report_layer_observed {}",
+        census.report_layer_observed()
+    );
     let _ = writeln!(
         text,
         "operation_vocabulary_closed {}",
@@ -1398,14 +1593,25 @@ fn render_evidence_census(text: &mut String, census: LiveEvidenceCensus) {
     let _ = writeln!(text, "experimental {}", census.experimental());
 }
 
-fn render_observation_census(text: &mut String, census: ObservationCensus) {
-    let _ = writeln!(text, "observations {}", census.total());
+fn render_observation_census(
+    text: &mut String,
+    census: ObservationCensus,
+    report_layer_observations: usize,
+) {
+    let _ = writeln!(
+        text,
+        "observations {}",
+        census.total() + report_layer_observations
+    );
     let _ = writeln!(text, "accepted {}", census.accepted);
     let _ = writeln!(text, "refused {}", census.refused);
     let _ = writeln!(text, "determinism {}", census.determinism);
     let _ = writeln!(text, "paired_relation {}", census.paired_relation);
     let _ = writeln!(text, "first_party_fact {}", census.first_party_fact);
-    let _ = writeln!(text, "report_layer_observations {}", census.report_layer);
+    let _ = writeln!(
+        text,
+        "report_layer_observations {report_layer_observations}"
+    );
     let _ = writeln!(
         text,
         "recorded_unbound_native_acceptance {}",
@@ -1423,14 +1629,14 @@ fn render_observation_census(text: &mut String, census: ObservationCensus) {
     );
 }
 
-fn render_validation_summary(text: &mut String, validated: &ValidatedLiveTransferSafetyReport) {
-    for (blocker, rows) in &validated.blockers {
+fn render_validation_summary(text: &mut String, validated: &CanonicalReportView<'_>) {
+    for (blocker, rows) in validated.blockers {
         let _ = writeln!(text, "blocker {blocker:?} {rows}");
     }
-    for (row, standing) in &validated.outstanding {
+    for (row, standing) in validated.outstanding {
         let _ = writeln!(text, "outstanding {row} {}", standing_name(standing));
     }
-    for item in &validated.recomputed_items {
+    for item in validated.recomputed_items {
         let _ = writeln!(text, "recomputed {item:?}");
     }
 
@@ -1617,12 +1823,21 @@ fn render_observation(text: &mut String, observation: &LiveReportObservation) {
                 "observation {row} first-party-fact fact {fact:?} observed-by {observed_by:?}"
             );
         }
-        LiveReportObservation::ReportLayer { row } => {
-            let _ = writeln!(
-                text,
-                "observation {row} report-layer validated-by canonical-bytes"
-            );
-        }
+    }
+}
+
+fn render_validated_report_layer_observations(
+    text: &mut String,
+    requirements: &[LiveReportLayerRequirement],
+) {
+    for requirement in requirements {
+        let _ = writeln!(
+            text,
+            "observation {} report-layer requirement {} validated-by canonical-bytes schema {}",
+            requirement.row,
+            requirement.requirement.name(),
+            LIVE_SAFETY_REPORT_SCHEMA
+        );
     }
 }
 
@@ -1713,7 +1928,7 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         // bytes whose job is to count.
         LiveRowStanding::FirstPartyFactObserved { .. } => "first-party-fact-observed",
         LiveRowStanding::InfrastructureBlocked(_) => "infrastructure-blocked",
-        LiveRowStanding::ReportLayerAnswerable => "report-layer-answerable",
+        LiveRowStanding::ReportLayerRequired(_) => "report-layer-required",
         LiveRowStanding::OperationVocabularyClosed => "operation-vocabulary-closed",
         LiveRowStanding::Experimental => "experimental",
     }
@@ -1728,16 +1943,19 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
 /// bytes would flag the matrix's own row names. What §1.9 forbids is a
 /// sponsor amount being *emitted*, which is a statement about what a
 /// field carries.
-const FORBIDDEN_KEYS: &[&str] = &[
+const SPONSOR_AMOUNT_KEYS: &[&str] = &[
     "sponsor_amount",
     "sponsor_amounts",
-    "sponsor_opening",
-    "sponsor_openings",
     "sponsor_value",
     "sponsor_values",
-    "sponsor_blinding",
     "sponsor_change_amount",
     "sponsor_total",
+];
+
+const SPONSOR_OPENING_KEYS: &[&str] = &[
+    "sponsor_opening",
+    "sponsor_openings",
+    "sponsor_blinding",
     "blinding_factor",
     "value_blinding",
     "fixture_opening",
@@ -1749,39 +1967,41 @@ const FORBIDDEN_KEYS: &[&str] = &[
 /// sponsor opening, and this is what answers them: the canonical
 /// serialization is rendered and every line's *key* is compared against
 /// this module's forbidden-key list. §1.9 forbids an individual sponsor
-/// amount from
-/// being emitted in a canonical report at all, so the answer must be
-/// that no line carries one.
-#[must_use]
-pub fn canonical_bytes_publish_no_sponsor_value(
-    validated: &ValidatedLiveTransferSafetyReport,
-) -> bool {
-    render_live_safety_report(validated)
-        .lines()
-        .filter_map(|line| line.split_whitespace().next())
-        .all(|key| !FORBIDDEN_KEYS.contains(&key))
+/// amount from being emitted in a canonical report at all, so the answer
+/// must be that no line carries one.
+const fn forbidden_keys(requirement: LiveReportRequirement) -> &'static [&'static str] {
+    match requirement {
+        LiveReportRequirement::SponsorAmountAbsent => SPONSOR_AMOUNT_KEYS,
+        LiveReportRequirement::SponsorOpeningAbsent => SPONSOR_OPENING_KEYS,
+    }
+}
+
+fn validate_report_disclosures(
+    canonical_bytes: &str,
+    requirements: &[LiveReportLayerRequirement],
+) -> Result<(), LiveSafetyReportRefusal> {
+    for requirement in requirements {
+        for key in canonical_bytes
+            .lines()
+            .filter_map(|line| line.split_whitespace().next())
+        {
+            if forbidden_keys(requirement.requirement).contains(&key) {
+                return Err(LiveSafetyReportRefusal::ReportDisclosurePresent {
+                    row: requirement.row,
+                    key: key.to_owned(),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The per-section scoreboard a reader of a report wants first.
 #[must_use]
 pub fn section_scoreboard(
-    plan: &LiveTransferEvidencePlan,
+    validated: &ValidatedLiveTransferSafetyReport,
 ) -> BTreeMap<LiveSafetySection, (usize, usize, usize)> {
-    let mut board: BTreeMap<LiveSafetySection, (usize, usize, usize)> = LiveSafetySection::ALL
-        .iter()
-        .map(|section| (*section, (0, 0, 0)))
-        .collect();
-    for row in plan.rows() {
-        let entry = board.entry(row.row().section()).or_insert((0, 0, 0));
-        entry.0 += 1;
-        if row.standing().is_answered() {
-            entry.1 += 1;
-        }
-        if row.standing().is_infrastructure_error() {
-            entry.2 += 1;
-        }
-    }
-    board
+    validated.scoreboard.clone()
 }
 
 #[cfg(test)]
@@ -1790,13 +2010,13 @@ mod tests {
         LiveDeploymentBinding, LiveExecutorProvenance, LiveRecordedObservation,
         LiveReportObservation, LiveRunBinding, LiveSafetyCompleteness, LiveSafetyDiagnostics,
         LiveSafetyReportRefusal, LiveSafetyReportRole, LiveTargetResponse, RecomputedItem,
-        VolatileField, assemble_live_safety_report, canonical_bytes_publish_no_sponsor_value,
-        compare_run_bindings, render_live_safety_report, section_scoreboard, target_evidence_name,
-        validate_live_safety_report,
+        VolatileField, assemble_live_safety_report, compare_run_bindings,
+        render_live_safety_report, section_scoreboard, target_evidence_name,
+        validate_live_safety_report, validate_report_disclosures,
     };
     use crate::live_evidence::derive_live_evidence_plan;
     use crate::live_plan::reviewed_target;
-    use crate::live_safety::{LiveSafetyPolarity, LiveSafetySection};
+    use crate::live_safety::{LiveReportRequirement, LiveSafetyPolarity, LiveSafetySection};
     use target_elements::TargetProjection;
 
     fn projection() -> TargetProjection {
@@ -1892,6 +2112,7 @@ mod tests {
                 RecomputedItem::CaseCensus,
                 RecomputedItem::RelationCensus,
                 RecomputedItem::MutationLinks,
+                RecomputedItem::DisclosureComparison,
                 RecomputedItem::Summary,
             ]),
         );
@@ -1908,6 +2129,10 @@ mod tests {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
         let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
+        assert_eq!(report.observations().len(), 46);
+        assert_eq!(report.report_layer_requirements().len(), 2);
+        assert_eq!(report.census().report_layer_required(), 2);
+        assert_eq!(report.census().report_layer_observed(), 0);
         let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
         let rendered = render_live_safety_report(&validated);
 
@@ -1930,7 +2155,8 @@ mod tests {
             "determinism 1\n",
             "paired_relation 0\n",
             "first_party_fact 3\n",
-            "report_layer 2\n",
+            "report_layer_required 0\n",
+            "report_layer_observed 2\n",
             "report_layer_observations 2\n",
             "recorded_unbound_native_acceptance 24\n",
             "recorded_unbound_native_refusal 17\n",
@@ -1938,7 +2164,44 @@ mod tests {
         ] {
             assert!(rendered.contains(exact), "missing {exact:?}");
         }
+        assert_eq!(validated.census().report_layer_required(), 0);
+        assert_eq!(validated.census().report_layer_observed(), 2);
+        assert_eq!(validated.report_layer_observations().len(), 2);
+        assert_eq!(
+            validated
+                .report_layer_observations()
+                .iter()
+                .map(|observation| {
+                    (
+                        observation.row(),
+                        observation.requirement(),
+                        observation.schema(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "report-publishes-sponsor-amount",
+                    LiveReportRequirement::SponsorAmountAbsent,
+                    4,
+                ),
+                (
+                    "report-publishes-sponsor-opening",
+                    LiveReportRequirement::SponsorOpeningAbsent,
+                    4,
+                ),
+            ],
+        );
+        let answered = validated.census().first_party_discharged()
+            + validated.census().determinism_observed()
+            + validated.census().first_party_fact_observed()
+            + validated.census().report_layer_observed();
+        assert_eq!(answered, 40);
         assert_eq!(validated.outstanding().len(), 67);
+        assert_eq!(
+            super::completeness_of(validated.census()),
+            LiveSafetyCompleteness::PartialRequiredRowsOutstanding,
+        );
     }
 
     #[test]
@@ -2147,7 +2410,7 @@ mod tests {
     #[test]
     fn schema_two_is_hard_rejected() {
         // Schema 2 is historical and never a legacy-validated route into
-        // the evidence-bearing schema 3 report.
+        // the evidence-bearing schema 4 report.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
         let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
@@ -2224,46 +2487,40 @@ mod tests {
         let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
         assert_eq!(
             render_live_safety_report(&validated),
-            render_live_safety_report(&validated),
+            validated.canonical_bytes,
         );
     }
 
     #[test]
-    fn the_canonical_bytes_publish_no_sponsor_value() {
-        // §15.6's two report rows, answered. §1.9 forbids an individual
-        // sponsor amount from being emitted in a canonical report, and
-        // this is the check that says it is not.
+    fn report_disclosures_refuse_with_the_exact_row_and_key() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
         let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
+        let requirements = report.report_layer_requirements.clone();
         let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
-        assert!(canonical_bytes_publish_no_sponsor_value(&validated));
-
-        // And the check has teeth: a rendering that really did emit one
-        // of the forbidden keys is caught. Staged over the same key
-        // vocabulary the production path reads, so a key removed from the
-        // list stops being checked here too.
         let rendered = render_live_safety_report(&validated);
-        for key in super::FORBIDDEN_KEYS {
+        for (key, row) in [
+            ("sponsor_amount", "report-publishes-sponsor-amount"),
+            ("sponsor_opening", "report-publishes-sponsor-opening"),
+        ] {
             let leaked = format!("{rendered}{key} 1000\n");
-            assert!(
-                leaked
-                    .lines()
-                    .filter_map(|line| line.split_whitespace().next())
-                    .any(|first| super::FORBIDDEN_KEYS.contains(&first)),
-                "{key} would not have been caught",
+            assert_eq!(
+                validate_report_disclosures(&leaked, &requirements),
+                Err(LiveSafetyReportRefusal::ReportDisclosurePresent {
+                    row,
+                    key: key.to_owned(),
+                }),
             );
         }
-
-        // The two §15.6 rows this answers are the ones the plan filed at
-        // the report boundary, and there are exactly two of them.
-        assert_eq!(plan.census().report_layer(), 2);
     }
 
     #[test]
     fn the_scoreboard_partitions_the_matrix_by_section() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
-        let board = section_scoreboard(&plan);
+        let target = projection();
+        let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
+        let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
+        let board = section_scoreboard(&validated);
         assert_eq!(board.len(), LiveSafetySection::ALL.len());
         let total: usize = board.values().map(|(rows, _, _)| rows).sum();
         assert_eq!(total, crate::live_safety::row_count());
