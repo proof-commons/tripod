@@ -373,7 +373,7 @@ mod tests {
                 defect: ResponseShapeDefect::AcceptedConservationOmitsTransaction,
             }),
         );
-        assert!(document.rows.is_empty());
+        assert_eq!(document.rows, Vec::new());
     }
 
     #[test]
