@@ -1337,7 +1337,7 @@ A candidate that clears to zero is invalid even if target value conservation hol
 
 The floor is semantic and independently projected after acceptance.
 
-## 6.6 Destruction · `rule:guide15:clear-destruction`
+## 6.6 Destruction · `rule:guide15:clear-destruction-exact`
 
 Clear records exact destruction:
 

@@ -17,7 +17,7 @@ tree's mint census of the kind.
 | Name | Kind | Sense | Spelling | Locator | Mints |
 |---|---|---|---|---|---|
 | Branch | ``branch`` | A named control-flow branch of a typed source, cited by the tests that cover it | ``branch:operations:settle-distribution`` | `packages/model/src/ops/settlement.rs:23` | 11 |
-| Candidate | ``candidate`` | A proposed option under evaluation, before selection | ``candidate:guide11:explicit-only`` | `plans/guides/guide_eleven_concept.md:990` | 49 |
+| Candidate | ``candidate`` | A proposed option under evaluation, before selection | ``candidate:guide11:explicit-only`` | `plans/guides/guide_eleven_concept.md:990` | 50 |
 | Error vocabulary | ``err`` | The enumerated error surface a package presents at its boundary. Near Erratum, ``errat``, and a different genre: an erratum corrects a document after publication; this states what a package can return | ``err:labels:vocabulary`` | `plans/packages/errors/labels.md:1` | 11 |
 | Leaf | ``leaf`` | A terminal node of a decision or derivation tree | ``leaf:authorization:cadence-band`` | `docs/attestation/realization.md:1121` | 2 |
 | Milestone | ``milestone`` | A named point in a delivery schedule, reached or not | ``milestone:realization:crate`` | `plans/packages/realization.md:272` | 29 |
@@ -28,7 +28,7 @@ tree's mint census of the kind.
 | Pin | ``pin`` | A committed value, recipe, or reference frozen against drift and enforced by a gate. No registry row names the frozen commitment; Version records what a version comprises, a different act | ``pin:pins:denotation`` | `docs/attestation/realization.md:127` | 40 |
 | Reference | ``ref`` | A cited external work or upstream artifact | ``ref:elements:tapscript`` | `plans/reference/elements-tapscript.md:1` | 11 |
 | Residual risk | ``res`` | An accepted and catalogued exposure — R-dust, R-op, R-conv, R-CSV — recorded rather than removed. Result, ``result``, is a stated result; the token ``res`` does not abbreviate it and is assigned to nothing | ``res:trust:dust`` | `docs/attestation/realization.md:1796` | 11 |
-| Task | ``task`` | A tracked unit of backlog work: kept, statused, cited long after writing, a records-family genre. The registry's Task rows are ``exer``, work set for a reader, and ``job``, a code asset that runs; both misdescribe a backlog item, and ``task`` is assigned to nothing | ``task:phase2:pilots`` | `plans/backlog.md:1231` | 86 |
+| Task | ``task`` | A tracked unit of backlog work: kept, statused, cited long after writing, a records-family genre. The registry's Task rows are ``exer``, work set for a reader, and ``job``, a code asset that runs; both misdescribe a backlog item, and ``task`` is assigned to nothing | ``task:phase2:pilots`` | `plans/backlog.md:1231` | 114 |
 | Trap | ``trap`` | A catalogued way to get the design wrong, stated once at its canonical site and returned to by later arguments. Near Pitfall, ``warn``, and distinct: a warning cautions in the flow of the text, where a trap is a named, cited entry of a standing register of design errors | ``trap:architecture:two-clocks`` | `docs/attestation/realization.md:327` | 42 |
 
 ## Statuses
