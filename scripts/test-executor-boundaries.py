@@ -51,6 +51,8 @@ Run standalone (`python3 scripts/test-executor-boundaries.py`) or as the
 
 from __future__ import annotations
 
+import importlib.util
+import io
 import json
 import os
 import re
@@ -81,6 +83,10 @@ NETWORK_ID = "1111111111111111111111111111111111111111111111111111111111111111"
 # restated: a test that pinned its own number would keep passing through a
 # revision bump by testing a revision nobody speaks.
 SCHEMA = None
+
+# A request-controlled line-shaped value. It is not itself a diagnostic:
+# the tests below place it where only the quarantine may retain it.
+INJECTED_LINE_MARKER = "INJECTED_DIAGNOSTIC_LINE_THAT_MUST_NOT_EXIST"
 
 
 class Failures:
@@ -222,6 +228,26 @@ def adapter_schema() -> int:
             if match:
                 return int(match.group(1))
     raise SystemExit("the adapter declares no protocol revision")
+
+
+def executor_module():
+    """Loads the adapter for node-free tests of its diagnostic boundary."""
+    spec = importlib.util.spec_from_file_location(
+        "elements_native_executor_boundary_subject", EXECUTOR_PATH
+    )
+    if spec is None or spec.loader is None:
+        raise SystemExit("the executor module could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def memory_diagnostics(module):
+    """Configures one in-memory typed stream and quarantine."""
+    output = io.StringIO()
+    quarantine = io.StringIO()
+    module.STREAMS = module.DiagnosticStreams(output, quarantine)
+    return output, quarantine
 
 
 def adapter_bound(name: str) -> int:
@@ -480,6 +506,149 @@ def test_an_extra_handshake_field_is_refused(failures) -> int:
         fixture.close()
 
 
+def test_an_extra_execution_field_cannot_inject_a_typed_line(failures) -> int:
+    """A request field name is quarantined and has one fixed typed outcome."""
+    module = executor_module()
+    output, quarantine = memory_diagnostics(module)
+    field = "extra\r\n%s" % INJECTED_LINE_MARKER
+    request = {
+        "schema": SCHEMA,
+        "case": {"group": "boundary", "ordinal": 1},
+        "subject": {},
+        "construction": None,
+        field: True,
+    }
+    try:
+        try:
+            module.answer_case(object(), request)
+        except module.FatalAdapterError as error:
+            module.report_fatal(error)
+        else:
+            failures.check(False, "an extra execution field was accepted")
+
+        diagnostics = output.getvalue()
+        quarantined = quarantine.getvalue()
+        failures.equal(
+            diagnostics.splitlines(),
+            [
+                "elements-native-executor: fatal: execution request failed its "
+                "field census; detail is elements-output record 1"
+            ],
+            "the execution census emits exactly one fixed typed line",
+        )
+        failures.check(
+            INJECTED_LINE_MARKER not in diagnostics,
+            "the request-controlled marker became a typed line",
+        )
+        failures.check(
+            field in quarantined,
+            "the request-controlled field name was not quarantined exactly",
+        )
+        return 4
+    finally:
+        module.STREAMS = None
+
+
+def test_the_typed_sink_rejects_line_bearing_content(failures) -> int:
+    """CR or LF content is dropped and replaced by one fixed fatal line."""
+    module = executor_module()
+    output = io.StringIO()
+    quarantine = io.StringIO()
+    streams = module.DiagnosticStreams(output, quarantine)
+    injected = "unrecognized\r\n%s" % INJECTED_LINE_MARKER
+    try:
+        streams.typed(injected)
+    except module.FatalAdapterError:
+        pass
+    else:
+        failures.check(False, "the typed sink accepted line-bearing content")
+
+    failures.equal(
+        output.getvalue().splitlines(),
+        ["elements-native-executor: fatal: typed diagnostic content rejected"],
+        "the sink replaces line-bearing content with its fixed fatal outcome",
+    )
+    failures.check(
+        INJECTED_LINE_MARKER not in output.getvalue(),
+        "the typed sink wrote the injected line",
+    )
+    failures.equal(
+        quarantine.getvalue(),
+        "",
+        "the typed sink retained content it was required to drop",
+    )
+    return 4
+
+
+def test_an_unknown_diagnostic_outcome_is_fatal(failures) -> int:
+    """An unrecognized form is quarantined but never written through."""
+    module = executor_module()
+    output = io.StringIO()
+    quarantine = io.StringIO()
+    streams = module.DiagnosticStreams(output, quarantine)
+    marker = "UNKNOWN_DIAGNOSTIC_OUTCOME_MARKER"
+    try:
+        streams.typed(marker)
+    except module.FatalAdapterError:
+        pass
+    else:
+        failures.check(False, "an unknown diagnostic outcome was accepted")
+
+    failures.equal(
+        output.getvalue().splitlines(),
+        [
+            "elements-native-executor: fatal: unrecognized diagnostic outcome; "
+            "detail is elements-output record 1"
+        ],
+        "the unknown outcome takes the fixed fatal path",
+    )
+    failures.check(marker not in output.getvalue(), "the unknown form was written through")
+    failures.check(marker in quarantine.getvalue(), "the unknown form was not quarantined")
+    return 4
+
+
+def test_zk_paths_and_loader_exceptions_reach_neither_file(failures) -> int:
+    """Materializer diagnostics retain neither a path nor exception text."""
+    module = executor_module()
+    output, quarantine = memory_diagnostics(module)
+    marker = "/operator/ZK_PATH_AND_EXCEPTION_MARKER/libzk.so"
+
+    class Operations:
+        materializer = None
+
+    class Executor:
+        operations = Operations()
+
+    original = module.ConfidentialMaterializer
+    try:
+        module.ConfidentialMaterializer = lambda _library: object()
+        module.initialize_confidential_materializer(Executor(), marker)
+
+        def fail_initialization(_library):
+            raise OSError(marker)
+
+        module.ConfidentialMaterializer = fail_initialization
+        module.initialize_confidential_materializer(Executor(), marker)
+
+        failures.equal(
+            output.getvalue().splitlines(),
+            [
+                "elements-native-executor: confidential materializer ready",
+                "elements-native-executor: confidential materializer initialization failed",
+            ],
+            "materializer outcomes use only their fixed spellings",
+        )
+        failures.check(marker not in output.getvalue(), "the ZK path reached --output")
+        failures.check(
+            marker not in quarantine.getvalue(),
+            "the ZK path or loader exception reached --elements-output",
+        )
+        return 3
+    finally:
+        module.ConfidentialMaterializer = original
+        module.STREAMS = None
+
+
 def test_a_wrong_revision_is_refused_before_any_node(failures) -> int:
     """A revision this adapter does not speak ends the exchange."""
     fixture = Fixture(client_body="exit 1\n", node_seconds=0.1)
@@ -595,6 +764,10 @@ TESTS = (
     ("a record past the bound is refused", test_a_record_past_the_bound_is_refused_without_unbounded_reading),
     ("a stream that ends inside a record", test_a_stream_that_ends_inside_a_record),
     ("an extra handshake field is refused", test_an_extra_handshake_field_is_refused),
+    ("an extra execution field cannot inject a typed line", test_an_extra_execution_field_cannot_inject_a_typed_line),
+    ("the typed sink rejects line-bearing content", test_the_typed_sink_rejects_line_bearing_content),
+    ("an unknown diagnostic outcome is fatal", test_an_unknown_diagnostic_outcome_is_fatal),
+    ("ZK paths and loader exceptions reach neither file", test_zk_paths_and_loader_exceptions_reach_neither_file),
     ("a wrong revision is refused before any node", test_a_wrong_revision_is_refused_before_any_node),
     ("the request bounds agree across implementations", test_the_request_bounds_agree_across_the_two_implementations),
     ("both destinations are mandatory", test_both_destinations_are_mandatory),
