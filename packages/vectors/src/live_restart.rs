@@ -776,12 +776,12 @@ pub fn attribute_proof_negative(
         .map_err(|refusal| ProofNegativeAttributionRefusal::ControlDecodingFailure { refusal })?;
     let control_location = control_transaction
         .locate_serialized_field(mutation.locator)
-        .map_err(|refusal| location_refusal(SerializedMutationSide::Control, refusal))?;
+        .map_err(|refusal| location_refusal(SerializedMutationSide::Control, &refusal))?;
     let mutant_bytes = mutation.mutant.encode();
     let mutant_location = mutation
         .mutant
         .locate_serialized_field(mutation.locator)
-        .map_err(|refusal| location_refusal(SerializedMutationSide::Mutant, refusal))?;
+        .map_err(|refusal| location_refusal(SerializedMutationSide::Mutant, &refusal))?;
     let located_field = LocatedMutationField {
         locator: mutation.locator,
         control_range: control_location.range().clone(),
@@ -808,7 +808,7 @@ pub fn attribute_proof_negative(
 
 const fn location_refusal(
     side: SerializedMutationSide,
-    refusal: SerializedFieldLocationRefusal,
+    refusal: &SerializedFieldLocationRefusal,
 ) -> ProofNegativeAttributionRefusal {
     let locator = refusal.locator();
     match refusal {
