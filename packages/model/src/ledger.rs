@@ -463,19 +463,14 @@ fn validate_checkpoint_semantics(
 
 impl ValidatedChainView {
     pub fn new(
-        network_id: [u8; 32],
-        genesis_id: [u8; 32],
-        architecture_manifest_hash: [u8; 32],
+        context: AttestationContext,
         anchor_height: BlockHeight,
-        checkpoint_height: BlockHeight,
-        checkpoint_block_hash: BlockHash,
-        schema_version: SchemaVersion,
         blocks: impl IntoIterator<Item = CanonicalBlock>,
     ) -> Result<Self, Guard> {
-        if schema_version != ATTESTATION_SCHEMA_VERSION {
+        if context.schema_version != ATTESTATION_SCHEMA_VERSION {
             return Err(Guard::UnsupportedSchema);
         }
-        if anchor_height > checkpoint_height {
+        if anchor_height > context.checkpoint_height {
             return Err(Guard::WrongCheckpoint);
         }
 
@@ -486,33 +481,27 @@ impl ValidatedChainView {
                 return Err(Guard::DuplicateEvent);
             }
         }
-        if by_height.keys().any(|height| *height > checkpoint_height) {
+        if by_height
+            .keys()
+            .any(|height| *height > context.checkpoint_height)
+        {
             return Err(Guard::HistoryOrder);
         }
 
         let checkpoint = by_height
-            .get(&checkpoint_height)
+            .get(&context.checkpoint_height)
             .ok_or(Guard::WrongCheckpoint)?;
 
-        if checkpoint.hash != checkpoint_block_hash {
+        if checkpoint.hash != context.checkpoint_block_hash {
             return Err(Guard::WrongCheckpoint);
         }
-
-        let context = AttestationContext {
-            network_id,
-            genesis_id,
-            architecture_manifest_hash,
-            checkpoint_block_hash,
-            checkpoint_height,
-            schema_version,
-        };
 
         validate_context_identity(&context)?;
         validate_anchored_chain(
             &by_height,
             anchor_height,
-            checkpoint_height,
-            checkpoint_block_hash,
+            context.checkpoint_height,
+            context.checkpoint_block_hash,
         )?;
 
         Ok(Self {

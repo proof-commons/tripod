@@ -102,13 +102,8 @@ pub fn chain_view_for_history(world: &World) -> ValidatedChainView {
     let checkpoint_hash = blocks.last().unwrap().hash;
 
     ValidatedChainView::new(
-        TEST_NETWORK_ID,
-        TEST_GENESIS_ID,
-        test_manifest_hash(),
+        context(checkpoint_height, checkpoint_hash),
         genesis_height,
-        checkpoint_height,
-        checkpoint_hash,
-        ATTESTATION_SCHEMA_VERSION,
         blocks,
     )
     .unwrap()
