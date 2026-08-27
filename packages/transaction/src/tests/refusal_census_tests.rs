@@ -194,6 +194,7 @@ fn every_materialization_refusal_is_censused(refusal: &Materialization) {
         | Materialization::FixtureDigestMismatch { .. }
         | Materialization::FixtureBindingAmbiguous { .. }
         | Materialization::FixtureOutputOrderMismatch
+        | Materialization::SignerInputCensusExceedsPositionDomain
         | Materialization::DuplicateInputOutpoint { .. }
         | Materialization::IncompleteFamilyClassification
         | Materialization::ProtocolAssetMismatch { .. }
