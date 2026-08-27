@@ -3111,6 +3111,39 @@ mod tests {
     }
 
     #[test]
+    fn the_partition_is_eighty_two_answered_one_closed_and_twenty_five_required() {
+        // THE PARTITION, PINNED. It was a sentence in the Phase-5 record
+        // and nothing in the tree checked it, which is how seven rows
+        // could sit on the answered side of it while their evidence said
+        // otherwise. The figures are unchanged in COUNT by this wave and
+        // corrected in MEANING: the same 82 rows are answered, and seven
+        // of them are now answered at the boundary their run actually
+        // reached rather than at one it never got to.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let census = plan.census();
+        let answered = plan
+            .rows()
+            .iter()
+            .filter(|row| row.standing().is_answered())
+            .count();
+
+        assert_eq!(answered, 82, "the answered count moved");
+        assert_eq!(census.vocabulary_closed(), 1);
+        assert_eq!(census.native_run_required(), 25, "the required count moved");
+        assert_eq!(
+            answered + census.vocabulary_closed() + census.native_run_required(),
+            108
+        );
+        assert_eq!(census.rows(), 108);
+
+        // And the correction itself: 17 of the answered rows are
+        // refusals, every one of them at its own declared boundary, with
+        // NO row standing at a boundary it did not declare.
+        assert_eq!(census.native_refusal_observed(), 17);
+        assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
+    }
+
+    #[test]
     fn the_four_leaf_arrangement_rows_collapse_to_two_observations() {
         // The R-5 collapse, pinned: the four leaf-arrangement rows form two
         // collision pairs, and each pair draws ONE verdict, so exactly two
