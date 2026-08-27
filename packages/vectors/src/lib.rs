@@ -82,7 +82,8 @@ pub use live_disclosure::{
 pub use live_evidence::{
     DischargingValidator, FirstPartyGap, LiveEvidenceCensus, LiveEvidenceRow,
     LiveInfrastructureBlocker, LiveRowStanding, LiveTransferEvidencePlan,
-    MinimalityRegistryStanding, blocker_census, carried_residuals, derive_live_evidence_plan,
+    MinimalityRegistryStanding, RecordedObservation, blocker_census, carried_residuals,
+    derive_live_evidence_plan,
 };
 pub use live_fault_discharge::{
     FaultMutation, LiveFaultCase, LiveFaultRefusal, LiveFaultValidator, ObservedFaultRefusal,
@@ -129,11 +130,12 @@ pub use live_plan::{
     relocatable_live_bundles, relocatable_live_bundles_for,
 };
 pub use live_report::{
-    LIVE_SAFETY_REPORT_SCHEMA, LiveLifecycleStatus, LiveRunStanding, LiveSafetyCompleteness,
-    LiveSafetyDiagnostics, LiveSafetyReportRefusal, LiveSafetyReportRole, LiveTransferSafetyReport,
-    RecomputedItem, ValidatedLiveTransferSafetyReport, VolatileField, assemble_live_safety_report,
-    canonical_bytes_publish_no_sponsor_value, render_live_safety_report, section_scoreboard,
-    validate_live_safety_report,
+    LIVE_SAFETY_REPORT_SCHEMA, LiveDeploymentBinding, LiveExecutorProvenance, LiveLifecycleStatus,
+    LiveRecordedObservation, LiveReportObservation, LiveRunBinding, LiveSafetyCompleteness,
+    LiveSafetyDiagnostics, LiveSafetyReportRefusal, LiveSafetyReportRole, LiveTargetResponse,
+    LiveTransferSafetyReport, RecomputedItem, ValidatedLiveTransferSafetyReport, VolatileField,
+    assemble_live_safety_report, canonical_bytes_publish_no_sponsor_value,
+    render_live_safety_report, section_scoreboard, validate_live_safety_report,
 };
 pub use live_resource_report::{
     CandidateBoundsResult, LIVE_RESOURCE_REPORT_SCHEMA, LIVE_RESOURCE_SCHEMA_ID,

@@ -20,36 +20,20 @@
 //!
 //! # The honest finding this plan carries
 //!
-//! Twenty-four of the twenty-six positive rows of §15.1 and §15.2 are
-//! answered by a target. Each stands at
-//! [`LiveRowStanding::NativeRunObserved`], carrying the identity a real
-//! node computed for a transfer of that row's own shape which it
-//! accepted, whose bytes were read back out of the node's own copy equal
-//! to the bytes it was handed, and whose witness verified against an
-//! independently recomputed message. The standing carries the identity
-//! so the claim can be checked against a chain rather than believed.
+//! Forty-two rows preserve target-derived observations: twenty-four
+//! acceptances, seventeen refusals, and one paired relation. None is
+//! counted as answered here. The tree retains their identities, observed
+//! layers, and refusal details, but not the exact request bytes, disposable
+//! deployment bindings, and executor self-descriptions needed to validate
+//! the producing runs. Each therefore stands at
+//! [`LiveRowStanding::RecordedObservationUnbound`] until a forward run
+//! carries all of those facts together.
 //!
-//! A twenty-fifth is answered and no target was involved in it. The
+//! One positive observation remains answered and no target was involved. The
 //! deterministic-public-fixture-openings row's own gate is the
 //! byte-identity contract rather than an acceptance, and it stands at
 //! [`LiveRowStanding::DeterminismObserved`] — a member minted for it,
 //! counted in its own bucket, and never added to the acceptance figure.
-//! A reader asking how much a real node has said should read the
-//! twenty-four and not the twenty-five.
-//!
-//! The ONE that did not move stands at
-//! [`LiveRowStanding::NativeRunRequired`] — a statement that a run
-//! would answer it and not a statement that nothing could. It is
-//! `projection-equality-with-paired-explicit`, and the delta test below
-//! names its ground.
-//!
-//! This paragraph has been rewritten each time a wave observed
-//! something, and the rewriting is the discipline rather than churn: it
-//! said two while two were answered, and seven while seven were, and a
-//! header that kept an old number would be the plan's own summary
-//! disagreeing with the census it computes. It also said twenty-two
-//! while twenty-three were, which is the same failure caught late — the
-//! count beside it was checked by a test and the sentence was not.
 //!
 //! That is a narrower finding than this paragraph used to carry, and
 //! the narrowing is a repair rather than a softening. What it used to
@@ -564,6 +548,42 @@ pub enum DischargingValidator {
     Fault(LiveFaultValidator),
 }
 
+/// A historical target observation preserved without a validated run binding.
+///
+/// These are the facts the existing run-of-record constants retain. They are
+/// deliberately separate from [`LiveRowStanding`]'s bound observation members:
+/// an identity, layer, or refusal sentence is not a transcript-grade binding to
+/// the exact deployment, executor, request, and response that produced it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum RecordedObservation {
+    /// A target recorded an accepted transaction identity.
+    NativeAcceptance {
+        /// The recorded target identity.
+        accepted_identity: &'static str,
+    },
+    /// A target recorded a refusal and its accepted control.
+    NativeRefusal {
+        /// The boundary the row declared before the run.
+        declared_boundary: EvidenceBoundary,
+        /// The layer recorded by the executor.
+        observed_layer: ObservedOutcomeLayer,
+        /// The recorded identity of the accepted control.
+        control_identity: &'static str,
+        /// The target's recorded refusal sentence.
+        refusal_detail: &'static str,
+    },
+    /// A recorded relation over two accepted transaction identities.
+    PairedRelation {
+        /// The recorded explicit identity.
+        explicit_identity: &'static str,
+        /// The recorded private identity.
+        private_identity: &'static str,
+        /// The recorded relation.
+        relation: &'static str,
+    },
+}
+
 /// What answers one §15 row, or what stands in the way.
 ///
 /// Exactly one state per row, and none of them is "passed". §13.5 reads
@@ -591,6 +611,14 @@ pub enum LiveRowStanding {
     /// guide determines one, so a run's observation can be filed against
     /// a relation rather than against a name.
     NativeRunRequired(Option<CoverageRequirementId>),
+    /// A historical observation survives, but no transcript-grade run binding
+    /// in the tree validates it.
+    ///
+    /// It is preserved rather than rewritten as a run that never happened, and
+    /// it is not answered. A forward run can move the row to one of the bound
+    /// observation members below once exact deployment, executor, request, and
+    /// response evidence travels together.
+    RecordedObservationUnbound(RecordedObservation),
     /// A target-native run answered the row, and here is the identity.
     ///
     /// # Why this variant had to be minted
@@ -864,12 +892,11 @@ impl LiveRowStanding {
     /// Whether this standing is evidence rather than an outstanding
     /// obligation.
     ///
-    /// [`Self::NativeRefusalAtUnexpectedBoundary`] is deliberately ABSENT
-    /// from the list below, and its absence is the load-bearing half of
-    /// the boundary repair. A refusal at a boundary the row did not
-    /// declare is a recorded observation and NOT an answer, so it must
-    /// remain outstanding, appear in the report's outstanding list, and
-    /// keep the completeness token off `Complete`.
+    /// [`Self::NativeRefusalAtUnexpectedBoundary`] and
+    /// [`Self::RecordedObservationUnbound`] are deliberately absent. The
+    /// former contradicts the row's declaration; the latter preserves a
+    /// historical fact without the transcript-grade binding needed to
+    /// validate it. Neither is an answer.
     #[must_use]
     pub const fn is_answered(&self) -> bool {
         matches!(
@@ -939,6 +966,7 @@ pub struct LiveEvidenceCensus {
     first_party_discharged: usize,
     first_party_undischarged: usize,
     native_run_required: usize,
+    recorded_observation_unbound: usize,
     native_run_observed: usize,
     native_refusal_observed: usize,
     native_refusal_at_unexpected_boundary: usize,
@@ -970,17 +998,28 @@ impl LiveEvidenceCensus {
         self.first_party_undischarged
     }
 
-    /// How many rows a target-native run has answered.
+    /// How many rows a transcript-grade target-native run has answered.
     ///
-    /// The wave's own delta, as a number. Every one of them is a row
-    /// whose standing carries the identity that answered it, so the
-    /// figure can be audited row by row rather than believed.
+    /// Historical identities without the rest of their run binding count at
+    /// [`Self::recorded_observation_unbound`] instead.
     #[must_use]
     pub const fn native_run_observed(&self) -> usize {
         self.native_run_observed
     }
 
-    /// How many negative rows a target-native refusal has answered.
+    /// How many rows preserve a historical target observation without a
+    /// transcript-grade run binding.
+    ///
+    /// These rows are outstanding. They are counted apart from both a run
+    /// that still needs to happen and a validated observation, because the
+    /// recorded event is real while the evidence needed to validate its
+    /// provenance is absent from the tree.
+    #[must_use]
+    pub const fn recorded_observation_unbound(&self) -> usize {
+        self.recorded_observation_unbound
+    }
+
+    /// How many negative rows a transcript-grade refusal has answered.
     ///
     /// Counted apart from [`Self::native_run_observed`] rather than
     /// added to it, because the two are different observations: one is a
@@ -1099,7 +1138,8 @@ impl LiveEvidenceCensus {
     /// bar unreachable by construction and say nothing true about the
     /// pipeline.
     ///
-    /// The fourth term is not a row WAITING but a row CONTRADICTED, and
+    /// The unbound term preserves an event without treating its incomplete
+    /// provenance as evidence. The final term is not a row WAITING but a row CONTRADICTED, and
     /// it is here because §13.5's bar asks whether every required row is
     /// answered AT ITS OWN BOUNDARY. A wrong-boundary refusal leaves the
     /// declared boundary unexercised just as surely as a run that never
@@ -1108,6 +1148,7 @@ impl LiveEvidenceCensus {
     #[must_use]
     pub const fn every_required_row_is_answered(&self) -> bool {
         self.native_run_required == 0
+            && self.recorded_observation_unbound == 0
             && self.infrastructure_blocked == 0
             && self.first_party_undischarged == 0
             && self.native_refusal_at_unexpected_boundary == 0
@@ -1134,6 +1175,7 @@ impl LiveEvidenceCensus {
             first_party_discharged: 0,
             first_party_undischarged: 0,
             native_run_required: 0,
+            recorded_observation_unbound: 0,
             native_run_observed: 0,
             native_refusal_observed: 0,
             native_refusal_at_unexpected_boundary: 1,
@@ -1957,15 +1999,15 @@ fn classify(
     if let Some(blocker) = specific_blocker(row) {
         return Ok(LiveRowStanding::InfrastructureBlocked(blocker));
     }
-    // An answered row before a blocked one would let an observation
-    // paper over a component that is still missing, so this is asked
-    // AFTER the specific blocker and never before it.
+    // A recorded observation before a blocker would paper over a component
+    // that is still missing, so this is asked after the blocker.
     if let Some(accepted_identity) = observed_row_acceptance(row) {
-        return Ok(LiveRowStanding::NativeRunObserved { accepted_identity });
+        return Ok(LiveRowStanding::RecordedObservationUnbound(
+            RecordedObservation::NativeAcceptance { accepted_identity },
+        ));
     }
     // Beside it and after it, for the same reason it sits after the
-    // specific blocker: a refusal answers a row only once the row is
-    // not waiting on something that would have to exist first.
+    // specific blocker.
     if let Some(refusal) = observed_row_refusal(row) {
         // THE COMPARISON THIS BRANCH USED NOT TO MAKE. A refusal is
         // evidence for the row that declared it only where the layer the
@@ -1974,22 +2016,22 @@ fn classify(
         // near-enough. A refusal earlier in the pipeline than the
         // declared boundary answers nothing about the declared one,
         // because the run stopped before reaching it.
-        let matched = observed_boundary(refusal.observed_layer) == Some(boundary);
-        return Ok(if matched {
-            LiveRowStanding::NativeRefusalObserved {
+        if observed_boundary(refusal.observed_layer) != Some(boundary) {
+            return Ok(LiveRowStanding::NativeRefusalAtUnexpectedBoundary {
                 declared_boundary: boundary,
                 observed_layer: refusal.observed_layer,
                 control_identity: refusal.control_identity,
                 refusal_detail: refusal.refusal_detail,
-            }
-        } else {
-            LiveRowStanding::NativeRefusalAtUnexpectedBoundary {
+            });
+        }
+        return Ok(LiveRowStanding::RecordedObservationUnbound(
+            RecordedObservation::NativeRefusal {
                 declared_boundary: boundary,
                 observed_layer: refusal.observed_layer,
                 control_identity: refusal.control_identity,
                 refusal_detail: refusal.refusal_detail,
-            }
-        });
+            },
+        ));
     }
     // Beside the two above and after them, for the reason they sit
     // after the specific blocker. It is asked after the single-identity
@@ -1998,11 +2040,13 @@ fn classify(
     // is a RELATION over two acceptances reaches this at all.
     if let Some((explicit_identity, private_identity, relation)) = observed_row_paired_relation(row)
     {
-        return Ok(LiveRowStanding::PairedRelationObserved {
-            explicit_identity,
-            private_identity,
-            relation,
-        });
+        return Ok(LiveRowStanding::RecordedObservationUnbound(
+            RecordedObservation::PairedRelation {
+                explicit_identity,
+                private_identity,
+                relation,
+            },
+        ));
     }
     // Last of the observation branches, and after the specific
     // blocker for the same reason the others are. It is asked after
@@ -2130,6 +2174,9 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
             LiveRowStanding::FirstPartyDischarged { .. } => census.first_party_discharged += 1,
             LiveRowStanding::FirstPartyUndischarged(_) => census.first_party_undischarged += 1,
             LiveRowStanding::NativeRunRequired(_) => census.native_run_required += 1,
+            LiveRowStanding::RecordedObservationUnbound(_) => {
+                census.recorded_observation_unbound += 1;
+            }
             LiveRowStanding::NativeRunObserved { .. } => census.native_run_observed += 1,
             LiveRowStanding::NativeRefusalObserved { .. } => census.native_refusal_observed += 1,
             LiveRowStanding::NativeRefusalAtUnexpectedBoundary { .. } => {
@@ -2391,7 +2438,8 @@ pub const fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
 mod tests {
     use super::{
         EvidenceBoundary, LiveInfrastructureBlocker, LiveRowStanding, MinimalityRegistryStanding,
-        ObservedOutcomeLayer, blocker_census, derive_live_evidence_plan, observed_boundary,
+        ObservedOutcomeLayer, RecordedObservation, blocker_census, derive_live_evidence_plan,
+        observed_boundary,
     };
     use crate::live_safety::{LiveSafetyPolarity, LiveSafetySection};
     use std::collections::BTreeSet;
@@ -2610,13 +2658,13 @@ mod tests {
         assert_ne!(relation.len(), 0, "the standing observed nothing");
     }
 
-    /// The positive rows a run of their OWN SHAPE answered.
+    /// The positive rows whose run-of-record acceptance is preserved.
     ///
     /// Spelled rather than derived so that a row moved by an edit and
     /// not by a run fails the assertion that reads it. That is the whole
     /// point: a delta that could grow quietly is a delta nobody is
     /// checking.
-    fn rows_answered_by_a_run_of_their_own_shape() -> BTreeSet<&'static str> {
+    fn rows_with_a_recorded_acceptance_of_their_own_shape() -> BTreeSet<&'static str> {
         BTreeSet::from([
             "both-commitment-parity-forms",
             "candidate-maximum-inputs",
@@ -2646,26 +2694,15 @@ mod tests {
     }
 
     #[test]
-    fn exactly_the_positive_rows_a_run_answered_are_answered() {
-        // The wave's delta, held as a test rather than written in a
-        // report. Twenty-six positive rows; twenty-three of them are
-        // answered by a target, and each is answered because a real node
-        // accepted a transaction of ITS OWN SHAPE and the standing
-        // carries the identity.
+    fn exactly_the_positive_target_observations_are_preserved_unbound() {
+        // Twenty-six positive rows; twenty-four preserve a target acceptance
+        // without counting it as validated evidence. One more preserves the
+        // paired target relation, and the independently recomputed determinism
+        // row remains answered.
         //
-        // The figure in this comment read "twenty-two" against a set of
-        // twenty-three for as long as the set has had twenty-three
-        // members, which is a defect of exactly the kind the spelled
-        // count below exists to catch — the count was checked and the
-        // sentence beside it was not. It is corrected here rather than
-        // carried.
-        //
-        // One further row is answered and is NOT in that set: the
-        // openings row, whose §11.2 gate is the byte-identity contract
-        // rather than an acceptance. It is collected separately and
-        // asserted separately, because a determinism observation is not
-        // a target verdict. Two rows still await the run that would
-        // answer them, and awaiting a run is not an answer.
+        // The openings row is answered independently by determinism and is
+        // collected separately. The paired relation is preserved separately
+        // too, because neither kind is one acceptance of one row's shape.
         //
         // It read seven until the explicit shape ceremony ran thirteen
         // shapes against a real node and every one was accepted, which
@@ -2680,7 +2717,7 @@ mod tests {
         // delta nobody is checking.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let mut positives = 0_usize;
-        let mut answered = BTreeSet::new();
+        let mut recorded_acceptances = BTreeSet::new();
         let mut by_determinism = BTreeSet::new();
         let mut by_paired_relation = BTreeSet::new();
         for row in plan.rows() {
@@ -2689,15 +2726,17 @@ mod tests {
             }
             positives += 1;
             match row.standing() {
-                LiveRowStanding::NativeRunObserved { accepted_identity } => {
+                LiveRowStanding::RecordedObservationUnbound(
+                    RecordedObservation::NativeAcceptance { accepted_identity },
+                ) => {
                     assert_eq!(
                         accepted_identity.len(),
                         64,
-                        "{} is answered by something that is not a target identity",
+                        "{} records something that is not a target identity",
                         row.row(),
                     );
-                    assert!(row.standing().is_answered());
-                    answered.insert(row.row().name());
+                    assert!(!row.standing().is_answered());
+                    recorded_acceptances.insert(row.row().name());
                 }
                 LiveRowStanding::NativeRunRequired(_) => {
                     assert!(
@@ -2725,31 +2764,32 @@ mod tests {
                     assert!(row.standing().is_answered());
                     by_determinism.insert(row.row().name());
                 }
-                // The fourth observation kind, in its own set for the
-                // reason the third is in its own: what answers this row
-                // is a RELATION over two acceptances, and folding it
-                // into `answered` would put it in a set whose assertion
-                // message says every member was produced by a run of its
-                // own shape. It was produced by a run of a PAIR.
-                LiveRowStanding::PairedRelationObserved {
-                    explicit_identity,
-                    private_identity,
-                    relation,
-                } => {
+                // The paired relation stays separate from one-identity
+                // acceptance records and, without its full run binding,
+                // answers nothing in this partition.
+                LiveRowStanding::RecordedObservationUnbound(
+                    RecordedObservation::PairedRelation {
+                        explicit_identity,
+                        private_identity,
+                        relation,
+                    },
+                ) => {
                     assert_paired_relation(explicit_identity, private_identity, relation);
-                    assert!(row.standing().is_answered());
+                    assert!(!row.standing().is_answered());
                     by_paired_relation.insert(row.row().name());
                 }
                 other => panic!("{} stands at {other:?}", row.row()),
             }
         }
         assert_eq!(positives, 26, "both positive tables together");
-        assert_eq!(answered, rows_answered_by_a_run_of_their_own_shape());
-        assert_eq!(plan.census().native_run_observed(), 24);
+        assert_eq!(
+            recorded_acceptances,
+            rows_with_a_recorded_acceptance_of_their_own_shape(),
+        );
+        assert_eq!(plan.census().native_run_observed(), 0);
 
-        // The positive private class that did NOT move is named here
-        // rather than left to the count, because a matrix that only said
-        // how many rows moved could not say which.
+        // The history below explains how the records were acquired. It does
+        // not make them validated evidence in the current partition.
         //
         // Private-sponsor-values USED to be listed here, on the ground
         // that every sponsored control accepted so far was explicit and
@@ -2802,8 +2842,8 @@ mod tests {
         // nothing done to it: the control was accepted at the first
         // attempt with the symbol untouched.
         //
-        // THE EXPLICIT POSITIVE TABLE IS NOW COMPLETE. Every row left in
-        // this list is private.
+        // THE EXPLICIT POSITIVE TABLE'S HISTORICAL ACCEPTANCE RECORD IS
+        // COMPLETE. Its transcript-grade evidence binding is not.
         //
         // The openings row LEFT this list, and it left by a different
         // rule from every row before it. Every previous departure was a
@@ -2820,7 +2860,7 @@ mod tests {
         // relation over two acceptances.
         let paired = "projection-equality-with-paired-explicit";
         assert!(
-            !answered.contains(paired),
+            !recorded_acceptances.contains(paired),
             "{paired} claims an answer a single run of one shape produced",
         );
         assert!(
@@ -2828,24 +2868,23 @@ mod tests {
             "{paired} claims a determinism answer nothing recomputed",
         );
         assert_eq!(by_paired_relation, BTreeSet::from([paired]));
-        assert_eq!(plan.census().paired_relation_observed(), 1);
+        assert_eq!(plan.census().paired_relation_observed(), 0);
         assert_eq!(
             by_determinism,
             BTreeSet::from(["deterministic-public-fixture-openings"]),
         );
-        assert!(!answered.contains("deterministic-public-fixture-openings"));
+        assert!(!recorded_acceptances.contains("deterministic-public-fixture-openings"));
         assert_eq!(plan.census().determinism_observed(), 1);
         // The acceptance buckets did NOT move on the determinism row's
         // account, which is the whole claim of a separate bucket made
         // checkable.
-        assert_eq!(plan.census().native_run_observed(), 24);
+        assert_eq!(plan.census().native_run_observed(), 0);
     }
 
     #[test]
-    fn exactly_the_negative_rows_a_refusal_answered_are_answered() {
-        // The negative half's delta, spelled for the same reason the
-        // positive one is: a row moved by an edit rather than by a run
-        // fails here.
+    fn exactly_the_negative_refusals_are_preserved_unbound() {
+        // The historical negative delta, spelled so a row cannot lose its
+        // recorded refusal while none is mistaken for validated evidence.
         //
         // Both are §15.3 witness-content rows and both were answered by
         // ONE run, which submitted two mutants and then the unmutated
@@ -2856,14 +2895,16 @@ mod tests {
         use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
 
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
-        let mut answered = BTreeSet::new();
+        let mut recorded = BTreeSet::new();
         for row in plan.rows() {
-            if let LiveRowStanding::NativeRefusalObserved {
-                declared_boundary,
-                observed_layer,
-                control_identity,
-                refusal_detail,
-            } = row.standing()
+            if let LiveRowStanding::RecordedObservationUnbound(
+                RecordedObservation::NativeRefusal {
+                    declared_boundary,
+                    observed_layer,
+                    control_identity,
+                    refusal_detail,
+                },
+            ) = row.standing()
             {
                 assert_eq!(
                     control_identity.len(),
@@ -2886,12 +2927,12 @@ mod tests {
                     "{} stands as answered at a boundary it did not declare",
                     row.row(),
                 );
-                assert!(row.standing().is_answered());
-                answered.insert(row.row().name());
+                assert!(!row.standing().is_answered());
+                recorded.insert(row.row().name());
             }
         }
         assert_eq!(
-            answered,
+            recorded,
             BTreeSet::from([
                 "confidential-asset-commitment",
                 "empty-signature",
@@ -2912,7 +2953,7 @@ mod tests {
                 "wrong-private-blinding-balance",
             ]),
         );
-        assert_eq!(plan.census().native_refusal_observed(), 17);
+        assert_eq!(plan.census().native_refusal_observed(), 0);
 
         // THE KEY-PATH ROW COMES FROM A THIRD LANE and is held to the
         // same rule as the rest. Its control is the probe's own, accepted
@@ -3007,7 +3048,7 @@ mod tests {
     }
 
     #[test]
-    fn every_native_refusal_observed_matches_its_rows_declared_boundary() {
+    fn every_recorded_native_refusal_matches_its_rows_declared_boundary() {
         // The property over the DERIVED PLAN rather than over a synthetic
         // pair: walk every row the classifier answered by a refusal and
         // compare, exactly, the layer the run reached against the
@@ -3019,11 +3060,13 @@ mod tests {
         // somewhere else.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         for row in plan.rows() {
-            if let LiveRowStanding::NativeRefusalObserved {
-                declared_boundary,
-                observed_layer,
-                ..
-            } = row.standing()
+            if let LiveRowStanding::RecordedObservationUnbound(
+                RecordedObservation::NativeRefusal {
+                    declared_boundary,
+                    observed_layer,
+                    ..
+                },
+            ) = row.standing()
             {
                 assert_eq!(
                     observed_boundary(*observed_layer),
@@ -3098,9 +3141,12 @@ mod tests {
                 Some(EvidenceBoundary::ConsensusRejectionBeforeScript),
                 "{name} does not declare the boundary its run reached",
             );
-            let LiveRowStanding::NativeRefusalObserved { observed_layer, .. } = row.standing()
+            let LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeRefusal {
+                observed_layer,
+                ..
+            }) = row.standing()
             else {
-                panic!("{name} is not answered by a refusal");
+                panic!("{name} does not preserve its recorded refusal");
             };
             assert_eq!(
                 *observed_layer,
@@ -3111,14 +3157,12 @@ mod tests {
     }
 
     #[test]
-    fn the_partition_is_eighty_two_answered_one_closed_and_twenty_five_required() {
-        // THE PARTITION, PINNED. It was a sentence in the Phase-5 record
-        // and nothing in the tree checked it, which is how seven rows
-        // could sit on the answered side of it while their evidence said
-        // otherwise. The figures are unchanged in COUNT by this wave and
-        // corrected in MEANING: the same 82 rows are answered, and seven
-        // of them are now answered at the boundary their run actually
-        // reached rather than at one it never got to.
+    fn the_partition_is_forty_answered_one_closed_and_sixty_seven_outstanding() {
+        // FORWARD BINDING ONLY, under the owner ruling recorded by T6-002.
+        // The 42 target-derived rows preserve their observations, but the
+        // tree does not retain the exact request bytes, disposable deployment
+        // binding, and executor self-description needed to validate a run.
+        // They therefore leave the answered side without changing history.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let census = plan.census();
         let answered = plan
@@ -3127,19 +3171,26 @@ mod tests {
             .filter(|row| row.standing().is_answered())
             .count();
 
-        assert_eq!(answered, 82, "the answered count moved");
+        assert_eq!(answered, 40, "the answered count moved");
+        assert_eq!(census.first_party_discharged(), 34);
+        assert_eq!(census.determinism_observed(), 1);
+        assert_eq!(census.first_party_fact_observed(), 3);
+        assert_eq!(census.report_layer(), 2);
         assert_eq!(census.vocabulary_closed(), 1);
         assert_eq!(census.native_run_required(), 25, "the required count moved");
+        assert_eq!(census.recorded_observation_unbound(), 42);
         assert_eq!(
-            answered + census.vocabulary_closed() + census.native_run_required(),
+            answered
+                + census.vocabulary_closed()
+                + census.native_run_required()
+                + census.recorded_observation_unbound(),
             108
         );
         assert_eq!(census.rows(), 108);
 
-        // And the correction itself: 17 of the answered rows are
-        // refusals, every one of them at its own declared boundary, with
-        // NO row standing at a boundary it did not declare.
-        assert_eq!(census.native_refusal_observed(), 17);
+        // The 17 refusal records remain exact about their observed layer,
+        // but none is counted as a validated refusal without its run.
+        assert_eq!(census.native_refusal_observed(), 0);
         assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
     }
 
@@ -3167,9 +3218,11 @@ mod tests {
         assert!(
             matches!(
                 standing("two-coordinators"),
-                LiveRowStanding::NativeRefusalObserved { .. }
+                LiveRowStanding::RecordedObservationUnbound(
+                    RecordedObservation::NativeRefusal { .. }
+                )
             ),
-            "two-coordinators was not driven to an observed refusal",
+            "two-coordinators did not preserve its recorded refusal",
         );
         assert!(
             matches!(
@@ -3184,9 +3237,11 @@ mod tests {
         assert!(
             matches!(
                 standing("no-coordinator"),
-                LiveRowStanding::NativeRefusalObserved { .. }
+                LiveRowStanding::RecordedObservationUnbound(
+                    RecordedObservation::NativeRefusal { .. }
+                )
             ),
-            "no-coordinator was not driven to an observed refusal",
+            "no-coordinator did not preserve its recorded refusal",
         );
         assert!(
             matches!(
@@ -3318,8 +3373,9 @@ mod tests {
         ));
         // And it did NOT land in either target bucket. The separate
         // bucket's whole claim, made checkable.
-        assert_eq!(plan.census().native_run_observed(), 24);
-        assert_eq!(plan.census().native_refusal_observed(), 17);
+        assert_eq!(plan.census().native_run_observed(), 0);
+        assert_eq!(plan.census().native_refusal_observed(), 0);
+        assert_eq!(plan.census().recorded_observation_unbound(), 42);
     }
 
     #[test]

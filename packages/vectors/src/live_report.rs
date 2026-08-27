@@ -4,17 +4,17 @@
 //! semantic relation, and did every required invalid transfer fail at its
 //! owning boundary — and names twelve typed carriers the answer travels
 //! in. §13.5 says the gate accepts a validated wrapper rather than a raw
-//! report, recomputes fourteen items, and excludes ten volatile fields
-//! from the canonical bytes. This module is all three.
+//! report, names fourteen possible recomputations, and excludes ten
+//! volatile fields from the canonical bytes. This module is all three.
 //!
 //! # The wrapper is the whole point
 //!
 //! [`LiveTransferSafetyReport`] is a value a caller can build, and it
 //! establishes nothing. [`ValidatedLiveTransferSafetyReport`] has private
 //! fields and one constructor, [`validate_live_safety_report`], which
-//! *recomputes* every item from the evidence plan rather than reading it
-//! off the report it was handed. A report whose summary disagreed with
-//! its own rows is refused rather than published.
+//! records an item only after its comparison ran. A report whose summary
+//! disagreed with its own rows is refused rather than published, and an
+//! absent run binding cannot manufacture six passing run comparisons.
 //!
 //! # Timing is not in here, and that is structural
 //!
@@ -38,13 +38,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
-use target_elements::{DeploymentProjection, TargetProjection};
+use target_elements::TargetProjection;
+use target_elements_conformance::protocol::ObservedOutcomeLayer;
+use transaction::Txid;
 
 use crate::live_evidence::{
     LiveEvidenceCensus, LiveInfrastructureBlocker, LiveRowStanding, LiveTransferEvidencePlan,
-    blocker_census,
+    RecordedObservation, blocker_census,
 };
 use crate::live_safety::LiveSafetySection;
+use crate::matrix::EvidenceBoundary;
 
 /// The schema of the canonical rendered safety report.
 ///
@@ -58,13 +61,12 @@ use crate::live_safety::LiveSafetySection;
 /// row count, which is exactly the misreading a stated schema exists to
 /// turn into a refusal.
 ///
-/// Revision 3 adds the `native_refusal_at_unexpected_boundary` census
-/// line and the `native-refusal-at-unexpected-boundary` outstanding
-/// spelling, and makes `failed` a reachable completeness token. The
-/// revision is REQUIRED rather than cosmetic: under revision 2 a
-/// wrong-boundary refusal was counted as an answered row, so a
-/// revision-2 reader meeting these bytes would both mis-sum the census
-/// and — worse — read a contradiction as a pass.
+/// Revision 3 adds the evidence corpus ledger, the
+/// `recorded_observation_unbound` census, every observation bucket, and
+/// the `native_refusal_at_unexpected_boundary` census and outstanding
+/// spelling. It also makes `failed` reachable. Schema 2 is hard-rejected:
+/// it has neither the ledger nor the boundary distinction and is never
+/// silently reinterpreted as evidence-bearing schema 3.
 pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 3;
 
 /// What a safety report is, said in the bytes.
@@ -115,24 +117,257 @@ impl LiveSafetyCompleteness {
     }
 }
 
-/// Where the run half of the report stands.
-///
-/// §13.2's carriers five through eight and twelve — the sent requests,
-/// the responses, the target verdicts, the semantic projections, and the
-/// executor provenance — exist only for a report about a run. A report
-/// about no run carries this instead of empty collections, because an
-/// empty response census and a census nobody asked for are different
-/// facts and §1.11 does not let them share a field.
+/// The exact deployment fields one validated target run binds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveDeploymentBinding {
+    environment: String,
+    network_id: [u8; 32],
+    genesis_id: [u8; 32],
+    target_contract: String,
+}
+
+impl LiveDeploymentBinding {
+    /// The deployment environment.
+    #[must_use]
+    pub fn environment(&self) -> &str {
+        &self.environment
+    }
+
+    /// The network identity in target display order.
+    #[must_use]
+    pub const fn network_id(&self) -> &[u8; 32] {
+        &self.network_id
+    }
+
+    /// The genesis identity in target display order.
+    #[must_use]
+    pub const fn genesis_id(&self) -> &[u8; 32] {
+        &self.genesis_id
+    }
+
+    /// The target contract revision recorded by the run.
+    #[must_use]
+    pub fn target_contract(&self) -> &str {
+        &self.target_contract
+    }
+}
+
+/// The stable executor self-description one validated target run binds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveExecutorProvenance {
+    adapter_name: String,
+    adapter_version: String,
+    node_name: String,
+    node_version: String,
+    executed_source_tip: String,
+}
+
+impl LiveExecutorProvenance {
+    /// The adapter name.
+    #[must_use]
+    pub fn adapter_name(&self) -> &str {
+        &self.adapter_name
+    }
+
+    /// The adapter version.
+    #[must_use]
+    pub fn adapter_version(&self) -> &str {
+        &self.adapter_version
+    }
+
+    /// The node name.
+    #[must_use]
+    pub fn node_name(&self) -> &str {
+        &self.node_name
+    }
+
+    /// The node version.
+    #[must_use]
+    pub fn node_version(&self) -> &str {
+        &self.node_version
+    }
+
+    /// The executed source identity.
+    #[must_use]
+    pub fn executed_source_tip(&self) -> &str {
+        &self.executed_source_tip
+    }
+}
+
+/// One exact target response retained by a validated run binding.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub enum LiveRunStanding {
-    /// No target-native run was requested.
-    ///
-    /// Carries the blocker that made a run pointless rather than merely
-    /// recording an absence: a run whose every submission would fail for
-    /// one unrelated reason produces observations that discharge nothing,
-    /// and §4.3's "target was not asked" is the honest record of it.
-    NoRunRequested(LiveInfrastructureBlocker),
+pub enum LiveTargetResponse {
+    /// The target accepted the request and assigned this identity.
+    Accepted {
+        /// The typed target identity.
+        identity: Txid,
+    },
+    /// The target refused the request.
+    Refused {
+        /// The observed refusal layer.
+        observed_layer: ObservedOutcomeLayer,
+        /// The target's exact detail.
+        detail: String,
+        /// The accepted control identity the refusal is attributable against.
+        control_identity: Txid,
+    },
+}
+
+/// One transcript-grade target run in the cumulative corpus.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveRunBinding {
+    run_id: String,
+    deployment: LiveDeploymentBinding,
+    executor: LiveExecutorProvenance,
+    requests: BTreeMap<String, Vec<u8>>,
+    responses: BTreeMap<String, LiveTargetResponse>,
+}
+
+impl LiveRunBinding {
+    /// The deterministic corpus identity of this run.
+    #[must_use]
+    pub fn run_id(&self) -> &str {
+        &self.run_id
+    }
+
+    /// The exact deployment binding.
+    #[must_use]
+    pub const fn deployment(&self) -> &LiveDeploymentBinding {
+        &self.deployment
+    }
+
+    /// The validated executor provenance.
+    #[must_use]
+    pub const fn executor(&self) -> &LiveExecutorProvenance {
+        &self.executor
+    }
+
+    /// Exact sent request bytes, keyed by deterministic request identity.
+    #[must_use]
+    pub const fn requests(&self) -> &BTreeMap<String, Vec<u8>> {
+        &self.requests
+    }
+
+    /// Exact responses, keyed by the same request identity.
+    #[must_use]
+    pub const fn responses(&self) -> &BTreeMap<String, LiveTargetResponse> {
+        &self.responses
+    }
+}
+
+/// A typed historical observation whose run binding is absent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum LiveRecordedObservation {
+    /// A recorded acceptance.
+    NativeAcceptance {
+        /// The target-computed identity.
+        identity: Txid,
+    },
+    /// A recorded refusal and accepted control.
+    NativeRefusal {
+        /// The row's declared boundary.
+        declared_boundary: EvidenceBoundary,
+        /// The recorded observed layer.
+        observed_layer: ObservedOutcomeLayer,
+        /// The accepted control identity.
+        control_identity: Txid,
+        /// The target's exact refusal detail.
+        detail: &'static str,
+    },
+    /// A recorded relation over two accepted identities.
+    PairedRelation {
+        /// The explicit identity.
+        explicit_identity: Txid,
+        /// The private identity.
+        private_identity: Txid,
+        /// The recorded relation.
+        relation: &'static str,
+    },
+}
+
+/// One row-level observation in the corpus ledger.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum LiveReportObservation {
+    /// A bound target acceptance.
+    NativeAcceptance {
+        /// The matrix row.
+        row: &'static str,
+        /// The bound run.
+        run_id: String,
+        /// The exact request within the run.
+        request_id: String,
+        /// The target-computed identity.
+        identity: Txid,
+    },
+    /// A bound target refusal.
+    NativeRefusal {
+        /// The matrix row.
+        row: &'static str,
+        /// The bound run.
+        run_id: String,
+        /// The exact request within the run.
+        request_id: String,
+        /// The row's declared boundary.
+        declared_boundary: EvidenceBoundary,
+        /// The observed layer.
+        observed_layer: ObservedOutcomeLayer,
+        /// The accepted control identity.
+        control_identity: Txid,
+        /// The target's exact refusal detail.
+        detail: String,
+    },
+    /// A bound relation over two accepted members.
+    PairedRelation {
+        /// The matrix row.
+        row: &'static str,
+        /// The explicit member's run.
+        explicit_run_id: String,
+        /// The explicit request within its run.
+        explicit_request_id: String,
+        /// The explicit identity.
+        explicit_identity: Txid,
+        /// The private member's run.
+        private_run_id: String,
+        /// The private request within its run.
+        private_request_id: String,
+        /// The private identity.
+        private_identity: Txid,
+        /// The validated relation.
+        relation: String,
+    },
+    /// A preserved historical observation lacking a complete run binding.
+    RecordedObservationUnbound {
+        /// The matrix row.
+        row: &'static str,
+        /// The typed recorded fact.
+        observation: LiveRecordedObservation,
+    },
+    /// A first-party determinism observation.
+    Determinism {
+        /// The matrix row.
+        row: &'static str,
+        /// What was recomputed.
+        recomputed: &'static str,
+        /// The site that recomputed it.
+        observed_by: &'static str,
+    },
+    /// A first-party fact.
+    FirstPartyFact {
+        /// The matrix row.
+        row: &'static str,
+        /// The fact.
+        fact: &'static str,
+        /// The site establishing it.
+        observed_by: &'static str,
+    },
+    /// A row answered by validation of the report layer itself.
+    ReportLayer {
+        /// The matrix row.
+        row: &'static str,
+    },
 }
 
 /// The lifecycle obligations §13.2 makes the report carry (§17.1).
@@ -279,16 +514,16 @@ impl LiveSafetyDiagnostics {
 /// The live-transfer safety report of §13.2.
 ///
 /// A value a caller can build, and one that establishes nothing on its
-/// own. The twelve carriers are here; the conclusions are
+/// own. The cumulative corpus carriers are here; the conclusions are
 /// [`validate_live_safety_report`]'s.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveTransferSafetyReport {
     schema: u32,
     role: LiveSafetyReportRole,
     target: TargetProjection,
-    deployment: Option<DeploymentProjection>,
     representations: BTreeSet<LiveTransferRepresentationPlan>,
-    run: LiveRunStanding,
+    runs: Vec<LiveRunBinding>,
+    observations: Vec<LiveReportObservation>,
     lifecycle: LiveLifecycleStatus,
     census: LiveEvidenceCensus,
     completeness: LiveSafetyCompleteness,
@@ -313,13 +548,10 @@ impl LiveTransferSafetyReport {
         &self.target
     }
 
-    /// The deployment a run was bound to, where one happened.
-    ///
-    /// `None` says no run was requested, and never that a run happened
-    /// against a deployment nobody recorded.
+    /// The transcript-grade run bindings in the cumulative corpus.
     #[must_use]
-    pub const fn deployment(&self) -> Option<&DeploymentProjection> {
-        self.deployment.as_ref()
+    pub fn runs(&self) -> &[LiveRunBinding] {
+        &self.runs
     }
 
     /// The representation plans in scope.
@@ -328,10 +560,10 @@ impl LiveTransferSafetyReport {
         &self.representations
     }
 
-    /// Where the run half stands.
+    /// Every row-level observation in matrix order.
     #[must_use]
-    pub const fn run(&self) -> &LiveRunStanding {
-        &self.run
+    pub fn observations(&self) -> &[LiveReportObservation] {
+        &self.observations
     }
 
     /// The lifecycle obligations.
@@ -389,12 +621,30 @@ pub enum LiveSafetyReportRefusal {
         /// What the census supports.
         recomputed: LiveSafetyCompleteness,
     },
-    /// The report names a deployment while recording that no run
-    /// happened.
-    ///
-    /// §19.5 binds a report to an exact deployment, and a binding without
-    /// a run is a binding to nothing.
-    DeploymentWithoutARun,
+    /// A recorded target identity is not valid target-display txid text.
+    MalformedRecordedIdentity {
+        /// The matrix row carrying it.
+        row: &'static str,
+    },
+    /// The report and the derived corpus carry different run identities.
+    RunCensusDiffers,
+    /// One run's deployment differs from the validated ledger.
+    RunDeploymentDiffers(String),
+    /// One run's exact request census or bytes differ.
+    RunRequestDiffers(String),
+    /// One run's exact response census or facts differ.
+    RunResponseDiffers(String),
+    /// One run's executor provenance differs.
+    RunExecutorProvenanceDiffers(String),
+    /// The report's row-level observations differ from the derived ledger.
+    ObservationsDiffer,
+    /// The report's observation buckets do not cross-foot its census.
+    ObservationCensusDiffers,
+    /// A bound observation cites no matching run or request.
+    BoundObservationUnbacked {
+        /// The matrix row carrying the invalid reference.
+        row: &'static str,
+    },
     /// The report's lifecycle status is not the candidate's.
     LifecycleDiffers,
 }
@@ -403,15 +653,11 @@ pub enum LiveSafetyReportRefusal {
 ///
 /// # What holding one of these establishes
 ///
-/// That the report's twelve carriers agree with what this module
-/// recomputed from the evidence plan: the same target, the same
-/// representation census, the same row classification, the same
-/// completeness token, and the same lifecycle status. Every one of those
-/// is computed here out of [`LiveTransferEvidencePlan`], which itself has
-/// no unchecked constructor, rather than read off the report.
-///
-/// It establishes nothing about what a target *decided*, because nothing
-/// asked one.
+/// That the corpus carriers agree with what this module recomputed from
+/// the evidence plan. Its recomputation witness names only comparisons
+/// that actually ran; with no transcript-grade target run in the tree it
+/// establishes the preserved observations as unbound, not as target
+/// verdict evidence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedLiveTransferSafetyReport {
     report: LiveTransferSafetyReport,
@@ -477,11 +723,9 @@ impl RecomputedItem {
 
     /// Whether this item can only be recomputed for a report about a run.
     ///
-    /// Six of the fourteen are about things an executor produced. For a
-    /// report recording that no run happened, recomputing one means
-    /// establishing that it is *empty and consistent with that* — which
-    /// is a real check and not a skipped one, because a report claiming
-    /// no run while carrying responses would fail it.
+    /// Six of the fourteen are about things an executor produced. They do
+    /// not enter the validated witness until at least one bound run made
+    /// the corresponding comparison possible.
     #[must_use]
     pub const fn needs_a_run(self) -> bool {
         matches!(
@@ -552,36 +796,364 @@ const fn completeness_of(census: LiveEvidenceCensus) -> LiveSafetyCompleteness {
 /// would let a caller state a conclusion the rows do not support, and
 /// [`validate_live_safety_report`] would then be checking the caller
 /// against themselves.
-#[must_use]
+///
+/// # Errors
+///
+/// [`LiveSafetyReportRefusal::MalformedRecordedIdentity`] if a historical
+/// identity cannot be parsed through the transaction package's target-display
+/// API, or [`LiveSafetyReportRefusal::BoundObservationUnbacked`] if a future
+/// bound standing arrives without its validated run binding.
 pub fn assemble_live_safety_report(
     plan: &LiveTransferEvidencePlan,
     target: TargetProjection,
-) -> LiveTransferSafetyReport {
+) -> Result<LiveTransferSafetyReport, LiveSafetyReportRefusal> {
     let census = plan.census();
-    LiveTransferSafetyReport {
+    Ok(LiveTransferSafetyReport {
         schema: LIVE_SAFETY_REPORT_SCHEMA,
         role: LiveSafetyReportRole::LiveTransferSafety,
         target,
-        // No run, so no deployment binding. §19.5 binds a report to an
-        // exact deployment and a binding without a run binds nothing.
-        deployment: None,
         representations: BTreeSet::from([
             LiveTransferRepresentationPlan::Explicit,
             LiveTransferRepresentationPlan::PrivateCommitted,
         ]),
-        run: LiveRunStanding::NoRunRequested(LiveInfrastructureBlocker::OwnerSighashNotComputable),
+        // No historical target run in the tree retains all four binding
+        // carriers. The observation ledger below preserves what was recorded
+        // without manufacturing deployment or executor provenance.
+        runs: Vec::new(),
+        observations: observations_from_plan(plan)?,
         lifecycle: LiveLifecycleStatus::candidate(),
         census,
         completeness: completeness_of(census),
+    })
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct ObservationCensus {
+    accepted: usize,
+    refused: usize,
+    determinism: usize,
+    paired_relation: usize,
+    first_party_fact: usize,
+    report_layer: usize,
+    recorded_unbound: usize,
+    unbound_acceptance: usize,
+    unbound_refusal: usize,
+    unbound_paired_relation: usize,
+}
+
+impl ObservationCensus {
+    fn from_observations(observations: &[LiveReportObservation]) -> Self {
+        let mut census = Self::default();
+        for observation in observations {
+            match observation {
+                LiveReportObservation::NativeAcceptance { .. } => census.accepted += 1,
+                LiveReportObservation::NativeRefusal { .. } => census.refused += 1,
+                LiveReportObservation::PairedRelation { .. } => census.paired_relation += 1,
+                LiveReportObservation::RecordedObservationUnbound { observation, .. } => {
+                    census.recorded_unbound += 1;
+                    match observation {
+                        LiveRecordedObservation::NativeAcceptance { .. } => {
+                            census.unbound_acceptance += 1;
+                        }
+                        LiveRecordedObservation::NativeRefusal { .. } => {
+                            census.unbound_refusal += 1;
+                        }
+                        LiveRecordedObservation::PairedRelation { .. } => {
+                            census.unbound_paired_relation += 1;
+                        }
+                    }
+                }
+                LiveReportObservation::Determinism { .. } => census.determinism += 1,
+                LiveReportObservation::FirstPartyFact { .. } => census.first_party_fact += 1,
+                LiveReportObservation::ReportLayer { .. } => census.report_layer += 1,
+            }
+        }
+        census
     }
+
+    const fn cross_foots(self, census: LiveEvidenceCensus) -> bool {
+        self.accepted == census.native_run_observed()
+            && self.refused == census.native_refusal_observed()
+            && self.determinism == census.determinism_observed()
+            && self.paired_relation == census.paired_relation_observed()
+            && self.first_party_fact == census.first_party_fact_observed()
+            && self.report_layer == census.report_layer()
+            && self.recorded_unbound
+                == census.recorded_observation_unbound()
+                    + census.native_refusal_at_unexpected_boundary()
+    }
+
+    const fn total(self) -> usize {
+        self.accepted
+            + self.refused
+            + self.determinism
+            + self.paired_relation
+            + self.first_party_fact
+            + self.report_layer
+            + self.recorded_unbound
+    }
+}
+
+fn parse_recorded_identity(
+    row: &'static str,
+    identity: &str,
+) -> Result<Txid, LiveSafetyReportRefusal> {
+    Txid::from_target_display(identity)
+        .map_err(|_| LiveSafetyReportRefusal::MalformedRecordedIdentity { row })
+}
+
+fn observations_from_plan(
+    plan: &LiveTransferEvidencePlan,
+) -> Result<Vec<LiveReportObservation>, LiveSafetyReportRefusal> {
+    let mut observations = Vec::new();
+    for evidence in plan.rows() {
+        let row = evidence.row().name();
+        let observation = match evidence.standing() {
+            LiveRowStanding::RecordedObservationUnbound(recorded) => {
+                let observation = match recorded {
+                    RecordedObservation::NativeAcceptance { accepted_identity } => {
+                        LiveRecordedObservation::NativeAcceptance {
+                            identity: parse_recorded_identity(row, accepted_identity)?,
+                        }
+                    }
+                    RecordedObservation::NativeRefusal {
+                        declared_boundary,
+                        observed_layer,
+                        control_identity,
+                        refusal_detail,
+                    } => LiveRecordedObservation::NativeRefusal {
+                        declared_boundary: *declared_boundary,
+                        observed_layer: *observed_layer,
+                        control_identity: parse_recorded_identity(row, control_identity)?,
+                        detail: refusal_detail,
+                    },
+                    RecordedObservation::PairedRelation {
+                        explicit_identity,
+                        private_identity,
+                        relation,
+                    } => LiveRecordedObservation::PairedRelation {
+                        explicit_identity: parse_recorded_identity(row, explicit_identity)?,
+                        private_identity: parse_recorded_identity(row, private_identity)?,
+                        relation,
+                    },
+                };
+                Some(LiveReportObservation::RecordedObservationUnbound { row, observation })
+            }
+            LiveRowStanding::DeterminismObserved {
+                recomputed,
+                observed_by,
+            } => Some(LiveReportObservation::Determinism {
+                row,
+                recomputed,
+                observed_by,
+            }),
+            LiveRowStanding::FirstPartyFactObserved { fact, observed_by } => {
+                Some(LiveReportObservation::FirstPartyFact {
+                    row,
+                    fact,
+                    observed_by,
+                })
+            }
+            LiveRowStanding::ReportLayerAnswerable => {
+                Some(LiveReportObservation::ReportLayer { row })
+            }
+            // A future bound standing must arrive with a validated run binding;
+            // silently inventing one from its row name would restore this defect.
+            LiveRowStanding::NativeRunObserved { .. }
+            | LiveRowStanding::NativeRefusalObserved { .. }
+            | LiveRowStanding::PairedRelationObserved { .. } => {
+                return Err(LiveSafetyReportRefusal::BoundObservationUnbacked { row });
+            }
+            LiveRowStanding::NativeRefusalAtUnexpectedBoundary {
+                declared_boundary,
+                observed_layer,
+                control_identity,
+                refusal_detail,
+            } => Some(LiveReportObservation::RecordedObservationUnbound {
+                row,
+                observation: LiveRecordedObservation::NativeRefusal {
+                    declared_boundary: *declared_boundary,
+                    observed_layer: *observed_layer,
+                    control_identity: parse_recorded_identity(row, control_identity)?,
+                    detail: refusal_detail,
+                },
+            }),
+            LiveRowStanding::FirstPartyDischarged { .. }
+            | LiveRowStanding::FirstPartyUndischarged(_)
+            | LiveRowStanding::NativeRunRequired(_)
+            | LiveRowStanding::InfrastructureBlocked(_)
+            | LiveRowStanding::OperationVocabularyClosed
+            | LiveRowStanding::Experimental => None,
+        };
+        if let Some(observation) = observation {
+            observations.push(observation);
+        }
+    }
+    Ok(observations)
+}
+
+#[derive(Debug, Default)]
+struct RecomputationProgress {
+    completed: BTreeSet<RecomputedItem>,
+}
+
+impl RecomputationProgress {
+    fn mark(&mut self, item: RecomputedItem) {
+        self.completed.insert(item);
+    }
+
+    fn finish(self) -> BTreeSet<RecomputedItem> {
+        self.completed
+    }
+}
+
+fn compare_run_bindings(
+    offered: &[LiveRunBinding],
+    expected: &[LiveRunBinding],
+) -> Result<(), LiveSafetyReportRefusal> {
+    if offered.len() != expected.len() {
+        return Err(LiveSafetyReportRefusal::RunCensusDiffers);
+    }
+    if offered
+        .windows(2)
+        .any(|pair| pair[0].run_id >= pair[1].run_id)
+        || expected
+            .windows(2)
+            .any(|pair| pair[0].run_id >= pair[1].run_id)
+    {
+        return Err(LiveSafetyReportRefusal::RunCensusDiffers);
+    }
+    for (offered, expected) in offered.iter().zip(expected) {
+        if offered.run_id != expected.run_id {
+            return Err(LiveSafetyReportRefusal::RunCensusDiffers);
+        }
+        if offered.deployment != expected.deployment {
+            return Err(LiveSafetyReportRefusal::RunDeploymentDiffers(
+                offered.run_id.clone(),
+            ));
+        }
+        if offered.requests != expected.requests {
+            return Err(LiveSafetyReportRefusal::RunRequestDiffers(
+                offered.run_id.clone(),
+            ));
+        }
+        if offered.responses != expected.responses {
+            return Err(LiveSafetyReportRefusal::RunResponseDiffers(
+                offered.run_id.clone(),
+            ));
+        }
+        if offered.executor != expected.executor {
+            return Err(LiveSafetyReportRefusal::RunExecutorProvenanceDiffers(
+                offered.run_id.clone(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn response_for<'run>(
+    runs: &'run [LiveRunBinding],
+    run_id: &str,
+    request_id: &str,
+    row: &'static str,
+) -> Result<&'run LiveTargetResponse, LiveSafetyReportRefusal> {
+    let run = runs
+        .iter()
+        .find(|run| run.run_id == run_id)
+        .ok_or(LiveSafetyReportRefusal::BoundObservationUnbacked { row })?;
+    if !run.requests.contains_key(request_id) {
+        return Err(LiveSafetyReportRefusal::BoundObservationUnbacked { row });
+    }
+    run.responses
+        .get(request_id)
+        .ok_or(LiveSafetyReportRefusal::BoundObservationUnbacked { row })
+}
+
+fn validate_bound_observations(
+    observations: &[LiveReportObservation],
+    runs: &[LiveRunBinding],
+) -> Result<usize, LiveSafetyReportRefusal> {
+    let mut compared = 0_usize;
+    for observation in observations {
+        match observation {
+            LiveReportObservation::NativeAcceptance {
+                row,
+                run_id,
+                request_id,
+                identity,
+            } => {
+                let expected = LiveTargetResponse::Accepted {
+                    identity: *identity,
+                };
+                if response_for(runs, run_id, request_id, row)? != &expected {
+                    return Err(LiveSafetyReportRefusal::RunResponseDiffers(run_id.clone()));
+                }
+                compared += 1;
+            }
+            LiveReportObservation::NativeRefusal {
+                row,
+                run_id,
+                request_id,
+                observed_layer,
+                control_identity,
+                detail,
+                ..
+            } => {
+                let expected = LiveTargetResponse::Refused {
+                    observed_layer: *observed_layer,
+                    detail: detail.clone(),
+                    control_identity: *control_identity,
+                };
+                if response_for(runs, run_id, request_id, row)? != &expected {
+                    return Err(LiveSafetyReportRefusal::RunResponseDiffers(run_id.clone()));
+                }
+                compared += 1;
+            }
+            LiveReportObservation::PairedRelation {
+                row,
+                explicit_run_id,
+                explicit_request_id,
+                explicit_identity,
+                private_run_id,
+                private_request_id,
+                private_identity,
+                ..
+            } => {
+                let explicit_expected = LiveTargetResponse::Accepted {
+                    identity: *explicit_identity,
+                };
+                if response_for(runs, explicit_run_id, explicit_request_id, row)?
+                    != &explicit_expected
+                {
+                    return Err(LiveSafetyReportRefusal::RunResponseDiffers(
+                        explicit_run_id.clone(),
+                    ));
+                }
+                let private_expected = LiveTargetResponse::Accepted {
+                    identity: *private_identity,
+                };
+                if response_for(runs, private_run_id, private_request_id, row)? != &private_expected
+                {
+                    return Err(LiveSafetyReportRefusal::RunResponseDiffers(
+                        private_run_id.clone(),
+                    ));
+                }
+                compared += 1;
+            }
+            LiveReportObservation::RecordedObservationUnbound { .. }
+            | LiveReportObservation::Determinism { .. }
+            | LiveReportObservation::FirstPartyFact { .. }
+            | LiveReportObservation::ReportLayer { .. } => {}
+        }
+    }
+    Ok(compared)
 }
 
 /// Validate one safety report against the plan it claims to be about.
 ///
-/// §13.5's fourteen items, recomputed here rather than read off the
-/// report. The six that are about a run are recomputed for a report
-/// recording that no run happened by establishing that its run carriers
-/// really are empty, which a report claiming otherwise fails.
+/// §13.5's possible items, each recorded only after its comparison ran.
+/// Run-only items stay absent while the corpus has no transcript-grade
+/// run binding.
 ///
 /// # Errors
 ///
@@ -592,12 +1164,15 @@ pub fn validate_live_safety_report(
     plan: &LiveTransferEvidencePlan,
     target: &TargetProjection,
 ) -> Result<ValidatedLiveTransferSafetyReport, LiveSafetyReportRefusal> {
+    let mut progress = RecomputationProgress::default();
     if report.schema != LIVE_SAFETY_REPORT_SCHEMA {
         return Err(LiveSafetyReportRefusal::UnsupportedSchema(report.schema));
     }
+    progress.mark(RecomputedItem::Schema);
     if report.role != LiveSafetyReportRole::LiveTransferSafety {
         return Err(LiveSafetyReportRefusal::WrongRole(report.role));
     }
+    progress.mark(RecomputedItem::Role);
     if &report.target != target {
         return Err(LiveSafetyReportRefusal::TargetDiffers);
     }
@@ -609,6 +1184,33 @@ pub fn validate_live_safety_report(
         .collect();
     if report.representations != representations {
         return Err(LiveSafetyReportRefusal::RepresentationCensusDiffers);
+    }
+
+    let expected_runs = Vec::new();
+    compare_run_bindings(&report.runs, &expected_runs)?;
+    if !report.runs.is_empty() {
+        progress.mark(RecomputedItem::TargetDeploymentBinding);
+        progress.mark(RecomputedItem::RequestResponseCensus);
+        progress.mark(RecomputedItem::ExecutorProvenance);
+    }
+
+    let expected_observations = observations_from_plan(plan)?;
+    if report.observations != expected_observations {
+        return Err(LiveSafetyReportRefusal::ObservationsDiffer);
+    }
+    progress.mark(RecomputedItem::CaseCensus);
+    progress.mark(RecomputedItem::RelationCensus);
+    progress.mark(RecomputedItem::MutationLinks);
+
+    let observed = ObservationCensus::from_observations(&report.observations);
+    if !observed.cross_foots(plan.census()) {
+        return Err(LiveSafetyReportRefusal::ObservationCensusDiffers);
+    }
+
+    let bound_compared = validate_bound_observations(&report.observations, &report.runs)?;
+    if bound_compared > 0 {
+        progress.mark(RecomputedItem::ResponseShape);
+        progress.mark(RecomputedItem::TargetVerdictComparison);
     }
 
     let recomputed = plan.census();
@@ -627,28 +1229,27 @@ pub fn validate_live_safety_report(
         });
     }
 
-    // §19.5's binding, both directions. A report recording no run may not
-    // name a deployment, and — for the run half of §13.5's items — its
-    // run carriers must really be the empty ones a no-run report has.
-    let LiveRunStanding::NoRunRequested(_) = report.run;
-    if report.deployment.is_some() {
-        return Err(LiveSafetyReportRefusal::DeploymentWithoutARun);
-    }
-
     if report.lifecycle != LiveLifecycleStatus::candidate() {
         return Err(LiveSafetyReportRefusal::LifecycleDiffers);
     }
+    progress.mark(RecomputedItem::Summary);
 
     let outstanding = plan
         .rows()
         .iter()
-        .filter(|row| !row.standing().is_answered())
+        .filter(|row| {
+            !row.standing().is_answered()
+                && !matches!(
+                    row.standing(),
+                    LiveRowStanding::OperationVocabularyClosed | LiveRowStanding::Experimental
+                )
+        })
         .map(|row| (row.row().name(), row.standing().clone()))
         .collect();
 
     Ok(ValidatedLiveTransferSafetyReport {
         report,
-        recomputed_items: RecomputedItem::ALL.iter().copied().collect(),
+        recomputed_items: progress.finish(),
         blockers: blocker_census(plan),
         outstanding,
     })
@@ -677,12 +1278,17 @@ pub fn render_live_safety_report(validated: &ValidatedLiveTransferSafetyReport) 
         "execution_domain {:?}",
         report.target.execution_domain()
     );
-    let _ = writeln!(text, "deployment none");
     for representation in &report.representations {
         let _ = writeln!(text, "representation {representation:?}");
     }
-    let LiveRunStanding::NoRunRequested(blocker) = &report.run;
-    let _ = writeln!(text, "run none {blocker:?}");
+    let observation_census = ObservationCensus::from_observations(&report.observations);
+    let _ = writeln!(
+        text,
+        "target_evidence {}",
+        target_evidence_name(observation_census)
+    );
+    let _ = writeln!(text, "run_bindings {}", report.runs.len());
+    render_run_bindings(&mut text, &report.runs);
 
     let _ = writeln!(text, "rows {}", report.census.rows());
     let _ = writeln!(
@@ -702,8 +1308,38 @@ pub fn render_live_safety_report(validated: &ValidatedLiveTransferSafetyReport) 
     );
     let _ = writeln!(
         text,
+        "recorded_observation_unbound {}",
+        report.census.recorded_observation_unbound()
+    );
+    let _ = writeln!(
+        text,
+        "native_run_observed {}",
+        report.census.native_run_observed()
+    );
+    let _ = writeln!(
+        text,
+        "native_refusal_observed {}",
+        report.census.native_refusal_observed()
+    );
+    let _ = writeln!(
+        text,
         "native_refusal_at_unexpected_boundary {}",
         report.census.native_refusal_at_unexpected_boundary()
+    );
+    let _ = writeln!(
+        text,
+        "determinism_observed {}",
+        report.census.determinism_observed()
+    );
+    let _ = writeln!(
+        text,
+        "paired_relation_observed {}",
+        report.census.paired_relation_observed()
+    );
+    let _ = writeln!(
+        text,
+        "first_party_fact_observed {}",
+        report.census.first_party_fact_observed()
     );
     let _ = writeln!(
         text,
@@ -717,6 +1353,42 @@ pub fn render_live_safety_report(validated: &ValidatedLiveTransferSafetyReport) 
         report.census.vocabulary_closed()
     );
     let _ = writeln!(text, "experimental {}", report.census.experimental());
+
+    let _ = writeln!(text, "observations {}", observation_census.total());
+    let _ = writeln!(text, "accepted {}", observation_census.accepted);
+    let _ = writeln!(text, "refused {}", observation_census.refused);
+    let _ = writeln!(text, "determinism {}", observation_census.determinism);
+    let _ = writeln!(
+        text,
+        "paired_relation {}",
+        observation_census.paired_relation
+    );
+    let _ = writeln!(
+        text,
+        "first_party_fact {}",
+        observation_census.first_party_fact
+    );
+    let _ = writeln!(
+        text,
+        "report_layer_observations {}",
+        observation_census.report_layer
+    );
+    let _ = writeln!(
+        text,
+        "recorded_unbound_native_acceptance {}",
+        observation_census.unbound_acceptance
+    );
+    let _ = writeln!(
+        text,
+        "recorded_unbound_native_refusal {}",
+        observation_census.unbound_refusal
+    );
+    let _ = writeln!(
+        text,
+        "recorded_unbound_paired_relation {}",
+        observation_census.unbound_paired_relation
+    );
+    render_observations(&mut text, &report.observations);
 
     for (blocker, rows) in &validated.blockers {
         let _ = writeln!(text, "blocker {blocker:?} {rows}");
@@ -743,6 +1415,208 @@ pub fn render_live_safety_report(validated: &ValidatedLiveTransferSafetyReport) 
     text
 }
 
+const fn target_evidence_name(census: ObservationCensus) -> &'static str {
+    let bound = census.accepted + census.refused + census.paired_relation;
+    let unbound = census.recorded_unbound;
+    if bound == 0 && unbound == 0 {
+        "none-recorded"
+    } else if bound == 0 {
+        "recorded-unbound"
+    } else if unbound == 0 {
+        "bound"
+    } else {
+        "mixed-bound-and-unbound"
+    }
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    let mut rendered = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(rendered, "{byte:02x}");
+    }
+    rendered
+}
+
+fn render_run_bindings(text: &mut String, runs: &[LiveRunBinding]) {
+    for run in runs {
+        let _ = writeln!(text, "run {}", run.run_id);
+        let _ = writeln!(
+            text,
+            "run_deployment_environment {:?}",
+            run.deployment.environment
+        );
+        let _ = writeln!(
+            text,
+            "run_deployment_network {}",
+            hex_bytes(&run.deployment.network_id)
+        );
+        let _ = writeln!(
+            text,
+            "run_deployment_genesis {}",
+            hex_bytes(&run.deployment.genesis_id)
+        );
+        let _ = writeln!(
+            text,
+            "run_deployment_target {:?}",
+            run.deployment.target_contract
+        );
+        let _ = writeln!(text, "run_executor_adapter {:?}", run.executor.adapter_name);
+        let _ = writeln!(
+            text,
+            "run_executor_adapter_version {:?}",
+            run.executor.adapter_version
+        );
+        let _ = writeln!(text, "run_executor_node {:?}", run.executor.node_name);
+        let _ = writeln!(
+            text,
+            "run_executor_node_version {:?}",
+            run.executor.node_version
+        );
+        let _ = writeln!(
+            text,
+            "run_executor_source_tip {:?}",
+            run.executor.executed_source_tip
+        );
+        for (request_id, bytes) in &run.requests {
+            let _ = writeln!(text, "run_request {request_id} {}", hex_bytes(bytes));
+        }
+        for (request_id, response) in &run.responses {
+            match response {
+                LiveTargetResponse::Accepted { identity } => {
+                    let _ = writeln!(
+                        text,
+                        "run_response {request_id} accepted {}",
+                        identity.to_target_display()
+                    );
+                }
+                LiveTargetResponse::Refused {
+                    observed_layer,
+                    detail,
+                    control_identity,
+                } => {
+                    let _ = writeln!(
+                        text,
+                        "run_response {request_id} refused {observed_layer:?} control {} detail {detail:?}",
+                        control_identity.to_target_display()
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn render_observations(text: &mut String, observations: &[LiveReportObservation]) {
+    for observation in observations {
+        match observation {
+            LiveReportObservation::NativeAcceptance {
+                row,
+                run_id,
+                request_id,
+                identity,
+            } => {
+                let _ = writeln!(
+                    text,
+                    "observation {row} accepted run {run_id} request {request_id} identity {}",
+                    identity.to_target_display()
+                );
+            }
+            LiveReportObservation::NativeRefusal {
+                row,
+                run_id,
+                request_id,
+                declared_boundary,
+                observed_layer,
+                control_identity,
+                detail,
+            } => {
+                let _ = writeln!(
+                    text,
+                    "observation {row} refused run {run_id} request {request_id} declared {declared_boundary:?} observed {observed_layer:?} control {} detail {detail:?}",
+                    control_identity.to_target_display()
+                );
+            }
+            LiveReportObservation::PairedRelation {
+                row,
+                explicit_run_id,
+                explicit_request_id,
+                explicit_identity,
+                private_run_id,
+                private_request_id,
+                private_identity,
+                relation,
+            } => {
+                let _ = writeln!(
+                    text,
+                    "observation {row} paired-relation explicit-run {explicit_run_id} explicit-request {explicit_request_id} explicit-identity {} private-run {private_run_id} private-request {private_request_id} private-identity {} relation {relation:?}",
+                    explicit_identity.to_target_display(),
+                    private_identity.to_target_display()
+                );
+            }
+            LiveReportObservation::RecordedObservationUnbound { row, observation } => {
+                match observation {
+                    LiveRecordedObservation::NativeAcceptance { identity } => {
+                        let _ = writeln!(
+                            text,
+                            "observation {row} recorded-observation-unbound native-acceptance identity {}",
+                            identity.to_target_display()
+                        );
+                    }
+                    LiveRecordedObservation::NativeRefusal {
+                        declared_boundary,
+                        observed_layer,
+                        control_identity,
+                        detail,
+                    } => {
+                        let _ = writeln!(
+                            text,
+                            "observation {row} recorded-observation-unbound native-refusal declared {declared_boundary:?} observed {observed_layer:?} control {} detail {detail:?}",
+                            control_identity.to_target_display()
+                        );
+                    }
+                    LiveRecordedObservation::PairedRelation {
+                        explicit_identity,
+                        private_identity,
+                        relation,
+                    } => {
+                        let _ = writeln!(
+                            text,
+                            "observation {row} recorded-observation-unbound paired-relation explicit-identity {} private-identity {} relation {relation:?}",
+                            explicit_identity.to_target_display(),
+                            private_identity.to_target_display()
+                        );
+                    }
+                }
+            }
+            LiveReportObservation::Determinism {
+                row,
+                recomputed,
+                observed_by,
+            } => {
+                let _ = writeln!(
+                    text,
+                    "observation {row} determinism recomputed {recomputed:?} observed-by {observed_by:?}"
+                );
+            }
+            LiveReportObservation::FirstPartyFact {
+                row,
+                fact,
+                observed_by,
+            } => {
+                let _ = writeln!(
+                    text,
+                    "observation {row} first-party-fact fact {fact:?} observed-by {observed_by:?}"
+                );
+            }
+            LiveReportObservation::ReportLayer { row } => {
+                let _ = writeln!(
+                    text,
+                    "observation {row} report-layer validated-by canonical-bytes"
+                );
+            }
+        }
+    }
+}
+
 /// One standing's wire spelling.
 ///
 /// Explicit rather than derived from the type's own `Debug`, because a
@@ -753,6 +1627,7 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         LiveRowStanding::FirstPartyDischarged { .. } => "first-party-discharged",
         LiveRowStanding::FirstPartyUndischarged(_) => "first-party-undischarged",
         LiveRowStanding::NativeRunRequired(_) => "native-run-required",
+        LiveRowStanding::RecordedObservationUnbound(_) => "recorded-observation-unbound",
         // The identity is deliberately not printed here. It is the
         // standing's own payload and belongs in the evidence plan, not
         // in bytes whose job is to summarize.
@@ -863,9 +1738,11 @@ pub fn section_scoreboard(
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveSafetyCompleteness, LiveSafetyDiagnostics, LiveSafetyReportRefusal,
-        LiveSafetyReportRole, RecomputedItem, VolatileField, assemble_live_safety_report,
-        canonical_bytes_publish_no_sponsor_value, render_live_safety_report, section_scoreboard,
+        LiveDeploymentBinding, LiveExecutorProvenance, LiveRecordedObservation,
+        LiveReportObservation, LiveRunBinding, LiveSafetyCompleteness, LiveSafetyDiagnostics,
+        LiveSafetyReportRefusal, LiveSafetyReportRole, LiveTargetResponse, RecomputedItem,
+        VolatileField, assemble_live_safety_report, canonical_bytes_publish_no_sponsor_value,
+        compare_run_bindings, render_live_safety_report, section_scoreboard, target_evidence_name,
         validate_live_safety_report,
     };
     use crate::live_evidence::derive_live_evidence_plan;
@@ -877,6 +1754,39 @@ mod tests {
         reviewed_target()
             .expect("the reviewed contract validates")
             .projection()
+    }
+
+    fn parsed_identity(value: &str) -> transaction::Txid {
+        transaction::Txid::from_target_display(value).expect("the test identity parses")
+    }
+
+    fn synthetic_run() -> LiveRunBinding {
+        let identity =
+            parsed_identity("40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029");
+        LiveRunBinding {
+            run_id: "synthetic-bound-run".to_owned(),
+            deployment: LiveDeploymentBinding {
+                environment: "development".to_owned(),
+                network_id: [0x11; 32],
+                genesis_id: [0x22; 32],
+                target_contract: "elements-tapscript-v1".to_owned(),
+            },
+            executor: LiveExecutorProvenance {
+                adapter_name: "native-adapter".to_owned(),
+                adapter_version: "1".to_owned(),
+                node_name: "elementsd".to_owned(),
+                node_version: "28.99".to_owned(),
+                executed_source_tip: "recorded-tip".to_owned(),
+            },
+            requests: std::collections::BTreeMap::from([(
+                "request-a".to_owned(),
+                vec![0x01, 0x02, 0x03],
+            )]),
+            responses: std::collections::BTreeMap::from([(
+                "request-a".to_owned(),
+                LiveTargetResponse::Accepted { identity },
+            )]),
+        }
     }
 
     #[test]
@@ -918,16 +1828,227 @@ mod tests {
     fn a_report_validates_against_the_plan_it_is_about() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
-        let report = assemble_live_safety_report(&plan, target.clone());
+        let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
         let validated = validate_live_safety_report(report, &plan, &target)
             .expect("the assembled report validates");
 
-        // §13.5's fourteen, recomputed as a census rather than claimed.
+        // Only comparisons that actually ran are recorded. The corpus has
+        // no transcript-grade run bindings yet, so no run-only item can be
+        // smuggled into the witness by inserting `ALL` wholesale.
         assert_eq!(
-            validated.recomputed_items().len(),
-            RecomputedItem::ALL.len()
+            validated.recomputed_items(),
+            &std::collections::BTreeSet::from([
+                RecomputedItem::Role,
+                RecomputedItem::Schema,
+                RecomputedItem::CaseCensus,
+                RecomputedItem::RelationCensus,
+                RecomputedItem::MutationLinks,
+                RecomputedItem::Summary,
+            ]),
         );
-        assert_eq!(validated.recomputed_items().len(), 14);
+        assert_eq!(RecomputedItem::ALL.len(), 14);
+        for item in RecomputedItem::ALL {
+            if item.needs_a_run() {
+                assert!(!validated.recomputed_items().contains(item));
+            }
+        }
+    }
+
+    #[test]
+    fn the_assembled_report_is_a_truthful_unbound_corpus_ledger() {
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let target = projection();
+        let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
+        let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
+        let rendered = render_live_safety_report(&validated);
+
+        assert!(rendered.contains("target_evidence recorded-unbound\n"));
+        assert!(rendered.contains("run_bindings 0\n"));
+        assert!(!rendered.contains("deployment none"));
+        assert!(!rendered.contains("run none"));
+        assert!(!rendered.contains("NoRunRequested"));
+
+        for exact in [
+            "recorded_observation_unbound 42\n",
+            "native_run_observed 0\n",
+            "native_refusal_observed 0\n",
+            "determinism_observed 1\n",
+            "paired_relation_observed 0\n",
+            "first_party_fact_observed 3\n",
+            "observations 48\n",
+            "accepted 0\n",
+            "refused 0\n",
+            "determinism 1\n",
+            "paired_relation 0\n",
+            "first_party_fact 3\n",
+            "report_layer 2\n",
+            "report_layer_observations 2\n",
+            "recorded_unbound_native_acceptance 24\n",
+            "recorded_unbound_native_refusal 17\n",
+            "recorded_unbound_paired_relation 1\n",
+        ] {
+            assert!(rendered.contains(exact), "missing {exact:?}");
+        }
+        assert_eq!(validated.outstanding().len(), 67);
+    }
+
+    #[test]
+    fn every_rendered_target_identity_is_typed_and_shared_identities_keep_their_rows() {
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let target = projection();
+        let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
+        let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
+        let rendered = render_live_safety_report(&validated);
+        let mut occurrences = std::collections::BTreeMap::new();
+
+        for line in rendered
+            .lines()
+            .filter(|line| line.starts_with("observation "))
+        {
+            let words: Vec<_> = line.split_whitespace().collect();
+            for pair in words.windows(2) {
+                if matches!(
+                    pair[0],
+                    "identity" | "control" | "explicit-identity" | "private-identity"
+                ) {
+                    let parsed = transaction::Txid::from_target_display(pair[1])
+                        .expect("every rendered identity parses");
+                    assert_eq!(parsed.to_target_display(), pair[1]);
+                    *occurrences.entry(pair[1]).or_insert(0_usize) += 1;
+                }
+            }
+        }
+        assert!(occurrences.values().any(|count| *count > 1));
+        assert_eq!(
+            rendered
+                .lines()
+                .filter(|line| line.starts_with("observation "))
+                .count(),
+            48,
+        );
+    }
+
+    #[test]
+    fn every_bound_run_fact_has_a_typed_refusal() {
+        let expected = vec![synthetic_run()];
+
+        let mut deployment = expected.clone();
+        deployment[0].deployment.genesis_id[0] ^= 1;
+        assert_eq!(
+            compare_run_bindings(&deployment, &expected),
+            Err(LiveSafetyReportRefusal::RunDeploymentDiffers(
+                "synthetic-bound-run".to_owned(),
+            )),
+        );
+
+        let mut request = expected.clone();
+        request[0]
+            .requests
+            .insert("request-a".to_owned(), vec![0xff]);
+        assert_eq!(
+            compare_run_bindings(&request, &expected),
+            Err(LiveSafetyReportRefusal::RunRequestDiffers(
+                "synthetic-bound-run".to_owned(),
+            )),
+        );
+
+        let mut response = expected.clone();
+        response[0].responses.insert(
+            "request-a".to_owned(),
+            LiveTargetResponse::Refused {
+                observed_layer:
+                    target_elements_conformance::protocol::ObservedOutcomeLayer::ScriptPathRejection,
+                detail: "mutated".to_owned(),
+                control_identity: parsed_identity(
+                    "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029",
+                ),
+            },
+        );
+        assert_eq!(
+            compare_run_bindings(&response, &expected),
+            Err(LiveSafetyReportRefusal::RunResponseDiffers(
+                "synthetic-bound-run".to_owned(),
+            )),
+        );
+
+        let mut executor = expected.clone();
+        executor[0].executor.node_version = "another-version".to_owned();
+        assert_eq!(
+            compare_run_bindings(&executor, &expected),
+            Err(LiveSafetyReportRefusal::RunExecutorProvenanceDiffers(
+                "synthetic-bound-run".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
+    fn mutating_a_recorded_identity_refuses_the_report() {
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let target = projection();
+        let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
+        let observation = report
+            .observations
+            .iter_mut()
+            .find_map(|observation| match observation {
+                LiveReportObservation::RecordedObservationUnbound {
+                    observation: LiveRecordedObservation::NativeAcceptance { identity },
+                    ..
+                } => Some(identity),
+                _ => None,
+            })
+            .expect("the corpus preserves an acceptance");
+        *observation =
+            parsed_identity("75e823f7c5c70ddfbd9584f90f67298f2570907947829828066c7047b21b53b1");
+        assert_eq!(
+            validate_live_safety_report(report, &plan, &target),
+            Err(LiveSafetyReportRefusal::ObservationsDiffer),
+        );
+    }
+
+    #[test]
+    fn no_target_evidence_fixture_renders_none_recorded() {
+        assert_eq!(
+            target_evidence_name(super::ObservationCensus::default()),
+            "none-recorded",
+        );
+        let one = [LiveReportObservation::RecordedObservationUnbound {
+            row: "fixture-row",
+            observation: LiveRecordedObservation::NativeAcceptance {
+                identity: parsed_identity(
+                    "75e823f7c5c70ddfbd9584f90f67298f2570907947829828066c7047b21b53b1",
+                ),
+            },
+        }];
+        assert_eq!(
+            target_evidence_name(super::ObservationCensus::from_observations(&one)),
+            "recorded-unbound",
+        );
+    }
+
+    #[test]
+    fn the_private_restart_rows_are_preserved_but_unbound() {
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let target = projection();
+        let report = assemble_live_safety_report(&plan, target).expect("assembles");
+        let rows = report
+            .observations()
+            .iter()
+            .filter_map(|observation| match observation {
+                LiveReportObservation::RecordedObservationUnbound { row, .. }
+                    if matches!(*row, "private-one-to-one" | "both-commitment-parity-forms") =>
+                {
+                    Some(*row)
+                }
+                _ => None,
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            rows,
+            std::collections::BTreeSet::from([
+                "both-commitment-parity-forms",
+                "private-one-to-one",
+            ]),
+        );
     }
 
     #[test]
@@ -937,7 +2058,7 @@ mod tests {
         // this whole module exists to prevent.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
-        let report = assemble_live_safety_report(&plan, target.clone());
+        let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
         assert_eq!(
             report.completeness(),
             LiveSafetyCompleteness::PartialRequiredRowsOutstanding,
@@ -945,9 +2066,9 @@ mod tests {
         let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
         assert_ne!(validated.outstanding().len(), 0);
         // And NO blockers, where there used to be one. The report is
-        // partial for the honest reason and only for it: rows are
-        // outstanding because no run of their shape has happened, not
-        // because a component they need is missing. The last blocker
+        // partial for the honest reasons: some rows need a future run and
+        // historical target observations need transcript-grade binding,
+        // not because a component they need is missing. The last blocker
         // left when the raw-bypass row was answered by a fact about
         // this workspace, its own gate being whether that path exists.
         //
@@ -963,7 +2084,7 @@ mod tests {
         // the token, it derives one and compares.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
-        let mut report = assemble_live_safety_report(&plan, target.clone());
+        let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
         report.completeness = LiveSafetyCompleteness::CompleteForTheRequiredMatrix;
         assert_eq!(
             validate_live_safety_report(report, &plan, &target),
@@ -975,20 +2096,16 @@ mod tests {
     }
 
     #[test]
-    fn a_report_of_another_role_is_refused_by_the_safety_validator() {
-        // §13.6's separation. There is one role today, so the check is
-        // staged through the schema instead — a reader holding only the
-        // bytes has to be able to refuse a document of the wrong kind,
-        // and both fields exist for that.
+    fn schema_two_is_hard_rejected() {
+        // Schema 2 is historical and never a legacy-validated route into
+        // the evidence-bearing schema 3 report.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
-        let mut report = assemble_live_safety_report(&plan, target.clone());
-        report.schema = super::LIVE_SAFETY_REPORT_SCHEMA + 1;
+        let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
+        report.schema = 2;
         assert_eq!(
             validate_live_safety_report(report, &plan, &target),
-            Err(LiveSafetyReportRefusal::UnsupportedSchema(
-                super::LIVE_SAFETY_REPORT_SCHEMA + 1
-            )),
+            Err(LiveSafetyReportRefusal::UnsupportedSchema(2)),
         );
         assert_eq!(
             LiveSafetyReportRole::LiveTransferSafety.name(),
@@ -1006,7 +2123,7 @@ mod tests {
         // carrier had smuggled a volatile value in.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
-        let report = assemble_live_safety_report(&plan, target.clone());
+        let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
         let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
         let canonical = render_live_safety_report(&validated);
 
@@ -1042,7 +2159,7 @@ mod tests {
         // same validated report are the same bytes.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
-        let report = assemble_live_safety_report(&plan, target.clone());
+        let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
         let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
         assert_eq!(
             render_live_safety_report(&validated),
@@ -1057,7 +2174,7 @@ mod tests {
         // this is the check that says it is not.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
-        let report = assemble_live_safety_report(&plan, target.clone());
+        let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
         let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
         assert!(canonical_bytes_publish_no_sponsor_value(&validated));
 
@@ -1096,49 +2213,18 @@ mod tests {
         // asserted rather than bounded, because a scoreboard that said
         // "some" would let the next row in without a run.
         //
-        // The explicit table is answered in ALL SIXTEEN of its rows, and
-        // it read ZERO until the explicit shape ceremony ran thirteen
-        // shapes against a real node and every one of them was accepted;
-        // the sponsored lane's own accepted control answered two more,
-        // and the sponsored control that TAKES CHANGE answered the last.
-        // Every row was answered by a run of its own shape.
-        //
-        // The private table is answered in exactly seven rows. It read
-        // two before the shape wave built the multi-output and
-        // multi-input fixtures and ran three more shapes, and six until
-        // a merge whose forced blinder is nonzero was accepted; each
-        // time it is updated to the observed fact rather than loosened
-        // to a range that would stop noticing.
+        // All target-derived rows now preserve their historical observation
+        // without counting it as validated evidence. The only positive row
+        // still answered is the independently recomputed determinism row.
         let (explicit_rows, explicit_answered, explicit_blocked) =
             board[&LiveSafetySection::PositiveExplicit];
-        assert_eq!(explicit_answered, 16, "the explicit table's answered count");
-        assert_eq!(
-            explicit_answered, explicit_rows,
-            "the explicit table is complete, and a row added to it without a run fails here",
-        );
+        assert_eq!(explicit_answered, 0, "the explicit table's answered count");
         assert_eq!(explicit_blocked, 0);
         assert_ne!(explicit_rows, 0);
 
         let (private_rows, private_answered, private_blocked) =
             board[&LiveSafetySection::PositivePrivate];
-        // TEN of ten, and the three ways they were answered are three
-        // different kinds of evidence. Eight moved on acceptances of
-        // their own shapes, the last of those being the sponsored
-        // PRIVATE successor. The ninth is the openings row, answered by
-        // the determinism observation its own §11.2 gate asks for rather
-        // than by a target verdict. The tenth is projection-equality,
-        // and it moved LAST and on neither: the pairs arc materialized
-        // one §16.1 fixture twice, a node accepted both members, and the
-        // relation over the two identities is what the row asks for.
-        //
-        // THE PRIVATE TABLE IS NOW COMPLETE. The count is spelled rather
-        // than derived so that a row moved by an edit and not by a run
-        // fails here.
-        assert_eq!(private_answered, 10, "the private table's answered count");
-        assert_eq!(
-            private_answered, private_rows,
-            "the private table is complete, and a row added to it without a run fails here",
-        );
+        assert_eq!(private_answered, 1, "the private table's answered count");
         assert_eq!(private_blocked, 0);
         assert_eq!(private_rows, 10);
         assert_eq!(LiveSafetyPolarity::ALL.len(), 2);
@@ -1150,7 +2236,7 @@ mod tests {
         // and no report may say the candidate is release-complete.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
-        let report = assemble_live_safety_report(&plan, target);
+        let report = assemble_live_safety_report(&plan, target).expect("assembles");
         assert!(!report.lifecycle().release_complete());
         assert_eq!(report.lifecycle().outstanding().len(), 2);
         assert_eq!(report.lifecycle().implemented().len(), 1);
