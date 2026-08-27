@@ -3159,7 +3159,7 @@ mod tests {
     }
 
     #[test]
-    fn the_partition_is_forty_answered_one_closed_and_sixty_seven_outstanding() {
+    fn the_partition_is_thirty_eight_answered_two_report_required_and_sixty_nine_outstanding() {
         // FORWARD BINDING ONLY, under the owner ruling recorded by T6-002.
         // The 42 target-derived rows preserve their observations, but the
         // tree does not retain the exact request bytes, disposable deployment
@@ -3173,7 +3173,7 @@ mod tests {
             .filter(|row| row.standing().is_answered())
             .count();
 
-        assert_eq!(answered, 40, "the answered count moved");
+        assert_eq!(answered, 38, "the answered count moved");
         assert_eq!(census.first_party_discharged(), 34);
         assert_eq!(census.determinism_observed(), 1);
         assert_eq!(census.first_party_fact_observed(), 3);
@@ -3183,6 +3183,7 @@ mod tests {
         assert_eq!(census.recorded_observation_unbound(), 42);
         assert_eq!(
             answered
+                + census.report_layer()
                 + census.vocabulary_closed()
                 + census.native_run_required()
                 + census.recorded_observation_unbound(),
@@ -3381,11 +3382,20 @@ mod tests {
     }
 
     #[test]
-    fn the_two_report_rows_are_the_ones_the_report_bytes_answer() {
+    fn the_two_report_rows_are_requirements_not_plan_answers() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         assert_eq!(plan.census().report_layer(), 2);
-        let per_section = plan
-            .section_census(|standing| matches!(standing, LiveRowStanding::ReportLayerAnswerable));
-        assert_eq!(per_section[&LiveSafetySection::SponsorFault], 2);
+        for name in [
+            "report-publishes-sponsor-amount",
+            "report-publishes-sponsor-opening",
+        ] {
+            let row = plan
+                .rows()
+                .iter()
+                .find(|row| row.row().name() == name)
+                .expect("the report requirement is in the matrix");
+            assert!(!row.standing().is_answered(), "{name} is a plan answer");
+            assert_eq!(row.row().section(), LiveSafetySection::SponsorFault);
+        }
     }
 }

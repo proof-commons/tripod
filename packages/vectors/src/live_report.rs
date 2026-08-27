@@ -2163,6 +2163,18 @@ mod tests {
     }
 
     #[test]
+    fn schema_three_is_hard_rejected() {
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let target = projection();
+        let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
+        report.schema = 3;
+        assert_eq!(
+            validate_live_safety_report(report, &plan, &target),
+            Err(LiveSafetyReportRefusal::UnsupportedSchema(3)),
+        );
+    }
+
+    #[test]
     fn the_canonical_bytes_carry_no_volatile_field() {
         // §13.5's exclusion, checked rather than argued. Each of the ten
         // fields is given a value nothing else in the workspace produces,
