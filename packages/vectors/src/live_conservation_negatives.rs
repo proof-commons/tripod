@@ -99,6 +99,20 @@ pub const CONTROL_STEP: &str = "submit-balance-valid-control";
 /// cases, so a reader compares like with like.
 const MUTATED_OUTPUT: usize = 0;
 
+/// The output the private-ct-imbalance mutant rewrites the value commitment
+/// of.
+///
+/// The successor's SECOND output, the sender's confidential change, chosen
+/// precisely because it is not [`MUTATED_OUTPUT`]: the imbalance mutant and
+/// the wrong-blinder mutant both replace a 33-byte value commitment and
+/// both draw the balance failure, so placing them at the same output would
+/// give them the same declared field range and leave the record unable to
+/// tell `private-ct-imbalance` from `wrong-private-blinding-balance`. At
+/// different outputs the two ranges differ, which is what separates the two
+/// rows. The change output carries its own value commitment and range
+/// proof, so the mutation is a real value-commitment surgery there.
+const IMBALANCE_OUTPUT: usize = 1;
+
 /// A value blinder the wrong-blinder mutant recomputes its commitment
 /// under.
 ///
@@ -514,6 +528,27 @@ fn build_mutants(
     // moves as well as the bytes the corruption moves.
     let range_field_range = changed_range(&control_bytes, &missing_mutant);
 
+    // The private-ct-imbalance mutant: at the SENDER's change output, a
+    // value commitment to a value one unit above the change the control
+    // balances, so the Pedersen tally no longer closes. The range proof is
+    // left in place, because the balance check is queued before it
+    // (`src/confidential_validation.cpp:364`), so the tally is what fails
+    // rather than the proof. Placed at IMBALANCE_OUTPUT rather than
+    // MUTATED_OUTPUT so its declared field range separates it from the
+    // wrong-blinder mutant they otherwise share a verdict with.
+    let imbalance_amount = consumed.split()[1]
+        .checked_add(1)
+        .ok_or(ConservationNegativeRefusal::WrongBlinderNotRecomputable)?;
+    let imbalance = checker
+        .recompute(asset, imbalance_amount, &WRONG_VALUE_BLINDER)
+        .ok_or(ConservationNegativeRefusal::WrongBlinderNotRecomputable)?;
+    let imbalance_mutant =
+        replace_output_value(control, IMBALANCE_OUTPUT, *imbalance.bytes())?.encode();
+    let imbalance_sentinel = commitment_sentinel(control, IMBALANCE_OUTPUT)?;
+    let imbalance_sentinel_bytes =
+        replace_output_value(control, IMBALANCE_OUTPUT, imbalance_sentinel)?.encode();
+    let imbalance_field_range = changed_range(&control_bytes, &imbalance_sentinel_bytes);
+
     Ok(vec![
         MutantObservation {
             case: ProofNegativeCase::WrongBlinder,
@@ -528,6 +563,14 @@ fn build_mutants(
             declared_field_range: range_field_range,
             submitted_bytes: missing_mutant.len(),
             mutant_bytes: missing_mutant,
+            observed_layer: None,
+            observed_detail: None,
+        },
+        MutantObservation {
+            case: ProofNegativeCase::PrivateCtImbalance,
+            declared_field_range: imbalance_field_range,
+            submitted_bytes: imbalance_mutant.len(),
+            mutant_bytes: imbalance_mutant,
             observed_layer: None,
             observed_detail: None,
         },

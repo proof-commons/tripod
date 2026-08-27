@@ -1081,8 +1081,10 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
     }
     outcome.expect("the ceremony reached the target");
 
-    // Every one of the three proof-negatives was submitted and answered.
-    assert_eq!(record.mutants().len(), 3);
+    // Every one of the four proof-negatives was submitted and answered:
+    // the three range/blinder cases plus the private-ct-imbalance mutant
+    // at the change output.
+    assert_eq!(record.mutants().len(), 4);
     for mutant in record.mutants() {
         assert!(
             mutant.observed_layer().is_some(),
