@@ -142,84 +142,21 @@ No named consumer means no digest. No distinct decision means no digest.
 
 ## 2. Review basis and current evidence · `sec:backlog:review-basis`
 
-### 2.1 Latest static review · `tab:backlog:review-basis`
+### 2.1 Canonical review record · `tab:backlog:review-basis`
 
-The current review is the sixth static review, performed in two independent
-passes over the supplied concatenation of the tree:
-
-```text
-tree:
-   
-
-selected files:
-    220
-```
-
-The supplied filter excluded 352 files, among them:
-
-```text
-Cargo.lock
-the paper sources
-most unit and integration tests
-most compiler implementation files
-most executable-model implementation files
-the label-tool implementation
-several build/tooling packages and scripts
-```
-
-No Cargo, Meson, TeX, the native executor, advisory, or reproducibility
-command was run as part of this review.
-
-Therefore:
-
-- the review makes no current green-build claim;
-- the excluded packages and test directories received no content review;
-- lockfile checksums and resolved features were not independently verified;
-- advisory status was not checked;
-- licence compatibility was not independently checked;
-- historical gate records remain historical evidence only.
-
-Its findings are recorded in §5.6. Its central verdict is that the native
-evidence layer still does not bind evidence to its subject: an execution
-transcript retains neither the requested subjects nor the exact fixtures
-sent to the child, so it can be rebound to a census, matrix, target, or
-deployment that was never executed; and the claim a fixture files under is
-caller-authored, so claim-bearing metadata can be attached to an unrelated
-or trivially true script. Both passes rank those as release-blocking for
-that subsystem, and no public-declassification prototype begins while they
-remain open. The review text is archived at
-[plans/reviews/review-6-0.3.4-dev.md](reviews/review-6-0.3.4-dev.md).
+The [static-review index](reviews/README.md) is the review record of record
+and always names the latest indexed review. The per-finding disposition
+register for the Guide-14 arc lives in
+[Guide 14 §4](guides/guide_fourteen.md)
+((`tab:guide14-exec:preflight`)). Review facts — the reviewed tree, file
+census, exclusions, and verdict — live in the indexed review texts, not
+here. A review's findings are evidence about its exact tree.
 
 ### 2.2 Earlier review basis
 
-The repository retains seven earlier reviewed trees as historical context:
-
-```text
-initial reviewed tree:
-   
-
-follow-up reviewed tree:
-   
-
-proof-planning reviewed tree:
-   
-
-second-review tree:
-   
-
-third-review tree:
-   
-
-fourth-review tree:
-   
-
-fifth-review tree:
-   
-```
-
-Those reviews and their findings are evidence about their exact trees. They are
-not current-checkout execution evidence. The second through sixth review
-texts are archived under [plans/reviews/](reviews/README.md).
+Every earlier reviewed tree is listed in the same canonical
+[static-review index](reviews/README.md). Historical reviews are evidence
+about their exact trees, not current-checkout evidence.
 
 ### 2.3 Historical gate records
 
