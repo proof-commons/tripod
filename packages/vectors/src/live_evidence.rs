@@ -2319,6 +2319,7 @@ mod tests {
                 + census.native_run_required()
                 + census.native_run_observed()
                 + census.determinism_observed()
+                + census.paired_relation_observed()
                 + census.first_party_fact_observed()
                 + census.native_refusal_observed()
                 + census.infrastructure_blocked()
@@ -2387,6 +2388,7 @@ mod tests {
         let mut positives = 0_usize;
         let mut answered = BTreeSet::new();
         let mut by_determinism = BTreeSet::new();
+        let mut by_paired_relation = BTreeSet::new();
         for row in plan.rows() {
             if row.row().polarity() != LiveSafetyPolarity::Positive {
                 continue;
@@ -2428,6 +2430,29 @@ mod tests {
                     );
                     assert!(row.standing().is_answered());
                     by_determinism.insert(row.row().name());
+                }
+                // The fourth observation kind, in its own set for the
+                // reason the third is in its own: what answers this row
+                // is a RELATION over two acceptances, and folding it
+                // into `answered` would put it in a set whose assertion
+                // message says every member was produced by a run of its
+                // own shape. It was produced by a run of a PAIR.
+                LiveRowStanding::PairedRelationObserved {
+                    explicit_identity,
+                    private_identity,
+                    relation,
+                } => {
+                    assert_eq!(explicit_identity.len(), 64, "{}", row.row());
+                    assert_eq!(private_identity.len(), 64, "{}", row.row());
+                    assert_ne!(
+                        explicit_identity,
+                        private_identity,
+                        "{} names one transaction twice",
+                        row.row(),
+                    );
+                    assert_ne!(relation.len(), 0, "{} observed nothing", row.row());
+                    assert!(row.standing().is_answered());
+                    by_paired_relation.insert(row.row().name());
                 }
                 other => panic!("{} stands at {other:?}", row.row()),
             }
@@ -2526,15 +2551,22 @@ mod tests {
         // a member able to hold it. The row is asserted below at that
         // member, and it is asserted NOT to be in `answered` — because
         // no run of its shape produced anything, and that remains true.
-        let unmoved = "projection-equality-with-paired-explicit";
+        // THE PROJECTION-EQUALITY ROW HAS MOVED, and it moved at a
+        // standing of its own. It is asserted OUT of `answered` for the
+        // reason the openings row is: no run of its own shape produced
+        // it, because its shape is a pair and what answers it is a
+        // relation over two acceptances.
+        let paired = "projection-equality-with-paired-explicit";
         assert!(
-            !answered.contains(unmoved),
-            "{unmoved} claims an answer no run of its own shape produced",
+            !answered.contains(paired),
+            "{paired} claims an answer a single run of one shape produced",
         );
         assert!(
-            !by_determinism.contains(unmoved),
-            "{unmoved} claims a determinism answer nothing recomputed",
+            !by_determinism.contains(paired),
+            "{paired} claims a determinism answer nothing recomputed",
         );
+        assert_eq!(by_paired_relation, BTreeSet::from([paired]));
+        assert_eq!(plan.census().paired_relation_observed(), 1);
         assert_eq!(
             by_determinism,
             BTreeSet::from(["deterministic-public-fixture-openings"]),
