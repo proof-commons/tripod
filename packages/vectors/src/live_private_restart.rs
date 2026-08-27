@@ -1699,11 +1699,11 @@ pub mod run_of_record {
 
     /// The predecessor fixture's digest.
     pub const PREDECESSOR_DIGEST: &str =
-        "7fb3e6666f7574af9d9a295b6d9412f38817faf02c97b020752dc57709f0ae8b";
+        "ca43b210d6e74b76f7b3d3f79a6123556f150a7af9fa78e2571e2812b9d51fc2";
 
     /// The successor fixture's digest.
     pub const SUCCESSOR_DIGEST: &str =
-        "414b7c3c514e5846398e5199e43789c07eda8865ef488e062b424d456997eeb1";
+        "31501b776502ee48d48b115d8bc80f55ba01bfc8cb6e163e3f2882848d025aa0";
 
     /// The identity the target computed for the accepted control.
     ///
@@ -1742,7 +1742,7 @@ pub mod run_of_record {
     /// blinders and split different amounts. A pair of runs whose
     /// successor digests agreed would be one run reported twice.
     pub const PARITY_SUCCESSOR_DIGEST: &str =
-        "f56b971cffea21a748b509a9b8aa7ccb0764ba6ce208438405a4025d35342c55";
+        "b97f100ae568991cb33e3a671636152070ce9a88bbd0893dd338396609c1aac9";
 
     /// The identity the target computed for the second parity's
     /// accepted successor.
@@ -1757,6 +1757,36 @@ pub mod run_of_record {
 
     /// The commitment prefix the second run's consumed coin carried.
     pub const PARITY_CONSUMED_COMMITMENT_PREFIX: u8 = 0x09;
+
+    /// Forward expectations under the sole live fixture-digest v2 algorithm.
+    ///
+    /// These are fixture identities, not run observations. Each awaits a node-accepted v2 run
+    /// before it can pair with an accepted identity as historical evidence.
+    pub mod forward_fixture_digest_v2 {
+        /// The shared predecessor fixture's forward digest under fixture-digest v2.
+        ///
+        /// This is the same fixture whose recorded v1 digest remains immutable run data. Algorithm
+        /// v2 binds amounts unconditionally; forward runs bind here. No node acceptance under v2 is
+        /// claimed.
+        pub const PREDECESSOR_DIGEST: &str =
+            "7fb3e6666f7574af9d9a295b6d9412f38817faf02c97b020752dc57709f0ae8b";
+
+        /// The primary-receipt successor fixture's forward digest under fixture-digest v2.
+        ///
+        /// This is the same fixture whose recorded v1 digest and accepted identity are immutable
+        /// halves of one historical observation in the parent module. Algorithm v2 binds amounts
+        /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+        pub const SUCCESSOR_DIGEST: &str =
+            "414b7c3c514e5846398e5199e43789c07eda8865ef488e062b424d456997eeb1";
+
+        /// The balancing-receipt successor fixture's forward digest under fixture-digest v2.
+        ///
+        /// This is the same fixture whose recorded v1 digest and accepted identity are immutable
+        /// halves of one historical observation in the parent module. Algorithm v2 binds amounts
+        /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+        pub const PARITY_SUCCESSOR_DIGEST: &str =
+            "f56b971cffea21a748b509a9b8aa7ccb0764ba6ce208438405a4025d35342c55";
+    }
 }
 
 /// One digest as its printed spelling.
@@ -1858,19 +1888,14 @@ mod byte_identity_tests {
     };
     use crate::confidential_predecessor::PredecessorShape;
 
-    /// The two fixtures of the run of record register under exactly the
-    /// digests that run recorded.
+    /// The run-of-record fixtures register under their forward digests for the live v2 algorithm.
     ///
     /// # Why this test is worth its weight
     ///
-    /// The digests below were written down by a ceremony that ran against
-    /// a pinned node BEFORE the single-output form and the fee role were
-    /// added to the registry's vocabulary. They are therefore an
-    /// expectation this workspace cannot quietly move: recomputing them
-    /// from the manifests re-derives every blinder, every nonce input,
-    /// every range-proof seed, and every commitment prefix of a fixture
-    /// whose successor a target ACCEPTED at
-    /// `run_of_record::ACCEPTED_TXID`.
+    /// Recomputing the live v2 identities from the manifests re-derives every blinder, every nonce
+    /// input, every range-proof seed, and every commitment prefix. The recorded identities and v1
+    /// digests remain immutable historical observations; fixture-digest v2 binds amounts
+    /// unconditionally and carries separate forward pins.
     ///
     /// So this is the byte-identity clause of both removals, stated as a
     /// running check rather than as a claim in a commit message. A
@@ -1879,7 +1904,7 @@ mod byte_identity_tests {
     /// reassigned, a search whose counter moved — would land here, and it
     /// would land here before it landed on a chain.
     #[test]
-    fn the_run_of_record_fixtures_register_under_the_digests_it_recorded() {
+    fn the_run_of_record_fixtures_register_under_their_forward_v2_digests() {
         for consumed in ConsumedReceipt::ALL {
             let linked = link_and_register(
                 PredecessorShape::DualParity,
@@ -1890,27 +1915,48 @@ mod byte_identity_tests {
             )
             .expect("the run of record's own fixtures register");
 
-            // The predecessor is the same manifest for both runs, so both
-            // must land on the one recorded digest.
+            // The predecessor is the same manifest for both runs, so both must land on the one
+            // forward v2 digest.
             assert_eq!(
                 hex(linked.predecessor_digest()),
-                run::PREDECESSOR_DIGEST,
-                "the predecessor fixture drifted from the run of record",
+                run::forward_fixture_digest_v2::PREDECESSOR_DIGEST,
+                "the predecessor fixture drifted from its forward v2 pin",
             );
 
-            // The successors differ, and each run recorded its own. The
-            // primary receipt is the run whose consumed commitment
+            // The successors differ. The primary receipt is the run whose consumed commitment
             // carried the first admitted prefix.
-            let expected = match consumed {
-                ConsumedReceipt::Primary => run::SUCCESSOR_DIGEST,
-                ConsumedReceipt::Balancing => run::PARITY_SUCCESSOR_DIGEST,
+            let (expected_v2, recorded_v1) = match consumed {
+                ConsumedReceipt::Primary => (
+                    run::forward_fixture_digest_v2::SUCCESSOR_DIGEST,
+                    run::SUCCESSOR_DIGEST,
+                ),
+                ConsumedReceipt::Balancing => (
+                    run::forward_fixture_digest_v2::PARITY_SUCCESSOR_DIGEST,
+                    run::PARITY_SUCCESSOR_DIGEST,
+                ),
             };
             assert_eq!(
                 hex(linked.successor_digest()),
-                expected,
-                "the successor fixture for {} drifted from the run of record",
+                expected_v2,
+                "the successor fixture for {} drifted from its forward v2 pin",
+                consumed.name(),
+            );
+
+            // Owner ruling Q19: v2 binds amounts unconditionally, so each successor pin must differ
+            // from its recorded v1 sibling. This static comparison does not revalidate v1.
+            assert_ne!(
+                expected_v2,
+                recorded_v1,
+                "owner ruling Q19 requires {}'s successor digest to move in v2",
                 consumed.name(),
             );
         }
+
+        // Owner ruling Q19 applies to the shared amount-bearing predecessor too.
+        assert_ne!(
+            run::forward_fixture_digest_v2::PREDECESSOR_DIGEST,
+            run::PREDECESSOR_DIGEST,
+            "owner ruling Q19 requires the predecessor digest to move in v2",
+        );
     }
 }
