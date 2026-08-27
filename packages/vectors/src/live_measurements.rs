@@ -1,13 +1,13 @@
-//! §18.2's complete transactions and §18.3's seventeen dimensions.
+//! §18.2's synthetic sizing transactions and §18.3's seventeen dimensions.
 //!
 //! §18.2 names fifteen cases and asks for a *complete transaction* per
 //! case; §18.3 names seventeen dimensions and asks for them to be
-//! recorded separately. This module builds the transactions through the
-//! same construction pipeline a deployment would use — request,
-//! finalization, owner authorization, completion — and reads every figure
-//! off the finalized bytes or off the linked artifacts those bytes point
-//! at. Nothing here is an estimate, and nothing is transcribed from an
-//! earlier wave's notes.
+//! recorded separately. This module is a synthetic sizing study: it builds
+//! deliberately unauthorizing transactions through request, finalization,
+//! owner-witness insertion, and completion, then reads every figure off
+//! those exact bytes or their linked artifacts. The byte counts are exact
+//! for the synthetic transactions, but the study performs no target run
+//! and mints no target verdict.
 //!
 //! # Fifteen cases, seventeen transactions
 //!
@@ -26,25 +26,24 @@
 //! - a dimension the case's own shape has no member for at all — a
 //!   one-to-one transfer commits no member leaf, so its member-byte
 //!   figure is *absent* rather than zero;
-//! - a dimension whose subject cannot exist in this workspace — no
-//!   confidential proof is serialized (§12.8's model commits values and
-//!   the encoder writes an empty range proof for every output), and no
-//!   owner signature can be produced at all (§1.7);
-//! - a dimension whose subject is a target's own verdict, which a
-//!   transaction nobody could witness has not earned (§1.11).
+//! - a dimension this synthetic construction deliberately does not carry —
+//!   it serializes no confidential proof and inserts an unauthorizing owner
+//!   witness only to size its slot;
+//! - a dimension whose subject is a target's own verdict, which these exact
+//!   synthetic bytes have not earned because this study performs no target
+//!   run (§1.11).
 //!
 //! [`DimensionStanding`] has one arm per kind, and the arithmetic that
 //! reads the table has to match on all of them.
 //!
 //! # The signature position is a slot, and the slot is what is measured
 //!
-//! Nothing in this workspace computes the taproot sighash an owner would
-//! sign, so every receipt input's witness carries opaque bytes of a
-//! signature's width. That is stated at every use rather than hidden: the
-//! weight and virtual size below are the exact figures for a transaction
-//! whose signature positions are *filled*, which is the figure a resource
-//! study wants, and [`DimensionStanding::WitnessSlotOnly`] is what keeps
-//! it from reading as a measurement of a signature that exists.
+//! This lane deliberately inserts [`UNAUTHORIZING_SIGNATURE`] into every
+//! owner-witness position. That is stated at every use rather than hidden:
+//! the weight and virtual size below are the exact figures for a synthetic
+//! transaction whose signature positions are *filled*, which is the figure
+//! a sizing study wants, and [`DimensionStanding::WitnessSlotOnly`] keeps it
+//! from reading as a measurement of an authorizing signature.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -75,7 +74,7 @@ use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::error::VectorError;
 use crate::live_capability::OracleFixtureValues;
-use crate::live_evidence::{LiveInfrastructureBlocker, UNAUTHORIZING_SIGNATURE};
+use crate::live_evidence::UNAUTHORIZING_SIGNATURE;
 use crate::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, demonstration_live_bundle,
     published_owner, reviewed_target,
@@ -207,44 +206,73 @@ impl LiveResourceRecord {
     }
 }
 
-/// Why one dimension of one measurement carries no figure.
+/// The lane-local reason these exact synthetic bytes have no target run.
 ///
-/// Every arm names a component that does not exist, and none of them is
-/// a measurement of zero. §18.4's rule is the reason the type exists at
-/// all: an absent observation read as zero is an absent observation
-/// reported as agreement.
+/// A fieldless witness rather than a workspace capability claim: the study
+/// deliberately inserted unauthorizing bytes to measure the witness slot.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[non_exhaustive]
+pub struct UnauthorizingWitnessUsedForSizing;
+
+/// Why one dimension of one synthetic measurement carries no figure.
+///
+/// Every arm names a limitation of this lane's construction or run, not a
+/// missing workspace capability, and none is a measurement of zero. §18.4's
+/// rule is the reason the type exists at all: an absent observation read as
+/// zero is an absent observation reported as agreement.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LiveResourceNonClaim {
-    /// The encoder writes an empty range proof for every output.
-    ///
-    /// §12.8's construction model commits values and produces no proof,
-    /// and the serializer writes one empty surjection and one empty range
-    /// prefix per output because every output here is unblinded. So a
-    /// private transfer's proof-byte figure is not zero-because-measured
-    /// but zero-because-there-is-no-proof, and the two must not read
-    /// alike. Closing this is the business of the confidential funding
-    /// concept, which is a charter and not substrate.
-    NoConfidentialProofIsSerialized,
-    /// No target has judged these bytes, and the named component is why.
-    NoTargetVerdictExists(LiveInfrastructureBlocker),
+    /// This synthetic private construction serializes no proof.
+    SyntheticPrivateConstructionSerializesNoProof,
+    /// These exact bytes had no target run for the lane-local reason.
+    NoTargetRunForTheseExactBytes(UnauthorizingWitnessUsedForSizing),
     /// A relay-policy verdict is downstream of a consensus one.
     ///
     /// Distinguished from the consensus arm because they call for
-    /// different repairs: the consensus verdict is blocked by a missing
-    /// digest, and the relay verdict is blocked by there being no
-    /// accepted transaction for a policy to have an opinion about.
+    /// different work: a target run could supply a consensus verdict, while
+    /// a relay verdict remains downstream of an accepted transaction.
     NoRelayVerdictWithoutAConsensusOne,
 }
 
 impl LiveResourceNonClaim {
+    /// Every non-claim, in canonical order.
+    pub const ALL: [Self; 3] = [
+        Self::SyntheticPrivateConstructionSerializesNoProof,
+        Self::NoTargetRunForTheseExactBytes(UnauthorizingWitnessUsedForSizing),
+        Self::NoRelayVerdictWithoutAConsensusOne,
+    ];
+
     /// The non-claim's wire spelling.
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
-            Self::NoConfidentialProofIsSerialized => "no-confidential-proof-is-serialized",
-            Self::NoTargetVerdictExists(_) => "no-target-verdict-exists",
+            Self::SyntheticPrivateConstructionSerializesNoProof => {
+                "synthetic-private-construction-serializes-no-proof"
+            }
+            Self::NoTargetRunForTheseExactBytes(UnauthorizingWitnessUsedForSizing) => {
+                "no-target-run-for-these-exact-bytes"
+            }
             Self::NoRelayVerdictWithoutAConsensusOne => "no-relay-verdict-without-a-consensus-one",
+        }
+    }
+
+    /// Decodes one canonical non-claim spelling.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `name` is not one of [`Self::ALL`]. Protocol versions are
+    /// pinned, so a foreign spelling is a protocol fault rather than a reason
+    /// to substitute the nearest known non-claim.
+    #[must_use]
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            "synthetic-private-construction-serializes-no-proof" => {
+                Self::SyntheticPrivateConstructionSerializesNoProof
+            }
+            "no-target-run-for-these-exact-bytes" => {
+                Self::NoTargetRunForTheseExactBytes(UnauthorizingWitnessUsedForSizing)
+            }
+            "no-relay-verdict-without-a-consensus-one" => Self::NoRelayVerdictWithoutAConsensusOne,
+            _ => panic!("unknown live resource non-claim spelling"),
         }
     }
 }
@@ -258,7 +286,7 @@ impl LiveResourceNonClaim {
 pub enum DimensionStanding {
     /// An exact figure, recomputed from bytes this measurement produced.
     Measured(u64),
-    /// The exact width of a slot whose contents cannot exist.
+    /// The exact width of a slot carrying deliberately unauthorizing bytes.
     ///
     /// The figure is a real byte count and the thing it counts is not a
     /// signature. Both halves matter: the transaction's weight depends on
@@ -1267,9 +1295,9 @@ fn read_dimensions(
         // An explicit output has no proof form at all, so the dimension
         // has no member here rather than a figure of zero.
         LiveTransferRepresentationPlan::Explicit => Standing::AbsentFromThisShape,
-        LiveTransferRepresentationPlan::PrivateCommitted => {
-            Standing::NotClaimable(LiveResourceNonClaim::NoConfidentialProofIsSerialized)
-        }
+        LiveTransferRepresentationPlan::PrivateCommitted => Standing::NotClaimable(
+            LiveResourceNonClaim::SyntheticPrivateConstructionSerializesNoProof,
+        ),
     };
 
     BTreeMap::from([
@@ -1324,15 +1352,14 @@ fn read_dimensions(
             Record::VirtualSize,
             Standing::Measured(built.transaction().virtual_size()),
         ),
-        // §1.7: no owner signature can be produced, so these bytes were
-        // never offered to a target and have earned no verdict. The
-        // native lane's own submitted bytes are the exception, and they
-        // are compared in `crate::live_comparison` rather than borrowed
-        // here — those are different bytes.
+        // This synthetic study deliberately placed unauthorizing witness
+        // bytes into the owner slots for sizing. These exact bytes were not
+        // offered to a target and have earned no verdict. Other native lanes
+        // submit different bytes and retain their own evidence.
         (
             Record::ConsensusVerdict,
-            Standing::NotClaimable(LiveResourceNonClaim::NoTargetVerdictExists(
-                LiveInfrastructureBlocker::OwnerSighashNotComputable,
+            Standing::NotClaimable(LiveResourceNonClaim::NoTargetRunForTheseExactBytes(
+                UnauthorizingWitnessUsedForSizing,
             )),
         ),
         (
@@ -1493,11 +1520,10 @@ fn predecessor_value(
 #[cfg(test)]
 mod tests {
     use super::{
-        CaseMeasurement, DimensionStanding, LiveResourceCase, LiveResourceNonClaim,
-        LiveResourceRecord, MeasuredSponsorRole, deepest_committed_shape, measure_resource_cases,
-        measurement_recipes,
+        CaseMeasurement, DimensionStanding, LiveResourceCase, LiveResourceNonClaim as NonClaim,
+        LiveResourceRecord, MeasuredSponsorRole, UnauthorizingWitnessUsedForSizing,
+        deepest_committed_shape, measure_resource_cases, measurement_recipes,
     };
-    use crate::live_evidence::LiveInfrastructureBlocker;
     use std::collections::BTreeSet;
     use std::sync::OnceLock;
     use tapscript::upstream::LiveTransferRepresentationPlan;
@@ -1635,7 +1661,7 @@ mod tests {
     }
 
     #[test]
-    fn the_typed_non_claims_are_where_the_blockers_put_them() {
+    fn the_typed_non_claims_name_only_this_synthetic_study() {
         // The three dimensions no measurement here can carry a figure
         // for, and one that only a private measurement cannot. Each is
         // asserted as its own typed value rather than as an absence, so
@@ -1646,15 +1672,13 @@ mod tests {
                 assert_eq!(
                     member.standing(LiveResourceRecord::ConsensusVerdict),
                     Some(DimensionStanding::NotClaimable(
-                        LiveResourceNonClaim::NoTargetVerdictExists(
-                            LiveInfrastructureBlocker::OwnerSighashNotComputable,
-                        ),
+                        NonClaim::NoTargetRunForTheseExactBytes(UnauthorizingWitnessUsedForSizing,),
                     )),
                 );
                 assert_eq!(
                     member.standing(LiveResourceRecord::RelayPolicyVerdict),
                     Some(DimensionStanding::NotClaimable(
-                        LiveResourceNonClaim::NoRelayVerdictWithoutAConsensusOne,
+                        NonClaim::NoRelayVerdictWithoutAConsensusOne,
                     )),
                 );
                 assert_eq!(
@@ -1673,7 +1697,7 @@ mod tests {
                         assert_eq!(
                             proofs,
                             DimensionStanding::NotClaimable(
-                                LiveResourceNonClaim::NoConfidentialProofIsSerialized,
+                                NonClaim::SyntheticPrivateConstructionSerializesNoProof,
                             ),
                         );
                     }
