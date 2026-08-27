@@ -279,19 +279,14 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         "conservation forces the total to equal the consumed one and no chain mints such a coin",
     ),
     entry(
-        "private-ct-imbalance",
-        G::MutantBuilderOwed,
-        "the surgery lane reaches it; a case mutating the committed values is the whole of the work",
-    ),
-    entry(
         "malformed-surjection-proof",
         G::NoAdmittedRepresentationCarriesTheField,
         "the surjection field is empty in every form built, an explicit asset requiring it so",
     ),
     entry(
         "copied-commitment",
-        G::MutantBuilderOwed,
-        "copying another output's commitment is one call on the lane that already mutates that field",
+        G::TargetVerdictDoesNotSeparateTheRows,
+        "its mutant draws bad-txns-in-ne-out at the change output's value commitment, the same words and field range private-ct-imbalance already drove, and the successor has no third confidential output whose distinct range would separate them",
     ),
     entry(
         "private-output-omitted",

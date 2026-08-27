@@ -961,14 +961,24 @@ pub mod run_of_record {
     /// stayed within: the mutated output's 33-byte value-commitment field.
     pub const WRONG_BLINDER_FIELD_RANGE: (usize, usize) = (81, 114);
 
+    /// The half-open byte range the private-ct-imbalance mutant declared
+    /// and stayed within: the SECOND output's 33-byte value-commitment
+    /// field. Distinct from [`WRONG_BLINDER_FIELD_RANGE`] because the two
+    /// mutants sit at different outputs, which is what separates
+    /// `private-ct-imbalance` from `wrong-private-blinding-balance` when the
+    /// target draws the same `bad-txns-in-ne-out` for both.
+    pub const PRIVATE_CT_IMBALANCE_FIELD_RANGE: (usize, usize) = (215, 248);
+
     /// The half-open byte range the two range-proof mutants declared: the
     /// mutated output-witness entry's range-proof region, length prefix
     /// included so the emptying and the corruption both fall inside it.
     pub const RANGEPROOF_FIELD_RANGE: (usize, usize) = (781, 4_958);
 
-    /// The one identical refusal the target gave all three mutants, at the
+    /// The one identical refusal the target gave every mutant, at the
     /// [`super::ObservedOutcomeLayer::ConsensusRejectionBeforeScript`]
-    /// layer.
+    /// layer. The wrong-blinder, range-proof and private-ct-imbalance
+    /// mutants all draw it; the FIELD each declared is what tells their
+    /// rows apart, the words being the same.
     pub const MUTANT_REJECT_DETAIL: &str = "bad-txns-in-ne-out";
 
     /// The run's wall time, in seconds.
@@ -991,11 +1001,12 @@ mod tests {
     }
 
     #[test]
-    fn the_run_of_record_names_one_control_and_three_field_ranges() {
+    fn the_run_of_record_names_one_control_and_four_field_ranges() {
         // The figures are the run's, and this checks their SHAPE rather
-        // than re-deriving them: a 64-hex control identity, a
-        // value-commitment field exactly 33 bytes wide, and a range-proof
-        // field wide enough to hold a real proof.
+        // than re-deriving them: a 64-hex control identity, two
+        // value-commitment fields exactly 33 bytes wide at DIFFERENT
+        // offsets, and a range-proof field wide enough to hold a real
+        // proof.
         assert_eq!(run::CONTROL_ACCEPTED_TXID.len(), 64);
         assert_eq!(run::PREDECESSOR_DIGEST.len(), 64);
         assert_ne!(run::PREDECESSOR_DIGEST, run::SUCCESSOR_DIGEST);
@@ -1008,14 +1019,28 @@ mod tests {
             "the value-commitment field is 33 bytes"
         );
 
+        // The imbalance mutant's field is also 33 bytes and sits at a
+        // DIFFERENT offset: the two do not overlap, which is what separates
+        // the two rows that share the target's words.
+        let (im_start, im_end) = run::PRIVATE_CT_IMBALANCE_FIELD_RANGE;
+        assert_eq!(
+            im_end - im_start,
+            33,
+            "the second value-commitment field is 33 bytes"
+        );
+        assert!(
+            im_start >= wb_end,
+            "the two value-commitment fields do not overlap"
+        );
+
         let (rp_start, rp_end) = run::RANGEPROOF_FIELD_RANGE;
         assert!(
             rp_end - rp_start > 1000,
             "the range-proof field holds a real proof"
         );
         assert!(
-            rp_start > wb_end,
-            "the range proof follows the value commitment"
+            rp_start > im_end,
+            "the range proof follows both value commitments"
         );
     }
 
