@@ -2009,6 +2009,35 @@ impl FormLimitation {
             Self::FeeMemberOnlyInTheFeeBearingDeployment => false,
         }
     }
+
+    /// How this limitation was structurally removed, where it has been.
+    ///
+    /// The fourth stage of the ruling's arc, which this enum carried the
+    /// first three of and not this one: [`Limitation::removal`] has
+    /// answered the question for the enumeration's walls since their
+    /// removals were taken, and the product's walls had `refused_at`,
+    /// `convention`, `removal_path` and no place to record a path
+    /// TAKEN. `None` is the honest answer for a limitation still
+    /// standing, and the accessor exists precisely so a filed path can
+    /// never read as a taken one.
+    ///
+    /// Each removal is a named constant rather than an inline literal,
+    /// on [`TWO_OUTPUT_FLOOR_REMOVAL`]'s discipline: the census row that
+    /// cites a removal and the limitation that reports it must not be
+    /// able to disagree about what happened.
+    ///
+    /// The deployment split will answer `None` for as long as it
+    /// stands, which by [`Self::removal_is_wanted`] is deliberate and
+    /// indefinite: a limitation the workspace would choose again is
+    /// still a limitation, and it still owes this answer.
+    #[must_use]
+    pub const fn removal(self) -> Option<LimitationRemoval> {
+        match self {
+            Self::RegistryHasOnlyACommittedSponsorChangeRole
+            | Self::NoSolvingRoleOutsideTheDestinations
+            | Self::FeeMemberOnlyInTheFeeBearingDeployment => None,
+        }
+    }
 }
 
 /// What this workspace can say about ONE cell of the product.
@@ -4047,6 +4076,56 @@ mod tests {
             !FormLimitation::FeeMemberOnlyInTheFeeBearingDeployment.removal_is_wanted(),
             "the deployment split is a wall this workspace would choose again, and is recorded \
              all the same",
+        );
+    }
+
+    /// Every form limitation carries the ruling's whole arc, and one
+    /// still standing claims NO removal.
+    ///
+    /// The fourth stage, held structurally the way the enumeration's own
+    /// walls hold it. `removal_path` says what WOULD end a limitation
+    /// and `removal` says what DID, and the two must not be able to
+    /// collapse: a filed path reading as a taken one is exactly the
+    /// failure the accessor was minted to prevent.
+    #[test]
+    fn a_form_limitation_still_standing_claims_no_removal() {
+        let all = [
+            FormLimitation::RegistryHasOnlyACommittedSponsorChangeRole,
+            FormLimitation::NoSolvingRoleOutsideTheDestinations,
+            FormLimitation::FeeMemberOnlyInTheFeeBearingDeployment,
+        ];
+        for limitation in all {
+            // The first three stages, present for every member whether
+            // or not the fourth has been reached.
+            assert_ne!(limitation.refused_at(), "", "the refusing row is named");
+            assert_ne!(limitation.convention(), "", "the convention is explained");
+            assert_ne!(limitation.removal_path(), "", "a path is filed");
+            // And where the fourth is recorded, it is a whole record.
+            if let Some(removal) = limitation.removal() {
+                assert_ne!(removal.row, "", "the removing row is named");
+                assert_ne!(removal.change, "", "the structural change is stated");
+            }
+        }
+
+        // The pinned state: all three limitations STAND and none claims
+        // a removal. The two walls that ask removal have filed paths and
+        // no taken ones, which is a different sentence from either half
+        // alone; a wave that takes a wall down moves this pin in the
+        // same commit that takes it.
+        let removed: Vec<FormLimitation> = all
+            .into_iter()
+            .filter(|limitation| limitation.removal().is_some())
+            .collect();
+        assert_eq!(removed, vec![], "no form limitation has been removed yet");
+
+        // The deployment split answers `None` for as long as it stands,
+        // and it stands on purpose: `removal_is_wanted` is false for it,
+        // so a removal recorded there would be a contradiction and not
+        // progress.
+        assert_eq!(
+            FormLimitation::FeeMemberOnlyInTheFeeBearingDeployment.removal(),
+            None,
+            "a limitation the workspace would choose again records no removal",
         );
     }
 
