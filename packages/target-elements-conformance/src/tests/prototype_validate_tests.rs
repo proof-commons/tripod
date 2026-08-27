@@ -71,7 +71,11 @@ fn agreeing_transcript(
                 final_stack: None,
                 final_altstack: None,
                 observed_failure,
-                resources: NativeResourceObservation::default(),
+                resources: NativeResourceObservation {
+                    script_bytes: Some(fixture.script.len() as u64),
+                    initial_stack_items: Some(fixture.initial_stack.len() as u64),
+                    ..NativeResourceObservation::default()
+                },
             },
         );
     }

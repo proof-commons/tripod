@@ -595,8 +595,8 @@ fn the_adapters_not_yet_implemented_refusal_is_a_declared_record() {
         "mined_readback": serde_json::Value::Null,
         "accepted_txid": serde_json::Value::Null,
         "resources": {
-            "script_bytes": 0,
-            "initial_stack_items": 0,
+            "script_bytes": serde_json::Value::Null,
+            "initial_stack_items": serde_json::Value::Null,
             "peak_stack_items": serde_json::Value::Null,
             "peak_altstack_items": serde_json::Value::Null,
             "maximum_element_bytes": serde_json::Value::Null,
@@ -888,8 +888,8 @@ fn the_adapters_confidential_refusal_is_a_declared_record() {
         "sponsor_witness": [],
         "signature_bound_to": serde_json::Value::Null,
         "resources": {
-            "script_bytes": 0,
-            "initial_stack_items": 0,
+            "script_bytes": serde_json::Value::Null,
+            "initial_stack_items": serde_json::Value::Null,
             "peak_stack_items": serde_json::Value::Null,
             "peak_altstack_items": serde_json::Value::Null,
             "maximum_element_bytes": serde_json::Value::Null,

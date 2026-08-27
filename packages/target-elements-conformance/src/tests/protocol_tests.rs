@@ -446,11 +446,13 @@ fn the_handshake_request_states_this_harnesss_schema() {
 }
 
 #[test]
-fn this_harness_speaks_schema_six_and_no_earlier_one() {
-    // Stated as a value rather than left implicit. Schema 6 widens the
-    // observed-layer vocabulary with `key_path_rejection`. No record
-    // shape moves for it, and the break is real all the same: an earlier
-    // harness refuses a name it has never heard, so an adapter that has
+fn this_harness_speaks_schema_seven_and_no_earlier_one() {
+    // Stated as a value rather than left implicit. Schema 7 tightens the
+    // conservation response shapes and makes fixture resource figures
+    // required but nullable. Schema 6 widens the observed-layer
+    // vocabulary with `key_path_rejection`. No record shape moves for it,
+    // and the break is real all the same: an earlier harness refuses a
+    // name it has never heard, so an adapter that has
     // learned to tell a key-path refusal from a script-path one would
     // have its answer read as a transport failure rather than as the
     // verdict the target reached. Schema 5 declares the
@@ -472,7 +474,8 @@ fn this_harness_speaks_schema_six_and_no_earlier_one() {
     // implementations moving together: the adapter's constant of the
     // same name is what it is compared against in the field, and a bump
     // that reached only one side is the fault G12-R09 recorded.
-    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 6);
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 7);
+    assert_ne!(NATIVE_PROTOCOL_SCHEMA, 6);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 5);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 4);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 3);
