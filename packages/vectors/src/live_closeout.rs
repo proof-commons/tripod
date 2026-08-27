@@ -48,6 +48,8 @@ use crate::live_roles::{
     CandidateEvidenceRole, CeremonyEvidenceRoles, CeremonyEvidenceRolesBuilder, RoleEvidence,
     RoleGround,
 };
+use crate::recorded_acceptance::RecordedAcceptance;
+use transaction::{TransactionIdentityParseError, Txid};
 
 /// The ten positive private classes, as the row delta names them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -162,7 +164,7 @@ impl PositivePrivateClass {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MovedMatrixRow {
     class: PositivePrivateClass,
-    accepted_identity: String,
+    accepted_identity: Txid,
 }
 
 impl MovedMatrixRow {
@@ -174,8 +176,8 @@ impl MovedMatrixRow {
 
     /// The target-computed identity the acceptance was observed at.
     #[must_use]
-    pub fn accepted_identity(&self) -> &str {
-        &self.accepted_identity
+    pub const fn accepted_identity(&self) -> Txid {
+        self.accepted_identity
     }
 }
 
@@ -202,6 +204,10 @@ pub enum CloseoutDisposition {
 /// What refuses a closeout.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CloseoutRefusal {
+    /// A committed run-of-record identity is not a target transaction
+    /// identity. Callers cannot arrange this refusal because public
+    /// evidence boundaries accept only [`RecordedAcceptance`].
+    MalformedRecordedIdentity(TransactionIdentityParseError),
     /// The cleared set does not hold exactly one member.
     ClearedResidualsAreNotExactlyOne {
         /// What was offered.
@@ -373,21 +379,36 @@ impl ConfidentialFundingCloseoutReport {
 
 /// One row moved, on one observed acceptance.
 ///
+/// Caller-authored text is not an acceptance provenance token and does
+/// not type-check at this boundary:
+///
+/// ```compile_fail
+/// use vectors::live_closeout::{PositivePrivateClass, moved_on_acceptance};
+///
+/// let _ = moved_on_acceptance(PositivePrivateClass::OneToOne, "prose");
+/// ```
+///
 /// # Errors
 ///
 /// [`CloseoutRefusal::SponsorRowMoved`] for the class this guide may not
 /// move.
 pub fn moved_on_acceptance(
     class: PositivePrivateClass,
-    accepted_identity: impl Into<String>,
+    accepted_identity: RecordedAcceptance,
 ) -> Result<MovedMatrixRow, CloseoutRefusal> {
     if !class.may_enter_the_delta() {
         return Err(CloseoutRefusal::SponsorRowMoved);
     }
     Ok(MovedMatrixRow {
         class,
-        accepted_identity: accepted_identity.into(),
+        accepted_identity: accepted_identity.accepted_identity(),
     })
+}
+
+fn recorded_identity(
+    mint: fn() -> Result<RecordedAcceptance, TransactionIdentityParseError>,
+) -> Result<RecordedAcceptance, CloseoutRefusal> {
+    mint().map_err(CloseoutRefusal::MalformedRecordedIdentity)
 }
 
 /// Validate a closeout.
@@ -545,7 +566,7 @@ fn wave_five_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::Funding,
         RoleGround::ObservedAcceptance {
-            accepted_identity: run::ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(run::accepted)?,
             independent_check: "the funding record validated against the first-party \
                                 commitment oracle, and both predecessor coins matched"
                 .to_owned(),
@@ -555,7 +576,7 @@ fn wave_five_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::OwnerSignature,
         RoleGround::ObservedAcceptance {
-            accepted_identity: run::ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(run::accepted)?,
             independent_check: "the witness read back out of the node's own copy verifies \
                                 against an independently recomputed message"
                 .to_owned(),
@@ -565,7 +586,7 @@ fn wave_five_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::Safety,
         RoleGround::ObservedAcceptance {
-            accepted_identity: run::PARITY_ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(run::parity_accepted)?,
             independent_check: "two positive private matrix rows moved, each on an acceptance \
                                 of its own shape"
                 .to_owned(),
@@ -653,10 +674,13 @@ pub fn wave_five_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeou
         // when this wave began.
         pre_sighash_matrix_delta: 0,
         wave5_matrix_delta: vec![
-            moved_on_acceptance(PositivePrivateClass::OneToOne, run::ACCEPTED_TXID)?,
+            moved_on_acceptance(
+                PositivePrivateClass::OneToOne,
+                recorded_identity(run::accepted)?,
+            )?,
             moved_on_acceptance(
                 PositivePrivateClass::BothCommitmentParityForms,
-                run::PARITY_ACCEPTED_TXID,
+                recorded_identity(run::parity_accepted)?,
             )?,
         ],
         exclusions: vec![
@@ -817,7 +841,7 @@ fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::Funding,
         RoleGround::ObservedAcceptance {
-            accepted_identity: run::ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(run::accepted)?,
             independent_check: "the funding record validated against the first-party \
                                 commitment oracle, and both predecessor coins matched"
                 .to_owned(),
@@ -827,7 +851,7 @@ fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::OwnerSignature,
         RoleGround::ObservedAcceptance {
-            accepted_identity: run::ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(run::accepted)?,
             independent_check: "the witness read back out of the node's own copy verifies \
                                 against an independently recomputed message"
                 .to_owned(),
@@ -837,7 +861,7 @@ fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::Safety,
         RoleGround::ObservedAcceptance {
-            accepted_identity: run::PARITY_ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(run::parity_accepted)?,
             independent_check: "three positive private matrix rows moved, each on an acceptance \
                                 of its own shape"
                 .to_owned(),
@@ -847,7 +871,7 @@ fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::CtConservation,
         RoleGround::ObservedAcceptance {
-            accepted_identity: cn::CONTROL_ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(cn::control_accepted)?,
             independent_check: "the target's own commitment-balance rule accepted the conserving \
                                 control and refused the wrong-blinder mutant at the balance layer, \
                                 the same observed run the proof-negatives record"
@@ -945,14 +969,17 @@ pub fn wave_six_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeout
         ]),
         pre_sighash_matrix_delta: 0,
         wave5_matrix_delta: vec![
-            moved_on_acceptance(PositivePrivateClass::OneToOne, run::ACCEPTED_TXID)?,
+            moved_on_acceptance(
+                PositivePrivateClass::OneToOne,
+                recorded_identity(run::accepted)?,
+            )?,
             moved_on_acceptance(
                 PositivePrivateClass::BothCommitmentParityForms,
-                run::PARITY_ACCEPTED_TXID,
+                recorded_identity(run::parity_accepted)?,
             )?,
             moved_on_acceptance(
                 PositivePrivateClass::TargetCtConservation,
-                cn::CONTROL_ACCEPTED_TXID,
+                recorded_identity(cn::control_accepted)?,
             )?,
         ],
         exclusions: vec![
@@ -1178,7 +1205,7 @@ fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::Funding,
         RoleGround::ObservedAcceptance {
-            accepted_identity: run::ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(run::accepted)?,
             independent_check: "the funding record validated against the first-party \
                                 commitment oracle, and both predecessor coins matched"
                 .to_owned(),
@@ -1188,7 +1215,7 @@ fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::OwnerSignature,
         RoleGround::ObservedAcceptance {
-            accepted_identity: ms::SEVERAL_OWNERS_ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(ms::several_owners_accepted)?,
             independent_check: "two receipts under two distinct owners, each input carrying the \
                                 leaf its own position executes, and the witness read back out of \
                                 the node's own copy verifies against an independently recomputed \
@@ -1200,7 +1227,7 @@ fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::Safety,
         RoleGround::ObservedAcceptance {
-            accepted_identity: ms::MANY_TO_MANY_ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(ms::many_to_many_accepted)?,
             independent_check: "six positive private matrix rows moved, each on an acceptance of \
                                 its own shape, and the four that did not move are named with \
                                 their grounds"
@@ -1211,7 +1238,7 @@ fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::CtConservation,
         RoleGround::ObservedAcceptance {
-            accepted_identity: cn::CONTROL_ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(cn::control_accepted)?,
             independent_check: "the target's own commitment-balance rule accepted the conserving \
                                 control and refused the wrong-blinder mutant at the balance layer"
                 .to_owned(),
@@ -1350,23 +1377,29 @@ pub fn wave_seven_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
         ]),
         pre_sighash_matrix_delta: 0,
         wave5_matrix_delta: vec![
-            moved_on_acceptance(PositivePrivateClass::OneToOne, run::ACCEPTED_TXID)?,
+            moved_on_acceptance(
+                PositivePrivateClass::OneToOne,
+                recorded_identity(run::accepted)?,
+            )?,
             moved_on_acceptance(
                 PositivePrivateClass::BothCommitmentParityForms,
-                run::PARITY_ACCEPTED_TXID,
+                recorded_identity(run::parity_accepted)?,
             )?,
             moved_on_acceptance(
                 PositivePrivateClass::TargetCtConservation,
-                cn::CONTROL_ACCEPTED_TXID,
+                recorded_identity(cn::control_accepted)?,
             )?,
-            moved_on_acceptance(PositivePrivateClass::Split, ms::SPLIT_ACCEPTED_TXID)?,
+            moved_on_acceptance(
+                PositivePrivateClass::Split,
+                recorded_identity(ms::split_accepted)?,
+            )?,
             moved_on_acceptance(
                 PositivePrivateClass::ManyToManyRepresentative,
-                ms::MANY_TO_MANY_ACCEPTED_TXID,
+                recorded_identity(ms::many_to_many_accepted)?,
             )?,
             moved_on_acceptance(
                 PositivePrivateClass::SeveralDistinctOwners,
-                ms::SEVERAL_OWNERS_ACCEPTED_TXID,
+                recorded_identity(ms::several_owners_accepted)?,
             )?,
         ],
         exclusions: vec![
@@ -1584,29 +1617,38 @@ pub fn wave_eight_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
         blockers: BTreeSet::from([LiveInfrastructureBlocker::PredecessorConstructorAbsent]),
         pre_sighash_matrix_delta: 0,
         wave5_matrix_delta: vec![
-            moved_on_acceptance(PositivePrivateClass::OneToOne, run::ACCEPTED_TXID)?,
+            moved_on_acceptance(
+                PositivePrivateClass::OneToOne,
+                recorded_identity(run::accepted)?,
+            )?,
             moved_on_acceptance(
                 PositivePrivateClass::BothCommitmentParityForms,
-                run::PARITY_ACCEPTED_TXID,
+                recorded_identity(run::parity_accepted)?,
             )?,
             moved_on_acceptance(
                 PositivePrivateClass::TargetCtConservation,
-                cn::CONTROL_ACCEPTED_TXID,
+                recorded_identity(cn::control_accepted)?,
             )?,
-            moved_on_acceptance(PositivePrivateClass::Split, ms::SPLIT_ACCEPTED_TXID)?,
+            moved_on_acceptance(
+                PositivePrivateClass::Split,
+                recorded_identity(ms::split_accepted)?,
+            )?,
             moved_on_acceptance(
                 PositivePrivateClass::ManyToManyRepresentative,
-                ms::MANY_TO_MANY_ACCEPTED_TXID,
+                recorded_identity(ms::many_to_many_accepted)?,
             )?,
             moved_on_acceptance(
                 PositivePrivateClass::SeveralDistinctOwners,
-                ms::SEVERAL_OWNERS_ACCEPTED_TXID,
+                recorded_identity(ms::several_owners_accepted)?,
             )?,
             // The two this wave adds.
-            moved_on_acceptance(PositivePrivateClass::Merge, ms::MERGE_ACCEPTED_TXID)?,
+            moved_on_acceptance(
+                PositivePrivateClass::Merge,
+                recorded_identity(ms::merge_accepted)?,
+            )?,
             moved_on_acceptance(
                 PositivePrivateClass::PrivateSponsorValues,
-                sp::SPONSORED_PRIVATE_TXID,
+                recorded_identity(sp::sponsored_private_accepted)?,
             )?,
         ],
         exclusions: vec![
@@ -1690,7 +1732,7 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::Funding,
         RoleGround::ObservedAcceptance {
-            accepted_identity: run::ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(run::accepted)?,
             independent_check: "the funding record validated against the first-party \
                                 commitment oracle, and both predecessor coins matched"
                 .to_owned(),
@@ -1700,7 +1742,7 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::OwnerSignature,
         RoleGround::ObservedAcceptance {
-            accepted_identity: sp::SPONSORED_PRIVATE_TXID.to_owned(),
+            accepted_identity: recorded_identity(sp::sponsored_private_accepted)?,
             independent_check: "an owner's signature verified out of the node's own copy against \
                                 a message recomputed independently of the candidate, on the \
                                 sponsored private successor whose sponsor change was located in \
@@ -1712,7 +1754,7 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::Safety,
         RoleGround::ObservedAcceptance {
-            accepted_identity: ms::MERGE_ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(ms::merge_accepted)?,
             independent_check: "eight positive private matrix rows moved, each on an acceptance \
                                 of its own shape; the openings row is answered in the matrix by \
                                 a determinism observation and carries no target identity, and \
@@ -1724,8 +1766,9 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::CtConservation,
         RoleGround::ObservedAcceptance {
-            accepted_identity:
-                crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(
+                crate::live_conservation_negatives::run_of_record::control_accepted,
+            )?,
             independent_check: "the target's own commitment-balance rule accepted the conserving \
                                 control and refused the wrong-blinder mutant at the balance layer"
                 .to_owned(),
@@ -1735,7 +1778,7 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         &mut roles,
         CandidateEvidenceRole::Minimality,
         RoleGround::ObservedAcceptance {
-            accepted_identity: ms::STRICT_ONE_TO_ONE_ACCEPTED_TXID.to_owned(),
+            accepted_identity: recorded_identity(ms::strict_one_to_one_accepted)?,
             independent_check: "three of the five paired cases satisfy every pair-acceptance \
                                 conjunct, each pair's two members having a recorded acceptance \
                                 of its own shape; the identity cited is the private half of the \
@@ -1766,11 +1809,125 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
 mod tests {
     use super::{
         CLEARED_BY_FUNDING, CloseoutDisposition, CloseoutParts, CloseoutRefusal,
-        PositivePrivateClass, moved_on_acceptance, validate_closeout,
+        ConfidentialFundingCloseoutReport, PositivePrivateClass, moved_on_acceptance,
+        validate_closeout,
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
     use crate::live_restart::{RestartLedger, RestartStep, RestartStepResult};
     use std::collections::{BTreeMap, BTreeSet};
+
+    fn assert_exact_moved_identities(
+        report: &ConfidentialFundingCloseoutReport,
+        expected: &[(PositivePrivateClass, &str)],
+    ) {
+        let observed: Vec<_> = report
+            .moved_rows()
+            .iter()
+            .map(|row| (row.class(), row.accepted_identity().to_string()))
+            .collect();
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|(class, identity)| (*class, (*identity).to_owned()))
+            .collect();
+        assert_eq!(observed, expected);
+
+        let rendered = report.render();
+        for (class, identity) in expected {
+            let line = format!("moved_row {} on {identity}", class.name());
+            assert!(rendered.lines().any(|rendered| rendered == line));
+        }
+    }
+
+    #[test]
+    fn all_four_closeouts_render_the_exact_recorded_identities() {
+        use crate::live_conservation_negatives::run_of_record as cn;
+        use crate::live_multi_shapes::run_of_record as ms;
+        use crate::live_private_restart::run_of_record as run;
+        use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
+
+        let five = super::wave_five_closeout().expect("wave five validates");
+        assert_exact_moved_identities(
+            &five,
+            &[
+                (PositivePrivateClass::OneToOne, run::ACCEPTED_TXID),
+                (
+                    PositivePrivateClass::BothCommitmentParityForms,
+                    run::PARITY_ACCEPTED_TXID,
+                ),
+            ],
+        );
+
+        let six = super::wave_six_closeout().expect("wave six validates");
+        assert_exact_moved_identities(
+            &six,
+            &[
+                (PositivePrivateClass::OneToOne, run::ACCEPTED_TXID),
+                (
+                    PositivePrivateClass::BothCommitmentParityForms,
+                    run::PARITY_ACCEPTED_TXID,
+                ),
+                (
+                    PositivePrivateClass::TargetCtConservation,
+                    cn::CONTROL_ACCEPTED_TXID,
+                ),
+            ],
+        );
+
+        let seven = super::wave_seven_closeout().expect("wave seven validates");
+        assert_exact_moved_identities(
+            &seven,
+            &[
+                (PositivePrivateClass::OneToOne, run::ACCEPTED_TXID),
+                (
+                    PositivePrivateClass::BothCommitmentParityForms,
+                    run::PARITY_ACCEPTED_TXID,
+                ),
+                (
+                    PositivePrivateClass::TargetCtConservation,
+                    cn::CONTROL_ACCEPTED_TXID,
+                ),
+                (PositivePrivateClass::Split, ms::SPLIT_ACCEPTED_TXID),
+                (
+                    PositivePrivateClass::ManyToManyRepresentative,
+                    ms::MANY_TO_MANY_ACCEPTED_TXID,
+                ),
+                (
+                    PositivePrivateClass::SeveralDistinctOwners,
+                    ms::SEVERAL_OWNERS_ACCEPTED_TXID,
+                ),
+            ],
+        );
+
+        let eight = super::wave_eight_closeout().expect("wave eight validates");
+        assert_exact_moved_identities(
+            &eight,
+            &[
+                (PositivePrivateClass::OneToOne, run::ACCEPTED_TXID),
+                (
+                    PositivePrivateClass::BothCommitmentParityForms,
+                    run::PARITY_ACCEPTED_TXID,
+                ),
+                (
+                    PositivePrivateClass::TargetCtConservation,
+                    cn::CONTROL_ACCEPTED_TXID,
+                ),
+                (PositivePrivateClass::Split, ms::SPLIT_ACCEPTED_TXID),
+                (
+                    PositivePrivateClass::ManyToManyRepresentative,
+                    ms::MANY_TO_MANY_ACCEPTED_TXID,
+                ),
+                (
+                    PositivePrivateClass::SeveralDistinctOwners,
+                    ms::SEVERAL_OWNERS_ACCEPTED_TXID,
+                ),
+                (PositivePrivateClass::Merge, ms::MERGE_ACCEPTED_TXID),
+                (
+                    PositivePrivateClass::PrivateSponsorValues,
+                    sp::SPONSORED_PRIVATE_TXID,
+                ),
+            ],
+        );
+    }
 
     #[test]
     fn the_minimality_wave_completes_the_order_and_leaves_wave_seven_untouched() {
@@ -1808,7 +1965,12 @@ mod tests {
         assert!(moved.contains("private-merge"));
         assert!(moved.contains("private-sponsor-values"));
         for row in report.moved_rows() {
-            assert_eq!(row.accepted_identity().len(), 64, "{}", row.class().name());
+            assert_eq!(
+                row.accepted_identity().to_string().len(),
+                64,
+                "{}",
+                row.class().name()
+            );
         }
 
         // And the two that did not, each for a reason its own step
@@ -1987,13 +2149,17 @@ mod tests {
         }
 
         // Every moved row cites a target-computed identity.
-        let identities: BTreeSet<&str> = report
+        let identities: BTreeSet<_> = report
             .moved_rows()
             .iter()
             .map(super::MovedMatrixRow::accepted_identity)
             .collect();
         for identity in &identities {
-            assert_eq!(identity.len(), 64, "{identity} is not a target identity");
+            assert_eq!(
+                identity.to_string().len(),
+                64,
+                "{identity} is not a target identity"
+            );
         }
 
         // Six rows cite FIVE distinct identities, and the collision is a
@@ -2134,14 +2300,14 @@ mod tests {
         // gone. What has NOT changed is that the row moves on an
         // acceptance and on nothing else -- the constructor still takes
         // an identity, and a caller with no run has none to hand it.
-        let moved = moved_on_acceptance(
-            PositivePrivateClass::PrivateSponsorValues,
-            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_TXID,
-        )
-        .expect("the row moves on the acceptance of its own shape");
+        let recorded =
+            crate::live_sponsor_shapes::sponsored_run_of_record::sponsored_private_accepted()
+                .expect("the committed identity parses");
+        let moved = moved_on_acceptance(PositivePrivateClass::PrivateSponsorValues, recorded)
+            .expect("the row moves on the acceptance of its own shape");
         assert_eq!(moved.class(), PositivePrivateClass::PrivateSponsorValues);
         assert_eq!(
-            moved.accepted_identity(),
+            moved.accepted_identity().to_string(),
             crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_TXID,
         );
     }
@@ -2216,10 +2382,18 @@ mod tests {
     fn one_class_cannot_move_twice() {
         let mut offered = parts(stopped_ledger());
         offered.wave5_matrix_delta = vec![
-            moved_on_acceptance(PositivePrivateClass::OneToOne, "aa".repeat(32))
-                .expect("a movable class"),
-            moved_on_acceptance(PositivePrivateClass::OneToOne, "bb".repeat(32))
-                .expect("a movable class"),
+            moved_on_acceptance(
+                PositivePrivateClass::OneToOne,
+                crate::live_private_restart::run_of_record::accepted()
+                    .expect("the committed primary identity parses"),
+            )
+            .expect("a movable class"),
+            moved_on_acceptance(
+                PositivePrivateClass::OneToOne,
+                crate::live_private_restart::run_of_record::parity_accepted()
+                    .expect("the committed parity identity parses"),
+            )
+            .expect("a movable class"),
         ];
         assert_eq!(
             validate_closeout(offered).err(),

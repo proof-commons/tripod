@@ -2305,6 +2305,11 @@ pub mod sponsored_run_of_record {
     pub const SPONSORED_ACCEPTED_TXID: &str =
         "36cd6616ee518320b45f196d6ad0e6db894a5441683f57230e66e5608e6bc08c";
 
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        sponsored_accepted,
+        SPONSORED_ACCEPTED_TXID
+    );
+
     /// How many bytes the without-change control handed the node.
     pub const SPONSORED_SUBMITTED_BYTES: usize = 1_480;
 
@@ -2337,6 +2342,11 @@ pub mod sponsored_run_of_record {
     /// sponsor-change program.
     pub const SPONSORED_CHANGE_ACCEPTED_TXID: &str =
         "e3a4e4319e024bb021501d2ef0b7118b871953e05cb13b6c00e4d8a592982bb8";
+
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        sponsored_change_accepted,
+        SPONSORED_CHANGE_ACCEPTED_TXID
+    );
 
     /// How many bytes the with-change control handed the node.
     ///
@@ -2381,6 +2391,11 @@ pub mod sponsored_run_of_record {
     /// identity for something else unless something fails.
     pub const COMMITTED_SPONSOR_FUNDING_TXID: &str =
         "0150397668adf2b72545786ab61bd90c927f9da769655a2d3a1955107fc09237";
+
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        committed_sponsor_funding_accepted,
+        COMMITTED_SPONSOR_FUNDING_TXID
+    );
 
     /// The weight the target computed for that funding transaction.
     ///
@@ -2532,6 +2547,11 @@ pub mod sponsored_run_of_record {
     pub const SPONSORED_PRIVATE_TXID: &str =
         "195b103d6d5e2c361f27248d31ef8bed663dffa9b65cea8c5e347f522f5918a8";
 
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        sponsored_private_accepted,
+        SPONSORED_PRIVATE_TXID
+    );
+
     /// The bytes that reached the node for it.
     pub const SPONSORED_PRIVATE_SUBMITTED_BYTES: usize = 13_873;
 
@@ -2564,6 +2584,11 @@ pub mod sponsored_run_of_record {
     /// the fee carrying that asset too.
     pub const SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_TXID: &str =
         "906f077960ebf83bae41e4f069127ce81b733309d9a2843231ea95badff62f37";
+
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        sponsored_private_explicit_no_change_accepted,
+        SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_TXID
+    );
 
     /// The bytes that reached the node for the explicit no-change run.
     ///
@@ -2802,7 +2827,8 @@ mod tests {
         assert!(
             crate::live_closeout::moved_on_acceptance(
                 crate::live_closeout::PositivePrivateClass::PrivateSponsorValues,
-                sponsored_run_of_record::SPONSORED_PRIVATE_TXID,
+                sponsored_run_of_record::sponsored_private_accepted()
+                    .expect("the committed sponsored-private identity parses"),
             )
             .is_ok(),
             "the row the acceptance was for cannot be moved on it",

@@ -2280,6 +2280,8 @@ pub mod run_of_record {
     pub const SPLIT_ACCEPTED_TXID: &str =
         "56c97ec9748ec730a6a6fab111c15830a4e215c0652ec5df4e4b34e7bd955a0c";
 
+    crate::recorded_acceptance::mint_recorded_acceptance!(split_accepted, SPLIT_ACCEPTED_TXID);
+
     /// How many bytes the split handed to the node.
     pub const SPLIT_SUBMITTED_BYTES: usize = 13_499;
 
@@ -2302,6 +2304,11 @@ pub mod run_of_record {
     pub const MANY_TO_MANY_ACCEPTED_TXID: &str =
         "fc1769b853b3f3abf24a6eb996fa76e5e19c87adfd379034392e9487af85a58d";
 
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        many_to_many_accepted,
+        MANY_TO_MANY_ACCEPTED_TXID
+    );
+
     /// How many bytes the many-to-many handed to the node.
     pub const MANY_TO_MANY_SUBMITTED_BYTES: usize = 13_882;
 
@@ -2321,6 +2328,11 @@ pub mod run_of_record {
     /// cardinality.
     pub const SEVERAL_OWNERS_ACCEPTED_TXID: &str =
         "15ff668df082fb22f2222a52f8cc0fc27f5787ec82b3c0408472ae063fc1e207";
+
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        several_owners_accepted,
+        SEVERAL_OWNERS_ACCEPTED_TXID
+    );
 
     /// How many bytes the several-owners transfer handed to the node.
     pub const SEVERAL_OWNERS_SUBMITTED_BYTES: usize = 9_519;
@@ -2351,6 +2363,11 @@ pub mod run_of_record {
     /// and this consumed one.
     pub const STRICT_ONE_TO_ONE_ACCEPTED_TXID: &str =
         "139b9d4475d93e242fd0c5c8efb986b523945ae905edea427b66ca2050df6db8";
+
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        strict_one_to_one_accepted,
+        STRICT_ONE_TO_ONE_ACCEPTED_TXID
+    );
 
     /// The strict one-to-one successor fixture's digest.
     pub const STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST: &str =
@@ -2428,6 +2445,8 @@ pub mod run_of_record {
     /// this identity existed.
     pub const MERGE_ACCEPTED_TXID: &str =
         "fe48b8c0feb8adeecc78fc78f91a2d24f43871672f3c083f06984383a2ff4a4d";
+
+    crate::recorded_acceptance::mint_recorded_acceptance!(merge_accepted, MERGE_ACCEPTED_TXID);
 
     /// How many bytes the merge handed to the node.
     pub const MERGE_SUBMITTED_BYTES: usize = 5_156;
@@ -2600,6 +2619,11 @@ pub mod run_of_record {
     pub const EXIT_CROSSING_ACCEPTED_TXID: &str =
         "b382a7c3a6057e49d9b2c11cead5d1864c53e238176480c9709b21ebd1b7d656";
 
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        exit_crossing_accepted,
+        EXIT_CROSSING_ACCEPTED_TXID
+    );
+
     /// How many bytes the exit crossing handed to the node.
     pub const EXIT_CROSSING_SUBMITTED_BYTES: usize = 5_412;
 
@@ -2650,6 +2674,11 @@ pub mod run_of_record {
     pub const ENTRY_CROSSING_ACCEPTED_TXID: &str =
         "7a1771fd3d04cc7ee2c48a0d7daa9287122b6ca07706c943f48a23aa8192793f";
 
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        entry_crossing_accepted,
+        ENTRY_CROSSING_ACCEPTED_TXID
+    );
+
     /// How many bytes the entry crossing handed to the node.
     pub const ENTRY_CROSSING_SUBMITTED_BYTES: usize = 9_133;
 
@@ -2693,6 +2722,11 @@ pub mod run_of_record {
     /// private member is this shape and not that one.
     pub const PURE_SPLIT_ACCEPTED_TXID: &str =
         "544afb18a0016db35e007f1da9a49d60ba163b8cc565adf16fe25a04a198eea0";
+
+    crate::recorded_acceptance::mint_recorded_acceptance!(
+        pure_split_accepted,
+        PURE_SPLIT_ACCEPTED_TXID
+    );
 
     /// How many bytes the pure split handed to the node.
     pub const PURE_SPLIT_SUBMITTED_BYTES: usize = 9_136;

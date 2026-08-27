@@ -52,6 +52,7 @@
 use std::collections::BTreeMap;
 
 use crate::live_evidence::LiveInfrastructureBlocker;
+use crate::recorded_acceptance::RecordedAcceptance;
 
 /// The seven questions a candidate ceremony can be evidence about.
 ///
@@ -167,10 +168,21 @@ pub enum RoleGround {
     /// The target accepted, at this identity, and an independent origin
     /// agreed. The identity is the target's own, recorded as the target
     /// computed it.
+    ///
+    /// An invented string cannot enter this ground:
+    ///
+    /// ```compile_fail
+    /// use vectors::live_roles::RoleGround;
+    ///
+    /// let _ = RoleGround::ObservedAcceptance {
+    ///     accepted_identity: "00".repeat(32),
+    ///     independent_check: "caller-authored prose".to_owned(),
+    /// };
+    /// ```
     ObservedAcceptance {
         /// The identity the target computed for the accepted
         /// transaction.
-        accepted_identity: String,
+        accepted_identity: RecordedAcceptance,
         /// What the second origin checked, in that origin's own words.
         independent_check: String,
     },
@@ -397,6 +409,11 @@ mod tests {
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
 
+    fn recorded_acceptance() -> crate::RecordedAcceptance {
+        crate::live_private_restart::run_of_record::accepted()
+            .expect("the committed acceptance identity parses")
+    }
+
     fn outside(owner: &str) -> RoleGround {
         RoleGround::OutsideThisCeremony {
             owned_by: owner.to_owned(),
@@ -410,7 +427,7 @@ mod tests {
         let funding = RoleEvidence::new(
             CandidateEvidenceRole::Funding,
             RoleGround::ObservedAcceptance {
-                accepted_identity: "aa".repeat(32),
+                accepted_identity: recorded_acceptance(),
                 independent_check: "the funding record validated".to_owned(),
             },
         );
@@ -477,7 +494,7 @@ mod tests {
             (
                 CandidateEvidenceRole::Funding,
                 RoleGround::ObservedAcceptance {
-                    accepted_identity: "bb".repeat(32),
+                    accepted_identity: recorded_acceptance(),
                     independent_check: "two origins agreed".to_owned(),
                 },
                 EvidenceDisposition::Validated,

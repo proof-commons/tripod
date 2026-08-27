@@ -1729,6 +1729,8 @@ pub mod run_of_record {
     pub const ACCEPTED_TXID: &str =
         "4571a077826d45f64402a5c83ac9c0454fe42cf53b75f7aac2c8d07b574ad152";
 
+    crate::recorded_acceptance::mint_recorded_acceptance!(accepted, ACCEPTED_TXID);
+
     /// How many bytes were handed to the node.
     pub const SUBMITTED_BYTES: usize = 9_136;
 
@@ -1767,6 +1769,8 @@ pub mod run_of_record {
     /// takes both to say that both parities were exercised.
     pub const PARITY_ACCEPTED_TXID: &str =
         "45f1c5669cdc868f5612f6b18b2e285b791d7f093e45b2d28147eac63427dd95";
+
+    crate::recorded_acceptance::mint_recorded_acceptance!(parity_accepted, PARITY_ACCEPTED_TXID);
 
     /// The commitment prefix the second run's consumed coin carried.
     pub const PARITY_CONSUMED_COMMITMENT_PREFIX: u8 = 0x09;
