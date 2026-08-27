@@ -819,6 +819,15 @@ impl LiveRowStanding {
                 // in its own member and counts in its own bucket.
                 | Self::DeterminismObserved { .. }
                 // Answered, and answered by the gate its own row was
+                // given: §15.2's projection-equality row asks for a
+                // COMPARISON of two accepted transactions' projections,
+                // which is a relation and not an acceptance. Both target
+                // verdicts are underneath it, so unlike the two members
+                // around it this one does rest on a chain — what it is
+                // not is ONE verdict, which is why it stands in its own
+                // member and counts in its own bucket.
+                | Self::PairedRelationObserved { .. }
+                // Answered, and answered by the gate its own row was
                 // given: two rows ask whether something is SO of this
                 // workspace, and a fact with a site is the whole of what
                 // such a row wants. What it is NOT is a target verdict,
