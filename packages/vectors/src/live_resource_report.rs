@@ -811,7 +811,7 @@ mod tests {
 
         assert_eq!(
             LiveResourceNonClaim::ALL,
-            inventory.map(|(reason, _)| reason),
+            inventory.map(|(reason, _)| reason)
         );
         for (reason, spelling) in inventory {
             assert_eq!(reason.name(), spelling);
