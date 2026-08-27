@@ -129,9 +129,16 @@ pub enum NegativeHalfGap {
     /// covenant's own clause for the same field — the destination closure's
     /// asset check, the explicit conservation fragment — never gets to run.
     /// This is the wall for the SCRIPT class specifically: a drive to the
-    /// CONSENSUS verdict is possible where a distinct output earns a
-    /// separating field range, which is the `private-ct-imbalance`
-    /// precedent.
+    /// CONSENSUS verdict is possible where a distinct field range, or a
+    /// distinct transaction shape, earns a separating fact, which is the
+    /// `private-ct-imbalance` precedent.
+    ///
+    /// All SEVEN rows this member was minted for were driven that way on
+    /// the owner-signing negative run — the two asset and two value
+    /// surgeries by their field ranges on the 2-in-2-out control, the two
+    /// output-cardinality rows by their shapes, and `omitted-source` by its
+    /// one-input shape — so the member now carries ZERO rows and is kept as
+    /// provenance, the vocabulary the drive read off.
     ConsensusAnswersBeforeScript,
     /// The explicit lane's witness mutation reaches item zero only.
     ///
@@ -280,16 +287,11 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // honest third-owner program is now buildable, a third owner threaded
     // through the bundle link, and it is discharged first-party beside
     // its three siblings on the input recognition's own refusal.
-    entry(
-        "wrong-explicit-asset",
-        G::ConsensusAnswersBeforeScript,
-        "rewriting a destination's asset unbalances the explicit per-asset sum, refused bad-txns-in-ne-out before the destination closure's asset clause runs",
-    ),
-    entry(
-        "confidential-asset-commitment",
-        G::ConsensusAnswersBeforeScript,
-        "replacing an explicit asset with a commitment fails surjection at consensus before the covenant's explicit-asset clause is reached",
-    ),
+    // Two asset faults of this section have LEFT: `wrong-explicit-asset`
+    // and `confidential-asset-commitment` are driven to their consensus
+    // refusal on the owner-signing negative run — each on its own mutant at
+    // its own asset field, refused `bad-txns-in-ne-out` before any covenant
+    // clause — and are recorded in `live_evidence` rather than here.
     entry(
         "unclassified-u",
         G::NoIndependentCovenantClause,
@@ -310,21 +312,14 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         G::WitnessSurgeryStageAbsent,
         "the control block is witness item two and the staged mutation reaches item zero only",
     ),
-    // §15.5 — the value and partition faults still waiting. Two rows of
+    // §15.5 — the value and partition faults still waiting. Several rows of
     // this section have LEFT this register: `malformed-rangeproof` and
     // `wrong-private-blinding-balance` are answered by the conservation
-    // ceremony's own run, each on its own driven mutant, and they are
-    // recorded there rather than here.
-    entry(
-        "output-total-one-below-input",
-        G::ConsensusAnswersBeforeScript,
-        "a destination value one below its total leaves inputs exceeding outputs, refused bad-txns-in-ne-out before the explicit conservation fragment",
-    ),
-    entry(
-        "output-total-one-above-input",
-        G::ConsensusAnswersBeforeScript,
-        "a destination value one above its total leaves outputs exceeding inputs, refused bad-txns-in-ne-out before that same fragment",
-    ),
+    // ceremony's own run, and `output-total-one-below-input` and
+    // `output-total-one-above-input` by the owner-signing negative run —
+    // one lowered and one raised explicit value, each at its own receipt's
+    // value field so the two consensus refusals separate by range — each on
+    // its own driven mutant, recorded in `live_evidence` rather than here.
     entry(
         "amount-outside-semantic-domain",
         G::NoAdmittedShapeCarriesTheFault,
@@ -340,21 +335,16 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         G::TargetVerdictDoesNotSeparateTheRows,
         "its mutant draws bad-txns-in-ne-out at the change output's value commitment, the same words and field range private-ct-imbalance already drove, and the successor has no third confidential output whose distinct range would separate them",
     ),
-    entry(
-        "private-output-omitted",
-        G::ConsensusAnswersBeforeScript,
-        "deleting a created destination drops the output sum, refused bad-txns-in-ne-out before the covenant's cardinality clause runs",
-    ),
-    entry(
-        "hidden-private-u-output",
-        G::ConsensusAnswersBeforeScript,
-        "adding an undeclared protocol-asset output raises the output sum, refused bad-txns-in-ne-out before the cardinality clause",
-    ),
-    entry(
-        "omitted-source",
-        G::ConsensusAnswersBeforeScript,
-        "deleting a receipt input drops the input sum, refused bad-txns-in-ne-out before the covenant reads a single field",
-    ),
+    // The three structural conservation faults have LEFT: `private-output-
+    // omitted` (a receipt removed), `hidden-private-u-output` (an output
+    // added) and `omitted-source` (a receipt input removed) are driven to
+    // their consensus refusal on the owner-signing negative run. Each drops
+    // or raises a sum and draws `bad-txns-in-ne-out`, and because
+    // `changed_range` cannot localize a structural change past the output-
+    // count varint, the two output-cardinality rows separate by SHAPE — two
+    // inputs and one output against two and three — the "distinct
+    // transaction structure" the attributability rule admits; they are
+    // recorded in `live_evidence` rather than here.
     entry(
         "output-claimed-through-two-flows",
         G::NoAdmittedRepresentationCarriesTheField,

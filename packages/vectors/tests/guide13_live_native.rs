@@ -1270,7 +1270,48 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
     }
 
     // The run says in its own bytes what it did not establish.
-    assert!(rendered.contains("discharges_only_its_own_row true"));
+    assert!(rendered.contains("each_row_by_its_own_mutant true"));
+
+    // The seven consensus-conservation mutants were each built, submitted
+    // and answered, and each declared a DISTINCT field range so no two
+    // rows rest on one observation.
+    assert_consensus_mutants_separate(record);
+}
+
+/// The seven consensus-conservation mutants were each answered and each
+/// declared a distinct field range.
+///
+/// Split from the test body so the assertion the run rests on — that no
+/// two rows share one observation — is stated once and the test stays
+/// under the line bound.
+fn assert_consensus_mutants_separate(
+    record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
+) {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+    use vectors::live_owner_signing_negatives::ConsensusMutantObservation;
+    let consensus = record.consensus_mutants();
+    assert_eq!(consensus.len(), 7, "the seven consensus mutants were built");
+    assert!(
+        consensus.iter().all(|mutant| mutant.observed_layer()
+            == Some(ObservedOutcomeLayer::ConsensusRejectionBeforeScript)),
+        "a consensus mutant was not refused at consensus before script",
+    );
+    // The separating fact is the byte range together with the shape: the
+    // four field surgeries keep the control's shape and separate by range,
+    // the three structural surgeries separate by shape where the
+    // output-count varint defeats a localized range. The tuple is distinct
+    // across all seven, so no two rows rest on one observation.
+    let mut separators: Vec<((usize, usize), (usize, usize))> = consensus
+        .iter()
+        .map(ConsensusMutantObservation::separator)
+        .collect();
+    separators.sort_unstable();
+    separators.dedup();
+    assert_eq!(
+        separators.len(),
+        consensus.len(),
+        "two consensus mutants share a range-and-shape separator and do not separate",
+    );
 }
 
 /// One KEY-PATH spend attempt against a funded explicit constructor.

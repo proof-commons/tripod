@@ -16,7 +16,7 @@
 //! forms the owner message from it, and re-signs afresh. The re-signed
 //! mutant passes `OP_CHECKSIGVERIFY` and reaches the leaf's own clause.
 //!
-//! # The one row this ceremony drives, and why only it
+//! # The script-path row this ceremony drives
 //!
 //! `vault-control-entitlement-or-bare-u-output`. The coordinator leaf's
 //! `InspectOutputScriptPubKey` clause constrains the WITNESS VERSION of
@@ -31,9 +31,26 @@
 //! script-path class only where a covenant clause constrains the mutated
 //! field INDEPENDENT of the signature AND the consensus balance rule does
 //! not fire first. An asset or a single-output value surgery breaks the
-//! per-asset sum and is refused `bad-txns-in-ne-out` before the leaf runs;
-//! that refusal is a consensus verdict and not the row's script class, so
-//! those rows are not driven here.
+//! per-asset sum and is refused `bad-txns-in-ne-out` before the leaf runs.
+//!
+//! # The consensus rows this ceremony drives
+//!
+//! That same consensus verdict is itself an attributable observation when
+//! it separates by field, which is the `private-ct-imbalance` precedent.
+//! So beside the bare-u script mutant this ceremony stages SEVEN
+//! consensus-conservation mutants on the same signed control — one per §15
+//! row whose fault breaks the explicit per-asset sum: a wrong explicit
+//! asset, a blinded asset commitment with no surjection proof, a value one
+//! below and one above the input total, an omitted destination, an added
+//! hidden output, and an omitted source input. Each is cut from the signed
+//! control's OWN bytes and is NOT re-signed — the consensus balance check
+//! is queued before script verification, so a broken tally refuses the
+//! mutant before its stale signature is examined, the fact the conservation
+//! ceremony's proof-negatives already rest on. Each surgery breaks
+//! conservation in its own field, so its refusal separates from every
+//! sibling by a DISTINCT declared byte range — the two asset fields, the
+//! two value fields, and the three structural changes are seven distinct
+//! regions of one transaction — and no two rows rest on one observation.
 //!
 //! # Attribution is by mutated field, against a control on the same chain
 //!
@@ -65,7 +82,8 @@ use target_elements_conformance::protocol::{
     OperationCaseId, OperationSubject, TargetFundingSubject, TargetSubmissionSubject,
 };
 use transaction::bytes::{
-    AssetField, AssetId, InputWitness, Outpoint, TargetOutput, TargetTransaction, ValueField,
+    AssetField, AssetId, InputWitness, NonceField, Outpoint, OutputWitness, TargetOutput,
+    TargetTransaction, ValueField,
 };
 use transaction::live_abi::CandidateLiveTransferAbi;
 use transaction::live_census::{
@@ -136,6 +154,187 @@ pub const MUTANT_STEP: &str = "bare-u-output-mutant";
 
 /// The ceremony's own name for the control submission.
 pub const CONTROL_STEP: &str = "vault-control-entitlement-control";
+
+/// The value the added hidden output carries, in the protocol asset.
+///
+/// Any positive amount serves: it raises the protocol-asset output sum
+/// above the input sum, which is the conservation break the row names.
+const HIDDEN_OUTPUT_AMOUNT: u64 = 1_000;
+
+/// The output the two value-total surgeries and the two asset surgeries
+/// place their mutations at, chosen so each row earns a DISTINCT declared
+/// field range on the one explicit control.
+///
+/// The two asset surgeries sit at the two receipt outputs' asset fields,
+/// the two value surgeries at the two receipts' value fields — four
+/// distinct field regions on one transaction, the `private-ct-imbalance`
+/// discipline applied across the explicit successor. The structural
+/// surgeries change the shape and separate by that.
+const FIRST_RECEIPT: usize = 0;
+const SECOND_RECEIPT: usize = 1;
+
+/// The input the omitted-source surgery drops.
+const DROPPED_INPUT: usize = 1;
+
+/// One consensus-conservation surgery this ceremony stages on the signed
+/// explicit control, each breaking the explicit per-asset sum in its own
+/// way so the target answers `bad-txns-in-ne-out` (or a surjection
+/// verdict) at [`ObservedOutcomeLayer::ConsensusRejectionBeforeScript`]
+/// before any covenant clause runs.
+///
+/// The mutants carry the control's OWN signatures unchanged: the surgery
+/// is post-signature and the signature is not re-taken, because the
+/// consensus balance check is queued before script verification, so the
+/// tally is what refuses and a stale signature never gets examined — the
+/// same fact the conservation ceremony's proof-negatives rest on. Each is
+/// attributed by the byte range its mutation confined itself to in the
+/// WITNESSLESS serialization, measured rather than asserted, disjoint or
+/// at least distinct from every sibling's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConsensusSurgery {
+    /// Rewrite the first receipt's asset to a different explicit asset:
+    /// the protocol-asset output sum falls one receipt short.
+    WrongExplicitAsset,
+    /// Replace the second receipt's explicit asset with a blinded asset
+    /// commitment carrying no surjection proof: surjection fails.
+    ConfidentialAssetCommitment,
+    /// Lower the first receipt's explicit value by one: outputs fall one
+    /// below inputs.
+    OutputTotalOneBelowInput,
+    /// Raise the second receipt's explicit value by one: outputs rise one
+    /// above inputs.
+    OutputTotalOneAboveInput,
+    /// Delete the second receipt output entirely: the output sum drops.
+    PrivateOutputOmitted,
+    /// Append an undeclared protocol-asset output: the output sum rises.
+    HiddenPrivateUOutput,
+    /// Delete the second receipt input: the input sum drops.
+    OmittedSource,
+}
+
+/// Every consensus surgery, in the order the ceremony submits them.
+const CONSENSUS_SURGERIES: [ConsensusSurgery; 7] = [
+    ConsensusSurgery::WrongExplicitAsset,
+    ConsensusSurgery::ConfidentialAssetCommitment,
+    ConsensusSurgery::OutputTotalOneBelowInput,
+    ConsensusSurgery::OutputTotalOneAboveInput,
+    ConsensusSurgery::PrivateOutputOmitted,
+    ConsensusSurgery::HiddenPrivateUOutput,
+    ConsensusSurgery::OmittedSource,
+];
+
+impl ConsensusSurgery {
+    /// The §15 row this surgery drives, spelled as the safety matrix names
+    /// it.
+    const fn row(self) -> &'static str {
+        match self {
+            Self::WrongExplicitAsset => "wrong-explicit-asset",
+            Self::ConfidentialAssetCommitment => "confidential-asset-commitment",
+            Self::OutputTotalOneBelowInput => "output-total-one-below-input",
+            Self::OutputTotalOneAboveInput => "output-total-one-above-input",
+            Self::PrivateOutputOmitted => "private-output-omitted",
+            Self::HiddenPrivateUOutput => "hidden-private-u-output",
+            Self::OmittedSource => "omitted-source",
+        }
+    }
+
+    /// The ceremony's own name for this surgery's submission step.
+    fn step_name(self) -> String {
+        format!("consensus-{}", self.row())
+    }
+
+    /// Apply this surgery to the signed control, returning the mutant.
+    fn apply(
+        self,
+        control: &TargetTransaction,
+    ) -> Result<TargetTransaction, OwnerSigningNegativeRefusal> {
+        match self {
+            Self::WrongExplicitAsset => rewrite_output_asset(
+                control,
+                FIRST_RECEIPT,
+                AssetField::Explicit(AssetId::from_internal(RESERVE_ASSET)),
+            ),
+            Self::ConfidentialAssetCommitment => {
+                let asset = control
+                    .outputs()
+                    .get(SECOND_RECEIPT)
+                    .map(TargetOutput::asset)
+                    .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+                rewrite_output_asset(control, SECOND_RECEIPT, blinded_asset_of(asset))
+            }
+            Self::OutputTotalOneBelowInput => adjust_output_value(control, FIRST_RECEIPT, -1),
+            Self::OutputTotalOneAboveInput => adjust_output_value(control, SECOND_RECEIPT, 1),
+            Self::PrivateOutputOmitted => remove_output(control, SECOND_RECEIPT),
+            Self::HiddenPrivateUOutput => append_hidden_output(control),
+            Self::OmittedSource => remove_input(control, DROPPED_INPUT),
+        }
+    }
+}
+
+/// One consensus mutant, as this ceremony built, submitted and observed
+/// it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConsensusMutantObservation {
+    row: &'static str,
+    declared_field_range: (usize, usize),
+    input_count: usize,
+    output_count: usize,
+    mutant_bytes: Vec<u8>,
+    submitted_bytes: usize,
+    observed_layer: Option<ObservedOutcomeLayer>,
+    observed_detail: Option<String>,
+}
+
+impl ConsensusMutantObservation {
+    /// The §15 row this mutant drives.
+    #[must_use]
+    pub const fn row(&self) -> &'static str {
+        self.row
+    }
+
+    /// The half-open witnessless byte range the mutation confined itself
+    /// to, in the control's coordinates.
+    #[must_use]
+    pub const fn declared_field_range(&self) -> (usize, usize) {
+        self.declared_field_range
+    }
+
+    /// The mutant's transaction shape: its input and output counts. The
+    /// field surgeries keep the control's shape and separate by their byte
+    /// range; the structural surgeries change the shape, and it is the
+    /// shape that separates them where their byte ranges cannot be
+    /// localized past the output-count varint.
+    #[must_use]
+    pub const fn shape(&self) -> (usize, usize) {
+        (self.input_count, self.output_count)
+    }
+
+    /// The separating fact this mutant declares: its byte range together
+    /// with its shape. Distinct across every driven row, so no two rows
+    /// rest on one observation.
+    #[must_use]
+    pub const fn separator(&self) -> ((usize, usize), (usize, usize)) {
+        (self.declared_field_range, self.shape())
+    }
+
+    /// How many bytes this mutant handed the node.
+    #[must_use]
+    pub const fn submitted_bytes(&self) -> usize {
+        self.submitted_bytes
+    }
+
+    /// The layer the target refused this mutant at, where it was observed.
+    #[must_use]
+    pub const fn observed_layer(&self) -> Option<ObservedOutcomeLayer> {
+        self.observed_layer
+    }
+
+    /// The node's own words, where it gave any.
+    #[must_use]
+    pub fn observed_detail(&self) -> Option<&str> {
+        self.observed_detail.as_deref()
+    }
+}
 
 /// What this ceremony refuses, before any node is asked.
 ///
@@ -282,11 +481,18 @@ pub struct OwnerSigningNegativeRecord {
     relinked: bool,
     coins: Vec<ObservedFundedCoin>,
     mutant: Option<MutantObservation>,
+    consensus_mutants: Vec<ConsensusMutantObservation>,
     control: Option<ControlObservation>,
     refusal: Option<OwnerSigningNegativeRefusal>,
 }
 
 impl OwnerSigningNegativeRecord {
+    /// The consensus-conservation mutants, in the order they ran.
+    #[must_use]
+    pub fn consensus_mutants(&self) -> &[ConsensusMutantObservation] {
+        &self.consensus_mutants
+    }
+
     /// The asset identity the target chose.
     #[must_use]
     pub fn issued_asset(&self) -> Option<&str> {
@@ -328,13 +534,14 @@ impl OwnerSigningNegativeRecord {
     #[must_use]
     pub fn non_claims() -> Vec<&'static str> {
         vec![
-            "establishes nothing about the proof-bearing lane: this mutant is an explicit \
-             candidate and the covenant it reaches is the explicit destination's",
-            "discharges no row but its own: the mutant drives \
-             vault-control-entitlement-or-bare-u-output and no other, each other owner-signing \
-             row needing its own surgery",
-            "attributes no consensus refusal to a script clause: a mutant refused \
-             bad-txns-in-ne-out reached no leaf and is not recorded as a script-path verdict",
+            "establishes nothing about the proof-bearing lane: every candidate here is an \
+             explicit one and the covenant it reaches is the explicit destination's",
+            "attributes no consensus mutant to a script clause: a mutant refused \
+             bad-txns-in-ne-out reached no leaf and is recorded as a consensus verdict, not a \
+             script-path one — only the bare-u mutant is a script-path verdict",
+            "discharges each row by its OWN mutant: the bare-u program surgery is the script-path \
+             row's, and each consensus surgery breaks conservation in its own field so its refusal \
+             separates by a distinct declared range rather than sharing one observation",
             "claims nothing about any deployment but the one this run created and destroyed",
         ]
     }
@@ -347,8 +554,12 @@ enum Stage {
     Issue,
     /// Pay the issued asset to the re-linked explicit constructor.
     Fund,
-    /// Submit the mutant, first, so the control's coins stay unspent.
+    /// Submit the bare-u script mutant, first, so the control's coins stay
+    /// unspent.
     Mutant,
+    /// Submit the consensus-conservation mutant at this index, before the
+    /// control so its coins stay unspent for the acceptance.
+    ConsensusMutant(usize),
     /// Submit the unmutated control, last, which is what consumes them.
     Control,
     /// Nothing further.
@@ -760,18 +971,44 @@ impl OwnerSigningNegativePlanner {
             accepted_txid: None,
             reverification: None,
         });
+        // The consensus-conservation mutants are cut from the SIGNED
+        // control's own bytes and NOT re-signed: the consensus balance
+        // check is queued before script verification, so a broken tally
+        // refuses the mutant before its stale signature is examined. Each
+        // is confined to its own witnessless byte range, measured here.
+        self.record.consensus_mutants = build_consensus_mutants(&control_bytes)?;
+
         // The control's bytes are stashed on the control record's message
         // check; the bytes themselves are rebuilt for the control step so
         // the ceremony holds one pending submission at a time.
         Ok(mutant_bytes)
     }
 
-    /// Record what the target did with the mutant.
+    /// Record what the target did with the bare-u mutant.
     fn settle_mutant(&mut self, response: &NativeOperationResponse) {
         if let Some(mutant) = self.record.mutant.as_mut() {
             mutant.observed_layer = Some(response.observed_layer);
             mutant.observed_detail.clone_from(&response.observed_detail);
         }
+    }
+
+    /// Record what the target did with one consensus mutant.
+    fn settle_consensus_mutant(&mut self, index: usize, response: &NativeOperationResponse) {
+        if let Some(mutant) = self.record.consensus_mutants.get_mut(index) {
+            mutant.observed_layer = Some(response.observed_layer);
+            mutant.observed_detail.clone_from(&response.observed_detail);
+        }
+    }
+
+    /// The submission step for one consensus mutant.
+    fn consensus_mutant_step(&self, index: usize) -> Option<OperationStep> {
+        let mutant = self.record.consensus_mutants.get(index)?;
+        Some(OperationStep::new(
+            &CONSENSUS_SURGERIES[index].step_name(),
+            OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                transaction_bytes: mutant.mutant_bytes.clone(),
+            })),
+        ))
     }
 
     /// Rebuild and stage the control for submission.
@@ -819,7 +1056,15 @@ impl TargetOperationPlanner for OwnerSigningNegativePlanner {
                 }
                 Stage::Mutant => {
                     self.settle_mutant(response);
-                    self.stage = Stage::Control;
+                    self.stage = Stage::ConsensusMutant(0);
+                }
+                Stage::ConsensusMutant(index) => {
+                    self.settle_consensus_mutant(index, response);
+                    self.stage = if index + 1 < self.record.consensus_mutants.len() {
+                        Stage::ConsensusMutant(index + 1)
+                    } else {
+                        Stage::Control
+                    };
                 }
                 Stage::Control => {
                     let submitted = self
@@ -851,6 +1096,10 @@ impl TargetOperationPlanner for OwnerSigningNegativePlanner {
                 }
                 Err(refusal) => Err(self.refuse(refusal)),
             },
+            Stage::ConsensusMutant(index) => self.consensus_mutant_step(index).map_or_else(
+                || Err(self.refuse(OwnerSigningNegativeRefusal::CandidateNotConstructible)),
+                |step| Ok(Some(step)),
+            ),
             Stage::Control => match self.stage_control() {
                 Ok(bytes) => {
                     self.pending = Some(PendingSubmission {
@@ -905,6 +1154,211 @@ fn rewrite_output_program(
         candidate.output_witnesses().to_vec(),
     )
     .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)
+}
+
+/// One candidate with a single output's asset rewritten, value, nonce and
+/// program held fixed. The output witness is left as it was: an explicit
+/// output carries none, and a blinded asset with no surjection proof is
+/// exactly the surjection break `confidential-asset-commitment` names.
+fn rewrite_output_asset(
+    candidate: &TargetTransaction,
+    output: usize,
+    asset: AssetField,
+) -> Result<TargetTransaction, OwnerSigningNegativeRefusal> {
+    let mut outputs = candidate.outputs().to_vec();
+    let target = outputs
+        .get_mut(output)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    *target = TargetOutput::new(
+        asset,
+        target.value(),
+        target.nonce(),
+        target.program().to_vec(),
+    );
+    rebuild(
+        candidate,
+        candidate.inputs().to_vec(),
+        outputs,
+        candidate.witnesses().to_vec(),
+        candidate.output_witnesses().to_vec(),
+    )
+}
+
+/// One candidate with a single explicit output's value shifted by a signed
+/// delta, asset, nonce and program held fixed.
+fn adjust_output_value(
+    candidate: &TargetTransaction,
+    output: usize,
+    delta: i64,
+) -> Result<TargetTransaction, OwnerSigningNegativeRefusal> {
+    let mut outputs = candidate.outputs().to_vec();
+    let target = outputs
+        .get_mut(output)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let ValueField::Explicit(amount) = target.value() else {
+        return Err(OwnerSigningNegativeRefusal::CandidateNotConstructible);
+    };
+    let shifted = amount
+        .checked_add_signed(delta)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    *target = TargetOutput::new(
+        target.asset(),
+        ValueField::Explicit(shifted),
+        target.nonce(),
+        target.program().to_vec(),
+    );
+    rebuild(
+        candidate,
+        candidate.inputs().to_vec(),
+        outputs,
+        candidate.witnesses().to_vec(),
+        candidate.output_witnesses().to_vec(),
+    )
+}
+
+/// One candidate with a single output, and its parallel output witness,
+/// deleted.
+fn remove_output(
+    candidate: &TargetTransaction,
+    output: usize,
+) -> Result<TargetTransaction, OwnerSigningNegativeRefusal> {
+    let mut outputs = candidate.outputs().to_vec();
+    let mut output_witnesses = candidate.output_witnesses().to_vec();
+    if output >= outputs.len() {
+        return Err(OwnerSigningNegativeRefusal::CandidateNotConstructible);
+    }
+    outputs.remove(output);
+    if output < output_witnesses.len() {
+        output_witnesses.remove(output);
+    }
+    rebuild(
+        candidate,
+        candidate.inputs().to_vec(),
+        outputs,
+        candidate.witnesses().to_vec(),
+        output_witnesses,
+    )
+}
+
+/// One candidate with an undeclared protocol-asset output appended, taking
+/// the first receipt's asset and program so it is a well-formed explicit
+/// output whose only fault is that it raises the output sum.
+fn append_hidden_output(
+    candidate: &TargetTransaction,
+) -> Result<TargetTransaction, OwnerSigningNegativeRefusal> {
+    let template = candidate
+        .outputs()
+        .get(FIRST_RECEIPT)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let hidden = TargetOutput::new(
+        template.asset(),
+        ValueField::Explicit(HIDDEN_OUTPUT_AMOUNT),
+        NonceField::Null,
+        template.program().to_vec(),
+    );
+    let mut outputs = candidate.outputs().to_vec();
+    outputs.push(hidden);
+    let mut output_witnesses = candidate.output_witnesses().to_vec();
+    output_witnesses.push(OutputWitness::new(Vec::new(), Vec::new()));
+    rebuild(
+        candidate,
+        candidate.inputs().to_vec(),
+        outputs,
+        candidate.witnesses().to_vec(),
+        output_witnesses,
+    )
+}
+
+/// One candidate with a single input, and its parallel input witness,
+/// deleted.
+fn remove_input(
+    candidate: &TargetTransaction,
+    input: usize,
+) -> Result<TargetTransaction, OwnerSigningNegativeRefusal> {
+    let mut inputs = candidate.inputs().to_vec();
+    let mut witnesses = candidate.witnesses().to_vec();
+    if input >= inputs.len() {
+        return Err(OwnerSigningNegativeRefusal::CandidateNotConstructible);
+    }
+    inputs.remove(input);
+    if input < witnesses.len() {
+        witnesses.remove(input);
+    }
+    rebuild(
+        candidate,
+        inputs,
+        candidate.outputs().to_vec(),
+        witnesses,
+        candidate.output_witnesses().to_vec(),
+    )
+}
+
+/// A blinded asset commitment carrying the explicit asset's bytes under a
+/// blinded prefix, so the field is a well-formed 33-byte commitment with
+/// no surjection proof behind it.
+fn blinded_asset_of(asset: AssetField) -> AssetField {
+    let mut commitment = [0x0a_u8; transaction::bytes::COMMITMENT_BYTES];
+    if let AssetField::Explicit(id) = asset {
+        commitment[1..].copy_from_slice(id.internal());
+    }
+    AssetField::Commitment(commitment)
+}
+
+/// Rebuild a candidate from its version and lock time with new inputs,
+/// outputs, and witnesses.
+fn rebuild(
+    candidate: &TargetTransaction,
+    inputs: Vec<transaction::bytes::TargetInput>,
+    outputs: Vec<TargetOutput>,
+    witnesses: Vec<InputWitness>,
+    output_witnesses: Vec<OutputWitness>,
+) -> Result<TargetTransaction, OwnerSigningNegativeRefusal> {
+    TargetTransaction::with_output_witnesses(
+        candidate.version(),
+        inputs,
+        outputs,
+        candidate.lock_time(),
+        witnesses,
+        output_witnesses,
+    )
+    .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)
+}
+
+/// Build every consensus-conservation mutant from the signed control's
+/// own bytes.
+///
+/// Each surgery is applied to the decoded signed control, the mutant
+/// encoded WITH its stale witness for submission, and its declared field
+/// range measured over the witnessless serialization — where the surgery
+/// lives and the stale signature does not — by diffing against the
+/// control's own witnessless bytes. The signatures are deliberately not
+/// re-taken: the target's consensus balance check refuses each mutant
+/// before any script or signature runs, so a valid signature would add
+/// nothing and re-signing would obscure that the tally is what refused.
+fn build_consensus_mutants(
+    control_bytes: &[u8],
+) -> Result<Vec<ConsensusMutantObservation>, OwnerSigningNegativeRefusal> {
+    let control = TargetTransaction::decode(control_bytes)
+        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let control_witnessless = control.encode_without_witness();
+
+    let mut mutants = Vec::with_capacity(CONSENSUS_SURGERIES.len());
+    for surgery in CONSENSUS_SURGERIES {
+        let mutant = surgery.apply(&control)?;
+        let mutant_bytes = mutant.encode();
+        let declared = changed_range(&control_witnessless, &mutant.encode_without_witness());
+        mutants.push(ConsensusMutantObservation {
+            row: surgery.row(),
+            declared_field_range: declared,
+            input_count: mutant.inputs().len(),
+            output_count: mutant.outputs().len(),
+            submitted_bytes: mutant_bytes.len(),
+            mutant_bytes,
+            observed_layer: None,
+            observed_detail: None,
+        });
+    }
+    Ok(mutants)
 }
 
 /// The witnessless serialization of a candidate that decoded from wire
@@ -976,6 +1430,22 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
         lines.push("mutant none".to_owned());
     }
 
+    for mutant in record.consensus_mutants() {
+        lines.push(format!(
+            "consensus_mutant row {} declared_range {}..{} shape {}in-{}out submitted_bytes {} layer {} detail {}",
+            mutant.row(),
+            mutant.declared_field_range().0,
+            mutant.declared_field_range().1,
+            mutant.shape().0,
+            mutant.shape().1,
+            mutant.submitted_bytes(),
+            mutant
+                .observed_layer()
+                .map_or_else(|| "none".to_owned(), |layer| format!("{layer:?}")),
+            mutant.observed_detail().unwrap_or("none"),
+        ));
+    }
+
     if let Some(control) = record.control() {
         lines.push(format!(
             "control submitted_bytes {} message {} layer {} txid {} detail {}",
@@ -1013,7 +1483,7 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
     for claim in OwnerSigningNegativeRecord::non_claims() {
         lines.push(format!("non_claim {claim}"));
     }
-    lines.push("discharges_only_its_own_row true".to_owned());
+    lines.push("each_row_by_its_own_mutant true".to_owned());
 
     let mut out = lines.join("\n");
     out.push('\n');
@@ -1052,11 +1522,63 @@ pub mod run_of_record {
     /// within: the mutated destination's program.
     pub const DECLARED_FIELD_RANGE: (usize, usize) = (132, 167);
 
-    /// How many bytes the mutant handed the node.
+    /// How many bytes the bare-u mutant handed the node.
     pub const MUTANT_SUBMITTED_BYTES: usize = 1152;
 
+    /// What the target said to every consensus-conservation mutant,
+    /// verbatim, at [`super::ObservedOutcomeLayer::ConsensusRejectionBeforeScript`].
+    ///
+    /// The seven mutants all break the explicit per-asset sum, and the
+    /// target folds each break into the one balance verdict — the internal
+    /// tally and surjection codes never leave `VerifyAmounts` — so the
+    /// WORDS are identical and it is the declared field range, or the
+    /// transaction shape for the structural rows, that tells the rows
+    /// apart. The same discipline the conservation ceremony's
+    /// proof-negatives rest on, on the explicit successor.
+    pub const CONSENSUS_MUTANT_REJECT_DETAIL: &str = "bad-txns-in-ne-out";
+
+    /// The witnessless field range and 2-in-2-out shape the
+    /// `wrong-explicit-asset` mutant declared: the first receipt's asset
+    /// identifier, rewritten to a different explicit asset.
+    pub const WRONG_EXPLICIT_ASSET_FIELD_RANGE: (usize, usize) = (90, 122);
+
+    /// The `confidential-asset-commitment` mutant's field range: the second
+    /// receipt's asset explicitness prefix, flipped from explicit to a
+    /// blinded commitment with no surjection proof.
+    pub const CONFIDENTIAL_ASSET_COMMITMENT_FIELD_RANGE: (usize, usize) = (167, 168);
+
+    /// The `output-total-one-below-input` mutant's field range: the first
+    /// receipt's explicit value, lowered by one.
+    pub const OUTPUT_TOTAL_ONE_BELOW_FIELD_RANGE: (usize, usize) = (130, 131);
+
+    /// The `output-total-one-above-input` mutant's field range: the second
+    /// receipt's explicit value, raised by one.
+    pub const OUTPUT_TOTAL_ONE_ABOVE_FIELD_RANGE: (usize, usize) = (208, 209);
+
+    /// The structural range the two output-cardinality mutants share, and
+    /// the shapes that separate them.
+    ///
+    /// `changed_range` cannot localize an insertion or a deletion past the
+    /// output-count varint, so `private-output-omitted` (a receipt removed)
+    /// and `hidden-private-u-output` (an output added) both declare this
+    /// range on the 2-in-2-out control. It is the SHAPE that separates
+    /// them — the removal leaves two inputs and ONE output, the addition
+    /// two inputs and THREE — which is the "distinct transaction structure"
+    /// the attributability rule admits beside a distinct field range.
+    pub const OUTPUT_CARDINALITY_FIELD_RANGE: (usize, usize) = (88, 245);
+    /// `private-output-omitted`'s shape: two inputs, one output.
+    pub const PRIVATE_OUTPUT_OMITTED_SHAPE: (usize, usize) = (2, 1);
+    /// `hidden-private-u-output`'s shape: two inputs, three outputs.
+    pub const HIDDEN_PRIVATE_U_OUTPUT_SHAPE: (usize, usize) = (2, 3);
+
+    /// The `omitted-source` mutant's field range and one-input shape: a
+    /// receipt input deleted, which drops the input sum.
+    pub const OMITTED_SOURCE_FIELD_RANGE: (usize, usize) = (5, 80);
+    /// `omitted-source`'s shape: one input, two outputs.
+    pub const OMITTED_SOURCE_SHAPE: (usize, usize) = (1, 2);
+
     /// The run's wall time, in seconds.
-    pub const WALL_SECONDS: f64 = 8.2;
+    pub const WALL_SECONDS: f64 = 8.3;
 }
 
 #[cfg(test)]
@@ -1078,5 +1600,41 @@ mod tests {
         assert_eq!(BARE_U_PROGRAM[0], 0x00, "the version byte is not zero");
         assert_eq!(BARE_U_PROGRAM[1], 0x14, "the push is not twenty bytes");
         assert_eq!(BARE_U_PROGRAM.len(), 22);
+    }
+
+    #[test]
+    fn the_seven_consensus_rows_declare_distinct_separators() {
+        // The run of record's own figures, checked to be pairwise distinct
+        // as (range, shape) pairs — the fact that makes the seven rows
+        // separable when the target draws one identical verdict for all of
+        // them. The four field surgeries keep the 2-in-2-out shape and
+        // separate by range; the three structural surgeries change the
+        // shape, which is what separates the two output-cardinality mutants
+        // that share the un-localizable structural range.
+        use super::run_of_record as run;
+        let field = |range| (range, (2_usize, 2_usize));
+        let separators = [
+            field(run::WRONG_EXPLICIT_ASSET_FIELD_RANGE),
+            field(run::CONFIDENTIAL_ASSET_COMMITMENT_FIELD_RANGE),
+            field(run::OUTPUT_TOTAL_ONE_BELOW_FIELD_RANGE),
+            field(run::OUTPUT_TOTAL_ONE_ABOVE_FIELD_RANGE),
+            (
+                run::OUTPUT_CARDINALITY_FIELD_RANGE,
+                run::PRIVATE_OUTPUT_OMITTED_SHAPE,
+            ),
+            (
+                run::OUTPUT_CARDINALITY_FIELD_RANGE,
+                run::HIDDEN_PRIVATE_U_OUTPUT_SHAPE,
+            ),
+            (run::OMITTED_SOURCE_FIELD_RANGE, run::OMITTED_SOURCE_SHAPE),
+        ];
+        let mut seen = std::collections::BTreeSet::new();
+        for separator in separators {
+            assert!(
+                seen.insert(separator),
+                "two consensus rows share the separator {separator:?}",
+            );
+        }
+        assert_eq!(seen.len(), 7, "the register drives seven consensus rows");
     }
 }
