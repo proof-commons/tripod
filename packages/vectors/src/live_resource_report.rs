@@ -863,7 +863,8 @@ mod tests {
         // tell which one they have from the first line.
         let projection = target();
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
-        let safety = assemble_live_safety_report(&plan, projection.clone());
+        let safety = assemble_live_safety_report(&plan, projection.clone())
+            .expect("the safety report assembles");
         let safety = validate_live_safety_report(safety, &plan, &projection)
             .expect("the safety report validates");
 

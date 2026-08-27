@@ -1400,7 +1400,8 @@ mod tests {
 
         let target = projection();
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
-        let safety = assemble_live_safety_report(&plan, target.clone());
+        let safety = assemble_live_safety_report(&plan, target.clone())
+            .expect("the safety report assembles");
         let safety = validate_live_safety_report(safety, &plan, &target).expect("validates");
         let safety = render_live_safety_report(&safety);
 
