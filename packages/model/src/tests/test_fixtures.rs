@@ -105,6 +105,7 @@ pub fn chain_view_for_history(world: &World) -> ValidatedChainView {
         TEST_NETWORK_ID,
         TEST_GENESIS_ID,
         test_manifest_hash(),
+        genesis_height,
         checkpoint_height,
         checkpoint_hash,
         ATTESTATION_SCHEMA_VERSION,

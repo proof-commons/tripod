@@ -385,6 +385,7 @@ fn indexer_excludes_events_after_checkpoint() {
         test_fixtures::TEST_GENESIS_ID,
         test_fixtures::test_manifest_hash(),
         genesis_height,
+        genesis_height,
         test_fixtures::block_hash(u8::try_from(genesis_height % 256).unwrap()),
         ATTESTATION_SCHEMA_VERSION,
         vec![CanonicalBlock {
@@ -462,6 +463,7 @@ fn invalid_semantic_context_is_rejected_at_chain_view_construction() {
             network_id,
             genesis_id,
             manifest_hash,
+            1,
             1,
             test_fixtures::block_hash(1),
             ATTESTATION_SCHEMA_VERSION,

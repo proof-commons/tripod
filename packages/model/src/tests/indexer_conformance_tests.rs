@@ -524,6 +524,7 @@ fn checkpoint_hash_mismatch_is_rejected() {
             TEST_GENESIS_ID,
             test_manifest_hash(),
             0,
+            0,
             block_hash(99),
             ATTESTATION_SCHEMA_VERSION,
             blocks,
@@ -539,6 +540,7 @@ fn noncontiguous_chain_view_is_rejected() {
             TEST_NETWORK_ID,
             TEST_GENESIS_ID,
             test_manifest_hash(),
+            0,
             2,
             block_hash(2),
             ATTESTATION_SCHEMA_VERSION,
@@ -566,6 +568,7 @@ fn parent_hash_mismatch_is_rejected() {
             TEST_NETWORK_ID,
             TEST_GENESIS_ID,
             test_manifest_hash(),
+            0,
             1,
             block_hash(1),
             ATTESTATION_SCHEMA_VERSION,
@@ -593,6 +596,7 @@ fn post_checkpoint_block_is_rejected() {
             TEST_NETWORK_ID,
             TEST_GENESIS_ID,
             test_manifest_hash(),
+            0,
             1,
             block_hash(1),
             ATTESTATION_SCHEMA_VERSION,
@@ -626,6 +630,7 @@ fn realization_genesis_anchor_with_parent_is_rejected() {
             TEST_GENESIS_ID,
             test_manifest_hash(),
             0,
+            0,
             block_hash(0),
             ATTESTATION_SCHEMA_VERSION,
             vec![CanonicalBlock {
@@ -646,6 +651,7 @@ fn checkpoint_genesis_anchor_with_parent_is_rejected() {
             TEST_GENESIS_ID,
             test_manifest_hash(),
             5,
+            5,
             block_hash(5),
             ATTESTATION_SCHEMA_VERSION,
             vec![CanonicalBlock {
@@ -665,6 +671,7 @@ fn non_first_block_without_parent_is_rejected() {
             TEST_NETWORK_ID,
             TEST_GENESIS_ID,
             test_manifest_hash(),
+            0,
             1,
             block_hash(1),
             ATTESTATION_SCHEMA_VERSION,
@@ -686,12 +693,82 @@ fn non_first_block_without_parent_is_rejected() {
 }
 
 #[test]
+fn anchor_above_checkpoint_is_a_checkpoint_fault() {
+    assert_eq!(
+        ValidatedChainView::new(
+            TEST_NETWORK_ID,
+            TEST_GENESIS_ID,
+            test_manifest_hash(),
+            2,
+            1,
+            block_hash(1),
+            ATTESTATION_SCHEMA_VERSION,
+            vec![CanonicalBlock {
+                height: 1,
+                hash: block_hash(1),
+                parent_hash: None,
+            }],
+        ),
+        Err(Guard::WrongCheckpoint),
+    );
+}
+
+#[test]
+fn first_retained_block_must_equal_the_anchor() {
+    assert_eq!(
+        ValidatedChainView::new(
+            TEST_NETWORK_ID,
+            TEST_GENESIS_ID,
+            test_manifest_hash(),
+            1,
+            1,
+            block_hash(1),
+            ATTESTATION_SCHEMA_VERSION,
+            vec![
+                CanonicalBlock {
+                    height: 0,
+                    hash: block_hash(0),
+                    parent_hash: None,
+                },
+                CanonicalBlock {
+                    height: 1,
+                    hash: block_hash(1),
+                    parent_hash: Some(block_hash(0)),
+                },
+            ],
+        ),
+        Err(Guard::HistoryOrder),
+    );
+}
+
+#[test]
+fn valid_anchored_prefix_constructs_and_indexes() {
+    let world = test_fixtures::world();
+    let chain = chain_view_for_history(&world);
+    let anchor_height = world.history.genesis.order.height;
+
+    assert_eq!(chain.validate_prefix_from(anchor_height), Ok(()));
+    assert!(
+        ReferenceIndexer::from_assumed_kernel_history(&world.history, &chain, [0_u8; 32]).is_ok()
+    );
+}
+
+#[test]
+fn consumer_anchor_must_equal_the_declared_anchor() {
+    let world = test_fixtures::world();
+    let chain = chain_view_for_history(&world);
+
+    assert_eq!(chain.validate_prefix_from(1), Err(Guard::HistoryOrder));
+}
+
+#[test]
 fn unsupported_attestation_schema_is_rejected() {
     assert_eq!(
         ValidatedChainView::new(
             TEST_NETWORK_ID,
             TEST_GENESIS_ID,
             test_manifest_hash(),
+            0,
             0,
             block_hash(0),
             ATTESTATION_SCHEMA_VERSION + 1,
