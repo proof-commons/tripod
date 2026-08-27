@@ -76,30 +76,63 @@ pub enum NegativeHalfGap {
     /// A row here needs no new capability, no ruling and no target
     /// change — only a case added to a ceremony that already runs.
     MutantBuilderOwed,
+    /// The safe successor this ceremony emits does not carry the structure
+    /// the row mutates, so reaching the fault needs a structurally
+    /// different transaction.
+    ///
+    /// Work rather than a wall, but work larger than a case added to a
+    /// ceremony that already runs: the row's fault lives in a shape the
+    /// demonstration successor has none of — a facet the safe constructor
+    /// never emits (an issuance on an input, a destruction, a root effect,
+    /// a specialized-event projection, a transition certificate to omit),
+    /// the sponsored form this sponsorless ceremony does not build, or an
+    /// added offsetting input-and-output pair the fixed two-in two-out
+    /// shape does not carry. The owner-signing route re-signs whatever
+    /// bytes it is handed, so it would carry such a candidate past the
+    /// signature gate — but the candidate has to be BUILT first, and
+    /// building it is a different ceremony rather than a mutation of this
+    /// one.
+    FacetNeedsADifferentTransaction,
     /// Re-signing over the mutated bytes does not carry the row to its
-    /// script class.
+    /// script class. HISTORICAL, and now VACATED.
     ///
-    /// The member's name is HISTORICAL. What it once said was absent — a
-    /// way to produce a valid owner signature over rebuilt bytes — is now
-    /// built and used: `OwnerSigningCensus::over_foreign_bytes_for_negative_evidence`
-    /// signs a mutant over its own census, and one row LEFT this gap
-    /// through it, `vault-control-entitlement-or-bare-u-output`, driven by
-    /// a program surgery that reached the coordinator leaf's
-    /// `InspectOutputScriptPubKey` clause and was refused there.
-    ///
-    /// The rows still here are the ones that route does not rescue. A
-    /// re-signed mutant AUTHORIZES its own outputs, so the route carries a
-    /// row to its script class only where a covenant clause constrains the
-    /// mutated field INDEPENDENT of the signature and the consensus balance
-    /// rule does not answer first. That leaves three families, each owing
-    /// its own native determination this wave did not make: surgeries that
-    /// break conservation (asset, value, an omitted or an added output),
-    /// whose refusal may be a consensus verdict rather than the row's
-    /// script class; facets the safe constructor never emits (issuance,
-    /// destruction, root effects, specialized events), which need a
-    /// structurally different transaction; and rows whose field is derived
-    /// from the shape with no independent covenant clause to refuse it.
+    /// The name once said a component was absent — a way to produce a valid
+    /// owner signature over rebuilt bytes. That component is built and
+    /// used: `OwnerSigningCensus::over_foreign_bytes_for_negative_evidence`
+    /// signs a mutant over its own census, and
+    /// `vault-control-entitlement-or-bare-u-output` left through it on the
+    /// coordinator leaf's `InspectOutputScriptPubKey` version clause. Every
+    /// OTHER row that carried this member has since had its native
+    /// determination made and been retyped to its true gap: the route
+    /// rescues no further row to a NOVEL script class, because the only
+    /// covenant clause a conservation-preserving surgery reaches is the
+    /// version clause that row already took — the destination closure
+    /// checks the output's asset and program VERSION and then DROPS the
+    /// payload, so a conservation-preserving payload substitute is accepted
+    /// rather than refused. The rows moved to
+    /// [`Self::ConsensusAnswersBeforeScript`],
+    /// [`Self::FacetNeedsADifferentTransaction`],
+    /// [`Self::NoIndependentCovenantClause`],
+    /// [`Self::NoAdmittedShapeCarriesTheFault`] and
+    /// [`Self::NoAdmittedRepresentationCarriesTheField`]. No row carries
+    /// this member now, and it is kept only as provenance.
     OwnerSigningOverForeignBytesAbsent,
+    /// Consensus answers the mutant before the covenant's own clause runs.
+    ///
+    /// The row's mutation is stageable on the explicit successor as a byte
+    /// surgery, and the re-signed mutant passes the signature gate — but
+    /// the mutation breaks the explicit per-asset sum (an asset changed, a
+    /// value moved off its total, an output added or removed, an input
+    /// removed), and the target checks that balance at CONSENSUS before it
+    /// runs any script. So the refusal a run produces is `bad-txns-in-ne-out`
+    /// or a proof verdict, not the row's declared SCRIPT class, and the
+    /// covenant's own clause for the same field — the destination closure's
+    /// asset check, the explicit conservation fragment — never gets to run.
+    /// This is the wall for the SCRIPT class specifically: a drive to the
+    /// CONSENSUS verdict is possible where a distinct output earns a
+    /// separating field range, which is the `private-ct-imbalance`
+    /// precedent.
+    ConsensusAnswersBeforeScript,
     /// The explicit lane's witness mutation reaches item zero only.
     ///
     /// The staged mutation replaces the signature payload and nothing
@@ -121,6 +154,18 @@ pub enum NegativeHalfGap {
     /// the FIELD is the thing that is not there. "Malformed" presupposes
     /// a well-formed original, and there is none to malform.
     NoAdmittedRepresentationCarriesTheField,
+    /// The mutated field is derived from the shape, with no covenant clause
+    /// constraining it independent of the owner signature.
+    ///
+    /// Distinct from the two structural-absence members above: the field is
+    /// present and the shape is admitted, but the covenant carries no
+    /// clause that reads THIS field and refuses it on its own — a
+    /// position's role (a fee-or-sponsor u, an unclassified u) is fixed by
+    /// where it sits in the shape, not by a value a clause inspects. A
+    /// re-signed mutant authorizes its own outputs, so with no independent
+    /// clause to refuse the field the row's own observation is not
+    /// producible on this deployment at all.
+    NoIndependentCovenantClause,
     /// The row's own typing is in question and a ruling is owed.
     ///
     /// The row may be mis-typed in polarity, in boundary, or in the
@@ -237,23 +282,23 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // its three siblings on the input recognition's own refusal.
     entry(
         "wrong-explicit-asset",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "output assembly writes the protocol asset unconditionally, with no field to state another",
+        G::ConsensusAnswersBeforeScript,
+        "rewriting a destination's asset unbalances the explicit per-asset sum, refused bad-txns-in-ne-out before the destination closure's asset clause runs",
     ),
     entry(
         "confidential-asset-commitment",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "the asset field is explicit under both plans and no request field admits a commitment",
+        G::ConsensusAnswersBeforeScript,
+        "replacing an explicit asset with a commitment fails surjection at consensus before the covenant's explicit-asset clause is reached",
     ),
     entry(
         "unclassified-u",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "every emitted position carries a derived role, so an unclassified one needs raw assembly",
+        G::NoIndependentCovenantClause,
+        "a position's role is fixed by where it sits in the shape, and no covenant clause reads a classification field to refuse an unclassified one",
     ),
     entry(
         "sponsor-or-fee-role-carrying-u",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "the fee position is fixed by the shape and refused first-party when declared elsewhere",
+        G::NoIndependentCovenantClause,
+        "the fee position is fixed by the shape and no covenant clause constrains a u's fee-or-sponsor role independent of the signature",
     ),
     entry(
         "key-path-escape",
@@ -272,13 +317,13 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // recorded there rather than here.
     entry(
         "output-total-one-below-input",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "the request admits the wrong total and the constructor closes conservation before bytes",
+        G::ConsensusAnswersBeforeScript,
+        "a destination value one below its total leaves inputs exceeding outputs, refused bad-txns-in-ne-out before the explicit conservation fragment",
     ),
     entry(
         "output-total-one-above-input",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "the same closure refuses it, and editing the finalized amount invalidates the signature",
+        G::ConsensusAnswersBeforeScript,
+        "a destination value one above its total leaves outputs exceeding inputs, refused bad-txns-in-ne-out before that same fragment",
     ),
     entry(
         "amount-outside-semantic-domain",
@@ -297,43 +342,43 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     ),
     entry(
         "private-output-omitted",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "omitting a created output after signing leaves the signature over outputs that are gone",
+        G::ConsensusAnswersBeforeScript,
+        "deleting a created destination drops the output sum, refused bad-txns-in-ne-out before the covenant's cardinality clause runs",
     ),
     entry(
         "hidden-private-u-output",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "no request field adds an undeclared protocol-asset output to a finalized candidate",
+        G::ConsensusAnswersBeforeScript,
+        "adding an undeclared protocol-asset output raises the output sum, refused bad-txns-in-ne-out before the cardinality clause",
     ),
     entry(
         "omitted-source",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "the canonical partition is derived from the request, so omitting a source needs raw bytes",
+        G::ConsensusAnswersBeforeScript,
+        "deleting a receipt input drops the input sum, refused bad-txns-in-ne-out before the covenant reads a single field",
     ),
     entry(
         "output-claimed-through-two-flows",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "one output under two flows is not a request the canonical partition can state",
+        G::NoAdmittedRepresentationCarriesTheField,
+        "a per-flow assignment is a request concept with no wire field, so no built candidate carries an output claimed through two flows",
     ),
     entry(
         "issuance",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "issuance is an unselectable request facet and the constructor emits none",
+        G::FacetNeedsADifferentTransaction,
+        "the covenant carries an issuance-absence clause, but the successor emits no issuance and staging one is a different transaction",
     ),
     entry(
         "destruction",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "destruction is an unselectable request facet and the constructor emits none",
+        G::FacetNeedsADifferentTransaction,
+        "a destruction facet the safe constructor never emits, so there is no successor output to mutate into one",
     ),
     entry(
         "value-routed-into-ash-or-time-locked-receipt",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "the destination table admits only live receipt constructors, so no such destination exists",
+        G::NoAdmittedShapeCarriesTheFault,
+        "no ash or time-locked destination is admitted, and the destination closure drops a payload, so a same-version substitute is accepted rather than refused",
     ),
     entry(
         "second-offsetting-u-flow",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "a second offsetting flow has no request field and must be assembled in raw bytes",
+        G::FacetNeedsADifferentTransaction,
+        "an offsetting flow is an added balanced input-and-output pair the fixed two-in two-out successor does not carry",
     ),
     // §15.6 — the sponsor faults still waiting. The sponsor table's
     // other five are answered: two are report-layer, two are pre-target
@@ -341,8 +386,8 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // observed refusals this register's successors are modelled on.
     entry(
         "sponsor-protocol-overlap",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "the sponsor region's positions are derived arithmetic with no field a caller can move",
+        G::FacetNeedsADifferentTransaction,
+        "the sponsor region belongs to a sponsored successor this sponsorless ceremony does not build",
     ),
     entry(
         "two-sponsor-envelopes",
@@ -351,13 +396,13 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     ),
     entry(
         "foreign-sponsor-asset",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "sponsor recognition refuses the foreign coin first-party, before bytes exist to offer",
+        G::NoAdmittedShapeCarriesTheFault,
+        "sponsor recognition refuses a foreign-asset sponsor coin first-party, so no such candidate is admitted to mutate",
     ),
     entry(
         "sponsor-change-in-protocol-range",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "the change position is derived from the shape and cannot be asked for among destinations",
+        G::FacetNeedsADifferentTransaction,
+        "the sponsor-change position belongs to a sponsored successor this ceremony does not build",
     ),
     entry(
         "sponsor-member-unclassified",
@@ -381,18 +426,18 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // row, neither of them that a run is owed.
     entry(
         "any-root-input-or-output",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "no request field names a root effect and the constructor emits none",
+        G::FacetNeedsADifferentTransaction,
+        "a root effect the safe constructor never emits, needing a transaction shape this ceremony does not build",
     ),
     entry(
         "burn-record-or-specialized-event",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "specialized projections are an unselectable request facet",
+        G::FacetNeedsADifferentTransaction,
+        "a specialized-event projection the safe constructor never emits, needing a different transaction",
     ),
     entry(
         "omitted-transition-certificate",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "the projection is emitted by construction, so omitting it needs raw bytes and a signature",
+        G::FacetNeedsADifferentTransaction,
+        "the successor emits no transition certificate, so there is none to omit without building a certificate-bearing transaction first",
     ),
     // The four leaf-arrangement rows. The covenant DOES introspect its
     // own input index, so these are not commitment-generic — and that is
@@ -421,8 +466,8 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     ),
     entry(
         "receipt-sponsor-range-exchange",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "the two ranges are derived from one shape and no caller value exchanges them",
+        G::FacetNeedsADifferentTransaction,
+        "the receipt and sponsor ranges belong to a sponsored successor this ceremony does not build",
     ),
     // A TYPED STOP, and the one row of the seven the retyping ruling
     // does not reach. Its target-side wall stands as written. What the
