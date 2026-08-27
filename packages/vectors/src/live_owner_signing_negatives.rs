@@ -1024,12 +1024,10 @@ impl OwnerSigningNegativePlanner {
         let curve = OracleLiveCurve::new(
             reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?,
         );
-        let requests = Self::requests(finalized);
         let census = OwnerSigningCensus::from_explicit_finalized(
             &target,
             finalized,
             LiveDeployment::new(self.genesis_block_hash),
-            &requests,
             &curve,
         )
         .map_err(OwnerSigningNegativeRefusal::CensusRefused)?;

@@ -71,7 +71,6 @@ use std::collections::BTreeMap;
 
 use linker::OwnerParameter;
 use linker::live_backend::{LiveTransferComposition, LiveTransferRepresentationPlan};
-use target_elements::LeafVersion;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::owner_key_oracle::verify_owner_signature;
 use target_elements_conformance::protocol::{
@@ -80,11 +79,14 @@ use target_elements_conformance::protocol::{
     OperationSubject, TargetConfidentialFundingSubject, TargetFundingSubject,
     TargetSubmissionSubject,
 };
+use transaction::LiveDeployment;
 use transaction::bytes::{
     AssetField, AssetId, COMMITMENT_BYTES, InputWitness, Outpoint, TargetTransaction, ValueField,
 };
 use transaction::live_abi::CandidateLiveTransferAbi;
-use transaction::live_census::{OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest};
+use transaction::live_census::{
+    OwnerCensusRefusal, OwnerSigningCensus, ProofFinalizedSigningCandidate,
+};
 use transaction::live_construct::{
     PrivateDestinationOpening, PrivateInputOpening, PrivateLiveFinalization, PrivateLiveOpenings,
     finalize_private_live_transfer, private_sponsor_witnesses,
@@ -100,9 +102,8 @@ use transaction::live_request::{
     RequestedForm, SponsorChangeRequest,
 };
 use transaction::sponsor::SponsorCapability;
-use transaction::taproot::{Digest32, leaf_hash};
+use transaction::taproot::Digest32;
 use transaction::view::{PublicConstructionView, PublicOutputView};
-use transaction::{AnnexDisposition, IssuanceDisposition, LiveDeployment};
 
 use crate::confidential_materializer::{
     FirstPartyCommitmentCheck, ReferenceConfidentialMaterializer,
@@ -1342,35 +1343,15 @@ pub(crate) fn assemble_control(
 ) -> Result<BuiltControl, PrivateRestartRefusal> {
     let materialized = finalization.materialized();
 
-    // Each receipt's signing request is built from the leaf THAT INPUT
-    // executes, which the finalization supplies. A ceremony that chose
-    // its own leaf would be authorizing a different program than the one
-    // the coin pays to.
-    let requests: Vec<OwnerSigningInputRequest> = finalization
-        .receipts()
-        .iter()
-        .map(|record| {
-            OwnerSigningInputRequest::new(
-                u32::from(record.position()),
-                leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
-                LeafVersion::TAPSCRIPT,
-                transaction::OWNER_CODESEPARATOR_POSITION,
-                AnnexDisposition::Absent,
-                IssuanceDisposition::Absent,
-                record.control_block().to_vec(),
-            )
-        })
-        .collect();
-
     let target = reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?;
     let curve = crate::live_capability::OracleLiveCurve::new(
         reviewed_target().map_err(|_| PrivateRestartRefusal::SubstrateUnavailable)?,
     );
+    let finalized_signing = ProofFinalizedSigningCandidate::from_private_finalization(finalization);
     let census = OwnerSigningCensus::from_proof_finalized(
         &target,
-        materialized,
+        &finalized_signing,
         LiveDeployment::new(genesis_block_hash),
-        &requests,
         &curve,
     )
     .map_err(PrivateRestartRefusal::CensusRefused)?;

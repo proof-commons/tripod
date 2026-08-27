@@ -47,10 +47,12 @@ pub use live_accepted::{
     AcceptedOwnerAuthorizations, AcceptedResultRefusal, OfferedOwnerAuthorization,
 };
 pub use live_census::{
-    AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
-    OWNER_KEY_VERSION_BYTE, OWNER_SIGHASH_TYPE_BYTE, OWNER_SIGNATURE_BYTES, OWNER_SPEND_TYPE_BYTE,
-    OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputCensus, OwnerSigningInputRequest,
-    SpentOutputCensusEntry, check_signature_width, check_type_byte, spend_type_byte,
+    AnnexDisposition, FinalizedSigningField, IssuanceDisposition, LiveDeployment,
+    OWNER_CODESEPARATOR_POSITION, OWNER_KEY_VERSION_BYTE, OWNER_SIGHASH_TYPE_BYTE,
+    OWNER_SIGNATURE_BYTES, OWNER_SPEND_TYPE_BYTE, OwnerCensusRefusal, OwnerSigningCensus,
+    OwnerSigningInputCensus, OwnerSigningInputRequest, ProofFinalizedReceiptInput,
+    ProofFinalizedSigningCandidate, SpentOutputCensusEntry, check_signature_width, check_type_byte,
+    spend_type_byte,
 };
 pub use live_construct::{
     CandidateLiveTransferTransaction, ExplicitDestinationRole, LIVE_TRANSFER_SEQUENCE,

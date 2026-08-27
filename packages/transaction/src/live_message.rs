@@ -247,7 +247,7 @@ pub const KEY_PATH_SPEND_TYPE_BYTE: u8 = 0x00;
 #[must_use]
 pub fn candidate_key_path_message(
     census: &OwnerSigningCensus,
-    input: &OwnerSigningInputCensus,
+    input_index: u32,
     treatment: WitnessVectorTreatment,
 ) -> Digest32 {
     let mut stream = whole_transaction_stream(census, treatment);
@@ -258,7 +258,7 @@ pub fn candidate_key_path_message(
     // stream that carried them would be the script-path stream with a
     // different first byte rather than a different spend.
     stream.push(KEY_PATH_SPEND_TYPE_BYTE);
-    stream.extend_from_slice(&input.input_index().to_le_bytes());
+    stream.extend_from_slice(&input_index.to_le_bytes());
 
     tagged_hash(TAP_SIGHASH_TAG, &stream)
 }

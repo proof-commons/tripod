@@ -81,13 +81,14 @@ use std::collections::BTreeSet;
 use linker::live_backend::LiveTransferRepresentationPlan;
 use target_elements::{LeafVersion, ReviewedElementsTapscriptDefinition};
 
-use crate::bytes::{AssetField, OutputWitness, TargetTransaction, ValueField};
-use crate::live_finalize::FinalizedLiveTransfer;
+use crate::bytes::{AssetField, Outpoint, OutputWitness, TargetTransaction, ValueField};
+use crate::live_construct::PrivateLiveFinalization;
+use crate::live_finalize::{FinalizedLiveTransfer, ReceiptInputRecord, protected_preimage};
 use crate::live_materialize::MaterializedConfidentialCandidate;
 use crate::live_taproot::LiveCurveCapability;
 use crate::taproot::{
     CONTROL_BASE_BYTES, DIGEST_BYTES, Digest32, TAPROOT_LEAF_MASK, TAPROOT_WITNESS_VERSION,
-    branch_hash, witness_program_script,
+    branch_hash, leaf_hash, witness_program_script,
 };
 
 // --- The profile's constants ------------------------------------------
@@ -135,10 +136,9 @@ pub const OWNER_KEY_VERSION_BYTE: u8 = 0x00;
 /// `src/script/interpreter.cpp:581` sets this value at the head of
 /// evaluation and only `:1472` moves it, and no leaf in this workspace
 /// emits the opcode that moves it. That makes the constancy a condition
-/// on the leaf vocabulary rather than a property of the target, which is
-/// why the census carries the field rather than assuming the condition —
-/// this constant is the value a test compares against, not a value the
-/// census substitutes.
+/// on the leaf vocabulary rather than a property of the target. Finalized
+/// routes derive this value, while the negative seam checks an offered
+/// value against it and refuses any difference.
 pub const OWNER_CODESEPARATOR_POSITION: u32 = 0xffff_ffff;
 
 /// The deepest control path a census admits.
@@ -284,15 +284,18 @@ impl SpentOutputCensusEntry {
 
 // --- One signing input -------------------------------------------------
 
-/// What a caller asks the census for, per signing input.
+/// What the negative-evidence seam asks the census for, per signing input.
+///
+/// Production construction does not accept this type. Both finalized
+/// routes derive the request from the leaf record their finalized object
+/// owns. This caller-authored form remains only for the deliberately
+/// foreign negative-evidence seam, where a ceremony must be able to
+/// offer a committed sibling leaf in order to attribute a negative.
 ///
 /// Distinct from [`OwnerSigningInputCensus`], which is what the census
-/// *retains*, and the difference is the point. The control block is here
-/// and not there: the leaf commitment check consumes it and drops it, so
-/// the internal key inside it never becomes a census field. A census
-/// that carried the control block would be carrying a key, and the
-/// exclusion rule is enforced by there being no field rather than by a
-/// reviewer noticing.
+/// *retains*. The control block is here and not there: the leaf
+/// commitment check consumes it and drops it, so the internal key inside
+/// it never becomes a census field.
 ///
 /// The issuance disposition is here and not there for a different
 /// reason: only [`IssuanceDisposition::Absent`] ever survives
@@ -374,6 +377,107 @@ impl OwnerSigningInputRequest {
     }
 }
 
+/// One receipt leaf frozen beside a proof-finalized candidate.
+///
+/// This is the narrow compatibility input for the older proof-bearing
+/// evidence ceremony, whose single-leaf programs predate the private
+/// live finalizer. It names only the facts a finalization must select:
+/// the receipt position, leaf program, and authenticating control block.
+/// The census derives the leaf hash, leaf version, code-separator
+/// position, annex disposition, and issuance disposition itself.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProofFinalizedReceiptInput {
+    input_index: u32,
+    leaf_script: Vec<u8>,
+    control_block: Vec<u8>,
+    finalized_outpoint: Option<Outpoint>,
+    finalized_spent: Option<SpentOutputCensusEntry>,
+}
+
+impl ProofFinalizedReceiptInput {
+    /// Freeze one receipt selection for a proof-bearing evidence record.
+    #[must_use]
+    pub fn for_evidence(input_index: u32, leaf_script: Vec<u8>, control_block: Vec<u8>) -> Self {
+        Self {
+            input_index,
+            leaf_script,
+            control_block,
+            finalized_outpoint: None,
+            finalized_spent: None,
+        }
+    }
+
+    fn from_receipt(record: &ReceiptInputRecord) -> Self {
+        Self {
+            input_index: u32::from(record.position()),
+            leaf_script: record.leaf_script().to_vec(),
+            control_block: record.control_block().to_vec(),
+            finalized_outpoint: Some(record.outpoint()),
+            finalized_spent: Some(SpentOutputCensusEntry::new(
+                record.asset(),
+                record.value(),
+                record.program().to_vec(),
+            )),
+        }
+    }
+}
+
+/// A proof-finalized candidate together with its finalized receipt leaves.
+///
+/// The ordinary production constructor consumes a
+/// [`PrivateLiveFinalization`], so the receipt selection and candidate
+/// cross this boundary as one object. The evidence constructor exists
+/// for the archived proof-bearing ceremony's bare owner leaves; it
+/// freezes those leaves before census construction and deliberately has
+/// no parameter for protected bytes or derived sighash fields.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProofFinalizedSigningCandidate {
+    materialized: MaterializedConfidentialCandidate,
+    receipts: Vec<ProofFinalizedReceiptInput>,
+    sponsor_inputs: Vec<Outpoint>,
+}
+
+impl ProofFinalizedSigningCandidate {
+    /// Freeze the finalized candidate and receipt selection from the
+    /// private live finalizer.
+    #[must_use]
+    pub fn from_private_finalization(finalization: &PrivateLiveFinalization) -> Self {
+        Self {
+            materialized: finalization.materialized().clone(),
+            receipts: finalization
+                .receipts()
+                .iter()
+                .map(ProofFinalizedReceiptInput::from_receipt)
+                .collect(),
+            sponsor_inputs: finalization.sponsor_inputs().to_vec(),
+        }
+    }
+
+    /// Freeze the receipt leaves of the archived proof-bearing evidence
+    /// ceremony.
+    ///
+    /// The ceremony has no sponsor suffix; every materialized input must
+    /// therefore have exactly one receipt record. That coverage and every
+    /// record's commitment are checked by [`OwnerSigningCensus::from_proof_finalized`].
+    #[must_use]
+    pub fn for_receipt_evidence(
+        materialized: MaterializedConfidentialCandidate,
+        receipts: Vec<ProofFinalizedReceiptInput>,
+    ) -> Self {
+        Self {
+            materialized,
+            receipts,
+            sponsor_inputs: Vec::new(),
+        }
+    }
+
+    /// The frozen confidential candidate.
+    #[must_use]
+    pub const fn materialized(&self) -> &MaterializedConfidentialCandidate {
+        &self.materialized
+    }
+}
+
 /// One signing input, as the census retains it.
 ///
 /// Exactly the five per-input members the accepted option-B result
@@ -432,6 +536,27 @@ impl OwnerSigningInputCensus {
 
 // --- The refusals ------------------------------------------------------
 
+/// Which finalized signing fact disagreed with the candidate it belongs to.
+///
+/// Leaf hashes, leaf versions, and code-separator positions are absent:
+/// production callers can no longer supply them beside a finalization.
+/// They are derived from the finalized receipt, while the fields below
+/// still have two finalization-owned origins that the proof route can
+/// compare exactly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FinalizedSigningField {
+    /// The receipt record names another candidate input.
+    Outpoint,
+    /// The receipt's spent asset differs from the materializer's record.
+    SpentAsset,
+    /// The receipt's spent value differs from the materializer's record.
+    SpentValue,
+    /// The receipt's spent program differs from the materializer's record.
+    SpentProgram,
+    /// A seam-level request did not use the finalized control block.
+    ControlBlock,
+}
+
 /// Why a census could not be assembled.
 ///
 /// Closed, with no catch-all. Every member is a *construction* refusal
@@ -440,6 +565,23 @@ impl OwnerSigningInputCensus {
 /// evidence about a chain.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OwnerCensusRefusal {
+    /// One finalization-owned signing fact disagrees with its candidate.
+    FinalizedSigningInputMismatch {
+        /// Which candidate input disagreed.
+        input_index: u32,
+        /// Which exact field disagreed.
+        field: FinalizedSigningField,
+    },
+    /// A candidate receipt position has no finalized signing record.
+    MissingFinalizedSigningInput {
+        /// The uncovered receipt position.
+        input_index: u32,
+    },
+    /// A finalized signing record names a sponsor or nonexistent input.
+    SigningInputIsNotAFinalizedReceipt {
+        /// The position that is not a finalized receipt.
+        input_index: u32,
+    },
     /// The spent-output census does not have one entry per input.
     ///
     /// Terms 6 and 7 are taken over the whole spent-output set, so a
@@ -481,6 +623,13 @@ pub enum OwnerCensusRefusal {
         declared: AnnexDisposition,
         /// The spend-type byte that declaration recomputes to.
         recomputed_spend_type: u8,
+    },
+    /// A code-separator position lies outside the selected owner profile.
+    CodeseparatorPositionOutsideOwnerProfile {
+        /// Which input offered it.
+        input_index: u32,
+        /// The position offered.
+        offered: u32,
     },
     /// The census is bound to a different deployment than the run.
     ///
@@ -651,21 +800,44 @@ pub struct OwnerSigningCensus {
 impl OwnerSigningCensus {
     /// The census of one materialized confidential candidate.
     ///
-    /// The only public route to a census, and it takes a value the
-    /// materializer alone produces, so there is no route that skips
-    /// finalization.
+    /// It takes one object carrying the proof-finalized candidate and
+    /// its frozen receipt selection. Protected bytes and sighash leaf
+    /// fields cannot be passed beside it.
     ///
     /// # Errors
     ///
-    /// [`OwnerCensusRefusal`], at the first clause the request fails.
+    /// [`OwnerCensusRefusal`], at the first clause the finalized source
+    /// fails.
     /// Every one is a construction refusal and none is a target verdict.
     pub fn from_proof_finalized(
         target: &ReviewedElementsTapscriptDefinition,
-        materialized: &MaterializedConfidentialCandidate,
+        finalized: &ProofFinalizedSigningCandidate,
+        deployment: LiveDeployment,
+        curve: &dyn LiveCurveCapability,
+    ) -> Result<Self, OwnerCensusRefusal> {
+        let requests = finalized_requests(&finalized.receipts);
+        Self::from_proof_finalized_requests(target, finalized, deployment, &requests, curve)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_proof_finalized_with_requests_for_test(
+        target: &ReviewedElementsTapscriptDefinition,
+        finalized: &ProofFinalizedSigningCandidate,
         deployment: LiveDeployment,
         requests: &[OwnerSigningInputRequest],
         curve: &dyn LiveCurveCapability,
     ) -> Result<Self, OwnerCensusRefusal> {
+        Self::from_proof_finalized_requests(target, finalized, deployment, requests, curve)
+    }
+
+    fn from_proof_finalized_requests(
+        target: &ReviewedElementsTapscriptDefinition,
+        finalized: &ProofFinalizedSigningCandidate,
+        deployment: LiveDeployment,
+        requests: &[OwnerSigningInputRequest],
+        curve: &dyn LiveCurveCapability,
+    ) -> Result<Self, OwnerCensusRefusal> {
+        let materialized = finalized.materialized();
         let frozen = materialized.proof_finalized();
         let candidate = frozen.protected().clone();
         let output_witnesses = candidate.output_witnesses().to_vec();
@@ -680,7 +852,12 @@ impl OwnerSigningCensus {
                 )
             })
             .collect::<Vec<_>>();
-
+        check_finalized_receipt_coverage(
+            &candidate,
+            materialized,
+            &finalized.receipts,
+            &finalized.sponsor_inputs,
+        )?;
         Self::assemble(
             target,
             candidate,
@@ -689,6 +866,8 @@ impl OwnerSigningCensus {
             spent_outputs,
             deployment,
             requests,
+            Some(&finalized.receipts),
+            LiveTransferRepresentationPlan::PrivateCommitted,
             curve,
         )
     }
@@ -741,7 +920,6 @@ impl OwnerSigningCensus {
         target: &ReviewedElementsTapscriptDefinition,
         finalized: &FinalizedLiveTransfer,
         deployment: LiveDeployment,
-        requests: &[OwnerSigningInputRequest],
         curve: &dyn LiveCurveCapability,
     ) -> Result<Self, OwnerCensusRefusal> {
         let representation = finalized.representation();
@@ -771,6 +949,13 @@ impl OwnerSigningCensus {
                 SpentOutputCensusEntry::new(spent.asset(), spent.value(), spent.program().to_vec())
             }))
             .collect::<Vec<_>>();
+        let receipts = finalized
+            .receipts()
+            .iter()
+            .map(ProofFinalizedReceiptInput::from_receipt)
+            .collect::<Vec<_>>();
+        check_explicit_receipt_coverage(&candidate, &receipts, finalized.sponsor_inputs())?;
+        let requests = finalized_requests(&receipts);
 
         Self::assemble(
             target,
@@ -779,7 +964,9 @@ impl OwnerSigningCensus {
             output_witnesses,
             spent_outputs,
             deployment,
-            requests,
+            &requests,
+            Some(&receipts),
+            LiveTransferRepresentationPlan::Explicit,
             curve,
         )
     }
@@ -864,6 +1051,38 @@ impl OwnerSigningCensus {
             spent_outputs,
             deployment,
             requests,
+            None,
+            LiveTransferRepresentationPlan::Explicit,
+            curve,
+        )
+    }
+
+    #[cfg(test)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the test seam exposes the shared clause list without widening production"
+    )]
+    pub(crate) fn over_parts_for_test(
+        target: &ReviewedElementsTapscriptDefinition,
+        candidate: TargetTransaction,
+        protected_bytes: Vec<u8>,
+        output_witnesses: Vec<OutputWitness>,
+        spent_outputs: Vec<SpentOutputCensusEntry>,
+        deployment: LiveDeployment,
+        requests: &[OwnerSigningInputRequest],
+        representation: LiveTransferRepresentationPlan,
+        curve: &dyn LiveCurveCapability,
+    ) -> Result<Self, OwnerCensusRefusal> {
+        Self::assemble(
+            target,
+            candidate,
+            protected_bytes,
+            output_witnesses,
+            spent_outputs,
+            deployment,
+            requests,
+            None,
+            representation,
             curve,
         )
     }
@@ -881,10 +1100,16 @@ impl OwnerSigningCensus {
         spent_outputs: Vec<SpentOutputCensusEntry>,
         deployment: LiveDeployment,
         requests: &[OwnerSigningInputRequest],
+        finalized_receipts: Option<&[ProofFinalizedReceiptInput]>,
+        representation: LiveTransferRepresentationPlan,
         curve: &dyn LiveCurveCapability,
     ) -> Result<Self, OwnerCensusRefusal> {
         let inputs = candidate.inputs().len();
         let outputs = candidate.outputs().len();
+
+        if protected_preimage(&candidate, representation) != protected_bytes {
+            return Err(OwnerCensusRefusal::ProtectedBytesAreNotTheCandidates);
+        }
 
         if spent_outputs.len() != inputs {
             return Err(OwnerCensusRefusal::SpentOutputCardinalityMismatch {
@@ -932,6 +1157,15 @@ impl OwnerSigningCensus {
                 return Err(OwnerCensusRefusal::IssuanceBearingInputRefused { input_index: index });
             }
 
+            if request.codeseparator_position() != OWNER_CODESEPARATOR_POSITION {
+                return Err(
+                    OwnerCensusRefusal::CodeseparatorPositionOutsideOwnerProfile {
+                        input_index: index,
+                        offered: request.codeseparator_position(),
+                    },
+                );
+            }
+
             let recomputed = spend_type_byte(request.annex());
             if recomputed != OWNER_SPEND_TYPE_BYTE {
                 return Err(OwnerCensusRefusal::AnnexDisagreement {
@@ -942,6 +1176,21 @@ impl OwnerSigningCensus {
             }
 
             check_leaf_commits(target, request, &spent_outputs[position], curve)?;
+
+            if let Some(receipts) = finalized_receipts {
+                let receipt = receipts
+                    .iter()
+                    .find(|receipt| receipt.input_index == index)
+                    .ok_or(OwnerCensusRefusal::SigningInputIsNotAFinalizedReceipt {
+                        input_index: index,
+                    })?;
+                if request.control_block() != receipt.control_block.as_slice() {
+                    return Err(OwnerCensusRefusal::FinalizedSigningInputMismatch {
+                        input_index: index,
+                        field: FinalizedSigningField::ControlBlock,
+                    });
+                }
+            }
 
             signing_inputs.push(OwnerSigningInputCensus {
                 input_index: index,
@@ -1048,6 +1297,161 @@ impl OwnerSigningCensus {
             })
         }
     }
+}
+
+/// Derive every sighash leaf fact from the finalized receipt selection.
+fn finalized_requests(receipts: &[ProofFinalizedReceiptInput]) -> Vec<OwnerSigningInputRequest> {
+    receipts
+        .iter()
+        .map(|receipt| {
+            OwnerSigningInputRequest::new(
+                receipt.input_index,
+                leaf_hash(LeafVersion::TAPSCRIPT, &receipt.leaf_script),
+                LeafVersion::TAPSCRIPT,
+                OWNER_CODESEPARATOR_POSITION,
+                AnnexDisposition::Absent,
+                IssuanceDisposition::Absent,
+                receipt.control_block.clone(),
+            )
+        })
+        .collect()
+}
+
+fn check_explicit_receipt_coverage(
+    candidate: &TargetTransaction,
+    receipts: &[ProofFinalizedReceiptInput],
+    sponsor_inputs: &[Outpoint],
+) -> Result<(), OwnerCensusRefusal> {
+    check_receipt_positions(candidate, receipts, sponsor_inputs)?;
+
+    for receipt in receipts {
+        let Some(expected) = receipt.finalized_outpoint else {
+            continue;
+        };
+        let position = usize::try_from(receipt.input_index).map_err(|_| {
+            OwnerCensusRefusal::SigningInputIsNotAFinalizedReceipt {
+                input_index: receipt.input_index,
+            }
+        })?;
+        if candidate.inputs()[position].outpoint() != expected {
+            return Err(OwnerCensusRefusal::FinalizedSigningInputMismatch {
+                input_index: receipt.input_index,
+                field: FinalizedSigningField::Outpoint,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn check_finalized_receipt_coverage(
+    candidate: &TargetTransaction,
+    materialized: &MaterializedConfidentialCandidate,
+    receipts: &[ProofFinalizedReceiptInput],
+    sponsor_inputs: &[Outpoint],
+) -> Result<(), OwnerCensusRefusal> {
+    check_receipt_positions(candidate, receipts, sponsor_inputs)?;
+
+    if materialized.signer_inputs().len() != candidate.inputs().len() {
+        let input_index = u32::try_from(materialized.signer_inputs().len()).unwrap_or(u32::MAX);
+        return Err(OwnerCensusRefusal::MissingFinalizedSigningInput { input_index });
+    }
+
+    for signer in materialized.signer_inputs() {
+        let input_index = u32::from(signer.position());
+        let position = usize::from(signer.position());
+        if position >= candidate.inputs().len() {
+            return Err(OwnerCensusRefusal::SigningInputIsNotAFinalizedReceipt { input_index });
+        }
+        if candidate.inputs()[position].outpoint() != signer.outpoint() {
+            return Err(OwnerCensusRefusal::FinalizedSigningInputMismatch {
+                input_index,
+                field: FinalizedSigningField::Outpoint,
+            });
+        }
+    }
+
+    for receipt in receipts {
+        let position = usize::try_from(receipt.input_index).map_err(|_| {
+            OwnerCensusRefusal::SigningInputIsNotAFinalizedReceipt {
+                input_index: receipt.input_index,
+            }
+        })?;
+        let signer = &materialized.signer_inputs()[position];
+
+        if let Some(outpoint) = receipt.finalized_outpoint {
+            if signer.outpoint() != outpoint {
+                return Err(OwnerCensusRefusal::FinalizedSigningInputMismatch {
+                    input_index: receipt.input_index,
+                    field: FinalizedSigningField::Outpoint,
+                });
+            }
+        }
+
+        if let Some(spent) = &receipt.finalized_spent {
+            let field = if signer.spent_asset() != spent.asset() {
+                Some(FinalizedSigningField::SpentAsset)
+            } else if signer.spent_value() != spent.value() {
+                Some(FinalizedSigningField::SpentValue)
+            } else if signer.spent_program() != spent.program() {
+                Some(FinalizedSigningField::SpentProgram)
+            } else {
+                None
+            };
+            if let Some(field) = field {
+                return Err(OwnerCensusRefusal::FinalizedSigningInputMismatch {
+                    input_index: receipt.input_index,
+                    field,
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn check_receipt_positions(
+    candidate: &TargetTransaction,
+    receipts: &[ProofFinalizedReceiptInput],
+    sponsor_inputs: &[Outpoint],
+) -> Result<(), OwnerCensusRefusal> {
+    let inputs = candidate.inputs().len();
+    let receipt_count = inputs.checked_sub(sponsor_inputs.len()).ok_or(
+        OwnerCensusRefusal::SigningInputIsNotAFinalizedReceipt {
+            input_index: u32::try_from(inputs).unwrap_or(u32::MAX),
+        },
+    )?;
+    let mut positions = BTreeSet::new();
+
+    for receipt in receipts {
+        let position = usize::try_from(receipt.input_index).ok();
+        if position.is_none_or(|position| position >= receipt_count)
+            || !positions.insert(receipt.input_index)
+        {
+            return Err(OwnerCensusRefusal::SigningInputIsNotAFinalizedReceipt {
+                input_index: receipt.input_index,
+            });
+        }
+    }
+
+    for position in 0..receipt_count {
+        let input_index = u32::try_from(position).unwrap_or(u32::MAX);
+        if !positions.contains(&input_index) {
+            return Err(OwnerCensusRefusal::MissingFinalizedSigningInput { input_index });
+        }
+    }
+
+    for (offset, sponsor) in sponsor_inputs.iter().enumerate() {
+        let position = receipt_count + offset;
+        if candidate.inputs()[position].outpoint() != *sponsor {
+            return Err(OwnerCensusRefusal::FinalizedSigningInputMismatch {
+                input_index: u32::try_from(position).unwrap_or(u32::MAX),
+                field: FinalizedSigningField::Outpoint,
+            });
+        }
+    }
+
+    Ok(())
 }
 
 // --- Profile checks a returned answer must pass -----------------------

@@ -80,7 +80,6 @@
 use std::fmt::Write as _;
 
 use linker::live_backend::LiveTransferRepresentationPlan;
-use target_elements::LeafVersion;
 use target_elements_conformance::constructor::curve::FIELD_ELEMENT_BYTES;
 use target_elements_conformance::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
@@ -92,10 +91,7 @@ use transaction::bytes::{
     AssetField, AssetId, InputWitness, Outpoint, TargetTransaction, ValueField,
 };
 use transaction::live_abi::CandidateLiveTransferAbi;
-use transaction::live_census::{
-    AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
-    OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest,
-};
+use transaction::live_census::{LiveDeployment, OwnerCensusRefusal, OwnerSigningCensus};
 use transaction::live_construct::{
     LiveConstructionReport, complete_live_transfer, finalize_live_transfer,
 };
@@ -107,7 +103,7 @@ use transaction::live_request::{
     LiveReceiptDestination, LiveTransferRequest, ProtocolValue, RequestedForm, SponsorChangeRequest,
 };
 use transaction::live_signing::{LiveOwnerResponse, authorize_live_transfer};
-use transaction::taproot::{Digest32, leaf_hash};
+use transaction::taproot::Digest32;
 use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::error::VectorError;
@@ -735,27 +731,10 @@ impl KeyPathProbePlanner {
         let curve = OracleLiveCurve::new(
             reviewed_target().map_err(|_| KeyPathProbeRefusal::SubstrateUnavailable)?,
         );
-        let requests: Vec<OwnerSigningInputRequest> = finalized
-            .receipts()
-            .iter()
-            .map(|record| {
-                OwnerSigningInputRequest::new(
-                    u32::from(record.position()),
-                    leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
-                    LeafVersion::TAPSCRIPT,
-                    OWNER_CODESEPARATOR_POSITION,
-                    AnnexDisposition::Absent,
-                    IssuanceDisposition::Absent,
-                    record.control_block().to_vec(),
-                )
-            })
-            .collect();
-
         OwnerSigningCensus::from_explicit_finalized(
             &target,
             finalized,
             LiveDeployment::new(genesis),
-            &requests,
             &curve,
         )
         .map_err(KeyPathProbeRefusal::CensusRefused)
@@ -795,7 +774,11 @@ impl KeyPathProbePlanner {
             .first()
             .ok_or(KeyPathProbeRefusal::CandidateNotConstructible)?;
 
-        let message = candidate_key_path_message(&census, input, WitnessVectorTreatment::BothGrown);
+        let message = candidate_key_path_message(
+            &census,
+            input.input_index(),
+            WitnessVectorTreatment::BothGrown,
+        );
         let material = signing_material(&FIRST_SCALAR)
             .map_err(|_| KeyPathProbeRefusal::SubstrateUnavailable)?;
         let signature = material

@@ -96,8 +96,8 @@ use transaction::bytes::{
     ValueField,
 };
 use transaction::live_census::{
-    AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
-    OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest,
+    LiveDeployment, OwnerCensusRefusal, OwnerSigningCensus, ProofFinalizedReceiptInput,
+    ProofFinalizedSigningCandidate,
 };
 use transaction::live_materialize::{
     ConfidentialConstructionIntent, ConfidentialCustodyProfile, ConfidentialDestinationIntent,
@@ -105,8 +105,8 @@ use transaction::live_materialize::{
     ConfidentialMaterializationProfiles, ConfidentialMaterializerProfile, ConfidentialNonceProfile,
     ConfidentialOrderProfile, ConfidentialOutputRole, ConfidentialProofProfile,
     ConfidentialRetryProfile, FixtureOpeningReference, FrozenConfidentialFixtureView,
-    IndependentCommitmentCheck, MaterializationRefusal, MaterializedConfidentialCandidate,
-    NonProtocolFundingRegion, ParityOutcome, SCALAR_BYTES, materialize_confidential_candidate,
+    IndependentCommitmentCheck, MaterializationRefusal, NonProtocolFundingRegion, ParityOutcome,
+    SCALAR_BYTES, materialize_confidential_candidate,
 };
 use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message};
 use transaction::live_taproot::LiveCurveCapability;
@@ -852,15 +852,11 @@ impl OwnerLeaf {
         })
     }
 
-    /// The signing request this leaf answers for one input position.
-    fn request(&self, index: u32) -> OwnerSigningInputRequest {
-        OwnerSigningInputRequest::new(
+    /// The finalized receipt selection for one input position.
+    fn finalized_receipt(&self, index: u32) -> ProofFinalizedReceiptInput {
+        ProofFinalizedReceiptInput::for_evidence(
             index,
-            self.tapleaf_hash,
-            LeafVersion::TAPSCRIPT,
-            OWNER_CODESEPARATOR_POSITION,
-            AnnexDisposition::Absent,
-            IssuanceDisposition::Absent,
+            self.leaf_script.clone(),
             self.control_block.clone(),
         )
     }
@@ -1646,43 +1642,45 @@ impl ProofBearingObservationPlanner {
     fn materialize(
         &self,
         exchanged: bool,
-    ) -> Result<MaterializedConfidentialCandidate, ProofBearingRefusal> {
+    ) -> Result<ProofFinalizedSigningCandidate, ProofBearingRefusal> {
         let intent = self.intent(exchanged)?;
         let view = if exchanged {
             self.exchanged_view()?
         } else {
             self.view()?
         };
-        materialize_confidential_candidate(
+        let materialized = materialize_confidential_candidate(
             &intent,
             &view,
             &ReferenceConfidentialMaterializer::new(),
             &FirstPartyCommitmentCheck::new(),
         )
-        .map_err(ProofBearingRefusal::MaterializationRefused)
+        .map_err(ProofBearingRefusal::MaterializationRefused)?;
+        let receipts = self
+            .owners
+            .iter()
+            .enumerate()
+            .map(|(index, owner)| owner.finalized_receipt(u32::try_from(index).unwrap_or(u32::MAX)))
+            .collect();
+        Ok(ProofFinalizedSigningCandidate::for_receipt_evidence(
+            materialized,
+            receipts,
+        ))
     }
 
     /// The census of one materialized candidate.
     fn census(
         &self,
-        materialized: &MaterializedConfidentialCandidate,
+        finalized: &ProofFinalizedSigningCandidate,
     ) -> Result<OwnerSigningCensus, ProofBearingRefusal> {
         let target = reviewed_target().map_err(|_| ProofBearingRefusal::SubstrateUnavailable)?;
         let curve = OracleLiveCurve::new(
             reviewed_target().map_err(|_| ProofBearingRefusal::SubstrateUnavailable)?,
         );
-        let requests: Vec<OwnerSigningInputRequest> = self
-            .owners
-            .iter()
-            .enumerate()
-            .map(|(index, owner)| owner.request(u32::try_from(index).unwrap_or(u32::MAX)))
-            .collect();
-
         OwnerSigningCensus::from_proof_finalized(
             &target,
-            materialized,
+            finalized,
             LiveDeployment::new(self.genesis_block_hash),
-            &requests,
             &curve,
         )
         .map_err(ProofBearingRefusal::CensusRefused)
@@ -1804,7 +1802,7 @@ impl ProofBearingObservationPlanner {
         };
         let source = signing_census.as_ref().unwrap_or(&census);
 
-        let frozen = materialized.proof_finalized().protected();
+        let frozen = materialized.materialized().proof_finalized().protected();
         let mut witnesses = Vec::with_capacity(self.owners.len());
         let mut first_message = None;
         for (index, owner) in self.owners.iter().enumerate() {
@@ -1950,7 +1948,7 @@ impl ProofBearingObservationPlanner {
     /// the candidate exists and before anything is submitted.
     fn settle_candidate_shape(&mut self) -> Result<(), ProofBearingRefusal> {
         let materialized = self.materialize(false)?;
-        let frozen = materialized.proof_finalized().protected();
+        let frozen = materialized.materialized().proof_finalized().protected();
         self.record.output_witness_vector_length = Some(frozen.output_witnesses().len());
         self.record.output_witness_proof_bytes = frozen
             .output_witnesses()
