@@ -2558,8 +2558,10 @@ mod tests {
             plan.rows()
                 .iter()
                 .find(|row| row.row().name() == name)
-                .map(|row| row.standing())
-                .unwrap_or_else(|| panic!("{name} is not a matrix row"))
+                .map_or_else(
+                    || panic!("{name} is not a matrix row"),
+                    super::LiveEvidenceRow::standing,
+                )
         };
 
         // PAIR 1, the coordinator index check: two-coordinators is driven,

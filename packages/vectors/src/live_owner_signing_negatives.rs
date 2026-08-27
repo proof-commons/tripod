@@ -61,7 +61,7 @@
 //! leaf-arrangement mutants — one per pair, the arrangement whose only
 //! failing input is the leaf at the forbidden position. `two-coordinators`
 //! reveals the coordinator leaf at both inputs, so the coordinator running
-//! at input one fails the index EqualVerify; `no-coordinator` reveals a
+//! at input one fails the index `EqualVerify`; `no-coordinator` reveals a
 //! member leaf at both inputs, so the member running at input zero fails
 //! the bound Verify. The other half of each pair (`wrong-coordinator`,
 //! `member-coordinator-leaf-exchange`) stays typed because its own
@@ -1962,7 +1962,7 @@ pub mod run_of_record {
     /// valid coordinator. Reached because the mutant is re-signed over its
     /// rearranged census and its shape and amounts are the control's, so
     /// the per-asset tally passes and the leaf runs. The verdict READS the
-    /// same OP_EQUALVERIFY as the bare-u mutant, at a different clause, and
+    /// same `OP_EQUALVERIFY` as the bare-u mutant, at a different clause, and
     /// the rows separate by their distinct mutation — a second coordinator
     /// leaf against a rewritten output program.
     pub const TWO_COORDINATORS_REJECT_DETAIL: &str =
@@ -1978,8 +1978,8 @@ pub mod run_of_record {
     /// The member leaf revealed at input zero runs the member bound's lower
     /// check `... 1; GreaterThanOrEqual64; Verify` at index zero and fails
     /// it — the one input that fails, the other being the control's valid
-    /// member. The verdict is an OP_VERIFY, which tells this row from the
-    /// two coordinator-index rows that draw OP_EQUALVERIFY.
+    /// member. The verdict is an `OP_VERIFY`, which tells this row from the
+    /// two coordinator-index rows that draw `OP_EQUALVERIFY`.
     pub const NO_COORDINATOR_REJECT_DETAIL: &str =
         "mandatory-script-verify-flag-failed (Script failed an OP_VERIFY operation)";
 
