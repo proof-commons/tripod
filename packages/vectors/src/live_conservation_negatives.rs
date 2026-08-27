@@ -1128,6 +1128,13 @@ mod tests {
     };
 
     fn renderer_transaction(commitment: [u8; 33]) -> TargetTransaction {
+        renderer_transaction_with_proof(commitment, vec![1_u8, 2, 3])
+    }
+
+    fn renderer_transaction_with_proof(
+        commitment: [u8; 33],
+        range_proof: Vec<u8>,
+    ) -> TargetTransaction {
         TargetTransaction::with_output_witnesses(
             2,
             vec![TargetInput::new(
@@ -1143,7 +1150,7 @@ mod tests {
             )],
             0,
             vec![InputWitness::new(Vec::new())],
-            vec![OutputWitness::range_proof_only(vec![1_u8, 2, 3])],
+            vec![OutputWitness::range_proof_only(range_proof)],
         )
         .expect("the renderer fixture is structurally complete")
     }
@@ -1159,7 +1166,17 @@ mod tests {
     }
 
     fn answered_mutant(case: ProofNegativeCase) -> MutantObservation {
-        let mutant = renderer_transaction([0x09; 33]);
+        let mutant = match case {
+            ProofNegativeCase::WrongBlinder | ProofNegativeCase::PrivateCtImbalance => {
+                renderer_transaction([0x09; 33])
+            }
+            ProofNegativeCase::MissingRangeproof => {
+                renderer_transaction_with_proof([0x08; 33], Vec::new())
+            }
+            ProofNegativeCase::MalformedRangeproof => {
+                renderer_transaction_with_proof([0x08; 33], vec![0xff_u8, 2, 3])
+            }
+        };
         MutantObservation {
             submitted_bytes: mutant.encode().len(),
             mutation: ProofNegativeMutation::at_output(case, 0, mutant),
