@@ -1122,12 +1122,13 @@ fn the_new_role_moves_no_recorded_digest_because_it_rides_a_new_code() {
         FixtureOutputRole::SponsorChange { asset: ASSET },
         FixtureOutputRole::ExplicitDestination,
         FixtureOutputRole::ExplicitSponsorChange { asset: ASSET },
+        FixtureOutputRole::BalancingSponsorChange { asset: ASSET },
     ]
     .map(FixtureOutputRole::transcript_code);
     assert_eq!(
         codes,
-        [1, 2, 3, 4, 5, 6, 7],
-        "codes are stable and the new one is next"
+        [1, 2, 3, 4, 5, 6, 7, 8],
+        "codes are stable and each new one is next"
     );
 
     // And it takes the fee's side of every predicate but the program
@@ -1275,5 +1276,173 @@ fn an_explicit_sponsor_change_is_held_to_the_clauses_of_an_explicit_output() {
             .register(unsolved)
             .expect_err("no output solves the balance"),
         RegistrationRefusal::BalancingRoleNotUnique { found: 0 },
+    );
+}
+
+// --- The balancing sponsor change, and the wall it removes ------------
+
+/// A manifest whose ONLY blinded output is the sponsor's change: two
+/// explicit destinations, the change under `change`, and the fee.
+///
+/// The form the solving-role wall held. Consensus admits it — the
+/// change is a blinded output and the tally counts blinded outputs —
+/// and for as long as no solving role could be stated outside the
+/// destinations, no manifest of this form could register.
+fn sole_blinded_change_manifest(
+    handle: &str,
+    change: FixtureOutputRole,
+    input_blinder_sum: [u8; 32],
+) -> ConfidentialFixtureManifest {
+    ConfidentialFixtureManifest {
+        handle: ConfidentialFixtureHandle::new(handle.to_owned()),
+        material_class: PublicDisposableTestMaterial::EXPECTED,
+        derivation_profile: FixtureDerivationProfile::GuideCtfV1,
+        profiles: profiles(ReproducibilityContract::ByteIdentity),
+        retry_limit: MAX_PARITY_COUNTER,
+        explicit_asset: ASSET,
+        input_blinder_sum,
+        outputs: vec![
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::ExplicitDestination,
+                semantic_amount: 300_000_000,
+                output_program: vec![0x51],
+            },
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::ExplicitDestination,
+                semantic_amount: 200_000_000,
+                output_program: vec![0x52],
+            },
+            ConfidentialFixtureOutput {
+                role: change,
+                semantic_amount: 150_000_000,
+                output_program: vec![0x53],
+            },
+            ConfidentialFixtureOutput {
+                role: FixtureOutputRole::Fee,
+                semantic_amount: 50_000_000,
+                output_program: Vec::new(),
+            },
+        ],
+    }
+}
+
+#[test]
+fn a_balancing_sponsor_change_solves_and_is_committed_against_its_own_asset() {
+    // The wall this member removes: a form whose only blinded output is
+    // the sponsor's change had no solving role to name. It now names
+    // one, and the solve is the sole form's arithmetic reached through
+    // a sponsor role: nothing derives, so the solved blinder is the
+    // input blinder sum itself.
+    let mut registry = ConfidentialFixtureRegistry::new();
+    registry
+        .register(sole_blinded_change_manifest(
+            "ctf-v1/solving-sponsor-change",
+            FixtureOutputRole::BalancingSponsorChange {
+                asset: RESERVE_ASSET,
+            },
+            NON_CANCELING_SUM,
+        ))
+        .expect("a form whose only blinded output is the sponsor's change registers");
+    let frozen = registry.freeze();
+    let handle = ConfidentialFixtureHandle::new("ctf-v1/solving-sponsor-change".to_owned());
+    let digest = *frozen
+        .registered_digest(&handle)
+        .expect("the registry holds its own digest");
+    let resolved = frozen.resolve(&handle, &digest).expect("it resolves");
+
+    let FixtureOpenings::Derived { openings, .. } = resolved.openings() else {
+        panic!("byte identity derives openings");
+    };
+    assert_eq!(openings.len(), 4, "four outputs, four opening slots");
+    for index in [0_usize, 1, 3] {
+        assert!(
+            openings[index].is_none(),
+            "slot {index} is explicit and carries no opening",
+        );
+    }
+    let change = openings[2]
+        .as_ref()
+        .expect("the solving change carries the one opening");
+    assert_eq!(
+        change.value_blinder, NON_CANCELING_SUM,
+        "with nothing derived to subtract, the solve returns the input blinder sum ITSELF",
+    );
+
+    // The commitment is built against the role's OWN asset generator,
+    // not the manifest's: a remainder committed against the protocol
+    // asset would be a point the target reads as the wrong asset
+    // entirely. Recomputed rather than asserted from the role.
+    let recomputed = crate::commitment_oracle::commitment::commitment(
+        &RESERVE_ASSET,
+        150_000_000,
+        &change.value_blinder,
+    )
+    .expect("the oracle commits");
+    assert_eq!(
+        change.value_commitment, recomputed,
+        "the solving change is committed against the sponsor's reserve asset",
+    );
+}
+
+#[test]
+fn a_committed_change_that_does_not_declare_the_solving_role_draws_its_old_refusal() {
+    // NARROWING, NOT RELAXATION, observed. The manifest the wall held
+    // -- explicit destinations, a committed sponsor change stated with
+    // the role that existed, a fee -- draws exactly the refusal it has
+    // always drawn, with the same count. A form is freed only by
+    // NAMING the solving member.
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(sole_blinded_change_manifest(
+                "ctf-v1/undeclared-solving-change",
+                FixtureOutputRole::SponsorChange {
+                    asset: RESERVE_ASSET,
+                },
+                NON_CANCELING_SUM,
+            ))
+            .expect_err("an undeclared committed change still solves nothing"),
+        RegistrationRefusal::BalancingRoleNotUnique { found: 0 },
+    );
+
+    // And the uniqueness clause counts the new member exactly as it
+    // counts the old solving roles: declared beside a balancing
+    // destination it draws the two-solvers refusal.
+    let mut two_solvers = sole_blinded_change_manifest(
+        "ctf-v1/two-solving-roles",
+        FixtureOutputRole::BalancingSponsorChange {
+            asset: RESERVE_ASSET,
+        },
+        NON_CANCELING_SUM,
+    );
+    two_solvers.outputs[0].role = FixtureOutputRole::Balancing;
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(two_solvers)
+            .expect_err("two solving roles leave the sum underdetermined"),
+        RegistrationRefusal::BalancingRoleNotUnique { found: 2 },
+    );
+}
+
+#[test]
+fn a_solving_sponsor_change_over_a_canceling_sum_is_refused_rather_than_built() {
+    // The degeneracy warning travels WITH the solving role, which is
+    // the T5-041 condition carried verbatim: a sole solved output over
+    // a zero consumed sum hides nothing -- the solve returns the zero
+    // unchanged and the commitment is exactly the value times the
+    // asset generator. `DegenerateBalancingScalar` is what catches it,
+    // left standing and load-bearing.
+    assert_eq!(
+        ConfidentialFixtureRegistry::new()
+            .register(sole_blinded_change_manifest(
+                "ctf-v1/solving-change-canceling",
+                FixtureOutputRole::BalancingSponsorChange {
+                    asset: RESERVE_ASSET,
+                },
+                [0_u8; 32],
+            ))
+            .expect_err("a zero consumed sum would hide nothing"),
+        RegistrationRefusal::Derivation {
+            refusal: FixtureDerivationRefusal::DegenerateBalancingScalar,
+        },
     );
 }

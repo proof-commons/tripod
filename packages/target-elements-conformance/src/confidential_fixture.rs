@@ -403,6 +403,57 @@ pub enum FixtureOutputRole {
         /// every other role.
         asset: [u8; 32],
     },
+    /// A sponsor's committed change that SOLVES the balance.
+    ///
+    /// The member that lets the SOLVING role be stated on a sponsor
+    /// change. The balancing-output model was written when every
+    /// blinded output was a destination, so a form whose only blinded
+    /// output is the sponsor's change — possible on the target, whose
+    /// tally counts blinded outputs and does not know what a
+    /// destination is — had no solving role to name and could not
+    /// register. That was a recorded first-party limitation of the form
+    /// census, and this member is its removal, taken along the filed
+    /// path's first alternative: a second sponsor-change member whose
+    /// `solves_the_balance` is true, rather than a manifest-level
+    /// statement that would have shifted every registered digest.
+    ///
+    /// # What it is, against the two members it sits between
+    ///
+    /// It is [`Self::SponsorChange`]'s arithmetic under
+    /// [`Self::Balancing`]'s election. Like the committed change it
+    /// carries the sponsor's reserve asset in the role and an opening
+    /// the registry derives, and its commitment is built against its
+    /// OWN asset generator; like the balancing output its blinder is
+    /// SOLVED from the others rather than derived, and the uniqueness
+    /// clause counts it — a manifest declaring it beside another
+    /// solving role draws `BalancingRoleNotUnique` with the count of
+    /// two, exactly as two `Balancing` outputs always have.
+    ///
+    /// # The degeneracy warning travels WITH the role
+    ///
+    /// A sole solved output over a zero consumed sum hides nothing: the
+    /// solve returns that zero unchanged and the commitment is exactly
+    /// the value times its asset generator. The registry's existing
+    /// [`FixtureDerivationRefusal::DegenerateBalancingScalar`] refusal
+    /// is what catches it, left standing and load-bearing here exactly
+    /// as the sole-balancing form left it, so the freed form is
+    /// buildable only over coins whose blinders do not cancel.
+    ///
+    /// # It moves no recorded digest
+    ///
+    /// Under transcript code 8, which is the next unused one, and
+    /// nothing else — the same argument every member since
+    /// [`Self::SoleBalancing`] was added under. A manifest-level
+    /// "which output solves" field was the filed path's other
+    /// alternative and is the WRONG shape while a role can say it: the
+    /// role code already rides in every output's transcript, and a
+    /// manifest field would have shifted every registered digest.
+    BalancingSponsorChange {
+        /// The reserve asset this output carries, framed into the
+        /// transcript in the position the manifest's asset occupies for
+        /// every other role.
+        asset: [u8; 32],
+    },
 }
 
 impl FixtureOutputRole {
@@ -420,14 +471,15 @@ impl FixtureOutputRole {
             Self::SponsorChange { .. } => 5,
             Self::ExplicitDestination => 6,
             Self::ExplicitSponsorChange { .. } => 7,
+            Self::BalancingSponsorChange { .. } => 8,
         }
     }
 
     /// The asset this role carries in place of the manifest's, if any.
     ///
-    /// `Some` for the sponsor-change members alone — the committed one
-    /// and the explicit one, whose remainders are denominated in the
-    /// sponsor's reserve either way. Every other role takes the
+    /// `Some` for the sponsor-change members alone — committed,
+    /// explicit, and solving, whose remainders are denominated in the
+    /// sponsor's reserve whichever they are. Every other role takes the
     /// manifest's single `explicit_asset`, and this accessor is the ONE
     /// seam through which a role may say otherwise — so a reader
     /// checking that no existing digest moved has one place to look
@@ -435,7 +487,9 @@ impl FixtureOutputRole {
     #[must_use]
     pub const fn own_asset(self) -> Option<[u8; 32]> {
         match self {
-            Self::SponsorChange { asset } | Self::ExplicitSponsorChange { asset } => Some(asset),
+            Self::SponsorChange { asset }
+            | Self::ExplicitSponsorChange { asset }
+            | Self::BalancingSponsorChange { asset } => Some(asset),
             Self::Primary
             | Self::Balancing
             | Self::SoleBalancing
@@ -452,7 +506,7 @@ impl FixtureOutputRole {
     #[must_use]
     pub const fn solves_the_balance(self) -> bool {
         match self {
-            Self::Balancing | Self::SoleBalancing => true,
+            Self::Balancing | Self::SoleBalancing | Self::BalancingSponsorChange { .. } => true,
             Self::Primary
             | Self::Fee
             | Self::SponsorChange { .. }
@@ -474,9 +528,11 @@ impl FixtureOutputRole {
     #[must_use]
     pub const fn carries_an_opening(self) -> bool {
         match self {
-            Self::Primary | Self::Balancing | Self::SoleBalancing | Self::SponsorChange { .. } => {
-                true
-            }
+            Self::Primary
+            | Self::Balancing
+            | Self::SoleBalancing
+            | Self::SponsorChange { .. }
+            | Self::BalancingSponsorChange { .. } => true,
             Self::Fee | Self::ExplicitDestination | Self::ExplicitSponsorChange { .. } => false,
         }
     }
@@ -496,7 +552,8 @@ impl FixtureOutputRole {
             | Self::SoleBalancing
             | Self::SponsorChange { .. }
             | Self::ExplicitDestination
-            | Self::ExplicitSponsorChange { .. } => false,
+            | Self::ExplicitSponsorChange { .. }
+            | Self::BalancingSponsorChange { .. } => false,
         }
     }
 }
@@ -511,6 +568,7 @@ impl std::fmt::Display for FixtureOutputRole {
             Self::SponsorChange { .. } => "sponsor change",
             Self::ExplicitDestination => "explicit destination",
             Self::ExplicitSponsorChange { .. } => "explicit sponsor change",
+            Self::BalancingSponsorChange { .. } => "balancing sponsor change",
         };
         formatter.write_str(text)
     }
@@ -750,7 +808,7 @@ pub struct ConfidentialFixtureManifest {
     /// The explicit protocol asset every protocol output carries.
     ///
     /// Every output takes it EXCEPT one whose role names an asset of its
-    /// own — today the two sponsor-change members, whose remainders are
+    /// own — today the sponsor-change members, whose remainders are
     /// denominated in the sponsor's reserve rather than in the protocol
     /// asset the receipts carry.
     pub explicit_asset: [u8; 32],
