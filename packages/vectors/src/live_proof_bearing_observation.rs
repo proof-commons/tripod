@@ -2931,11 +2931,24 @@ mod tests {
         assert_eq!(T5_031_CONSTRUCTION_REFUSALS.captured(), None);
     }
 
+    fn minted_v2_run_of_record() -> &'static ProofBearingRunOfRecord {
+        let ProofBearingRunOfRecordV2::Recorded(recorded) = construction_run_of_record_v2() else {
+            panic!("the V2 run of record is still pending");
+        };
+        recorded
+    }
+
+    #[test]
+    fn the_v2_run_of_record_is_recorded() {
+        assert!(matches!(
+            construction_run_of_record_v2(),
+            ProofBearingRunOfRecordV2::Recorded(_)
+        ));
+    }
+
     #[test]
     fn the_recorded_coin_projection_is_internally_consistent() {
-        let live = synthetic_completed_live_record();
-        let recorded = ProofBearingRunOfRecord::try_from(&live)
-            .expect("the structurally complete live record projects");
+        let recorded = minted_v2_run_of_record();
         let issued_asset = asset_of(recorded.issued_asset()).expect("the recorded asset is valid");
         let owners = [
             OwnerLeaf::derive(&FIRST_SCALAR).expect("the first owner derives"),
@@ -2959,6 +2972,7 @@ mod tests {
             };
             assert_eq!(commitment.first(), Some(prefix));
             assert_eq!(coin.program(), owner.program.as_slice());
+            assert_eq!(coin.program().len(), 34);
         }
     }
 
