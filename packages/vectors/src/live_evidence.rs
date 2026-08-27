@@ -686,6 +686,46 @@ pub enum LiveRowStanding {
         /// The first-party test that recomputed it.
         observed_by: &'static str,
     },
+    /// A RELATION over TWO accepted identities answered the row.
+    ///
+    /// # Why this member had to be minted
+    ///
+    /// Minted by DIRECTION, on the precedent [`Self::DeterminismObserved`]
+    /// and [`Self::FirstPartyFactObserved`] both set, and for the reason
+    /// they were set: a row was answerable, the vocabulary had no name to
+    /// file the answer under, and the honest options were to leave the
+    /// row unmoved or to file its answer under a member that would
+    /// misdescribe it. The minimality wave took the first and REPORTED
+    /// the gap in these words — `NativeRunObserved` carries exactly ONE
+    /// `accepted_identity` and a projection equality is a relation over
+    /// TWO — and declined to mint a member for it unilaterally. This
+    /// member is the repair the pairs arc minted in answer.
+    ///
+    /// # What may occupy it, and what it must never be read as
+    ///
+    /// TWO identities a target computed for TWO transactions the target
+    /// ACCEPTED, which are the two MATERIALIZATIONS OF ONE semantic
+    /// fixture (§16.1), together with the relation observed over them in
+    /// the row's own terms. Not two acceptances that happen to be
+    /// comparable; not one acceptance and one shape sibling — that
+    /// substitution is exactly what [`crate::live_pairs::PairTargetVerdict`]'s
+    /// `NotSubmittedShapeAcceptedElsewhere` member exists to deny, and a
+    /// standing that took it would undo the denial.
+    ///
+    /// It is counted in its OWN census bucket. A relation over two
+    /// acceptances is not two acceptances of two rows, and adding it to
+    /// [`LiveEvidenceCensus::native_run_observed`] would let a reader
+    /// take one observation for two.
+    PairedRelationObserved {
+        /// The identity the target computed for the accepted EXPLICIT
+        /// materialization.
+        explicit_identity: &'static str,
+        /// The identity the target computed for the accepted PRIVATE
+        /// materialization.
+        private_identity: &'static str,
+        /// The relation observed over the two, in the row's own terms.
+        relation: &'static str,
+    },
     /// A row whose own gate is a FACT about this workspace, established.
     ///
     /// # Why this member had to be minted
@@ -779,6 +819,15 @@ impl LiveRowStanding {
                 // in its own member and counts in its own bucket.
                 | Self::DeterminismObserved { .. }
                 // Answered, and answered by the gate its own row was
+                // given: §15.2's projection-equality row asks for a
+                // COMPARISON of two accepted transactions' projections,
+                // which is a relation and not an acceptance. Both target
+                // verdicts are underneath it, so unlike the two members
+                // around it this one does rest on a chain — what it is
+                // not is ONE verdict, which is why it stands in its own
+                // member and counts in its own bucket.
+                | Self::PairedRelationObserved { .. }
+                // Answered, and answered by the gate its own row was
                 // given: two rows ask whether something is SO of this
                 // workspace, and a fact with a site is the whole of what
                 // such a row wants. What it is NOT is a target verdict,
@@ -827,6 +876,7 @@ pub struct LiveEvidenceCensus {
     native_run_observed: usize,
     native_refusal_observed: usize,
     determinism_observed: usize,
+    paired_relation_observed: usize,
     first_party_fact_observed: usize,
     infrastructure_blocked: usize,
     report_layer: usize,
@@ -873,6 +923,19 @@ impl LiveEvidenceCensus {
     #[must_use]
     pub const fn native_refusal_observed(&self) -> usize {
         self.native_refusal_observed
+    }
+
+    /// How many rows a relation over TWO accepted identities has
+    /// answered.
+    ///
+    /// A bucket of its own for the reason the determinism and refusal
+    /// buckets are: what it counts is a different observation. A paired
+    /// relation is ONE fact about TWO transactions, and adding it to
+    /// [`Self::native_run_observed`] would let a reader take it for two
+    /// rows' worth of acceptance evidence.
+    #[must_use]
+    pub const fn paired_relation_observed(&self) -> usize {
+        self.paired_relation_observed
     }
 
     /// How many rows a first-party determinism observation has answered.
@@ -1698,8 +1761,21 @@ fn classify(
             refusal_detail,
         });
     }
-    // Last of the three observation branches, and after the specific
-    // blocker for the same reason the other two are. It is asked after
+    // Beside the two above and after them, for the reason they sit
+    // after the specific blocker. It is asked after the single-identity
+    // acceptance branch deliberately: a row answerable by an acceptance
+    // of its OWN shape must take that answer, and only a row whose gate
+    // is a RELATION over two acceptances reaches this at all.
+    if let Some((explicit_identity, private_identity, relation)) = observed_row_paired_relation(row)
+    {
+        return Ok(LiveRowStanding::PairedRelationObserved {
+            explicit_identity,
+            private_identity,
+            relation,
+        });
+    }
+    // Last of the observation branches, and after the specific
+    // blocker for the same reason the others are. It is asked after
     // them rather than before because a row whose gate IS a target
     // verdict must take the target's answer where one exists; only a
     // row §11.2 gave a non-acceptance gate reaches this at all.
@@ -1827,6 +1903,9 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
             LiveRowStanding::NativeRunObserved { .. } => census.native_run_observed += 1,
             LiveRowStanding::NativeRefusalObserved { .. } => census.native_refusal_observed += 1,
             LiveRowStanding::DeterminismObserved { .. } => census.determinism_observed += 1,
+            LiveRowStanding::PairedRelationObserved { .. } => {
+                census.paired_relation_observed += 1;
+            }
             LiveRowStanding::FirstPartyFactObserved { .. } => {
                 census.first_party_fact_observed += 1;
             }
@@ -1950,52 +2029,81 @@ pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 /// Whether any run has compared the public protocol projections of an
 /// ACCEPTED private transaction and its PAIRED ACCEPTED explicit one.
 ///
-/// FALSE, and this constant is the filed path for the
-/// `projection-equality-with-paired-explicit` row rather than a note
-/// about it. The row did not move in the minimality wave, it does not
-/// move here, and what stands in the way is TWO things rather than one
-/// -- which is the reason for writing them down separately, because a
-/// reader who closed only the first would still not have the row.
+/// The filed path for the `projection-equality-with-paired-explicit`
+/// row, and DERIVED rather than written: it is the pairs arc's own
+/// ledger flag. A constant restating in this file what another module
+/// observes is a second opinion free to drift from the first, and this
+/// one is the same fact read from where the fact lives.
 ///
-/// # The first gap: the accepted transactions are not a PAIR
+/// # What it took, because the two gaps were real
 ///
-/// §16.1's load-bearing word is that a pair begins from ONE semantic
-/// fixture, materialized twice. The two acceptances a reader would reach
-/// for are `live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID`
-/// and `live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID`,
-/// and they are two INDEPENDENT ceremonies whose shapes match -- not two
-/// materializations of one fixture. The registry says so in its own
-/// bytes: [`crate::live_pairs::PairTargetVerdict`] has no accepted
-/// variant at all, and its
-/// `NotSubmittedShapeAcceptedElsewhere` member exists precisely to
-/// record that a run of a member's OWN SHAPE was accepted while denying
-/// that the member was. So a comparison over those two identities would
-/// compare two UNPAIRED transactions, which is the substitution
-/// `observed_row_acceptance` forbids when it refuses an acceptance of a
-/// different shape in place of the row's own.
+/// The minimality wave filed this FALSE and named two things standing in
+/// the way rather than one, and both had to be closed.
 ///
-/// # The second gap: no standing can hold the observation
+/// The first was that the two acceptances a reader would reach for are
+/// NOT a pair. §16.1's load-bearing word is that a pair begins from ONE
+/// semantic fixture materialized twice, and
+/// `live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID` and
+/// `live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID`
+/// are two INDEPENDENT ceremonies whose shapes match. Comparing them
+/// would be the substitution [`crate::live_pairs::PairTargetVerdict`]'s
+/// `NotSubmittedShapeAcceptedElsewhere` member exists to deny. The arc
+/// closes it by CONSTRUCTION rather than by argument: both its members
+/// read one fixture, and neither shape carries a literal of its own.
 ///
+/// The second was that no standing could hold the observation.
 /// [`LiveRowStanding::NativeRunObserved`] carries exactly ONE
-/// `accepted_identity`. A projection equality is a relation over TWO
-/// accepted identities, and filing it under a member shaped for one
-/// would be the single error a run of record exists to prevent -- the
-/// error [`LiveRowStanding::DeterminismObserved`] was minted to avoid
-/// when wave seven produced an observation the vocabulary could not
-/// take. That minting was DIRECTED in answer to a reported gap rather
-/// than taken unilaterally, and this gap is reported the same way rather
-/// than closed by inventing a member for it.
+/// `accepted_identity` and a projection equality is a relation over TWO,
+/// so filing it under that member would be the single error a run of
+/// record exists to prevent. The wave declined to mint a member for it
+/// unilaterally and reported the gap;
+/// [`LiveRowStanding::PairedRelationObserved`] is the repair the owner's
+/// pairs-arc ruling directed in answer, on the precedent
+/// [`LiveRowStanding::DeterminismObserved`] set.
 ///
-/// # What would close it
+/// # What it is still not
 ///
-/// One run that submits the one-to-one pair's two MEMBERS -- not their
-/// shape siblings -- to one node, has both accepted, and compares the
-/// public protocol projections of the two accepted transactions; and a
-/// standing able to carry two identities beside what was compared. The
-/// pairs lane submits nothing today, so the first half is a capability
-/// this workspace has yet to build and not a target verdict anybody has
-/// seen.
-pub const A_PAIRED_ACCEPTED_PROJECTION_COMPARISON_EXISTS: bool = false;
+/// True here means one arc observed one relation over one fixture's two
+/// materializations. It is not a claim about §16.1's other four pairs,
+/// whose members remain unsubmitted and whose registry entries say so.
+pub const A_PAIRED_ACCEPTED_PROJECTION_COMPARISON_EXISTS: bool =
+    crate::live_pair_arc::run_of_record::A_PAIR_ARC_LEDGER_EXISTS;
+
+/// The relation one PAIRS ARC observed over its two accepted members.
+///
+/// Beside [`observed_row_acceptance`] and shaped like it, and separate
+/// for the reason [`LiveRowStanding::PairedRelationObserved`] is a
+/// separate member: what answers this row is not an acceptance but a
+/// RELATION over two of them, and the two have to be the two
+/// materializations of one §16.1 fixture rather than two runs whose
+/// shapes match.
+///
+/// It answers only while the arc's own run of record carries BOTH
+/// identities. The flag and the identities move together at the arc's
+/// own site, so a row cannot move here on a ledger that does not exist.
+fn observed_row_paired_relation(
+    row: &LiveSafetyRow,
+) -> Option<(&'static str, &'static str, &'static str)> {
+    use crate::live_pair_arc::run_of_record as arc;
+
+    match row.name() {
+        "projection-equality-with-paired-explicit" => {
+            let explicit = arc::EXPLICIT_MEMBER_ACCEPTED_IDENTITY?;
+            let private = arc::PRIVATE_MEMBER_ACCEPTED_IDENTITY?;
+            if !arc::A_PAIR_ARC_LEDGER_EXISTS {
+                return None;
+            }
+            Some((
+                explicit,
+                private,
+                "the public protocol projections of the two accepted materializations of one \
+                 §16.1 one-to-one fixture agree on every §6.6 term, the private member \
+                 withholding the exact amounts the explicit member publishes",
+            ))
+        }
+        _ => None,
+    }
+}
 
 /// The residuals this plan inherits and does not clear.
 ///
@@ -2108,6 +2216,7 @@ mod tests {
                 + census.native_run_required()
                 + census.native_run_observed()
                 + census.determinism_observed()
+                + census.paired_relation_observed()
                 + census.first_party_fact_observed()
                 + census.native_refusal_observed()
                 + census.infrastructure_blocked()
@@ -2219,6 +2328,7 @@ mod tests {
                 + census.native_run_required()
                 + census.native_run_observed()
                 + census.determinism_observed()
+                + census.paired_relation_observed()
                 + census.first_party_fact_observed()
                 + census.native_refusal_observed()
                 + census.infrastructure_blocked()
@@ -2248,6 +2358,56 @@ mod tests {
                 assert!(row.row().is_first_party());
             }
         }
+    }
+
+    /// The paired relation's own shape, checked apart from the loop.
+    ///
+    /// The assertion a reader wants most is that the two identities are
+    /// DIFFERENT: one identity recorded twice would be one transaction,
+    /// and a relation over one transaction is not a relation.
+    fn assert_paired_relation(explicit: &str, private: &str, relation: &str) {
+        assert_eq!(explicit.len(), 64);
+        assert_eq!(private.len(), 64);
+        assert_ne!(
+            explicit, private,
+            "the standing names one transaction twice"
+        );
+        assert_ne!(relation.len(), 0, "the standing observed nothing");
+    }
+
+    /// The positive rows a run of their OWN SHAPE answered.
+    ///
+    /// Spelled rather than derived so that a row moved by an edit and
+    /// not by a run fails the assertion that reads it. That is the whole
+    /// point: a delta that could grow quietly is a delta nobody is
+    /// checking.
+    fn rows_answered_by_a_run_of_their_own_shape() -> BTreeSet<&'static str> {
+        BTreeSet::from([
+            "both-commitment-parity-forms",
+            "candidate-maximum-inputs",
+            "candidate-maximum-outputs",
+            "canonical-input-normalization",
+            "one-destination-owner",
+            "one-input-split-into-two",
+            "one-input-to-one-output",
+            "private-many-to-many-representative",
+            "private-sponsor-values",
+            "private-merge",
+            "private-one-to-one",
+            "private-several-distinct-owners",
+            "private-split",
+            "repeated-owner",
+            "semantic-boundary-values",
+            "several-destination-owners",
+            "several-distinct-owners",
+            "several-inputs-merged-into-one",
+            "several-inputs-to-several-outputs",
+            "sponsor-change-absent",
+            "sponsor-change-present",
+            "sponsored",
+            "sponsorless",
+            "target-ct-conservation",
+        ])
     }
 
     #[test]
@@ -2287,6 +2447,7 @@ mod tests {
         let mut positives = 0_usize;
         let mut answered = BTreeSet::new();
         let mut by_determinism = BTreeSet::new();
+        let mut by_paired_relation = BTreeSet::new();
         for row in plan.rows() {
             if row.row().polarity() != LiveSafetyPolarity::Positive {
                 continue;
@@ -2329,39 +2490,26 @@ mod tests {
                     assert!(row.standing().is_answered());
                     by_determinism.insert(row.row().name());
                 }
+                // The fourth observation kind, in its own set for the
+                // reason the third is in its own: what answers this row
+                // is a RELATION over two acceptances, and folding it
+                // into `answered` would put it in a set whose assertion
+                // message says every member was produced by a run of its
+                // own shape. It was produced by a run of a PAIR.
+                LiveRowStanding::PairedRelationObserved {
+                    explicit_identity,
+                    private_identity,
+                    relation,
+                } => {
+                    assert_paired_relation(explicit_identity, private_identity, relation);
+                    assert!(row.standing().is_answered());
+                    by_paired_relation.insert(row.row().name());
+                }
                 other => panic!("{} stands at {other:?}", row.row()),
             }
         }
         assert_eq!(positives, 26, "both positive tables together");
-        assert_eq!(
-            answered,
-            BTreeSet::from([
-                "both-commitment-parity-forms",
-                "candidate-maximum-inputs",
-                "candidate-maximum-outputs",
-                "canonical-input-normalization",
-                "one-destination-owner",
-                "one-input-split-into-two",
-                "one-input-to-one-output",
-                "private-many-to-many-representative",
-                "private-sponsor-values",
-                "private-merge",
-                "private-one-to-one",
-                "private-several-distinct-owners",
-                "private-split",
-                "repeated-owner",
-                "semantic-boundary-values",
-                "several-destination-owners",
-                "several-distinct-owners",
-                "several-inputs-merged-into-one",
-                "several-inputs-to-several-outputs",
-                "sponsor-change-absent",
-                "sponsor-change-present",
-                "sponsored",
-                "sponsorless",
-                "target-ct-conservation",
-            ]),
-        );
+        assert_eq!(answered, rows_answered_by_a_run_of_their_own_shape());
         assert_eq!(plan.census().native_run_observed(), 24);
 
         // The positive private class that did NOT move is named here
@@ -2426,15 +2574,22 @@ mod tests {
         // a member able to hold it. The row is asserted below at that
         // member, and it is asserted NOT to be in `answered` — because
         // no run of its shape produced anything, and that remains true.
-        let unmoved = "projection-equality-with-paired-explicit";
+        // THE PROJECTION-EQUALITY ROW HAS MOVED, and it moved at a
+        // standing of its own. It is asserted OUT of `answered` for the
+        // reason the openings row is: no run of its own shape produced
+        // it, because its shape is a pair and what answers it is a
+        // relation over two acceptances.
+        let paired = "projection-equality-with-paired-explicit";
         assert!(
-            !answered.contains(unmoved),
-            "{unmoved} claims an answer no run of its own shape produced",
+            !answered.contains(paired),
+            "{paired} claims an answer a single run of one shape produced",
         );
         assert!(
-            !by_determinism.contains(unmoved),
-            "{unmoved} claims a determinism answer nothing recomputed",
+            !by_determinism.contains(paired),
+            "{paired} claims a determinism answer nothing recomputed",
         );
+        assert_eq!(by_paired_relation, BTreeSet::from([paired]));
+        assert_eq!(plan.census().paired_relation_observed(), 1);
         assert_eq!(
             by_determinism,
             BTreeSet::from(["deterministic-public-fixture-openings"]),

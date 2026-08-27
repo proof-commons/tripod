@@ -3063,3 +3063,165 @@ fn the_missing_sponsor_authorization_negative_is_refused_behind_its_control() {
 
     assert!(rendered.contains("evidences_no_negative_case false"));
 }
+
+// --- §16.1: the pairs arc, one fixture materialized twice -------------
+
+/// The PAIRS ARC: one §16.1 semantic fixture, both its materializations
+/// submitted to ONE node, and the relation over the two acceptances.
+///
+/// # Why this is one test and cannot be two
+///
+/// §6.6 asks a pair's members to carry the same exact explicit `U`, and
+/// each of these ignored tests spins its own disposable chain and issues
+/// its own asset. Two tests would therefore be two assets and two chains,
+/// and the pair's fifth term would disagree for a reason that has nothing
+/// to do with representation. So the arc issues once, submits the
+/// explicit member, hands the private half the asset the first one
+/// issued, and submits the private member — one ceremony, one node.
+///
+/// # What this run establishes that no earlier run could
+///
+/// The campaign already had an accepted explicit one-to-one and an
+/// accepted private strict one-to-one, and they are not a pair: §16.1
+/// requires ONE semantic fixture materialized twice, and those two are
+/// independent ceremonies whose shapes merely match. Both members here
+/// read the same fixture and neither shape carries a literal of its own,
+/// so what is submitted is the pair rather than two things that resemble
+/// one.
+///
+/// # Nothing here decides what the node should have said
+///
+/// The assertions are about a run that COMPLETED and about the arc's own
+/// record of it. Where a member was not accepted the arc refuses before
+/// it has a ledger, and the refusal is reported with the target's own
+/// words in the transcript rather than asserted away.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_pairs_arc_submits_both_members_of_one_fixture_to_a_real_target() {
+    use vectors::live_pair_arc::{PairArcPlanner, render_pair_arc};
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension("pairs-arc");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner = PairArcPlanner::new(identifier(&genesis)).expect("the arc ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_pair_arc(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    if let Some(refusal) = record.refusal() {
+        panic!("the pairs arc refused before it had a ledger: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    // The arc's own fixture, and the fact every later claim rests on.
+    assert!(record.fixture_conserves());
+
+    let ledger = record.ledger().expect("a completed arc writes a ledger");
+
+    // ONE asset, which is what one issuance buys and what §6.6's fifth
+    // term needs.
+    assert_eq!(
+        record.issued_asset(),
+        Some(ledger.issued_asset()),
+        "the ledger names an asset the run did not issue",
+    );
+    assert_eq!(
+        ledger.explicit().projection().explicit_asset(),
+        ledger.private().projection().explicit_asset(),
+        "the two members do not carry one exact explicit U",
+    );
+
+    // Both members at the acceptance bar every recorded run meets: an
+    // identity the target computed, a copy read back equal to what it was
+    // handed, and every input's signature verified against a message
+    // recomputed here.
+    for member in [ledger.explicit(), ledger.private()] {
+        assert!(
+            member.meets_the_acceptance_bar(),
+            "{:?} did not meet the acceptance bar",
+            member.member(),
+        );
+    }
+    assert_ne!(
+        ledger.explicit().accepted_txid(),
+        ledger.private().accepted_txid(),
+        "the two members are one transaction",
+    );
+
+    // The relation, in the row's own terms.
+    let observation = ledger.observation();
+    assert!(
+        observation.projections_are_equal(),
+        "a §6.6 term disagrees: {:?}",
+        observation.terms(),
+    );
+
+    // And the pair is evidence of MINIMALITY rather than of similarity:
+    // the private member withholds exact amounts the explicit member
+    // publishes. A pair whose private half published everything would
+    // establish nothing about disclosure.
+    assert!(observation.terms_withheld_by_the_private_member() > 0);
+    assert!(
+        ledger
+            .explicit()
+            .projection()
+            .publishes_every_exact_amount()
+    );
+    assert!(
+        !ledger.private().projection().publishes_every_exact_amount(),
+        "the private member published an exact amount",
+    );
+    assert!(ledger.supports_the_projection_equality_row());
+
+    // The run says in its own bytes what it did not establish.
+    assert!(rendered.contains("evidences_no_negative_case true"));
+    assert!(rendered.contains("builds_no_sponsor_region true"));
+}
