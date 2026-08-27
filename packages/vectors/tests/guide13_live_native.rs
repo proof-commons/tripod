@@ -454,17 +454,18 @@ fn one_confidential_predecessor_is_funded_mined_and_read_back() {
 ///
 /// # What it asserts, and what it merely records
 ///
-/// It asserts the *shape* of a completed ceremony: that every case was
-/// submitted and answered, and that an acceptance carried a readback to
-/// check. What each case's layer was is written into the artifact and
-/// asserted nowhere — a lane that asserted a verdict would fail rather
-/// than report when the honest answer changed.
+/// It asserts the shape of a completed ceremony and binds all seven
+/// answers to T5-026's run of record: each case name, each target layer,
+/// whether an accepted identity was present, and the selected case's
+/// accepted and reverified identity. A changed answer is still written
+/// into the artifact first, and then the lane fails closed pending owner
+/// review rather than silently advancing the historical record.
 ///
-/// The one thing it does assert about content is the two-origin
-/// agreement, and only where an acceptance was observed: a run that
-/// accepted a candidate and then could not verify its own witness
-/// against its own recomputed message has found something, and it must
-/// say so by failing rather than by writing a false line.
+/// The two-origin agreement is unconditional for the selected case. A
+/// run that accepted a candidate and then could not verify its read-back
+/// witness against the independently recomputed message has found
+/// something, and it must say so by failing rather than by writing a
+/// false line.
 ///
 /// # It clears nothing by running
 ///
@@ -540,6 +541,7 @@ fn one_owner_authorization_is_observed_on_the_explicit_lane() {
     }
 
     outcome.expect("the ceremony reached the target");
+    assert_owner_observation_matches_run_of_record(record);
 
     // Every case was submitted and answered. A case that was neither is
     // one the ceremony quietly dropped, and a run that dropped a control
@@ -576,30 +578,114 @@ fn one_owner_authorization_is_observed_on_the_explicit_lane() {
         "the two candidate messages coincided",
     );
 
-    // The two origins, where an acceptance was observed. This is the
-    // only content assertion in the file, and it is here because a run
-    // that accepted a candidate and then failed to verify its own
-    // witness against its own recomputed message has found something.
-    if let Some(check) = record.reverification() {
-        assert!(
-            check.readback_matches_submission(),
-            "the bytes the node reported are not the bytes it was handed",
-        );
-        assert!(
-            check.verified().is_ok(),
-            "the accepted witness does not verify against the recomputed message: {:?}",
-            check.verified(),
-        );
-        assert!(
-            !check.verifies_against_empty_vector_message(),
-            "the accepted witness verifies against both candidate messages",
-        );
-    }
-
     // The run says in its own bytes what it did not establish.
     assert!(rendered.contains("establishes_the_proof_bearing_lane false"));
     assert!(rendered.contains("clears_sighash_profile_unreviewed false"));
     assert!(rendered.contains("discharges_no_matrix_row true"));
+}
+
+/// Bind every T5-026 answer after the transcript has been written.
+fn assert_owner_observation_matches_run_of_record(
+    record: &vectors::live_owner_observation::OwnerObservationRecord,
+) {
+    use vectors::live_owner_observation::run_of_record::{
+        self, ExpectedAcceptance, ExpectedCaseOutcome,
+    };
+
+    assert_eq!(
+        record.observations().len(),
+        run_of_record::EXPECTED_CASE_OUTCOMES.len(),
+        "the ceremony did not answer the full run-of-record census",
+    );
+
+    let mut expected_reverification_identity = None;
+    for (observation, expected) in record
+        .observations()
+        .iter()
+        .zip(run_of_record::EXPECTED_CASE_OUTCOMES)
+    {
+        match expected {
+            ExpectedCaseOutcome::Recorded {
+                case,
+                name,
+                layer,
+                acceptance,
+            } => {
+                assert_eq!(observation.case(), case, "the recorded case order drifted");
+                assert_eq!(
+                    observation.case().name(),
+                    name,
+                    "the recorded case name drifted",
+                );
+                assert_eq!(
+                    observation.layer(),
+                    layer,
+                    "{name} reached a different target layer",
+                );
+                match acceptance {
+                    ExpectedAcceptance::Refused => assert_eq!(
+                        observation.accepted_txid(),
+                        None,
+                        "{name} was refused but carried an accepted identity",
+                    ),
+                    ExpectedAcceptance::Accepted {
+                        identity,
+                        reverification_identity,
+                    } => {
+                        assert_eq!(
+                            observation.accepted_txid(),
+                            Some(identity),
+                            "{name} was accepted at a different identity",
+                        );
+                        assert!(
+                            expected_reverification_identity
+                                .replace(reverification_identity)
+                                .is_none(),
+                            "the run of record names more than one reverification",
+                        );
+                    }
+                }
+            }
+            ExpectedCaseOutcome::NotRecorded { case, name } => {
+                assert_eq!(
+                    observation.case(),
+                    case,
+                    "the unrecorded case order drifted"
+                );
+                assert_eq!(
+                    observation.case().name(),
+                    name,
+                    "the unrecorded case name drifted",
+                );
+            }
+        }
+    }
+
+    // Checked UNCONDITIONALLY. The selected case is asserted Accepted
+    // above, so an absent second-origin record is itself a binding failure.
+    let expected_reverification_identity = expected_reverification_identity
+        .expect("the selected case names its recorded reverification identity");
+    let check = record
+        .reverification()
+        .expect("the selected acceptance carries its two-origin readback check");
+    assert_eq!(
+        check.accepted_txid(),
+        expected_reverification_identity,
+        "the reverification named a different accepted transaction",
+    );
+    assert!(
+        check.readback_matches_submission(),
+        "the bytes the node reported are not the bytes it was handed",
+    );
+    assert!(
+        check.verified().is_ok(),
+        "the accepted witness does not verify against the recomputed message: {:?}",
+        check.verified(),
+    );
+    assert!(
+        !check.verifies_against_empty_vector_message(),
+        "the accepted witness verifies against both candidate messages",
+    );
 }
 
 /// One owner authorization observed on the PROOF-BEARING lane.
