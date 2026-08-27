@@ -102,6 +102,31 @@ impl UnobservedReason {
     }
 }
 
+/// Why an observable weight still has no comparison in this run.
+///
+/// Submitted bytes whose target observation omitted a weight are a local
+/// evidence absence. A form that never had bytes to submit instead keeps
+/// the infrastructure blocker that prevented those bytes from existing.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum ComparisonAbsenceReason {
+    /// These bytes were submitted, but the target supplied no weight.
+    NoObservedWeightForTheseBytes,
+    /// The run stopped before this form had bytes to submit.
+    RunBlockedBeforeBytesExisted(LiveInfrastructureBlocker),
+}
+
+impl ComparisonAbsenceReason {
+    /// The reason's wire spelling.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::NoObservedWeightForTheseBytes => "no-observed-weight-for-these-bytes",
+            Self::RunBlockedBeforeBytesExisted(_) => "run-blocked-before-bytes-existed",
+        }
+    }
+}
+
 /// Where one dimension's comparison stands (§18.4).
 ///
 /// Four arms, and exactly one of them is agreement. The two that carry no
@@ -131,10 +156,11 @@ pub enum ComparisonStanding {
     NotObservableAtThisBoundary(UnobservedReason),
     /// The dimension is observable, and this run observed nothing.
     ///
-    /// The blocker names what stopped the run from reaching a verdict for
-    /// this form. Distinguished from the arm above because this one is
-    /// cleared by a run and that one is not.
-    NoObservationInThisRun(LiveInfrastructureBlocker),
+    /// The reason distinguishes submitted bytes whose target observation
+    /// omitted a weight from a form whose blocker prevented any bytes from
+    /// existing. Distinguished from the arm above because this one is
+    /// cleared by another run and that one is not.
+    NoObservationInThisRun(ComparisonAbsenceReason),
 }
 
 impl ComparisonStanding {
@@ -344,17 +370,22 @@ fn compare_plan(
     // What this run recorded is that ITS private form was never
     // submitted, which is the fact the standing rests on and which the
     // narrower funding arm does not change.
-    let blocker = transcript
-        .gap_for(plan)
-        .map_or(LiveInfrastructureBlocker::OwnerSighashNotComputable, |_| {
-            LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded
-        });
+    let absence_reason = transcript.gap_for(plan).map_or(
+        ComparisonAbsenceReason::RunBlockedBeforeBytesExisted(
+            LiveInfrastructureBlocker::OwnerSighashNotComputable,
+        ),
+        |_| {
+            ComparisonAbsenceReason::RunBlockedBeforeBytesExisted(
+                LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
+            )
+        },
+    );
 
     let standings = LiveResourceRecord::ALL
         .iter()
         .map(|dimension| {
             let standing = unobservable(*dimension).map_or_else(
-                || compare_figure(predicted, observed, blocker),
+                || compare_figure(predicted, observed, absence_reason),
                 ComparisonStanding::NotObservableAtThisBoundary,
             );
             (*dimension, standing)
@@ -373,7 +404,7 @@ fn compare_plan(
 const fn compare_figure(
     predicted: Option<u64>,
     observed: Option<u64>,
-    blocker: LiveInfrastructureBlocker,
+    absence_reason: ComparisonAbsenceReason,
 ) -> ComparisonStanding {
     match (predicted, observed) {
         (Some(predicted), Some(observed)) if predicted == observed => {
@@ -383,7 +414,7 @@ const fn compare_figure(
             predicted,
             observed,
         },
-        _ => ComparisonStanding::NoObservationInThisRun(blocker),
+        _ => ComparisonStanding::NoObservationInThisRun(absence_reason),
     }
 }
 
@@ -413,8 +444,8 @@ pub fn run_agreements(comparisons: &[PlanResourceComparison]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        ComparisonStanding, ResourcePlannerFailure, UnobservedReason, compare_run, run_agreements,
-        run_failures, unobservable,
+        ComparisonAbsenceReason, ComparisonStanding, ResourcePlannerFailure, UnobservedReason,
+        compare_run, run_agreements, run_failures, unobservable,
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
     use crate::live_measurements::{LiveResourceCase, LiveResourceRecord, measure_resource_cases};
@@ -477,7 +508,9 @@ mod tests {
         assert_eq!(
             private.standing(LiveResourceRecord::CompleteWeight),
             Some(ComparisonStanding::NoObservationInThisRun(
-                LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
+                ComparisonAbsenceReason::RunBlockedBeforeBytesExisted(
+                    LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
+                ),
             )),
         );
         assert_eq!(private.agreements().len(), 0);
@@ -526,6 +559,51 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn bytes_without_an_observed_weight_name_that_local_absence() {
+        // RED before NEW-N2's repair: the old fallback called this the
+        // retired owner-sighash infrastructure blocker even though these
+        // exact bytes were submitted and only their weight is absent.
+        let run = observed_run_of_record();
+        let observations = run
+            .observations()
+            .iter()
+            .map(|observation| crate::live_native::rewitnessed(observation, None))
+            .collect();
+        let run = crate::live_native::with_observations(run, observations);
+        let comparisons = compare_run(&run);
+        let explicit = comparisons
+            .iter()
+            .find(|comparison| comparison.plan() == LiveTransferRepresentationPlan::Explicit)
+            .expect("both forms are compared");
+
+        assert_eq!(
+            explicit.standing(LiveResourceRecord::CompleteWeight),
+            Some(ComparisonStanding::NoObservationInThisRun(
+                ComparisonAbsenceReason::NoObservedWeightForTheseBytes,
+            )),
+        );
+        assert_eq!(
+            ComparisonAbsenceReason::NoObservedWeightForTheseBytes.name(),
+            "no-observed-weight-for-these-bytes",
+        );
+    }
+
+    #[test]
+    fn a_present_weight_keeps_its_wire_spelling_byte_identical() {
+        let comparisons = compare_run(&observed_run_of_record());
+        let explicit = comparisons
+            .iter()
+            .find(|comparison| comparison.plan() == LiveTransferRepresentationPlan::Explicit)
+            .expect("both forms are compared");
+        let standing = explicit
+            .standing(LiveResourceRecord::CompleteWeight)
+            .expect("the observed weight is classified");
+
+        assert_eq!(standing, ComparisonStanding::Agree { figure: 1_911 });
+        assert_eq!(standing.name().as_bytes(), b"agree");
     }
 
     #[test]
