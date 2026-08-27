@@ -719,8 +719,7 @@ fn assert_owner_observation_matches_run_of_record(
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
     use vectors::live_proof_bearing_observation::{
-        PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION, ProofBearingObservationPlanner,
-        ProofBearingRunOfRecord, ProofBearingRunOfRecordV2, construction_run_of_record_v2,
+        ProofBearingObservationPlanner, ProofBearingRunOfRecordV2, construction_run_of_record_v2,
         render_proof_bearing_observation,
     };
 
@@ -783,32 +782,22 @@ fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
 
     outcome.expect("the ceremony reached the target");
 
-    assert_construction_refusals_match_the_run_of_record(record);
-    match construction_run_of_record_v2() {
-        ProofBearingRunOfRecordV2::Pending => {
-            let projection = ProofBearingRunOfRecord::try_from(record)
-                .expect("the completed V2 ceremony projects before constants are minted");
-            assert_eq!(
-                projection.schema_version(),
-                PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION
-            );
-            assert!(rendered.contains("run_of_record_v2 pending"));
-            assert!(rendered.contains("run_of_record_projection ready"));
-        }
-        ProofBearingRunOfRecordV2::Recorded(expected) => {
-            assert_proof_bearing_record_matches_run_of_record(record, expected);
-        }
-    }
+    let ProofBearingRunOfRecordV2::Recorded(expected) = construction_run_of_record_v2() else {
+        panic!("the V2 run-of-record constants are not minted");
+    };
+    assert_construction_refusals_match_the_run_of_record(record, expected);
+    assert_proof_bearing_record_matches_run_of_record(record, expected);
+    assert!(rendered.contains("run_of_record_v2 recorded"));
+    assert!(rendered.contains("run_of_record_projection ready schema_version 1"));
     check_proof_bearing_record(record, &rendered);
 }
 
-/// Bind every live construction refusal to the V2 run of record where
-/// the constants exist.
+/// Bind every live construction refusal to the exact V2 run of record.
 ///
-/// The live-only relations do not wait for those constants: every
-/// refusal must project to the stable vocabulary, the controls must be
-/// exactly the closed control census in order, and every full refusal
-/// must name the first consumed coin.
+/// Every refusal must project to the stable vocabulary, the controls
+/// must be exactly the closed control census in order, every full
+/// refusal must name the first consumed coin, and the projected vector
+/// must equal the recorded vector.
 ///
 /// # Panics
 ///
@@ -817,11 +806,11 @@ fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
 /// a recorded V2 refusal vector.
 fn assert_construction_refusals_match_the_run_of_record(
     record: &vectors::live_proof_bearing_observation::ProofBearingObservationRecord,
+    expected: &vectors::live_proof_bearing_observation::ProofBearingRunOfRecord,
 ) {
     use transaction::live_materialize::MaterializationRefusal;
     use vectors::live_proof_bearing_observation::{
-        ProofBearingConstructionControl, ProofBearingRunOfRecordV2,
-        RecordedProofBearingConstructionRefusal, construction_run_of_record_v2,
+        ProofBearingConstructionControl, RecordedProofBearingConstructionRefusal,
     };
 
     let projected = record
@@ -856,17 +845,15 @@ fn assert_construction_refusals_match_the_run_of_record(
         );
     }
 
-    if let ProofBearingRunOfRecordV2::Recorded(expected) = construction_run_of_record_v2() {
-        let expected = expected
-            .construction_refusals()
-            .captured()
-            .expect("the V2 record captures construction refusals");
-        assert_eq!(
-            projected.as_slice(),
-            expected,
-            "the live construction refusals drifted from the complete V2 vector",
-        );
-    }
+    let expected = expected
+        .construction_refusals()
+        .captured()
+        .expect("the V2 record captures construction refusals");
+    assert_eq!(
+        projected.as_slice(),
+        expected,
+        "the live construction refusals drifted from the complete V2 vector",
+    );
 }
 
 /// Bind the live coins, reverification, and candidate messages to the
