@@ -927,6 +927,8 @@ pub fn render_conservation_negatives(record: &ConservationNegativeRecord) -> Str
 /// chain the run created and destroyed. It re-runs nothing and proves
 /// nothing by existing; it makes the run's own answer quotable.
 pub mod run_of_record {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
     /// The disposable asset the run issued.
     pub const ISSUED_ASSET: &str =
         "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
@@ -982,6 +984,15 @@ pub mod run_of_record {
     /// draw it; the FIELD each declared is what tells their rows apart, the
     /// words being the same.
     pub const MUTANT_REJECT_DETAIL: &str = "bad-txns-in-ne-out";
+
+    /// The layer the target refused every mutant at, TYPED.
+    ///
+    /// The doc above already named it and only a reader could act on
+    /// that. This is the same fact in the vocabulary, so the classifier
+    /// can compare the layer a run REACHED against the boundary a row
+    /// DECLARED instead of assuming the two agree.
+    pub const MUTANT_OBSERVED_LAYER: ObservedOutcomeLayer =
+        ObservedOutcomeLayer::ConsensusRejectionBeforeScript;
 
     /// The run's wall time, in seconds.
     pub const WALL_SECONDS: f64 = 12.7;

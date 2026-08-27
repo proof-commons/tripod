@@ -1343,6 +1343,8 @@ pub mod run_of_record {
 /// the lane binds itself to, on a disposable development chain the run
 /// created and destroyed.
 pub mod run_of_record_phase_b {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
     /// The layer the adapter filed the verdict under, corrected.
     ///
     /// Recorded as the string the run produced, on the pattern phase A
@@ -1379,6 +1381,17 @@ pub mod run_of_record_phase_b {
 
     /// The run's wall time.
     pub const WALL_SECONDS: f64 = 5.1;
+
+    /// The layer the attempt was refused at, TYPED.
+    ///
+    /// [`OBSERVED_LAYER`] above records the same fact as the STRING the
+    /// run produced, and phase B's whole content is that this layer is
+    /// its own rather than the script path phase A borrowed. The string
+    /// stays exactly as recorded — it is the run's own bytes — and this
+    /// constant carries the fact in the vocabulary a classifier can
+    /// compare. The two are bound to each other in this module's tests,
+    /// so the typed form cannot drift from the recorded one.
+    pub const REFUSAL_OBSERVED_LAYER: ObservedOutcomeLayer = ObservedOutcomeLayer::KeyPathRejection;
 }
 
 #[cfg(test)]
@@ -1477,6 +1490,16 @@ mod tests {
         assert_ne!(b::OBSERVED_LAYER, a::OBSERVED_LAYER);
         assert_eq!(a::OBSERVED_LAYER, "ScriptPathRejection");
         assert_eq!(b::OBSERVED_LAYER, "KeyPathRejection");
+
+        // The typed constant is BOUND to the recorded string rather than
+        // stated beside it. A typed layer that drifted from the run's own
+        // bytes would let the classifier compare against a fact the run
+        // never produced, which is the whole failure the layer plumbing
+        // exists to close.
+        assert_eq!(
+            format!("{:?}", b::REFUSAL_OBSERVED_LAYER),
+            b::OBSERVED_LAYER
+        );
 
         // The pair. The control carries an identity a reader can look
         // up, it is the script-path shape against the attempt's key-path

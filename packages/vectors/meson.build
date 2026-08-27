@@ -47,6 +47,7 @@ vectors_source_files = files(
   'src/materialize.rs',
   'src/matrix.rs',
   'src/mutation.rs',
+  'src/observed_boundary.rs',
   'src/operation.rs',
   'src/plan.rs',
   'src/projection.rs',

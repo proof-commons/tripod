@@ -2292,6 +2292,8 @@ fn render_sponsor_reverification(out: &mut String, record: &SponsorShapeRecord) 
 /// answering once is not production multi-party sponsor signing, and
 /// neither run should be read as establishing any.
 pub mod sponsored_run_of_record {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
     /// The identity the target computed for the accepted sponsor-signed
     /// explicit control that takes NO change.
     ///
@@ -2646,6 +2648,15 @@ pub mod sponsored_run_of_record {
     /// the adapter returned and this offering does not carry. MEASURED
     /// at the node rather than argued from the code that built the two.
     pub const MISSING_SPONSOR_AUTHORIZATION_SUBMITTED_BYTES: usize = 1_375;
+
+    /// The layer the unauthorized sponsor mutant was refused at, TYPED.
+    ///
+    /// The words above trace the refusal to a comparison inside the
+    /// sponsor program's own evaluation, which is the leaf running — so
+    /// the layer is the script path, and this constant is that fact in
+    /// the vocabulary rather than in prose.
+    pub const MISSING_SPONSOR_AUTHORIZATION_OBSERVED_LAYER: ObservedOutcomeLayer =
+        ObservedOutcomeLayer::ScriptPathRejection;
 }
 
 #[cfg(test)]
