@@ -561,7 +561,7 @@ pub struct ProofNegativeMutation {
 impl ProofNegativeMutation {
     /// A mutation at `output_index`, with its field derived from `case`.
     #[must_use]
-    pub fn at_output(
+    pub const fn at_output(
         case: ProofNegativeCase,
         output_index: usize,
         mutant: TargetTransaction,
@@ -806,7 +806,7 @@ pub fn attribute_proof_negative(
     })
 }
 
-fn location_refusal(
+const fn location_refusal(
     side: SerializedMutationSide,
     refusal: SerializedFieldLocationRefusal,
 ) -> ProofNegativeAttributionRefusal {

@@ -967,6 +967,9 @@ mod tests {
         assert_eq!(run::PREDECESSOR_DIGEST.len(), 64);
         assert_ne!(run::PREDECESSOR_DIGEST, run::SUCCESSOR_DIGEST);
         assert_eq!(run::CONSUMED_COMMITMENT_PREFIX, 0x08);
+        assert_eq!(run::WRONG_BLINDER_FIELD_RANGE, (81, 114));
+        assert_eq!(run::PRIVATE_CT_IMBALANCE_FIELD_RANGE, (215, 248));
+        assert_eq!(run::RANGEPROOF_FIELD_RANGE, (781, 4_958));
 
         let (wb_start, wb_end) = run::WRONG_BLINDER_FIELD_RANGE;
         assert_eq!(
