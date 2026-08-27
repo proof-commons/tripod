@@ -718,7 +718,7 @@ pub enum LiveProgramRefusal {
     },
     /// A coordinator recipe selected no value-obligation fragment.
     RecipeValueComponentMissing,
-    /// The component union did not carry FinalTruth's base requirements.
+    /// The component union did not carry `FinalTruth`'s base requirements.
     FinalTruthDependenciesMissing,
     /// A concrete coordinator placement did not match its recipe.
     CoordinatorPlacementInvalid {
@@ -1333,9 +1333,11 @@ pub fn coordinator_placements(
         .iter()
         .map(|component| component.fragment)
         .collect::<BTreeSet<_>>();
-    let confidential_external = (value_fragment != Fragment::ExplicitConservation)
-        .then_some(BTreeSet::from([External::ConfidentialValueConservation]))
-        .unwrap_or_default();
+    let confidential_external = if value_fragment != Fragment::ExplicitConservation {
+        BTreeSet::from([External::ConfidentialValueConservation])
+    } else {
+        BTreeSet::new()
+    };
 
     let placements = CoordinatorGlobalCheck::ALL
         .iter()

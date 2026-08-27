@@ -988,10 +988,10 @@ fn a_value_slot_claiming_an_alternative_composition_branch_is_refused() {
         let outstanding = slot.outstanding().collect();
         let external = slot.external_evidence().collect();
         let alternative = match composition {
-            LiveTransferComposition::HomogeneousExplicit => LiveFragmentId::PrivateDestinationForm,
+            LiveTransferComposition::HomogeneousExplicit
+            | LiveTransferComposition::ExitUnblinding => LiveFragmentId::PrivateDestinationForm,
             LiveTransferComposition::HomogeneousPrivate
             | LiveTransferComposition::EntryBlinding => LiveFragmentId::ExplicitConservation,
-            LiveTransferComposition::ExitUnblinding => LiveFragmentId::PrivateDestinationForm,
         };
         claimed.insert(alternative);
         placements.insert(
