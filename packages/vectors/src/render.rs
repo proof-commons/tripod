@@ -37,7 +37,7 @@ use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use crate::bundle::fixture_bundle;
 use crate::error::VectorError;
 use crate::materialize::TargetVectorId;
-use crate::matrix::EvidenceBoundary;
+use crate::observed_boundary::matches_boundary;
 use crate::operation::OperationTranscript;
 use crate::plan::{ProjectionComparison, derive_evidence_plan};
 use crate::report::{
@@ -400,43 +400,6 @@ fn render_mutations(transcript: &OperationTranscript) -> Result<String, VectorEr
     }
     out.push_str("\n  ]\n");
     Ok(out)
-}
-
-/// Whether an observed layer is the §1.5 boundary a class expected.
-///
-/// The two vocabularies are different types and this is the only place
-/// they are put side by side. It is a total function over the observed
-/// layer rather than a lookup with a fallback, so a layer nobody
-/// considered fails to match rather than matching by accident.
-fn matches_boundary(expected: EvidenceBoundary, observed: ObservedOutcomeLayer) -> bool {
-    // Exhaustive over the expected side, which is this workspace's own
-    // vocabulary: a boundary added to §1.5 has to be given an
-    // observable layer here or this stops compiling. The observed side
-    // is then a single equality, so no layer can satisfy a boundary by
-    // falling through a wildcard.
-    let required = match expected {
-        EvidenceBoundary::ConsensusRejectionBeforeScript => {
-            ObservedOutcomeLayer::ConsensusRejectionBeforeScript
-        }
-        EvidenceBoundary::KeyPathRejection => ObservedOutcomeLayer::KeyPathRejection,
-        EvidenceBoundary::ScriptPathRejection => ObservedOutcomeLayer::ScriptPathRejection,
-        EvidenceBoundary::RelayPolicyRejection => ObservedOutcomeLayer::RelayPolicyRejection,
-        EvidenceBoundary::AcceptedTransaction => ObservedOutcomeLayer::Accepted,
-        // Boundaries no submission reaches. A pre-target refusal happens
-        // before a target is asked, an infrastructure failure is not a
-        // target fact, and a report-layer verdict is made after
-        // acceptance rather than by the target — so no observed layer
-        // satisfies one of these.
-        EvidenceBoundary::SemanticRequestRejection
-        | EvidenceBoundary::CompilerPlanRejection
-        | EvidenceBoundary::ConstructorDerivationRejection
-        | EvidenceBoundary::BackendEmissionRejection
-        | EvidenceBoundary::LinkerRejection
-        | EvidenceBoundary::AbiConstructionRejection
-        | EvidenceBoundary::ExecutorInfrastructureFailure
-        | EvidenceBoundary::ReportSemanticProjectionRejection => return false,
-    };
-    observed == required
 }
 
 /// One string, escaped for the report object.

@@ -978,11 +978,25 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         L::LinkedConstructorProgram,
         B::AbiConstructionRejection,
     ),
+    // RETYPED to the boundary it has, and the FIRST of the seven rows
+    // whose declared boundary the run of record refuted. The mutant
+    // rewrites a receipt's asset identifier, which breaks the explicit
+    // PER-ASSET conservation sum; the target checks that sum at consensus
+    // and refuses there, before any script runs. The row declared a
+    // script path, so what it asked about was never reached — and the
+    // refusal it was credited with is a fact about consensus arithmetic,
+    // not about a covenant clause.
+    //
+    // The covenant's own conservation clause is NOT withdrawn and is not
+    // claimed either: it remains defense-in-depth, and it stands
+    // target-unexercised FOR THIS FAULT because consensus preempts it.
+    // What changes is only which boundary this row's evidence is filed
+    // under. Retyped, recorded in `T6-002`.
     linked(
         S::ObjectFault,
         "wrong-explicit-asset",
         L::SemanticFact,
-        B::ScriptPathRejection,
+        B::ConsensusRejectionBeforeScript,
         recognition(TransactionSide::Output, ObjectId::ReceiptLive),
         wrong_asset,
         "WrongRecognizedAsset",
@@ -990,11 +1004,17 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
     // §1.3: no confidential asset commitment may carry `U`. The asset
     // field is explicit under both representation plans, so a commitment
     // in it is the recognized asset being wrong.
+    // RETYPED beside its sibling above and for its reason. Blinding the
+    // asset field with no surjection proof leaves the per-asset sum
+    // uncheckable, which consensus refuses at the same place and before
+    // any script. The covenant conservation clause stays defense-in-depth
+    // and target-unexercised for this fault. Retyped, recorded in
+    // `T6-002`.
     linked(
         S::ObjectFault,
         "confidential-asset-commitment",
         L::SemanticFact,
-        B::ScriptPathRejection,
+        B::ConsensusRejectionBeforeScript,
         recognition(TransactionSide::Output, ObjectId::ReceiptLive),
         wrong_asset,
         "WrongRecognizedAsset",
@@ -1069,20 +1089,29 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
 /// keeps as external target evidence; and the representation rows are
 /// refused by the ABI, which admits one homogeneous plan at a time.
 pub const VALUE_FAULTS: &[LiveSafetyRow] = &[
+    // RETYPED beside the two object-fault rows and for the same physics:
+    // a value one below the input total breaks the per-asset sum, and
+    // the target answers `bad-txns-in-ne-out` at consensus before any
+    // script. The covenant's conservation clause remains
+    // defense-in-depth and target-unexercised for this fault. Retyped,
+    // recorded in `T6-002`.
     linked(
         S::ValueFault,
         "output-total-one-below-input",
         L::SemanticFact,
-        B::ScriptPathRejection,
+        B::ConsensusRejectionBeforeScript,
         conservation(),
         amount_mismatch,
         "AmountMismatch",
     ),
+    // RETYPED, the same break in the opposite direction and refused at
+    // the same boundary by the same check. Retyped, recorded in
+    // `T6-002`.
     linked(
         S::ValueFault,
         "output-total-one-above-input",
         L::SemanticFact,
-        B::ScriptPathRejection,
+        B::ConsensusRejectionBeforeScript,
         conservation(),
         amount_mismatch,
         "AmountMismatch",
@@ -1160,20 +1189,30 @@ pub const VALUE_FAULTS: &[LiveSafetyRow] = &[
         L::TargetTransaction,
         B::ConsensusRejectionBeforeScript,
     ),
+    // RETYPED, for the same reason. Removing a receipt drops the output
+    // side of the per-asset sum, so the break is arithmetic and consensus
+    // refuses it before any script — the row's declared script path was
+    // never reached. The covenant's conservation clause stays
+    // defense-in-depth and target-unexercised for this fault. Retyped,
+    // recorded in `T6-002`.
     linked(
         S::ValueFault,
         "private-output-omitted",
         L::SemanticFact,
-        B::ScriptPathRejection,
+        B::ConsensusRejectionBeforeScript,
         delta_policy(),
         missing_family,
         "MissingCanonicalDeltaFamily",
     ),
+    // RETYPED, the added-output half of the same cardinality pair: an
+    // extra output raises the output sum above the input sum and draws
+    // the same consensus verdict at the same boundary. Retyped,
+    // recorded in `T6-002`.
     linked(
         S::ValueFault,
         "hidden-private-u-output",
         L::SemanticFact,
-        B::ScriptPathRejection,
+        B::ConsensusRejectionBeforeScript,
         delta_policy(),
         unexpected_family,
         "UnexpectedCanonicalDeltaFamily",
@@ -1193,11 +1232,16 @@ pub const VALUE_FAULTS: &[LiveSafetyRow] = &[
         L::AbiLayout,
         B::AbiConstructionRejection,
     ),
+    // RETYPED, the LAST of the seven and the input-side member of the
+    // family: deleting a receipt input drops the input sum, the per-asset
+    // totals stop matching, and consensus refuses before any script. The
+    // covenant's conservation clause remains defense-in-depth and
+    // target-unexercised for this fault. Retyped, recorded in `T6-002`.
     linked(
         S::ValueFault,
         "omitted-source",
         L::SemanticFact,
-        B::ScriptPathRejection,
+        B::ConsensusRejectionBeforeScript,
         delta_policy(),
         missing_family,
         "MissingCanonicalDeltaFamily",

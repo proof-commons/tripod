@@ -2353,6 +2353,8 @@ mod tests {
 /// the target's answers changed with the order — which is itself the
 /// demonstration that the earlier answers were about the order.
 pub mod witness_negatives_run_of_record {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
     /// The identity the target computed for the accepted control.
     ///
     /// The same one-input one-output candidate the positive table cites,
@@ -2400,4 +2402,14 @@ pub mod witness_negatives_run_of_record {
     /// matters, and a reader reversing it would rediscover this the
     /// expensive way.
     pub const REFUSAL_UNDER_CONTROL_FIRST_ORDER: &str = "txn-already-known";
+
+    /// The layer BOTH witness mutants were refused at, TYPED.
+    ///
+    /// One constant for the two rows because the layer is the same fact
+    /// for both: each offering reached the leaf and was judged there, and
+    /// what separates the rows is the target's WORDS — the arity check
+    /// against the signature judgement — not where it spoke. Typed so the
+    /// classifier can check the layer instead of assuming it.
+    pub const WITNESS_REFUSAL_OBSERVED_LAYER: ObservedOutcomeLayer =
+        ObservedOutcomeLayer::ScriptPathRejection;
 }

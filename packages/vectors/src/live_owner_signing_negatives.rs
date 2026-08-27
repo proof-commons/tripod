@@ -1892,6 +1892,8 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
 /// reader can ask the chain the same question. They re-run nothing and
 /// prove nothing by existing; they make the run's own answer quotable.
 pub mod run_of_record {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
     /// The identity the target computed for the accepted control.
     ///
     /// The unmutated vault-control-entitlement candidate, accepted after
@@ -2013,6 +2015,33 @@ pub mod run_of_record {
     /// Up from the pre-leaf-arrangement 8.3s: the ceremony now submits two
     /// more mutants, the leaf-arrangement pair, before the control.
     pub const WALL_SECONDS: f64 = 10.2;
+
+    /// The layer the target refused the bare-u mutant at, TYPED.
+    ///
+    /// The recorded observation, as the vocabulary rather than as a
+    /// sentence about it. The words above already said "observed at the
+    /// script layer rather than at consensus" and nothing could read that
+    /// prose, so a classifier that needed the layer had to guess it from
+    /// the row's own declaration — which is how a consensus refusal came
+    /// to stand as a script-path answer. These constants are the run's
+    /// own record of WHERE, bound in the native test beside the words and
+    /// the identity, and they move no recorded value.
+    pub const MUTANT_OBSERVED_LAYER: ObservedOutcomeLayer =
+        ObservedOutcomeLayer::ScriptPathRejection;
+
+    /// The layer the target refused every consensus-conservation mutant
+    /// at, TYPED: before any script ran, which is the whole content of
+    /// the seven rows' retype.
+    pub const CONSENSUS_MUTANT_OBSERVED_LAYER: ObservedOutcomeLayer =
+        ObservedOutcomeLayer::ConsensusRejectionBeforeScript;
+
+    /// The layer the `two-coordinators` mutant was refused at, TYPED.
+    pub const TWO_COORDINATORS_OBSERVED_LAYER: ObservedOutcomeLayer =
+        ObservedOutcomeLayer::ScriptPathRejection;
+
+    /// The layer the `no-coordinator` mutant was refused at, TYPED.
+    pub const NO_COORDINATOR_OBSERVED_LAYER: ObservedOutcomeLayer =
+        ObservedOutcomeLayer::ScriptPathRejection;
 }
 
 #[cfg(test)]

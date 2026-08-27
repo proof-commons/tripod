@@ -57,7 +57,15 @@ use crate::live_safety::LiveSafetySection;
 /// reader summing the census lines it knows would find them short of the
 /// row count, which is exactly the misreading a stated schema exists to
 /// turn into a refusal.
-pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 2;
+///
+/// Revision 3 adds the `native_refusal_at_unexpected_boundary` census
+/// line and the `native-refusal-at-unexpected-boundary` outstanding
+/// spelling, and makes `failed` a reachable completeness token. The
+/// revision is REQUIRED rather than cosmetic: under revision 2 a
+/// wrong-boundary refusal was counted as an answered row, so a
+/// revision-2 reader meeting these bytes would both mis-sum the census
+/// and — worse — read a contradiction as a pass.
+pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 3;
 
 /// What a safety report is, said in the bytes.
 ///
@@ -515,8 +523,22 @@ impl ValidatedLiveTransferSafetyReport {
 }
 
 /// The completeness one census supports.
+///
+/// # The mismatch count is asked FIRST, and that ordering is the rule
+///
+/// A wrong-boundary refusal and a run that has not happened are different
+/// conditions, and the enum has carried a distinct token for the first
+/// since it was written — `Failed` says a required row was answered at a
+/// boundary other than its own. Nothing could reach it, because nothing
+/// compared the two boundaries. Now that something does, the mismatch
+/// count is tested BEFORE the outstanding count: a matrix with both a
+/// contradiction and an ordinary outstanding row is `Failed`, not
+/// partial, because a report that renders a contradiction as "still
+/// waiting" understates what it found.
 const fn completeness_of(census: LiveEvidenceCensus) -> LiveSafetyCompleteness {
-    if census.every_required_row_is_answered() {
+    if census.native_refusal_at_unexpected_boundary() > 0 {
+        LiveSafetyCompleteness::Failed
+    } else if census.every_required_row_is_answered() {
         LiveSafetyCompleteness::CompleteForTheRequiredMatrix
     } else {
         LiveSafetyCompleteness::PartialRequiredRowsOutstanding
@@ -680,6 +702,11 @@ pub fn render_live_safety_report(validated: &ValidatedLiveTransferSafetyReport) 
     );
     let _ = writeln!(
         text,
+        "native_refusal_at_unexpected_boundary {}",
+        report.census.native_refusal_at_unexpected_boundary()
+    );
+    let _ = writeln!(
+        text,
         "infrastructure_blocked {}",
         report.census.infrastructure_blocked()
     );
@@ -735,6 +762,15 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         // that quoted a verdict would be carrying evidence in bytes
         // whose job is to count.
         LiveRowStanding::NativeRefusalObserved { .. } => "native-refusal-observed",
+        // Withheld for the same two reasons as the standing above, and
+        // spelled APART from it because the two are different facts.
+        // This one says the target refused somewhere other than where
+        // the row declared, which is a finding rather than an answer —
+        // and it is spelled apart from `native-run-required` too,
+        // because a contradicted row is not a row still waiting.
+        LiveRowStanding::NativeRefusalAtUnexpectedBoundary { .. } => {
+            "native-refusal-at-unexpected-boundary"
+        }
         // Withheld for the first reason and not the second: there is no
         // target sentence here to carry, and what the payload names is
         // the first-party test that recomputed the fixture, which
@@ -841,6 +877,41 @@ mod tests {
         reviewed_target()
             .expect("the reviewed contract validates")
             .projection()
+    }
+
+    #[test]
+    fn an_unexpected_boundary_refusal_is_outstanding_and_fails_the_report() {
+        use super::{completeness_of, standing_name};
+        use crate::live_evidence::{LiveEvidenceCensus, LiveRowStanding};
+        use crate::matrix::EvidenceBoundary;
+        use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
+        let standing = LiveRowStanding::NativeRefusalAtUnexpectedBoundary {
+            declared_boundary: EvidenceBoundary::ScriptPathRejection,
+            observed_layer: ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+            control_identity: "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029",
+            refusal_detail: "bad-txns-in-ne-out",
+        };
+
+        // It renders under its OWN spelling, so a reader can tell a
+        // contradiction from a row that is merely waiting.
+        assert_eq!(
+            standing_name(&standing),
+            "native-refusal-at-unexpected-boundary",
+        );
+
+        // It lands in `outstanding`. That list is built by filtering on
+        // exactly this predicate, so asserting the predicate is
+        // asserting the membership.
+        assert!(!standing.is_answered());
+
+        // And the census carrying one is FAILED rather than partial —
+        // the mismatch taking precedence, with every other bucket clear
+        // so the verdict can only have come from the mismatch.
+        let census = LiveEvidenceCensus::one_unexpected_boundary_for_tests();
+        assert!(!census.every_required_row_is_answered());
+        assert_eq!(completeness_of(census), LiveSafetyCompleteness::Failed);
+        assert_eq!(LiveSafetyCompleteness::Failed.name(), "failed");
     }
 
     #[test]

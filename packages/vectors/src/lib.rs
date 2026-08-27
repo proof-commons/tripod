@@ -44,6 +44,7 @@ pub mod live_sponsored_private;
 pub mod materialize;
 pub mod matrix;
 pub mod mutation;
+mod observed_boundary;
 pub mod operation;
 pub mod plan;
 pub mod projection;

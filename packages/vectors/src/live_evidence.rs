@@ -99,6 +99,8 @@ use crate::live_safety::{
     LiveRowLink, LiveSafetyRow, LiveSafetySection, required_safety_matrix, resolve_row,
 };
 use crate::matrix::EvidenceBoundary;
+use crate::observed_boundary::observed_boundary;
+use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
 /// Where the §13.1 minimality pair registry stands.
 ///
@@ -637,9 +639,66 @@ pub enum LiveRowStanding {
     ///
     /// The refusal detail is the target's own words, recorded verbatim
     /// and never paraphrased into this workspace's vocabulary.
+    /// # Why the boundary and the layer are both carried
+    ///
+    /// A refusal answers a row only if it happened WHERE the row said it
+    /// would. §1.5 has a class name its boundary in advance precisely so
+    /// that a refusal at a different one is a finding rather than a pass,
+    /// and this member used to carry neither side of that comparison —
+    /// so it could be minted for any attributable refusal at all, and a
+    /// consensus verdict could stand as the answer to a script-path row.
+    ///
+    /// Both are kept rather than a boolean, because a reader checking the
+    /// claim needs to see the two facts that were compared, not this
+    /// crate's opinion that they agreed.
+    ///
+    /// This member is minted ONLY where
+    /// [`crate::observed_boundary::observed_boundary`] maps the observed
+    /// layer to EXACTLY the declared boundary. Every other refusal is
+    /// [`Self::NativeRefusalAtUnexpectedBoundary`], which is not answered.
     NativeRefusalObserved {
+        /// The boundary the row declared in advance.
+        declared_boundary: EvidenceBoundary,
+        /// The layer the target actually refused at, which maps to
+        /// exactly the declared boundary or this member is not minted.
+        observed_layer: ObservedOutcomeLayer,
         /// The identity the target computed for the accepted control the
         /// refusal is attributable against.
+        control_identity: &'static str,
+        /// What the target said when it refused the mutated candidate.
+        refusal_detail: &'static str,
+    },
+    /// A target refused this row's mutant at a boundary that is NOT the
+    /// one the row declared.
+    ///
+    /// # What it is, and what it is not
+    ///
+    /// It is a RECORDED OBSERVATION — the run happened, the control was
+    /// accepted, the mutant was refused, and the target's words are
+    /// carried here exactly as it said them. Nothing about the run is
+    /// doubted and no recorded value is called false.
+    ///
+    /// What it is not is an ANSWER. The row asked whether a particular
+    /// layer refuses a particular fault; the target refused earlier, so
+    /// the layer the row names was never reached and nothing was learned
+    /// about it. Reading this as an answer is the §1.7 layer blur in its
+    /// most expensive form: it claims a covenant clause ran when the
+    /// transaction never got that far.
+    ///
+    /// [`Self::is_answered`] is false for it, it is counted in its own
+    /// census bucket, that bucket must be zero for
+    /// [`LiveEvidenceCensus::every_required_row_is_answered`], and a
+    /// report carrying one is [`crate::live_report::LiveSafetyCompleteness::Failed`]
+    /// rather than partial — a contradiction between what was declared
+    /// and what was observed is a different thing from a run that has
+    /// not happened, and the two must not render alike.
+    NativeRefusalAtUnexpectedBoundary {
+        /// The boundary the row declared in advance.
+        declared_boundary: EvidenceBoundary,
+        /// The layer the target actually refused at, which does NOT map
+        /// to the declared boundary.
+        observed_layer: ObservedOutcomeLayer,
+        /// The identity the target computed for the accepted control.
         control_identity: &'static str,
         /// What the target said when it refused the mutated candidate.
         refusal_detail: &'static str,
@@ -804,6 +863,13 @@ pub enum LiveRowStanding {
 impl LiveRowStanding {
     /// Whether this standing is evidence rather than an outstanding
     /// obligation.
+    ///
+    /// [`Self::NativeRefusalAtUnexpectedBoundary`] is deliberately ABSENT
+    /// from the list below, and its absence is the load-bearing half of
+    /// the boundary repair. A refusal at a boundary the row did not
+    /// declare is a recorded observation and NOT an answer, so it must
+    /// remain outstanding, appear in the report's outstanding list, and
+    /// keep the completeness token off `Complete`.
     #[must_use]
     pub const fn is_answered(&self) -> bool {
         matches!(
@@ -875,6 +941,7 @@ pub struct LiveEvidenceCensus {
     native_run_required: usize,
     native_run_observed: usize,
     native_refusal_observed: usize,
+    native_refusal_at_unexpected_boundary: usize,
     determinism_observed: usize,
     paired_relation_observed: usize,
     first_party_fact_observed: usize,
@@ -923,6 +990,23 @@ impl LiveEvidenceCensus {
     #[must_use]
     pub const fn native_refusal_observed(&self) -> usize {
         self.native_refusal_observed
+    }
+
+    /// How many rows a refusal reached at the WRONG boundary.
+    ///
+    /// A bucket of its own and never folded into
+    /// [`Self::native_refusal_observed`], because what it counts is a
+    /// CONTRADICTION rather than an observation short of one: the row
+    /// declared a boundary, a run refused somewhere else, and the
+    /// declared boundary was therefore never exercised. Adding it to the
+    /// refusal count would restore exactly the misreading this wave
+    /// exists to end.
+    ///
+    /// It is expected to be zero. A non-zero figure is a finding, and
+    /// [`Self::every_required_row_is_answered`] refuses while it stands.
+    #[must_use]
+    pub const fn native_refusal_at_unexpected_boundary(&self) -> usize {
+        self.native_refusal_at_unexpected_boundary
     }
 
     /// How many rows a relation over TWO accepted identities has
@@ -1014,11 +1098,53 @@ impl LiveEvidenceCensus {
     /// permanently outstanding inside it. Leaving it in would make the
     /// bar unreachable by construction and say nothing true about the
     /// pipeline.
+    ///
+    /// The fourth term is not a row WAITING but a row CONTRADICTED, and
+    /// it is here because §13.5's bar asks whether every required row is
+    /// answered AT ITS OWN BOUNDARY. A wrong-boundary refusal leaves the
+    /// declared boundary unexercised just as surely as a run that never
+    /// happened, so a bar that ignored it could be met by a matrix whose
+    /// evidence contradicts its own declarations.
     #[must_use]
     pub const fn every_required_row_is_answered(&self) -> bool {
         self.native_run_required == 0
             && self.infrastructure_blocked == 0
             && self.first_party_undischarged == 0
+            && self.native_refusal_at_unexpected_boundary == 0
+    }
+
+    /// A census whose only outstanding condition is ONE wrong-boundary
+    /// refusal, for tests that must exercise a state the live matrix no
+    /// longer reaches.
+    ///
+    /// Test-only, and it exists because the repair removed its own
+    /// subject: under the owner's retype disposition no §15 row stands at
+    /// [`LiveRowStanding::NativeRefusalAtUnexpectedBoundary`], so the
+    /// report behaviour for one could not otherwise be exercised at all.
+    /// A contradiction the code can no longer produce is exactly the
+    /// contradiction whose handling must stay pinned, or the next row to
+    /// hit it would find the handling rotted.
+    ///
+    /// Every other bucket is deliberately clear, so a `Failed` verdict
+    /// drawn from this census can only have come from the mismatch.
+    #[cfg(test)]
+    pub(crate) const fn one_unexpected_boundary_for_tests() -> Self {
+        Self {
+            rows: 1,
+            first_party_discharged: 0,
+            first_party_undischarged: 0,
+            native_run_required: 0,
+            native_run_observed: 0,
+            native_refusal_observed: 0,
+            native_refusal_at_unexpected_boundary: 1,
+            determinism_observed: 0,
+            paired_relation_observed: 0,
+            first_party_fact_observed: 0,
+            infrastructure_blocked: 0,
+            report_layer: 0,
+            vocabulary_closed: 0,
+            experimental: 0,
+        }
     }
 }
 
@@ -1406,9 +1532,34 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
 /// session. A refusal without its control is not evidence, and a
 /// control from another chain is not this one's.
 ///
-/// Each entry returns the accepted control's identity and the target's
-/// own words, both from a run of record.
-fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static str)> {
+/// Each entry returns the accepted control's identity, the LAYER the
+/// target refused at, and the target's own words, all three from a run of
+/// record.
+///
+/// # Why the layer is carried
+///
+/// It used to be dropped. Each entry returned a pair — the control and
+/// the words — and the classifier that consumed the pair therefore had
+/// nothing to compare against the boundary the row DECLARED, so it minted
+/// an answered standing whenever a refusal was attributable at all. Seven
+/// rows declaring a script path stood as answered on consensus refusals
+/// that never ran a script, which is a claim about a covenant clause the
+/// target never reached. The layer is carried here so the comparison is
+/// possible at all, and it comes from the ceremonies' own run-of-record
+/// constants rather than from anything this function knows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RecordedNativeRefusal {
+    /// The identity the target computed for the accepted control the
+    /// refusal is attributable against.
+    control_identity: &'static str,
+    /// The layer the target actually refused the mutant at, as recorded
+    /// by the run.
+    observed_layer: ObservedOutcomeLayer,
+    /// What the target said, verbatim.
+    refusal_detail: &'static str,
+}
+
+fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
     use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
 
     match row.name() {
@@ -1418,14 +1569,16 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
         // one run and are distinguishable in it: the empty offering
         // failed the check that consumed it, and the well-sized
         // non-signature was judged and found invalid.
-        "empty-signature" => Some((
-            witness::CONTROL_ACCEPTED_TXID,
-            witness::EMPTY_SIGNATURE_REFUSAL,
-        )),
-        "malformed-signature" => Some((
-            witness::CONTROL_ACCEPTED_TXID,
-            witness::MALFORMED_SIGNATURE_REFUSAL,
-        )),
+        "empty-signature" => Some(RecordedNativeRefusal {
+            control_identity: witness::CONTROL_ACCEPTED_TXID,
+            observed_layer: witness::WITNESS_REFUSAL_OBSERVED_LAYER,
+            refusal_detail: witness::EMPTY_SIGNATURE_REFUSAL,
+        }),
+        "malformed-signature" => Some(RecordedNativeRefusal {
+            control_identity: witness::CONTROL_ACCEPTED_TXID,
+            observed_layer: witness::WITNESS_REFUSAL_OBSERVED_LAYER,
+            refusal_detail: witness::MALFORMED_SIGNATURE_REFUSAL,
+        }),
         // §15.6's sponsor-authorization row, answered by the sponsored
         // lane's own run: the mutant offered FIRST and then the
         // unmutated control, to one node on one chain. The mutant is
@@ -1439,10 +1592,14 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
         // accepted in the SAME run: the fee-role check passes for this
         // deployment, so the comparison that failed is the one the
         // sponsor witness reaches.
-        "missing-sponsor-authorization" => Some((
-            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
-            crate::live_sponsor_shapes::sponsored_run_of_record::MISSING_SPONSOR_AUTHORIZATION_REFUSAL,
-        )),
+        "missing-sponsor-authorization" => Some(RecordedNativeRefusal {
+            control_identity:
+                crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            observed_layer:
+                crate::live_sponsor_shapes::sponsored_run_of_record::MISSING_SPONSOR_AUTHORIZATION_OBSERVED_LAYER,
+            refusal_detail:
+                crate::live_sponsor_shapes::sponsored_run_of_record::MISSING_SPONSOR_AUTHORIZATION_REFUSAL,
+        }),
         // §15.5's two proof-negative rows, answered by the conservation
         // ceremony's own run — which submitted THREE mutants before the
         // control for a reason it states, all four spending one coin: a
@@ -1486,10 +1643,14 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
         // which is the rule, and the distinct output is what earns the
         // separating field range fact (e) of the ceremony's charter names.
         "malformed-rangeproof" | "wrong-private-blinding-balance" | "private-ct-imbalance" => {
-            Some((
-                crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
-                crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
-            ))
+            Some(RecordedNativeRefusal {
+                control_identity:
+                    crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+                observed_layer:
+                    crate::live_conservation_negatives::run_of_record::MUTANT_OBSERVED_LAYER,
+                refusal_detail:
+                    crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
+            })
         }
         // §15.4's script-path row, answered by the owner-signing negative
         // ceremony's own run: the bare-u mutant offered FIRST and the
@@ -1505,10 +1666,14 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
         // The re-signing changes the witness too, by design; the declared
         // range is measured over the WITNESSLESS serialization the message
         // is taken over, where it does not reach.
-        "vault-control-entitlement-or-bare-u-output" => Some((
-            crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
-            crate::live_owner_signing_negatives::run_of_record::MUTANT_REJECT_DETAIL,
-        )),
+        "vault-control-entitlement-or-bare-u-output" => Some(RecordedNativeRefusal {
+            control_identity:
+                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            observed_layer:
+                crate::live_owner_signing_negatives::run_of_record::MUTANT_OBSERVED_LAYER,
+            refusal_detail:
+                crate::live_owner_signing_negatives::run_of_record::MUTANT_REJECT_DETAIL,
+        }),
         // The seven conservation-breaking rows, answered by the SAME
         // owner-signing negative run — each on its OWN consensus mutant,
         // cut from the signed explicit control and offered before it. Each
@@ -1538,10 +1703,14 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
         | "output-total-one-above-input"
         | "private-output-omitted"
         | "hidden-private-u-output"
-        | "omitted-source" => Some((
-            crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
-            crate::live_owner_signing_negatives::run_of_record::CONSENSUS_MUTANT_REJECT_DETAIL,
-        )),
+        | "omitted-source" => Some(RecordedNativeRefusal {
+            control_identity:
+                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            observed_layer:
+                crate::live_owner_signing_negatives::run_of_record::CONSENSUS_MUTANT_OBSERVED_LAYER,
+            refusal_detail:
+                crate::live_owner_signing_negatives::run_of_record::CONSENSUS_MUTANT_REJECT_DETAIL,
+        }),
         // ONE driven row of each leaf-arrangement collision pair, answered
         // by the SAME owner-signing negative run. The four rows form two
         // pairs drawing one verdict each — the coordinator index check and
@@ -1565,14 +1734,22 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
         // same OP_EQUALVERIFY and from every sibling. No taptree moved: both
         // funded coins commit to one tree holding both leaves, so the
         // rearrangement reuses committed leaves.
-        "two-coordinators" => Some((
-            crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
-            crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_REJECT_DETAIL,
-        )),
-        "no-coordinator" => Some((
-            crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
-            crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_REJECT_DETAIL,
-        )),
+        "two-coordinators" => Some(RecordedNativeRefusal {
+            control_identity:
+                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            observed_layer:
+                crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_OBSERVED_LAYER,
+            refusal_detail:
+                crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_REJECT_DETAIL,
+        }),
+        "no-coordinator" => Some(RecordedNativeRefusal {
+            control_identity:
+                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            observed_layer:
+                crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_OBSERVED_LAYER,
+            refusal_detail:
+                crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_REJECT_DETAIL,
+        }),
         // §15.4's key-path row, answered by the internal-key
         // unspendability probe's phase-B run: the key-path attempt
         // offered FIRST and the unmutated control after it, to one node
@@ -1596,10 +1773,13 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
         // answers for any key anyone does not hold
         // `(´[PLAN-rule:exclusions:nonclaims]´)`. The refusal establishes
         // that the attempt was observed and refused, under its own name.
-        "key-path-escape" => Some((
-            crate::live_keypath_probe::run_of_record_phase_b::CONTROL_ACCEPTED_TXID,
-            crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_DETAIL,
-        )),
+        "key-path-escape" => Some(RecordedNativeRefusal {
+            control_identity:
+                crate::live_keypath_probe::run_of_record_phase_b::CONTROL_ACCEPTED_TXID,
+            observed_layer:
+                crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_OBSERVED_LAYER,
+            refusal_detail: crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_DETAIL,
+        }),
         _ => None,
     }
 }
@@ -1786,10 +1966,29 @@ fn classify(
     // Beside it and after it, for the same reason it sits after the
     // specific blocker: a refusal answers a row only once the row is
     // not waiting on something that would have to exist first.
-    if let Some((control_identity, refusal_detail)) = observed_row_refusal(row) {
-        return Ok(LiveRowStanding::NativeRefusalObserved {
-            control_identity,
-            refusal_detail,
+    if let Some(refusal) = observed_row_refusal(row) {
+        // THE COMPARISON THIS BRANCH USED NOT TO MAKE. A refusal is
+        // evidence for the row that declared it only where the layer the
+        // target reached IS the boundary the row named — exact equality
+        // through the one shared mapping, never a family or a
+        // near-enough. A refusal earlier in the pipeline than the
+        // declared boundary answers nothing about the declared one,
+        // because the run stopped before reaching it.
+        let matched = observed_boundary(refusal.observed_layer) == Some(boundary);
+        return Ok(if matched {
+            LiveRowStanding::NativeRefusalObserved {
+                declared_boundary: boundary,
+                observed_layer: refusal.observed_layer,
+                control_identity: refusal.control_identity,
+                refusal_detail: refusal.refusal_detail,
+            }
+        } else {
+            LiveRowStanding::NativeRefusalAtUnexpectedBoundary {
+                declared_boundary: boundary,
+                observed_layer: refusal.observed_layer,
+                control_identity: refusal.control_identity,
+                refusal_detail: refusal.refusal_detail,
+            }
         });
     }
     // Beside the two above and after them, for the reason they sit
@@ -1933,6 +2132,9 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
             LiveRowStanding::NativeRunRequired(_) => census.native_run_required += 1,
             LiveRowStanding::NativeRunObserved { .. } => census.native_run_observed += 1,
             LiveRowStanding::NativeRefusalObserved { .. } => census.native_refusal_observed += 1,
+            LiveRowStanding::NativeRefusalAtUnexpectedBoundary { .. } => {
+                census.native_refusal_at_unexpected_boundary += 1;
+            }
             LiveRowStanding::DeterminismObserved { .. } => census.determinism_observed += 1,
             LiveRowStanding::PairedRelationObserved { .. } => {
                 census.paired_relation_observed += 1;
@@ -2188,8 +2390,8 @@ pub const fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveInfrastructureBlocker, LiveRowStanding, MinimalityRegistryStanding, blocker_census,
-        derive_live_evidence_plan,
+        EvidenceBoundary, LiveInfrastructureBlocker, LiveRowStanding, MinimalityRegistryStanding,
+        ObservedOutcomeLayer, blocker_census, derive_live_evidence_plan, observed_boundary,
     };
     use crate::live_safety::{LiveSafetyPolarity, LiveSafetySection};
     use std::collections::BTreeSet;
@@ -2250,6 +2452,7 @@ mod tests {
                 + census.paired_relation_observed()
                 + census.first_party_fact_observed()
                 + census.native_refusal_observed()
+                + census.native_refusal_at_unexpected_boundary()
                 + census.infrastructure_blocked()
                 + census.report_layer()
                 + census.vocabulary_closed()
@@ -2362,6 +2565,7 @@ mod tests {
                 + census.paired_relation_observed()
                 + census.first_party_fact_observed()
                 + census.native_refusal_observed()
+                + census.native_refusal_at_unexpected_boundary()
                 + census.infrastructure_blocked()
                 + census.report_layer()
                 + census.vocabulary_closed()
@@ -2655,6 +2859,8 @@ mod tests {
         let mut answered = BTreeSet::new();
         for row in plan.rows() {
             if let LiveRowStanding::NativeRefusalObserved {
+                declared_boundary,
+                observed_layer,
                 control_identity,
                 refusal_detail,
             } = row.standing()
@@ -2668,6 +2874,16 @@ mod tests {
                 assert!(
                     !refusal_detail.is_empty(),
                     "{} carries no refusal detail",
+                    row.row(),
+                );
+                // The property the member now promises, checked on every
+                // instance rather than trusted to the classifier: this
+                // standing exists ONLY where the observed layer maps to
+                // exactly the declared boundary.
+                assert_eq!(
+                    observed_boundary(*observed_layer),
+                    Some(*declared_boundary),
+                    "{} stands as answered at a boundary it did not declare",
                     row.row(),
                 );
                 assert!(row.standing().is_answered());
@@ -2747,6 +2963,184 @@ mod tests {
         ] {
             assert_ne!(detail, witness::REFUSAL_UNDER_CONTROL_FIRST_ORDER);
         }
+    }
+
+    #[test]
+    fn a_consensus_refusal_cannot_answer_a_script_path_row() {
+        // The defect in ONE synthetic case, independent of any row this
+        // matrix happens to carry. A refusal is recorded at consensus;
+        // the row declared a script path; the classification must be the
+        // unexpected-boundary standing and it must NOT be answered.
+        //
+        // Direct construction rather than a derived plan on purpose: this
+        // holds even if every row in §15 were retyped tomorrow, because
+        // what it pins is the MEANING of the two members rather than the
+        // present contents of the matrix.
+        let unexpected = LiveRowStanding::NativeRefusalAtUnexpectedBoundary {
+            declared_boundary: EvidenceBoundary::ScriptPathRejection,
+            observed_layer: ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+            control_identity: "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029",
+            refusal_detail: "bad-txns-in-ne-out",
+        };
+        assert!(
+            !unexpected.is_answered(),
+            "a refusal at the wrong boundary was read as an answer",
+        );
+
+        // And the mapping that decides it, on the same pair: consensus is
+        // not the script path, so the two cannot be confused by a
+        // classifier reading this function.
+        assert_ne!(
+            observed_boundary(ObservedOutcomeLayer::ConsensusRejectionBeforeScript),
+            Some(EvidenceBoundary::ScriptPathRejection),
+        );
+
+        // The matching member IS answered, so the test distinguishes the
+        // repair from simply refusing every refusal.
+        let matched = LiveRowStanding::NativeRefusalObserved {
+            declared_boundary: EvidenceBoundary::ConsensusRejectionBeforeScript,
+            observed_layer: ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+            control_identity: "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029",
+            refusal_detail: "bad-txns-in-ne-out",
+        };
+        assert!(matched.is_answered());
+    }
+
+    #[test]
+    fn every_native_refusal_observed_matches_its_rows_declared_boundary() {
+        // The property over the DERIVED PLAN rather than over a synthetic
+        // pair: walk every row the classifier answered by a refusal and
+        // compare, exactly, the layer the run reached against the
+        // boundary the row declared.
+        //
+        // This is the test that was red before the seven rows were
+        // retyped, and it named them: it is the standing proof that no
+        // row rejoins the answered set on a refusal that happened
+        // somewhere else.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        for row in plan.rows() {
+            if let LiveRowStanding::NativeRefusalObserved {
+                declared_boundary,
+                observed_layer,
+                ..
+            } = row.standing()
+            {
+                assert_eq!(
+                    observed_boundary(*observed_layer),
+                    Some(*declared_boundary),
+                    "{} was answered at {observed_layer:?} but declared {declared_boundary:?}",
+                    row.row(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_unexpected_boundary_set_is_exact() {
+        // Under the owner's RETYPE disposition the set is EMPTY, and
+        // asserting emptiness by name rather than by a census figure is
+        // deliberate: a future row that starts refusing at the wrong
+        // boundary fails here WITH ITS NAME, which is what a reader needs
+        // in order to act.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let mismatched = plan
+            .rows()
+            .iter()
+            .filter(|row| {
+                matches!(
+                    row.standing(),
+                    LiveRowStanding::NativeRefusalAtUnexpectedBoundary { .. }
+                )
+            })
+            .map(|row| row.row().name())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            mismatched,
+            BTreeSet::new(),
+            "rows stand refused at a boundary they did not declare",
+        );
+        assert_eq!(plan.census().native_refusal_at_unexpected_boundary(), 0);
+        // The census figure and the named set are recomputed
+        // independently and must agree; a bucket that counted something
+        // the walk cannot name would be a figure nobody can audit.
+        assert_eq!(
+            plan.census().native_refusal_at_unexpected_boundary(),
+            mismatched.len(),
+        );
+    }
+
+    #[test]
+    fn the_seven_conservation_rows_declare_the_boundary_their_run_reached() {
+        // The retype itself, pinned by name. These seven declared a
+        // script path and were answered by a consensus refusal that ran
+        // no script, so they are RETYPED to the boundary the target
+        // actually used. A future edit putting any of them back to
+        // a script path fails here and in
+        // `the_unexpected_boundary_set_is_exact` together.
+        let seven = [
+            "confidential-asset-commitment",
+            "hidden-private-u-output",
+            "omitted-source",
+            "output-total-one-above-input",
+            "output-total-one-below-input",
+            "private-output-omitted",
+            "wrong-explicit-asset",
+        ];
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        for name in seven {
+            let row = plan
+                .rows()
+                .iter()
+                .find(|row| row.row().name() == name)
+                .expect("the row is in the matrix");
+            assert_eq!(
+                row.row().refusing_layer(),
+                Some(EvidenceBoundary::ConsensusRejectionBeforeScript),
+                "{name} does not declare the boundary its run reached",
+            );
+            let LiveRowStanding::NativeRefusalObserved { observed_layer, .. } = row.standing()
+            else {
+                panic!("{name} is not answered by a refusal");
+            };
+            assert_eq!(
+                *observed_layer,
+                ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+                "{name} was not refused at consensus",
+            );
+        }
+    }
+
+    #[test]
+    fn the_partition_is_eighty_two_answered_one_closed_and_twenty_five_required() {
+        // THE PARTITION, PINNED. It was a sentence in the Phase-5 record
+        // and nothing in the tree checked it, which is how seven rows
+        // could sit on the answered side of it while their evidence said
+        // otherwise. The figures are unchanged in COUNT by this wave and
+        // corrected in MEANING: the same 82 rows are answered, and seven
+        // of them are now answered at the boundary their run actually
+        // reached rather than at one it never got to.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let census = plan.census();
+        let answered = plan
+            .rows()
+            .iter()
+            .filter(|row| row.standing().is_answered())
+            .count();
+
+        assert_eq!(answered, 82, "the answered count moved");
+        assert_eq!(census.vocabulary_closed(), 1);
+        assert_eq!(census.native_run_required(), 25, "the required count moved");
+        assert_eq!(
+            answered + census.vocabulary_closed() + census.native_run_required(),
+            108
+        );
+        assert_eq!(census.rows(), 108);
+
+        // And the correction itself: 17 of the answered rows are
+        // refusals, every one of them at its own declared boundary, with
+        // NO row standing at a boundary it did not declare.
+        assert_eq!(census.native_refusal_observed(), 17);
+        assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
     }
 
     #[test]
