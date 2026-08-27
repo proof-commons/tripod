@@ -741,6 +741,12 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         // belongs in the evidence plan beside the row rather than in
         // bytes whose job is to count.
         LiveRowStanding::DeterminismObserved { .. } => "determinism-observed",
+        // TWO identities withheld rather than one, and for the first
+        // reason twice over: they are the standing's own payload and
+        // belong in the evidence plan beside the row. A summary that
+        // printed a pair of identities would be carrying the evidence in
+        // bytes whose job is to count it.
+        LiveRowStanding::PairedRelationObserved { .. } => "paired-relation-observed",
         // Withheld for the same two reasons: no target sentence exists
         // to carry, and the payload names a first-party site, which
         // belongs beside the row in the evidence plan rather than in

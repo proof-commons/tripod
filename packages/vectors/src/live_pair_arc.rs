@@ -642,6 +642,7 @@ enum Half {
 pub struct PairArcRecord {
     fixture_conserves: bool,
     issued_asset: Option<String>,
+    observed: Vec<(PairArcMember, ObservedOutcomeLayer, Option<String>)>,
     explicit: Option<AcceptedMember>,
     private: Option<AcceptedMember>,
     ledger: Option<PairArcLedger>,
@@ -659,6 +660,17 @@ impl PairArcRecord {
     #[must_use]
     pub fn issued_asset(&self) -> Option<&str> {
         self.issued_asset.as_deref()
+    }
+
+    /// The layer each member's submission reached, and the target's own
+    /// words where it spoke.
+    ///
+    /// Written BEFORE the acceptance is tested, so a run whose member was
+    /// refused leaves the target's verdict in the transcript rather than
+    /// only the arc's refusal to build a ledger out of it.
+    #[must_use]
+    pub fn observed(&self) -> &[(PairArcMember, ObservedOutcomeLayer, Option<String>)] {
+        &self.observed
     }
 
     /// The explicit member's acceptance, where there was one.
@@ -753,6 +765,11 @@ impl PairArcPlanner {
         every_input_verified: bool,
         readback_matches_submission: bool,
     ) -> Result<(), PairArcRefusal> {
+        self.record.observed.push((
+            member,
+            response.observed_layer,
+            response.observed_detail.clone(),
+        ));
         if !matches!(response.observed_layer, ObservedOutcomeLayer::Accepted) {
             return Err(PairArcRefusal::MemberNotAccepted(member));
         }
@@ -1246,6 +1263,14 @@ pub fn render_pair_arc(record: &PairArcRecord) -> String {
         "issued_asset {}",
         record.issued_asset().unwrap_or("absent"),
     );
+    for (member, layer, detail) in record.observed() {
+        let _ = writeln!(
+            out,
+            "observed {} layer {layer:?} detail {}",
+            member.name(),
+            detail.as_deref().unwrap_or("none"),
+        );
+    }
     for member in PairArcMember::ALL {
         let observed = match member {
             PairArcMember::Explicit => record.explicit(),
