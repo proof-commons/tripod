@@ -24,8 +24,8 @@ pub use tapscript::upstream::{
     ValidatedLiveTransferOperationPlan,
 };
 pub use tapscript::{
-    CandidateTransferLifecycle, CompleteFamilyRanges, LiveFamily, LiveFamilyRange, LiveInputFamily,
-    LiveOutputFamily, LiveProgramRole, LiveTransferLeafRole, LiveTransferShape,
-    LiveTransferShapeBounds, LiveTransferShapeSet, OwnerKey, OwnerProfileDisposition,
-    OwnerSighashProfile, ProtectedDatum, RecognitionResidual,
+    CandidateTransferLifecycle, CompleteFamilyRanges, EstablishedOwnerSighashProfile, LiveFamily,
+    LiveFamilyRange, LiveInputFamily, LiveOutputFamily, LiveProgramRole, LiveTransferLeafRole,
+    LiveTransferShape, LiveTransferShapeBounds, LiveTransferShapeSet, OwnerKey,
+    OwnerProfileDisposition, OwnerSighashProfile, ProtectedDatum, RecognitionResidual,
 };
