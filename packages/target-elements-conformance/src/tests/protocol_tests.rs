@@ -219,14 +219,52 @@ fn every_reviewed_execution_domain_has_a_wire_form() {
     }
 }
 
+/// A key-path refusal has its own wire name, and it is a verdict.
+#[test]
+fn the_key_path_layer_is_spelled_and_counted_as_its_own() {
+    use crate::protocol::ObservedOutcomeLayer;
+
+    // The wire spelling, checked through serde rather than read off the
+    // attribute: the adapter emits this exact string, and a rename here
+    // that nobody carried across would leave the two sides describing
+    // the same event under two names.
+    let wire = serde_json::to_string(&ObservedOutcomeLayer::KeyPathRejection)
+        .expect("the layer serializes");
+    assert_eq!(wire, "\"key_path_rejection\"");
+    assert_eq!(
+        serde_json::from_str::<ObservedOutcomeLayer>("\"key_path_rejection\"")
+            .expect("the layer parses"),
+        ObservedOutcomeLayer::KeyPathRejection,
+    );
+
+    // It is NOT the script-path name, which is the whole reason it
+    // exists, and it is a verdict the target reached rather than a
+    // failure around the run.
+    assert_ne!(
+        ObservedOutcomeLayer::KeyPathRejection,
+        ObservedOutcomeLayer::ScriptPathRejection,
+    );
+    assert!(ObservedOutcomeLayer::KeyPathRejection.is_target_verdict());
+    assert_eq!(
+        ObservedOutcomeLayer::KeyPathRejection.to_string(),
+        "key-path rejection",
+    );
+}
+
 #[test]
 fn the_handshake_request_states_this_harnesss_schema() {
     assert_eq!(HandshakeRequest::default().schema, NATIVE_PROTOCOL_SCHEMA);
 }
 
 #[test]
-fn this_harness_speaks_schema_five_and_no_earlier_one() {
-    // Stated as a value rather than left implicit. Schema 5 declares the
+fn this_harness_speaks_schema_six_and_no_earlier_one() {
+    // Stated as a value rather than left implicit. Schema 6 widens the
+    // observed-layer vocabulary with `key_path_rejection`. No record
+    // shape moves for it, and the break is real all the same: an earlier
+    // harness refuses a name it has never heard, so an adapter that has
+    // learned to tell a key-path refusal from a script-path one would
+    // have its answer read as a transport failure rather than as the
+    // verdict the target reached. Schema 5 declares the
     // confidential funding arm: a fifth operation subject and two
     // response members that are not defaulted, so a revision-4 executor
     // can neither parse a revision-5 request nor produce a revision-5
@@ -245,7 +283,8 @@ fn this_harness_speaks_schema_five_and_no_earlier_one() {
     // implementations moving together: the adapter's constant of the
     // same name is what it is compared against in the field, and a bump
     // that reached only one side is the fault G12-R09 recorded.
-    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 5);
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 6);
+    assert_ne!(NATIVE_PROTOCOL_SCHEMA, 5);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 4);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 3);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 2);

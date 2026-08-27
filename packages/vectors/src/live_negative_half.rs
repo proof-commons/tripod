@@ -191,10 +191,21 @@ pub enum NegativeHalfGap {
     /// owed before any run.
     RowClassUnderdetermined,
     /// The observed-layer vocabulary has no member for what happened.
+    /// HISTORICAL, and now VACATED.
     ///
-    /// The refusal exists and was recorded; what is missing is a name to
-    /// file it under, so filing it would read the vocabulary's poverty
-    /// as evidence.
+    /// The refusal existed and was recorded; what was missing was a name
+    /// to file it under, so filing it would have read the vocabulary's
+    /// poverty as evidence.
+    ///
+    /// It carried ONE row, `key-path-escape`, and the poverty is
+    /// repaired: `ObservedOutcomeLayer::KeyPathRejection` is minted, the
+    /// adapter tells a key-path refusal from a script-path one by reading
+    /// the witness and the spent programs rather than the refusal text
+    /// alone, and the probe's phase-B run observed the refusal under its
+    /// own name behind an accepted control
+    /// ([`crate::live_keypath_probe::run_of_record_phase_b`]). The row
+    /// left this register by being answered, and the member is kept only
+    /// as provenance — the vocabulary the repair was read off.
     ObservedLayerVocabularyAbsent,
     /// One identical verdict covers rows that must be told apart.
     ///
@@ -313,11 +324,14 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         G::NoIndependentCovenantClause,
         "the fee position is fixed by the shape and no covenant clause constrains a u's fee-or-sponsor role independent of the signature",
     ),
-    entry(
-        "key-path-escape",
-        G::ObservedLayerVocabularyAbsent,
-        "the probe ran and its refusal is filed under a script-path name for want of a key-path one",
-    ),
+    // `key-path-escape` has LEFT. Its gap named a missing NAME rather
+    // than a missing run, and the name is minted: the observed-layer
+    // vocabulary carries `KeyPathRejection`, the adapter classifies from
+    // the witness and the spent programs instead of from the refusal
+    // text alone, and the probe's phase-B run observed the refusal under
+    // its own name behind an unmutated control accepted on the same
+    // chain. It left by being ANSWERED at its own site, which is the only
+    // way a row leaves this register.
     entry(
         "malformed-control-path",
         G::WitnessSurgeryStageAbsent,

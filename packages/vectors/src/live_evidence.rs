@@ -1569,6 +1569,33 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
             crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
             crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_REJECT_DETAIL,
         )),
+        // §15.4's key-path row, answered by the internal-key
+        // unspendability probe's phase-B run: the key-path attempt
+        // offered FIRST and the unmutated control after it, to one node
+        // on one chain. The order is forced rather than chosen — both
+        // spend the one funded receipt, so a control accepted first would
+        // have spent the coin and the attempt after it would have drawn a
+        // missing input rather than a verdict about the witness.
+        //
+        // The pair is ONE candidate submitted twice. The two witnessless
+        // serializations were compared byte for byte and are equal, so
+        // the separating fact is the WITNESS ALONE: one item against
+        // three, a signature with no leaf script and no control block.
+        // Nothing else about the transaction differs, which is what makes
+        // the refusal this row's rather than the candidate's.
+        //
+        // WHAT THIS DOES NOT MOVE. The row is answered; the discrete-log
+        // assumption on the published internal key is not touched and is
+        // not touchable by a refusal. The attempt's signature is by a
+        // published test scalar that is not the output key, so the target
+        // refused a signature that does not verify — what any target
+        // answers for any key anyone does not hold
+        // `(´[PLAN-rule:exclusions:nonclaims]´)`. The refusal establishes
+        // that the attempt was observed and refused, under its own name.
+        "key-path-escape" => Some((
+            crate::live_keypath_probe::run_of_record_phase_b::CONTROL_ACCEPTED_TXID,
+            crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_DETAIL,
+        )),
         _ => None,
     }
 }
@@ -2645,6 +2672,7 @@ mod tests {
                 "confidential-asset-commitment",
                 "empty-signature",
                 "hidden-private-u-output",
+                "key-path-escape",
                 "malformed-rangeproof",
                 "malformed-signature",
                 "missing-sponsor-authorization",
@@ -2660,7 +2688,20 @@ mod tests {
                 "wrong-private-blinding-balance",
             ]),
         );
-        assert_eq!(plan.census().native_refusal_observed(), 16);
+        assert_eq!(plan.census().native_refusal_observed(), 17);
+
+        // THE KEY-PATH ROW COMES FROM A THIRD LANE and is held to the
+        // same rule as the rest. Its control is the probe's own, accepted
+        // on the probe's own chain, so it cites neither of the two
+        // controls this test already separates; and its pair is tighter
+        // than either of them, the attempt and the control being ONE
+        // candidate whose witnessless serializations were compared byte
+        // for byte rather than argued to be equal.
+        assert_ne!(
+            crate::live_keypath_probe::run_of_record_phase_b::CONTROL_ACCEPTED_TXID,
+            witness::CONTROL_ACCEPTED_TXID,
+            "the key-path negative cites the witness lane's control",
+        );
 
         // THE THIRD ROW COMES FROM A DIFFERENT LANE and is held to the
         // same rule. Its mutant was offered first and its control
@@ -2872,7 +2913,7 @@ mod tests {
         // And it did NOT land in either target bucket. The separate
         // bucket's whole claim, made checkable.
         assert_eq!(plan.census().native_run_observed(), 24);
-        assert_eq!(plan.census().native_refusal_observed(), 16);
+        assert_eq!(plan.census().native_refusal_observed(), 17);
     }
 
     #[test]

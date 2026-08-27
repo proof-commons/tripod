@@ -364,7 +364,7 @@ the transaction-context types `PrimitiveExecutionContext`, `FixtureInput`,
 ### `protocol` — the secretless wire
 
 ```text
-NATIVE_PROTOCOL_SCHEMA: u32 = 4
+NATIVE_PROTOCOL_SCHEMA: u32 = 6
 MOCK_EXECUTOR_NETWORK_ID: [u8; 32] = [0x11; 32]
 MOCK_EXECUTOR_GENESIS_ID: [u8; 32] = [0x22; 32]
 

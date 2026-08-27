@@ -45,6 +45,27 @@
 //! the attempt turned out to be inexpressible that would have been a
 //! finding to report rather than a licence to widen the wire.
 //!
+//! # The accepted control, and why phase B needed one
+//!
+//! Phase A offered the attempt and nothing else, so its refusal had no
+//! pair. A census of rejections from a pipeline that has never had a
+//! transaction accepted establishes that the target rejects things,
+//! which every target that rejects everything also does — so the §15
+//! register admits a refusal as evidence only against an UNMUTATED
+//! control accepted ON THE SAME CHAIN.
+//!
+//! The control here is not a second candidate. It is the SAME candidate,
+//! spent by the script path the constructor is built for, and the two
+//! submissions' witnessless serializations are compared byte for byte
+//! and recorded rather than asserted, so "differing in the witness
+//! alone" is a measurement.
+//!
+//! The attempt is offered FIRST and the control second, and the order is
+//! forced rather than chosen: both spend the one funded receipt, so a
+//! control accepted first would have spent the coin and the attempt
+//! after it would have drawn a missing input rather than the verdict the
+//! probe is about.
+//!
 //! # Every key here is published test material
 //!
 //! The signing scalar is the BIP-340 specification's own first appendix
@@ -75,12 +96,17 @@ use transaction::live_census::{
     AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
     OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest,
 };
-use transaction::live_construct::finalize_live_transfer;
+use transaction::live_construct::{
+    LiveConstructionReport, complete_live_transfer, finalize_live_transfer,
+};
 use transaction::live_finalize::FinalizedLiveTransfer;
-use transaction::live_message::{WitnessVectorTreatment, candidate_key_path_message};
+use transaction::live_message::{
+    WitnessVectorTreatment, candidate_key_path_message, candidate_owner_message,
+};
 use transaction::live_request::{
     LiveReceiptDestination, LiveTransferRequest, ProtocolValue, RequestedForm, SponsorChangeRequest,
 };
+use transaction::live_signing::{LiveOwnerResponse, authorize_live_transfer};
 use transaction::taproot::{Digest32, leaf_hash};
 use transaction::view::{PublicConstructionView, PublicOutputView};
 
@@ -119,6 +145,9 @@ const PROBE_AUXILIARY: [u8; FIELD_ELEMENT_BYTES] = [0x66; FIELD_ELEMENT_BYTES];
 
 /// The probe's name for its one submission.
 pub const ATTEMPT_STEP: &str = "key-path-spend-attempt";
+
+/// The probe's name for the accepted control that follows it.
+pub const CONTROL_STEP: &str = "script-path-control";
 
 /// The probe's name for its issuance step.
 pub const ISSUE_STEP: &str = "issue-protocol-asset";
@@ -159,6 +188,14 @@ pub enum KeyPathProbeRefusal {
     /// vocabulary declines to carry is a finding about the wire, and
     /// this member is where it would land.
     AttemptNotExpressible,
+    /// The script-path control could not be authorized or completed.
+    ///
+    /// Kept apart from [`Self::CandidateNotConstructible`] because the
+    /// candidate the control authorizes is the one the attempt was
+    /// already built over: reaching this member means the CONTROL half
+    /// failed, and a record that folded the two would leave a reader
+    /// unable to see which half the ceremony lost.
+    ControlNotAuthorizable,
 }
 
 /// The constructor's program, and what it is a commitment to.
@@ -296,6 +333,48 @@ impl KeyPathAttempt {
     }
 }
 
+/// The unmutated control the attempt is attributable against.
+///
+/// The same candidate, spent by its script path. What is carried is the
+/// bytes' length, the measured relation to the attempt, and nothing the
+/// attempt already carries: two copies of one transaction's terms would
+/// be two places for them to drift.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyPathControl {
+    submitted_bytes: Vec<u8>,
+    witness_items: usize,
+    shares_the_attempts_witnessless_bytes: bool,
+}
+
+impl KeyPathControl {
+    /// The exact bytes handed to the submission wire.
+    #[must_use]
+    pub fn submitted_bytes(&self) -> &[u8] {
+        &self.submitted_bytes
+    }
+
+    /// How many items the control's first input carries.
+    ///
+    /// Three for a script-path spend — signature, leaf script, control
+    /// block — against the attempt's one, which is the whole visible
+    /// difference between the pair.
+    #[must_use]
+    pub const fn witness_items(&self) -> usize {
+        self.witness_items
+    }
+
+    /// Whether the pair differs in the witness ALONE.
+    ///
+    /// Measured by comparing the two witnessless serializations rather
+    /// than asserted from the construction: a control that had been
+    /// finalized over some other coin would be a second candidate wearing
+    /// the control's name, and this is the fact that would say so.
+    #[must_use]
+    pub const fn shares_the_attempts_witnessless_bytes(&self) -> bool {
+        self.shares_the_attempts_witnessless_bytes
+    }
+}
+
 /// What the target did with the attempt.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyPathObservation {
@@ -334,6 +413,8 @@ pub struct KeyPathProbeRecord {
     binding: Option<ProgramBinding>,
     attempt: Option<KeyPathAttempt>,
     observation: Option<KeyPathObservation>,
+    control: Option<KeyPathControl>,
+    control_observation: Option<KeyPathObservation>,
     refusal: Option<KeyPathProbeRefusal>,
 }
 
@@ -380,6 +461,18 @@ impl KeyPathProbeRecord {
         self.observation.as_ref()
     }
 
+    /// The unmutated control offered after the attempt.
+    #[must_use]
+    pub const fn control(&self) -> Option<&KeyPathControl> {
+        self.control.as_ref()
+    }
+
+    /// What the target said about the control.
+    #[must_use]
+    pub const fn control_observation(&self) -> Option<&KeyPathObservation> {
+        self.control_observation.as_ref()
+    }
+
     /// Why the ceremony stopped, where it stopped.
     #[must_use]
     pub const fn refusal(&self) -> Option<&KeyPathProbeRefusal> {
@@ -398,7 +491,8 @@ impl KeyPathProbeRecord {
             "the residual discrete-log assumption on the internal key stands regardless",
             "the offered signature is by a published test key that is not the output key",
             "the key-path message construction is candidate-scoped and reviewed by nobody",
-            "no matrix row, blocker or residual moves on this run",
+            "no blocker and no residual moves on this run",
+            "the one §15 row this run answers records an observed refusal, never a discharged assumption",
         ]
     }
 }
@@ -409,6 +503,7 @@ enum Stage {
     Issue,
     Fund,
     Attempt,
+    Control,
     Done,
 }
 
@@ -564,7 +659,13 @@ impl KeyPathProbePlanner {
     }
 
     /// One finalized explicit candidate over the funded coin.
-    fn finalize(&self) -> Result<FinalizedLiveTransfer, KeyPathProbeRefusal> {
+    ///
+    /// The construction report travels with it because the control's
+    /// completion needs it; the attempt does not, and dropping it there
+    /// is what made phase A's finalization return one value.
+    fn finalize(
+        &self,
+    ) -> Result<(FinalizedLiveTransfer, LiveConstructionReport), KeyPathProbeRefusal> {
         let view = PublicConstructionView::new(self.record.coins.iter().map(|coin| {
             PublicOutputView::new(
                 coin.outpoint(),
@@ -613,7 +714,8 @@ impl KeyPathProbePlanner {
         let target = reviewed_target().map_err(|_| KeyPathProbeRefusal::SubstrateUnavailable)?;
         let finalization = finalize_live_transfer(&target, &self.abi, &request, &view, None, None)
             .map_err(|_| KeyPathProbeRefusal::CandidateNotConstructible)?;
-        Ok(finalization.into_finalized())
+        let report = finalization.report().clone();
+        Ok((finalization.into_finalized(), report))
     }
 
     /// The census of one finalized explicit candidate.
@@ -659,15 +761,35 @@ impl KeyPathProbePlanner {
         .map_err(KeyPathProbeRefusal::CensusRefused)
     }
 
+    /// The pair: one candidate, offered twice, differing in the witness.
+    ///
+    /// ONE finalization answers both halves, which is the point rather
+    /// than an economy. The attempt is the census's own candidate wearing
+    /// a one-item witness; the control is the same candidate authorized
+    /// the way this workspace authorizes every transfer. A second
+    /// finalization for the control would have been a second candidate a
+    /// reader had to take on trust as the first one's twin.
+    ///
+    /// The attempt's bytes are built exactly as phase A built them, and
+    /// the control is added beside them.
+    fn build_pair(&self) -> Result<(KeyPathAttempt, KeyPathControl), KeyPathProbeRefusal> {
+        let (finalized, report) = self.finalize()?;
+        let attempt = self.build_attempt(&finalized)?;
+        let control = self.build_control(finalized, report, &attempt)?;
+        Ok((attempt, control))
+    }
+
     /// The attempt: one candidate, one input, one witness item.
     ///
     /// The transaction is rebuilt from the census's own candidate rather
     /// than from anything the ceremony still holds, so the bytes
     /// submitted are the bytes the message was formed over, differing in
     /// the witness alone.
-    fn build_attempt(&self) -> Result<KeyPathAttempt, KeyPathProbeRefusal> {
-        let finalized = self.finalize()?;
-        let census = Self::census(&finalized, self.genesis_block_hash)?;
+    fn build_attempt(
+        &self,
+        finalized: &FinalizedLiveTransfer,
+    ) -> Result<KeyPathAttempt, KeyPathProbeRefusal> {
+        let census = Self::census(finalized, self.genesis_block_hash)?;
         let input = census
             .signing_inputs()
             .first()
@@ -713,6 +835,66 @@ impl KeyPathProbePlanner {
         })
     }
 
+    /// The control: the same candidate, spent by its script path.
+    ///
+    /// Authorized through the ordinary owner route — one signature per
+    /// receipt over the message the census forms — and completed the way
+    /// every accepted transfer in this package is completed. Nothing
+    /// here is probe-specific except the auxiliary value, which is the
+    /// probe's own so that both halves of the pair are reproducible from
+    /// constants that are written down.
+    fn build_control(
+        &self,
+        finalized: FinalizedLiveTransfer,
+        report: LiveConstructionReport,
+        attempt: &KeyPathAttempt,
+    ) -> Result<KeyPathControl, KeyPathProbeRefusal> {
+        let census = Self::census(&finalized, self.genesis_block_hash)?;
+        let material = signing_material(&FIRST_SCALAR)
+            .map_err(|_| KeyPathProbeRefusal::SubstrateUnavailable)?;
+
+        let mut responses = Vec::new();
+        for signing in finalized.signing_requests() {
+            let input = census
+                .signing_inputs()
+                .iter()
+                .find(|entry| entry.input_index() == u32::from(signing.input()))
+                .ok_or(KeyPathProbeRefusal::ControlNotAuthorizable)?;
+            let message =
+                candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown);
+            let signature = material
+                .sign(&message, &PROBE_AUXILIARY)
+                .map_err(|_| KeyPathProbeRefusal::SigningRefused)?
+                .to_vec();
+            responses.push((signing.input(), LiveOwnerResponse::to(&signing, signature)));
+        }
+
+        let target = reviewed_target().map_err(|_| KeyPathProbeRefusal::SubstrateUnavailable)?;
+        let authorized = authorize_live_transfer(finalized, responses)
+            .map_err(|_| KeyPathProbeRefusal::ControlNotAuthorizable)?;
+        let built = complete_live_transfer(&target, authorized, report, None)
+            .map_err(|_| KeyPathProbeRefusal::ControlNotAuthorizable)?;
+        let bytes = built.bytes();
+
+        // The pair's relation, measured out of the two encodings rather
+        // than taken from the fact that one finalization produced both.
+        let decoded = TargetTransaction::decode(&bytes)
+            .map_err(|_| KeyPathProbeRefusal::ControlNotAuthorizable)?;
+        let attempted = TargetTransaction::decode(attempt.submitted_bytes())
+            .map_err(|_| KeyPathProbeRefusal::ControlNotAuthorizable)?;
+        let witness_items = decoded
+            .witnesses()
+            .first()
+            .map_or(0, |witness| witness.stack().len());
+
+        Ok(KeyPathControl {
+            shares_the_attempts_witnessless_bytes: decoded.encode_without_witness()
+                == attempted.encode_without_witness(),
+            witness_items,
+            submitted_bytes: bytes,
+        })
+    }
+
     /// Record what the target did with the attempt.
     ///
     /// Whatever it was. Nothing here compares the layer against what the
@@ -721,6 +903,21 @@ impl KeyPathProbePlanner {
     /// into the artifact rather than a panic that hid it.
     fn settle_attempt(&mut self, response: &NativeOperationResponse) {
         self.record.observation = Some(KeyPathObservation {
+            layer: response.observed_layer,
+            accepted_txid: response.accepted_txid.clone(),
+            detail: response.observed_detail.clone(),
+        });
+    }
+
+    /// Record what the target did with the control.
+    ///
+    /// On the same rule the attempt is recorded under: the control has an
+    /// intention and an intention is not an entitlement, so a control the
+    /// node refused is written into the artifact rather than panicked on.
+    /// A refused control does not make the attempt's refusal evidence,
+    /// and the register is what would say so.
+    fn settle_control(&mut self, response: &NativeOperationResponse) {
+        self.record.control_observation = Some(KeyPathObservation {
             layer: response.observed_layer,
             accepted_txid: response.accepted_txid.clone(),
             detail: response.observed_detail.clone(),
@@ -749,6 +946,10 @@ impl TargetOperationPlanner for KeyPathProbePlanner {
                 }
                 Stage::Attempt => {
                     self.settle_attempt(response);
+                    self.stage = Stage::Control;
+                }
+                Stage::Control => {
+                    self.settle_control(response);
                     self.stage = Stage::Done;
                 }
                 Stage::Done => {}
@@ -758,10 +959,17 @@ impl TargetOperationPlanner for KeyPathProbePlanner {
         match self.stage {
             Stage::Issue => Ok(Some(self.funding_step(ISSUE_STEP, true))),
             Stage::Fund => Ok(Some(self.funding_step(FUND_STEP, false))),
-            Stage::Attempt => match self.build_attempt() {
-                Ok(attempt) => {
+            // Both halves are built here, and the control is held until
+            // its own step. Building the pair at the attempt's step is
+            // what makes the two one candidate: a control built later
+            // would be finalized over a coin the attempt had already been
+            // offered against, and nothing in the record would show the
+            // two came from one construction.
+            Stage::Attempt => match self.build_pair() {
+                Ok((attempt, control)) => {
                     let bytes = attempt.submitted_bytes.clone();
                     self.record.attempt = Some(attempt);
+                    self.record.control = Some(control);
                     Ok(Some(OperationStep::new(
                         ATTEMPT_STEP,
                         OperationSubject::Submission(Box::new(TargetSubmissionSubject {
@@ -771,6 +979,22 @@ impl TargetOperationPlanner for KeyPathProbePlanner {
                 }
                 Err(refusal) => Err(self.refuse(refusal)),
             },
+            Stage::Control => {
+                let held = self
+                    .record
+                    .control
+                    .as_ref()
+                    .map(|control| control.submitted_bytes.clone());
+                let Some(bytes) = held else {
+                    return Err(self.refuse(KeyPathProbeRefusal::ControlNotAuthorizable));
+                };
+                Ok(Some(OperationStep::new(
+                    CONTROL_STEP,
+                    OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                        transaction_bytes: bytes,
+                    })),
+                )))
+            }
             Stage::Done => Ok(None),
         }
     }
@@ -802,7 +1026,7 @@ fn explicit_binding(abi: &CandidateLiveTransferAbi) -> Result<ProgramBinding, Ve
 /// and no line is a verdict about whether the run went well.
 #[must_use]
 pub fn render_keypath_probe(record: &KeyPathProbeRecord) -> String {
-    let mut lines = vec!["role internal-key-unspendability-probe-phase-a".to_owned()];
+    let mut lines = vec!["role internal-key-unspendability-probe-phase-b".to_owned()];
 
     lines.extend(provenance_lines(record.provenance()));
     lines.push(format!(
@@ -818,7 +1042,13 @@ pub fn render_keypath_probe(record: &KeyPathProbeRecord) -> String {
         lines.extend(attempt_lines(record, attempt));
     }
     if let Some(observation) = record.observation() {
-        lines.extend(observation_lines(observation));
+        lines.extend(observation_lines("observed", observation));
+    }
+    if let Some(control) = record.control() {
+        lines.extend(control_lines(control));
+    }
+    if let Some(observation) = record.control_observation() {
+        lines.extend(observation_lines("control_observed", observation));
     }
     if let Some(refusal) = record.refusal() {
         lines.push(format!("ceremony_refusal {refusal:?}"));
@@ -828,7 +1058,8 @@ pub fn render_keypath_probe(record: &KeyPathProbeRecord) -> String {
         lines.push(format!("non_claim {claim}"));
     }
     lines.push("residual_internal_key_unspendability_stands true".to_owned());
-    lines.push("discharges_no_matrix_row true".to_owned());
+    lines.push("discharges_no_residual true".to_owned());
+    lines.push("answers_matrix_row key-path-escape".to_owned());
 
     let mut rendered = lines.join("\n");
     let _ = writeln!(rendered);
@@ -935,20 +1166,43 @@ fn attempt_lines(record: &KeyPathProbeRecord, attempt: &KeyPathAttempt) -> Vec<S
     lines
 }
 
-/// What the target did with the attempt.
-fn observation_lines(observation: &KeyPathObservation) -> Vec<String> {
+/// The unmutated control offered after the attempt.
+fn control_lines(control: &KeyPathControl) -> Vec<String> {
     let mut lines = Vec::with_capacity(4);
-    lines.push(format!("observed layer {:?}", observation.layer()));
     lines.push(format!(
-        "observed is_target_verdict {}",
+        "control submitted_bytes {}",
+        control.submitted_bytes().len()
+    ));
+    lines.push(format!(
+        "control submitted {}",
+        printed(control.submitted_bytes())
+    ));
+    lines.push(format!("control witness_items {}", control.witness_items()));
+    lines.push(format!(
+        "control shares_the_attempts_witnessless_bytes {}",
+        control.shares_the_attempts_witnessless_bytes()
+    ));
+    lines
+}
+
+/// What the target did with one submission.
+///
+/// The prefix names WHICH submission, so the attempt's verdict and the
+/// control's cannot be read for each other in a transcript that carries
+/// both.
+fn observation_lines(prefix: &str, observation: &KeyPathObservation) -> Vec<String> {
+    let mut lines = Vec::with_capacity(4);
+    lines.push(format!("{prefix} layer {:?}", observation.layer()));
+    lines.push(format!(
+        "{prefix} is_target_verdict {}",
         observation.layer().is_target_verdict()
     ));
     lines.push(format!(
-        "observed accepted_txid {}",
+        "{prefix} accepted_txid {}",
         observation.accepted_txid().unwrap_or("none")
     ));
     lines.push(format!(
-        "observed detail {}",
+        "{prefix} detail {}",
         observation.detail().unwrap_or("none")
     ));
     lines
@@ -1033,10 +1287,98 @@ pub mod run_of_record {
     /// text's prefix and cannot do otherwise with the vocabulary it has.
     /// Repairing that is the typed carrier the follow-up phase owns; the
     /// probe reports it and changes nothing.
+    ///
+    /// The repair LANDED, and this constant does not move for it. What
+    /// phase A observed is what phase A observed, and rewriting it to the
+    /// name a later vocabulary would have given it would replace a record
+    /// of a run with a reconstruction of one. The corrected observation
+    /// is phase B's own, beside this module in
+    /// [`super::run_of_record_phase_b`].
     pub const OBSERVED_LAYER: &str = "ScriptPathRejection";
 
     /// The run's wall time.
     pub const WALL_SECONDS: f64 = 4.1;
+}
+
+/// The phase-B run of record: the same attempt, under its own name, with
+/// its control.
+///
+/// # Why there are two runs of record and not one amended one
+///
+/// Phase A's figures are what phase A observed, and the module above
+/// keeps them exactly as it wrote them — including the layer name that
+/// was the finding. Rewriting that constant to the name this vocabulary
+/// now has would replace a record of a run with a reconstruction of one,
+/// and the divergence phase A reported would vanish from the artifact
+/// that reported it.
+///
+/// # The probe re-ran BYTE-IDENTICALLY on every figure phase A recorded
+///
+/// The issued asset, the funded program, the output key, the merkle
+/// root, the signing key, the candidate key-path message, the submitted
+/// width, the witness census and the target's verbatim words all
+/// re-derived unchanged. So this module CITES them rather than copying
+/// them: two spellings of one measurement are two things that can
+/// disagree, and [`the_two_runs_are_one_ceremony_under_two_names`] is
+/// what holds the citation honest.
+///
+/// What is new is the NAME the verdict is filed under and the PAIR it is
+/// filed against.
+///
+/// # What the pair buys, and what it does not
+///
+/// The refusal is now attributable in the §15 register's own sense: the
+/// unmutated candidate was accepted on the same chain, the mutated one
+/// refused, and the two differ in the witness alone — measured off the
+/// witnessless serializations rather than asserted from the fact that
+/// one finalization built both.
+///
+/// It buys nothing whatever about the internal key. The signature the
+/// attempt offers is by a published test scalar that is not the output
+/// key, so the refusal is a target refusing a signature that does not
+/// verify. The residual discrete-log assumption stands exactly where it
+/// stood `(´[PLAN-rule:exclusions:nonclaims]´)`.
+///
+/// The target: Elements Core v28.99.0-b7fc5d080a7e, at the pinned tip
+/// the lane binds itself to, on a disposable development chain the run
+/// created and destroyed.
+pub mod run_of_record_phase_b {
+    /// The layer the adapter filed the verdict under, corrected.
+    ///
+    /// Recorded as the string the run produced, on the pattern phase A
+    /// set. The whole content of phase B is that this differs from
+    /// [`super::run_of_record::OBSERVED_LAYER`] while the words below do
+    /// not: the target said the same thing and the wire stopped
+    /// mis-naming it.
+    pub const OBSERVED_LAYER: &str = "KeyPathRejection";
+
+    /// What the target said when it refused the attempt, verbatim.
+    pub const REFUSAL_DETAIL: &str =
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)";
+
+    /// The identity the target gave the accepted control.
+    ///
+    /// The half of the pair a reader can check against a chain. The
+    /// refusal left no transaction to look up, which is what being
+    /// refused means.
+    pub const CONTROL_ACCEPTED_TXID: &str =
+        "0fcf267058e83e06e87a950bbeec920a15e3641ef7f76c55df0a8fff544e64c1";
+
+    /// How many bytes the control handed to the submission wire.
+    pub const CONTROL_SUBMITTED_BYTES: usize = 751;
+
+    /// How many items the control's single input carried.
+    ///
+    /// Three — signature, leaf script, control block — against the
+    /// attempt's one, which is the whole visible difference between the
+    /// pair.
+    pub const CONTROL_WITNESS_ITEMS: usize = 3;
+
+    /// Whether the pair differed in the witness ALONE, as measured.
+    pub const CONTROL_SHARES_THE_ATTEMPTS_WITNESSLESS_BYTES: bool = true;
+
+    /// The run's wall time.
+    pub const WALL_SECONDS: f64 = 5.1;
 }
 
 #[cfg(test)]
@@ -1078,7 +1420,12 @@ mod tests {
         let rendered = render_keypath_probe(&KeyPathProbeRecord::default());
 
         assert!(rendered.contains("residual_internal_key_unspendability_stands true"));
-        assert!(rendered.contains("discharges_no_matrix_row true"));
+        // The line phase A carried said no matrix row moved, which was
+        // true of phase A. Phase B answers one row and still discharges
+        // no residual, and the transcript says both rather than letting
+        // the second be read out of the first.
+        assert!(rendered.contains("discharges_no_residual true"));
+        assert!(rendered.contains("answers_matrix_row key-path-escape"));
         assert!(rendered.ends_with('\n'));
     }
 
@@ -1114,6 +1461,33 @@ mod tests {
         // The verdict was a refusal, and the artifact says so in the
         // target's own words rather than in a mapped name.
         assert!(run::OBSERVED_DETAIL.contains("Invalid Schnorr signature"));
+    }
+
+    #[test]
+    fn the_two_runs_are_one_ceremony_under_two_names() {
+        // What phase B changed and what it did not, asserted rather than
+        // described. The TARGET said the same thing both times — the
+        // verbatim words are the same string — and the WIRE stopped
+        // filing them under a script-path name. A phase-B run whose
+        // words had moved would be a different observation reported
+        // under this name.
+        use super::{run_of_record as a, run_of_record_phase_b as b};
+
+        assert_eq!(b::REFUSAL_DETAIL, a::OBSERVED_DETAIL);
+        assert_ne!(b::OBSERVED_LAYER, a::OBSERVED_LAYER);
+        assert_eq!(a::OBSERVED_LAYER, "ScriptPathRejection");
+        assert_eq!(b::OBSERVED_LAYER, "KeyPathRejection");
+
+        // The pair. The control carries an identity a reader can look
+        // up, it is the script-path shape against the attempt's key-path
+        // one, and the two differ in the witness alone — which is the
+        // property that makes the refusal the row's rather than the
+        // candidate's.
+        assert_eq!(b::CONTROL_ACCEPTED_TXID.len(), 64);
+        assert_eq!(b::CONTROL_WITNESS_ITEMS, 3);
+        assert_eq!(a::WITNESS_ITEMS, 1);
+        const { assert!(b::CONTROL_SHARES_THE_ATTEMPTS_WITNESSLESS_BYTES) };
+        const { assert!(b::CONTROL_SUBMITTED_BYTES > a::SUBMITTED_BYTES) };
     }
 
     #[test]
