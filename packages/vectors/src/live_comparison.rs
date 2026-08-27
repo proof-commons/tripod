@@ -361,8 +361,8 @@ fn compare_plan(
 
     // What stopped this form from producing an observation, where one is
     // missing. The gap the run itself recorded is the sharper answer; a
-    // form the run did submit and got no weight for was stopped by the
-    // thing that stops every transfer.
+    // form the run did submit and got no weight for carries that local
+    // absence instead of borrowing a blocker from another pipeline.
     //
     // The gap's word is scoped to this pipeline's own funding step and is
     // not a claim that no confidential predecessor exists anywhere: one
@@ -371,9 +371,7 @@ fn compare_plan(
     // submitted, which is the fact the standing rests on and which the
     // narrower funding arm does not change.
     let absence_reason = transcript.gap_for(plan).map_or(
-        ComparisonAbsenceReason::RunBlockedBeforeBytesExisted(
-            LiveInfrastructureBlocker::OwnerSighashNotComputable,
-        ),
+        ComparisonAbsenceReason::NoObservedWeightForTheseBytes,
         |_| {
             ComparisonAbsenceReason::RunBlockedBeforeBytesExisted(
                 LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
