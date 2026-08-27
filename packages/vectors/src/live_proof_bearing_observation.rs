@@ -1156,7 +1156,14 @@ impl ProofBearingRunOfRecordV2 {
 mod v2_run_of_record {
     use std::sync::OnceLock;
 
-    use super::*;
+    use super::{
+        AssetField, AssetId, BTreeMap, Digest32, ObservedOutcomeLayer,
+        PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION, ProofBearingCase,
+        ProofBearingConstructionControl, ProofBearingObservation, ProofBearingReverification,
+        ProofBearingRunOfRecord, RecordedConfidentialCoin, RecordedConstructionRefusals,
+        RecordedMaterializationRefusal, RecordedProofBearingConstructionRefusal, ValueField,
+        decode_hex,
+    };
 
     const ISSUED_ASSET: &str = "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
     const PREDECESSOR_DIGEST: &str =
