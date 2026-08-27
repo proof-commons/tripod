@@ -56,7 +56,7 @@ use crate::matrix::EvidenceBoundary;
 /// Every other layer is a verdict the target reached, and maps to the one
 /// boundary that names it.
 #[must_use]
-pub(crate) const fn observed_boundary(layer: ObservedOutcomeLayer) -> Option<EvidenceBoundary> {
+pub const fn observed_boundary(layer: ObservedOutcomeLayer) -> Option<EvidenceBoundary> {
     match layer {
         ObservedOutcomeLayer::ConsensusRejectionBeforeScript => {
             Some(EvidenceBoundary::ConsensusRejectionBeforeScript)
@@ -94,7 +94,7 @@ pub(crate) const fn observed_boundary(layer: ObservedOutcomeLayer) -> Option<Evi
 /// matches no expectation, and a layer that maps to one matches only that
 /// one.
 #[must_use]
-pub(crate) fn matches_boundary(expected: EvidenceBoundary, observed: ObservedOutcomeLayer) -> bool {
+pub fn matches_boundary(expected: EvidenceBoundary, observed: ObservedOutcomeLayer) -> bool {
     observed_boundary(observed) == Some(expected)
 }
 
