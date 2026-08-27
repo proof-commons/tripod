@@ -1333,10 +1333,10 @@ pub fn coordinator_placements(
         .iter()
         .map(|component| component.fragment)
         .collect::<BTreeSet<_>>();
-    let confidential_external = if value_fragment != Fragment::ExplicitConservation {
-        BTreeSet::from([External::ConfidentialValueConservation])
-    } else {
+    let confidential_external = if value_fragment == Fragment::ExplicitConservation {
         BTreeSet::new()
+    } else {
+        BTreeSet::from([External::ConfidentialValueConservation])
     };
 
     let placements = CoordinatorGlobalCheck::ALL
