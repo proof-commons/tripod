@@ -4,9 +4,10 @@
 
 An external adversarial review of the phase-5 closing arc, commissioned against the range `0.5.12-dev..0.5.17-dev` at exact HEAD `0.5.17-dev`. It is archived here as the record of what was found; its findings register is backlog §5.10 and the remediating batch is the `T5-071` gate-repair wave.
 
-Two MECHANICAL deviations from the received bytes, both named here so the archive is not silently edited. No word of any finding is changed by either.
+Three MECHANICAL deviations from the received bytes, both named here so the archive is not silently edited. No word of any finding is changed by either.
 
 - Fifty-five source citations arrived as Markdown links to machine-local absolute paths, which resolve nowhere for a reader and which the plan-tree checker cannot follow. Each is rendered as the plain `path:line` code span its link text already was.
+- Three backticked array literals — two leaf arrangements and one transcript code sequence — arrived square-bracketed, which the register generator reads as an imported-citation form and requires parenthesized. The brackets are dropped and the digits kept, on the precedent the `T5-067` backlog row set for the same two arrangements.
 - The verdict heading carried the exit-gate label as a bare backticked span, which the planning harvest reads as a MINT and which would therefore duplicate the label the phase card mints. It is parens-wrapped as a citation. This is the review's own finding F8 applied to the review's own bytes.
 
 ---
@@ -80,7 +81,7 @@ Thus the lane could remain green if the control were rejected, a leaf mutant ans
 
 Exact claims touched: `wrong-coordinator` would duplicate `two-coordinators`, and `member-coordinator-leaf-exchange` would duplicate `no-coordinator`.
 
-Only `[0,0]` and `[1,1]` are declared and built; the typed partners are strings associated with those two variants: `live_owner_signing_negatives.rs:301-369`. No typed-partner mutant is constructed or submitted. Nevertheless, the register states exact hypothetical failure clauses and words: `live_negative_half.rs:436-458`.
+Only `0,0` and `1,1` are declared and built; the typed partners are strings associated with those two variants: `live_owner_signing_negatives.rs:301-369`. No typed-partner mutant is constructed or submitted. Nevertheless, the register states exact hypothetical failure clauses and words: `live_negative_half.rs:436-458`.
 
 The in-repo covenant establishes the per-input coordinator `EqualVerify` and member-bound `Verify` clauses: `pattern.rs:898-915`, `917-967`. It does not establish which failure a candidate with the reported “second failing input” returns as its target-level detail. The tests examine only the two driven arrangements.
 
@@ -182,7 +183,7 @@ The full expected map is pinned at `shape_census.rs:4362-4424`. `unsupported-her
 T5-063 role facts also hold:
 
 - transcript codes 7 and 8: `confidential_fixture.rs:459-475`;
-- code sequence pinned as `[1,2,3,4,5,6,7,8]`: `confidential_fixture_tests.rs:1110-1132`;
+- code sequence pinned as `1,2,3,4,5,6,7,8`: `confidential_fixture_tests.rs:1110-1132`;
 - programless explicit change still gets `OutputProgramEmpty`, and an undeclared solver still gets `BalancingRoleNotUnique { found: 0 }`: `confidential_fixture_tests.rs:1240-1279`, `1387-1405`.
 
 ### Separator distinctness
