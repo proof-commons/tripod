@@ -76,22 +76,29 @@ pub enum NegativeHalfGap {
     /// A row here needs no new capability, no ruling and no target
     /// change — only a case added to a ceremony that already runs.
     MutantBuilderOwed,
-    /// No route signs bytes the safe constructor did not build.
+    /// Re-signing over the mutated bytes does not carry the row to its
+    /// script class.
     ///
-    /// The negative half's single largest obstacle, and NOT the same
-    /// thing as the absent raw-surgery path the one blocked row carries.
-    /// Raw surgery is not absent: three lanes already rebuild finalized
-    /// bytes and submit them to a real node. What is absent is a way to
-    /// produce a VALID OWNER SIGNATURE over bytes so rebuilt.
+    /// The member's name is HISTORICAL. What it once said was absent — a
+    /// way to produce a valid owner signature over rebuilt bytes — is now
+    /// built and used: `OwnerSigningCensus::over_foreign_bytes_for_negative_evidence`
+    /// signs a mutant over its own census, and one row LEFT this gap
+    /// through it, `vault-control-entitlement-or-bare-u-output`, driven by
+    /// a program surgery that reached the coordinator leaf's
+    /// `InspectOutputScriptPubKey` clause and was refused there.
     ///
-    /// That distinction decides these rows. Each declares a script-path
-    /// refusal, which requires the target to RUN the leaf; the leaf
-    /// checks an owner signature first; and surgery after signing
-    /// invalidates it. So the run reaches a signature failure and stops,
-    /// and the row's own class is never the thing that refused. Rows
-    /// whose boundary is consensus-before-script are unaffected, the
-    /// signature never being reached — which is why the two proof
-    /// negatives could be answered and these cannot.
+    /// The rows still here are the ones that route does not rescue. A
+    /// re-signed mutant AUTHORIZES its own outputs, so the route carries a
+    /// row to its script class only where a covenant clause constrains the
+    /// mutated field INDEPENDENT of the signature and the consensus balance
+    /// rule does not answer first. That leaves three families, each owing
+    /// its own native determination this wave did not make: surgeries that
+    /// break conservation (asset, value, an omitted or an added output),
+    /// whose refusal may be a consensus verdict rather than the row's
+    /// script class; facets the safe constructor never emits (issuance,
+    /// destruction, root effects, specialized events), which need a
+    /// structurally different transaction; and rows whose field is derived
+    /// from the shape with no independent covenant clause to refuse it.
     OwnerSigningOverForeignBytesAbsent,
     /// The explicit lane's witness mutation reaches item zero only.
     ///
@@ -229,11 +236,6 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // through the bundle link, and it is discharged first-party beside
     // its three siblings on the input recognition's own refusal.
     entry(
-        "vault-control-entitlement-or-bare-u-output",
-        G::OwnerSigningOverForeignBytesAbsent,
-        "no request field names an output class and output assembly writes the linked program",
-    ),
-    entry(
         "wrong-explicit-asset",
         G::OwnerSigningOverForeignBytesAbsent,
         "output assembly writes the protocol asset unconditionally, with no field to state another",
@@ -284,19 +286,14 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         "conservation forces the total to equal the consumed one and no chain mints such a coin",
     ),
     entry(
-        "private-ct-imbalance",
-        G::MutantBuilderOwed,
-        "the surgery lane reaches it; a case mutating the committed values is the whole of the work",
-    ),
-    entry(
         "malformed-surjection-proof",
         G::NoAdmittedRepresentationCarriesTheField,
         "the surjection field is empty in every form built, an explicit asset requiring it so",
     ),
     entry(
         "copied-commitment",
-        G::MutantBuilderOwed,
-        "copying another output's commitment is one call on the lane that already mutates that field",
+        G::TargetVerdictDoesNotSeparateTheRows,
+        "its mutant draws bad-txns-in-ne-out at the change output's value commitment, the same words and field range private-ct-imbalance already drove, and the successor has no third confidential output whose distinct range would separate them",
     ),
     entry(
         "private-output-omitted",

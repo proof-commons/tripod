@@ -1410,15 +1410,41 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
         // `malformed-rangeproof` declares no class and is attributed the
         // way the witness-content rows are, by its field and its control.
         //
-        // `private-ct-imbalance` is NOT answered here and stays waiting,
-        // though it declares the same class and would draw the same
-        // words. Its mutation is the committed VALUES failing to
-        // balance, and no mutant of it was built; reading the wrong
-        // blinder's refusal onto it would count one observation for two
-        // rows, which is the rule this function exists to keep.
-        "malformed-rangeproof" | "wrong-private-blinding-balance" => Some((
-            crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
-            crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
+        // `private-ct-imbalance` is answered the SAME way, on its OWN
+        // mutant. The conservation ceremony now submits a fourth mutant: a
+        // value commitment to a value one unit above the change the control
+        // balances, placed at the SECOND output. It declares the same
+        // `AmountMismatch` class and draws the same `bad-txns-in-ne-out`
+        // words, and it is NOT one observation counted twice: its mutant is
+        // its own, and its declared field range is the second output's
+        // value commitment (`PRIVATE_CT_IMBALANCE_FIELD_RANGE`, 215..248),
+        // disjoint from the wrong blinder's (81..114). Two rows move on the
+        // same run because each drove its own mutant at its own field,
+        // which is the rule, and the distinct output is what earns the
+        // separating field range fact (e) of the ceremony's charter names.
+        "malformed-rangeproof" | "wrong-private-blinding-balance" | "private-ct-imbalance" => {
+            Some((
+                crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+                crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
+            ))
+        }
+        // §15.4's script-path row, answered by the owner-signing negative
+        // ceremony's own run: the bare-u mutant offered FIRST and the
+        // unmutated control LAST, to one node on one chain. The mutant is
+        // re-signed over its own mutated bytes through the negative-evidence
+        // census, so it passes the leaf's signature gate and reaches the
+        // coordinator leaf's `InspectOutputScriptPubKey` version clause,
+        // which refuses it. The verdict reads as a generic script-verify
+        // failure and is attributed by the FIELD the mutant declared and
+        // stayed within — the mutated destination's program alone
+        // (`DECLARED_FIELD_RANGE`) — with the unmutated control accepted in
+        // the SAME run to make the difference the leaf measured this row's.
+        // The re-signing changes the witness too, by design; the declared
+        // range is measured over the WITNESSLESS serialization the message
+        // is taken over, where it does not reach.
+        "vault-control-entitlement-or-bare-u-output" => Some((
+            crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+            crate::live_owner_signing_negatives::run_of_record::MUTANT_REJECT_DETAIL,
         )),
         _ => None,
     }
@@ -2405,10 +2431,12 @@ mod tests {
                 "malformed-rangeproof",
                 "malformed-signature",
                 "missing-sponsor-authorization",
+                "private-ct-imbalance",
+                "vault-control-entitlement-or-bare-u-output",
                 "wrong-private-blinding-balance",
             ]),
         );
-        assert_eq!(plan.census().native_refusal_observed(), 5);
+        assert_eq!(plan.census().native_refusal_observed(), 7);
 
         // THE THIRD ROW COMES FROM A DIFFERENT LANE and is held to the
         // same rule. Its mutant was offered first and its control
@@ -2555,7 +2583,7 @@ mod tests {
         // And it did NOT land in either target bucket. The separate
         // bucket's whole claim, made checkable.
         assert_eq!(plan.census().native_run_observed(), 24);
-        assert_eq!(plan.census().native_refusal_observed(), 5);
+        assert_eq!(plan.census().native_refusal_observed(), 7);
     }
 
     #[test]

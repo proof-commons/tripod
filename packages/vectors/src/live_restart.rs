@@ -359,6 +359,9 @@ impl BalanceValidControl {
 pub enum MutatedField {
     /// The value blinder of one output.
     ValueBlinder,
+    /// The value commitment of one output, replaced to commit a value the
+    /// transaction's balance does not close.
+    ValueCommitment,
     /// The range-proof bytes of one output-witness entry.
     RangeproofBytes,
 }
@@ -369,12 +372,19 @@ impl MutatedField {
     pub const fn name(self) -> &'static str {
         match self {
             Self::ValueBlinder => "value-blinder",
+            Self::ValueCommitment => "value-commitment",
             Self::RangeproofBytes => "rangeproof-bytes",
         }
     }
 }
 
-/// The three proof-negatives the restart's fourth step runs.
+/// A confidential value-fault proof-negative.
+///
+/// [`Self::ALL`] is the three the restart's fourth step runs. The
+/// conservation lane runs those three and one more — [`Self::PrivateCtImbalance`],
+/// which the restart order does not — so the enum carries a fourth
+/// variant outside `ALL`: a case belongs to `ALL` only if the restart's
+/// fourth step submits it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ProofNegativeCase {
     /// A value blinder that does not belong to the committed value.
@@ -384,10 +394,22 @@ pub enum ProofNegativeCase {
     /// An output-witness entry whose range proof is present and does not
     /// verify.
     MalformedRangeproof,
+    /// A value commitment that commits a value the transaction's balance
+    /// does not close.
+    ///
+    /// Distinct from [`Self::WrongBlinder`]: the value is wrong rather than
+    /// its blinder, and the conservation lane places it at a DIFFERENT
+    /// output so its declared field range separates it from the
+    /// wrong-blinder mutant they otherwise share a verdict with.
+    PrivateCtImbalance,
 }
 
 impl ProofNegativeCase {
-    /// All three, in the guide's order.
+    /// The three the restart's fourth step runs, in the guide's order.
+    ///
+    /// [`Self::PrivateCtImbalance`] is deliberately absent: it is the
+    /// conservation lane's own case and no step of the restart order
+    /// submits it.
     pub const ALL: [Self; 3] = [
         Self::WrongBlinder,
         Self::MissingRangeproof,
@@ -405,6 +427,7 @@ impl ProofNegativeCase {
         match self {
             Self::WrongBlinder => MutatedField::ValueBlinder,
             Self::MissingRangeproof | Self::MalformedRangeproof => MutatedField::RangeproofBytes,
+            Self::PrivateCtImbalance => MutatedField::ValueCommitment,
         }
     }
 
@@ -415,6 +438,7 @@ impl ProofNegativeCase {
             Self::WrongBlinder => "wrong-blinder",
             Self::MissingRangeproof => "missing-rangeproof",
             Self::MalformedRangeproof => "malformed-rangeproof",
+            Self::PrivateCtImbalance => "private-ct-imbalance",
         }
     }
 }
