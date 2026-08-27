@@ -1486,8 +1486,8 @@ mod tests {
         assert_eq!(b::CONTROL_ACCEPTED_TXID.len(), 64);
         assert_eq!(b::CONTROL_WITNESS_ITEMS, 3);
         assert_eq!(a::WITNESS_ITEMS, 1);
-        assert!(b::CONTROL_SHARES_THE_ATTEMPTS_WITNESSLESS_BYTES);
-        assert!(b::CONTROL_SUBMITTED_BYTES > a::SUBMITTED_BYTES);
+        const { assert!(b::CONTROL_SHARES_THE_ATTEMPTS_WITNESSLESS_BYTES) };
+        const { assert!(b::CONTROL_SUBMITTED_BYTES > a::SUBMITTED_BYTES) };
     }
 
     #[test]
