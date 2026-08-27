@@ -59,7 +59,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use linker::live_backend::LiveTransferRepresentationPlan;
-use target_elements::LeafVersion;
 use target_elements_conformance::confidential_fixture::{
     FrozenConfidentialFixtureRegistry, sponsor_reserve_handle,
 };
@@ -75,10 +74,7 @@ use transaction::bytes::{
     TargetTransaction, Txid, ValueField,
 };
 use transaction::live_abi::CandidateLiveTransferAbi;
-use transaction::live_census::{
-    AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
-    OwnerSigningCensus, OwnerSigningInputRequest,
-};
+use transaction::live_census::{LiveDeployment, OwnerSigningCensus};
 use transaction::live_construct::{
     LiveConstructionReport, complete_live_transfer, finalize_live_transfer,
 };
@@ -91,7 +87,7 @@ use transaction::live_signing::{LiveOwnerResponse, authorize_live_transfer};
 use transaction::sponsor::{
     SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest,
 };
-use transaction::taproot::{Digest32, leaf_hash, witness_program_script};
+use transaction::taproot::{Digest32, witness_program_script};
 use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::bundle::fee_program_digest;
@@ -1508,26 +1504,10 @@ impl SponsorShapePlanner {
         let curve = OracleLiveCurve::new(
             reviewed_target().map_err(|_| SponsorShapeRefusal::SubstrateUnavailable)?,
         );
-        let requests: Vec<OwnerSigningInputRequest> = finalized
-            .receipts()
-            .iter()
-            .map(|record| {
-                OwnerSigningInputRequest::new(
-                    u32::from(record.position()),
-                    leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
-                    LeafVersion::TAPSCRIPT,
-                    OWNER_CODESEPARATOR_POSITION,
-                    AnnexDisposition::Absent,
-                    IssuanceDisposition::Absent,
-                    record.control_block().to_vec(),
-                )
-            })
-            .collect();
         OwnerSigningCensus::from_explicit_finalized(
             &target,
             finalized,
             LiveDeployment::new(self.genesis),
-            &requests,
             &curve,
         )
         .map_err(|cause| SponsorShapeRefusal::OwnerCensusRefused(format!("{cause:?}")))

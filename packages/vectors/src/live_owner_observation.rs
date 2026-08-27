@@ -82,7 +82,6 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use linker::live_backend::LiveTransferRepresentationPlan;
-use target_elements::LeafVersion;
 use target_elements_conformance::constructor::curve::FIELD_ELEMENT_BYTES;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::owner_key_oracle::{SignatureRejection, verify_owner_signature};
@@ -93,8 +92,7 @@ use target_elements_conformance::protocol::{
 use transaction::bytes::{AssetField, AssetId, Outpoint, TargetTransaction, Txid, ValueField};
 use transaction::live_abi::CandidateLiveTransferAbi;
 use transaction::live_census::{
-    AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
-    OWNER_SIGNATURE_BYTES, OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest,
+    LiveDeployment, OWNER_SIGNATURE_BYTES, OwnerCensusRefusal, OwnerSigningCensus,
     check_signature_width, check_type_byte,
 };
 use transaction::live_construct::{
@@ -106,7 +104,7 @@ use transaction::live_request::{
     LiveReceiptDestination, LiveTransferRequest, ProtocolValue, RequestedForm, SponsorChangeRequest,
 };
 use transaction::live_signing::{LiveOwnerResponse, authorize_live_transfer};
-use transaction::taproot::{Digest32, leaf_hash};
+use transaction::taproot::Digest32;
 use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::error::VectorError;
@@ -1003,27 +1001,10 @@ impl OwnerObservationPlanner {
         let curve = OracleLiveCurve::new(
             reviewed_target().map_err(|_| OwnerObservationRefusal::SubstrateUnavailable)?,
         );
-        let requests: Vec<OwnerSigningInputRequest> = finalized
-            .receipts()
-            .iter()
-            .map(|record| {
-                OwnerSigningInputRequest::new(
-                    u32::from(record.position()),
-                    leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
-                    LeafVersion::TAPSCRIPT,
-                    OWNER_CODESEPARATOR_POSITION,
-                    AnnexDisposition::Absent,
-                    IssuanceDisposition::Absent,
-                    record.control_block().to_vec(),
-                )
-            })
-            .collect();
-
         OwnerSigningCensus::from_explicit_finalized(
             &target,
             finalized,
             LiveDeployment::new(genesis),
-            &requests,
             &curve,
         )
         .map_err(OwnerObservationRefusal::CensusRefused)

@@ -77,7 +77,7 @@ use crate::live_accepted::{
     AcceptedOwnerAuthorizations, AcceptedResultRefusal, OfferedOwnerAuthorization,
 };
 use crate::live_census::{
-    LiveDeployment, OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest,
+    LiveDeployment, OwnerCensusRefusal, OwnerSigningCensus, ProofFinalizedSigningCandidate,
 };
 use crate::live_materialize::{MaterializedConfidentialCandidate, ProofFinalizedRegion};
 use crate::live_taproot::LiveCurveCapability;
@@ -207,10 +207,10 @@ impl SigningStarted {
     /// work.
     ///
     /// The order of rule:guide-ctf-exec:handoff-order is enforced by
-    /// what this takes rather than by a check: the argument is a
-    /// materialized candidate, which only the materializer produces and
-    /// only after its own freeze, so proof finalization precedes the
-    /// asking by construction.
+    /// what this takes rather than by a check: the argument carries the
+    /// materialized candidate together with its finalized receipt
+    /// selection, so proof finalization precedes the asking by
+    /// construction.
     ///
     /// The witness revision is checked FIRST, before the census is
     /// assembled. A stale establishment snapshot must not produce a
@@ -225,18 +225,16 @@ impl SigningStarted {
     /// first census clause the request fails.
     pub fn open(
         target: &ReviewedElementsTapscriptDefinition,
-        materialized: &MaterializedConfidentialCandidate,
+        finalized: &ProofFinalizedSigningCandidate,
         deployment: LiveDeployment,
-        requests: &[OwnerSigningInputRequest],
         curve: &dyn LiveCurveCapability,
         established: &EstablishedOwnerSighashProfile,
     ) -> Result<Self, SighashHandoffRefusal> {
         let current = target.definition().version();
         Self::open_at_capability_revision(
             target,
-            materialized,
+            finalized,
             deployment,
-            requests,
             curve,
             established,
             current,
@@ -245,9 +243,8 @@ impl SigningStarted {
 
     fn open_at_capability_revision(
         target: &ReviewedElementsTapscriptDefinition,
-        materialized: &MaterializedConfidentialCandidate,
+        finalized: &ProofFinalizedSigningCandidate,
         deployment: LiveDeployment,
-        requests: &[OwnerSigningInputRequest],
         curve: &dyn LiveCurveCapability,
         established: &EstablishedOwnerSighashProfile,
         current: TargetContractVersion,
@@ -261,13 +258,8 @@ impl SigningStarted {
             );
         }
 
-        let request = OwnerSigningCensus::from_proof_finalized(
-            target,
-            materialized,
-            deployment,
-            requests,
-            curve,
-        )?;
+        let request =
+            OwnerSigningCensus::from_proof_finalized(target, finalized, deployment, curve)?;
 
         Ok(Self { request })
     }
@@ -275,18 +267,16 @@ impl SigningStarted {
     #[cfg(test)]
     pub(crate) fn open_with_capability_revision_for_test(
         target: &ReviewedElementsTapscriptDefinition,
-        materialized: &MaterializedConfidentialCandidate,
+        finalized: &ProofFinalizedSigningCandidate,
         deployment: LiveDeployment,
-        requests: &[OwnerSigningInputRequest],
         curve: &dyn LiveCurveCapability,
         established: &EstablishedOwnerSighashProfile,
         current: TargetContractVersion,
     ) -> Result<Self, SighashHandoffRefusal> {
         Self::open_at_capability_revision(
             target,
-            materialized,
+            finalized,
             deployment,
-            requests,
             curve,
             established,
             current,

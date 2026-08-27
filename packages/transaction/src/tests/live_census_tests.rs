@@ -45,8 +45,9 @@ use crate::bytes::{
 use crate::live_census::{
     AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
     OWNER_KEY_VERSION_BYTE, OWNER_SIGHASH_TYPE_BYTE, OWNER_SIGNATURE_BYTES, OWNER_SPEND_TYPE_BYTE,
-    OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest, SpentOutputCensusEntry,
-    check_signature_width, check_type_byte, spend_type_byte,
+    OwnerCensusRefusal, OwnerSigningCensus, OwnerSigningInputRequest, ProofFinalizedReceiptInput,
+    ProofFinalizedSigningCandidate, SpentOutputCensusEntry, check_signature_width, check_type_byte,
+    spend_type_byte,
 };
 use crate::live_message::{
     KEY_PATH_SPEND_TYPE_BYTE, TAP_SIGHASH_TAG, WitnessVectorTreatment, candidate_key_path_message,
@@ -54,7 +55,8 @@ use crate::live_message::{
 };
 use crate::live_taproot::{LiveCurveCapability, TweakedOutputKey};
 use crate::taproot::{
-    Digest32, OutputKeyParity, TAPROOT_WITNESS_VERSION, tagged_hash, witness_program_script,
+    Digest32, OutputKeyParity, TAPROOT_WITNESS_VERSION, branch_hash, leaf_hash, tagged_hash,
+    witness_program_script,
 };
 
 // --- Fixtures ----------------------------------------------------------
@@ -123,6 +125,12 @@ fn control_block() -> Vec<u8> {
     block
 }
 
+fn control_block_with_sibling(sibling: Digest32) -> Vec<u8> {
+    let mut block = control_block();
+    block.extend_from_slice(&sibling);
+    block
+}
+
 /// The witness program the stand-in curve's answer commits to.
 ///
 /// Recomputed here the way the census recomputes it, so the fixture and
@@ -134,6 +142,40 @@ pub(super) fn committed_program(target: &ReviewedElementsTapscriptDefinition) ->
         .expect("the stand-in curve answers");
     witness_program_script(target, TAPROOT_WITNESS_VERSION, output_key.key())
         .expect("the reviewed grammar builds a witness program")
+}
+
+/// One actual leaf program for proof-finalized route fixtures.
+fn finalized_leaf_script() -> Vec<u8> {
+    vec![0x20, 0x51, 0xac]
+}
+
+/// The witness program committing to [`finalized_leaf_script`].
+pub(super) fn finalized_committed_program(target: &ReviewedElementsTapscriptDefinition) -> Vec<u8> {
+    let curve = CensusCurve;
+    let root = leaf_hash(LeafVersion::TAPSCRIPT, &finalized_leaf_script());
+    let output_key = curve
+        .output_key(&INTERNAL_KEY, &root)
+        .expect("the stand-in curve answers");
+    witness_program_script(target, TAPROOT_WITNESS_VERSION, output_key.key())
+        .expect("the reviewed grammar builds a witness program")
+}
+
+/// Freeze one finalized receipt record per materialized input.
+pub(super) fn finalized_signing_candidate(
+    materialized: crate::live_materialize::MaterializedConfidentialCandidate,
+) -> ProofFinalizedSigningCandidate {
+    let receipts = materialized
+        .signer_inputs()
+        .iter()
+        .map(|input| {
+            ProofFinalizedReceiptInput::for_evidence(
+                u32::from(input.position()),
+                finalized_leaf_script(),
+                control_block(),
+            )
+        })
+        .collect();
+    ProofFinalizedSigningCandidate::for_receipt_evidence(materialized, receipts)
 }
 
 /// The signing request the positive cases use.
@@ -231,7 +273,7 @@ fn try_parts_census(
     candidate: TargetTransaction,
     disturb: impl FnOnce(CensusParts) -> CensusParts,
 ) -> Result<OwnerSigningCensus, OwnerCensusRefusal> {
-    let protected_bytes = candidate.encode();
+    let protected_bytes = candidate.encode_without_witness();
     let output_witnesses = candidate.output_witnesses().to_vec();
     let spent_outputs = vec![SpentOutputCensusEntry::new(
         AssetField::Explicit(AssetId::from_internal([0x3b; 32])),
@@ -334,18 +376,19 @@ fn the_profile_checks_the_returned_signature_width() {
 #[test]
 fn a_census_is_built_from_a_proof_finalized_candidate_and_carries_option_bs_fields() {
     let target = reviewed_target();
-    let materialized = valid_with_spent_program(committed_program(&target));
+    let finalized = finalized_signing_candidate(valid_with_spent_program(
+        finalized_committed_program(&target),
+    ));
 
     let census = OwnerSigningCensus::from_proof_finalized(
         &target,
-        &materialized,
+        &finalized,
         LiveDeployment::new(GENESIS),
-        &[request()],
         &CensusCurve,
     )
     .expect("the materialized candidate censuses");
 
-    let frozen = materialized.proof_finalized();
+    let frozen = finalized.materialized().proof_finalized();
 
     // Every field the accepted result names, read back.
     assert_eq!(census.protected_bytes(), frozen.protected_bytes());
@@ -362,7 +405,10 @@ fn a_census_is_built_from_a_proof_finalized_candidate_and_carries_option_bs_fiel
 
     let input = &census.signing_inputs()[0];
     assert_eq!(input.input_index(), 0);
-    assert_eq!(input.tapleaf_hash(), &LEAF_HASH);
+    assert_eq!(
+        input.tapleaf_hash(),
+        &leaf_hash(LeafVersion::TAPSCRIPT, &finalized_leaf_script())
+    );
     assert_eq!(input.leaf_version(), LeafVersion::TAPSCRIPT);
     assert_eq!(input.codeseparator_position(), OWNER_CODESEPARATOR_POSITION);
     assert_eq!(input.annex(), AnnexDisposition::Absent);
@@ -374,6 +420,147 @@ fn a_census_is_built_from_a_proof_finalized_candidate_and_carries_option_bs_fiel
     assert_ne!(
         census.protected_bytes(),
         frozen.protected().encode_without_witness().as_slice(),
+    );
+}
+
+#[test]
+fn finalized_proof_receipt_coverage_is_exact() {
+    let target = reviewed_target();
+    let materialized = valid_with_spent_program(finalized_committed_program(&target));
+
+    let missing =
+        ProofFinalizedSigningCandidate::for_receipt_evidence(materialized.clone(), Vec::new());
+    assert_eq!(
+        OwnerSigningCensus::from_proof_finalized(
+            &target,
+            &missing,
+            LiveDeployment::new(GENESIS),
+            &CensusCurve,
+        ),
+        Err(OwnerCensusRefusal::MissingFinalizedSigningInput { input_index: 0 }),
+    );
+
+    let extra = ProofFinalizedSigningCandidate::for_receipt_evidence(
+        materialized,
+        vec![
+            ProofFinalizedReceiptInput::for_evidence(0, finalized_leaf_script(), control_block()),
+            ProofFinalizedReceiptInput::for_evidence(1, finalized_leaf_script(), control_block()),
+        ],
+    );
+    assert_eq!(
+        OwnerSigningCensus::from_proof_finalized(
+            &target,
+            &extra,
+            LiveDeployment::new(GENESIS),
+            &CensusCurve,
+        ),
+        Err(OwnerCensusRefusal::SigningInputIsNotAFinalizedReceipt { input_index: 1 }),
+    );
+}
+
+#[test]
+fn a_committed_sibling_is_negative_only_and_exact_control_paths_are_finalized() {
+    let target = reviewed_target();
+    let first_script = vec![0x20, 0x51, 0xac];
+    let sibling_script = vec![0x20, 0x52, 0xac];
+    let first_hash = leaf_hash(LeafVersion::TAPSCRIPT, &first_script);
+    let sibling_hash = leaf_hash(LeafVersion::TAPSCRIPT, &sibling_script);
+    let root = branch_hash(first_hash, sibling_hash);
+    let output_key = CensusCurve
+        .output_key(&INTERNAL_KEY, &root)
+        .expect("the stand-in curve answers");
+    let program = witness_program_script(&target, TAPROOT_WITNESS_VERSION, output_key.key())
+        .expect("the reviewed grammar builds the two-leaf program");
+    let materialized = valid_with_spent_program(program);
+    let finalized = ProofFinalizedSigningCandidate::for_receipt_evidence(
+        materialized.clone(),
+        vec![ProofFinalizedReceiptInput::for_evidence(
+            0,
+            first_script,
+            control_block_with_sibling(sibling_hash),
+        )],
+    );
+    let sibling = OwnerSigningInputRequest::new(
+        0,
+        sibling_hash,
+        LeafVersion::TAPSCRIPT,
+        OWNER_CODESEPARATOR_POSITION,
+        AnnexDisposition::Absent,
+        IssuanceDisposition::Absent,
+        control_block_with_sibling(first_hash),
+    );
+    let candidate = materialized.proof_finalized().protected().clone();
+    let protected_bytes = candidate.encode_without_witness();
+    let output_witnesses = candidate.output_witnesses().to_vec();
+    let spent = materialized
+        .signer_inputs()
+        .iter()
+        .map(|input| {
+            SpentOutputCensusEntry::new(
+                input.spent_asset(),
+                input.spent_value(),
+                input.spent_program().to_vec(),
+            )
+        })
+        .collect();
+
+    OwnerSigningCensus::over_foreign_bytes_for_negative_evidence(
+        &target,
+        candidate,
+        protected_bytes,
+        output_witnesses,
+        spent,
+        LiveDeployment::new(GENESIS),
+        std::slice::from_ref(&sibling),
+        &CensusCurve,
+    )
+    .expect("the explicit-only negative seam admits a committed sibling");
+
+    assert_eq!(
+        OwnerSigningCensus::from_proof_finalized_with_requests_for_test(
+            &target,
+            &finalized,
+            LiveDeployment::new(GENESIS),
+            &[sibling],
+            &CensusCurve,
+        ),
+        Err(OwnerCensusRefusal::FinalizedSigningInputMismatch {
+            input_index: 0,
+            field: crate::live_census::FinalizedSigningField::ControlBlock,
+        }),
+    );
+}
+
+#[test]
+fn the_proof_finalized_seam_pins_the_owner_codeseparator() {
+    let target = reviewed_target();
+    let finalized = finalized_signing_candidate(valid_with_spent_program(
+        finalized_committed_program(&target),
+    ));
+    let request = OwnerSigningInputRequest::new(
+        0,
+        leaf_hash(LeafVersion::TAPSCRIPT, &finalized_leaf_script()),
+        LeafVersion::TAPSCRIPT,
+        OWNER_CODESEPARATOR_POSITION - 1,
+        AnnexDisposition::Absent,
+        IssuanceDisposition::Absent,
+        control_block(),
+    );
+
+    assert_eq!(
+        OwnerSigningCensus::from_proof_finalized_with_requests_for_test(
+            &target,
+            &finalized,
+            LiveDeployment::new(GENESIS),
+            &[request],
+            &CensusCurve,
+        ),
+        Err(
+            OwnerCensusRefusal::CodeseparatorPositionOutsideOwnerProfile {
+                input_index: 0,
+                offered: OWNER_CODESEPARATOR_POSITION - 1,
+            }
+        ),
     );
 }
 
@@ -391,6 +578,30 @@ fn the_census_binds_by_exact_bytes_rather_than_by_trust() {
     assert_eq!(
         census.check_offered(&mutated),
         Err(OwnerCensusRefusal::ProtectedBytesAreNotTheCandidates),
+    );
+}
+
+#[test]
+fn candidate_a_with_candidate_bs_bytes_is_refused_during_construction() {
+    let candidate_b = {
+        let candidate = pinned_candidate();
+        TargetTransaction::with_output_witnesses(
+            candidate.version(),
+            candidate.inputs().to_vec(),
+            candidate.outputs().to_vec(),
+            candidate.lock_time() + 1,
+            candidate.witnesses().to_vec(),
+            candidate.output_witnesses().to_vec(),
+        )
+        .expect("candidate B is well formed")
+    };
+
+    assert_eq!(
+        refusal(|mut parts| {
+            parts.protected_bytes = candidate_b.encode_without_witness();
+            parts
+        }),
+        OwnerCensusRefusal::ProtectedBytesAreNotTheCandidates,
     );
 }
 
@@ -606,7 +817,7 @@ fn a_control_block_whose_leaf_version_disagrees_is_refused() {
 fn an_internal_key_with_no_output_key_is_refused() {
     let target = reviewed_target();
     let candidate = pinned_candidate();
-    let protected_bytes = candidate.encode();
+    let protected_bytes = candidate.encode_without_witness();
     let output_witnesses = candidate.output_witnesses().to_vec();
 
     let refused = OwnerSigningCensus::over_foreign_bytes_for_negative_evidence(
@@ -699,12 +910,18 @@ fn a_census_with_nothing_to_authorize_is_refused() {
 
 #[test]
 fn every_refusal_variant_is_reached_by_a_test_in_this_file() {
-    // The census of the census. Fourteen variants, and the list is
+    // The census of the census. Twenty variants, and the list is
     // spelled here so that adding a variant without a case is a failing
     // test rather than a silently unexercised refusal. Two are reached
     // through the standalone profile checks rather than through
     // assembly, and one through the offered-bytes check.
     let reached = [
+        OwnerCensusRefusal::FinalizedSigningInputMismatch {
+            input_index: 0,
+            field: crate::live_census::FinalizedSigningField::ControlBlock,
+        },
+        OwnerCensusRefusal::MissingFinalizedSigningInput { input_index: 0 },
+        OwnerCensusRefusal::SigningInputIsNotAFinalizedReceipt { input_index: 1 },
         OwnerCensusRefusal::SpentOutputCardinalityMismatch {
             inputs: 1,
             spent_outputs: 0,
@@ -717,6 +934,10 @@ fn every_refusal_variant_is_reached_by_a_test_in_this_file() {
             input_index: 0,
             declared: AnnexDisposition::Present,
             recomputed_spend_type: 0x03,
+        },
+        OwnerCensusRefusal::CodeseparatorPositionOutsideOwnerProfile {
+            input_index: 0,
+            offered: OWNER_CODESEPARATOR_POSITION - 1,
         },
         OwnerCensusRefusal::DeploymentMismatch {
             expected: GENESIS,
@@ -743,9 +964,12 @@ fn every_refusal_variant_is_reached_by_a_test_in_this_file() {
         OwnerCensusRefusal::DuplicateSigningInput { input_index: 0 },
         OwnerCensusRefusal::NoSigningInputRequested,
         OwnerCensusRefusal::ProtectedBytesAreNotTheCandidates,
+        OwnerCensusRefusal::RepresentationIsNotTheExplicitLane {
+            representation: linker::live_backend::LiveTransferRepresentationPlan::PrivateCommitted,
+        },
     ];
 
-    assert_eq!(reached.len(), 15);
+    assert_eq!(reached.len(), 20);
 }
 
 // --- Deliverable 3: the message, and the two candidate digests --------
@@ -824,7 +1048,11 @@ fn the_key_path_message_differs_from_the_script_path_message() {
     let input = &census.signing_inputs()[0];
 
     assert_ne!(
-        candidate_key_path_message(&census, input, WitnessVectorTreatment::BothGrown),
+        candidate_key_path_message(
+            &census,
+            input.input_index(),
+            WitnessVectorTreatment::BothGrown,
+        ),
         candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown),
     );
 }
@@ -842,49 +1070,36 @@ fn the_key_path_spend_type_is_the_composition_rule_at_a_zero_extension_flag() {
 }
 
 #[test]
-fn the_key_path_message_does_not_move_when_a_tapscript_term_moves() {
-    // The check that the tapscript tail is genuinely absent rather than
-    // merely differently spelled, isolated at the one term that can be
-    // moved on its own. The codeseparator position is written by the
-    // script path at term 18 and appears nowhere in the twelve terms
-    // both paths share, and the census carries it rather than fixing it
-    // — so a census differing in it alone is assemblable, which is not
-    // true of the leaf hash, whose every change moves the spent program
-    // the shared prefix already commits to.
-    //
-    // Both halves are asserted. A construction that ignored the census
-    // entirely would also pass the second one.
+fn a_wrong_codeseparator_is_refused_and_key_path_takes_only_an_index() {
     let target = reviewed_target();
     let census = pinned_census(&target);
-    let other = parts_census(&target, pinned_candidate(), |mut parts| {
-        parts.requests = vec![OwnerSigningInputRequest::new(
-            0,
-            LEAF_HASH,
-            LeafVersion::TAPSCRIPT,
-            OWNER_CODESEPARATOR_POSITION - 1,
-            AnnexDisposition::Absent,
-            IssuanceDisposition::Absent,
-            control_block(),
-        )];
-        parts
-    });
-
     let input = &census.signing_inputs()[0];
-    let moved = &other.signing_inputs()[0];
-    assert_ne!(
-        input.codeseparator_position(),
-        moved.codeseparator_position(),
-    );
-
-    assert_ne!(
-        candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown),
-        candidate_owner_message(&other, moved, WitnessVectorTreatment::BothGrown),
-        "the reviewed message must commit to the tapscript terms",
+    assert_eq!(
+        refusal(|mut parts| {
+            parts.requests = vec![OwnerSigningInputRequest::new(
+                0,
+                LEAF_HASH,
+                LeafVersion::TAPSCRIPT,
+                OWNER_CODESEPARATOR_POSITION - 1,
+                AnnexDisposition::Absent,
+                IssuanceDisposition::Absent,
+                control_block(),
+            )];
+            parts
+        }),
+        OwnerCensusRefusal::CodeseparatorPositionOutsideOwnerProfile {
+            input_index: 0,
+            offered: OWNER_CODESEPARATOR_POSITION - 1,
+        },
     );
     assert_eq!(
-        candidate_key_path_message(&census, input, WitnessVectorTreatment::BothGrown),
-        candidate_key_path_message(&other, moved, WitnessVectorTreatment::BothGrown),
-        "a key-path message must write no tapscript term",
+        candidate_key_path_message(
+            &census,
+            input.input_index(),
+            WitnessVectorTreatment::BothGrown,
+        ),
+        candidate_key_path_message(&census, 0, WitnessVectorTreatment::BothGrown),
+        "the key-path API has no leaf or code-separator argument",
     );
 }
 
@@ -897,11 +1112,9 @@ fn the_key_path_message_still_carries_the_output_witness_term() {
     // transaction terms would be constant across treatments.
     let target = reviewed_target();
     let census = pinned_census(&target);
-    let input = &census.signing_inputs()[0];
-
     assert_ne!(
-        candidate_key_path_message(&census, input, WitnessVectorTreatment::BothGrown),
-        candidate_key_path_message(&census, input, WitnessVectorTreatment::OutputsEmptied),
+        candidate_key_path_message(&census, 0, WitnessVectorTreatment::BothGrown),
+        candidate_key_path_message(&census, 0, WitnessVectorTreatment::OutputsEmptied),
     );
 }
 
@@ -933,7 +1146,7 @@ fn the_message_moves_when_one_range_proof_byte_moves() {
     .expect("the mutated candidate is well formed");
 
     let other = parts_census(&target, mutated, |mut parts| {
-        parts.protected_bytes = parts.candidate.encode();
+        parts.protected_bytes = parts.candidate.encode_without_witness();
         parts.output_witnesses = parts.candidate.output_witnesses().to_vec();
         parts
     });
@@ -1097,10 +1310,24 @@ fn private_lane_census(
         linker::live_backend::LiveTransferRepresentationPlan::PrivateCommitted,
     );
 
-    parts_census(target, candidate, |parts| CensusParts {
+    let output_witnesses = candidate.output_witnesses().to_vec();
+    let spent_outputs = vec![SpentOutputCensusEntry::new(
+        AssetField::Explicit(AssetId::from_internal([0x3b; 32])),
+        ValueField::Explicit(1_000),
+        committed_program(target),
+    )];
+    OwnerSigningCensus::over_parts_for_test(
+        target,
+        candidate,
         protected_bytes,
-        ..parts
-    })
+        output_witnesses,
+        spent_outputs,
+        LiveDeployment::new(GENESIS),
+        &[request()],
+        linker::live_backend::LiveTransferRepresentationPlan::PrivateCommitted,
+        &CensusCurve,
+    )
+    .expect("the private test parts assemble")
 }
 
 #[test]
