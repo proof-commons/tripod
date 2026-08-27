@@ -1539,6 +1539,8 @@ pub enum MaterializationRefusal {
     },
     /// The intent's order is not the fixture's own fixed order.
     FixtureOutputOrderMismatch,
+    /// The signer-input census cannot be represented by `u16` positions.
+    SignerInputCensusExceedsPositionDomain,
     /// Two inputs spend the same previous output.
     DuplicateInputOutpoint {
         /// The repeated outpoint.
@@ -2424,9 +2426,15 @@ fn preflight(
     fixtures: &FrozenConfidentialFixtureView,
     checker: &dyn IndependentCommitmentCheck,
 ) -> Result<OpeningBindingCensus, MaterializationRefusal> {
-    // Five: the profiles, first, because an unsupported combination is
-    // cheaper to refuse than anything below it and refusing it late would
-    // mean doing work under a profile this build does not implement.
+    // The signer ABI admits positions 0 through u16::MAX. Refuse a
+    // larger census before uniqueness checks or any cryptographic work.
+    if intent.inputs().len() > usize::from(u16::MAX) + 1 {
+        return Err(MaterializationRefusal::SignerInputCensusExceedsPositionDomain);
+    }
+
+    // Five: the profiles, before every remaining clause, because an
+    // unsupported combination must not reach work under a profile this
+    // build does not implement.
     if matches!(
         intent.profiles().materializer_profile,
         ConfidentialMaterializerProfile::PerOutputValueCapability
@@ -2821,14 +2829,127 @@ fn signer_inputs(
             spent_asset: input.observed_asset(),
             spent_value: input.observed_value(),
             spent_program: input.observed_program().to_vec(),
-            position: u16::try_from(index).unwrap_or(u16::MAX),
+            position: signer_input_position(index)?,
             byte_binding: candidate.protected_bytes().to_vec(),
         });
     }
     Ok(inputs)
 }
 
+/// Convert one signer-input index to its admitted position.
+fn signer_input_position(index: usize) -> Result<u16, MaterializationRefusal> {
+    u16::try_from(index).map_err(|_| MaterializationRefusal::SignerInputCensusExceedsPositionDomain)
+}
+
 /// Whether a byte string contains one thirty-two byte scalar.
 fn carries_scalar(bytes: &[u8], scalar: &[u8; SCALAR_BYTES]) -> bool {
     bytes.len() >= SCALAR_BYTES && bytes.windows(SCALAR_BYTES).any(|window| window == scalar)
+}
+
+#[cfg(test)]
+mod position_domain_tests {
+    use target_elements::ReproducibilityContract;
+
+    use super::{
+        CommitmentOrigin, ConfidentialConstructionIntent, ConfidentialCustodyProfile,
+        ConfidentialDestinationIntent, ConfidentialInputIntent,
+        ConfidentialMaterializationProfiles, ConfidentialMaterializerProfile,
+        ConfidentialNonceProfile, ConfidentialOrderProfile, ConfidentialOutputRole,
+        ConfidentialProofProfile, ConfidentialRetryProfile, FixtureOpeningReference,
+        FrozenConfidentialFixtureView, IndependentCommitment, IndependentCommitmentCheck,
+        MaterializationRefusal, NonProtocolFundingRegion, SCALAR_BYTES, preflight,
+        signer_input_position,
+    };
+    use crate::bytes::{AssetField, AssetId, Outpoint, Txid, ValueField};
+
+    struct RefusingChecker;
+
+    impl IndependentCommitmentCheck for RefusingChecker {
+        fn origin(&self) -> CommitmentOrigin {
+            CommitmentOrigin::FirstPartyBignumOracle
+        }
+
+        fn recompute(
+            &self,
+            _explicit_asset: AssetId,
+            _semantic_amount: u64,
+            _value_blinder: &[u8; SCALAR_BYTES],
+        ) -> Option<IndependentCommitment> {
+            None
+        }
+
+        fn solve_balancing_blinder(
+            &self,
+            _input_blinder_sum: &[u8; SCALAR_BYTES],
+            _other_blinders: &[[u8; SCALAR_BYTES]],
+        ) -> Option<[u8; SCALAR_BYTES]> {
+            None
+        }
+    }
+
+    const fn profiles() -> ConfidentialMaterializationProfiles {
+        ConfidentialMaterializationProfiles {
+            reproducibility_contract: ReproducibilityContract::ByteIdentity,
+            custody_profile: ConfidentialCustodyProfile::CentralPublicFixtures,
+            materializer_profile: ConfidentialMaterializerProfile::GuideCtfDeterministicV1,
+            proof_profile: ConfidentialProofProfile::ExplicitAssetRangeproofV1,
+            nonce_profile: ConfidentialNonceProfile::DeterministicDerivedV1,
+            order_profile: ConfidentialOrderProfile::FixtureFixedOrder,
+            retry_profile: ConfidentialRetryProfile::NoRetry,
+        }
+    }
+
+    fn minimal_input() -> ConfidentialInputIntent {
+        let outpoint = Outpoint::new(Txid::from_internal([0x11_u8; 32]), 0)
+            .expect("the test outpoint index is admitted");
+        ConfidentialInputIntent::explicit_receipt(
+            outpoint,
+            AssetField::Explicit(AssetId::from_internal([0x22_u8; 32])),
+            ValueField::Explicit(1),
+            vec![0x51],
+            u32::MAX,
+            1,
+        )
+    }
+
+    fn minimal_destination() -> ConfidentialDestinationIntent {
+        ConfidentialDestinationIntent::new(
+            1,
+            AssetId::from_internal([0x22_u8; 32]),
+            vec![0x51],
+            FixtureOpeningReference::new("unused".to_owned(), [0x33_u8; 32], 0),
+            ConfidentialOutputRole::Balancing,
+        )
+    }
+
+    #[test]
+    fn oversized_signer_input_census_refuses_before_duplicate_outpoints() {
+        let intent = ConfidentialConstructionIntent::new(
+            vec![minimal_input(); usize::from(u16::MAX) + 2],
+            vec![minimal_destination()],
+            NonProtocolFundingRegion::default(),
+            profiles(),
+            3,
+            0,
+        );
+
+        assert_eq!(
+            preflight(
+                &intent,
+                &FrozenConfidentialFixtureView::default(),
+                &RefusingChecker,
+            )
+            .expect_err("the census exceeds the position domain"),
+            MaterializationRefusal::SignerInputCensusExceedsPositionDomain,
+        );
+    }
+
+    #[test]
+    fn signer_input_position_refuses_the_first_unrepresentable_index() {
+        assert_eq!(signer_input_position(usize::from(u16::MAX)), Ok(u16::MAX),);
+        assert_eq!(
+            signer_input_position(usize::from(u16::MAX) + 1),
+            Err(MaterializationRefusal::SignerInputCensusExceedsPositionDomain),
+        );
+    }
 }

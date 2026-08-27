@@ -2,12 +2,11 @@
 //!
 //! [`crate::live_first_party`] discharges §15.3's owner and signature
 //! faults, whose boundary is one entry point. The rest of the matrix's
-//! pre-target rows are spread across six more: the owner-key encoding
-//! closure, the static constructor derivation, the linker's symbol
-//! census, the typed protocol value, the live-transfer finalization, and
-//! the offered-transaction check. This module meets §4.2 for those.
+//! pre-target rows are spread across the entry points named by
+//! [`LiveFaultValidator`] and counted by [`LIVE_FAULT_VALIDATOR_COUNT`].
+//! This module meets §4.2 for those.
 //!
-//! # The same argument as §15.3's, made six more times
+//! # The same argument as §15.3's, at every owning entry point
 //!
 //! §4.2 discharges a row only with a canonical malformed typed input, the
 //! exact owning validator, a typed refusal naming the intended class, a
@@ -101,6 +100,12 @@ use crate::live_plan::{
 };
 use crate::live_safety::{LiveSafetyRow, required_safety_matrix};
 
+/// The asserted number of cases in [`live_fault_cases`].
+pub const LIVE_FAULT_CASE_COUNT: usize = 23;
+
+/// The asserted number of distinct validators in [`live_fault_cases`].
+pub const LIVE_FAULT_VALIDATOR_COUNT: usize = 8;
+
 /// Which first-party validator owns one §15.4–§15.7 row.
 ///
 /// A name for the exact entry point a discharge drove. There is
@@ -124,8 +129,8 @@ pub enum LiveFaultValidator {
     /// `transaction::live_census::OwnerSigningCensus::from_explicit_finalized`,
     /// the sole first-party site that recomputes a leaf commitment.
     ///
-    /// A SEVENTH entry point, and it is here because it is the only
-    /// place in this workspace that does what a target's
+    /// This entry point is here because it is the only place in this
+    /// workspace that does what a target's
     /// `VerifyTaprootCommitment` does: fold a declared leaf hash up an
     /// offered control block's path, tweak the offered internal key, and
     /// compare the result with the program actually spent. That is why
@@ -136,11 +141,11 @@ pub enum LiveFaultValidator {
     /// `transaction::live_request::LiveTransferRequest::new`, the sole
     /// site that admits a transfer request at all.
     ///
-    /// An EIGHTH entry point, and the earliest of them: it refuses
-    /// before an ABI is consulted, before a program is looked up and
-    /// before a candidate exists. A row whose fault is a property of
-    /// what a caller ASKED FOR — rather than of what the ask produces —
-    /// can be answered nowhere else.
+    /// This is the earliest entry point: it refuses before an ABI is
+    /// consulted, before a program is looked up and before a candidate
+    /// exists. A row whose fault is a property of what a caller ASKED
+    /// FOR — rather than of what the ask produces — can be answered
+    /// nowhere else.
     LiveTransferRequestConstruction,
     /// `linker::LiveDefinitionCensus::define`, the sole site that admits
     /// a symbol definition into a link.
@@ -500,8 +505,9 @@ macro_rules! census_is {
 
 /// The complete census of first-party cases for §15.4–§15.7.
 ///
-/// Twenty-two cases over eight owning entry points, and no §15.4–§15.7 row
-/// whose verdict a first-party layer owns is missing from it.
+/// [`LIVE_FAULT_CASE_COUNT`] cases over [`LIVE_FAULT_VALIDATOR_COUNT`]
+/// owning entry points, and no §15.4–§15.7 row whose verdict a first-party
+/// layer owns is missing from it.
 #[must_use]
 #[expect(
     clippy::too_many_lines,
@@ -1868,9 +1874,19 @@ fn run_every_fault_case() -> Result<Vec<ValidatedLiveFaultEvidence>, LiveFaultRe
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveFaultCase, discharge_live_faults, live_fault_cases, matrix_row, validate_live_fault,
+        LIVE_FAULT_CASE_COUNT, LIVE_FAULT_VALIDATOR_COUNT, LiveFaultCase, discharge_live_faults,
+        live_fault_cases, matrix_row, validate_live_fault,
     };
     use std::collections::BTreeSet;
+
+    #[test]
+    fn live_case_and_validator_censuses_match_the_public_contracts() {
+        let cases = live_fault_cases();
+        let validators: BTreeSet<_> = cases.iter().map(LiveFaultCase::validator).collect();
+
+        assert_eq!(cases.len(), LIVE_FAULT_CASE_COUNT);
+        assert_eq!(validators.len(), LIVE_FAULT_VALIDATOR_COUNT);
+    }
 
     #[test]
     fn every_case_names_a_first_party_row_of_the_matrix() {
@@ -1952,7 +1968,11 @@ mod tests {
             .iter()
             .map(super::ValidatedLiveFaultEvidence::validator)
             .collect();
-        assert_eq!(validators.len(), 8, "eight owning entry points");
+        assert_eq!(
+            validators.len(),
+            LIVE_FAULT_VALIDATOR_COUNT,
+            "every owning entry point"
+        );
     }
 
     #[test]

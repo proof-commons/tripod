@@ -238,13 +238,17 @@ pub struct CanonicalBlock {
 
 /// A validated view of one canonical chain prefix.
 ///
-/// `ValidatedChainView` verifies internal prefix consistency. It does
-/// not replace Elements consensus/header validation: the deployment
-/// verifier must still supply a canonical chain view derived from
-/// validated block headers and functionary consensus.
+/// Construction starts at a declared anchor: either the realization
+/// genesis or a checkpoint that defines a genesis for this view. The
+/// first retained block is never inferred. `ValidatedChainView` verifies
+/// complete internal consistency from that anchor through the selected
+/// checkpoint. It does not replace Elements consensus/header validation:
+/// the deployment verifier must still supply a canonical chain view
+/// derived from validated block headers and functionary consensus.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedChainView {
     context: AttestationContext,
+    anchor_height: BlockHeight,
     blocks: BTreeMap<BlockHeight, CanonicalBlock>,
 }
 
@@ -459,16 +463,15 @@ fn validate_checkpoint_semantics(
 
 impl ValidatedChainView {
     pub fn new(
-        network_id: [u8; 32],
-        genesis_id: [u8; 32],
-        architecture_manifest_hash: [u8; 32],
-        checkpoint_height: BlockHeight,
-        checkpoint_block_hash: BlockHash,
-        schema_version: SchemaVersion,
+        context: AttestationContext,
+        anchor_height: BlockHeight,
         blocks: impl IntoIterator<Item = CanonicalBlock>,
     ) -> Result<Self, Guard> {
-        if schema_version != ATTESTATION_SCHEMA_VERSION {
+        if context.schema_version != ATTESTATION_SCHEMA_VERSION {
             return Err(Guard::UnsupportedSchema);
+        }
+        if anchor_height > context.checkpoint_height {
+            return Err(Guard::WrongCheckpoint);
         }
 
         let mut by_height = BTreeMap::new();
@@ -478,28 +481,32 @@ impl ValidatedChainView {
                 return Err(Guard::DuplicateEvent);
             }
         }
+        if by_height
+            .keys()
+            .any(|height| *height > context.checkpoint_height)
+        {
+            return Err(Guard::HistoryOrder);
+        }
 
         let checkpoint = by_height
-            .get(&checkpoint_height)
+            .get(&context.checkpoint_height)
             .ok_or(Guard::WrongCheckpoint)?;
 
-        if checkpoint.hash != checkpoint_block_hash {
+        if checkpoint.hash != context.checkpoint_block_hash {
             return Err(Guard::WrongCheckpoint);
         }
 
-        let context = AttestationContext {
-            network_id,
-            genesis_id,
-            architecture_manifest_hash,
-            checkpoint_block_hash,
-            checkpoint_height,
-            schema_version,
-        };
-
         validate_context_identity(&context)?;
+        validate_anchored_chain(
+            &by_height,
+            anchor_height,
+            context.checkpoint_height,
+            context.checkpoint_block_hash,
+        )?;
 
         Ok(Self {
             context,
+            anchor_height,
             blocks: by_height,
         })
     }
@@ -519,54 +526,45 @@ impl ValidatedChainView {
             .ok_or(Guard::WrongCheckpoint)
     }
 
-    /// Validates a complete, contiguous canonical prefix from the
-    /// realization genesis height through the selected checkpoint.
+    /// Checks that a consumer names this view's declared anchor.
     ///
-    /// The chain provider is responsible for validating block headers
-    /// and consensus. This check ensures the view supplied to the
-    /// indexer is internally contiguous and parent-linked.
-    pub fn validate_prefix_from(&self, genesis_height: BlockHeight) -> Result<(), Guard> {
-        if genesis_height > self.context.checkpoint_height {
-            return Err(Guard::WrongCheckpoint);
-        }
-
-        let mut expected_height = genesis_height;
-        let mut previous_hash: Option<BlockHash> = None;
-
-        for block in self
-            .blocks
-            .range(genesis_height..=self.context.checkpoint_height)
-            .map(|(_, block)| block)
-        {
-            if block.height != expected_height {
-                return Err(Guard::HistoryOrder);
-            }
-
-            if let Some(previous_hash) = previous_hash
-                && block.parent_hash != Some(previous_hash)
-            {
-                return Err(Guard::HistoryOrder);
-            }
-
-            previous_hash = Some(block.hash);
-
-            if block.height != self.context.checkpoint_height {
-                expected_height = expected_height.checked_add(1).ok_or(Guard::Overflow)?;
-            }
-        }
-
-        if expected_height != self.context.checkpoint_height {
+    /// Construction has already validated the complete chain, so this
+    /// method cannot create a second, weaker chain-validation path.
+    pub const fn validate_prefix_from(&self, anchor_height: BlockHeight) -> Result<(), Guard> {
+        if anchor_height != self.anchor_height {
             return Err(Guard::HistoryOrder);
         }
-
-        let checkpoint_hash = previous_hash.ok_or(Guard::WrongCheckpoint)?;
-
-        if checkpoint_hash != self.context.checkpoint_block_hash {
-            return Err(Guard::WrongCheckpoint);
-        }
-
         Ok(())
     }
+}
+
+/// Validate every retained block from the declared anchor through the
+/// selected checkpoint.
+fn validate_anchored_chain(
+    blocks: &BTreeMap<BlockHeight, CanonicalBlock>,
+    anchor_height: BlockHeight,
+    checkpoint_height: BlockHeight,
+    checkpoint_hash: BlockHash,
+) -> Result<(), Guard> {
+    let mut blocks = blocks.values();
+    let first = blocks.next().ok_or(Guard::WrongCheckpoint)?;
+    if first.height != anchor_height || first.parent_hash.is_some() {
+        return Err(Guard::HistoryOrder);
+    }
+
+    let mut previous = first;
+    for block in blocks {
+        let expected_height = previous.height.checked_add(1).ok_or(Guard::HistoryOrder)?;
+        if block.height != expected_height || block.parent_hash != Some(previous.hash) {
+            return Err(Guard::HistoryOrder);
+        }
+        previous = block;
+    }
+
+    if previous.height != checkpoint_height || previous.hash != checkpoint_hash {
+        return Err(Guard::WrongCheckpoint);
+    }
+    Ok(())
 }
 
 // ´def:verification:reference-indexer´

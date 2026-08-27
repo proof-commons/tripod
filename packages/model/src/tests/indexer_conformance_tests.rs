@@ -16,9 +16,7 @@ use super::advanced_fixtures::*;
 use super::attestation_history_fixture::{accepted_burn, clear_entry, genesis_clear};
 use super::scenario_fixtures::*;
 use super::test_fixtures;
-use super::test_fixtures::{
-    TEST_GENESIS_ID, TEST_NETWORK_ID, block_hash, chain_view_for_history, test_manifest_hash, txid,
-};
+use super::test_fixtures::{block_hash, chain_view_for_history, txid};
 use crate::ledger::UntrustedIndexerFixture;
 use crate::*;
 
@@ -58,6 +56,19 @@ fn synthetic_indexer(clears: &[ClearEntry], burns: &[BurnTransaction]) -> Refere
     }
 
     indexer
+}
+
+fn anchored_chain_view(
+    anchor_height: BlockHeight,
+    checkpoint_height: BlockHeight,
+    checkpoint_hash: BlockHash,
+    blocks: Vec<CanonicalBlock>,
+) -> Result<ValidatedChainView, Guard> {
+    ValidatedChainView::new(
+        test_fixtures::context(checkpoint_height, checkpoint_hash),
+        anchor_height,
+        blocks,
+    )
 }
 
 #[test]
@@ -519,83 +530,216 @@ fn checkpoint_hash_mismatch_is_rejected() {
     }];
 
     assert_eq!(
-        ValidatedChainView::new(
-            TEST_NETWORK_ID,
-            TEST_GENESIS_ID,
-            test_manifest_hash(),
-            0,
-            block_hash(99),
-            ATTESTATION_SCHEMA_VERSION,
-            blocks,
-        ),
+        anchored_chain_view(0, 0, block_hash(99), blocks),
         Err(Guard::WrongCheckpoint),
     );
 }
 
 #[test]
 fn noncontiguous_chain_view_is_rejected() {
-    let view = ValidatedChainView::new(
-        TEST_NETWORK_ID,
-        TEST_GENESIS_ID,
-        test_manifest_hash(),
-        2,
-        block_hash(2),
-        ATTESTATION_SCHEMA_VERSION,
-        vec![
-            CanonicalBlock {
-                height: 0,
-                hash: block_hash(0),
-                parent_hash: None,
-            },
-            CanonicalBlock {
-                height: 2,
-                hash: block_hash(2),
-                parent_hash: Some(block_hash(0)),
-            },
-        ],
-    )
-    .unwrap();
-
-    assert_eq!(view.validate_prefix_from(0), Err(Guard::HistoryOrder));
+    assert_eq!(
+        anchored_chain_view(
+            0,
+            2,
+            block_hash(2),
+            vec![
+                CanonicalBlock {
+                    height: 0,
+                    hash: block_hash(0),
+                    parent_hash: None,
+                },
+                CanonicalBlock {
+                    height: 2,
+                    hash: block_hash(2),
+                    parent_hash: Some(block_hash(0)),
+                },
+            ],
+        ),
+        Err(Guard::HistoryOrder),
+    );
 }
 
 #[test]
 fn parent_hash_mismatch_is_rejected() {
-    let view = ValidatedChainView::new(
-        TEST_NETWORK_ID,
-        TEST_GENESIS_ID,
-        test_manifest_hash(),
-        1,
-        block_hash(1),
-        ATTESTATION_SCHEMA_VERSION,
-        vec![
-            CanonicalBlock {
+    assert_eq!(
+        anchored_chain_view(
+            0,
+            1,
+            block_hash(1),
+            vec![
+                CanonicalBlock {
+                    height: 0,
+                    hash: block_hash(0),
+                    parent_hash: None,
+                },
+                CanonicalBlock {
+                    height: 1,
+                    hash: block_hash(1),
+                    parent_hash: Some(block_hash(99)),
+                },
+            ],
+        ),
+        Err(Guard::HistoryOrder),
+    );
+}
+
+#[test]
+fn post_checkpoint_block_is_rejected() {
+    assert_eq!(
+        anchored_chain_view(
+            0,
+            1,
+            block_hash(1),
+            vec![
+                CanonicalBlock {
+                    height: 0,
+                    hash: block_hash(0),
+                    parent_hash: None,
+                },
+                CanonicalBlock {
+                    height: 1,
+                    hash: block_hash(1),
+                    parent_hash: Some(block_hash(0)),
+                },
+                CanonicalBlock {
+                    height: 2,
+                    hash: block_hash(2),
+                    parent_hash: Some(block_hash(1)),
+                },
+            ],
+        ),
+        Err(Guard::HistoryOrder),
+    );
+}
+
+#[test]
+fn realization_genesis_anchor_with_parent_is_rejected() {
+    assert_eq!(
+        anchored_chain_view(
+            0,
+            0,
+            block_hash(0),
+            vec![CanonicalBlock {
                 height: 0,
                 hash: block_hash(0),
-                parent_hash: None,
-            },
-            CanonicalBlock {
+                parent_hash: Some(block_hash(99)),
+            }],
+        ),
+        Err(Guard::HistoryOrder),
+    );
+}
+
+#[test]
+fn checkpoint_genesis_anchor_with_parent_is_rejected() {
+    assert_eq!(
+        anchored_chain_view(
+            5,
+            5,
+            block_hash(5),
+            vec![CanonicalBlock {
+                height: 5,
+                hash: block_hash(5),
+                parent_hash: Some(block_hash(4)),
+            }],
+        ),
+        Err(Guard::HistoryOrder),
+    );
+}
+
+#[test]
+fn non_first_block_without_parent_is_rejected() {
+    assert_eq!(
+        anchored_chain_view(
+            0,
+            1,
+            block_hash(1),
+            vec![
+                CanonicalBlock {
+                    height: 0,
+                    hash: block_hash(0),
+                    parent_hash: None,
+                },
+                CanonicalBlock {
+                    height: 1,
+                    hash: block_hash(1),
+                    parent_hash: None,
+                },
+            ],
+        ),
+        Err(Guard::HistoryOrder),
+    );
+}
+
+#[test]
+fn anchor_above_checkpoint_is_a_checkpoint_fault() {
+    assert_eq!(
+        anchored_chain_view(
+            2,
+            1,
+            block_hash(1),
+            vec![CanonicalBlock {
                 height: 1,
                 hash: block_hash(1),
-                parent_hash: Some(block_hash(99)),
-            },
-        ],
-    )
-    .unwrap();
+                parent_hash: None,
+            }],
+        ),
+        Err(Guard::WrongCheckpoint),
+    );
+}
 
-    assert_eq!(view.validate_prefix_from(0), Err(Guard::HistoryOrder));
+#[test]
+fn first_retained_block_must_equal_the_anchor() {
+    assert_eq!(
+        anchored_chain_view(
+            1,
+            1,
+            block_hash(1),
+            vec![
+                CanonicalBlock {
+                    height: 0,
+                    hash: block_hash(0),
+                    parent_hash: None,
+                },
+                CanonicalBlock {
+                    height: 1,
+                    hash: block_hash(1),
+                    parent_hash: Some(block_hash(0)),
+                },
+            ],
+        ),
+        Err(Guard::HistoryOrder),
+    );
+}
+
+#[test]
+fn valid_anchored_prefix_constructs_and_indexes() {
+    let world = test_fixtures::world();
+    let chain = chain_view_for_history(&world);
+    let anchor_height = world.history.genesis.order.height;
+
+    assert_eq!(chain.validate_prefix_from(anchor_height), Ok(()));
+    assert!(
+        ReferenceIndexer::from_assumed_kernel_history(&world.history, &chain, [0_u8; 32]).is_ok()
+    );
+}
+
+#[test]
+fn consumer_anchor_must_equal_the_declared_anchor() {
+    let world = test_fixtures::world();
+    let chain = chain_view_for_history(&world);
+
+    assert_eq!(chain.validate_prefix_from(1), Err(Guard::HistoryOrder));
 }
 
 #[test]
 fn unsupported_attestation_schema_is_rejected() {
     assert_eq!(
         ValidatedChainView::new(
-            TEST_NETWORK_ID,
-            TEST_GENESIS_ID,
-            test_manifest_hash(),
+            AttestationContext {
+                schema_version: ATTESTATION_SCHEMA_VERSION + 1,
+                ..test_fixtures::context(0, block_hash(0))
+            },
             0,
-            block_hash(0),
-            ATTESTATION_SCHEMA_VERSION + 1,
             vec![CanonicalBlock {
                 height: 0,
                 hash: block_hash(0),

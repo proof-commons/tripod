@@ -379,17 +379,14 @@ fn indexer_excludes_events_after_checkpoint() {
     );
 
     let genesis_height = full.history.genesis.order.height;
+    let checkpoint_hash = test_fixtures::block_hash(u8::try_from(genesis_height % 256).unwrap());
 
     let checkpoint_chain = ValidatedChainView::new(
-        test_fixtures::TEST_NETWORK_ID,
-        test_fixtures::TEST_GENESIS_ID,
-        test_fixtures::test_manifest_hash(),
+        test_fixtures::context(genesis_height, checkpoint_hash),
         genesis_height,
-        test_fixtures::block_hash(u8::try_from(genesis_height % 256).unwrap()),
-        ATTESTATION_SCHEMA_VERSION,
         vec![CanonicalBlock {
             height: genesis_height,
-            hash: test_fixtures::block_hash(u8::try_from(genesis_height % 256).unwrap()),
+            hash: checkpoint_hash,
             parent_hash: None,
         }],
     )
@@ -459,12 +456,15 @@ fn invalid_semantic_context_is_rejected_at_chain_view_construction() {
 
     let build = |network_id, genesis_id, manifest_hash| {
         ValidatedChainView::new(
-            network_id,
-            genesis_id,
-            manifest_hash,
+            AttestationContext {
+                network_id,
+                genesis_id,
+                architecture_manifest_hash: manifest_hash,
+                checkpoint_block_hash: test_fixtures::block_hash(1),
+                checkpoint_height: 1,
+                schema_version: ATTESTATION_SCHEMA_VERSION,
+            },
             1,
-            test_fixtures::block_hash(1),
-            ATTESTATION_SCHEMA_VERSION,
             vec![block],
         )
     };
