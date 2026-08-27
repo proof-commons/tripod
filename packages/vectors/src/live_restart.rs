@@ -395,10 +395,12 @@ pub enum ProofNegativeCase {
     /// verify.
     MalformedRangeproof,
     /// A value commitment that commits a value the transaction's balance
-    /// does not close. Distinct from [`Self::WrongBlinder`]: the value is
-    /// wrong rather than its blinder, and the conservation lane places it
-    /// at a DIFFERENT output so its declared field range separates it from
-    /// the wrong-blinder mutant they otherwise share a verdict with.
+    /// does not close.
+    ///
+    /// Distinct from [`Self::WrongBlinder`]: the value is wrong rather than
+    /// its blinder, and the conservation lane places it at a DIFFERENT
+    /// output so its declared field range separates it from the
+    /// wrong-blinder mutant they otherwise share a verdict with.
     PrivateCtImbalance,
 }
 

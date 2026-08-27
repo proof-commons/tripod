@@ -962,11 +962,12 @@ pub mod run_of_record {
     pub const WRONG_BLINDER_FIELD_RANGE: (usize, usize) = (81, 114);
 
     /// The half-open byte range the private-ct-imbalance mutant declared
-    /// and stayed within: the SECOND output's 33-byte value-commitment
-    /// field. Distinct from [`WRONG_BLINDER_FIELD_RANGE`] because the two
-    /// mutants sit at different outputs, which is what separates
-    /// `private-ct-imbalance` from `wrong-private-blinding-balance` when the
-    /// target draws the same `bad-txns-in-ne-out` for both.
+    /// and stayed within: the SECOND output's 33-byte value-commitment field.
+    ///
+    /// Distinct from [`WRONG_BLINDER_FIELD_RANGE`] because the two mutants
+    /// sit at different outputs, which is what separates `private-ct-imbalance`
+    /// from `wrong-private-blinding-balance` when the target draws the same
+    /// `bad-txns-in-ne-out` for both.
     pub const PRIVATE_CT_IMBALANCE_FIELD_RANGE: (usize, usize) = (215, 248);
 
     /// The half-open byte range the two range-proof mutants declared: the
@@ -975,10 +976,11 @@ pub mod run_of_record {
     pub const RANGEPROOF_FIELD_RANGE: (usize, usize) = (781, 4_958);
 
     /// The one identical refusal the target gave every mutant, at the
-    /// [`super::ObservedOutcomeLayer::ConsensusRejectionBeforeScript`]
-    /// layer. The wrong-blinder, range-proof and private-ct-imbalance
-    /// mutants all draw it; the FIELD each declared is what tells their
-    /// rows apart, the words being the same.
+    /// [`super::ObservedOutcomeLayer::ConsensusRejectionBeforeScript`] layer.
+    ///
+    /// The wrong-blinder, range-proof and private-ct-imbalance mutants all
+    /// draw it; the FIELD each declared is what tells their rows apart, the
+    /// words being the same.
     pub const MUTANT_REJECT_DETAIL: &str = "bad-txns-in-ne-out";
 
     /// The run's wall time, in seconds.
