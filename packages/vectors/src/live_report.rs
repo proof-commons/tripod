@@ -1047,7 +1047,6 @@ fn observations_from_plan(
                     observed_by,
                 })
             }
-            LiveRowStanding::ReportLayerRequired(_) => None,
             // A future bound standing must arrive with a validated run binding;
             // silently inventing one from its row name would restore this defect.
             LiveRowStanding::NativeRunObserved { .. }
@@ -1069,7 +1068,8 @@ fn observations_from_plan(
                     detail: refusal_detail,
                 },
             }),
-            LiveRowStanding::FirstPartyDischarged { .. }
+            LiveRowStanding::ReportLayerRequired(_)
+            | LiveRowStanding::FirstPartyDischarged { .. }
             | LiveRowStanding::FirstPartyUndischarged(_)
             | LiveRowStanding::NativeRunRequired(_)
             | LiveRowStanding::InfrastructureBlocked(_)
