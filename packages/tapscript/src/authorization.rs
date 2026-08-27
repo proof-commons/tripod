@@ -66,8 +66,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use target_elements::{
-    AuthorizationContract, EncodingClass, SighashCapability, SighashDimension,
-    UnknownPublicKeyTypeRule,
+    AuthorizationContract, EncodingClass, ReviewedElementsTapscriptDefinition, SighashCapability,
+    SighashDimension, TargetContractVersion, UnknownPublicKeyTypeRule,
 };
 
 use crate::capability::census_enum;
@@ -451,6 +451,150 @@ impl OwnerSighashProfile {
         } else {
             OwnerProfileDisposition::ReviewIncomplete { unreviewed }
         }
+    }
+}
+
+/// A selected owner profile established against one reviewed capability
+/// revision.
+///
+/// Private fields, no default, and one validated constructor make the
+/// establishment conclusion unavailable for callers to state. The
+/// constructor consumes the closed [`OwnerSighashProfile`], reads the
+/// reviewed target's capability, and delegates the complete dimension
+/// decision to [`OwnerSighashProfile::assess`].
+///
+/// The revision pin is part of the witness rather than adjacent metadata.
+/// A witness outlives no capability revision: every consumer must compare
+/// [`Self::capability_revision`] with the revision whose capability it is
+/// about to rely on and refuse a mismatch before using the profile.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EstablishedOwnerSighashProfile {
+    profile: OwnerSighashProfile,
+    established: BTreeSet<SighashDimension>,
+    capability_revision: TargetContractVersion,
+}
+
+impl EstablishedOwnerSighashProfile {
+    /// Establishes the selected profile against the reviewed target.
+    ///
+    /// This is the sole public constructor. It takes the reviewed wrapper,
+    /// not a capability and caller-supplied revision separately, so the
+    /// assessment and its pin cannot name different contracts.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OwnerProfileDisposition::ReviewIncomplete`] with every
+    /// required dimension the reviewed capability does not establish.
+    pub fn establish(
+        profile: OwnerSighashProfile,
+        target: &ReviewedElementsTapscriptDefinition,
+    ) -> Result<Self, OwnerProfileDisposition> {
+        Self::establish_against(
+            profile,
+            target.definition().authorization().sighash(),
+            target.definition().version(),
+        )
+    }
+
+    fn establish_against(
+        profile: OwnerSighashProfile,
+        capability: &SighashCapability,
+        capability_revision: TargetContractVersion,
+    ) -> Result<Self, OwnerProfileDisposition> {
+        match profile.assess(capability) {
+            OwnerProfileDisposition::Established => {
+                let established = profile.required().collect();
+                Ok(Self {
+                    profile,
+                    established,
+                    capability_revision,
+                })
+            }
+            incomplete @ OwnerProfileDisposition::ReviewIncomplete { .. } => Err(incomplete),
+        }
+    }
+
+    /// The selected profile whose required dimensions were established.
+    #[must_use]
+    pub const fn profile(&self) -> &OwnerSighashProfile {
+        &self.profile
+    }
+
+    /// The exact required dimensions established when this witness was
+    /// minted, in census order.
+    #[must_use]
+    pub const fn established_dimensions(&self) -> &BTreeSet<SighashDimension> {
+        &self.established
+    }
+
+    /// The reviewed capability revision this witness is pinned to.
+    #[must_use]
+    pub const fn capability_revision(&self) -> TargetContractVersion {
+        self.capability_revision
+    }
+}
+
+#[cfg(test)]
+mod established_profile_tests {
+    use target_elements::{SighashSourceCitation, UnreviewedGround, reviewed_elements_tapscript};
+
+    use super::*;
+
+    fn capability_that_establishes_nothing() -> SighashCapability {
+        let citation = SighashSourceCitation::new(
+            "no terms: this capability is a test stand-in",
+            "no source: this capability is a test stand-in",
+            "a synthetic capability built by the witness tests",
+        );
+
+        SighashCapability::new(
+            [],
+            SighashDimension::ALL.iter().map(|dimension| {
+                (
+                    *dimension,
+                    UnreviewedGround::NoCandidateThisArcBuildsCarriesTheSubject(citation),
+                )
+            }),
+            [],
+        )
+    }
+
+    #[test]
+    fn a_nothing_established_capability_refuses_the_exact_six_dimensions() {
+        let profile = selected_owner_profile();
+        let expected = profile.required().collect::<BTreeSet<_>>();
+
+        let refusal = EstablishedOwnerSighashProfile::establish_against(
+            profile,
+            &capability_that_establishes_nothing(),
+            TargetContractVersion::V2,
+        )
+        .expect_err("no required dimension is established");
+
+        assert_eq!(expected.len(), 6);
+        assert_eq!(
+            refusal,
+            OwnerProfileDisposition::ReviewIncomplete {
+                unreviewed: expected,
+            },
+        );
+    }
+
+    #[test]
+    fn the_real_reviewed_contract_mints_the_revision_pinned_witness() {
+        let target = reviewed_elements_tapscript().expect("the reviewed contract validates");
+        let expected = selected_owner_profile().required().collect::<BTreeSet<_>>();
+
+        let established =
+            EstablishedOwnerSighashProfile::establish(selected_owner_profile(), &target)
+                .expect("the reviewed capability establishes every required dimension");
+
+        assert_eq!(established.profile(), &selected_owner_profile());
+        assert_eq!(established.established_dimensions(), &expected);
+        assert_eq!(
+            established.capability_revision(),
+            target.definition().version(),
+        );
     }
 }
 

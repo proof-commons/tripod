@@ -21,10 +21,11 @@ pub mod stack;
 pub mod upstream;
 
 pub use authorization::{
-    DimensionRefusal, DimensionRole, OutsideMessageGround, OwnerKeyEncodingClosure,
-    OwnerKeyNegative, OwnerKeyObligation, OwnerProfileDisposition, OwnerSighashProfile,
-    ProtectedDatum, owner_key_encoding_closure, profile_classifies_every_offered_dimension,
-    profile_coverage_lands_only_on_required_dimensions, selected_owner_profile,
+    DimensionRefusal, DimensionRole, EstablishedOwnerSighashProfile, OutsideMessageGround,
+    OwnerKeyEncodingClosure, OwnerKeyNegative, OwnerKeyObligation, OwnerProfileDisposition,
+    OwnerSighashProfile, ProtectedDatum, owner_key_encoding_closure,
+    profile_classifies_every_offered_dimension, profile_coverage_lands_only_on_required_dimensions,
+    selected_owner_profile,
 };
 pub use bundle::{
     BackendArtifactStatus, BundleRefusal, BundleSymbol, CandidateRelocatableTapscriptBundle,
