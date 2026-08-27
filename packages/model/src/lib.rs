@@ -94,12 +94,12 @@ pub use ledger::{
     ATTESTATION_QUERY_DOMAIN, ATTESTATION_SCHEMA_VERSION, AttestationContext, AttestationEventId,
     AttestationEventSnapshot, AttestationQueryProvider, AttestationQueryResult, AttestationTerm,
     BurnTransaction, CanonicalBlock, ClearEntry, ClearId, DecodeError, DifferentialError,
-    EncodeError, ExactRational, IndependentAttestationIndexer, IndexerDiagnosticSnapshot,
-    ModelIndexerCheckpoint, OrderedAttestationEvent, QueryValidationError,
-    RecognizedAttestationEvent, ReferenceIndexer, ValidatedChainView, compare_attestation_events,
-    compare_attestation_indexers, compare_attestation_query, decode_biguint, decode_varint,
-    deserialize_query, encode_biguint, encode_varint, expected_architecture_manifest_hash,
-    serialize_query, validate_event_index, validate_query,
+    EncodeError, ExactRational, ExpectedZeroAttestationAddresses, IndependentAttestationIndexer,
+    IndexerDiagnosticSnapshot, ModelIndexerCheckpoint, OrderedAttestationEvent,
+    QueryValidationError, RecognizedAttestationEvent, ReferenceIndexer, ValidatedChainView,
+    compare_attestation_events, compare_attestation_indexers, compare_attestation_query,
+    decode_biguint, decode_varint, deserialize_query, encode_biguint, encode_varint,
+    expected_architecture_manifest_hash, serialize_query, validate_event_index, validate_query,
 };
 pub use maintenance::{
     AdmissionCapacityPlan, DeterministicMaintenanceScheduler, MaintenanceAction, MaintenanceMode,
