@@ -1374,7 +1374,8 @@ fn output_asset(
 /// `input_blinder_sum` is constructor-only material, enforced by the
 /// conservation solve and node acceptance. It is not semantic transcript
 /// material and is deliberately absent here.
-fn digest_transcript(
+#[must_use]
+pub(crate) fn digest_transcript(
     manifest: &ConfidentialFixtureManifest,
     openings: &FixtureOpenings,
 ) -> Vec<u8> {
