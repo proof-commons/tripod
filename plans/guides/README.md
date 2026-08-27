@@ -43,6 +43,7 @@ weight rule in [the plans README](../README.md).
 | [guide_twelve_concept.md](guide_twelve_concept.md) | Phase-4 end-to-end compact ASH |
 | [guide_thirteen_concept.md](guide_thirteen_concept.md) | Phase-5 end-to-end live receipt transfer |
 | [guide_fourteen_concept.md](guide_fourteen_concept.md) | Phase-6 end-to-end STATE and maturity announcement |
+| [guide_fifteen_concept.md](guide_fifteen_concept.md) | Phase-7 owner-authorized burn, public ASH, and permissionless clear |
 | [guide_confidential_funding_concept.md](guide_confidential_funding_concept.md) | Phase-5 confidential test materialization and funding protocol |
 | [guide_owner_sighash_concept.md](guide_owner_sighash_concept.md) | Phase-5 owner sighash profile, review, and accepted result |
 
@@ -61,6 +62,13 @@ A concept guide and the executed guide of the same number are different
 documents: the concept is the earlier sketch, the executed guide is what the
 batch was run against, and they may disagree. The executed guide is the
 record of the charter; neither is a record of the outcome.
+
+[guide_fourteen.md](guide_fourteen.md) is the numbered Guide-14 execution
+guide as the owner supplied it, archived verbatim beside its concept. It is
+deliberately absent from the executed table above, because no batch has been
+run against it: its Wave-0 disposition of the tenth static review's findings
+has not been chartered. It joins that table when its batch is chartered
+against it.
 
 ## Guide rule · `rule:guides:authority`
 
