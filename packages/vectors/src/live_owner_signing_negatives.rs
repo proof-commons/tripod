@@ -46,11 +46,17 @@
 //! control's OWN bytes and is NOT re-signed — the consensus balance check
 //! is queued before script verification, so a broken tally refuses the
 //! mutant before its stale signature is examined, the fact the conservation
-//! ceremony's proof-negatives already rest on. Each surgery breaks
-//! conservation in its own field, so its refusal separates from every
-//! sibling by a DISTINCT declared byte range — the two asset fields, the
-//! two value fields, and the three structural changes are seven distinct
-//! regions of one transaction — and no two rows rest on one observation.
+//! ceremony's proof-negatives already rest on. The separating fact is the
+//! declared byte RANGE together with the transaction SHAPE, and it takes
+//! both: the four field surgeries — the two asset fields and the two value
+//! fields — keep the control's 2-in-2-out shape and separate by four
+//! distinct ranges, while the three structural surgeries change the shape,
+//! and two of those three declare the SAME range because `changed_range`
+//! cannot localize an insertion or a deletion past the output-count varint.
+//! `private-output-omitted` and `hidden-private-u-output` both declare
+//! `88..245` and separate by their shapes, `(2, 1)` against `(2, 3)`. The
+//! `(range, shape)` tuple is distinct across all seven, so no two rows rest
+//! on one observation.
 //!
 //! # The leaf-arrangement rows this ceremony drives
 //!
@@ -65,8 +71,11 @@
 //! member leaf at both inputs, so the member running at input zero fails
 //! the bound Verify. The other half of each pair (`wrong-coordinator`,
 //! `member-coordinator-leaf-exchange`) stays typed because its own
-//! arrangement has a SECOND failing input, so its observation would
-//! duplicate its pair-partner's and separate nothing.
+//! arrangement carries a SECOND failing input, so it has no separating
+//! fact of its own against the pair-partner already driven. Which of the
+//! two failures a target would report for such a candidate is NOT claimed:
+//! abort selection across a multi-input candidate is the target's, and no
+//! in-repo source settles it.
 //!
 //! These mutants move NO taptree. Both funded receipts are paid to one
 //! program, so both spent outputs commit to one taptree holding both the
@@ -710,15 +719,18 @@ impl OwnerSigningNegativeRecord {
              explicit one and the covenant it reaches is the explicit destination's",
             "attributes no consensus mutant to a script clause: a mutant refused \
              bad-txns-in-ne-out reached no leaf and is recorded as a consensus verdict, not a \
-             script-path one — only the bare-u mutant is a script-path verdict",
+             script-path one — the script-path verdicts here are the bare-u program surgery and \
+             the two leaf-arrangement mutants",
             "discharges each row by its OWN mutant: the bare-u program surgery is the script-path \
              row's, and each consensus surgery breaks conservation in its own field so its refusal \
-             separates by a distinct declared range rather than sharing one observation",
+             separates by a distinct declared range and transaction shape rather than sharing one \
+             observation",
             "drives ONE leaf-arrangement row per collision pair and moves no taptree: \
              two-coordinators and no-coordinator each reveal a committed leaf at a forbidden \
              position and are refused at the covenant's own index or bound clause, while \
              wrong-coordinator and member-coordinator-leaf-exchange stay typed because their own \
-             mutants would draw the same verdict at the same clause",
+             arrangements have a SECOND failing input, so nothing separates their observation from \
+             the pair-partner's already driven",
             "claims nothing about any deployment but the one this run created and destroyed",
         ]
     }

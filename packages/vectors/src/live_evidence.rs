@@ -1547,7 +1547,11 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<(&'static str, &'static s
         // pairs drawing one verdict each — the coordinator index check and
         // the member bound check — so one mutant per pair is driven and the
         // other stays typed (`TargetVerdictDoesNotSeparateTheRows`) because
-        // its own mutant would draw the same verdict at the same clause.
+        // its arrangement carries a SECOND failing input and so has no
+        // separating fact of its own against the partner already driven.
+        // Which failure a target would report for such a candidate is NOT
+        // claimed here: abort selection across a multi-input candidate is
+        // the target's, and no in-repo source settles it.
         // `two-coordinators` reveals the coordinator leaf at both inputs, so
         // the coordinator running at input one fails the index EqualVerify —
         // the one input that fails, the other being the control's valid
