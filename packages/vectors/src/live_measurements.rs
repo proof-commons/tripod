@@ -52,8 +52,8 @@ use linker::{CandidateLinkedLiveTransferBundle, OwnerParameter};
 use tapscript::upstream::LiveTransferRepresentationPlan;
 use tapscript::{
     AbstractLimits, LiveTransferLeafRole, LiveTransferShape, SponsorChangePresence, StackItem,
-    TapscriptInstruction, TapscriptProgram, live_program_precondition, resource_projection,
-    validate_program,
+    TapscriptInstruction, TapscriptProgram, live_program_precondition, program_stack_profile,
+    resource_projection,
 };
 use target_elements::{ResourceDimension, ReviewedElementsTapscriptDefinition};
 use transaction::bytes::{AssetField, Outpoint, Txid, ValueField};
@@ -1382,27 +1382,39 @@ fn walk_for(
 
 /// Walk one linked program and record what its stacks reach.
 ///
-/// The peaks are the *validator's* own, taken by validating every prefix
-/// of the program and reading the deepest state any of them reaches —
-/// which is the same technique the prototype lane uses, and for the same
-/// reason: a hand count of pushes and pops is a second implementation of
-/// the interpreter, and this study is not entitled to one.
+/// The peaks are the *validator's* own and are read from the shared
+/// analysis beside it, [`tapscript::stack::program_stack_profile`], which
+/// validates every prefix of the program and reports the deepest state any
+/// of them reaches. This study once walked those prefixes itself, in a
+/// private copy of the same loop the prototype lane carried; both copies
+/// are retired, because a hand count of pushes and pops is a second
+/// implementation of the interpreter and a second *copy* of the walk is a
+/// second place for one to start.
 ///
-/// The alternate peak has no precedent to copy: nothing in this
-/// workspace had measured one before, and a dimension §18.3 names cannot
-/// be left out because no earlier wave needed it. What it measures to is
-/// zero at every leaf this study spends — no live program moves an item
-/// across — and that is a finding rather than a gap, which is why it is
-/// walked for rather than assumed: the walk is the same one that reports
-/// the main peak, and the main peak is what shows it ran.
+/// The alternate peak had no precedent to copy when it was first
+/// measured, and a dimension §18.3 names cannot be left out because no
+/// earlier wave needed it. What it measures to is zero at every leaf this
+/// study spends — no live program moves an item across — and that is a
+/// finding rather than a gap, which is why it is walked for rather than
+/// assumed: it comes from the same walk that reports the main peak, and
+/// the main peak is what shows the walk ran.
+///
+/// The two dimensions beside the peaks are not the walk's: the widest push
+/// is read off the program's own literals and the validation budget off
+/// the resource projection.
 fn walk_program(
     target: &ReviewedElementsTapscriptDefinition,
     program: &TapscriptProgram,
 ) -> ProgramWalk {
-    let initial = live_program_precondition(target);
+    let profile = program_stack_profile(
+        target,
+        program,
+        &live_program_precondition(target),
+        AbstractLimits::for_target(target),
+    );
     let mut walk = ProgramWalk {
-        peak_main: initial.main().len() as u64,
-        peak_alternate: initial.alternate().len() as u64,
+        peak_main: profile.peak_main(),
+        peak_alternate: profile.peak_alternate(),
         widest_push: 0,
         validation_budget: resource_projection(target, program)
             .get(&ResourceDimension::ValidationBudget)
@@ -1413,28 +1425,6 @@ fn walk_program(
     for instruction in program.instructions() {
         if let TapscriptInstruction::Push(item) = instruction {
             walk.widest_push = walk.widest_push.max(pushed_width(item));
-        }
-    }
-
-    for length in 1..=program.len() {
-        let Ok(prefix) = TapscriptProgram::new(program.instructions()[..length].to_vec()) else {
-            continue;
-        };
-        let Ok(outcome) = validate_program(
-            target,
-            &prefix,
-            &initial,
-            AbstractLimits::for_target(target),
-        ) else {
-            continue;
-        };
-        for state in outcome
-            .success()
-            .iter()
-            .chain(outcome.nonaborting_failure())
-        {
-            walk.peak_main = walk.peak_main.max(state.main().len() as u64);
-            walk.peak_alternate = walk.peak_alternate.max(state.alternate().len() as u64);
         }
     }
 
@@ -1523,44 +1513,47 @@ mod tests {
         CACHED.get_or_init(|| measure_resource_cases().expect("every case is measurable"))
     }
 
-    /// The shared public analysis reads the same peaks this study measures
-    /// privately.
+    /// The shared analysis, read over every linked live program.
     ///
-    /// The private `walk_program` validates each prefix of a linked live
-    /// program and takes the deepest main and alternate stacks any of them
-    /// reaches. The public `tapscript::program_stack_profile` walks the same
-    /// prefixes from the same live precondition and returns those peaks, so
-    /// this test demonstrates the two agree over every linked program the
-    /// demonstration bundle carries. It relies on nothing shared yet:
-    /// `walk_program` stays, and a later slice retires it once the
-    /// equivalence is depended upon rather than merely shown.
+    /// This began as a side-by-side test against a private `walk_program`
+    /// that validated each prefix itself. That private walk is retired —
+    /// `walk_program` now reads `tapscript::program_stack_profile` — so what
+    /// is left is a direct test of the shared analysis over every linked
+    /// program the demonstration bundle carries, which is the widest set of
+    /// real programs in the workspace.
+    ///
+    /// The two assertions are the study's own standing facts rather than a
+    /// restatement of the analysis: every live leaf drives its main stack
+    /// somewhere, and none of them moves an item to the alternate stack.
+    /// The second is §18.3's zero, checked rather than assumed.
     #[test]
-    fn the_public_profile_matches_the_private_walk_over_every_linked_live_program() {
+    fn the_shared_analysis_profiles_every_linked_live_program() {
         use crate::live_plan::{demonstration_live_bundle, reviewed_target};
         use tapscript::{AbstractLimits, live_program_precondition, program_stack_profile};
 
         let target = reviewed_target().expect("the reviewed contract validates");
         let bundle = demonstration_live_bundle().expect("the demonstration bundle links");
 
-        let mut compared = 0_u32;
+        let mut profiled = 0_u32;
         for constructor in bundle.constructors().values() {
             for linked in constructor.programs().values() {
-                let program = linked.program();
-                let walk = super::walk_program(&target, program);
                 let profile = program_stack_profile(
                     &target,
-                    program,
+                    linked.program(),
                     &live_program_precondition(&target),
                     AbstractLimits::for_target(&target),
                 );
-                assert_eq!(profile.peak_main(), walk.peak_main);
-                assert_eq!(profile.peak_alternate(), walk.peak_alternate);
-                compared += 1;
+                assert!(
+                    profile.peak_main() > 0,
+                    "every live leaf drives its main stack",
+                );
+                assert_eq!(profile.peak_alternate(), 0);
+                profiled += 1;
             }
         }
         assert!(
-            compared > 0,
-            "the demonstration bundle carries linked programs to compare",
+            profiled > 0,
+            "the demonstration bundle carries linked programs to profile",
         );
     }
 

@@ -39,7 +39,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use tapscript::instruction::{StackItem, TapscriptInstruction};
 use tapscript::program::TapscriptProgram;
-use tapscript::stack::{AbstractLimits, AbstractStackState, resource_projection, validate_program};
+use tapscript::stack::{
+    AbstractLimits, AbstractStackState, program_stack_profile, resource_projection,
+    validate_program,
+};
 use target_elements::{
     EncodingClass, OpcodeId, PayloadWidth, ResourceDimension, ReviewedElementsTapscriptDefinition,
     StackValueType, TargetContractVersion,
@@ -1027,7 +1030,17 @@ fn project_resources(
     PrototypeResourceProjection {
         script_bytes,
         witness_bytes,
-        peak_main_stack: peak_main_stack(target, program, initial),
+        // The shared analysis beside the abstract evaluator, not a
+        // prefix walk of this package's own: the peak is the same figure
+        // it always was, read now from the one implementation every
+        // consumer reads it from.
+        peak_main_stack: program_stack_profile(
+            target,
+            program,
+            initial,
+            AbstractLimits::for_target(target),
+        )
+        .peak_main(),
         largest_element_bytes: widest,
         hash_operations,
         curve_operations,
@@ -1085,37 +1098,6 @@ fn serialized_witness_bytes(
     total
 }
 
-/// The greatest main-stack depth any reachable state holds.
-///
-/// Measured by validating each prefix of the program and taking the
-/// deepest state any of them reaches, so the number is the validator's
-/// rather than a hand count of pushes and pops.
-fn peak_main_stack(
-    target: &ReviewedElementsTapscriptDefinition,
-    program: &TapscriptProgram,
-    initial: &AbstractStackState,
-) -> u64 {
-    let mut peak = u64::try_from(initial.main().len()).unwrap_or(0);
-    for length in 1..=program.len() {
-        let Ok(prefix) = TapscriptProgram::new(program.instructions()[..length].to_vec()) else {
-            continue;
-        };
-        let Ok(outcome) =
-            validate_program(target, &prefix, initial, AbstractLimits::for_target(target))
-        else {
-            continue;
-        };
-        for state in outcome
-            .success()
-            .iter()
-            .chain(outcome.nonaborting_failure())
-        {
-            peak = peak.max(u64::try_from(state.main().len()).unwrap_or(0));
-        }
-    }
-    peak
-}
-
 /// Compares each measured dimension against the bound the reviewed
 /// contract states for it.
 ///
@@ -1152,67 +1134,69 @@ fn check_resource_bounds(
 }
 
 #[cfg(test)]
-mod program_stack_profile_equivalence {
-    //! The shared public analysis reads the same peak this package
-    //! measures privately.
+mod program_stack_profile_over_the_prototypes {
+    //! The shared analysis, read directly over the programs this package
+    //! builds.
     //!
-    //! The private `peak_main_stack` wrapper validates each prefix of a
-    //! program and takes the deepest main stack any of them reaches. The
-    //! public `tapscript::program_stack_profile` walks the same prefixes
-    //! and returns that peak among its dimensions. These tests demonstrate
-    //! the two agree over the prototypes this package builds; nothing here
-    //! retires the wrapper, which a later slice does once the equivalence
-    //! is relied upon rather than merely shown.
+    //! These began as side-by-side tests against a private `peak_main_stack`
+    //! wrapper that walked the prefixes itself. The wrapper is retired and
+    //! the projection now reads
+    //! [`tapscript::stack::program_stack_profile`], so what is left is a
+    //! direct test of the shared analysis over two real prototypes — richer
+    //! programs than any fixture the analysis carries beside itself. The
+    //! anchors are the ones the equivalence tests carried, kept because a
+    //! shared analysis that agreed with itself on the wrong number would
+    //! still have to fail here.
+    //!
+    //! The alternate peak is asserted for the reason it is measured at all:
+    //! no reviewed primitive moves an item across, so a prototype starting
+    //! with an empty alternate stack must end with one, and a future
+    //! primitive that moved items would show up here rather than silently.
 
-    use super::{PrototypeProgram, peak_main_stack};
-    use tapscript::stack::{AbstractLimits, program_stack_profile};
+    use super::PrototypeProgram;
+    use tapscript::stack::{AbstractLimits, ProgramStackProfile, program_stack_profile};
     use target_elements::{ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript};
 
     fn target() -> ReviewedElementsTapscriptDefinition {
         reviewed_elements_tapscript().expect("the reviewed contract validates")
     }
 
-    fn public_peak_main(
+    fn profile(
         target: &ReviewedElementsTapscriptDefinition,
         program: &PrototypeProgram,
-    ) -> u64 {
+    ) -> ProgramStackProfile {
         program_stack_profile(
             target,
             program.program(),
             program.initial_stack(),
             AbstractLimits::for_target(target),
         )
-        .peak_main()
     }
 
     #[test]
-    fn the_public_profile_matches_the_private_peak_on_the_continuity_prototype() {
+    fn the_shared_analysis_reports_the_continuity_prototypes_own_peak() {
         let target = target();
         let prototype =
             PrototypeProgram::continuity(&target).expect("the continuity prototype is admitted");
 
-        let private = peak_main_stack(&target, prototype.program(), prototype.initial_stack());
-        let public = public_peak_main(&target, &prototype);
+        let profile = profile(&target, &prototype);
 
-        assert_eq!(public, private);
-        // Anchored to the canonical measurement this prototype reports, so
-        // an equivalence that agreed on the wrong number would still fail.
-        assert_eq!(private, 9);
+        assert_eq!(profile.peak_main(), 9);
+        assert_eq!(profile.peak_alternate(), 0);
     }
 
     #[test]
-    fn the_public_profile_matches_the_private_peak_on_the_wide_floor_prototype() {
+    fn the_shared_analysis_reports_the_wide_floor_prototypes_own_peak() {
         let target = target();
         let prototype =
             PrototypeProgram::wide_floor(&target).expect("the wide-floor prototype is admitted");
 
-        let private = peak_main_stack(&target, prototype.program(), prototype.initial_stack());
-        let public = public_peak_main(&target, &prototype);
+        let profile = profile(&target, &prototype);
 
-        assert_eq!(public, private);
         assert!(
-            private >= 5,
+            profile.peak_main() >= 5,
             "the wide-floor construction settles five witnessed amounts"
         );
+        assert_eq!(profile.peak_alternate(), 0);
     }
 }
