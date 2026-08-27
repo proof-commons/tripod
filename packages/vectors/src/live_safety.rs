@@ -1036,11 +1036,22 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
     // §7.5 admits no key-path escape, and the internal key is the
     // published unspendable one. A key-path spend is expressible only in
     // raw bytes and the target is what refuses it.
+    //
+    // DECLARED BOUNDARY CORRECTED BY ERRATUM (`R5-010`). This row was
+    // transcribed against `B::ScriptPathRejection`, and the internal-key
+    // probe's phase B showed that layer is one this row can never reach:
+    // a key-path spend offers a signature with no leaf script and no
+    // control block, so nothing this workspace wrote runs. The declared
+    // boundary is now `B::KeyPathRejection`, the member minted for it on
+    // the twelfth boundary member's precedent. The row's ANSWER does not
+    // move — it was already an observed refusal against an accepted
+    // control on the same chain — and no observation is reclassified;
+    // what corrects is the layer the row said it expected.
     no_class(
         S::ObjectFault,
         "key-path-escape",
         L::WitnessProof,
-        B::ScriptPathRejection,
+        B::KeyPathRejection,
     ),
     no_class(
         S::ObjectFault,

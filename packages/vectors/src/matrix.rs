@@ -196,6 +196,26 @@ impl MutationLayer {
 /// [`Self::AbiConstructionRejection`] — whose wording covers "the ABI or
 /// the constructor" — would have hidden that ordering behind a label
 /// that also names a boundary three stages downstream.
+///
+/// # The thirteenth member is this workspace's too, and it names another
+///
+/// [`Self::KeyPathRejection`] is not one of §1.5's eleven either, and it
+/// is minted on the twelfth member's precedent for the same kind of
+/// mistranscription. Guide-13 §15.4's `key-path-escape` was transcribed
+/// against [`Self::ScriptPathRejection`], and a key-path spend runs NO
+/// script: it offers a signature with no leaf script and no control
+/// block, so no covenant clause this workspace wrote is ever reached.
+/// Declaring the script path as that row's expected boundary named a
+/// layer the row can never arrive at, and a row whose declared boundary
+/// is unreachable can be "passed" only by a verdict from somewhere else.
+/// The observed side had already been separated — the internal-key
+/// probe's phase B minted `ObservedOutcomeLayer::KeyPathRejection` and
+/// taught the adapter to tell the two apart from the witness the bytes
+/// carry and the programs the spent outputs pay, rather than from the
+/// refusal text, which wears one wrapper for both — and this member is
+/// the declared side catching up. Retyping a matrix row is an erratum
+/// owed to a recorded decision, and this one is recorded as
+/// `R5-010` in backlog §5.10.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum EvidenceBoundary {
     /// The typed semantic request is refused.
@@ -214,6 +234,8 @@ pub enum EvidenceBoundary {
     ExecutorInfrastructureFailure,
     /// The target refuses before any script runs.
     ConsensusRejectionBeforeScript,
+    /// The target refuses a key-path spend, no script having run.
+    KeyPathRejection,
     /// The covenant script path refuses.
     ScriptPathRejection,
     /// The target accepts for consensus and relay policy refuses.
@@ -235,6 +257,7 @@ impl EvidenceBoundary {
         Self::AbiConstructionRejection,
         Self::ExecutorInfrastructureFailure,
         Self::ConsensusRejectionBeforeScript,
+        Self::KeyPathRejection,
         Self::ScriptPathRejection,
         Self::RelayPolicyRejection,
         Self::AcceptedTransaction,
@@ -251,6 +274,7 @@ impl EvidenceBoundary {
         matches!(
             self,
             Self::ConsensusRejectionBeforeScript
+                | Self::KeyPathRejection
                 | Self::ScriptPathRejection
                 | Self::RelayPolicyRejection
                 | Self::AcceptedTransaction
@@ -1448,15 +1472,21 @@ mod tests {
                 "{boundary:?} falls into no single §1.5 class"
             );
         }
-        // Eleven from §1.5, plus the constructor-derivation layer this
-        // workspace minted for Guide-13 §15.4's erratum. The two counts
-        // are kept apart so that a member added for one guide cannot be
-        // read as a member the other guide named.
-        assert_eq!(EvidenceBoundary::ALL.len(), 12);
+        // Eleven from §1.5, plus the TWO layers this workspace minted
+        // for Guide-13 §15.4's errata: the constructor-derivation layer
+        // and the key-path layer. The counts are kept apart so that a
+        // member added for one guide cannot be read as a member the
+        // other guide named, and so the minted set has to be enumerated
+        // rather than absorbed into the §1.5 figure.
+        assert_eq!(EvidenceBoundary::ALL.len(), 13);
+        let minted = BTreeSet::from([
+            EvidenceBoundary::ConstructorDerivationRejection,
+            EvidenceBoundary::KeyPathRejection,
+        ]);
         assert_eq!(
             EvidenceBoundary::ALL
                 .iter()
-                .filter(|boundary| **boundary != EvidenceBoundary::ConstructorDerivationRejection)
+                .filter(|boundary| !minted.contains(boundary))
                 .count(),
             11,
             "§1.5 names eleven layers",
@@ -1504,7 +1534,10 @@ mod tests {
         // §18.10's unreachable-carrier class. The constructor-derivation
         // boundary joins them here because §18 never names it: it was
         // minted for Guide-13 §15.4. Recording which boundaries the
-        // matrix leaves empty is the point of this assertion.
+        // matrix leaves empty is the point of this assertion. The
+        // key-path boundary joins them for the same reason the
+        // constructor-derivation one does: it was minted for Guide-13
+        // §15.4, and §18 never names it.
         let unexercised: BTreeSet<EvidenceBoundary> = EvidenceBoundary::ALL
             .iter()
             .copied()
@@ -1515,6 +1548,7 @@ mod tests {
             BTreeSet::from([
                 EvidenceBoundary::SemanticRequestRejection,
                 EvidenceBoundary::ConstructorDerivationRejection,
+                EvidenceBoundary::KeyPathRejection,
             ]),
             "the set of boundaries §18 never reaches has changed"
         );

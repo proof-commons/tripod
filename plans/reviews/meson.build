@@ -10,4 +10,5 @@ plans_reviews_files = files(
   'review-6-0.3.4-dev.md',
   'review-7-0.3.6-dev.md',
   'review-8-0.4.2-dev.md',
+  'review-9-0.5.17-dev.md',
 )

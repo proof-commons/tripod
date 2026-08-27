@@ -418,6 +418,7 @@ fn matches_boundary(expected: EvidenceBoundary, observed: ObservedOutcomeLayer) 
         EvidenceBoundary::ConsensusRejectionBeforeScript => {
             ObservedOutcomeLayer::ConsensusRejectionBeforeScript
         }
+        EvidenceBoundary::KeyPathRejection => ObservedOutcomeLayer::KeyPathRejection,
         EvidenceBoundary::ScriptPathRejection => ObservedOutcomeLayer::ScriptPathRejection,
         EvidenceBoundary::RelayPolicyRejection => ObservedOutcomeLayer::RelayPolicyRejection,
         EvidenceBoundary::AcceptedTransaction => ObservedOutcomeLayer::Accepted,
