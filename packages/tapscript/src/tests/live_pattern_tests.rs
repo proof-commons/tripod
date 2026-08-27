@@ -40,7 +40,8 @@ use crate::authorization::{
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::live_constructor::{
     LiveProgramRole, OwnerKey, OwnerKeyRejection, StaticLiveReceiptConstructor,
-    derive_live_receipt_constructor, static_transfer_leaf_set,
+    derive_live_receipt_constructor, derive_live_receipt_constructor_composing,
+    static_transfer_leaf_set,
 };
 use crate::live_pattern::{
     CoordinatorGlobalCheck, FinalStackDefect, GlobalCheckPlacement, GlobalCheckStatus,
@@ -172,6 +173,26 @@ fn constructor(representation: LiveTransferRepresentationPlan) -> StaticLiveRece
 /// The explicit-plan reference constructor.
 fn explicit() -> StaticLiveReceiptConstructor {
     constructor(LiveTransferRepresentationPlan::Explicit)
+}
+
+/// The reference constructor for one transfer composition.
+///
+/// # Panics
+///
+/// If the reference parts stop deriving a constructor, which would make
+/// the fixture rather than the census the thing under test.
+fn composing(composition: LiveTransferComposition) -> StaticLiveReceiptConstructor {
+    let shapes = demonstration_live_shape_set();
+
+    derive_live_receipt_constructor_composing(
+        &reviewed_target(),
+        &live_transfer_plan(),
+        composition,
+        owner(0x11),
+        shapes.clone(),
+        static_transfer_leaf_set(composition.consumed(), &shapes),
+    )
+    .expect("the reference composition derives")
 }
 
 /// Whether `whole` carries `part` as a contiguous run.
@@ -890,6 +911,23 @@ fn the_coordinator_role_carries_the_counts_and_the_member_role_does_not() {
         assert!(fragments.contains(&LiveFragmentId::LocalRecognition));
         assert!(fragments.contains(&LiveFragmentId::OwnerAuthorization));
     }
+}
+
+#[test]
+fn entry_blinding_census_names_the_created_private_form() {
+    let constructor = composing(LiveTransferComposition::EntryBlinding);
+    let fragments = emitted_fragments(LiveProgramRole::Coordinator, constructor.representation());
+
+    assert!(fragments.contains(&LiveFragmentId::PrivateDestinationForm));
+    assert!(!fragments.contains(&LiveFragmentId::ExplicitConservation));
+}
+
+#[test]
+fn exit_unblinding_census_does_not_name_the_homogeneous_private_form() {
+    let constructor = composing(LiveTransferComposition::ExitUnblinding);
+    let fragments = emitted_fragments(LiveProgramRole::Coordinator, constructor.representation());
+
+    assert!(!fragments.contains(&LiveFragmentId::PrivateDestinationForm));
 }
 
 // --- §1.6: three signatures from one owner are not three owners -------
