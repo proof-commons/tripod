@@ -800,6 +800,28 @@ mod tests {
     }
 
     #[test]
+    fn stop_status_excludes_ledger_owned_commentary() {
+        fn stopped(because: &str) -> RestartLedger {
+            let mut ledger = RestartLedger::new();
+            ledger
+                .record(
+                    RestartStep::AcceptedSponsorlessControl,
+                    RecordedStepResult::StoppedTyped {
+                        blocker: LiveInfrastructureBlocker::NoAcceptingControlExists,
+                        because: because.to_owned(),
+                    },
+                )
+                .expect("the stop records");
+            ledger
+        }
+
+        assert_eq!(
+            stopped("first explanation").status(),
+            stopped("different explanation").status(),
+        );
+    }
+
+    #[test]
     fn a_control_the_target_did_not_accept_cannot_ground_an_attribution() {
         for layer in [
             ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
