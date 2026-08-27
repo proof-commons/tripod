@@ -1303,9 +1303,14 @@ fn assert_mutant_and_control_match_the_record(
     use vectors::live_owner_signing_negatives::run_of_record;
 
     let mutant = record.mutant().expect("the mutant was built and submitted");
+    // BOUND to the run of record's own typed layer rather than to a
+    // literal written here. The constant is what the live evidence
+    // classifier compares against a row's declared boundary, so a run
+    // whose layer moved must fail here — where the transcript is already
+    // on disk — rather than silently disagreeing with the classifier.
     assert_eq!(
         mutant.observed_layer(),
-        Some(ObservedOutcomeLayer::ScriptPathRejection),
+        Some(run_of_record::MUTANT_OBSERVED_LAYER),
         "the bare-u mutant was not refused at the script path",
     );
     assert_eq!(
@@ -1380,7 +1385,6 @@ fn assert_leaf_arrangements_drive(
     record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
 ) {
     use std::collections::BTreeSet;
-    use target_elements_conformance::protocol::ObservedOutcomeLayer;
     use vectors::live_owner_signing_negatives::{LeafArrangementObservation, run_of_record};
     let arrangements = record.leaf_arrangements();
     assert_eq!(
@@ -1409,9 +1413,18 @@ fn assert_leaf_arrangements_drive(
             .iter()
             .find(|(row, ..)| *row == mutant.row())
             .expect("every built mutant is a recorded row");
+        // BOUND per row to that row's own recorded layer constant, not
+        // to one literal covering both: the two rows are separate
+        // observations and a shared literal would hide a run in which
+        // only one of them moved.
+        let recorded_layer = match mutant.row() {
+            "two-coordinators" => run_of_record::TWO_COORDINATORS_OBSERVED_LAYER,
+            "no-coordinator" => run_of_record::NO_COORDINATOR_OBSERVED_LAYER,
+            other => panic!("{other} is not a recorded leaf-arrangement row"),
+        };
         assert_eq!(
             mutant.observed_layer(),
-            Some(ObservedOutcomeLayer::ScriptPathRejection),
+            Some(recorded_layer),
             "{} was not refused at the script path",
             mutant.row(),
         );
@@ -1523,7 +1536,6 @@ fn assert_consensus_mutants_separate(
     record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
 ) {
     use std::collections::BTreeSet;
-    use target_elements_conformance::protocol::ObservedOutcomeLayer;
     use vectors::live_owner_signing_negatives::{ConsensusMutantObservation, run_of_record};
     let consensus = record.consensus_mutants();
     assert_eq!(consensus.len(), 7, "the seven consensus mutants were built");
@@ -1548,9 +1560,13 @@ fn assert_consensus_mutants_separate(
             .iter()
             .find(|(row, _)| *row == mutant.row())
             .expect("every built mutant is a recorded row");
+        // BOUND to the consensus layer constant the seven rows' retype
+        // rests on. If a rerun ever answered these at the script path
+        // instead, this fails and the retype is revisited by ruling
+        // rather than by drift.
         assert_eq!(
             mutant.observed_layer(),
-            Some(ObservedOutcomeLayer::ConsensusRejectionBeforeScript),
+            Some(run_of_record::CONSENSUS_MUTANT_OBSERVED_LAYER),
             "{} was not refused at consensus before script",
             mutant.row(),
         );
@@ -1864,7 +1880,7 @@ fn assert_the_verdicts_match_the_run_of_record(
     let observation = record.observation().expect("the attempt was answered");
     assert_eq!(
         observation.layer(),
-        ObservedOutcomeLayer::KeyPathRejection,
+        run_of_record_phase_b::REFUSAL_OBSERVED_LAYER,
         "the attempt was not refused at the key path",
     );
     assert_eq!(
