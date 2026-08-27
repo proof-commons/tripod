@@ -80,7 +80,8 @@ use crate::live_first_party::{
 };
 use crate::live_plan::{demonstration_live_abi, demonstration_live_bundle, live_transfer_plan};
 use crate::live_safety::{
-    LiveRowLink, LiveSafetyRow, LiveSafetySection, required_safety_matrix, resolve_row,
+    LiveRelationStanding, LiveReportRequirement, LiveRowLink, LiveSafetyRow, LiveSafetySection,
+    LiveUnlinkedReason, required_safety_matrix, resolve_row,
 };
 use crate::matrix::EvidenceBoundary;
 use crate::observed_boundary::observed_boundary;
@@ -536,15 +537,15 @@ pub enum FirstPartyGap {
 ///
 /// Two vocabularies, because the matrix's pre-target rows are owned by
 /// two different censuses: §15.3's owner and signature faults reach one
-/// of two signing-flow entry points, and §15.4–§15.7's reach one of five
-/// spread across three crates. Collapsing them would lose the fact a
-/// coverage reader wants, which is *what* refused.
+/// of two signing-flow entry points, and §15.4–§15.7's reach the entry
+/// points named by [`LiveFaultValidator`]. Collapsing them would lose the
+/// fact a coverage reader wants, which is *what* refused.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum DischargingValidator {
     /// One of §12.7's two owner-authorization entry points.
     OwnerAuthorization(LiveFirstPartyValidator),
-    /// One of the seven §15.4–§15.7 fault entry points.
+    /// A §15.4–§15.7 fault entry point.
     Fault(LiveFaultValidator),
 }
 
@@ -861,9 +862,10 @@ pub enum LiveRowStanding {
     ///
     /// §15.6's two report rows, which no target can answer and no
     /// validator refuses: what they ask is whether the canonical
-    /// serialization published a sponsor amount or an opening, and the
-    /// answer is a property of the rendered bytes.
-    ReportLayerAnswerable,
+    /// serialization published a sponsor amount or an opening. This
+    /// standing carries that exact requirement; it is not evidence and
+    /// [`Self::is_answered`] is false until report validation observes it.
+    ReportLayerRequired(LiveReportRequirement),
     /// No layer answers the row, because no input names its fault.
     ///
     /// §4.2's other honest disposition, taken. Its last sentence puts a
@@ -927,7 +929,6 @@ impl LiveRowStanding {
                 // which is why it stands in its own member and counts in
                 // its own bucket.
                 | Self::FirstPartyFactObserved { .. }
-                | Self::ReportLayerAnswerable
         )
     }
 
@@ -974,7 +975,8 @@ pub struct LiveEvidenceCensus {
     paired_relation_observed: usize,
     first_party_fact_observed: usize,
     infrastructure_blocked: usize,
-    report_layer: usize,
+    report_layer_required: usize,
+    report_layer_observed: usize,
     vocabulary_closed: usize,
     experimental: usize,
 }
@@ -1103,10 +1105,29 @@ impl LiveEvidenceCensus {
         self.infrastructure_blocked
     }
 
-    /// How many rows the report's own bytes answer.
+    /// How many rows still require validation against the report's bytes.
     #[must_use]
-    pub const fn report_layer(&self) -> usize {
-        self.report_layer
+    pub const fn report_layer_required(&self) -> usize {
+        self.report_layer_required
+    }
+
+    /// How many rows validated canonical report bytes answer.
+    #[must_use]
+    pub const fn report_layer_observed(&self) -> usize {
+        self.report_layer_observed
+    }
+
+    /// Move every report-layer requirement into the observed bucket.
+    pub(crate) const fn with_validated_report_layer_observations(
+        mut self,
+        observed: usize,
+    ) -> Option<Self> {
+        if self.report_layer_observed != 0 || self.report_layer_required != observed {
+            return None;
+        }
+        self.report_layer_required = 0;
+        self.report_layer_observed = observed;
+        Some(self)
     }
 
     /// How many rows no layer answers because no input names them.
@@ -1127,11 +1148,11 @@ impl LiveEvidenceCensus {
 
     /// Whether every required row is answered.
     ///
-    /// §13.5's bar. False while any row is waiting on a run or blocked on
-    /// a component, which is what stops a report built on this plan from
-    /// calling itself complete.
+    /// §13.5's bar. False while any row is waiting on a run, waiting on
+    /// report-byte validation, or blocked on a component, which is what
+    /// stops a report built on this plan from calling itself complete.
     ///
-    /// [`Self::vocabulary_closed`] is not among the three, and that is
+    /// [`Self::vocabulary_closed`] is not among those conditions, and that is
     /// §4.2's own instruction rather than leniency: a requirement whose
     /// policy cannot be met belongs outside the denominator instead of
     /// permanently outstanding inside it. Leaving it in would make the
@@ -1152,6 +1173,7 @@ impl LiveEvidenceCensus {
             && self.infrastructure_blocked == 0
             && self.first_party_undischarged == 0
             && self.native_refusal_at_unexpected_boundary == 0
+            && self.report_layer_required == 0
     }
 
     /// A census whose only outstanding condition is ONE wrong-boundary
@@ -1183,7 +1205,8 @@ impl LiveEvidenceCensus {
             paired_relation_observed: 0,
             first_party_fact_observed: 0,
             infrastructure_blocked: 0,
-            report_layer: 0,
+            report_layer_required: 0,
+            report_layer_observed: 0,
             vocabulary_closed: 0,
             experimental: 0,
         }
@@ -1973,12 +1996,14 @@ fn classify(
     // The row no layer answers, before anything else: it is not
     // discharged, not blocked, and not waiting on a run, and every later
     // branch here presumes a layer was asked.
+    if let LiveRelationStanding::Unlinked(LiveUnlinkedReason::ReportIsTheBoundary(requirement)) =
+        row.relation()
+    {
+        return Ok(LiveRowStanding::ReportLayerRequired(*requirement));
+    }
     let Some(boundary) = row.refusing_layer() else {
         return Ok(LiveRowStanding::OperationVocabularyClosed);
     };
-    if boundary == EvidenceBoundary::ReportSemanticProjectionRejection {
-        return Ok(LiveRowStanding::ReportLayerAnswerable);
-    }
     if let Some((validator, class)) = discharged.get(row.name()) {
         return Ok(LiveRowStanding::FirstPartyDischarged {
             validator: *validator,
@@ -2190,7 +2215,7 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
                 census.first_party_fact_observed += 1;
             }
             LiveRowStanding::InfrastructureBlocked(_) => census.infrastructure_blocked += 1,
-            LiveRowStanding::ReportLayerAnswerable => census.report_layer += 1,
+            LiveRowStanding::ReportLayerRequired(_) => census.report_layer_required += 1,
             LiveRowStanding::OperationVocabularyClosed => census.vocabulary_closed += 1,
             LiveRowStanding::Experimental => census.experimental += 1,
         }
@@ -2441,7 +2466,7 @@ mod tests {
         ObservedOutcomeLayer, RecordedObservation, blocker_census, derive_live_evidence_plan,
         observed_boundary,
     };
-    use crate::live_safety::{LiveSafetyPolarity, LiveSafetySection};
+    use crate::live_safety::{LiveReportRequirement, LiveSafetyPolarity, LiveSafetySection};
     use std::collections::BTreeSet;
 
     #[test]
@@ -2503,7 +2528,8 @@ mod tests {
                 + census.native_refusal_observed()
                 + census.native_refusal_at_unexpected_boundary()
                 + census.infrastructure_blocked()
-                + census.report_layer()
+                + census.report_layer_required()
+                + census.report_layer_observed()
                 + census.vocabulary_closed()
                 + census.experimental(),
             108,
@@ -2617,7 +2643,8 @@ mod tests {
                 + census.native_refusal_observed()
                 + census.native_refusal_at_unexpected_boundary()
                 + census.infrastructure_blocked()
-                + census.report_layer()
+                + census.report_layer_required()
+                + census.report_layer_observed()
                 + census.vocabulary_closed()
                 + census.experimental(),
             census.rows(),
@@ -3159,7 +3186,7 @@ mod tests {
     }
 
     #[test]
-    fn the_partition_is_forty_answered_one_closed_and_sixty_seven_outstanding() {
+    fn the_partition_is_thirty_eight_answered_two_report_required_and_sixty_nine_outstanding() {
         // FORWARD BINDING ONLY, under the owner ruling recorded by T6-002.
         // The 42 target-derived rows preserve their observations, but the
         // tree does not retain the exact request bytes, disposable deployment
@@ -3173,16 +3200,18 @@ mod tests {
             .filter(|row| row.standing().is_answered())
             .count();
 
-        assert_eq!(answered, 40, "the answered count moved");
+        assert_eq!(answered, 38, "the answered count moved");
         assert_eq!(census.first_party_discharged(), 34);
         assert_eq!(census.determinism_observed(), 1);
         assert_eq!(census.first_party_fact_observed(), 3);
-        assert_eq!(census.report_layer(), 2);
+        assert_eq!(census.report_layer_required(), 2);
+        assert_eq!(census.report_layer_observed(), 0);
         assert_eq!(census.vocabulary_closed(), 1);
         assert_eq!(census.native_run_required(), 25, "the required count moved");
         assert_eq!(census.recorded_observation_unbound(), 42);
         assert_eq!(
             answered
+                + census.report_layer_required()
                 + census.vocabulary_closed()
                 + census.native_run_required()
                 + census.recorded_observation_unbound(),
@@ -3381,11 +3410,48 @@ mod tests {
     }
 
     #[test]
-    fn the_two_report_rows_are_the_ones_the_report_bytes_answer() {
+    fn the_two_report_rows_are_requirements_not_plan_answers() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
-        assert_eq!(plan.census().report_layer(), 2);
-        let per_section = plan
-            .section_census(|standing| matches!(standing, LiveRowStanding::ReportLayerAnswerable));
-        assert_eq!(per_section[&LiveSafetySection::SponsorFault], 2);
+        assert_eq!(plan.census().report_layer_required(), 2);
+        assert_eq!(plan.census().report_layer_observed(), 0);
+        for (name, requirement) in [
+            (
+                "report-publishes-sponsor-amount",
+                LiveReportRequirement::SponsorAmountAbsent,
+            ),
+            (
+                "report-publishes-sponsor-opening",
+                LiveReportRequirement::SponsorOpeningAbsent,
+            ),
+        ] {
+            let row = plan
+                .rows()
+                .iter()
+                .find(|row| row.row().name() == name)
+                .expect("the report requirement is in the matrix");
+            assert!(!row.standing().is_answered(), "{name} is a plan answer");
+            assert_eq!(
+                row.standing(),
+                &LiveRowStanding::ReportLayerRequired(requirement),
+            );
+            assert_eq!(row.row().section(), LiveSafetySection::SponsorFault);
+        }
+    }
+
+    #[test]
+    fn a_report_requirement_prevents_completeness_until_it_is_observed() {
+        let required = super::LiveEvidenceCensus {
+            rows: 1,
+            report_layer_required: 1,
+            ..super::LiveEvidenceCensus::default()
+        };
+        assert!(!required.every_required_row_is_answered());
+
+        let observed = required
+            .with_validated_report_layer_observations(1)
+            .expect("the one report requirement is observed");
+        assert_eq!(observed.report_layer_required(), 0);
+        assert_eq!(observed.report_layer_observed(), 1);
+        assert!(observed.every_required_row_is_answered());
     }
 }

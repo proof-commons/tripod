@@ -132,11 +132,12 @@ pub use live_plan::{
 };
 pub use live_report::{
     LIVE_SAFETY_REPORT_SCHEMA, LiveDeploymentBinding, LiveExecutorProvenance, LiveLifecycleStatus,
-    LiveRecordedObservation, LiveReportObservation, LiveRunBinding, LiveSafetyCompleteness,
-    LiveSafetyDiagnostics, LiveSafetyReportRefusal, LiveSafetyReportRole, LiveTargetResponse,
-    LiveTransferSafetyReport, RecomputedItem, ValidatedLiveTransferSafetyReport, VolatileField,
-    assemble_live_safety_report, canonical_bytes_publish_no_sponsor_value,
-    render_live_safety_report, section_scoreboard, validate_live_safety_report,
+    LiveRecordedObservation, LiveReportLayerRequirement, LiveReportObservation, LiveRunBinding,
+    LiveSafetyCompleteness, LiveSafetyDiagnostics, LiveSafetyReportRefusal, LiveSafetyReportRole,
+    LiveTargetResponse, LiveTransferSafetyReport, RecomputedItem,
+    ValidatedLiveTransferSafetyReport, ValidatedReportLayerObservation, VolatileField,
+    assemble_live_safety_report, render_live_safety_report, section_scoreboard,
+    validate_live_safety_report,
 };
 pub use live_resource_report::{
     CandidateBoundsResult, LIVE_RESOURCE_REPORT_SCHEMA, LIVE_RESOURCE_SCHEMA_ID,
@@ -153,9 +154,9 @@ pub use live_resources::{
     research_bound_assignments, tree_admission,
 };
 pub use live_safety::{
-    LiveRelationStanding, LiveRowBoundary, LiveRowLink, LiveSafetyPolarity, LiveSafetyRow,
-    LiveSafetySection, LiveUnlinkedReason, required_safety_matrix, resolve_row, row_count,
-    section_census,
+    LiveRelationStanding, LiveReportRequirement, LiveRowBoundary, LiveRowLink, LiveSafetyPolarity,
+    LiveSafetyRow, LiveSafetySection, LiveUnlinkedReason, required_safety_matrix, resolve_row,
+    row_count, section_census,
 };
 pub use materialize::{
     SponsorCoin, SponsorSigningTask, has_candidate_program, materialize_sponsored,
