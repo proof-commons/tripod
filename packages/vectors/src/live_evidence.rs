@@ -2375,6 +2375,41 @@ mod tests {
         assert_ne!(relation.len(), 0, "the standing observed nothing");
     }
 
+    /// The positive rows a run of their OWN SHAPE answered.
+    ///
+    /// Spelled rather than derived so that a row moved by an edit and
+    /// not by a run fails the assertion that reads it. That is the whole
+    /// point: a delta that could grow quietly is a delta nobody is
+    /// checking.
+    fn rows_answered_by_a_run_of_their_own_shape() -> BTreeSet<&'static str> {
+        BTreeSet::from([
+            "both-commitment-parity-forms",
+            "candidate-maximum-inputs",
+            "candidate-maximum-outputs",
+            "canonical-input-normalization",
+            "one-destination-owner",
+            "one-input-split-into-two",
+            "one-input-to-one-output",
+            "private-many-to-many-representative",
+            "private-sponsor-values",
+            "private-merge",
+            "private-one-to-one",
+            "private-several-distinct-owners",
+            "private-split",
+            "repeated-owner",
+            "semantic-boundary-values",
+            "several-destination-owners",
+            "several-distinct-owners",
+            "several-inputs-merged-into-one",
+            "several-inputs-to-several-outputs",
+            "sponsor-change-absent",
+            "sponsor-change-present",
+            "sponsored",
+            "sponsorless",
+            "target-ct-conservation",
+        ])
+    }
+
     #[test]
     fn exactly_the_positive_rows_a_run_answered_are_answered() {
         // The wave's delta, held as a test rather than written in a
@@ -2474,35 +2509,7 @@ mod tests {
             }
         }
         assert_eq!(positives, 26, "both positive tables together");
-        assert_eq!(
-            answered,
-            BTreeSet::from([
-                "both-commitment-parity-forms",
-                "candidate-maximum-inputs",
-                "candidate-maximum-outputs",
-                "canonical-input-normalization",
-                "one-destination-owner",
-                "one-input-split-into-two",
-                "one-input-to-one-output",
-                "private-many-to-many-representative",
-                "private-sponsor-values",
-                "private-merge",
-                "private-one-to-one",
-                "private-several-distinct-owners",
-                "private-split",
-                "repeated-owner",
-                "semantic-boundary-values",
-                "several-destination-owners",
-                "several-distinct-owners",
-                "several-inputs-merged-into-one",
-                "several-inputs-to-several-outputs",
-                "sponsor-change-absent",
-                "sponsor-change-present",
-                "sponsored",
-                "sponsorless",
-                "target-ct-conservation",
-            ]),
-        );
+        assert_eq!(answered, rows_answered_by_a_run_of_their_own_shape());
         assert_eq!(plan.census().native_run_observed(), 24);
 
         // The positive private class that did NOT move is named here
