@@ -979,15 +979,22 @@ impl TargetOperationPlanner for KeyPathProbePlanner {
                 }
                 Err(refusal) => Err(self.refuse(refusal)),
             },
-            Stage::Control => match self.record.control.as_ref() {
-                Some(control) => Ok(Some(OperationStep::new(
+            Stage::Control => {
+                let held = self
+                    .record
+                    .control
+                    .as_ref()
+                    .map(|control| control.submitted_bytes.clone());
+                let Some(bytes) = held else {
+                    return Err(self.refuse(KeyPathProbeRefusal::ControlNotAuthorizable));
+                };
+                Ok(Some(OperationStep::new(
                     CONTROL_STEP,
                     OperationSubject::Submission(Box::new(TargetSubmissionSubject {
-                        transaction_bytes: control.submitted_bytes.clone(),
+                        transaction_bytes: bytes,
                     })),
-                ))),
-                None => Err(self.refuse(KeyPathProbeRefusal::ControlNotAuthorizable)),
-            },
+                )))
+            }
             Stage::Done => Ok(None),
         }
     }
