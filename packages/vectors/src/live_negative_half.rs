@@ -564,6 +564,25 @@ mod tests {
     use super::{NegativeHalfEntry, NegativeHalfGap, STILL_REQUIRED, gap_census, outstanding_rows};
     use std::collections::BTreeSet;
 
+    fn fingerprint_bytes(mut fingerprint: u64, bytes: &[u8]) -> u64 {
+        for byte in bytes {
+            fingerprint ^= u64::from(*byte);
+            fingerprint = fingerprint.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        fingerprint
+    }
+
+    fn grounds_fingerprint(entries: &[NegativeHalfEntry]) -> u64 {
+        let mut fingerprint = 0xcbf2_9ce4_8422_2325;
+        for entry in entries {
+            fingerprint = fingerprint_bytes(fingerprint, entry.row().as_bytes());
+            fingerprint = fingerprint_bytes(fingerprint, &[0]);
+            fingerprint = fingerprint_bytes(fingerprint, entry.ground().as_bytes());
+            fingerprint = fingerprint_bytes(fingerprint, &[u8::MAX]);
+        }
+        fingerprint
+    }
+
     /// The register and the classifier name the same rows.
     ///
     /// Set equality in both directions, reported as the two differences
@@ -618,6 +637,16 @@ mod tests {
                 entry.row(),
             );
         }
+    }
+
+    /// N1-C changes the view over evidence, never the 25 native-required
+    /// grounds. The count and byte fingerprint pin both the membership and
+    /// exact ground text without duplicating a second editable copy of all 25
+    /// sentences in this test.
+    #[test]
+    fn all_twenty_five_native_required_grounds_are_unchanged() {
+        assert_eq!(STILL_REQUIRED.len(), 25);
+        assert_eq!(grounds_fingerprint(STILL_REQUIRED), 0x47c6_ccd1_9ffb_0bc7);
     }
 
     /// The gap census covers the register and nothing else.
