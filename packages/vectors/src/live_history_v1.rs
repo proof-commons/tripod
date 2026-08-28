@@ -42,9 +42,7 @@ pub mod sponsor_shapes {
 }
 
 /// Historical owner-signing refusal observations.
-pub mod owner_signing_negatives {
-    pub use crate::live_owner_signing_negatives::run_of_record::*;
-}
+pub mod owner_signing_negatives;
 
 /// Historical phase-A key-path probe observations.
 pub mod keypath_probe {
@@ -170,10 +168,7 @@ mod tests {
             super::sponsor_shapes::SPONSORED_ACCEPTED_TXID,
             crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
         );
-        assert_eq!(
-            super::owner_signing_negatives::CONTROL_ARRANGEMENT,
-            crate::live_owner_signing_negatives::run_of_record::CONTROL_ARRANGEMENT,
-        );
+        assert_eq!(super::owner_signing_negatives::CONTROL_ARRANGEMENT, [0, 1],);
         assert_eq!(
             super::keypath_probe_phase_b::REFUSAL_DETAIL,
             crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_DETAIL,

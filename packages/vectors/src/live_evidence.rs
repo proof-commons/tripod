@@ -2396,11 +2396,11 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // is taken over, where it does not reach.
         "vault-control-entitlement-or-bare-u-output" => Some(RecordedNativeRefusal {
             control_identity:
-                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
             observed_layer:
-                crate::live_owner_signing_negatives::run_of_record::MUTANT_OBSERVED_LAYER,
+                crate::live_history_v1::owner_signing_negatives::MUTANT_OBSERVED_LAYER,
             refusal_detail:
-                crate::live_owner_signing_negatives::run_of_record::MUTANT_REJECT_DETAIL,
+                crate::live_history_v1::owner_signing_negatives::MUTANT_REJECT_DETAIL,
         }),
         // The seven conservation-breaking rows, answered by the SAME
         // owner-signing negative run — each on its OWN consensus mutant,
@@ -2433,11 +2433,11 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         | "hidden-private-u-output"
         | "omitted-source" => Some(RecordedNativeRefusal {
             control_identity:
-                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
             observed_layer:
-                crate::live_owner_signing_negatives::run_of_record::CONSENSUS_MUTANT_OBSERVED_LAYER,
+                crate::live_history_v1::owner_signing_negatives::CONSENSUS_MUTANT_OBSERVED_LAYER,
             refusal_detail:
-                crate::live_owner_signing_negatives::run_of_record::CONSENSUS_MUTANT_REJECT_DETAIL,
+                crate::live_history_v1::owner_signing_negatives::CONSENSUS_MUTANT_REJECT_DETAIL,
         }),
         // ONE driven row of each leaf-arrangement collision pair, answered
         // by the SAME owner-signing negative run. The four rows form two
@@ -2464,19 +2464,19 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // rearrangement reuses committed leaves.
         "two-coordinators" => Some(RecordedNativeRefusal {
             control_identity:
-                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
             observed_layer:
-                crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_OBSERVED_LAYER,
+                crate::live_history_v1::owner_signing_negatives::TWO_COORDINATORS_OBSERVED_LAYER,
             refusal_detail:
-                crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_REJECT_DETAIL,
+                crate::live_history_v1::owner_signing_negatives::TWO_COORDINATORS_REJECT_DETAIL,
         }),
         "no-coordinator" => Some(RecordedNativeRefusal {
             control_identity:
-                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
             observed_layer:
-                crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_OBSERVED_LAYER,
+                crate::live_history_v1::owner_signing_negatives::NO_COORDINATOR_OBSERVED_LAYER,
             refusal_detail:
-                crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_REJECT_DETAIL,
+                crate::live_history_v1::owner_signing_negatives::NO_COORDINATOR_REJECT_DETAIL,
         }),
         // §15.4's key-path row, answered by the internal-key
         // unspendability probe's phase-B run: the key-path attempt
@@ -4100,8 +4100,8 @@ mod tests {
         // not settled by anything in this repository, and no verdict is
         // predicted for them here.
         assert_ne!(
-            crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_REJECT_DETAIL,
-            crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_REJECT_DETAIL,
+            crate::live_history_v1::owner_signing_negatives::TWO_COORDINATORS_REJECT_DETAIL,
+            crate::live_history_v1::owner_signing_negatives::NO_COORDINATOR_REJECT_DETAIL,
             "the two driven leaf-arrangement rows draw one verdict",
         );
     }
