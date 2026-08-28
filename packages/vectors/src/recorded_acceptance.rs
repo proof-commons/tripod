@@ -111,8 +111,8 @@ mod tests {
         assert_eq!(
             recorded.citation(),
             concat!(
-                "vectors::live_private_restart::",
-                "run_of_record::ACCEPTED_TXID",
+                "vectors::live_history_v1::",
+                "private_restart::ACCEPTED_TXID",
             ),
         );
         assert_eq!(
