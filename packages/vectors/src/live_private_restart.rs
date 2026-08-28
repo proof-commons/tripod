@@ -1693,6 +1693,329 @@ pub fn render_private_restart(record: &PrivateRestartRecord) -> String {
 /// the lane binds itself to, on a disposable development chain the run
 /// created and destroyed.
 pub mod run_of_record {
+    use crate::recorded_acceptance::RecordedAcceptance;
+    use transaction::{TransactionIdentityParseError, Txid};
+
+    /// One accepted member of the immutable historical V1 ceremony.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct HistoricalPrivateRestartAcceptedMember {
+        successor_digest: &'static str,
+        acceptance: RecordedAcceptance,
+        commitment_prefix: u8,
+    }
+
+    impl HistoricalPrivateRestartAcceptedMember {
+        /// The historical V1 successor digest recorded beside this acceptance.
+        #[must_use]
+        pub const fn successor_digest(self) -> &'static str {
+            self.successor_digest
+        }
+
+        /// The provenance-bearing accepted identity from the historical run.
+        #[must_use]
+        pub const fn acceptance(self) -> RecordedAcceptance {
+            self.acceptance
+        }
+
+        /// The commitment prefix the historical run observed on its consumed coin.
+        #[must_use]
+        pub const fn commitment_prefix(self) -> u8 {
+            self.commitment_prefix
+        }
+    }
+
+    /// The historical ceremony's two distinct accepted parity members.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct HistoricalPrivateRestartTwoAcceptanceLink {
+        primary: HistoricalPrivateRestartAcceptedMember,
+        balancing: HistoricalPrivateRestartAcceptedMember,
+    }
+
+    impl HistoricalPrivateRestartTwoAcceptanceLink {
+        /// The run that consumed the predecessor's primary output.
+        #[must_use]
+        pub const fn primary(self) -> HistoricalPrivateRestartAcceptedMember {
+            self.primary
+        }
+
+        /// The run that consumed the predecessor's balancing output.
+        #[must_use]
+        pub const fn balancing(self) -> HistoricalPrivateRestartAcceptedMember {
+            self.balancing
+        }
+
+        /// Select the historical member for one consumed receipt.
+        #[must_use]
+        pub const fn for_receipt(
+            self,
+            consumed: super::ConsumedReceipt,
+        ) -> HistoricalPrivateRestartAcceptedMember {
+            match consumed {
+                super::ConsumedReceipt::Primary => self.primary,
+                super::ConsumedReceipt::Balancing => self.balancing,
+            }
+        }
+    }
+
+    /// The complete immutable payload of the historical V1 ceremony.
+    #[derive(Clone, Copy, Debug)]
+    pub struct HistoricalPrivateRestartV1 {
+        issued_asset: &'static str,
+        predecessor_digest: &'static str,
+        acceptances: HistoricalPrivateRestartTwoAcceptanceLink,
+        submitted_bytes: usize,
+        output_witness_proof_bytes: [usize; 2],
+        receipt_leaves: usize,
+        wall_seconds: f64,
+    }
+
+    impl HistoricalPrivateRestartV1 {
+        /// The disposable asset issued by the historical ceremony.
+        #[must_use]
+        pub const fn issued_asset(self) -> &'static str {
+            self.issued_asset
+        }
+
+        /// The predecessor's historical fixture-digest V1 identity.
+        #[must_use]
+        pub const fn predecessor_digest(self) -> &'static str {
+            self.predecessor_digest
+        }
+
+        /// Both accepted historical runs, one for each commitment parity.
+        #[must_use]
+        pub const fn acceptances(self) -> HistoricalPrivateRestartTwoAcceptanceLink {
+            self.acceptances
+        }
+
+        /// How many bytes the primary historical run submitted.
+        #[must_use]
+        pub const fn submitted_bytes(self) -> usize {
+            self.submitted_bytes
+        }
+
+        /// The proof byte counts carried by the primary historical run's outputs.
+        #[must_use]
+        pub const fn output_witness_proof_bytes(self) -> [usize; 2] {
+            self.output_witness_proof_bytes
+        }
+
+        /// How many receipt leaves the historical control consumed.
+        #[must_use]
+        pub const fn receipt_leaves(self) -> usize {
+            self.receipt_leaves
+        }
+
+        /// The primary historical run's wall time in seconds.
+        #[must_use]
+        pub const fn wall_seconds(self) -> f64 {
+            self.wall_seconds
+        }
+    }
+
+    /// The immutable historical private-restart run.
+    ///
+    /// Its sole variant is V1 because the recorded identities belong to the
+    /// historical fixture-digest V1 ceremony. The inner payload has no public
+    /// constructor, so a forward V2 payload cannot be relabeled as history.
+    ///
+    /// ```compile_fail
+    /// use vectors::live_private_restart::run_of_record::{
+    ///     ForwardPrivateRestartExpectation, HistoricalPrivateRestartRun,
+    ///     forward_private_restart_expectation,
+    /// };
+    ///
+    /// let ForwardPrivateRestartExpectation::V2(forward) =
+    ///     forward_private_restart_expectation();
+    /// let _ = HistoricalPrivateRestartRun::V1(forward);
+    /// ```
+    #[derive(Clone, Copy, Debug)]
+    pub enum HistoricalPrivateRestartRun {
+        /// The fixture-digest V1 ceremony already recorded by this module.
+        V1(HistoricalPrivateRestartV1),
+    }
+
+    /// One member of a future owner-authorized V2 acceptance pair.
+    ///
+    /// The fields stay private until a serialized V2 ceremony mints fresh
+    /// identities and prefixes in this source. Historical acceptance tokens
+    /// therefore cannot be supplied by a caller.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct ForwardPrivateRestartAcceptedMember {
+        identity: Txid,
+        commitment_prefix: u8,
+    }
+
+    impl ForwardPrivateRestartAcceptedMember {
+        /// The fresh identity computed by the target during the V2 ceremony.
+        #[must_use]
+        pub const fn identity(self) -> Txid {
+            self.identity
+        }
+
+        /// The commitment prefix observed during that same accepted run.
+        #[must_use]
+        pub const fn commitment_prefix(self) -> u8 {
+            self.commitment_prefix
+        }
+    }
+
+    /// The forward parity evidence's required two-acceptance link.
+    ///
+    /// There is no exactly-one form: a recorded link always carries both the
+    /// primary and balancing accepted successors from the same authorized V2
+    /// recording wave.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct ForwardPrivateRestartTwoAcceptanceLink {
+        primary: ForwardPrivateRestartAcceptedMember,
+        balancing: ForwardPrivateRestartAcceptedMember,
+    }
+
+    impl ForwardPrivateRestartTwoAcceptanceLink {
+        /// The accepted V2 run that consumed the primary output.
+        #[must_use]
+        pub const fn primary(self) -> ForwardPrivateRestartAcceptedMember {
+            self.primary
+        }
+
+        /// The accepted V2 run that consumed the balancing output.
+        #[must_use]
+        pub const fn balancing(self) -> ForwardPrivateRestartAcceptedMember {
+            self.balancing
+        }
+
+        /// Select the fresh acceptance for one consumed receipt.
+        #[must_use]
+        pub const fn for_receipt(
+            self,
+            consumed: super::ConsumedReceipt,
+        ) -> ForwardPrivateRestartAcceptedMember {
+            match consumed {
+                super::ConsumedReceipt::Primary => self.primary,
+                super::ConsumedReceipt::Balancing => self.balancing,
+            }
+        }
+    }
+
+    /// Why a forward expectation cannot yet supply accepted evidence.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum ForwardPrivateRestartExpectationRefusal {
+        /// No owner-authorized V2 ceremony has minted the two accepted identities.
+        AcceptancePending,
+    }
+
+    /// Whether an owner-authorized V2 ceremony has minted both acceptances.
+    ///
+    /// ```compile_fail
+    /// use vectors::live_private_restart::run_of_record::{
+    ///     ForwardPrivateRestartAcceptance, HistoricalPrivateRestartRun,
+    ///     historical_private_restart_run,
+    /// };
+    ///
+    /// let HistoricalPrivateRestartRun::V1(historical) =
+    ///     historical_private_restart_run().unwrap();
+    /// let _ = ForwardPrivateRestartAcceptance::Recorded(historical.acceptances());
+    /// ```
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum ForwardPrivateRestartAcceptance {
+        /// The V2 digests are pinned, but no fresh target identities are recorded.
+        Pending,
+        /// Both fresh V2 acceptances minted by one authorized recording wave.
+        Recorded(ForwardPrivateRestartTwoAcceptanceLink),
+    }
+
+    impl ForwardPrivateRestartAcceptance {
+        /// The report spelling of this evidence state.
+        #[must_use]
+        pub const fn name(self) -> &'static str {
+            match self {
+                Self::Pending => "pending",
+                Self::Recorded(_) => "recorded",
+            }
+        }
+
+        /// Require the two recorded V2 acceptances before an acceptance gate can pass.
+        ///
+        /// # Errors
+        ///
+        /// [`ForwardPrivateRestartExpectationRefusal::AcceptancePending`] until an
+        /// owner-authorized V2 ceremony records both fresh identities.
+        pub const fn recorded_link(
+            self,
+        ) -> Result<ForwardPrivateRestartTwoAcceptanceLink, ForwardPrivateRestartExpectationRefusal>
+        {
+            match self {
+                Self::Pending => Err(ForwardPrivateRestartExpectationRefusal::AcceptancePending),
+                Self::Recorded(link) => Ok(link),
+            }
+        }
+    }
+
+    /// The forward fixture-digest V2 pins for both parity members.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct ForwardPrivateRestartFixtureDigestsV2 {
+        predecessor: &'static str,
+        primary_successor: &'static str,
+        balancing_successor: &'static str,
+    }
+
+    impl ForwardPrivateRestartFixtureDigestsV2 {
+        /// The predecessor shared by both forward runs.
+        #[must_use]
+        pub const fn predecessor(self) -> &'static str {
+            self.predecessor
+        }
+
+        /// The successor selected by the consumed predecessor receipt.
+        #[must_use]
+        pub const fn successor(self, consumed: super::ConsumedReceipt) -> &'static str {
+            match consumed {
+                super::ConsumedReceipt::Primary => self.primary_successor,
+                super::ConsumedReceipt::Balancing => self.balancing_successor,
+            }
+        }
+
+        /// The primary-receipt successor's forward V2 digest.
+        #[must_use]
+        pub const fn primary_successor(self) -> &'static str {
+            self.primary_successor
+        }
+
+        /// The balancing-receipt successor's forward V2 digest.
+        #[must_use]
+        pub const fn balancing_successor(self) -> &'static str {
+            self.balancing_successor
+        }
+    }
+
+    /// The complete forward V2 expectation.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct ForwardPrivateRestartV2 {
+        fixtures: ForwardPrivateRestartFixtureDigestsV2,
+        acceptance: ForwardPrivateRestartAcceptance,
+    }
+
+    impl ForwardPrivateRestartV2 {
+        /// The V2 digest pins selected by a fresh native run.
+        #[must_use]
+        pub const fn fixtures(self) -> ForwardPrivateRestartFixtureDigestsV2 {
+            self.fixtures
+        }
+
+        /// The fail-closed acceptance state for the forward ceremony.
+        #[must_use]
+        pub const fn acceptance(self) -> ForwardPrivateRestartAcceptance {
+            self.acceptance
+        }
+    }
+
+    /// The expectation a fresh private-restart native gate must select.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum ForwardPrivateRestartExpectation {
+        /// Fixture-digest V2 pins and their independently pending acceptance pair.
+        V2(ForwardPrivateRestartV2),
+    }
+
     /// The disposable asset the run issued.
     pub const ISSUED_ASSET: &str =
         "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
@@ -1786,6 +2109,51 @@ pub mod run_of_record {
         /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
         pub const PARITY_SUCCESSOR_DIGEST: &str =
             "f56b971cffea21a748b509a9b8aa7ccb0764ba6ce208438405a4025d35342c55";
+    }
+
+    /// Materialize the immutable historical V1 ceremony as typed data.
+    ///
+    /// # Errors
+    ///
+    /// [`TransactionIdentityParseError`] if either committed historical
+    /// identity is not exactly 64 ASCII hexadecimal digits.
+    pub fn historical_private_restart_run()
+    -> Result<HistoricalPrivateRestartRun, TransactionIdentityParseError> {
+        Ok(HistoricalPrivateRestartRun::V1(
+            HistoricalPrivateRestartV1 {
+                issued_asset: ISSUED_ASSET,
+                predecessor_digest: PREDECESSOR_DIGEST,
+                acceptances: HistoricalPrivateRestartTwoAcceptanceLink {
+                    primary: HistoricalPrivateRestartAcceptedMember {
+                        successor_digest: SUCCESSOR_DIGEST,
+                        acceptance: accepted()?,
+                        commitment_prefix: CONSUMED_COMMITMENT_PREFIX,
+                    },
+                    balancing: HistoricalPrivateRestartAcceptedMember {
+                        successor_digest: PARITY_SUCCESSOR_DIGEST,
+                        acceptance: parity_accepted()?,
+                        commitment_prefix: PARITY_CONSUMED_COMMITMENT_PREFIX,
+                    },
+                },
+                submitted_bytes: SUBMITTED_BYTES,
+                output_witness_proof_bytes: OUTPUT_WITNESS_PROOF_BYTES,
+                receipt_leaves: RECEIPT_LEAVES,
+                wall_seconds: WALL_SECONDS,
+            },
+        ))
+    }
+
+    /// Select the forward V2 pins without claiming a target acceptance.
+    #[must_use]
+    pub const fn forward_private_restart_expectation() -> ForwardPrivateRestartExpectation {
+        ForwardPrivateRestartExpectation::V2(ForwardPrivateRestartV2 {
+            fixtures: ForwardPrivateRestartFixtureDigestsV2 {
+                predecessor: forward_fixture_digest_v2::PREDECESSOR_DIGEST,
+                primary_successor: forward_fixture_digest_v2::SUCCESSOR_DIGEST,
+                balancing_successor: forward_fixture_digest_v2::PARITY_SUCCESSOR_DIGEST,
+            },
+            acceptance: ForwardPrivateRestartAcceptance::Pending,
+        })
     }
 }
 
