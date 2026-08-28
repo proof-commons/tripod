@@ -828,6 +828,41 @@ OPEN with named blocker
 | `G14-R15` | P2 | The resource study still cites a cleared global owner-sighash blocker where its actual condition is lane-local unauthorizing witness use. | Replace stale blocker with a lane-specific non-claim or rebuild through real signing. |
 | `G14-R16` | P2 | Current-state prose disagrees with current code on protocol revision, Phase-5 status, positive-row standing, and historical sponsor restrictions. | Correct active owners and explicitly time-scope historical records. |
 
+
+Wave-0 disposition record, dated 2026-08-28. Every citation names the task row that carries the work. Run keys used below are: BASELINE — the serialized native suite at the wave's base tree, 40 of 40 GREEN at exit 0 in 420.7 seconds; ENFORCING — the same suite at the `T6-012` merge, 40 of 40 GREEN at exit 0 in 424.8 seconds; C011-NATIVE — the conservation rerun at main after the `T6-024` merge, GREEN at exit 0 in 13.9 seconds through the run-report wrapper, test wall 13.7 seconds, report (`c011-0.6.144-dev.report`); and C011-RED — the one-hex-digit control-identity flip that refused with "the control was accepted at an identity the run of record does not carry" at exit 101 in 13.4 seconds on a reverted, unmerged server scratch.
+
+| ID | Disposition | Evidence |
+|---|---|---|
+| `G14-R01` | REPAIRED | Exact observed/declared boundary equality and the seven-row retype landed in (`T6-003`); BASELINE and ENFORCING retained the serialized 40-of-40 surface. |
+| `G14-R02` | REPAIRED | Subclaims a/b/c — candidate/protected bytes, exact finalized leaf/control path, and code-separator position — derive from finalized objects; the explicit-only foreign seam retains the generic commitment check first (`T6-007`). |
+| `G14-R03` | REPAIRED | Subclaim a derives completion only from all seven accepted entries; subclaim b compares the exact stopped step and blocker (`T6-013`). |
+| `G14-R04` | REPAIRED | Construction cause and serialized field are distinct, with wrong-blinder selecting the value commitment (`T6-017`). |
+| `G14-R05` | REPAIRED | Both sponsor-report subclaims remain required until schema-4 validation checks the final bytes and mints observations (`T6-015`). |
+| `G14-R06` | a: REFUTED; b: REPAIRED | The study refuted the narrower basic-range-validation claim; the confirmed arbitrary caller-range seam was removed in favor of private canonical field locators (`T6-017`). |
+| `G14-R07` | REPAIRED | A record after full completion returns the typed `AlreadyComplete` refusal (`T6-013`). |
+| `G14-R08` | REPAIRED | Subclaims a/b/c — entry, exit, and the missing crossing identity/placement — now project from the same composition recipe emission walks (`T6-014`). |
+| `G14-R09` | REPAIRED | Subclaims a/b bind semantic amounts in both Rust and Python under sole-live v2 (`T6-019`); thirteen forward pins and the historical-v1/forward-v2 type boundary followed in (`T6-023`, `T6-028`–`T6-030`). |
+| `G14-R10` | REPAIRED | Parsed `Txid` plus constructor-closed acceptance provenance replaced free-form identities (`T6-008`); BASELINE and ENFORCING exercised the strict private-restart gate. |
+| `G14-R11` | RECLASSIFIED, THEN REPAIRED | The study found subclaims a/b member-side-correct; coordinator composition still under-reported, and one recipe now derives exact source/evidence unions while removing both overclaims (`T6-014`). |
+| `G14-R12` | REPAIRED | Subclaim a forbids openings on every rejecting target layer; subclaim b requires transaction bytes on acceptance (`T6-018`). |
+| `G14-R13` | REPAIRED | Subclaim a uses required nullable resource fields; subclaim b landed the atomic Rust/Python revision-7 handshake (`T6-018`). |
+| `G14-R14` | REPAIRED | Closed-enum fixed diagnostics quarantine arbitrary detail and reject line-bearing sink content (`T6-020`). |
+| `G14-R15` | REPAIRED | The resource study now states synthetic sizing and unauthorizing-witness non-claims instead of the cleared global blocker (`T6-020`). |
+| `G14-R16` | a: OPEN — TREE CONFLICT; b: REPAIRED; c: ALREADY-REPAIRED; d/e: REPAIRED; f: OPEN — TREE CONFLICT | Subclaim a: (`T6-001`) records Phase 6 current, but backlog §11 still says Phase 5 is not exited. Subclaim b uses the canonical review index (`T6-021`). Subclaim c was already repaired by the truthful census (`T6-010`). Subclaims d/e removed the obsolete sponsor prohibition and dead refusal (`T6-013`). Subclaim f: (`T6-018`) records a number-free introduction, but the adapter module introduction still says revision 4 while its constant is 7. |
+| `NEW-N1` | REPAIRED — ZERO BINDINGS | The false no-run provenance became a truthful schema-3 ledger (`T6-010`). The byte-exact archive, strict schema-5 validator, and private overlay seam now land (`T6-025`–`T6-027`), but the archived transcripts yield zero validated attributions, so zero rows retype and the census remains 40 answered + 1 vocabulary-closed + 25 native-run-required + 42 recorded-unbound = 108; forward-v2 recapture remains pending owner authorization. |
+| `NEW-N2` | REPAIRED | Missing observed weight has its own lane-local absence reason, distinct from a run blocked before bytes existed; weight 1911 and `agree` remain pinned (`T6-011`). |
+| `C-001` | REPAIRED | The versioned proof-bearing record retains complete construction refusals and observations (`T6-009`); BASELINE minted the V2 record and ENFORCING exercised its equality gates (`T6-012`). |
+| `C-002` | RECLASSIFIED, THEN REPAIRED | The study narrowed fabrication to an omission-contract violation producing unbound verdicts; the shared versioned record and explicit `NotCaptured` history close it (`T6-009`). |
+| `C-003` | REPAIRED | A nonempty unforgeable expected-zero witness augments the census derived from every burn record (`T6-006`). |
+| `C-004` | REPAIRED | Retained chain views now store an explicit anchor and require contiguous exact parent linkage through the checkpoint (`T6-016`). |
+| `C-005` | REPAIRED | The typed established-profile witness is owned by tapscript, re-exported by linker, and revision-checked by transaction (`T6-004`). |
+| `C-006` | RECLASSIFIED, THEN REPAIRED | The study narrowed duplicate identity to missing T5-026 provenance; one ceremony-owned constant binds all seven outcomes and unconditional reverification (`T6-005`), exercised by BASELINE and ENFORCING. |
+| `C-007` | REPAIRED | The private-restart test strictly binds its complete immutable record and requires explicit owner authority to supersede drift (`T6-008`), exercised by BASELINE and ENFORCING. |
+| `C-008` | REPAIRED | Constructor-closed recorded acceptance provenance now grounds observed roles as well as moved rows (`T6-008`). |
+| `C-009` | REPAIRED | A signer census above 65,536 refuses before fallible position conversion; no saturation remains (`T6-016`). |
+| `C-010` | REPAIRED | Live fault counts are asserted at 23 cases over 8 distinct validators rather than repeated as stale prose (`T6-016`). |
+| `C-011` | FILED-THEN-REPAIRED | Filed separately in (`T6-011`), then bound unconditionally in (`T6-022`); C011-NATIVE passed and C011-RED proved the exact identity binder fail-closed. |
+
 ## 4.1 Blocking rule · `gate:guide14-exec:preflight`
 
 No maturity semantic implementation, compiler plan, constructor, linker, ABI, or target evidence begins while a confirmed P0 or P1 row remains open.
