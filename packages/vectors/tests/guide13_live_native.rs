@@ -1914,7 +1914,7 @@ struct ScriptedPlan {
 }
 
 impl ScriptedPlan {
-    fn new(steps: Vec<OperationStep>) -> Self {
+    const fn new(steps: Vec<OperationStep>) -> Self {
         Self { steps, next: 0 }
     }
 
@@ -2165,7 +2165,7 @@ fn scripted_adapter(capabilities: &[&str], responses: &[String]) -> String {
         "#!/bin/sh\nIFS= read -r request\nprintf '%s\\n' '{handshake}'\nprintf '%s\\n' '{observed_environment}'\n",
     );
     for response in responses {
-        let _ = writeln!(script, "IFS= read -r request\nprintf '%s\\n' '{response}'",);
+        let _ = writeln!(script, "IFS= read -r request\nprintf '%s\\n' '{response}'");
     }
     script
 }
@@ -2421,7 +2421,7 @@ fn owner_observation_fact_assembly_distinguishes_controls_from_the_acceptance() 
             .all(|operation| operation.role == RequestRole::Auxiliary),
     );
     assert_eq!(facts.operations[8].role, RequestRole::Acceptance);
-    assert!(facts.digests.is_empty());
+    assert_eq!(facts.digests.as_slice(), &[]);
 }
 
 #[cfg(unix)]
@@ -2456,7 +2456,7 @@ fn report_fact_assembly_keeps_the_observational_submission_auxiliary() {
             .iter()
             .all(|operation| operation.role == RequestRole::Auxiliary),
     );
-    assert!(facts.digests.is_empty());
+    assert_eq!(facts.digests.as_slice(), &[]);
 }
 
 #[cfg(unix)]
