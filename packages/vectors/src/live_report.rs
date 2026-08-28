@@ -39,14 +39,16 @@ use std::fmt::Write as _;
 
 use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
 use target_elements::TargetProjection;
+use target_elements::opcode::LeafVersion;
 use target_elements_conformance::constructor::tagged;
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use transaction::bytes::SerializedFieldLocator;
+use transaction::taproot::{CONTROL_BASE_BYTES, DIGEST_BYTES, TAPROOT_LEAF_MASK};
 use transaction::{AssetField, TargetTransaction, Txid, ValueField};
 
 use crate::live_evidence::{
     LiveEvidenceCensus, LiveInfrastructureBlocker, LiveRowStanding, LiveTransferEvidencePlan,
-    RecordedObservation, blocker_census,
+    RecordedObservation, ValidatedCorpusEvidence, blocker_census,
 };
 use crate::live_safety::{LiveReportRequirement, LiveSafetySection};
 use crate::matrix::EvidenceBoundary;
@@ -555,7 +557,7 @@ impl LiveSupportLink {
 /// A closed semantic predicate one row can independently prove from request bytes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LiveRowSemanticPredicate {
-    /// The request has a key-path sponsor input and one exact fee output.
+    /// The request has one two-item sponsor authorization and one exact fee output.
     Sponsored {
         /// The sponsor input position.
         sponsor_input_index: usize,
@@ -1600,7 +1602,7 @@ pub enum LiveSafetyReportRefusal {
         /// The matrix row carrying the invalid reference.
         row: &'static str,
     },
-    /// One request is aliased to more than one row observation.
+    /// One request is aliased outside the closed schema-6 reuse shapes.
     ObservationAliased(String),
     /// Two composite acceptance members claim the same named ceremony.
     CompositeCeremonyReused(String),
@@ -1801,9 +1803,10 @@ const fn completeness_of(census: LiveEvidenceCensus) -> LiveSafetyCompleteness {
 /// API, or [`LiveSafetyReportRefusal::BoundObservationUnbacked`] if a future
 /// bound standing arrives without its validated run binding.
 pub fn assemble_live_safety_report(
-    plan: &LiveTransferEvidencePlan,
+    evidence: &ValidatedCorpusEvidence,
     target: TargetProjection,
 ) -> Result<LiveTransferSafetyReport, LiveSafetyReportRefusal> {
+    let plan = evidence.plan();
     let census = plan.census();
     Ok(LiveTransferSafetyReport {
         schema: LIVE_SAFETY_REPORT_SCHEMA,
@@ -1813,11 +1816,8 @@ pub fn assemble_live_safety_report(
             LiveTransferRepresentationPlan::Explicit,
             LiveTransferRepresentationPlan::PrivateCommitted,
         ]),
-        // No historical target run in the tree retains all four binding
-        // carriers. The observation ledger below preserves what was recorded
-        // without manufacturing deployment or executor provenance.
-        runs: Vec::new(),
-        observations: observations_from_plan(plan)?,
+        runs: evidence.runs().to_vec(),
+        observations: observations_from_overlay(evidence)?,
         report_layer_requirements: report_layer_requirements_from_plan(plan),
         lifecycle: LiveLifecycleStatus::candidate(),
         census,
@@ -1934,13 +1934,20 @@ fn recorded_observation_from_standing(
     }
 }
 
-fn observations_from_plan(
-    plan: &LiveTransferEvidencePlan,
+fn observations_from_overlay(
+    evidence: &ValidatedCorpusEvidence,
 ) -> Result<Vec<LiveReportObservation>, LiveSafetyReportRefusal> {
     let mut observations = Vec::new();
-    for evidence in plan.rows() {
-        let row = evidence.row().name();
-        let observation = match evidence.standing() {
+    let mut emitted_corpus_observations = BTreeSet::new();
+    for plan_row in evidence.plan().rows() {
+        let row = plan_row.row().name();
+        if let Some(attribution) = evidence.attribution_for(row) {
+            if emitted_corpus_observations.insert(attribution.observation_index()) {
+                observations.push(attribution.observation().clone());
+            }
+            continue;
+        }
+        let observation = match plan_row.standing() {
             LiveRowStanding::RecordedObservationUnbound(recorded) => {
                 Some(LiveReportObservation::RecordedObservationUnbound {
                     row,
@@ -1962,8 +1969,6 @@ fn observations_from_plan(
                     observed_by,
                 })
             }
-            // A future bound standing must arrive with a validated run binding;
-            // silently inventing one from its row name would restore this defect.
             LiveRowStanding::NativeRunObserved { .. }
             | LiveRowStanding::NativeRefusalObserved { .. }
             | LiveRowStanding::PairedRelationObserved { .. } => {
@@ -2034,17 +2039,37 @@ impl RecomputationProgress {
     }
 }
 
-fn changed_range(left: &[u8], right: &[u8]) -> (usize, usize) {
-    let prefix = left.iter().zip(right).take_while(|(a, b)| a == b).count();
+// Keep these byte-derived locator rules aligned with the independently proven
+// counterparts in `live_corpus_native_v2_r7`.
+fn exact_changed_range(left: &[u8], right: &[u8]) -> Option<(usize, usize)> {
+    if left == right {
+        return None;
+    }
+    let start = left.iter().zip(right).take_while(|(a, b)| a == b).count();
     let suffix = left
         .iter()
         .rev()
         .zip(right.iter().rev())
         .take_while(|(a, b)| a == b)
         .count()
-        .min(left.len().saturating_sub(prefix))
-        .min(right.len().saturating_sub(prefix));
-    (prefix, left.len().saturating_sub(suffix))
+        .min(left.len().saturating_sub(start))
+        .min(right.len().saturating_sub(start));
+    Some((start, left.len().saturating_sub(suffix)))
+}
+
+fn changed_bytes_are_within(control: &[u8], mutant: &[u8], start: usize, end: usize) -> bool {
+    if start >= end {
+        return false;
+    }
+    if end > control.len() {
+        return false;
+    }
+    exact_changed_range(control, mutant).is_some_and(|(changed_start, changed_end)| {
+        if changed_start < start {
+            return false;
+        }
+        changed_end <= end
+    })
 }
 
 fn witness_item_is_exact(
@@ -2091,17 +2116,65 @@ fn witness_item_is_exact(
     differences == 1
 }
 
-const CONTROL_BLOCK_BASE_BYTES: usize = 33;
-const CONTROL_BLOCK_DIGEST_BYTES: usize = 32;
-const TAPSCRIPT_LEAF_VERSION: u8 = 0xc0;
+fn sponsor_authorization_is_absent(
+    control: &TargetTransaction,
+    mutant: &TargetTransaction,
+    input_index: usize,
+    item_index: usize,
+) -> bool {
+    if control.version() != mutant.version()
+        || control.inputs() != mutant.inputs()
+        || control.outputs() != mutant.outputs()
+        || control.lock_time() != mutant.lock_time()
+        || control.output_witnesses() != mutant.output_witnesses()
+        || control.witnesses().len() != mutant.witnesses().len()
+        || control.encode_without_witness() != mutant.encode_without_witness()
+    {
+        return false;
+    }
+    let mut found = false;
+    for (offered_input, (control_witness, mutant_witness)) in control
+        .witnesses()
+        .iter()
+        .zip(mutant.witnesses())
+        .enumerate()
+    {
+        if offered_input != input_index {
+            if control_witness != mutant_witness {
+                return false;
+            }
+            continue;
+        }
+        let control_stack = control_witness.stack();
+        let mutant_stack = mutant_witness.stack();
+        if item_index >= control_stack.len() || control_stack.len() != mutant_stack.len() {
+            return false;
+        }
+        if control_stack[..item_index] != mutant_stack[..item_index] {
+            return false;
+        }
+        if control_stack[item_index..].iter().any(Vec::is_empty) {
+            return false;
+        }
+        if mutant_stack[item_index..]
+            .iter()
+            .any(|item| !item.is_empty())
+        {
+            return false;
+        }
+        found = true;
+    }
+    found
+}
+
+const TAPSCRIPT_LEAF_VERSION: u8 = LeafVersion::TAPSCRIPT.get();
 const MAXIMUM_CONTROL_BLOCK_DEPTH: usize = 128;
 
 const fn control_block_is_structurally_valid(block: &[u8]) -> bool {
-    block.len() >= CONTROL_BLOCK_BASE_BYTES
-        && (block.len() - CONTROL_BLOCK_BASE_BYTES).is_multiple_of(CONTROL_BLOCK_DIGEST_BYTES)
-        && (block.len() - CONTROL_BLOCK_BASE_BYTES) / CONTROL_BLOCK_DIGEST_BYTES
-            <= MAXIMUM_CONTROL_BLOCK_DEPTH
-        && block[0] & 0xfe == TAPSCRIPT_LEAF_VERSION
+    block.len() >= CONTROL_BASE_BYTES
+        && (block.len() - CONTROL_BASE_BYTES).is_multiple_of(DIGEST_BYTES)
+        && (block.len() - CONTROL_BASE_BYTES) / DIGEST_BYTES <= MAXIMUM_CONTROL_BLOCK_DEPTH
+        && block[0] & TAPROOT_LEAF_MASK == TAPSCRIPT_LEAF_VERSION
 }
 
 fn decoded_witness_path_role(stack: &[Vec<u8>]) -> Option<LiveWitnessPathRole> {
@@ -2256,7 +2329,9 @@ fn committed_leaf_arrangement_matches(
 
 fn mutation_locator_matches(
     control: &TargetTransaction,
+    control_bytes: &[u8],
     mutant: &TargetTransaction,
+    mutant_bytes: &[u8],
     mutant_kind: LiveMutantKind,
     locator: &LiveMutationLocator,
 ) -> bool {
@@ -2265,26 +2340,27 @@ fn mutation_locator_matches(
             let Ok(control_field) = control.locate_serialized_field(*locator) else {
                 return false;
             };
-            let Ok(mutant_field) = mutant.locate_serialized_field(*locator) else {
-                return false;
-            };
-            let (start, end) = changed_range(&control.encode(), &mutant.encode());
-            start < end
-                && start >= control_field.range().start
-                && end <= control_field.range().end
-                && start >= mutant_field.range().start
-                && end <= mutant_field.range().end
+            changed_bytes_are_within(
+                control_bytes,
+                mutant_bytes,
+                control_field.range().start,
+                control_field.range().end,
+            )
         }
         LiveMutationLocator::WitnessItem {
             input_index,
             item_index,
-        } => witness_item_is_exact(control, mutant, *input_index, *item_index),
+        } => match mutant_kind {
+            LiveMutantKind::MissingSponsorAuthorization => {
+                sponsor_authorization_is_absent(control, mutant, *input_index, *item_index)
+            }
+            _ => witness_item_is_exact(control, mutant, *input_index, *item_index),
+        },
         LiveMutationLocator::WitnesslessRange { start, end } => {
-            *start < *end
-                && changed_range(
-                    &control.encode_without_witness(),
-                    &mutant.encode_without_witness(),
-                ) == (*start, *end)
+            exact_changed_range(
+                &control.encode_without_witness(),
+                &mutant.encode_without_witness(),
+            ) == Some((*start, *end))
         }
         LiveMutationLocator::TransactionShape {
             control_inputs,
@@ -2463,7 +2539,9 @@ fn validate_refusal_links(
         }
         if !mutation_locator_matches(
             &decoded[control_request_id],
+            &run.requests[control_request_id],
             &decoded[request_id],
+            &run.requests[request_id],
             *mutant,
             locator,
         ) {
@@ -2717,25 +2795,76 @@ fn pair_relation_recomputes(
     terms.into_iter().all(|agrees| agrees) && withheld_terms == 2
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ObservationLinkClass {
+    OrdinaryAcceptance(&'static str),
+    CompositeAcceptanceMember(&'static str),
+    NativeRefusal,
+    PairMember,
+    MultiRowSemantic,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ObservationLinkStanding {
+    Single(ObservationLinkClass),
+    CompositeAndOrdinaryAcceptance,
+}
+
 fn insert_observation_link(
-    observed: &mut BTreeSet<(String, String)>,
+    observed: &mut BTreeMap<(String, String), ObservationLinkStanding>,
     run_id: &str,
     request_id: &str,
+    class: ObservationLinkClass,
 ) -> Result<(), LiveSafetyReportRefusal> {
-    if !observed.insert((run_id.to_owned(), request_id.to_owned())) {
-        return Err(LiveSafetyReportRefusal::ObservationAliased(
+    let key = (run_id.to_owned(), request_id.to_owned());
+    let Some(standing) = observed.get_mut(&key) else {
+        observed.insert(key, ObservationLinkStanding::Single(class));
+        return Ok(());
+    };
+    match (*standing, class) {
+        (
+            ObservationLinkStanding::Single(ObservationLinkClass::OrdinaryAcceptance(
+                "private-one-to-one",
+            )),
+            ObservationLinkClass::CompositeAcceptanceMember("both-commitment-parity-forms"),
+        )
+        | (
+            ObservationLinkStanding::Single(ObservationLinkClass::CompositeAcceptanceMember(
+                "both-commitment-parity-forms",
+            )),
+            ObservationLinkClass::OrdinaryAcceptance("private-one-to-one"),
+        ) => {
+            *standing = ObservationLinkStanding::CompositeAndOrdinaryAcceptance;
+            Ok(())
+        }
+        _ => Err(LiveSafetyReportRefusal::ObservationAliased(
             request_id.to_owned(),
-        ));
+        )),
     }
-    Ok(())
 }
 
 #[derive(Debug, Default)]
 struct BoundObservationValidation {
     compared: usize,
-    observed_links: BTreeSet<(String, String)>,
+    observed_links: BTreeMap<(String, String), ObservationLinkStanding>,
     support_links: BTreeMap<String, LiveSupportLink>,
     used_requests: BTreeSet<(String, String)>,
+}
+
+const CONSERVATION_CONTROL_ROW: &str = "target-ct-conservation";
+const CONSERVATION_CONTROL_REQUEST: &str = "conservation-negatives/request-6";
+
+fn ordinary_acceptance_role_matches(row: &str, request_id: &str, fact: &LiveRequestFact) -> bool {
+    // `live_corpus_native_v2_r7::add_conservation_material` deliberately
+    // cites the accepted control for the conservation-negative family as the
+    // positive conservation witness. Keep that typed reuse closed to its
+    // exact row and global request; every other ordinary acceptance remains
+    // an acceptance-role request.
+    if row == CONSERVATION_CONTROL_ROW {
+        request_id == CONSERVATION_CONTROL_REQUEST && fact == &LiveRequestFact::Control
+    } else {
+        fact == &LiveRequestFact::Acceptance
+    }
 }
 
 impl BoundObservationValidation {
@@ -2753,9 +2882,14 @@ impl BoundObservationValidation {
         else {
             return Ok(());
         };
-        insert_observation_link(&mut self.observed_links, run_id, request_id)?;
+        insert_observation_link(
+            &mut self.observed_links,
+            run_id,
+            request_id,
+            ObservationLinkClass::OrdinaryAcceptance(row),
+        )?;
         let (fact, response, _) = request_for(runs, run_id, request_id, row)?;
-        if fact != &LiveRequestFact::Acceptance {
+        if !ordinary_acceptance_role_matches(row, request_id, fact) {
             return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
                 run_id.clone(),
                 request_id.clone(),
@@ -2805,7 +2939,12 @@ impl BoundObservationValidation {
         }
         let mut prefixes = Vec::with_capacity(2);
         for member in [first, second] {
-            insert_observation_link(&mut self.observed_links, &member.run_id, &member.request_id)?;
+            insert_observation_link(
+                &mut self.observed_links,
+                &member.run_id,
+                &member.request_id,
+                ObservationLinkClass::CompositeAcceptanceMember(row),
+            )?;
             let (fact, response, bytes) =
                 request_for(runs, &member.run_id, &member.request_id, row)?;
             if fact != &LiveRequestFact::Acceptance {
@@ -2933,7 +3072,12 @@ impl BoundObservationValidation {
         else {
             return Ok(());
         };
-        insert_observation_link(&mut self.observed_links, run_id, request_id)?;
+        insert_observation_link(
+            &mut self.observed_links,
+            run_id,
+            request_id,
+            ObservationLinkClass::NativeRefusal,
+        )?;
         let (fact, response, _) = request_for(runs, run_id, request_id, row)?;
         let LiveRequestFact::Refusal {
             mutant,
@@ -3000,8 +3144,14 @@ impl BoundObservationValidation {
             &mut self.observed_links,
             explicit_run_id,
             explicit_request_id,
+            ObservationLinkClass::PairMember,
         )?;
-        insert_observation_link(&mut self.observed_links, private_run_id, private_request_id)?;
+        insert_observation_link(
+            &mut self.observed_links,
+            private_run_id,
+            private_request_id,
+            ObservationLinkClass::PairMember,
+        )?;
         let explicit = request_for(runs, explicit_run_id, explicit_request_id, row)?;
         let private = request_for(runs, private_run_id, private_request_id, row)?;
         validate_pair_claim(
@@ -3050,6 +3200,7 @@ impl BoundObservationValidation {
             &mut self.observed_links,
             &witness.run_id,
             &witness.request_id,
+            ObservationLinkClass::MultiRowSemantic,
         )?;
         let row = "sponsored";
         let (fact, response, bytes) = request_for(runs, &witness.run_id, &witness.request_id, row)?;
@@ -3093,17 +3244,23 @@ fn sponsored_request_shape_recomputes(
     sponsor_input_index: usize,
     fee_output_index: usize,
 ) -> bool {
-    let Some(sponsor_witness) = transaction.witnesses().get(sponsor_input_index) else {
-        return false;
-    };
-    let Some(fee_output) = transaction.outputs().get(fee_output_index) else {
-        return false;
-    };
-    transaction.inputs().len() > 1
-        && decoded_witness_path_role(sponsor_witness.stack()) == Some(LiveWitnessPathRole::KeyPath)
-        && fee_output.program().is_empty()
-        && matches!(fee_output.asset(), AssetField::Explicit(_))
-        && matches!(fee_output.value(), ValueField::Explicit(amount) if amount > 0)
+    let sponsor_inputs = transaction
+        .witnesses()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, witness)| {
+            let stack = witness.stack();
+            (stack.len() == 2 && stack.iter().all(|item| !item.is_empty())).then_some(index)
+        })
+        .collect::<Vec<_>>();
+    let fee_outputs = transaction
+        .outputs()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, output)| output.is_fee().then_some(index))
+        .collect::<Vec<_>>();
+    sponsor_inputs.as_slice() == [sponsor_input_index]
+        && fee_outputs.as_slice() == [fee_output_index]
 }
 
 fn semantic_predicate_recomputes(
@@ -3253,10 +3410,11 @@ fn validate_bound_observations(
 
 fn validate_report_envelope(
     report: &LiveTransferSafetyReport,
-    plan: &LiveTransferEvidencePlan,
+    evidence: &ValidatedCorpusEvidence,
     target: &TargetProjection,
     progress: &mut RecomputationProgress,
 ) -> Result<(), LiveSafetyReportRefusal> {
+    let plan = evidence.plan();
     if report.schema != LIVE_SAFETY_REPORT_SCHEMA {
         return Err(LiveSafetyReportRefusal::UnsupportedSchema(report.schema));
     }
@@ -3278,8 +3436,7 @@ fn validate_report_envelope(
         return Err(LiveSafetyReportRefusal::RepresentationCensusDiffers);
     }
 
-    let expected_runs = Vec::new();
-    compare_run_bindings(&report.runs, &expected_runs)?;
+    compare_run_bindings(&report.runs, evidence.runs())?;
     if !report.runs.is_empty() {
         progress.mark(RecomputedItem::TargetDeploymentBinding);
         progress.mark(RecomputedItem::RequestResponseCensus);
@@ -3290,10 +3447,11 @@ fn validate_report_envelope(
 
 fn validate_report_observation_ledger(
     report: &LiveTransferSafetyReport,
-    plan: &LiveTransferEvidencePlan,
+    evidence: &ValidatedCorpusEvidence,
     progress: &mut RecomputationProgress,
 ) -> Result<(), LiveSafetyReportRefusal> {
-    let expected_observations = observations_from_plan(plan)?;
+    let plan = evidence.plan();
+    let expected_observations = observations_from_overlay(evidence)?;
     let expected_requirements = report_layer_requirements_from_plan(plan);
     if report.observations != expected_observations
         || report.report_layer_requirements != expected_requirements
@@ -3413,12 +3571,13 @@ struct CanonicalReportView<'a> {
 /// the order the checks are written.
 pub fn validate_live_safety_report(
     report: LiveTransferSafetyReport,
-    plan: &LiveTransferEvidencePlan,
+    evidence: &ValidatedCorpusEvidence,
     target: &TargetProjection,
 ) -> Result<ValidatedLiveTransferSafetyReport, LiveSafetyReportRefusal> {
+    let plan = evidence.plan();
     let mut progress = RecomputationProgress::default();
-    validate_report_envelope(&report, plan, target, &mut progress)?;
-    validate_report_observation_ledger(&report, plan, &mut progress)?;
+    validate_report_envelope(&report, evidence, target, &mut progress)?;
+    validate_report_observation_ledger(&report, evidence, &mut progress)?;
     let recomputed = plan.census();
     validate_report_summary(&report, recomputed, &mut progress)?;
 
@@ -4107,10 +4266,11 @@ mod tests {
         LiveReportObservation, LiveRequestFact, LiveRowSemanticPredicate, LiveRunBinding,
         LiveSafetyCompleteness, LiveSafetyDiagnostics, LiveSafetyReportRefusal,
         LiveSafetyReportRole, LiveSupportLink, LiveTargetResponse, LiveWitnessPathRole,
-        NativeProtocolRevision, RecomputedItem, VALIDATED_PAIR_RELATION, VolatileField,
-        assemble_live_safety_report, compare_run_bindings, recomputed_txid,
-        render_live_safety_report, section_scoreboard, target_evidence_name,
-        validate_bound_observations, validate_live_safety_report, validate_report_disclosures,
+        NativeProtocolRevision, ObservationLinkClass, RecomputedItem, VALIDATED_PAIR_RELATION,
+        VolatileField, assemble_live_safety_report, compare_run_bindings, insert_observation_link,
+        observations_from_overlay, recomputed_txid, render_live_safety_report, section_scoreboard,
+        target_evidence_name, validate_bound_observations, validate_live_safety_report,
+        validate_report_disclosures,
     };
     use crate::live_evidence::derive_live_evidence_plan;
     use crate::live_plan::reviewed_target;
@@ -4232,6 +4392,17 @@ mod tests {
         .expect("the synthetic acceptance run parses")
     }
 
+    fn synthetic_control_acceptance_run(request_id: &str) -> LiveRunBinding {
+        let source = synthetic_acceptance_run("conservation-negatives", request_id, 0xb3, 0x08);
+        LiveRunBinding::from_archive(
+            source.archive_bytes,
+            source.requests,
+            std::collections::BTreeMap::from([(request_id.to_owned(), LiveRequestFact::Control)]),
+            source.responses,
+        )
+        .expect("the synthetic control acceptance run parses")
+    }
+
     fn composite_observation(
         first: &LiveRunBinding,
         first_ceremony: &str,
@@ -4306,10 +4477,14 @@ mod tests {
         .encode()
     }
 
-    fn synthetic_control_block() -> Vec<u8> {
-        let mut block = vec![0xc0];
+    fn synthetic_control_block_with_version(version: u8) -> Vec<u8> {
+        let mut block = vec![version];
         block.extend_from_slice(&[0x22; 32]);
         block
+    }
+
+    fn synthetic_control_block() -> Vec<u8> {
+        synthetic_control_block_with_version(target_elements::opcode::LeafVersion::TAPSCRIPT.get())
     }
 
     fn synthetic_refusal_run(
@@ -4383,11 +4558,26 @@ mod tests {
         )
     }
 
-    fn committed_leaf_arrangement_run() -> LiveRunBinding {
+    fn missing_sponsor_authorization_run() -> LiveRunBinding {
+        let control =
+            synthetic_witness_transaction(0x62, vec![vec![vec![0x31; 64], vec![0x32; 64]]]);
+        let mutant = synthetic_witness_transaction(0x62, vec![vec![Vec::new(), Vec::new()]]);
+        synthetic_refusal_run(
+            "missing-sponsor-authorization-tip",
+            control,
+            mutant,
+            LiveMutantKind::MissingSponsorAuthorization,
+            LiveMutationLocator::WitnessItem {
+                input_index: 0,
+                item_index: 0,
+            },
+        )
+    }
+
+    fn committed_leaf_arrangement_run_with_block(block: Vec<u8>) -> LiveRunBinding {
         let coordinator = vec![0x51, 0x00];
         let member = vec![0x51, 0x01];
         let signature = vec![0x31; 64];
-        let block = synthetic_control_block();
         let control = synthetic_witness_transaction(
             0x71,
             vec![
@@ -4415,6 +4605,10 @@ mod tests {
                 mutant_committed_leaf_programs: vec![coordinator.clone(), coordinator],
             },
         )
+    }
+
+    fn committed_leaf_arrangement_run() -> LiveRunBinding {
+        committed_leaf_arrangement_run_with_block(synthetic_control_block())
     }
 
     fn repeated_support_run() -> LiveRunBinding {
@@ -4545,7 +4739,7 @@ mod tests {
             0,
             vec![
                 InputWitness::new(vec![vec![0x31; 64], vec![0x51], synthetic_control_block()]),
-                InputWitness::new(vec![vec![0x32; 64]]),
+                InputWitness::new(vec![vec![0x32; 72], vec![0x33; 33]]),
             ],
         )
         .expect("the multi-row transaction is well formed")
@@ -4968,6 +5162,147 @@ mod tests {
     }
 
     #[test]
+    fn witness_path_shape_refuses_the_bitcoin_leaf_version() {
+        let signature = vec![0x31; 64];
+        let control = synthetic_witness_transaction(0x63, vec![vec![signature.clone()]]);
+        let mutant = synthetic_witness_transaction(
+            0x63,
+            vec![vec![
+                signature,
+                vec![0x51],
+                synthetic_control_block_with_version(0xc0),
+            ]],
+        );
+        let run = synthetic_refusal_run(
+            "obsolete-leaf-version-tip",
+            control,
+            mutant,
+            LiveMutantKind::KeyPathEscape,
+            LiveMutationLocator::WitnessPathShape {
+                input_index: 0,
+                control_stack_items: 1,
+                mutant_stack_items: 3,
+                changed_positions: vec![1, 2],
+                control_role: LiveWitnessPathRole::KeyPath,
+                mutant_role: LiveWitnessPathRole::ScriptPath,
+                witnessless_serialization_equal: true,
+            },
+        );
+        let run_id = run.run_id.clone();
+
+        assert_eq!(
+            compare_run_bindings(std::slice::from_ref(&run), std::slice::from_ref(&run)),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                run_id,
+                "mutant".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
+    fn witness_path_shape_requires_one_key_path_item_and_equal_witnessless_bytes() {
+        let signature = vec![0x31; 64];
+        let not_key_path =
+            synthetic_witness_transaction(0x64, vec![vec![signature.clone(), vec![0x01]]]);
+        let script_path = synthetic_witness_transaction(
+            0x64,
+            vec![vec![
+                signature.clone(),
+                vec![0x51],
+                synthetic_control_block(),
+            ]],
+        );
+        let locator = LiveMutationLocator::WitnessPathShape {
+            input_index: 0,
+            control_stack_items: 2,
+            mutant_stack_items: 3,
+            changed_positions: vec![1, 2],
+            control_role: LiveWitnessPathRole::KeyPath,
+            mutant_role: LiveWitnessPathRole::ScriptPath,
+            witnessless_serialization_equal: true,
+        };
+        let wrong_key_path = synthetic_refusal_run(
+            "wrong-key-path-shape-tip",
+            not_key_path,
+            script_path,
+            LiveMutantKind::KeyPathEscape,
+            locator,
+        );
+        let wrong_key_path_id = wrong_key_path.run_id.clone();
+        assert_eq!(
+            compare_run_bindings(
+                std::slice::from_ref(&wrong_key_path),
+                std::slice::from_ref(&wrong_key_path),
+            ),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                wrong_key_path_id,
+                "mutant".to_owned(),
+            )),
+        );
+
+        let key_path = synthetic_witness_transaction(0x65, vec![vec![signature.clone()]]);
+        let different_witnessless = synthetic_witness_transaction(
+            0x66,
+            vec![vec![signature, vec![0x51], synthetic_control_block()]],
+        );
+        let wrong_witnessless = synthetic_refusal_run(
+            "wrong-witnessless-shape-tip",
+            key_path,
+            different_witnessless,
+            LiveMutantKind::KeyPathEscape,
+            LiveMutationLocator::WitnessPathShape {
+                input_index: 0,
+                control_stack_items: 1,
+                mutant_stack_items: 3,
+                changed_positions: vec![1, 2],
+                control_role: LiveWitnessPathRole::KeyPath,
+                mutant_role: LiveWitnessPathRole::ScriptPath,
+                witnessless_serialization_equal: true,
+            },
+        );
+        let wrong_witnessless_id = wrong_witnessless.run_id.clone();
+        assert_eq!(
+            compare_run_bindings(
+                std::slice::from_ref(&wrong_witnessless),
+                std::slice::from_ref(&wrong_witnessless),
+            ),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                wrong_witnessless_id,
+                "mutant".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
+    fn missing_sponsor_authorization_requires_the_exact_empty_suffix() {
+        let run = missing_sponsor_authorization_run();
+        assert_eq!(
+            compare_run_bindings(std::slice::from_ref(&run), std::slice::from_ref(&run)),
+            Ok(()),
+        );
+        let mut forged = run;
+        let run_id = forged.run_id.clone();
+        let LiveRequestFact::Refusal { locator, .. } = forged
+            .request_facts
+            .get_mut("mutant")
+            .expect("the sponsor mutant fact is present")
+        else {
+            panic!("the sponsor mutant is a refusal");
+        };
+        let LiveMutationLocator::WitnessItem { item_index, .. } = locator else {
+            panic!("the sponsor mutant carries a witness-item locator");
+        };
+        *item_index = 1;
+        assert_eq!(
+            compare_run_bindings(std::slice::from_ref(&forged), std::slice::from_ref(&forged),),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                run_id,
+                "mutant".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
     fn committed_leaf_arrangement_is_schema_six_only_and_recomputed() {
         let run = committed_leaf_arrangement_run();
         assert_eq!(
@@ -4996,6 +5331,187 @@ mod tests {
             Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
                 run_id,
                 "mutant".to_owned(),
+            )),
+        );
+
+        let obsolete =
+            committed_leaf_arrangement_run_with_block(synthetic_control_block_with_version(0xc0));
+        let obsolete_run_id = obsolete.run_id.clone();
+        assert_eq!(
+            compare_run_bindings(
+                std::slice::from_ref(&obsolete),
+                std::slice::from_ref(&obsolete),
+            ),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                obsolete_run_id,
+                "mutant".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
+    fn composite_member_may_share_one_ordinary_acceptance() {
+        let first = synthetic_acceptance_run("primary-ceremony", "primary", 0xb1, 0x08);
+        let second = synthetic_acceptance_run("balancing-ceremony", "balancing", 0xb2, 0x09);
+        let composite = composite_observation(
+            &first,
+            "primary-ceremony",
+            "primary",
+            &second,
+            "balancing-ceremony",
+            "balancing",
+        );
+        let LiveTargetResponse::Accepted { identity } = &first.responses["primary"] else {
+            panic!("the shared response is accepted");
+        };
+        let ordinary = LiveReportObservation::NativeAcceptance {
+            row: "private-one-to-one",
+            run_id: first.run_id.clone(),
+            request_id: "primary".to_owned(),
+            identity: *identity,
+        };
+        let mut runs = vec![first, second];
+        runs.sort_by(|left, right| left.run_id.cmp(&right.run_id));
+
+        assert_eq!(
+            validate_bound_observations(&[composite, ordinary], &runs),
+            Ok(2),
+        );
+    }
+
+    #[test]
+    fn composite_member_reuse_is_closed_to_one_ordinary_acceptance() {
+        let mut observed = std::collections::BTreeMap::new();
+        assert_eq!(
+            insert_observation_link(
+                &mut observed,
+                "run",
+                "request",
+                ObservationLinkClass::OrdinaryAcceptance("private-one-to-one"),
+            ),
+            Ok(()),
+        );
+        assert_eq!(
+            insert_observation_link(
+                &mut observed,
+                "run",
+                "request",
+                ObservationLinkClass::CompositeAcceptanceMember("both-commitment-parity-forms",),
+            ),
+            Ok(()),
+        );
+        assert_eq!(
+            insert_observation_link(
+                &mut observed,
+                "run",
+                "request",
+                ObservationLinkClass::OrdinaryAcceptance("private-one-to-one"),
+            ),
+            Err(LiveSafetyReportRefusal::ObservationAliased(
+                "request".to_owned(),
+            )),
+        );
+
+        for class in [
+            ObservationLinkClass::NativeRefusal,
+            ObservationLinkClass::PairMember,
+            ObservationLinkClass::MultiRowSemantic,
+            ObservationLinkClass::OrdinaryAcceptance("another-row"),
+            ObservationLinkClass::CompositeAcceptanceMember("another-row"),
+            ObservationLinkClass::CompositeAcceptanceMember("both-commitment-parity-forms"),
+        ] {
+            let mut observed = std::collections::BTreeMap::new();
+            insert_observation_link(
+                &mut observed,
+                "run",
+                "request",
+                ObservationLinkClass::CompositeAcceptanceMember("both-commitment-parity-forms"),
+            )
+            .expect("one composite member is unique");
+            assert_eq!(
+                insert_observation_link(&mut observed, "run", "request", class),
+                Err(LiveSafetyReportRefusal::ObservationAliased(
+                    "request".to_owned(),
+                )),
+            );
+        }
+    }
+
+    #[test]
+    fn the_real_corpus_roles_match_every_typed_observation_form() {
+        let evidence = derive_live_evidence_plan().expect("the evidence plan derives");
+        let observations =
+            observations_from_overlay(&evidence).expect("the overlay observations derive");
+
+        assert_eq!(
+            validate_bound_observations(&observations, evidence.runs()),
+            Ok(42),
+        );
+    }
+
+    #[test]
+    fn conservation_control_reuse_is_closed_to_its_exact_acceptance() {
+        let request_id = "conservation-negatives/request-6";
+        let control = synthetic_control_acceptance_run(request_id);
+        let observation = |run: &LiveRunBinding, row: &'static str, request: &str| {
+            let LiveTargetResponse::Accepted { identity } = &run.responses[request] else {
+                panic!("the conservation control response is accepted");
+            };
+            LiveReportObservation::NativeAcceptance {
+                row,
+                run_id: run.run_id.clone(),
+                request_id: request.to_owned(),
+                identity: *identity,
+            }
+        };
+        assert_eq!(
+            validate_bound_observations(
+                &[observation(&control, "target-ct-conservation", request_id)],
+                std::slice::from_ref(&control),
+            ),
+            Ok(1),
+        );
+        assert_eq!(
+            validate_bound_observations(
+                &[observation(&control, "another-row", request_id)],
+                std::slice::from_ref(&control),
+            ),
+            Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                control.run_id.clone(),
+                request_id.to_owned(),
+            )),
+        );
+
+        let wrong_request_id = "conservation-negatives/request-5";
+        let wrong_request = synthetic_control_acceptance_run(wrong_request_id);
+        assert_eq!(
+            validate_bound_observations(
+                &[observation(
+                    &wrong_request,
+                    "target-ct-conservation",
+                    wrong_request_id,
+                )],
+                std::slice::from_ref(&wrong_request),
+            ),
+            Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                wrong_request.run_id.clone(),
+                wrong_request_id.to_owned(),
+            )),
+        );
+
+        let wrong_role = synthetic_acceptance_run("conservation-negatives", request_id, 0xb4, 0x08);
+        assert_eq!(
+            validate_bound_observations(
+                &[observation(
+                    &wrong_role,
+                    "target-ct-conservation",
+                    request_id,
+                )],
+                std::slice::from_ref(&wrong_role),
+            ),
+            Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                wrong_role.run_id.clone(),
+                request_id.to_owned(),
             )),
         );
     }
@@ -5083,6 +5599,27 @@ mod tests {
     }
 
     #[test]
+    fn a_multi_row_witness_cannot_be_reused_by_an_ordinary_observation() {
+        let run = synthetic_multi_row_run();
+        let multi_row = multi_row_observation(&run);
+        let LiveTargetResponse::Accepted { identity } = &run.responses["sponsored"] else {
+            panic!("the multi-row response is accepted");
+        };
+        let ordinary = LiveReportObservation::NativeAcceptance {
+            row: "another-row",
+            run_id: run.run_id.clone(),
+            request_id: "sponsored".to_owned(),
+            identity: *identity,
+        };
+        assert_eq!(
+            validate_bound_observations(&[multi_row, ordinary], std::slice::from_ref(&run)),
+            Err(LiveSafetyReportRefusal::ObservationAliased(
+                "sponsored".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
     fn a_multi_row_witness_with_one_unproven_predicate_refuses() {
         let run = synthetic_multi_row_run();
         let mut observation = multi_row_observation(&run);
@@ -5147,66 +5684,74 @@ mod tests {
         let validated = validate_live_safety_report(report, &plan, &target)
             .expect("the assembled report validates");
 
-        // Only comparisons that actually ran are recorded. The corpus has
-        // no transcript-grade run bindings yet, so no run-only item can be
-        // smuggled into the witness by inserting `ALL` wholesale.
+        // Only comparisons that actually ran are recorded. The validated
+        // corpus drives every safety-report recomputation except the separate
+        // resource-report comparison.
         assert_eq!(
             validated.recomputed_items(),
             &std::collections::BTreeSet::from([
                 RecomputedItem::Role,
                 RecomputedItem::Schema,
+                RecomputedItem::TargetDeploymentBinding,
+                RecomputedItem::RequestResponseCensus,
+                RecomputedItem::ResponseShape,
                 RecomputedItem::CaseCensus,
                 RecomputedItem::RelationCensus,
                 RecomputedItem::MutationLinks,
+                RecomputedItem::TargetVerdictComparison,
+                RecomputedItem::SemanticProjection,
                 RecomputedItem::DisclosureComparison,
+                RecomputedItem::ExecutorProvenance,
                 RecomputedItem::Summary,
             ]),
         );
         assert_eq!(RecomputedItem::ALL.len(), 14);
-        for item in RecomputedItem::ALL {
-            if item.needs_a_run() {
-                assert!(!validated.recomputed_items().contains(item));
-            }
-        }
+        assert!(
+            !validated
+                .recomputed_items()
+                .contains(&RecomputedItem::ResourceComparison)
+        );
     }
 
     #[test]
-    fn the_assembled_report_is_a_truthful_unbound_corpus_ledger() {
+    fn the_assembled_report_is_the_truthful_bound_corpus_ledger() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
         let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
-        assert_eq!(report.observations().len(), 46);
+        assert_eq!(report.runs().len(), 28);
+        assert_eq!(report.runs(), plan.runs());
+        assert_eq!(report.observations().len(), 45);
         assert_eq!(report.report_layer_requirements().len(), 2);
         assert_eq!(report.census().report_layer_required(), 2);
         assert_eq!(report.census().report_layer_observed(), 0);
         let validated = validate_live_safety_report(report, &plan, &target).expect("validates");
         let rendered = render_live_safety_report(&validated);
 
-        assert!(rendered.contains("target_evidence recorded-unbound\n"));
-        assert!(rendered.contains("run_bindings 0\n"));
+        assert!(rendered.contains("target_evidence bound\n"));
+        assert!(rendered.contains("run_bindings 28\n"));
         assert!(!rendered.contains("deployment none"));
         assert!(!rendered.contains("run none"));
         assert!(!rendered.contains("NoRunRequested"));
 
         for exact in [
-            "recorded_observation_unbound 42\n",
-            "native_run_observed 0\n",
-            "native_refusal_observed 0\n",
+            "recorded_observation_unbound 0\n",
+            "native_run_observed 24\n",
+            "native_refusal_observed 17\n",
             "determinism_observed 1\n",
-            "paired_relation_observed 0\n",
+            "paired_relation_observed 1\n",
             "first_party_fact_observed 3\n",
             "observations 48\n",
-            "accepted 0\n",
-            "refused 0\n",
+            "accepted 24\n",
+            "refused 17\n",
             "determinism 1\n",
-            "paired_relation 0\n",
+            "paired_relation 1\n",
             "first_party_fact 3\n",
             "report_layer_required 0\n",
             "report_layer_observed 2\n",
             "report_layer_observations 2\n",
-            "recorded_unbound_native_acceptance 24\n",
-            "recorded_unbound_native_refusal 17\n",
-            "recorded_unbound_paired_relation 1\n",
+            "recorded_unbound_native_acceptance 0\n",
+            "recorded_unbound_native_refusal 0\n",
+            "recorded_unbound_paired_relation 0\n",
         ] {
             assert!(rendered.contains(exact), "missing {exact:?}");
         }
@@ -5239,14 +5784,30 @@ mod tests {
             ],
         );
         let answered = validated.census().first_party_discharged()
+            + validated.census().native_run_observed()
+            + validated.census().native_refusal_observed()
             + validated.census().determinism_observed()
+            + validated.census().paired_relation_observed()
             + validated.census().first_party_fact_observed()
             + validated.census().report_layer_observed();
-        assert_eq!(answered, 40);
-        assert_eq!(validated.outstanding().len(), 67);
+        assert_eq!(answered, 82);
+        assert_eq!(validated.outstanding().len(), 25);
         assert_eq!(
             super::completeness_of(validated.census()),
             LiveSafetyCompleteness::PartialRequiredRowsOutstanding,
+        );
+    }
+
+    #[test]
+    fn the_envelope_refuses_a_run_set_not_owned_by_the_overlay() {
+        let evidence = derive_live_evidence_plan().expect("the evidence plan derives");
+        let target = projection();
+        let mut report = assemble_live_safety_report(&evidence, target.clone()).expect("assembles");
+        report.runs.pop();
+
+        assert_eq!(
+            validate_live_safety_report(report, &evidence, &target),
+            Err(LiveSafetyReportRefusal::RunCensusDiffers),
         );
     }
 
@@ -5277,12 +5838,27 @@ mod tests {
             }
         }
         assert!(occurrences.values().any(|count| *count > 1));
+        let corpus_observations = plan
+            .attributions()
+            .iter()
+            .map(crate::live_evidence::ValidatedCorpusAttribution::observation_index)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        let plan_derived_observations =
+            plan.census().determinism_observed() + plan.census().first_party_fact_observed();
+        let report_layer_observations = validated.report_layer_observations().len();
+        assert_eq!(plan.attributions().len(), 42);
+        assert_eq!(corpus_observations, 41);
+        assert_eq!(plan_derived_observations, 4);
+        assert_eq!(report_layer_observations, 2);
+        let rendered_observations = rendered
+            .lines()
+            .filter(|line| line.starts_with("observation "))
+            .count();
+        assert_eq!(rendered_observations, 47);
         assert_eq!(
-            rendered
-                .lines()
-                .filter(|line| line.starts_with("observation "))
-                .count(),
-            48,
+            rendered_observations,
+            corpus_observations + plan_derived_observations + report_layer_observations,
         );
     }
 
@@ -5748,7 +6324,7 @@ mod tests {
     }
 
     #[test]
-    fn mutating_a_recorded_identity_refuses_the_report() {
+    fn mutating_a_fresh_identity_refuses_the_report() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
         let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
@@ -5756,13 +6332,10 @@ mod tests {
             .observations
             .iter_mut()
             .find_map(|observation| match observation {
-                LiveReportObservation::RecordedObservationUnbound {
-                    observation: LiveRecordedObservation::NativeAcceptance { identity },
-                    ..
-                } => Some(identity),
+                LiveReportObservation::NativeAcceptance { identity, .. } => Some(identity),
                 _ => None,
             })
-            .expect("the corpus preserves an acceptance");
+            .expect("the corpus carries a fresh acceptance");
         *observation =
             parsed_identity("75e823f7c5c70ddfbd9584f90f67298f2570907947829828066c7047b21b53b1");
         assert_eq!(
@@ -5792,7 +6365,7 @@ mod tests {
     }
 
     #[test]
-    fn the_private_restart_rows_are_preserved_but_unbound() {
+    fn the_private_restart_rows_use_the_schema_six_bound_forms() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
         let report = assemble_live_safety_report(&plan, target).expect("assembles");
@@ -5800,8 +6373,13 @@ mod tests {
             .observations()
             .iter()
             .filter_map(|observation| match observation {
-                LiveReportObservation::RecordedObservationUnbound { row, .. }
-                    if matches!(*row, "private-one-to-one" | "both-commitment-parity-forms") =>
+                LiveReportObservation::CompositeTwoAcceptance { row, .. }
+                    if *row == "both-commitment-parity-forms" =>
+                {
+                    Some(*row)
+                }
+                LiveReportObservation::NativeAcceptance { row, .. }
+                    if *row == "private-one-to-one" =>
                 {
                     Some(*row)
                 }
@@ -5992,25 +6570,58 @@ mod tests {
         assert_eq!(board.len(), LiveSafetySection::ALL.len());
         let total: usize = board.values().map(|(rows, _, _)| rows).sum();
         assert_eq!(total, crate::live_safety::row_count());
+        let corpus_rows_in = |section| {
+            plan.attributions()
+                .iter()
+                .filter(|attribution| {
+                    plan.rows().iter().any(|row| {
+                        row.row().name() == attribution.row() && row.row().section() == section
+                    })
+                })
+                .count()
+        };
+        let other_answers_in = |section| {
+            plan.rows()
+                .iter()
+                .filter(|row| {
+                    row.row().section() == section
+                        && plan.attribution_for(row.row().name()).is_none()
+                        && row.standing().is_answered()
+                })
+                .count()
+        };
 
-        // Neither positive table waits on a component that does not
-        // exist, and the scoreboard exists to say how far each one has
-        // actually got rather than to round it away. Both numbers are
-        // asserted rather than bounded, because a scoreboard that said
-        // "some" would let the next row in without a run.
-        //
-        // All target-derived rows now preserve their historical observation
-        // without counting it as validated evidence. The only positive row
-        // still answered is the independently recomputed determinism row.
+        // All sixteen explicit rows are among the corpus's 42 attributions.
+        // The private table has nine corpus-attributed rows plus the
+        // independently observed determinism row. Request-6 witnesses
+        // `target-ct-conservation` in Positive Private; its control role does
+        // not move that row between sections. Exact counts keep either table
+        // from silently admitting or losing a row.
         let (explicit_rows, explicit_answered, explicit_blocked) =
             board[&LiveSafetySection::PositiveExplicit];
-        assert_eq!(explicit_answered, 0, "the explicit table's answered count");
+        let explicit_corpus_rows = corpus_rows_in(LiveSafetySection::PositiveExplicit);
+        let explicit_other_answers = other_answers_in(LiveSafetySection::PositiveExplicit);
+        assert_eq!(explicit_corpus_rows, 16);
+        assert_eq!(explicit_other_answers, 0);
+        assert_eq!(explicit_rows, 16);
+        assert_eq!(explicit_answered, 16, "the explicit table's answered count");
+        assert_eq!(
+            explicit_answered,
+            explicit_corpus_rows + explicit_other_answers
+        );
         assert_eq!(explicit_blocked, 0);
-        assert_ne!(explicit_rows, 0);
 
         let (private_rows, private_answered, private_blocked) =
             board[&LiveSafetySection::PositivePrivate];
-        assert_eq!(private_answered, 1, "the private table's answered count");
+        let private_corpus_rows = corpus_rows_in(LiveSafetySection::PositivePrivate);
+        let private_other_answers = other_answers_in(LiveSafetySection::PositivePrivate);
+        assert_eq!(private_corpus_rows, 9);
+        assert_eq!(private_other_answers, 1);
+        assert_eq!(private_answered, 10, "the private table's answered count");
+        assert_eq!(
+            private_answered,
+            private_corpus_rows + private_other_answers
+        );
         assert_eq!(private_blocked, 0);
         assert_eq!(private_rows, 10);
         assert_eq!(LiveSafetyPolarity::ALL.len(), 2);
