@@ -27,10 +27,11 @@
 //!
 //! # What this module does not do
 //!
-//! It observes nothing. Every OBSERVED-ACCEPTED verdict cites a
-//! `run_of_record` identity a ceremony produced; no verdict here
-//! is produced by running anything, and a shape consensus admits but
-//! nobody has submitted is recorded SOURCE-DERIVED and never "run".
+//! It observes nothing. Every current OBSERVED-ACCEPTED verdict cites a
+//! typed projection of the validated native-v2/revision-7 corpus; no
+//! verdict here is produced by running anything, and a shape consensus
+//! admits but nobody has submitted is recorded SOURCE-DERIVED and never
+//! "run".
 //! Nothing here moves a matrix row, a blocker or a residual: this is a
 //! register, and a register is not evidence.
 //!
@@ -335,9 +336,9 @@ pub enum ConsensusVerdict {
     /// A node accepted a transaction of this shape into a block.
     ///
     /// The strongest class, and the only one carrying a target-computed
-    /// identity. The identity is not a literal here: it is the
-    /// `run_of_record` constant a ceremony recorded, so a wave that
-    /// re-ran and got different bytes would move this register too.
+    /// identity. The identity is not a literal here: it is selected by
+    /// ceremony from the validated current corpus, so the register cannot
+    /// silently retain a predecessor value.
     ObservedAccepted {
         /// The identity the target computed for the accepted shape.
         identity: &'static str,
@@ -372,7 +373,8 @@ pub enum ConsensusVerdict {
 /// second.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FirstPartyStatus {
-    /// The registry builds it and a run of record observed it accepted.
+    /// The registry builds it and the validated current corpus records its
+    /// acceptance.
     ConstructibleAndObserved,
     /// Consensus admits it and the registry refuses it anyway.
     ///
@@ -394,8 +396,8 @@ pub enum FirstPartyStatus {
         refusal: RegistrationRefusal,
     },
     /// The registry refused it by convention, the convention was
-    /// STRUCTURALLY REMOVED, and a run of record then observed the shape
-    /// accepted.
+    /// STRUCTURALLY REMOVED, and the validated current corpus records the
+    /// shape accepted.
     ///
     /// # Why this is not just [`Self::ConstructibleAndObserved`]
     ///
@@ -481,8 +483,8 @@ pub struct LimitationRemoval {
     pub row: &'static str,
     /// What structurally changed, in the registry's own terms.
     pub change: &'static str,
-    /// The run-of-record identity of the first shape it unlocked, where
-    /// one has run.
+    /// The historical-v1 identity of the first shape it unlocked, where
+    /// one ran during that recorded campaign.
     ///
     /// `None` is a removal that is REAL at the registry and that nothing
     /// has yet carried to a node. The register keeps the two apart on
@@ -2368,8 +2370,8 @@ impl FormVerdict {
 /// 2. the tally predicate decides possibility, over both assets at once,
 ///    by [`TransferForm::blinder_sum_is_absorbable`];
 /// 3. a small PINNED set of cells carries what a node actually said,
-///    accepting or refusing, and cites the run-of-record constant by
-///    name rather than a literal;
+///    accepting or refusing, and selects a typed validated-corpus
+///    projection by ceremony rather than copying a literal;
 /// 4. everything else inherits, and the inheritance is what makes the
 ///    register a closure rule: a cell is expressible unless a named
 ///    layer refuses it, and every such layer is enumerated in
@@ -2435,7 +2437,7 @@ pub fn form_verdict(form: TransferForm) -> FormVerdict {
         };
     }
 
-    // 3b. The cells a node accepted, each citing its own run of record.
+    // 3b. The cells a node accepted, each citing its current corpus run.
     if let Some(identity) = accepted_identity(form) {
         return FormVerdict::ObservedAccepted { identity };
     }
@@ -2508,10 +2510,10 @@ const fn outside_the_space(form: TransferForm) -> Option<&'static str> {
     None
 }
 
-/// The run-of-record identity for a cell a node accepted.
+/// The validated current-corpus identity for a cell a node accepted.
 ///
-/// Cited by constant and never as a literal, so a wave that re-ran and
-/// recorded different bytes would move this register with it.
+/// Selected by ceremony and never copied as a literal, so a predecessor
+/// identity cannot remain current after the corpus moves.
 fn accepted_identity(form: TransferForm) -> Option<&'static str> {
     // The sponsored acceptances, which had NO census row anywhere before
     // this one. Three forms, three lanes, three identities.
@@ -3029,14 +3031,14 @@ mod tests {
         );
     }
 
-    /// Every constructible row cites a run-of-record identity.
+    /// Every constructible row cites its current corpus identity.
     ///
-    /// Cited rather than copied: the expected values below are the
-    /// `run_of_record` constants themselves, so this compares the
-    /// register against the evidence rather than against a literal
-    /// somebody transcribed.
+    /// Projected rather than copied: the expected values below come from
+    /// the same validated corpus through independently selected ceremony
+    /// names, so this compares the register against current authority
+    /// rather than against a literal somebody transcribed.
     #[test]
-    fn every_observed_row_cites_its_run_of_record_identity() {
+    fn every_observed_row_cites_its_current_corpus_identity() {
         let expected = [
             (
                 BlindedShape::OneToOne,
@@ -3080,7 +3082,7 @@ mod tests {
             assert_eq!(
                 entry.consensus,
                 ConsensusVerdict::ObservedAccepted { identity },
-                "{} cites its own run of record",
+                "{} cites its own current corpus run",
                 shape.handle(),
             );
             assert!(
