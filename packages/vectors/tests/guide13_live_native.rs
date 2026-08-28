@@ -1719,11 +1719,17 @@ fn sha256(input: &[u8]) -> [u8; 32] {
 
     let mut state = SHA256_INITIAL;
     let (blocks, remainder) = padded.as_chunks::<64>();
-    debug_assert!(remainder.is_empty());
+    assert!(
+        remainder.is_empty(),
+        "SHA-256 padding must produce whole 64-byte blocks",
+    );
     for block in blocks {
         let mut schedule = [0_u32; 64];
         let (words, remainder) = block.as_chunks::<4>();
-        debug_assert!(remainder.is_empty());
+        assert!(
+            remainder.is_empty(),
+            "a SHA-256 block must contain whole four-byte words",
+        );
         for (index, word) in words.iter().enumerate() {
             schedule[index] = u32::from_be_bytes(*word);
         }
@@ -1783,7 +1789,10 @@ fn sha256(input: &[u8]) -> [u8; 32] {
     }
     let mut digest = [0_u8; 32];
     let (chunks, remainder) = digest.as_chunks_mut::<4>();
-    debug_assert!(remainder.is_empty());
+    assert!(
+        remainder.is_empty(),
+        "a SHA-256 digest must contain whole four-byte words",
+    );
     for (chunk, word) in chunks.iter_mut().zip(state) {
         chunk.copy_from_slice(&word.to_be_bytes());
     }
