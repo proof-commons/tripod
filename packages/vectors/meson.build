@@ -18,6 +18,7 @@ vectors_source_files = files(
   'src/live_closeout.rs',
   'src/live_comparison.rs',
   'src/live_conservation_negatives.rs',
+  'src/live_corpus_rerun_day.rs',
   'src/live_disclosure.rs',
   'src/live_evidence.rs',
   'src/live_explicit_shapes.rs',
