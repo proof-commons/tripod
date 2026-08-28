@@ -431,6 +431,12 @@ enum SchemaKind {
     Report,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TransactionIdField {
+    Present,
+    Absent,
+}
+
 #[derive(Clone, Copy)]
 struct TranscriptSchema {
     kind: SchemaKind,
@@ -619,8 +625,10 @@ fn validate_schema_counts(
 fn validate_hex_fields(parsed: &ParsedLines<'_>) -> Result<(), RerunDayCorpusRefusal> {
     for (field, value) in &parsed.lines {
         match *field {
-            "accepted_txid"
-            | "committed_sponsor_funding_txid"
+            "accepted_txid" => {
+                parse_transaction_id_field(parsed.name, field, value)?;
+            }
+            "committed_sponsor_funding_txid"
             | "control_accepted_txid"
             | "issued_asset"
             | "predecessor_digest"
@@ -640,21 +648,24 @@ fn validate_hex_fields(parsed: &ParsedLines<'_>) -> Result<(), RerunDayCorpusRef
                 validate_fixed_hex(parsed.name, field, digest, 32)?;
             }
             "observed" => {
-                validate_optional_token_hex(parsed.name, field, value, "txid", 32)?;
+                validate_optional_transaction_id(parsed.name, field, value, "accepted_txid")?;
+                validate_optional_transaction_id(parsed.name, field, value, "txid")?;
                 if let Some(txid) = value
                     .split_whitespace()
                     .find_map(|token| token.strip_prefix("txid="))
-                    && txid != "none"
                 {
-                    validate_fixed_hex(parsed.name, field, txid, 32)?;
+                    parse_transaction_id_field(parsed.name, field, txid)?;
                 }
             }
             "control" => {
                 validate_token_hex(parsed.name, field, value, "message", 32)?;
-                validate_optional_token_hex(parsed.name, field, value, "txid", 32)?;
+                validate_optional_transaction_id(parsed.name, field, value, "txid")?;
             }
             "control_observed" => {
-                validate_optional_token_hex(parsed.name, field, value, "accepted_txid", 32)?;
+                validate_optional_transaction_id(parsed.name, field, value, "accepted_txid")?;
+            }
+            "negative" => {
+                validate_optional_transaction_id(parsed.name, field, value, "accepted_txid")?;
             }
             "provenance" => validate_provenance_hex(parsed.name, field, value)?,
             "binding" => validate_binding_hex(parsed.name, field, value)?,
@@ -864,13 +875,13 @@ fn validate_reverification_hex(
     let Some((subkey, hex)) = value.split_once(' ') else {
         return Ok(());
     };
-    let expected = match subkey {
-        "accepted_txid" | "recomputed_message" | "witness_txid" => Some(32),
-        "signature_from_readback" => Some(64),
-        _ => None,
-    };
-    if let Some(bytes) = expected {
-        validate_fixed_hex(name, field, hex, bytes)?;
+    match subkey {
+        "accepted_txid" => {
+            parse_transaction_id_field(name, field, hex)?;
+        }
+        "recomputed_message" | "witness_txid" => validate_fixed_hex(name, field, hex, 32)?,
+        "signature_from_readback" => validate_fixed_hex(name, field, hex, 64)?,
+        _ => {}
     }
     Ok(())
 }
@@ -888,17 +899,28 @@ fn validate_token_hex(
     Ok(())
 }
 
-fn validate_optional_token_hex(
+fn parse_transaction_id_field(
+    name: &str,
+    field: &str,
+    value: &str,
+) -> Result<TransactionIdField, RerunDayCorpusRefusal> {
+    match value {
+        "none" => Ok(TransactionIdField::Absent),
+        hex => {
+            validate_fixed_hex(name, field, hex, 32)?;
+            Ok(TransactionIdField::Present)
+        }
+    }
+}
+
+fn validate_optional_transaction_id(
     name: &str,
     field: &str,
     value: &str,
     key: &str,
-    bytes: usize,
 ) -> Result<(), RerunDayCorpusRefusal> {
-    if let Some(hex) = token_after(value, key)
-        && hex != "none"
-    {
-        validate_fixed_hex(name, field, hex, bytes)?;
+    if let Some(txid) = token_after(value, key) {
+        parse_transaction_id_field(name, field, txid)?;
     }
     Ok(())
 }
@@ -2161,6 +2183,26 @@ mod tests {
             parse_rerun_day_transcript(name, wrong_width.as_bytes()),
             Err(RerunDayCorpusRefusal::WrongByteLength { .. })
         ));
+    }
+
+    #[test]
+    fn absent_accepted_transaction_ids_are_typed_and_exactly_spelled() {
+        let (name, text) = transcript_text("sponsored-committed-value");
+        assert_eq!(
+            parse_transaction_id_field(name, "accepted_txid", "none"),
+            Ok(TransactionIdField::Absent)
+        );
+        parse_rerun_day_transcript(name, text.as_bytes())
+            .expect("the rejected positive attempt has no accepted transaction");
+
+        let unsupported = text.replacen("accepted_txid none", "accepted_txid none-recorded", 1);
+        assert_eq!(
+            parse_rerun_day_transcript(name, unsupported.as_bytes()),
+            Err(RerunDayCorpusRefusal::MalformedHex {
+                name: name.to_owned(),
+                field: "accepted_txid".to_owned(),
+            })
+        );
     }
 
     #[test]
