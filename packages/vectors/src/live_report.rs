@@ -5838,12 +5838,27 @@ mod tests {
             }
         }
         assert!(occurrences.values().any(|count| *count > 1));
+        let corpus_observations = plan
+            .attributions()
+            .iter()
+            .map(crate::live_evidence::ValidatedCorpusAttribution::observation_index)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        let plan_derived_observations =
+            plan.census().determinism_observed() + plan.census().first_party_fact_observed();
+        let report_layer_observations = validated.report_layer_observations().len();
+        assert_eq!(plan.attributions().len(), 42);
+        assert_eq!(corpus_observations, 41);
+        assert_eq!(plan_derived_observations, 4);
+        assert_eq!(report_layer_observations, 2);
+        let rendered_observations = rendered
+            .lines()
+            .filter(|line| line.starts_with("observation "))
+            .count();
+        assert_eq!(rendered_observations, 47);
         assert_eq!(
-            rendered
-                .lines()
-                .filter(|line| line.starts_with("observation "))
-                .count(),
-            48,
+            rendered_observations,
+            corpus_observations + plan_derived_observations + report_layer_observations,
         );
     }
 
@@ -6555,25 +6570,58 @@ mod tests {
         assert_eq!(board.len(), LiveSafetySection::ALL.len());
         let total: usize = board.values().map(|(rows, _, _)| rows).sum();
         assert_eq!(total, crate::live_safety::row_count());
+        let corpus_rows_in = |section| {
+            plan.attributions()
+                .iter()
+                .filter(|attribution| {
+                    plan.rows().iter().any(|row| {
+                        row.row().name() == attribution.row() && row.row().section() == section
+                    })
+                })
+                .count()
+        };
+        let other_answers_in = |section| {
+            plan.rows()
+                .iter()
+                .filter(|row| {
+                    row.row().section() == section
+                        && plan.attribution_for(row.row().name()).is_none()
+                        && row.standing().is_answered()
+                })
+                .count()
+        };
 
-        // Neither positive table waits on a component that does not
-        // exist, and the scoreboard exists to say how far each one has
-        // actually got rather than to round it away. Both numbers are
-        // asserted rather than bounded, because a scoreboard that said
-        // "some" would let the next row in without a run.
-        //
-        // All target-derived rows now preserve their historical observation
-        // without counting it as validated evidence. The only positive row
-        // still answered is the independently recomputed determinism row.
+        // All sixteen explicit rows are among the corpus's 42 attributions.
+        // The private table has nine corpus-attributed rows plus the
+        // independently observed determinism row. Request-6 witnesses
+        // `target-ct-conservation` in Positive Private; its control role does
+        // not move that row between sections. Exact counts keep either table
+        // from silently admitting or losing a row.
         let (explicit_rows, explicit_answered, explicit_blocked) =
             board[&LiveSafetySection::PositiveExplicit];
-        assert_eq!(explicit_answered, 0, "the explicit table's answered count");
+        let explicit_corpus_rows = corpus_rows_in(LiveSafetySection::PositiveExplicit);
+        let explicit_other_answers = other_answers_in(LiveSafetySection::PositiveExplicit);
+        assert_eq!(explicit_corpus_rows, 16);
+        assert_eq!(explicit_other_answers, 0);
+        assert_eq!(explicit_rows, 16);
+        assert_eq!(explicit_answered, 16, "the explicit table's answered count");
+        assert_eq!(
+            explicit_answered,
+            explicit_corpus_rows + explicit_other_answers
+        );
         assert_eq!(explicit_blocked, 0);
-        assert_ne!(explicit_rows, 0);
 
         let (private_rows, private_answered, private_blocked) =
             board[&LiveSafetySection::PositivePrivate];
-        assert_eq!(private_answered, 1, "the private table's answered count");
+        let private_corpus_rows = corpus_rows_in(LiveSafetySection::PositivePrivate);
+        let private_other_answers = other_answers_in(LiveSafetySection::PositivePrivate);
+        assert_eq!(private_corpus_rows, 9);
+        assert_eq!(private_other_answers, 1);
+        assert_eq!(private_answered, 10, "the private table's answered count");
+        assert_eq!(
+            private_answered,
+            private_corpus_rows + private_other_answers
+        );
         assert_eq!(private_blocked, 0);
         assert_eq!(private_rows, 10);
         assert_eq!(LiveSafetyPolarity::ALL.len(), 2);
