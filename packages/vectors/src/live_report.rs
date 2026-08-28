@@ -1602,7 +1602,7 @@ pub enum LiveSafetyReportRefusal {
         /// The matrix row carrying the invalid reference.
         row: &'static str,
     },
-    /// One request is aliased to more than one row observation.
+    /// One request is aliased outside the closed schema-6 reuse shapes.
     ObservationAliased(String),
     /// Two composite acceptance members claim the same named ceremony.
     CompositeCeremonyReused(String),
@@ -2795,23 +2795,58 @@ fn pair_relation_recomputes(
     terms.into_iter().all(|agrees| agrees) && withheld_terms == 2
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ObservationLinkClass {
+    OrdinaryAcceptance(&'static str),
+    CompositeAcceptanceMember(&'static str),
+    NativeRefusal,
+    PairMember,
+    MultiRowSemantic,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ObservationLinkStanding {
+    Single(ObservationLinkClass),
+    CompositeAndOrdinaryAcceptance,
+}
+
 fn insert_observation_link(
-    observed: &mut BTreeSet<(String, String)>,
+    observed: &mut BTreeMap<(String, String), ObservationLinkStanding>,
     run_id: &str,
     request_id: &str,
+    class: ObservationLinkClass,
 ) -> Result<(), LiveSafetyReportRefusal> {
-    if !observed.insert((run_id.to_owned(), request_id.to_owned())) {
-        return Err(LiveSafetyReportRefusal::ObservationAliased(
+    let key = (run_id.to_owned(), request_id.to_owned());
+    let Some(standing) = observed.get_mut(&key) else {
+        observed.insert(key, ObservationLinkStanding::Single(class));
+        return Ok(());
+    };
+    match (*standing, class) {
+        (
+            ObservationLinkStanding::Single(ObservationLinkClass::OrdinaryAcceptance(
+                "private-one-to-one",
+            )),
+            ObservationLinkClass::CompositeAcceptanceMember("both-commitment-parity-forms"),
+        )
+        | (
+            ObservationLinkStanding::Single(ObservationLinkClass::CompositeAcceptanceMember(
+                "both-commitment-parity-forms",
+            )),
+            ObservationLinkClass::OrdinaryAcceptance("private-one-to-one"),
+        ) => {
+            *standing = ObservationLinkStanding::CompositeAndOrdinaryAcceptance;
+            Ok(())
+        }
+        _ => Err(LiveSafetyReportRefusal::ObservationAliased(
             request_id.to_owned(),
-        ));
+        )),
     }
-    Ok(())
 }
 
 #[derive(Debug, Default)]
 struct BoundObservationValidation {
     compared: usize,
-    observed_links: BTreeSet<(String, String)>,
+    observed_links: BTreeMap<(String, String), ObservationLinkStanding>,
     support_links: BTreeMap<String, LiveSupportLink>,
     used_requests: BTreeSet<(String, String)>,
 }
@@ -2831,7 +2866,12 @@ impl BoundObservationValidation {
         else {
             return Ok(());
         };
-        insert_observation_link(&mut self.observed_links, run_id, request_id)?;
+        insert_observation_link(
+            &mut self.observed_links,
+            run_id,
+            request_id,
+            ObservationLinkClass::OrdinaryAcceptance(row),
+        )?;
         let (fact, response, _) = request_for(runs, run_id, request_id, row)?;
         if fact != &LiveRequestFact::Acceptance {
             return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
@@ -2883,7 +2923,12 @@ impl BoundObservationValidation {
         }
         let mut prefixes = Vec::with_capacity(2);
         for member in [first, second] {
-            insert_observation_link(&mut self.observed_links, &member.run_id, &member.request_id)?;
+            insert_observation_link(
+                &mut self.observed_links,
+                &member.run_id,
+                &member.request_id,
+                ObservationLinkClass::CompositeAcceptanceMember(row),
+            )?;
             let (fact, response, bytes) =
                 request_for(runs, &member.run_id, &member.request_id, row)?;
             if fact != &LiveRequestFact::Acceptance {
@@ -3011,7 +3056,12 @@ impl BoundObservationValidation {
         else {
             return Ok(());
         };
-        insert_observation_link(&mut self.observed_links, run_id, request_id)?;
+        insert_observation_link(
+            &mut self.observed_links,
+            run_id,
+            request_id,
+            ObservationLinkClass::NativeRefusal,
+        )?;
         let (fact, response, _) = request_for(runs, run_id, request_id, row)?;
         let LiveRequestFact::Refusal {
             mutant,
@@ -3078,8 +3128,14 @@ impl BoundObservationValidation {
             &mut self.observed_links,
             explicit_run_id,
             explicit_request_id,
+            ObservationLinkClass::PairMember,
         )?;
-        insert_observation_link(&mut self.observed_links, private_run_id, private_request_id)?;
+        insert_observation_link(
+            &mut self.observed_links,
+            private_run_id,
+            private_request_id,
+            ObservationLinkClass::PairMember,
+        )?;
         let explicit = request_for(runs, explicit_run_id, explicit_request_id, row)?;
         let private = request_for(runs, private_run_id, private_request_id, row)?;
         validate_pair_claim(
@@ -3128,6 +3184,7 @@ impl BoundObservationValidation {
             &mut self.observed_links,
             &witness.run_id,
             &witness.request_id,
+            ObservationLinkClass::MultiRowSemantic,
         )?;
         let row = "sponsored";
         let (fact, response, bytes) = request_for(runs, &witness.run_id, &witness.request_id, row)?;
@@ -4193,9 +4250,9 @@ mod tests {
         LiveReportObservation, LiveRequestFact, LiveRowSemanticPredicate, LiveRunBinding,
         LiveSafetyCompleteness, LiveSafetyDiagnostics, LiveSafetyReportRefusal,
         LiveSafetyReportRole, LiveSupportLink, LiveTargetResponse, LiveWitnessPathRole,
-        NativeProtocolRevision, RecomputedItem, VALIDATED_PAIR_RELATION, VolatileField,
-        assemble_live_safety_report, compare_run_bindings, recomputed_txid,
-        render_live_safety_report, section_scoreboard, target_evidence_name,
+        NativeProtocolRevision, ObservationLinkClass, RecomputedItem, VALIDATED_PAIR_RELATION,
+        VolatileField, assemble_live_safety_report, compare_run_bindings, insert_observation_link,
+        recomputed_txid, render_live_safety_report, section_scoreboard, target_evidence_name,
         validate_bound_observations, validate_live_safety_report, validate_report_disclosures,
     };
     use crate::live_evidence::derive_live_evidence_plan;
@@ -5265,6 +5322,94 @@ mod tests {
     }
 
     #[test]
+    fn composite_member_may_share_one_ordinary_acceptance() {
+        let first = synthetic_acceptance_run("primary-ceremony", "primary", 0xb1, 0x08);
+        let second = synthetic_acceptance_run("balancing-ceremony", "balancing", 0xb2, 0x09);
+        let composite = composite_observation(
+            &first,
+            "primary-ceremony",
+            "primary",
+            &second,
+            "balancing-ceremony",
+            "balancing",
+        );
+        let LiveTargetResponse::Accepted { identity } = &first.responses["primary"] else {
+            panic!("the shared response is accepted");
+        };
+        let ordinary = LiveReportObservation::NativeAcceptance {
+            row: "private-one-to-one",
+            run_id: first.run_id.clone(),
+            request_id: "primary".to_owned(),
+            identity: *identity,
+        };
+        let mut runs = vec![first, second];
+        runs.sort_by(|left, right| left.run_id.cmp(&right.run_id));
+
+        assert_eq!(
+            validate_bound_observations(&[composite, ordinary], &runs),
+            Ok(2),
+        );
+    }
+
+    #[test]
+    fn composite_member_reuse_is_closed_to_one_ordinary_acceptance() {
+        let mut observed = std::collections::BTreeMap::new();
+        assert_eq!(
+            insert_observation_link(
+                &mut observed,
+                "run",
+                "request",
+                ObservationLinkClass::OrdinaryAcceptance("private-one-to-one"),
+            ),
+            Ok(()),
+        );
+        assert_eq!(
+            insert_observation_link(
+                &mut observed,
+                "run",
+                "request",
+                ObservationLinkClass::CompositeAcceptanceMember("both-commitment-parity-forms",),
+            ),
+            Ok(()),
+        );
+        assert_eq!(
+            insert_observation_link(
+                &mut observed,
+                "run",
+                "request",
+                ObservationLinkClass::OrdinaryAcceptance("private-one-to-one"),
+            ),
+            Err(LiveSafetyReportRefusal::ObservationAliased(
+                "request".to_owned(),
+            )),
+        );
+
+        for class in [
+            ObservationLinkClass::NativeRefusal,
+            ObservationLinkClass::PairMember,
+            ObservationLinkClass::MultiRowSemantic,
+            ObservationLinkClass::OrdinaryAcceptance("another-row"),
+            ObservationLinkClass::CompositeAcceptanceMember("another-row"),
+            ObservationLinkClass::CompositeAcceptanceMember("both-commitment-parity-forms"),
+        ] {
+            let mut observed = std::collections::BTreeMap::new();
+            insert_observation_link(
+                &mut observed,
+                "run",
+                "request",
+                ObservationLinkClass::CompositeAcceptanceMember("both-commitment-parity-forms"),
+            )
+            .expect("one composite member is unique");
+            assert_eq!(
+                insert_observation_link(&mut observed, "run", "request", class),
+                Err(LiveSafetyReportRefusal::ObservationAliased(
+                    "request".to_owned(),
+                )),
+            );
+        }
+    }
+
+    #[test]
     fn reused_primary_links_refuse() {
         let run = synthetic_run();
         let LiveTargetResponse::Accepted { identity } = &run.responses["request-a"] else {
@@ -5343,6 +5488,27 @@ mod tests {
         assert_eq!(
             validate_bound_observations(&[observation], std::slice::from_ref(&run)),
             Ok(2),
+        );
+    }
+
+    #[test]
+    fn a_multi_row_witness_cannot_be_reused_by_an_ordinary_observation() {
+        let run = synthetic_multi_row_run();
+        let multi_row = multi_row_observation(&run);
+        let LiveTargetResponse::Accepted { identity } = &run.responses["sponsored"] else {
+            panic!("the multi-row response is accepted");
+        };
+        let ordinary = LiveReportObservation::NativeAcceptance {
+            row: "another-row",
+            run_id: run.run_id.clone(),
+            request_id: "sponsored".to_owned(),
+            identity: *identity,
+        };
+        assert_eq!(
+            validate_bound_observations(&[multi_row, ordinary], std::slice::from_ref(&run)),
+            Err(LiveSafetyReportRefusal::ObservationAliased(
+                "sponsored".to_owned(),
+            )),
         );
     }
 
