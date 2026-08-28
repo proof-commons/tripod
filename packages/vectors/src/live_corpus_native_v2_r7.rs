@@ -1185,11 +1185,7 @@ fn parse_report_suite(
 ) -> Result<ReportSuiteFacts, NativeV2ImportRefusal> {
     cursor.exact("run-report-schema native-v2-r7-run-report 1")?;
     cursor.exact("capture-format-schema native-v2-r7-capture 1")?;
-    cursor.exact(&format!("suite-commit {NATIVE_V2_R7_INPUT_SET_ADDRESS}"))?;
-    let suite_tree = cursor.value("suite-tree")?.to_owned();
-    if decode_digest(&suite_tree).is_none() {
-        return Err(cursor.refusal());
-    }
+    cursor.exact(&format!("run-address {NATIVE_V2_R7_INPUT_SET_ADDRESS}"))?;
     cursor.exact("suite-clean yes")?;
     cursor.exact("rust-test-target guide13_live_native")?;
     if cursor.len_hex("cargo-argv")?.is_empty() {
