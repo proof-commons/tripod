@@ -2322,11 +2322,8 @@ mod tests {
         };
 
         let ForwardPrivateRestartExpectation::V2(forward) = forward_private_restart_expectation();
-        match forward.acceptance() {
-            ForwardPrivateRestartAcceptance::Pending => {}
-            ForwardPrivateRestartAcceptance::Recorded(link) => {
-                let _ = (link.primary(), link.balancing());
-            }
+        if let ForwardPrivateRestartAcceptance::Recorded(link) = forward.acceptance() {
+            let _ = (link.primary(), link.balancing());
         }
     }
 
