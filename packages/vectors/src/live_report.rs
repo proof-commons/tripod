@@ -1895,7 +1895,7 @@ fn parse_recorded_identity(
 }
 
 const fn recorded_observation_from_standing(
-    recorded: &RecordedObservation,
+    recorded: RecordedObservation,
 ) -> LiveRecordedObservation {
     match recorded {
         RecordedObservation::NativeAcceptance => LiveRecordedObservation::NativeAcceptance,
@@ -1921,7 +1921,7 @@ fn observations_from_overlay(
             LiveRowStanding::RecordedObservationUnbound(recorded) => {
                 Some(LiveReportObservation::RecordedObservationUnbound {
                     row,
-                    observation: recorded_observation_from_standing(recorded),
+                    observation: recorded_observation_from_standing(*recorded),
                 })
             }
             LiveRowStanding::DeterminismObserved {
