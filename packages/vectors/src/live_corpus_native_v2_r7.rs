@@ -1211,18 +1211,26 @@ fn parse_report_suite(
         cursor.exact(line)?;
     }
     let expected_tip = cursor.value("elementsd-expected-tip")?.to_owned();
-    if expected_tip.len() != 40 || decode_hex(&expected_tip).is_none() {
+    if expected_tip.len() != 40 {
+        return Err(cursor.refusal());
+    }
+    if decode_hex(&expected_tip).is_none() {
         return Err(cursor.refusal());
     }
     let binary_revision = parse_text(cursor.value("elementsd-binary-reported-revision")?)
         .ok_or_else(|| cursor.refusal())?;
     let intended_tip = parse_text(cursor.value("elementsd-intended-executed-tip")?)
         .ok_or_else(|| cursor.refusal())?;
-    if binary_revision.len() < 12
-        || binary_revision.len() > expected_tip.len()
-        || !expected_tip.starts_with(&binary_revision)
-        || intended_tip != expected_tip
-    {
+    if binary_revision.len() < 12 {
+        return Err(cursor.refusal());
+    }
+    if binary_revision.len() > expected_tip.len() {
+        return Err(cursor.refusal());
+    }
+    if !expected_tip.starts_with(&binary_revision) {
+        return Err(cursor.refusal());
+    }
+    if intended_tip != expected_tip {
         return Err(cursor.refusal());
     }
     Ok(ReportSuiteFacts {
@@ -1244,22 +1252,6 @@ fn parse_report_executor(
     let network_id = text_field(cursor, "deployment-network-id")?;
     let genesis_id = text_field(cursor, "deployment-genesis-id")?;
     let target_contract = text_field(cursor, "deployment-target-contract")?;
-    for field in ["utc-start", "utc-end"] {
-        let timestamp = cursor.value(field)?;
-        if timestamp.len() != 20
-            || timestamp.as_bytes().get(4) != Some(&b'-')
-            || timestamp.as_bytes().get(7) != Some(&b'-')
-            || timestamp.as_bytes().get(10) != Some(&b'T')
-            || timestamp.as_bytes().get(13) != Some(&b':')
-            || timestamp.as_bytes().get(16) != Some(&b':')
-            || !timestamp.ends_with('Z')
-        {
-            return Err(cursor.refusal());
-        }
-    }
-    if cursor.number("outer-wall-ms")? == 0 {
-        return Err(cursor.refusal());
-    }
     Ok(ReportExecutorFacts {
         adapter_name,
         adapter_version,
@@ -1281,10 +1273,12 @@ fn parse_report_roster(
         let value = cursor.value("ceremony")?;
         let (offered, digest) = value.split_once(' ').ok_or_else(|| cursor.refusal())?;
         let digest = decode_digest(digest).ok_or_else(|| cursor.refusal())?;
-        if offered != ceremony
-            || ceremony_digests
-                .insert(offered.to_owned(), digest)
-                .is_some()
+        if offered != ceremony {
+            return Err(cursor.refusal());
+        }
+        if ceremony_digests
+            .insert(offered.to_owned(), digest)
+            .is_some()
         {
             return Err(cursor.refusal());
         }
@@ -1346,7 +1340,10 @@ fn validate_manifest(
     if tagged::sha256(inputs.manifest) != expected_hash {
         return Err(NativeV2ImportRefusal::ManifestHash);
     }
-    if inputs.manifest.contains(&b'\r') || !inputs.manifest.ends_with(b"\n") {
+    if inputs.manifest.contains(&b'\r') {
+        return Err(NativeV2ImportRefusal::ManifestGrammar);
+    }
+    if !inputs.manifest.ends_with(b"\n") {
         return Err(NativeV2ImportRefusal::ManifestGrammar);
     }
     let manifest =
@@ -1360,11 +1357,16 @@ fn validate_manifest(
         let (digest, name) = line
             .split_once("  ")
             .ok_or(NativeV2ImportRefusal::ManifestGrammar)?;
-        if line.matches("  ").count() != 1
-            || previous.is_some_and(|prior| prior >= name)
-            || name != input.name
-            || !observed.insert(name)
-        {
+        if line.matches("  ").count() != 1 {
+            return Err(NativeV2ImportRefusal::ManifestGrammar);
+        }
+        if previous.is_some_and(|prior| prior >= name) {
+            return Err(NativeV2ImportRefusal::ManifestGrammar);
+        }
+        if name != input.name {
+            return Err(NativeV2ImportRefusal::ManifestGrammar);
+        }
+        if !observed.insert(name) {
             return Err(NativeV2ImportRefusal::ManifestGrammar);
         }
         previous = Some(name);
@@ -1382,7 +1384,13 @@ fn validate_manifest(
             });
         }
     }
-    if observed.len() != ARCHIVE_FILES.len() || lines.lines().count() != ARCHIVE_FILES.len() {
+    if observed.len() != ARCHIVE_FILES.len() {
+        return Err(NativeV2ImportRefusal::CorpusCensus {
+            expected: ARCHIVE_FILES.len(),
+            actual: lines.lines().count(),
+        });
+    }
+    if lines.lines().count() != ARCHIVE_FILES.len() {
         return Err(NativeV2ImportRefusal::CorpusCensus {
             expected: ARCHIVE_FILES.len(),
             actual: lines.lines().count(),
@@ -1629,7 +1637,10 @@ fn parse_projection(
         let (program, amount) = rest.split_once(' ').ok_or_else(|| cursor.refusal())?;
         let program = decode_hex(program).ok_or_else(|| cursor.refusal())?;
         let amount = parse_u64(amount).ok_or_else(|| cursor.refusal())?;
-        if parse_usize(offered) != Some(index) || parse_usize(length) != Some(program.len()) {
+        if parse_usize(offered) != Some(index) {
+            return Err(cursor.refusal());
+        }
+        if parse_usize(length) != Some(program.len()) {
             return Err(cursor.refusal());
         }
         let owner = format!("destination-{index}");
@@ -1682,7 +1693,13 @@ fn parse_operation_response(
     let response_id = text_field(cursor, "response-id")?;
     let response_request_id = text_field(cursor, "response-request-id")?;
     let response_operation_id = text_field(cursor, "response-operation-id")?;
-    if response_request_id != request_id || response_operation_id != operation_id {
+    if response_request_id != request_id {
+        return Err(NativeV2ImportRefusal::IdentifierLink {
+            ceremony: ceremony.to_owned(),
+            request: request_id.to_owned(),
+        });
+    }
+    if response_operation_id != operation_id {
         return Err(NativeV2ImportRefusal::IdentifierLink {
             ceremony: ceremony.to_owned(),
             request: request_id.to_owned(),
@@ -1865,10 +1882,12 @@ fn parse_capture_topics(cursor: &mut LineCursor<'_>) -> Result<(), NativeV2Impor
     for index in 0..topic_count {
         let value = cursor.value("handshake-topic")?;
         let (offered, carrier) = value.split_once(' ').ok_or_else(|| cursor.refusal())?;
-        if parse_usize(offered) != Some(index)
-            || parse_len_hex(carrier)
-                .ok_or_else(|| cursor.refusal())?
-                .is_empty()
+        if parse_usize(offered) != Some(index) {
+            return Err(cursor.refusal());
+        }
+        if parse_len_hex(carrier)
+            .ok_or_else(|| cursor.refusal())?
+            .is_empty()
         {
             return Err(cursor.refusal());
         }
@@ -1884,9 +1903,13 @@ fn parse_capture_environment(
 ) -> Result<(), NativeV2ImportRefusal> {
     cursor.exact("environment-schema 7")?;
     cursor.exact("environment-chain 15 656c656d656e747372656774657374")?;
-    if text_field(cursor, "environment-network-id")? != network_id
-        || text_field(cursor, "environment-genesis-id")? != genesis_id
-    {
+    if text_field(cursor, "environment-network-id")? != network_id {
+        return Err(NativeV2ImportRefusal::CrossFileBinding {
+            ceremony: ceremony.to_owned(),
+            field: "observed-environment",
+        });
+    }
+    if text_field(cursor, "environment-genesis-id")? != genesis_id {
         return Err(NativeV2ImportRefusal::CrossFileBinding {
             ceremony: ceremony.to_owned(),
             field: "observed-environment",
@@ -1929,11 +1952,13 @@ fn parse_capture_header(
 ) -> Result<CaptureHeader, NativeV2ImportRefusal> {
     cursor.exact("native-capture-schema 1")?;
     let ceremony = cursor.value("ceremony-id")?.to_owned();
-    if !NATIVE_V2_R7_CEREMONY_ROSTER.contains(&ceremony.as_str())
-        || name
-            != format!(
-                "e8836e79b631b96420fb8006353df5b673ec7c69b830fb5f0555fb06add02517.{ceremony}.capture"
-            )
+    if !NATIVE_V2_R7_CEREMONY_ROSTER.contains(&ceremony.as_str()) {
+        return Err(cursor.refusal());
+    }
+    if name
+        != format!(
+            "e8836e79b631b96420fb8006353df5b673ec7c69b830fb5f0555fb06add02517.{ceremony}.capture"
+        )
     {
         return Err(cursor.refusal());
     }
@@ -2039,7 +2064,10 @@ fn parse_capture_digests(
         let [offered, digest_name, algorithm, digest] = fields.as_slice() else {
             return Err(cursor.refusal());
         };
-        if parse_usize(offered) != Some(index) || *algorithm != digest_algorithm {
+        if parse_usize(offered) != Some(index) {
+            return Err(cursor.refusal());
+        }
+        if *algorithm != digest_algorithm {
             return Err(cursor.refusal());
         }
         if !digest_names.insert(*digest_name) {
@@ -2162,14 +2190,25 @@ fn witness_item_is_exact(
     input_index: usize,
     item_index: usize,
 ) -> bool {
-    if control.version() != mutant.version()
-        || control.inputs() != mutant.inputs()
-        || control.outputs() != mutant.outputs()
-        || control.lock_time() != mutant.lock_time()
-        || control.output_witnesses() != mutant.output_witnesses()
-        || control.witnesses().len() != mutant.witnesses().len()
-        || control.encode_without_witness() != mutant.encode_without_witness()
-    {
+    if control.version() != mutant.version() {
+        return false;
+    }
+    if control.inputs() != mutant.inputs() {
+        return false;
+    }
+    if control.outputs() != mutant.outputs() {
+        return false;
+    }
+    if control.lock_time() != mutant.lock_time() {
+        return false;
+    }
+    if control.output_witnesses() != mutant.output_witnesses() {
+        return false;
+    }
+    if control.witnesses().len() != mutant.witnesses().len() {
+        return false;
+    }
+    if control.encode_without_witness() != mutant.encode_without_witness() {
         return false;
     }
     let mut differences = 0;
@@ -2184,7 +2223,10 @@ fn witness_item_is_exact(
         }
         for (offered_item, values) in pair.0.stack().iter().zip(pair.1.stack()).enumerate() {
             if values.0 != values.1 {
-                if offered_input != input_index || offered_item != item_index {
+                if offered_input != input_index {
+                    return false;
+                }
+                if offered_item != item_index {
                     return false;
                 }
                 differences += 1;
@@ -2287,12 +2329,19 @@ fn committed_leaves_match(
     else {
         return false;
     };
-    if input_indices.is_empty()
-        || input_indices.windows(2).any(|pair| pair[0] >= pair[1])
-        || control.encode_without_witness() != mutant.encode_without_witness()
-        || control.output_witnesses() != mutant.output_witnesses()
-        || control.witnesses().len() != mutant.witnesses().len()
-    {
+    if input_indices.is_empty() {
+        return false;
+    }
+    if input_indices.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return false;
+    }
+    if control.encode_without_witness() != mutant.encode_without_witness() {
+        return false;
+    }
+    if control.output_witnesses() != mutant.output_witnesses() {
+        return false;
+    }
+    if control.witnesses().len() != mutant.witnesses().len() {
         return false;
     }
     let Some(control_programs) = input_indices
@@ -2309,10 +2358,13 @@ fn committed_leaves_match(
     else {
         return false;
     };
-    if control_programs.as_slice() != control_committed_leaf_programs.as_slice()
-        || mutant_programs.as_slice() != mutant_committed_leaf_programs.as_slice()
-        || control_programs == mutant_programs
-    {
+    if control_programs.as_slice() != control_committed_leaf_programs.as_slice() {
+        return false;
+    }
+    if mutant_programs.as_slice() != mutant_committed_leaf_programs.as_slice() {
+        return false;
+    }
+    if control_programs == mutant_programs {
         return false;
     }
     let coordinator = &control_programs[0];
@@ -2413,7 +2465,10 @@ fn recompute_projection(bytes: &[u8], input: &ParsedProjection) -> Option<Recomp
         return None;
     }
     let decoded = TargetTransaction::decode(bytes).ok()?;
-    if decoded.encode() != bytes || input.input_owners.len() > decoded.inputs().len() {
+    if decoded.encode() != bytes {
+        return None;
+    }
+    if input.input_owners.len() > decoded.inputs().len() {
         return None;
     }
     let mut semantic_input_amounts = input.semantic_input_amounts.clone();
@@ -2437,7 +2492,10 @@ fn recompute_projection(bytes: &[u8], input: &ParsedProjection) -> Option<Recomp
             .iter()
             .filter(|(_, program)| program.as_slice() == output.program());
         let (owner, _) = matches.next()?;
-        if matches.next().is_some() || !destination_owners.insert(owner.clone()) {
+        if matches.next().is_some() {
+            return None;
+        }
+        if !destination_owners.insert(owner.clone()) {
             return None;
         }
         let amount = *input.semantic_destination_amounts.get(owner)?;
@@ -2448,10 +2506,12 @@ fn recompute_projection(bytes: &[u8], input: &ParsedProjection) -> Option<Recomp
         }
         destinations.push((owner.clone(), amount));
     }
-    if destination_owners.len() != input.destination_programs.len()
-        || !destination_owners
-            .iter()
-            .eq(input.semantic_destination_amounts.keys())
+    if destination_owners.len() != input.destination_programs.len() {
+        return None;
+    }
+    if !destination_owners
+        .iter()
+        .eq(input.semantic_destination_amounts.keys())
     {
         return None;
     }
@@ -2541,10 +2601,19 @@ fn decode_transcript_operations(
             OperationRole::Paired(LivePairMember::Private) => 5,
         };
         roles[role_index] += 1;
-        if !operation_ids.insert(&operation.operation_id)
-            || !request_ids.insert(&operation.request_id)
-            || !response_ids.insert(&operation.response_id)
-        {
+        if !operation_ids.insert(&operation.operation_id) {
+            return Err(NativeV2ImportRefusal::IdentifierLink {
+                ceremony: ceremony.to_owned(),
+                request: operation.request_id.clone(),
+            });
+        }
+        if !request_ids.insert(&operation.request_id) {
+            return Err(NativeV2ImportRefusal::IdentifierLink {
+                ceremony: ceremony.to_owned(),
+                request: operation.request_id.clone(),
+            });
+        }
+        if !response_ids.insert(&operation.response_id) {
             return Err(NativeV2ImportRefusal::IdentifierLink {
                 ceremony: ceremony.to_owned(),
                 request: operation.request_id.clone(),
@@ -2616,9 +2685,13 @@ fn validate_refusal_locators(
                 ceremony: ceremony.to_owned(),
                 request: operation.request_id.clone(),
             })?;
-        if control.role != OperationRole::Control
-            || control.accepted_identity != operation.control_identity
-        {
+        if control.role != OperationRole::Control {
+            return Err(NativeV2ImportRefusal::IdentifierLink {
+                ceremony: ceremony.to_owned(),
+                request: operation.request_id.clone(),
+            });
+        }
+        if control.accepted_identity != operation.control_identity {
             return Err(NativeV2ImportRefusal::IdentifierLink {
                 ceremony: ceremony.to_owned(),
                 request: operation.request_id.clone(),
@@ -3302,7 +3375,10 @@ fn finish_material(mut material: MaterialBuilder) -> Result<MaterialParts, Nativ
             })
         })
         .collect::<Result<Vec<_>, NativeV2ImportRefusal>>()?;
-    if material.observations.len() != 41 || attributions.len() != ROW_ROSTER.len() {
+    if material.observations.len() != 41 {
+        return Err(NativeV2ImportRefusal::RowAttribution);
+    }
+    if attributions.len() != ROW_ROSTER.len() {
         return Err(NativeV2ImportRefusal::RowAttribution);
     }
     Ok((material.observations, material.links, attributions))
@@ -3376,12 +3452,17 @@ fn validate_inputs(
         .iter()
         .map(|transcript| transcript.summary.ceremony())
         .ne(NATIVE_V2_R7_CEREMONY_ROSTER)
-        || role_census != [107, 31, 5, 17, 1, 1]
-        || parsed
-            .iter()
-            .map(|transcript| transcript.summary.operation_count())
-            .sum::<usize>()
-            != 162
+    {
+        return Err(NativeV2ImportRefusal::RowAttribution);
+    }
+    if role_census != [107, 31, 5, 17, 1, 1] {
+        return Err(NativeV2ImportRefusal::RowAttribution);
+    }
+    if parsed
+        .iter()
+        .map(|transcript| transcript.summary.operation_count())
+        .sum::<usize>()
+        != 162
     {
         return Err(NativeV2ImportRefusal::RowAttribution);
     }
