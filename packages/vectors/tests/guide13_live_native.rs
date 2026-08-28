@@ -1946,7 +1946,7 @@ fn scripted_capture() -> NativeOperationCapture {
         "cc".repeat(32),
     );
     let script = format!(
-        "#!/bin/sh\nIFS= read -r request\nprintf '%s\\n' '{handshake}'\nIFS= read -r request\nprintf '%s\\n' '{observed_environment}'\nIFS= read -r request\nprintf '%s\\n' '{refused}'\nIFS= read -r request\nprintf '%s\\n' '{accepted}'\n",
+        "#!/bin/sh\nIFS= read -r request\nprintf '%s\\n' '{handshake}'\nprintf '%s\\n' '{observed_environment}'\nIFS= read -r request\nprintf '%s\\n' '{refused}'\nIFS= read -r request\nprintf '%s\\n' '{accepted}'\n",
     );
     std::fs::write(&adapter, script).expect("the scripted adapter is written");
     let mut permissions = std::fs::metadata(&adapter)
