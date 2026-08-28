@@ -1491,39 +1491,8 @@ fn parse_counted_programs(text: &str) -> Option<Vec<Vec<u8>>> {
     (parsed.len() == count).then_some(parsed)
 }
 
-fn parse_locator(text: &str) -> Option<LiveMutationLocator> {
-    let fields = text.split(' ').collect::<Vec<_>>();
-    match fields.as_slice() {
-        ["serialized-output-field", output, field] => {
-            let field = match *field {
-                "value-commitment" => SerializedOutputField::ValueCommitment,
-                "rangeproof-bytes" => SerializedOutputField::RangeproofBytes,
-                _ => return None,
-            };
-            Some(LiveMutationLocator::SerializedOutputField(
-                SerializedFieldLocator::new(parse_usize(output)?, field),
-            ))
-        }
-        ["witness-item", input, item] => Some(LiveMutationLocator::WitnessItem {
-            input_index: parse_usize(input)?,
-            item_index: parse_usize(item)?,
-        }),
-        ["witnessless-range", start, end] => Some(LiveMutationLocator::WitnesslessRange {
-            start: parse_usize(start)?,
-            end: parse_usize(end)?,
-        }),
-        [
-            "transaction-shape",
-            control_inputs,
-            mutant_inputs,
-            control_outputs,
-            mutant_outputs,
-        ] => Some(LiveMutationLocator::TransactionShape {
-            control_inputs: parse_usize(control_inputs)?,
-            mutant_inputs: parse_usize(mutant_inputs)?,
-            control_outputs: parse_usize(control_outputs)?,
-            mutant_outputs: parse_usize(mutant_outputs)?,
-        }),
+fn parse_witness_path_locator(fields: &[&str]) -> Option<LiveMutationLocator> {
+    match fields {
         [
             "witness-path-shape",
             "input",
@@ -1574,6 +1543,44 @@ fn parse_locator(text: &str) -> Option<LiveMutationLocator> {
                 witnessless_serialization_equal,
             })
         }
+        _ => None,
+    }
+}
+
+fn parse_locator(text: &str) -> Option<LiveMutationLocator> {
+    let fields = text.split(' ').collect::<Vec<_>>();
+    match fields.as_slice() {
+        ["serialized-output-field", output, field] => {
+            let field = match *field {
+                "value-commitment" => SerializedOutputField::ValueCommitment,
+                "rangeproof-bytes" => SerializedOutputField::RangeproofBytes,
+                _ => return None,
+            };
+            Some(LiveMutationLocator::SerializedOutputField(
+                SerializedFieldLocator::new(parse_usize(output)?, field),
+            ))
+        }
+        ["witness-item", input, item] => Some(LiveMutationLocator::WitnessItem {
+            input_index: parse_usize(input)?,
+            item_index: parse_usize(item)?,
+        }),
+        ["witnessless-range", start, end] => Some(LiveMutationLocator::WitnesslessRange {
+            start: parse_usize(start)?,
+            end: parse_usize(end)?,
+        }),
+        [
+            "transaction-shape",
+            control_inputs,
+            mutant_inputs,
+            control_outputs,
+            mutant_outputs,
+        ] => Some(LiveMutationLocator::TransactionShape {
+            control_inputs: parse_usize(control_inputs)?,
+            mutant_inputs: parse_usize(mutant_inputs)?,
+            control_outputs: parse_usize(control_outputs)?,
+            mutant_outputs: parse_usize(mutant_outputs)?,
+        }),
+        ["witness-path-shape", ..] => parse_witness_path_locator(fields.as_slice()),
         [
             "committed-leaf-arrangement",
             "inputs",
