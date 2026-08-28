@@ -904,8 +904,13 @@ pub enum NativeV2ImportRefusal {
     PairProjection,
     /// The fixed R01 through R42 attribution did not cross-foot.
     RowAttribution,
-    /// Schema-6 run material could not be minted from validated facts.
-    RunBinding,
+    /// Schema-6 run material could not be minted from one ceremony's validated facts.
+    RunBinding {
+        ceremony: String,
+        check: &'static str,
+    },
+    /// The row-bearing run census did not cover every attributed ceremony.
+    RunBindingCensus { expected: usize, actual: usize },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2134,6 +2139,12 @@ fn render_run_archive(header: &CaptureHeader, digests: &[(String, String)]) -> V
         intended_tip,
     } = header;
     let digest_count = digests.len();
+    // The capture retains the complete banner; the run grammar carries its
+    // whitespace-free terminal version token beside the separately bound node name.
+    let node_version = node_version
+        .split_ascii_whitespace()
+        .next_back()
+        .unwrap_or(node_version);
     let mut run_archive = String::new();
     let _ = writeln!(&mut run_archive, "ceremony_id {ceremony}");
     let _ = writeln!(&mut run_archive, "protocol_revision {protocol_revision}");
@@ -2896,6 +2907,13 @@ fn operation_response(operation: &ParsedOperation) -> Result<LiveTargetResponse,
     })
 }
 
+fn run_binding_refusal(ceremony: &str, check: &'static str) -> NativeV2ImportRefusal {
+    NativeV2ImportRefusal::RunBinding {
+        ceremony: ceremony.to_owned(),
+        check,
+    }
+}
+
 fn build_runs(
     transcripts: &[ParsedTranscript],
 ) -> Result<(Vec<LiveRunBinding>, BTreeMap<String, String>), NativeV2ImportRefusal> {
@@ -2923,33 +2941,38 @@ fn build_runs(
                 OperationRole::Acceptance => LiveRequestFact::Acceptance,
                 OperationRole::Control => LiveRequestFact::Control,
                 OperationRole::Refusal => LiveRequestFact::Refusal {
-                    mutant: operation.mutant.ok_or(NativeV2ImportRefusal::RunBinding)?,
+                    mutant: operation
+                        .mutant
+                        .ok_or_else(|| run_binding_refusal(ceremony, "refusal-mutant"))?,
                     control_request_id: global_request_id(
                         ceremony,
                         operation
                             .control_request_id
                             .as_deref()
-                            .ok_or(NativeV2ImportRefusal::RunBinding)?,
+                            .ok_or_else(|| run_binding_refusal(ceremony, "refusal-control"))?,
                     ),
                     locator: operation
                         .locator
                         .clone()
-                        .ok_or(NativeV2ImportRefusal::RunBinding)?,
+                        .ok_or_else(|| run_binding_refusal(ceremony, "refusal-locator"))?,
                 },
                 OperationRole::Paired(member) => LiveRequestFact::Paired {
                     member,
                     projection: operation
                         .projection
                         .as_ref()
-                        .ok_or(NativeV2ImportRefusal::RunBinding)?
+                        .ok_or_else(|| run_binding_refusal(ceremony, "pair-projection"))?
                         .live(),
                 },
-                OperationRole::Auxiliary => return Err(NativeV2ImportRefusal::RunBinding),
+                OperationRole::Auxiliary => {
+                    return Err(run_binding_refusal(ceremony, "auxiliary-request"));
+                }
             };
             facts.insert(request_id.clone(), fact);
             responses.insert(
                 request_id,
-                operation_response(operation).map_err(|()| NativeV2ImportRefusal::RunBinding)?,
+                operation_response(operation)
+                    .map_err(|()| run_binding_refusal(ceremony, "response-shape"))?,
             );
         }
         let run = LiveRunBinding::from_archive(
@@ -2958,7 +2981,7 @@ fn build_runs(
             facts,
             responses,
         )
-        .map_err(|_| NativeV2ImportRefusal::RunBinding)?;
+        .map_err(|_| run_binding_refusal(ceremony, "archive-grammar"))?;
         runs.push(run);
     }
     runs.sort_by(|left, right| left.run_id().cmp(right.run_id()));
@@ -2974,7 +2997,10 @@ fn build_runs(
         })
         .collect::<BTreeMap<_, _>>();
     if run_ids.len() != used_ceremonies.len() {
-        return Err(NativeV2ImportRefusal::RunBinding);
+        return Err(NativeV2ImportRefusal::RunBindingCensus {
+            expected: used_ceremonies.len(),
+            actual: run_ids.len(),
+        });
     }
     Ok((runs, run_ids))
 }
@@ -3704,11 +3730,33 @@ mod tests {
     #[test]
     fn reviewed_archive_admits_exactly_39_ceremonies_and_40_outcomes() {
         let corpus = run_of_record().expect("the reviewed archive admits");
+        let bound_run_ids = corpus
+            .runs()
+            .iter()
+            .map(LiveRunBinding::run_id)
+            .collect::<BTreeSet<_>>();
+        let linked_run_ids = corpus
+            .links()
+            .iter()
+            .map(ProvenNativeV2Link::run_id)
+            .collect::<BTreeSet<_>>();
+        let bound_request_ids = corpus
+            .runs()
+            .iter()
+            .flat_map(|run| run.requests().keys().map(String::as_str))
+            .collect::<BTreeSet<_>>();
+        let linked_request_ids = corpus
+            .links()
+            .iter()
+            .map(ProvenNativeV2Link::request_id)
+            .collect::<BTreeSet<_>>();
         assert_eq!(corpus.transcripts().len(), 39);
         assert_eq!(corpus.outcome_count(), 40);
         assert_eq!(corpus.attributions().len(), 42);
         assert_eq!(corpus.observations().len(), 41);
         assert_eq!(corpus.content_address(), NATIVE_V2_R7_RUN_ADDRESS);
+        assert_eq!(bound_run_ids, linked_run_ids);
+        assert_eq!(bound_request_ids, linked_request_ids);
         assert!(crate::live_corpus_rerun_day::parse_rerun_day_archive().is_ok());
     }
 
