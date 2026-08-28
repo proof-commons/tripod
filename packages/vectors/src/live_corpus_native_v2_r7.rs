@@ -3563,7 +3563,7 @@ fn validate_observation_rows(material: &MaterialBuilder) -> Result<(), NativeV2I
             | LiveReportObservation::PairedRelation { row, .. } => {
                 if !observed.insert(*row) {
                     return Err(row_attribution_refusal(
-                        *row,
+                        row,
                         "observation",
                         "duplicate-observation-row",
                     ));
@@ -3573,7 +3573,7 @@ fn validate_observation_rows(material: &MaterialBuilder) -> Result<(), NativeV2I
                 for row in witness.rows() {
                     if !observed.insert(*row) {
                         return Err(row_attribution_refusal(
-                            *row,
+                            row,
                             "observation",
                             "duplicate-observation-row",
                         ));
@@ -3584,7 +3584,7 @@ fn validate_observation_rows(material: &MaterialBuilder) -> Result<(), NativeV2I
             | LiveReportObservation::Determinism { row, .. }
             | LiveReportObservation::FirstPartyFact { row, .. } => {
                 return Err(row_attribution_refusal(
-                    *row,
+                    row,
                     "observation",
                     "unbound-observation-shape",
                 ));
@@ -3728,7 +3728,7 @@ fn validate_support_repeats(material: &MaterialBuilder) -> Result<(), NativeV2Im
                 .split_once('/')
                 .map_or("support", |pair| pair.0);
             return Err(row_attribution_refusal(
-                *row,
+                row,
                 ceremony,
                 "support-bytes-differ",
             ));
