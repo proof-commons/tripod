@@ -23,8 +23,17 @@ use crate::live_report::{
 use crate::live_safety::required_safety_matrix;
 use crate::matrix::EvidenceBoundary;
 
-/// Full suite revision captured by the reviewed run.
-pub const NATIVE_V2_R7_SUITE_COMMIT: &str = "0.6.146-dev";
+/// The run's own address: the digest of the label-derived input set the
+/// capture driver publishes, under a separator that spells the product's
+/// name.
+///
+/// It names the corpus in its filenames and in its grammar line, and it
+/// is not the report digest below. That one is the address of the bytes
+/// this corpus IS; this one is the address of the inputs the run was
+/// taken OVER, and a reader recomputes it from the driver rather than
+/// from anything here.
+pub const NATIVE_V2_R7_INPUT_SET_ADDRESS: &str =
+    "e8836e79b631b96420fb8006353df5b673ec7c69b830fb5f0555fb06add02517";
 
 /// SHA-256 of the exact 79-entry manifest bytes.
 pub const NATIVE_V2_R7_MANIFEST_SHA256: &str =
@@ -1157,7 +1166,7 @@ fn parse_report(bytes: &[u8]) -> Result<ReportFacts, NativeV2ImportRefusal> {
         let mut cursor = LineCursor::new("RUN-REPORT", bytes)?;
         cursor.exact("run-report-schema native-v2-r7-run-report 1")?;
         cursor.exact("capture-format-schema native-v2-r7-capture 1")?;
-        cursor.exact(&format!("suite-commit {NATIVE_V2_R7_SUITE_COMMIT}"))?;
+        cursor.exact(&format!("suite-commit {NATIVE_V2_R7_INPUT_SET_ADDRESS}"))?;
         let suite_tree = cursor.value("suite-tree")?.to_owned();
         if decode_digest(&suite_tree).is_none() {
             return Err(cursor.refusal());
@@ -1779,7 +1788,7 @@ fn parse_transcript(
     require_binding(
         &ceremony,
         "run-address",
-        run_address == NATIVE_V2_R7_SUITE_COMMIT,
+        run_address == NATIVE_V2_R7_INPUT_SET_ADDRESS,
     )?;
     require_binding(
         &ceremony,

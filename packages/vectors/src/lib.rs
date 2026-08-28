@@ -78,8 +78,8 @@ pub use live_comparison::{
     compare_run, run_agreements, run_failures,
 };
 pub use live_corpus_native_v2_r7::{
-    NATIVE_V2_R7_CEREMONY_ROSTER, NATIVE_V2_R7_MANIFEST_SHA256, NATIVE_V2_R7_RUN_ADDRESS,
-    NATIVE_V2_R7_SUITE_COMMIT, NativeV2ImportRefusal, NativeV2LinkClass, NativeV2RowAttribution,
+    NATIVE_V2_R7_CEREMONY_ROSTER, NATIVE_V2_R7_INPUT_SET_ADDRESS, NATIVE_V2_R7_MANIFEST_SHA256,
+    NATIVE_V2_R7_RUN_ADDRESS, NativeV2ImportRefusal, NativeV2LinkClass, NativeV2RowAttribution,
     NativeV2Transcript, ProvenNativeV2Link, ValidatedNativeV2R7Corpus, run_of_record,
 };
 pub use live_disclosure::{
