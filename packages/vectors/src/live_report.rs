@@ -80,16 +80,14 @@ use crate::matrix::EvidenceBoundary;
 /// protocol revision, algorithm-tagged fixture digests, and typed request
 /// roles. Schema 4 is hard-rejected because it cannot distinguish a
 /// historical-v1 digest from a forward-v2 digest or detect a revision lie.
+/// Schema 5 was never persisted as a report document and is RETIRED; it
+/// has no historical reader.
 ///
 /// Revision 6 adds the narrow forward-capture vocabulary: one composite
 /// two-acceptance observation, two decoded witness locators, reusable
 /// accepted-control support links, and one independently proven multi-row
-/// semantic witness. Schema 5 remains a closed historical reader and cannot
-/// consume any of those additions.
+/// semantic witness. It is the sole accepted live safety report schema.
 pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 6;
-
-/// The retained historical report schema read by the schema-5 validator.
-pub const HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA: u32 = 5;
 
 /// What a safety report is, said in the bytes.
 ///
@@ -1168,24 +1166,7 @@ pub enum LiveReportObservation {
         /// Exactly two primary acceptance links.
         acceptance: LiveCompositeTwoAcceptance,
     },
-    /// A bound target refusal.
-    NativeRefusal {
-        /// The matrix row.
-        row: &'static str,
-        /// The bound run.
-        run_id: String,
-        /// The exact request within the run.
-        request_id: String,
-        /// The row's declared boundary.
-        declared_boundary: EvidenceBoundary,
-        /// The observed layer.
-        observed_layer: ObservedOutcomeLayer,
-        /// The accepted control identity.
-        control_identity: Txid,
-        /// The target's exact refusal detail.
-        detail: String,
-    },
-    /// A schema-6 bound refusal with an explicitly reusable support link.
+    /// A bound refusal with an explicitly reusable support link.
     NativeRefusalWithSupport {
         /// The matrix row.
         row: &'static str,
@@ -1538,8 +1519,6 @@ impl LiveTransferSafetyReport {
 pub enum LiveSafetyReportRefusal {
     /// The report states a schema this validator does not read.
     UnsupportedSchema(u32),
-    /// An observation or locator belongs to another schema's closed vocabulary.
-    SchemaVocabularyDiffers(u32),
     /// The report states a role that is not the safety one.
     ///
     /// §13.6's separation, enforced: a minimality report handed to the
@@ -1866,8 +1845,7 @@ impl ObservationCensus {
             match observation {
                 LiveReportObservation::NativeAcceptance { .. }
                 | LiveReportObservation::CompositeTwoAcceptance { .. } => census.accepted += 1,
-                LiveReportObservation::NativeRefusal { .. }
-                | LiveReportObservation::NativeRefusalWithSupport { .. } => census.refused += 1,
+                LiveReportObservation::NativeRefusalWithSupport { .. } => census.refused += 1,
                 LiveReportObservation::PairedRelation { .. } => census.paired_relation += 1,
                 LiveReportObservation::MultiRowSemantic { witness } => {
                     census.accepted += witness.rows.len();
@@ -2430,7 +2408,6 @@ fn validate_refusal_links(
     run: &LiveRunBinding,
     request_owners: &BTreeMap<&str, &str>,
     decoded: &BTreeMap<String, TargetTransaction>,
-    schema: u32,
 ) -> Result<(), LiveSafetyReportRefusal> {
     for (request_id, fact) in &run.request_facts {
         let LiveRequestFact::Refusal {
@@ -2441,15 +2418,6 @@ fn validate_refusal_links(
         else {
             continue;
         };
-        if schema == HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA
-            && matches!(
-                locator,
-                LiveMutationLocator::WitnessPathShape { .. }
-                    | LiveMutationLocator::CommittedLeafArrangement { .. }
-            )
-        {
-            return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
-        }
         let Some(control_owner) = request_owners.get(control_request_id.as_str()) else {
             return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
                 run.run_id.clone(),
@@ -2511,26 +2479,17 @@ fn validate_refusal_links(
 fn validate_run_binding(
     run: &LiveRunBinding,
     request_owners: &BTreeMap<&str, &str>,
-    schema: u32,
 ) -> Result<(), LiveSafetyReportRefusal> {
     validate_archived_run_facts(run)?;
-    if schema == HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA
-        && parse_run_archive(&run.archive_bytes)?.ceremony_id.is_some()
-    {
-        return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
-    }
     let decoded = decode_run_requests(run)?;
-    validate_refusal_links(run, request_owners, &decoded, schema)?;
+    validate_refusal_links(run, request_owners, &decoded)?;
     if run.run_id != content_address_run(run) {
         return Err(LiveSafetyReportRefusal::RunIdDiffers(run.run_id.clone()));
     }
     Ok(())
 }
 
-fn validate_run_bindings_for_schema(
-    runs: &[LiveRunBinding],
-    schema: u32,
-) -> Result<(), LiveSafetyReportRefusal> {
+fn validate_run_bindings(runs: &[LiveRunBinding]) -> Result<(), LiveSafetyReportRefusal> {
     if runs.windows(2).any(|pair| pair[0].run_id >= pair[1].run_id) {
         return Err(LiveSafetyReportRefusal::RunCensusDiffers);
     }
@@ -2546,21 +2505,20 @@ fn validate_run_bindings_for_schema(
         }
     }
     for run in runs {
-        validate_run_binding(run, &request_owners, schema)?;
+        validate_run_binding(run, &request_owners)?;
     }
     Ok(())
 }
 
-fn compare_run_bindings_for_schema(
+fn compare_run_bindings(
     offered: &[LiveRunBinding],
     expected: &[LiveRunBinding],
-    schema: u32,
 ) -> Result<(), LiveSafetyReportRefusal> {
     if offered.len() != expected.len() {
         return Err(LiveSafetyReportRefusal::RunCensusDiffers);
     }
-    validate_run_bindings_for_schema(offered, schema)?;
-    validate_run_bindings_for_schema(expected, schema)?;
+    validate_run_bindings(offered)?;
+    validate_run_bindings(expected)?;
     for (offered, expected) in offered.iter().zip(expected) {
         if offered.run_id != expected.run_id {
             return Err(LiveSafetyReportRefusal::RunCensusDiffers);
@@ -2892,62 +2850,6 @@ impl BoundObservationValidation {
         if prefixes.as_slice() != [0x08, 0x09] && prefixes.as_slice() != [0x09, 0x08] {
             return Err(LiveSafetyReportRefusal::CompositeParityNotOpposite(row));
         }
-        self.compared += 1;
-        Ok(())
-    }
-
-    fn refusal(
-        &mut self,
-        observation: &LiveReportObservation,
-        runs: &[LiveRunBinding],
-    ) -> Result<(), LiveSafetyReportRefusal> {
-        let LiveReportObservation::NativeRefusal {
-            row,
-            run_id,
-            request_id,
-            observed_layer,
-            control_identity,
-            detail,
-            declared_boundary,
-        } = observation
-        else {
-            return Ok(());
-        };
-        insert_observation_link(&mut self.observed_links, run_id, request_id)?;
-        let (fact, response, _) = request_for(runs, run_id, request_id, row)?;
-        let LiveRequestFact::Refusal {
-            mutant,
-            control_request_id,
-            ..
-        } = fact
-        else {
-            return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
-                run_id.clone(),
-                request_id.clone(),
-            ));
-        };
-        let boundary = crate::live_safety::required_safety_matrix()
-            .into_iter()
-            .find(|candidate| candidate.name() == mutant.row())
-            .and_then(crate::live_safety::LiveSafetyRow::refusing_layer);
-        if mutant.row() != *row || boundary != Some(*declared_boundary) {
-            return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
-                run_id.clone(),
-                request_id.clone(),
-            ));
-        }
-        let expected = LiveTargetResponse::Refused {
-            observed_layer: *observed_layer,
-            detail: detail.clone(),
-            control_identity: *control_identity,
-        };
-        if response != &expected {
-            return Err(LiveSafetyReportRefusal::RunResponseDiffers(run_id.clone()));
-        }
-        self.used_requests
-            .insert((run_id.clone(), request_id.clone()));
-        self.used_requests
-            .insert((run_id.clone(), control_request_id.clone()));
         self.compared += 1;
         Ok(())
     }
@@ -3314,12 +3216,11 @@ fn validate_pair_claim(
     Ok(())
 }
 
-fn validate_bound_observations_for_schema(
+fn validate_bound_observations(
     observations: &[LiveReportObservation],
     runs: &[LiveRunBinding],
-    schema: u32,
 ) -> Result<usize, LiveSafetyReportRefusal> {
-    validate_run_bindings_for_schema(runs, schema)?;
+    validate_run_bindings(runs)?;
     let mut validation = BoundObservationValidation::default();
     for observation in observations {
         match observation {
@@ -3327,30 +3228,15 @@ fn validate_bound_observations_for_schema(
                 validation.acceptance(observation, runs)?;
             }
             LiveReportObservation::CompositeTwoAcceptance { .. } => {
-                if schema != LIVE_SAFETY_REPORT_SCHEMA {
-                    return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
-                }
                 validation.composite_two_acceptance(observation, runs)?;
             }
-            LiveReportObservation::NativeRefusal { .. } => {
-                if schema != HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA {
-                    return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
-                }
-                validation.refusal(observation, runs)?;
-            }
             LiveReportObservation::NativeRefusalWithSupport { .. } => {
-                if schema != LIVE_SAFETY_REPORT_SCHEMA {
-                    return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
-                }
                 validation.refusal_with_support(observation, runs)?;
             }
             LiveReportObservation::PairedRelation { .. } => {
                 validation.pair(observation, runs)?;
             }
             LiveReportObservation::MultiRowSemantic { .. } => {
-                if schema != LIVE_SAFETY_REPORT_SCHEMA {
-                    return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
-                }
                 validation.multi_row_semantic(observation, runs)?;
             }
             LiveReportObservation::RecordedObservationUnbound { .. }
@@ -3370,9 +3256,8 @@ fn validate_report_envelope(
     plan: &LiveTransferEvidencePlan,
     target: &TargetProjection,
     progress: &mut RecomputationProgress,
-    expected_schema: u32,
 ) -> Result<(), LiveSafetyReportRefusal> {
-    if report.schema != expected_schema {
+    if report.schema != LIVE_SAFETY_REPORT_SCHEMA {
         return Err(LiveSafetyReportRefusal::UnsupportedSchema(report.schema));
     }
     progress.mark(RecomputedItem::Schema);
@@ -3394,7 +3279,7 @@ fn validate_report_envelope(
     }
 
     let expected_runs = Vec::new();
-    compare_run_bindings_for_schema(&report.runs, &expected_runs, expected_schema)?;
+    compare_run_bindings(&report.runs, &expected_runs)?;
     if !report.runs.is_empty() {
         progress.mark(RecomputedItem::TargetDeploymentBinding);
         progress.mark(RecomputedItem::RequestResponseCensus);
@@ -3407,7 +3292,6 @@ fn validate_report_observation_ledger(
     report: &LiveTransferSafetyReport,
     plan: &LiveTransferEvidencePlan,
     progress: &mut RecomputationProgress,
-    schema: u32,
 ) -> Result<(), LiveSafetyReportRefusal> {
     let expected_observations = observations_from_plan(plan)?;
     let expected_requirements = report_layer_requirements_from_plan(plan);
@@ -3423,8 +3307,7 @@ fn validate_report_observation_ledger(
         return Err(LiveSafetyReportRefusal::ObservationCensusDiffers);
     }
 
-    let bound_compared =
-        validate_bound_observations_for_schema(&report.observations, &report.runs, schema)?;
+    let bound_compared = validate_bound_observations(&report.observations, &report.runs)?;
     progress.mark(RecomputedItem::CaseCensus);
     progress.mark(RecomputedItem::RelationCensus);
     progress.mark(RecomputedItem::MutationLinks);
@@ -3520,6 +3403,10 @@ struct CanonicalReportView<'a> {
 /// Run-only items stay absent while the corpus has no transcript-grade
 /// run binding.
 ///
+/// Schema 5 was never persisted, so RETIRING it strands no reader. This
+/// reader accepts only [`LIVE_SAFETY_REPORT_SCHEMA`] and refuses every
+/// other value.
+///
 /// # Errors
 ///
 /// [`LiveSafetyReportRefusal`], naming the first disagreement found in
@@ -3529,40 +3416,9 @@ pub fn validate_live_safety_report(
     plan: &LiveTransferEvidencePlan,
     target: &TargetProjection,
 ) -> Result<ValidatedLiveTransferSafetyReport, LiveSafetyReportRefusal> {
-    validate_live_safety_report_for_schema(report, plan, target, LIVE_SAFETY_REPORT_SCHEMA)
-}
-
-/// Validate one committed historical schema-5 safety report.
-///
-/// This reader is deliberately separate from [`validate_live_safety_report`]:
-/// the historical path accepts only schema 5 and the live path accepts only
-/// schema 6, so neither document can silently enter the other path.
-///
-/// # Errors
-///
-/// [`LiveSafetyReportRefusal`], naming the first historical-schema disagreement.
-pub fn validate_schema_five_live_safety_report(
-    report: LiveTransferSafetyReport,
-    plan: &LiveTransferEvidencePlan,
-    target: &TargetProjection,
-) -> Result<ValidatedLiveTransferSafetyReport, LiveSafetyReportRefusal> {
-    validate_live_safety_report_for_schema(
-        report,
-        plan,
-        target,
-        HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-    )
-}
-
-fn validate_live_safety_report_for_schema(
-    report: LiveTransferSafetyReport,
-    plan: &LiveTransferEvidencePlan,
-    target: &TargetProjection,
-    expected_schema: u32,
-) -> Result<ValidatedLiveTransferSafetyReport, LiveSafetyReportRefusal> {
     let mut progress = RecomputationProgress::default();
-    validate_report_envelope(&report, plan, target, &mut progress, expected_schema)?;
-    validate_report_observation_ledger(&report, plan, &mut progress, expected_schema)?;
+    validate_report_envelope(&report, plan, target, &mut progress)?;
+    validate_report_observation_ledger(&report, plan, &mut progress)?;
     let recomputed = plan.census();
     validate_report_summary(&report, recomputed, &mut progress)?;
 
@@ -4002,21 +3858,6 @@ fn render_observation(text: &mut String, observation: &LiveReportObservation) {
         LiveReportObservation::CompositeTwoAcceptance { row, acceptance } => {
             render_composite_two_acceptance(text, row, acceptance);
         }
-        LiveReportObservation::NativeRefusal {
-            row,
-            run_id,
-            request_id,
-            declared_boundary,
-            observed_layer,
-            control_identity,
-            detail,
-        } => {
-            let _ = writeln!(
-                text,
-                "observation {row} refused run {run_id} request {request_id} declared {declared_boundary:?} observed {observed_layer:?} control {} detail {detail:?}",
-                control_identity.to_target_display()
-            );
-        }
         LiveReportObservation::NativeRefusalWithSupport {
             row,
             run_id,
@@ -4260,17 +4101,16 @@ pub fn section_scoreboard(
 #[cfg(test)]
 mod tests {
     use super::{
-        FixtureDigestAlgorithm, HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA, LIVE_SAFETY_REPORT_SCHEMA,
-        LiveCompositeAcceptanceMember, LiveCompositeTwoAcceptance, LiveMultiRowSemanticWitness,
-        LiveMutantKind, LiveMutationLocator, LivePairMember, LivePairProjectionInput,
-        LiveRecordedObservation, LiveReportObservation, LiveRequestFact, LiveRowSemanticPredicate,
-        LiveRunBinding, LiveSafetyCompleteness, LiveSafetyDiagnostics, LiveSafetyReportRefusal,
+        FixtureDigestAlgorithm, LIVE_SAFETY_REPORT_SCHEMA, LiveCompositeAcceptanceMember,
+        LiveCompositeTwoAcceptance, LiveMultiRowSemanticWitness, LiveMutantKind,
+        LiveMutationLocator, LivePairMember, LivePairProjectionInput, LiveRecordedObservation,
+        LiveReportObservation, LiveRequestFact, LiveRowSemanticPredicate, LiveRunBinding,
+        LiveSafetyCompleteness, LiveSafetyDiagnostics, LiveSafetyReportRefusal,
         LiveSafetyReportRole, LiveSupportLink, LiveTargetResponse, LiveWitnessPathRole,
         NativeProtocolRevision, RecomputedItem, VALIDATED_PAIR_RELATION, VolatileField,
-        assemble_live_safety_report, compare_run_bindings_for_schema, recomputed_txid,
+        assemble_live_safety_report, compare_run_bindings, recomputed_txid,
         render_live_safety_report, section_scoreboard, target_evidence_name,
-        validate_bound_observations_for_schema, validate_live_safety_report,
-        validate_report_disclosures, validate_schema_five_live_safety_report,
+        validate_bound_observations, validate_live_safety_report, validate_report_disclosures,
     };
     use crate::live_evidence::derive_live_evidence_plan;
     use crate::live_plan::reviewed_target;
@@ -4285,24 +4125,6 @@ mod tests {
 
     fn parsed_identity(value: &str) -> transaction::Txid {
         transaction::Txid::from_target_display(value).expect("the test identity parses")
-    }
-
-    fn compare_schema_five_run_bindings(
-        offered: &[LiveRunBinding],
-        expected: &[LiveRunBinding],
-    ) -> Result<(), LiveSafetyReportRefusal> {
-        compare_run_bindings_for_schema(offered, expected, HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA)
-    }
-
-    fn validate_schema_five_bound_observations(
-        observations: &[LiveReportObservation],
-        runs: &[LiveRunBinding],
-    ) -> Result<usize, LiveSafetyReportRefusal> {
-        validate_bound_observations_for_schema(
-            observations,
-            runs,
-            HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-        )
     }
 
     fn synthetic_archive(revision: u32, algorithm: &str, source_tip: &str) -> Vec<u8> {
@@ -4847,19 +4669,24 @@ mod tests {
         let LiveTargetResponse::Refused {
             observed_layer,
             detail,
-            control_identity,
+            ..
         } = &run.responses["mutant"]
         else {
             panic!("the mutant response is a refusal");
         };
-        LiveReportObservation::NativeRefusal {
+        LiveReportObservation::NativeRefusalWithSupport {
             row: "malformed-signature",
             run_id: run.run_id.clone(),
             request_id: "mutant".to_owned(),
             declared_boundary: crate::matrix::EvidenceBoundary::ScriptPathRejection,
             observed_layer: *observed_layer,
-            control_identity: *control_identity,
             detail: detail.clone(),
+            support: LiveSupportLink::new(
+                run.run_id.clone(),
+                "control".to_owned(),
+                run.requests["control"].clone(),
+                run.responses["control"].clone(),
+            ),
         }
     }
 
@@ -4998,10 +4825,10 @@ mod tests {
         let target = projection();
         let mut report =
             assemble_live_safety_report(&plan, target.clone()).expect("the live report assembles");
-        report.schema = HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA;
+        report.schema = 5;
 
         assert_eq!(
-            validate_schema_five_live_safety_report(report, &plan, &target),
+            validate_live_safety_report(report, &plan, &target),
             Err(LiveSafetyReportRefusal::UnsupportedSchema(5)),
         );
     }
@@ -5020,24 +4847,7 @@ mod tests {
         );
         let mut runs = vec![first, second];
         runs.sort_by(|left, right| left.run_id.cmp(&right.run_id));
-        assert_eq!(
-            validate_bound_observations_for_schema(
-                std::slice::from_ref(&observation),
-                &runs,
-                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-            ),
-            Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(
-                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-            )),
-        );
-        assert_eq!(
-            validate_bound_observations_for_schema(
-                &[observation],
-                &runs,
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
-            Ok(1),
-        );
+        assert_eq!(validate_bound_observations(&[observation], &runs), Ok(1),);
     }
 
     #[test]
@@ -5076,11 +4886,7 @@ mod tests {
             "balancing",
         );
         assert_eq!(
-            validate_bound_observations_for_schema(
-                &[observation],
-                &runs,
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            validate_bound_observations(&[observation], &runs),
             Err(LiveSafetyReportRefusal::AcceptedIdentityDiffers(
                 forged_run_id,
                 "primary".to_owned(),
@@ -5103,11 +4909,7 @@ mod tests {
         let mut runs = vec![first, second];
         runs.sort_by(|left, right| left.run_id.cmp(&right.run_id));
         assert_eq!(
-            validate_bound_observations_for_schema(
-                std::slice::from_ref(&same_ceremony),
-                &runs,
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            validate_bound_observations(std::slice::from_ref(&same_ceremony), &runs),
             Err(LiveSafetyReportRefusal::CompositeCeremonyReused(
                 "one-ceremony".to_owned(),
             )),
@@ -5126,11 +4928,7 @@ mod tests {
         let mut runs = vec![first, second];
         runs.sort_by(|left, right| left.run_id.cmp(&right.run_id));
         assert_eq!(
-            validate_bound_observations_for_schema(
-                &[same_ceremony],
-                &runs,
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            validate_bound_observations(&[same_ceremony], &runs),
             Err(LiveSafetyReportRefusal::CompositeParityNotOpposite(
                 "both-commitment-parity-forms",
             )),
@@ -5141,21 +4939,7 @@ mod tests {
     fn witness_path_shape_is_schema_six_only_and_recomputed() {
         let run = witness_path_shape_run();
         assert_eq!(
-            compare_run_bindings_for_schema(
-                std::slice::from_ref(&run),
-                std::slice::from_ref(&run),
-                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-            ),
-            Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(
-                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-            )),
-        );
-        assert_eq!(
-            compare_run_bindings_for_schema(
-                std::slice::from_ref(&run),
-                std::slice::from_ref(&run),
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            compare_run_bindings(std::slice::from_ref(&run), std::slice::from_ref(&run)),
             Ok(()),
         );
         let mut forged = run;
@@ -5175,11 +4959,7 @@ mod tests {
         };
         *changed_positions = vec![0];
         assert_eq!(
-            compare_run_bindings_for_schema(
-                std::slice::from_ref(&forged),
-                std::slice::from_ref(&forged),
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            compare_run_bindings(std::slice::from_ref(&forged), std::slice::from_ref(&forged),),
             Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
                 run_id,
                 "mutant".to_owned(),
@@ -5191,21 +4971,7 @@ mod tests {
     fn committed_leaf_arrangement_is_schema_six_only_and_recomputed() {
         let run = committed_leaf_arrangement_run();
         assert_eq!(
-            compare_run_bindings_for_schema(
-                std::slice::from_ref(&run),
-                std::slice::from_ref(&run),
-                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-            ),
-            Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(
-                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-            )),
-        );
-        assert_eq!(
-            compare_run_bindings_for_schema(
-                std::slice::from_ref(&run),
-                std::slice::from_ref(&run),
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            compare_run_bindings(std::slice::from_ref(&run), std::slice::from_ref(&run)),
             Ok(()),
         );
         let mut forged = run;
@@ -5226,11 +4992,7 @@ mod tests {
         };
         *mutant_coordinator_leaf_indices = vec![0];
         assert_eq!(
-            compare_run_bindings_for_schema(
-                std::slice::from_ref(&forged),
-                std::slice::from_ref(&forged),
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            compare_run_bindings(std::slice::from_ref(&forged), std::slice::from_ref(&forged),),
             Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
                 run_id,
                 "mutant".to_owned(),
@@ -5239,7 +5001,7 @@ mod tests {
     }
 
     #[test]
-    fn reused_primary_links_refuse_in_schema_five_and_schema_six() {
+    fn reused_primary_links_refuse() {
         let run = synthetic_run();
         let LiveTargetResponse::Accepted { identity } = &run.responses["request-a"] else {
             panic!("the primary response is accepted");
@@ -5250,21 +5012,15 @@ mod tests {
             request_id: "request-a".to_owned(),
             identity: *identity,
         };
-        for schema in [
-            HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-            LIVE_SAFETY_REPORT_SCHEMA,
-        ] {
-            assert_eq!(
-                validate_bound_observations_for_schema(
-                    &[observation.clone(), observation.clone()],
-                    std::slice::from_ref(&run),
-                    schema,
-                ),
-                Err(LiveSafetyReportRefusal::ObservationAliased(
-                    "request-a".to_owned(),
-                )),
-            );
-        }
+        assert_eq!(
+            validate_bound_observations(
+                &[observation.clone(), observation],
+                std::slice::from_ref(&run),
+            ),
+            Err(LiveSafetyReportRefusal::ObservationAliased(
+                "request-a".to_owned(),
+            )),
+        );
     }
 
     #[test]
@@ -5275,11 +5031,7 @@ mod tests {
             support_observation(&run, "mutant-b"),
         ];
         assert_eq!(
-            validate_bound_observations_for_schema(
-                &observations,
-                std::slice::from_ref(&run),
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            validate_bound_observations(&observations, std::slice::from_ref(&run)),
             Ok(2),
         );
     }
@@ -5294,11 +5046,7 @@ mod tests {
         };
         support.run_id = "another-run".to_owned();
         assert_eq!(
-            validate_bound_observations_for_schema(
-                &[observation],
-                std::slice::from_ref(&run),
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            validate_bound_observations(&[observation], std::slice::from_ref(&run)),
             Err(LiveSafetyReportRefusal::CrossRunRequestLink(
                 "control".to_owned(),
                 "control".to_owned(),
@@ -5316,11 +5064,7 @@ mod tests {
         };
         support.request_bytes[0] ^= 1;
         assert_eq!(
-            validate_bound_observations_for_schema(
-                &[first, second],
-                std::slice::from_ref(&run),
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            validate_bound_observations(&[first, second], std::slice::from_ref(&run)),
             Err(LiveSafetyReportRefusal::SupportLinkFactsDiffer(
                 run.run_id.clone(),
                 "control".to_owned(),
@@ -5333,21 +5077,7 @@ mod tests {
         let run = synthetic_multi_row_run();
         let observation = multi_row_observation(&run);
         assert_eq!(
-            validate_bound_observations_for_schema(
-                std::slice::from_ref(&observation),
-                std::slice::from_ref(&run),
-                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-            ),
-            Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(
-                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-            )),
-        );
-        assert_eq!(
-            validate_bound_observations_for_schema(
-                &[observation],
-                std::slice::from_ref(&run),
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            validate_bound_observations(&[observation], std::slice::from_ref(&run)),
             Ok(2),
         );
     }
@@ -5367,11 +5097,7 @@ mod tests {
             },
         );
         assert_eq!(
-            validate_bound_observations_for_schema(
-                &[observation],
-                std::slice::from_ref(&run),
-                LIVE_SAFETY_REPORT_SCHEMA,
-            ),
+            validate_bound_observations(&[observation], std::slice::from_ref(&run)),
             Err(LiveSafetyReportRefusal::SemanticPredicateNotProven(
                 "sponsored",
             )),
@@ -5566,14 +5292,14 @@ mod tests {
         let run_id = wrong.run_id.clone();
         wrong.revision = NativeProtocolRevision::Revision7;
         assert_eq!(
-            compare_schema_five_run_bindings(&[wrong.clone()], &[wrong]),
+            compare_run_bindings(&[wrong.clone()], &[wrong]),
             Err(LiveSafetyReportRefusal::RunProtocolRevisionDiffers(run_id)),
         );
 
         let mut unknown = synthetic_run();
         unknown.archive_bytes = synthetic_archive(99, "historical-v1", "recorded-tip");
         assert_eq!(
-            compare_schema_five_run_bindings(&[unknown.clone()], &[unknown]),
+            compare_run_bindings(&[unknown.clone()], &[unknown]),
             Err(LiveSafetyReportRefusal::UnknownProtocolRevision(99)),
         );
     }
@@ -5588,7 +5314,7 @@ mod tests {
             .expect("the fixture digest is present")
             .algorithm = FixtureDigestAlgorithm::ForwardV2;
         assert_eq!(
-            compare_schema_five_run_bindings(&[wrong.clone()], &[wrong]),
+            compare_run_bindings(&[wrong.clone()], &[wrong]),
             Err(LiveSafetyReportRefusal::RunDigestFactsDiffer(run_id)),
         );
 
@@ -5601,7 +5327,7 @@ mod tests {
         )
         .expect("the relabeled archive is structurally typed");
         assert_eq!(
-            compare_schema_five_run_bindings(
+            compare_run_bindings(
                 std::slice::from_ref(&relabeled),
                 std::slice::from_ref(&relabeled),
             ),
@@ -5613,7 +5339,7 @@ mod tests {
         let mut unknown = synthetic_run();
         unknown.archive_bytes = synthetic_archive(6, "invented-v3", "recorded-tip");
         assert_eq!(
-            compare_schema_five_run_bindings(&[unknown.clone()], &[unknown]),
+            compare_run_bindings(&[unknown.clone()], &[unknown]),
             Err(LiveSafetyReportRefusal::UnknownDigestAlgorithm(
                 "invented-v3".to_owned(),
             )),
@@ -5635,17 +5361,14 @@ mod tests {
         .expect("the changed run parses");
         assert_ne!(first.run_id, changed.run_id);
         assert_eq!(
-            compare_schema_five_run_bindings(
-                std::slice::from_ref(&first),
-                std::slice::from_ref(&first),
-            ),
+            compare_run_bindings(std::slice::from_ref(&first), std::slice::from_ref(&first),),
             Ok(()),
         );
 
         let mut forged_address = first;
         forged_address.run_id = "not-the-content-address".to_owned();
         assert_eq!(
-            compare_schema_five_run_bindings(
+            compare_run_bindings(
                 std::slice::from_ref(&forged_address),
                 std::slice::from_ref(&forged_address),
             ),
@@ -5656,7 +5379,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_five_renders_the_complete_new_run_field_set() {
+    fn the_live_schema_renders_the_complete_run_field_set() {
         let run = synthetic_run();
         let mut rendered = String::new();
         super::render_run_bindings(&mut rendered, std::slice::from_ref(&run));
@@ -5680,7 +5403,7 @@ mod tests {
             synthetic_transaction(0x43, 51, 0x31),
         );
         assert_eq!(
-            compare_schema_five_run_bindings(&[forged.clone()], &[forged]),
+            compare_run_bindings(&[forged.clone()], &[forged]),
             Err(LiveSafetyReportRefusal::AcceptedIdentityDiffers(
                 run_id,
                 "request-a".to_owned(),
@@ -5704,7 +5427,7 @@ mod tests {
         *control_identity =
             parsed_identity("75e823f7c5c70ddfbd9584f90f67298f2570907947829828066c7047b21b53b1");
         assert_eq!(
-            compare_schema_five_run_bindings(&[run.clone()], &[run]),
+            compare_run_bindings(&[run.clone()], &[run]),
             Err(LiveSafetyReportRefusal::RefusalControlIdentityDiffers(
                 run_id,
                 "mutant".to_owned(),
@@ -5718,34 +5441,34 @@ mod tests {
 
         let run = synthetic_mutation_run();
         let mut observation = mutation_observation(&run);
-        let LiveReportObservation::NativeRefusal { detail, .. } = &mut observation else {
+        let LiveReportObservation::NativeRefusalWithSupport { detail, .. } = &mut observation
+        else {
             panic!("the observation is a refusal");
         };
         *detail = "a matching importer invented this detail".to_owned();
         assert_eq!(
-            validate_schema_five_bound_observations(&[observation], std::slice::from_ref(&run),),
+            validate_bound_observations(&[observation], std::slice::from_ref(&run)),
             Err(LiveSafetyReportRefusal::RunResponseDiffers(
                 run.run_id.clone(),
             )),
         );
 
         let mut wrong_layer = mutation_observation(&run);
-        let LiveReportObservation::NativeRefusal { observed_layer, .. } = &mut wrong_layer else {
+        let LiveReportObservation::NativeRefusalWithSupport { observed_layer, .. } =
+            &mut wrong_layer
+        else {
             panic!("the observation is a refusal");
         };
         *observed_layer = ObservedOutcomeLayer::ConsensusRejectionBeforeScript;
         assert_eq!(
-            validate_schema_five_bound_observations(&[wrong_layer], std::slice::from_ref(&run),),
+            validate_bound_observations(&[wrong_layer], std::slice::from_ref(&run)),
             Err(LiveSafetyReportRefusal::RunResponseDiffers(
                 run.run_id.clone(),
             )),
         );
 
         assert_eq!(
-            validate_schema_five_bound_observations(
-                &[mutation_observation(&run)],
-                std::slice::from_ref(&run),
-            ),
+            validate_bound_observations(&[mutation_observation(&run)], std::slice::from_ref(&run),),
             Ok(1),
         );
     }
@@ -5763,7 +5486,7 @@ mod tests {
             },
         );
         assert_eq!(
-            compare_schema_five_run_bindings(&[orphan.clone()], &[orphan]),
+            compare_run_bindings(&[orphan.clone()], &[orphan]),
             Err(LiveSafetyReportRefusal::RequestResponseCensusDiffers(
                 run_id,
             )),
@@ -5783,7 +5506,7 @@ mod tests {
             vec![second, first]
         };
         assert_eq!(
-            compare_schema_five_run_bindings(&runs, &runs),
+            compare_run_bindings(&runs, &runs),
             Err(LiveSafetyReportRefusal::ReusedRequestId(
                 "request-a".to_owned(),
             )),
@@ -5828,7 +5551,7 @@ mod tests {
             vec![mutant_run, control_run]
         };
         assert_eq!(
-            compare_schema_five_run_bindings(&runs, &runs),
+            compare_run_bindings(&runs, &runs),
             Err(LiveSafetyReportRefusal::CrossRunRequestLink(
                 "mutant".to_owned(),
                 "control".to_owned(),
@@ -5852,7 +5575,7 @@ mod tests {
             item_index: 1,
         };
         assert_eq!(
-            compare_schema_five_run_bindings(&[run.clone()], &[run]),
+            compare_run_bindings(&[run.clone()], &[run]),
             Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
                 run_id,
                 "mutant".to_owned(),
@@ -5873,7 +5596,7 @@ mod tests {
             identity: *identity,
         };
         assert_eq!(
-            validate_schema_five_bound_observations(
+            validate_bound_observations(
                 &[observation("row-a"), observation("row-b")],
                 std::slice::from_ref(&run),
             ),
@@ -5887,7 +5610,7 @@ mod tests {
     fn run_response_and_observation_counts_cross_foot() {
         let run = synthetic_run();
         assert_eq!(
-            validate_schema_five_bound_observations(&[], std::slice::from_ref(&run)),
+            validate_bound_observations(&[], std::slice::from_ref(&run)),
             Err(LiveSafetyReportRefusal::RunObservationCensusDiffers),
         );
     }
@@ -5897,7 +5620,7 @@ mod tests {
         let run = synthetic_pair_run();
         let observation = pair_observation(&run, "transcript-says-the-pair-is-equal");
         assert_eq!(
-            validate_schema_five_bound_observations(&[observation], std::slice::from_ref(&run),),
+            validate_bound_observations(&[observation], std::slice::from_ref(&run)),
             Err(LiveSafetyReportRefusal::PairedRelationNotRecomputed(
                 "projection-equality-with-paired-explicit",
             )),
@@ -5905,7 +5628,7 @@ mod tests {
 
         let recomputed = pair_observation(&run, VALIDATED_PAIR_RELATION);
         assert_eq!(
-            validate_schema_five_bound_observations(&[recomputed], std::slice::from_ref(&run),),
+            validate_bound_observations(&[recomputed], std::slice::from_ref(&run)),
             Ok(1),
         );
     }
@@ -5931,7 +5654,7 @@ mod tests {
         let observation = pair_observation(&forged, VALIDATED_PAIR_RELATION);
 
         assert_eq!(
-            validate_schema_five_bound_observations(&[observation], std::slice::from_ref(&forged),),
+            validate_bound_observations(&[observation], std::slice::from_ref(&forged)),
             Err(LiveSafetyReportRefusal::PairedRelationNotRecomputed(
                 "projection-equality-with-paired-explicit",
             )),
@@ -5940,7 +5663,7 @@ mod tests {
 
     #[test]
     fn two_matching_lies_no_longer_validate() {
-        // Red before the validator repair: today `compare_run_bindings_for_schema`
+        // Red before the validator repair: today `compare_run_bindings`
         // checks one caller-authored run against another caller-authored
         // copy. These undecodable request bytes, invented identity and
         // matching expected copy therefore return `Ok(())` together.
@@ -5960,7 +5683,7 @@ mod tests {
         let matching_expected_lie = vec![invented];
         assert_eq!(offered, matching_expected_lie);
         assert_eq!(
-            compare_schema_five_run_bindings(&offered, &matching_expected_lie),
+            compare_run_bindings(&offered, &matching_expected_lie),
             Err(LiveSafetyReportRefusal::RequestDecodeRefused(
                 offered[0].run_id.clone(),
                 "request-a".to_owned(),
@@ -5976,7 +5699,7 @@ mod tests {
         let mut deployment = expected.clone();
         deployment[0].deployment.genesis_id[0] ^= 1;
         assert_eq!(
-            compare_schema_five_run_bindings(&deployment, &expected),
+            compare_run_bindings(&deployment, &expected),
             Err(LiveSafetyReportRefusal::RunDeploymentDiffers(
                 run_id.clone()
             )),
@@ -5987,7 +5710,7 @@ mod tests {
             .requests
             .insert("request-a".to_owned(), vec![0xff]);
         assert_eq!(
-            compare_schema_five_run_bindings(&request, &expected),
+            compare_run_bindings(&request, &expected),
             Err(LiveSafetyReportRefusal::RequestDecodeRefused(
                 run_id.clone(),
                 "request-a".to_owned(),
@@ -6007,7 +5730,7 @@ mod tests {
             },
         );
         assert_eq!(
-            compare_schema_five_run_bindings(&response, &expected),
+            compare_run_bindings(&response, &expected),
             Err(LiveSafetyReportRefusal::RequestResponseShapeDiffers(
                 run_id.clone(),
                 "request-a".to_owned(),
@@ -6017,7 +5740,7 @@ mod tests {
         let mut executor = expected.clone();
         executor[0].executor.node_version = "another-version".to_owned();
         assert_eq!(
-            compare_schema_five_run_bindings(&executor, &expected),
+            compare_run_bindings(&executor, &expected),
             Err(LiveSafetyReportRefusal::RunExecutorProvenanceDiffers(
                 run_id
             )),
@@ -6169,17 +5892,17 @@ mod tests {
     }
 
     #[test]
-    fn schema_four_is_hard_rejected() {
-        // Red before schema 5: four is the accepted schema at this commit,
-        // so this regression reaches validation instead of refusing.
+    fn non_live_schema_values_are_hard_rejected() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
-        let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
-        report.schema = 4;
-        assert_eq!(
-            validate_live_safety_report(report, &plan, &target),
-            Err(LiveSafetyReportRefusal::UnsupportedSchema(4)),
-        );
+        for schema in [4, 7, u32::MAX] {
+            let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
+            report.schema = schema;
+            assert_eq!(
+                validate_live_safety_report(report, &plan, &target),
+                Err(LiveSafetyReportRefusal::UnsupportedSchema(schema)),
+            );
+        }
     }
 
     #[test]
