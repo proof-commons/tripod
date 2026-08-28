@@ -656,6 +656,16 @@ impl SponsoredPrivatePlanner {
         &self.record
     }
 
+    /// The successor fixture digest selected by this planner.
+    ///
+    /// This accessor exposes ceremony metadata for the enhanced capture;
+    /// request bytes and target responses remain owned by the executor
+    /// journal.
+    #[must_use]
+    pub fn capture_successor_digest(&self) -> Option<[u8; 32]> {
+        self.successor.as_ref().map(|(digest, _view)| *digest)
+    }
+
     fn refuse(&mut self, refusal: SponsoredPrivateRefusal) -> PlanRefused {
         self.record.refusal = Some(refusal);
         self.stage = Stage::Done;

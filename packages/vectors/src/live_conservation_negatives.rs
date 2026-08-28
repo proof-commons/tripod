@@ -164,6 +164,15 @@ impl MutantObservation {
         self.mutation.case()
     }
 
+    /// The planner-selected serialized field this mutant changes.
+    ///
+    /// This is capture metadata only. The submitted request bytes remain
+    /// owned by the executor journal.
+    #[must_use]
+    pub const fn capture_locator(&self) -> transaction::bytes::SerializedFieldLocator {
+        self.mutation.locator()
+    }
+
     /// The layer the target refused the mutant at, where it was observed.
     #[must_use]
     pub const fn observed_layer(&self) -> Option<ObservedOutcomeLayer> {
@@ -237,6 +246,18 @@ impl ConservationNegativeRecord {
     #[must_use]
     pub fn issued_asset(&self) -> Option<&str> {
         self.issued_asset.as_deref()
+    }
+
+    /// The predecessor fixture digest selected by the completed planner.
+    #[must_use]
+    pub const fn predecessor_digest(&self) -> Option<[u8; 32]> {
+        self.predecessor_digest
+    }
+
+    /// The successor fixture digest selected by the completed planner.
+    #[must_use]
+    pub const fn successor_digest(&self) -> Option<[u8; 32]> {
+        self.successor_digest
     }
 
     /// The identity the target computed for the accepted control.
