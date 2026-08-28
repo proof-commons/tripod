@@ -2381,13 +2381,13 @@ impl BoundObservationValidation {
         let private = request_for(runs, private_run_id, private_request_id, row)?;
         validate_pair_claim(
             row,
-            PairClaimSide {
+            &PairClaimSide {
                 run_id: explicit_run_id,
                 request_id: explicit_request_id,
                 identity: *explicit_identity,
                 request: explicit,
             },
-            PairClaimSide {
+            &PairClaimSide {
                 run_id: private_run_id,
                 request_id: private_request_id,
                 identity: *private_identity,
@@ -2414,9 +2414,9 @@ struct PairClaimSide<'a> {
 }
 
 fn validate_pair_claim(
-    row: &&'static str,
-    explicit: PairClaimSide<'_>,
-    private: PairClaimSide<'_>,
+    row: &'static str,
+    explicit: &PairClaimSide<'_>,
+    private: &PairClaimSide<'_>,
     relation: &str,
 ) -> Result<(), LiveSafetyReportRefusal> {
     let (
@@ -2471,7 +2471,7 @@ fn validate_pair_claim(
             private_projection,
         )
     {
-        return Err(LiveSafetyReportRefusal::PairedRelationNotRecomputed(*row));
+        return Err(LiveSafetyReportRefusal::PairedRelationNotRecomputed(row));
     }
     Ok(())
 }
@@ -3850,7 +3850,7 @@ mod tests {
             Ok(()),
         );
 
-        let mut forged_address = first.clone();
+        let mut forged_address = first;
         forged_address.run_id = "not-the-content-address".to_owned();
         assert_eq!(
             compare_run_bindings(
@@ -4118,7 +4118,7 @@ mod tests {
     #[test]
     fn a_matching_pair_claim_still_refuses_an_unrecomputed_projection() {
         let source = synthetic_pair_run();
-        let mut request_facts = source.request_facts.clone();
+        let mut request_facts = source.request_facts;
         let LiveRequestFact::Paired { projection, .. } = request_facts
             .get_mut("private")
             .expect("the private request fact is present")
@@ -4127,10 +4127,10 @@ mod tests {
         };
         projection.semantic_input_amounts = vec![51];
         let forged = LiveRunBinding::from_archive(
-            source.archive_bytes.clone(),
-            source.requests.clone(),
+            source.archive_bytes,
+            source.requests,
             request_facts,
-            source.responses.clone(),
+            source.responses,
         )
         .expect("the forged pair remains structurally complete");
         let observation = pair_observation(&forged, VALIDATED_PAIR_RELATION);
