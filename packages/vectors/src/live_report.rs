@@ -597,7 +597,11 @@ fn parse_hex_32(text: &str) -> Option<[u8; 32]> {
         return None;
     }
     let mut decoded = [0_u8; 32];
-    for (slot, pair) in decoded.iter_mut().zip(text.as_bytes().chunks_exact(2)) {
+    let (pairs, remainder) = text.as_bytes().as_chunks::<2>();
+    if !remainder.is_empty() {
+        return None;
+    }
+    for (slot, pair) in decoded.iter_mut().zip(pairs) {
         let high = match pair[0] {
             b'0'..=b'9' => pair[0] - b'0',
             b'a'..=b'f' => pair[0] - b'a' + 10,
@@ -2162,7 +2166,6 @@ fn recompute_pair_projection(
         let amount = *input.semantic_destination_amounts.get(owner)?;
         match output.value() {
             ValueField::Explicit(published) if published == amount => {}
-            ValueField::Explicit(_) => return None,
             ValueField::Commitment(_) => publishes_every_destination_amount = false,
             _ => return None,
         }
