@@ -557,7 +557,7 @@ impl LiveSupportLink {
 /// A closed semantic predicate one row can independently prove from request bytes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LiveRowSemanticPredicate {
-    /// The request has a key-path sponsor input and one exact fee output.
+    /// The request has one two-item sponsor authorization and one exact fee output.
     Sponsored {
         /// The sponsor input position.
         sponsor_input_index: usize,
@@ -3171,17 +3171,23 @@ fn sponsored_request_shape_recomputes(
     sponsor_input_index: usize,
     fee_output_index: usize,
 ) -> bool {
-    let Some(sponsor_witness) = transaction.witnesses().get(sponsor_input_index) else {
-        return false;
-    };
-    let Some(fee_output) = transaction.outputs().get(fee_output_index) else {
-        return false;
-    };
-    transaction.inputs().len() > 1
-        && decoded_witness_path_role(sponsor_witness.stack()) == Some(LiveWitnessPathRole::KeyPath)
-        && fee_output.program().is_empty()
-        && matches!(fee_output.asset(), AssetField::Explicit(_))
-        && matches!(fee_output.value(), ValueField::Explicit(amount) if amount > 0)
+    let sponsor_inputs = transaction
+        .witnesses()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, witness)| {
+            let stack = witness.stack();
+            (stack.len() == 2 && stack.iter().all(|item| !item.is_empty())).then_some(index)
+        })
+        .collect::<Vec<_>>();
+    let fee_outputs = transaction
+        .outputs()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, output)| output.is_fee().then_some(index))
+        .collect::<Vec<_>>();
+    sponsor_inputs.as_slice() == [sponsor_input_index]
+        && fee_outputs.as_slice() == [fee_output_index]
 }
 
 fn semantic_predicate_recomputes(
@@ -4648,7 +4654,7 @@ mod tests {
             0,
             vec![
                 InputWitness::new(vec![vec![0x31; 64], vec![0x51], synthetic_control_block()]),
-                InputWitness::new(vec![vec![0x32; 64]]),
+                InputWitness::new(vec![vec![0x32; 72], vec![0x33; 33]]),
             ],
         )
         .expect("the multi-row transaction is well formed")
