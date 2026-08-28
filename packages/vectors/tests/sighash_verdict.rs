@@ -34,16 +34,19 @@ use tapscript::authorization::{
     DimensionRefusal, DimensionRole, OwnerProfileDisposition, selected_owner_profile,
 };
 use target_elements::{SighashDimension, UnreviewedGround, reviewed_elements_tapscript};
-use vectors::live_proof_bearing_observation::forward_v2_proof_bearing_run_of_record;
+use vectors::live_corpus_native_v2_r7;
 
-// The selected-profile identity minted from the validated current corpus.
-fn current_selected_profile_accepted_txid() -> &'static str {
-    forward_v2_proof_bearing_run_of_record()
-        .acceptance()
-        .recorded()
-        .expect("the authorized forward proof-bearing acceptance is recorded")
-        .reverification()
-        .accepted_txid()
+// The Wave-3 selected-profile identity projected from the validated current corpus.
+fn current_owner_observation_accepted_txid() -> &'static str {
+    let corpus = live_corpus_native_v2_r7::run_of_record()
+        .expect("the reviewed native-v2/revision-7 corpus validates");
+    let acceptances = corpus
+        .acceptance_projections("owner-observation")
+        .expect("the corpus projects the current owner-observation ceremony");
+    let [acceptance] = acceptances else {
+        panic!("the current owner-observation ceremony has one acceptance");
+    };
+    acceptance.identity_display()
 }
 
 /// The reviewed contract's sighash capability.
@@ -87,7 +90,7 @@ fn every_required_dimension_rests_on_the_run_that_was_observed() {
     // other run fails here.
     let profile = selected_owner_profile();
     let capability = capability();
-    let accepted_txid = current_selected_profile_accepted_txid();
+    let accepted_txid = current_owner_observation_accepted_txid();
 
     let mut walked = 0_usize;
     for dimension in profile.required() {
