@@ -26,6 +26,9 @@ weight rule in [the plans README](../README.md).
 | [review-8-0.4.2-dev.md](review-8-0.4.2-dev.md) | 0.4.2-dev | Guide-13 preflight register (guide §3) | Guide 13 |
 | [review-9-0.5.17-dev.md](review-9-0.5.17-dev.md) | 0.5.17-dev | backlog §5.10 (R5) | `T5-071` gate-repair wave |
 | [review-10-0.6.1-dev.md](review-10-0.6.1-dev.md) | 0.6.1-dev | Guide-14 disposition register (guide §4) | Guide 14 Wave 0 |
+| [guide_fourteen_conceptual_review_a.md](guide_fourteen_conceptual_review_a.md) | Guide 14 at 0.6.145-dev | [Guide-14 conceptual register](../guides/guide_fourteen_conceptual_register.md) | Guide 14 Waves 1–13 |
+| [guide_fourteen_conceptual_review_b.md](guide_fourteen_conceptual_review_b.md) | Guide 14 at 0.6.145-dev | [Guide-14 conceptual register](../guides/guide_fourteen_conceptual_register.md) | Guide 14 Waves 1–13 |
+| [guide_fourteen_conceptual_review_c.md](guide_fourteen_conceptual_review_c.md) | Guide 14 at 0.6.145-dev | [Guide-14 conceptual register](../guides/guide_fourteen_conceptual_register.md) | Guide 14 Waves 1–13 |
 
 ## Review rule · `rule:reviews:authority`
 

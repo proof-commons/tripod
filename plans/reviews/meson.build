@@ -3,6 +3,9 @@
 # meson.build accumulates this list into its role group.
 plans_reviews_files = files(
   'README.md',
+  'guide_fourteen_conceptual_review_a.md',
+  'guide_fourteen_conceptual_review_b.md',
+  'guide_fourteen_conceptual_review_c.md',
   'review-2-0.2.3-dev.md',
   'review-3-0.3.1-dev.md',
   'review-4-0.3.2-dev.md',
