@@ -34,7 +34,20 @@ use tapscript::authorization::{
     DimensionRefusal, DimensionRole, OwnerProfileDisposition, selected_owner_profile,
 };
 use target_elements::{SighashDimension, UnreviewedGround, reviewed_elements_tapscript};
-use vectors::live_owner_observation::run_of_record::SELECTED_PROFILE_ACCEPTED_TXID;
+use vectors::live_corpus_native_v2_r7;
+
+// The Wave-3 selected-profile identity projected from the validated current corpus.
+fn current_owner_observation_accepted_txid() -> &'static str {
+    let corpus = live_corpus_native_v2_r7::run_of_record()
+        .expect("the reviewed native-v2/revision-7 corpus validates");
+    let acceptances = corpus
+        .acceptance_projections("owner-observation")
+        .expect("the corpus projects the current owner-observation ceremony");
+    let [acceptance] = acceptances else {
+        panic!("the current owner-observation ceremony has one acceptance");
+    };
+    acceptance.identity_display()
+}
 
 /// The reviewed contract's sighash capability.
 fn capability() -> target_elements::SighashCapability {
@@ -77,6 +90,7 @@ fn every_required_dimension_rests_on_the_run_that_was_observed() {
     // other run fails here.
     let profile = selected_owner_profile();
     let capability = capability();
+    let accepted_txid = current_owner_observation_accepted_txid();
 
     let mut walked = 0_usize;
     for dimension in profile.required() {
@@ -88,7 +102,7 @@ fn every_required_dimension_rests_on_the_run_that_was_observed() {
         assert!(!ground.citation().terms().is_empty(), "{dimension:?}");
         assert_eq!(
             ground.exercised_by().observation().accepted_transaction(),
-            SELECTED_PROFILE_ACCEPTED_TXID,
+            accepted_txid,
             "{dimension:?} rests on the run that was observed",
         );
         walked += 1;

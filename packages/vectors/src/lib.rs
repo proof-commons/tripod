@@ -22,6 +22,7 @@ pub mod live_evidence;
 pub mod live_explicit_shapes;
 pub mod live_fault_discharge;
 pub mod live_first_party;
+pub mod live_history_v1;
 pub mod live_keypath_probe;
 pub mod live_measurements;
 pub mod live_minimality_report;
@@ -122,7 +123,7 @@ pub use live_minimality_report::{
 pub use live_native::{
     LiveFormNotSubmitted, LiveNativeObservation, LiveNativeRefusal, LiveNativeStep,
     LiveNativeTranscript, LiveTransferOperationPlanner, PredictedTransferResources,
-    observed_run_of_record, render_live_native_run,
+    render_live_native_run,
 };
 pub use live_pairs::{
     ExpectedTransferSemantics, MinimalityConditionStanding, MinimalityPair, MinimalityPairRefusal,

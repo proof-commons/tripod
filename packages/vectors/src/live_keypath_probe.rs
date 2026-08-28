@@ -1219,7 +1219,7 @@ fn observation_lines(prefix: &str, observation: &KeyPathObservation) -> Vec<Stri
     lines
 }
 
-/// The run of record: what one execution of this probe observed.
+/// Historical-v1 phase-A data: what one execution of this probe observed.
 ///
 /// # Why the observation is a constant and not a stored file
 ///
@@ -1244,7 +1244,9 @@ fn observation_lines(prefix: &str, observation: &KeyPathObservation) -> Vec<Stri
 /// The target: Elements Core v28.99.0-b7fc5d080a7e, at the pinned tip
 /// the lane binds itself to, on a disposable development chain the run
 /// created and destroyed. The outpoint is omitted, as the other runs of
-/// record omit theirs: it names a chain that no longer exists.
+/// record omit theirs: it names a chain that no longer exists. New historical
+/// callers use [`crate::live_history_v1::keypath_probe`]; this compatibility
+/// path remains for the separately owned native-guide cleanup.
 pub mod run_of_record {
     /// The disposable asset the run issued.
     pub const ISSUED_ASSET: &str =
@@ -1304,14 +1306,14 @@ pub mod run_of_record {
     /// name a later vocabulary would have given it would replace a record
     /// of a run with a reconstruction of one. The corrected observation
     /// is phase B's own, beside this module in
-    /// [`super::run_of_record_phase_b`].
+    /// [`crate::live_history_v1::keypath_probe_phase_b`].
     pub const OBSERVED_LAYER: &str = "ScriptPathRejection";
 
     /// The run's wall time.
     pub const WALL_SECONDS: f64 = 4.1;
 }
 
-/// The phase-B run of record: the same attempt, under its own name, with
+/// Historical-v1 phase-B data: the same attempt, under its own name, with
 /// its control.
 ///
 /// # Why there are two runs of record and not one amended one
@@ -1352,7 +1354,8 @@ pub mod run_of_record {
 ///
 /// The target: Elements Core v28.99.0-b7fc5d080a7e, at the pinned tip
 /// the lane binds itself to, on a disposable development chain the run
-/// created and destroyed.
+/// created and destroyed. New historical callers use
+/// [`crate::live_history_v1::keypath_probe_phase_b`].
 pub mod run_of_record_phase_b {
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
@@ -1360,8 +1363,8 @@ pub mod run_of_record_phase_b {
     ///
     /// Recorded as the string the run produced, on the pattern phase A
     /// set. The whole content of phase B is that this differs from
-    /// [`super::run_of_record::OBSERVED_LAYER`] while the words below do
-    /// not: the target said the same thing and the wire stopped
+    /// [`crate::live_history_v1::keypath_probe::OBSERVED_LAYER`] while the
+    /// words below do not: the target said the same thing and the wire stopped
     /// mis-naming it.
     pub const OBSERVED_LAYER: &str = "KeyPathRejection";
 
@@ -1408,6 +1411,7 @@ pub mod run_of_record_phase_b {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::live_history_v1::{keypath_probe as phase_a, keypath_probe_phase_b as phase_b};
 
     #[test]
     fn the_probe_funds_exactly_one_receipt() {
@@ -1461,30 +1465,33 @@ mod tests {
         // witness had grown a second item would not be a key-path
         // attempt, and one whose signing key equalled the output key
         // would be a different experiment reported under this name.
-        use super::run_of_record as run;
-
-        assert_eq!(run::WITNESS_ITEMS, 1);
-        assert_eq!(run::WITNESS_ITEM_BYTES, 64);
-        assert_ne!(run::SIGNING_PUBLIC_KEY, run::OUTPUT_KEY);
+        assert_eq!(phase_a::WITNESS_ITEMS, 1);
+        assert_eq!(phase_a::WITNESS_ITEM_BYTES, 64);
+        assert_ne!(phase_a::SIGNING_PUBLIC_KEY, phase_a::OUTPUT_KEY);
 
         // The program is the witness-version-one script for the output
         // key: two prefix bytes and the key. Checked by construction so
         // that a transcription slip in either constant is a failure
         // rather than a pair of numbers nobody compared.
-        assert_eq!(run::FUNDED_PROGRAM, format!("5120{}", run::OUTPUT_KEY));
+        assert_eq!(
+            phase_a::FUNDED_PROGRAM,
+            format!("5120{}", phase_a::OUTPUT_KEY),
+        );
 
-        assert_eq!(run::OUTPUT_KEY.len(), 64);
-        assert_eq!(run::MERKLE_ROOT.len(), 64);
-        assert_eq!(run::ISSUED_ASSET.len(), 64);
-        assert_eq!(run::CANDIDATE_KEY_PATH_MESSAGE.len(), 64);
+        assert_eq!(phase_a::OUTPUT_KEY.len(), 64);
+        assert_eq!(phase_a::MERKLE_ROOT.len(), 64);
+        assert_eq!(phase_a::ISSUED_ASSET.len(), 64);
+        assert_eq!(phase_a::CANDIDATE_KEY_PATH_MESSAGE.len(), 64);
 
         // The submitted bytes carry a transaction and not only the
         // witness item.
-        const { assert!(run::SUBMITTED_BYTES > run::WITNESS_ITEM_BYTES) };
+        const {
+            assert!(phase_a::SUBMITTED_BYTES > phase_a::WITNESS_ITEM_BYTES);
+        };
 
         // The verdict was a refusal, and the artifact says so in the
         // target's own words rather than in a mapped name.
-        assert!(run::OBSERVED_DETAIL.contains("Invalid Schnorr signature"));
+        assert!(phase_a::OBSERVED_DETAIL.contains("Invalid Schnorr signature"),);
     }
 
     #[test]
@@ -1495,12 +1502,10 @@ mod tests {
         // filing them under a script-path name. A phase-B run whose
         // words had moved would be a different observation reported
         // under this name.
-        use super::{run_of_record as a, run_of_record_phase_b as b};
-
-        assert_eq!(b::REFUSAL_DETAIL, a::OBSERVED_DETAIL);
-        assert_ne!(b::OBSERVED_LAYER, a::OBSERVED_LAYER);
-        assert_eq!(a::OBSERVED_LAYER, "ScriptPathRejection");
-        assert_eq!(b::OBSERVED_LAYER, "KeyPathRejection");
+        assert_eq!(phase_b::REFUSAL_DETAIL, phase_a::OBSERVED_DETAIL);
+        assert_ne!(phase_b::OBSERVED_LAYER, phase_a::OBSERVED_LAYER);
+        assert_eq!(phase_a::OBSERVED_LAYER, "ScriptPathRejection");
+        assert_eq!(phase_b::OBSERVED_LAYER, "KeyPathRejection");
 
         // The typed constant is BOUND to the recorded string rather than
         // stated beside it. A typed layer that drifted from the run's own
@@ -1508,8 +1513,8 @@ mod tests {
         // never produced, which is the whole failure the layer plumbing
         // exists to close.
         assert_eq!(
-            format!("{:?}", b::REFUSAL_OBSERVED_LAYER),
-            b::OBSERVED_LAYER
+            format!("{:?}", phase_b::REFUSAL_OBSERVED_LAYER),
+            phase_b::OBSERVED_LAYER
         );
 
         // The pair. The control carries an identity a reader can look
@@ -1517,11 +1522,15 @@ mod tests {
         // one, and the two differ in the witness alone — which is the
         // property that makes the refusal the row's rather than the
         // candidate's.
-        assert_eq!(b::CONTROL_ACCEPTED_TXID.len(), 64);
-        assert_eq!(b::CONTROL_WITNESS_ITEMS, 3);
-        assert_eq!(a::WITNESS_ITEMS, 1);
-        const { assert!(b::CONTROL_SHARES_THE_ATTEMPTS_WITNESSLESS_BYTES) };
-        const { assert!(b::CONTROL_SUBMITTED_BYTES > a::SUBMITTED_BYTES) };
+        assert_eq!(phase_b::CONTROL_ACCEPTED_TXID.len(), 64);
+        assert_eq!(phase_b::CONTROL_WITNESS_ITEMS, 3);
+        assert_eq!(phase_a::WITNESS_ITEMS, 1);
+        const {
+            assert!(phase_b::CONTROL_SHARES_THE_ATTEMPTS_WITNESSLESS_BYTES);
+        };
+        const {
+            assert!(phase_b::CONTROL_SUBMITTED_BYTES > phase_a::SUBMITTED_BYTES);
+        };
     }
 
     #[test]

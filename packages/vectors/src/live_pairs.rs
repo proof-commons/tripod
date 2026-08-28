@@ -895,7 +895,7 @@ pub enum PairShapeAcceptance {
     /// one-to-one fixture TWICE — this registry's own fixture, read from
     /// the arc so there is only one — and submitted both materializations
     /// to one node against one issued asset, both accepted
-    /// ([`crate::live_pair_arc::run_of_record`]). What may occupy this
+    /// ([`crate::live_history_v1::pair_arc`]). What may occupy this
     /// member is a submission of the pair's own member and nothing else;
     /// the four other pairs keep
     /// [`Self::ObservedForThisShape`], which says less and is what is
@@ -944,18 +944,44 @@ impl PairShapeAcceptance {
     }
 }
 
+fn current_acceptance_identity_at(ceremony: &str, index: usize, expected: usize) -> &'static str {
+    let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+        .expect("the reviewed native-v2/revision-7 corpus validates");
+    let acceptances = corpus
+        .acceptance_projections(ceremony)
+        .unwrap_or_else(|| panic!("the current corpus omits {ceremony}"));
+    assert_eq!(
+        acceptances.len(),
+        expected,
+        "{ceremony} carries a different current acceptance census",
+    );
+    acceptances
+        .get(index)
+        .unwrap_or_else(|| panic!("{ceremony} omits current acceptance {index}"))
+        .identity_display()
+}
+
+fn current_acceptance_identity(ceremony: &str) -> &'static str {
+    current_acceptance_identity_at(ceremony, 0, 1)
+}
+
 /// The recorded acceptance of one member's shape, or its absence.
 ///
-/// A table over the two lanes' runs of record. Every arm cites the
-/// constant the run wrote rather than repeating a digest, so a reader
-/// following a name arrives at the module that observed the run.
+/// A table over typed projections of the validated current corpus. Every arm
+/// selects a ceremony rather than repeating an identity, so there is no second
+/// transcription surface beside the archive.
 ///
 /// Shapes are compared on what a target can see: how many receipts are
 /// consumed, how many receipt outputs are created, which non-receipt
 /// roles are present, and — where a pair's subject is the owners —
 /// whether the consumed receipts stand under distinct owners.
+///
+/// # Panics
+///
+/// Panics only if the embedded reviewed native-v2/revision-7 corpus no
+/// longer supplies the exact acceptance projection selected by this pair.
 #[must_use]
-pub const fn recorded_acceptance(
+pub fn recorded_acceptance(
     pair: MinimalityPair,
     representation: LiveTransferRepresentationPlan,
 ) -> PairShapeAcceptance {
@@ -969,37 +995,18 @@ pub const fn recorded_acceptance(
         // what they answer is narrower and stronger than every other arm
         // here: not a run of the member's shape, but the member.
         //
-        // The fall-through is what keeps that honest. The arc's run of
-        // record carries `None` until a run writes an identity, and this
-        // arm then cites the nearest recorded run OF THE SHAPE, which is
-        // exactly what every other arm cites and exactly what the pair
-        // had before the arc existed.
-        (P::OneToOne, Plan::Explicit) => match crate::live_pair_arc::run_of_record::EXPLICIT_MEMBER_ACCEPTED_IDENTITY {
-            Some(accepted_identity) => A::ObservedForThisMember {
-                case: "explicit-paired-one-to-one",
-                accepted_identity,
-            },
-            None => A::ObservedForThisShape {
-                case: "explicit-one-to-one",
-                accepted_identity:
-                    crate::live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID,
-            },
+        (P::OneToOne, Plan::Explicit) => A::ObservedForThisMember {
+            case: "explicit-paired-one-to-one",
+            accepted_identity: current_acceptance_identity_at("pairs-arc", 0, 2),
         },
-        (P::OneToOne, Plan::PrivateCommitted) => match crate::live_pair_arc::run_of_record::PRIVATE_MEMBER_ACCEPTED_IDENTITY {
-            Some(accepted_identity) => A::ObservedForThisMember {
-                case: "private-paired-one-to-one",
-                accepted_identity,
-            },
-            None => A::ObservedForThisShape {
-                case: "private-strict-one-to-one",
-                accepted_identity:
-                    crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
-            },
+        (P::OneToOne, Plan::PrivateCommitted) => A::ObservedForThisMember {
+            case: "private-paired-one-to-one",
+            accepted_identity: current_acceptance_identity_at("pairs-arc", 1, 2),
         },
         // 1 -> 2, both created outputs being RECEIPTS.
         (P::Split, Plan::Explicit) => A::ObservedForThisShape {
             case: "explicit-split",
-            accepted_identity: crate::live_explicit_shapes::run_of_record::SPLIT_ACCEPTED_TXID,
+            accepted_identity: current_acceptance_identity("explicit-split"),
         },
         // The private lane HAS now run this member's own shape. It did
         // not before, and the two shapes it had run near this one are
@@ -1017,16 +1024,16 @@ pub const fn recorded_acceptance(
         // RECEIPTS".
         (P::Split, Plan::PrivateCommitted) => A::ObservedForThisShape {
             case: "private-pure-split",
-            accepted_identity: crate::live_multi_shapes::run_of_record::PURE_SPLIT_ACCEPTED_TXID,
+            accepted_identity: current_acceptance_identity("multi-pure-split"),
         },
         // 2 -> 1.
         (P::Merge, Plan::Explicit) => A::ObservedForThisShape {
             case: "explicit-merge",
-            accepted_identity: crate::live_explicit_shapes::run_of_record::MERGE_ACCEPTED_TXID,
+            accepted_identity: current_acceptance_identity("explicit-merge"),
         },
         (P::Merge, Plan::PrivateCommitted) => A::ObservedForThisShape {
             case: "private-merge",
-            accepted_identity: crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID,
+            accepted_identity: current_acceptance_identity("multi-private-merge"),
         },
         // 2 -> 2, and this fixture's two consumed receipts stand under
         // two DISTINCT published owners. On the private lane the run of
@@ -1038,13 +1045,11 @@ pub const fn recorded_acceptance(
         // stated here rather than left for a reader to notice.
         (P::ManyToMany, Plan::Explicit) => A::ObservedForThisShape {
             case: "explicit-several-to-several",
-            accepted_identity:
-                crate::live_explicit_shapes::run_of_record::SEVERAL_TO_SEVERAL_ACCEPTED_TXID,
+            accepted_identity: current_acceptance_identity("explicit-several-to-several"),
         },
         (P::ManyToMany, Plan::PrivateCommitted) => A::ObservedForThisShape {
             case: "private-several-distinct-owners",
-            accepted_identity:
-                crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID,
+            accepted_identity: current_acceptance_identity("multi-several-owners"),
         },
         // The sponsored pair. Its explicit half is exactly the sponsor
         // lane's change-absent control: a sponsor coin funded to the fee
@@ -1052,8 +1057,7 @@ pub const fn recorded_acceptance(
         // states with `SponsorChangeRequest::NotRequested`.
         (P::Sponsor, Plan::Explicit) => A::ObservedForThisShape {
             case: "sponsored-change-absent",
-            accepted_identity:
-                crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            accepted_identity: current_acceptance_identity("sponsored-change-absent"),
         },
         // Its private half HAS now been run as its own shape. The one
         // sponsored private successor recorded before it is still not
@@ -1073,8 +1077,7 @@ pub const fn recorded_acceptance(
         // have been handed a change output.
         (P::Sponsor, Plan::PrivateCommitted) => A::ObservedForThisShape {
             case: "sponsored-private-explicit-no-change",
-            accepted_identity:
-                crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_TXID,
+            accepted_identity: current_acceptance_identity("sponsored-private-explicit-no-change"),
         },
     }
 }
@@ -1664,7 +1667,7 @@ fn materialize_member(
 /// Split out of the condition resolver because it is the one conjunct
 /// whose subject is a TARGET verdict rather than a property of the built
 /// members, and it is answered from the two lanes' runs of record.
-const fn acceptance_standing(pair: MinimalityPair) -> MinimalityConditionStanding {
+fn acceptance_standing(pair: MinimalityPair) -> MinimalityConditionStanding {
     use MinimalityConditionStanding as Standing;
 
     let explicit_shape = recorded_acceptance(pair, LiveTransferRepresentationPlan::Explicit);
@@ -1736,7 +1739,7 @@ const fn acceptance_standing(pair: MinimalityPair) -> MinimalityConditionStandin
 /// Split out of the materializer because it is a different question from
 /// building a member: what this answers is what a target said, and the
 /// materializer answers what this workspace can construct.
-const fn member_verdict(
+fn member_verdict(
     pair: MinimalityPair,
     representation: LiveTransferRepresentationPlan,
 ) -> PairTargetVerdict {
@@ -2450,7 +2453,7 @@ mod tests {
         // consumed and how many outputs each created, in its own run of
         // record and in the order it ran them. Those two arrays are the
         // independent statement this test holds the table against.
-        use crate::live_multi_shapes::run_of_record as ms;
+        use crate::live_history_v1::multi_shapes as ms;
 
         // Which recorded private run each pair's citation points at, by
         // its index in the order the arrays are written in: split,

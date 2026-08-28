@@ -27,10 +27,11 @@
 //!
 //! # What this module does not do
 //!
-//! It observes nothing. Every OBSERVED-ACCEPTED verdict cites a
-//! `run_of_record` identity a ceremony produced; no verdict here
-//! is produced by running anything, and a shape consensus admits but
-//! nobody has submitted is recorded SOURCE-DERIVED and never "run".
+//! It observes nothing. Every current OBSERVED-ACCEPTED verdict cites a
+//! typed projection of the validated native-v2/revision-7 corpus; no
+//! verdict here is produced by running anything, and a shape consensus
+//! admits but nobody has submitted is recorded SOURCE-DERIVED and never
+//! "run".
 //! Nothing here moves a matrix row, a blocker or a residual: this is a
 //! register, and a register is not evidence.
 //!
@@ -335,9 +336,9 @@ pub enum ConsensusVerdict {
     /// A node accepted a transaction of this shape into a block.
     ///
     /// The strongest class, and the only one carrying a target-computed
-    /// identity. The identity is not a literal here: it is the
-    /// `run_of_record` constant a ceremony recorded, so a wave that
-    /// re-ran and got different bytes would move this register too.
+    /// identity. The identity is not a literal here: it is selected by
+    /// ceremony from the validated current corpus, so the register cannot
+    /// silently retain a predecessor value.
     ObservedAccepted {
         /// The identity the target computed for the accepted shape.
         identity: &'static str,
@@ -372,7 +373,8 @@ pub enum ConsensusVerdict {
 /// second.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FirstPartyStatus {
-    /// The registry builds it and a run of record observed it accepted.
+    /// The registry builds it and the validated current corpus records its
+    /// acceptance.
     ConstructibleAndObserved,
     /// Consensus admits it and the registry refuses it anyway.
     ///
@@ -394,8 +396,8 @@ pub enum FirstPartyStatus {
         refusal: RegistrationRefusal,
     },
     /// The registry refused it by convention, the convention was
-    /// STRUCTURALLY REMOVED, and a run of record then observed the shape
-    /// accepted.
+    /// STRUCTURALLY REMOVED, and the validated current corpus records the
+    /// shape accepted.
     ///
     /// # Why this is not just [`Self::ConstructibleAndObserved`]
     ///
@@ -481,8 +483,8 @@ pub struct LimitationRemoval {
     pub row: &'static str,
     /// What structurally changed, in the registry's own terms.
     pub change: &'static str,
-    /// The run-of-record identity of the first shape it unlocked, where
-    /// one has run.
+    /// The historical-v1 identity of the first shape it unlocked, where
+    /// one ran during that recorded campaign.
     ///
     /// `None` is a removal that is REAL at the registry and that nothing
     /// has yet carried to a node. The register keeps the two apart on
@@ -508,7 +510,7 @@ const TWO_OUTPUT_FLOOR_REMOVAL: LimitationRemoval = LimitationRemoval {
              declare it, so nothing was relaxed; the zero-blinder degeneracy is answered by the \
              registry's existing `DegenerateBalancingScalar` refusal, left standing and now \
              load-bearing.",
-    proven_by: Some(crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID),
+    proven_by: Some(crate::live_history_v1::multi_shapes::STRICT_ONE_TO_ONE_ACCEPTED_TXID),
 };
 
 /// The absent fee role's removal, recorded once.
@@ -545,7 +547,7 @@ const CANCELING_PREDECESSOR_REMOVAL: LimitationRemoval = LimitationRemoval {
              nonzero for a reason that can be stated. The consumed sum is now SUMMED over the \
              coins the shape names rather than stated from one predecessor's structure, and the \
              ceremony writes the forced blinder's nonzero-ness into its own transcript.",
-    proven_by: Some(crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID),
+    proven_by: Some(crate::live_history_v1::multi_shapes::MERGE_ACCEPTED_TXID),
 };
 
 /// The absent fee projection's removal, recorded once.
@@ -590,7 +592,7 @@ const SPONSORLESS_FEE_REMOVAL: LimitationRemoval = LimitationRemoval {
              relation gained the fee as a term rather than an allowance. The fee-bearing \
              deployment is welded to the digest an empty program actually hashes to, the \
              demonstration keeping its fixture constant and its identities untouched.",
-    proven_by: Some(crate::live_multi_shapes::run_of_record::FEE_BEARING_SUCCESSOR_IDENTITY),
+    proven_by: Some(crate::live_history_v1::multi_shapes::FEE_BEARING_SUCCESSOR_IDENTITY),
 };
 
 /// The homogeneous-representation limitation's removal, recorded once.
@@ -608,7 +610,7 @@ const SPONSORLESS_FEE_REMOVAL: LimitationRemoval = LimitationRemoval {
 const PER_SIDE_REPRESENTATION_REMOVAL: LimitationRemoval = LimitationRemoval {
     row: "T5-054",
     change: "A composition pairs one admitted representation plan to each SIDE of a transfer,              taking §6.5's own \"unless separately admitted\" clause rather than widening the              guide, and leaving the plan census at the two members §6.1 states exhaustively. The              constructor carries the composition and derives its representation from the CONSUMED              side, so a crossing deployment seats its crossing constructor at exactly the key a              coin is recognized under and no destination table widens. The coordinator's value              obligation dispatches on the composition rather than on one plan, which is what the              obligation was always about -- the side a transfer CREATES -- and the exit direction              gains a POSITIONAL value-form fragment requiring the explicit form at every              destination but the declared absorber and the confidential form at that one. The              absorber is a declared destination position inside the destination range, so it adds              no output family and the §10.4 closure argument is untouched. The registry gained an              explicit receipt destination role at a new transcript code, the opposite corner of              the three predicates from the fee, and the materializer builds one through its own              stage that asks the target for the OPPOSITE answer the fee stage asks for. Every              recorded digest re-derives bit-for-bit through all of it.",
-    proven_by: Some(crate::live_multi_shapes::run_of_record::EXIT_CROSSING_ACCEPTED_TXID),
+    proven_by: Some(crate::live_history_v1::multi_shapes::EXIT_CROSSING_ACCEPTED_TXID),
 };
 
 /// A first-party convention that refuses a shape consensus admits.
@@ -1023,6 +1025,37 @@ pub struct ShapeCensusEntry {
     pub first_party: FirstPartyStatus,
 }
 
+fn current_acceptance_identity(ceremony: &str) -> &'static str {
+    let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+        .expect("the reviewed native-v2/revision-7 corpus validates");
+    let [acceptance] = corpus
+        .acceptance_projections(ceremony)
+        .unwrap_or_else(|| panic!("the current corpus omits {ceremony}"))
+    else {
+        panic!("{ceremony} does not carry exactly one current acceptance");
+    };
+    acceptance.identity_display()
+}
+
+fn current_refusal_detail(ceremony: &str) -> &'static str {
+    let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+        .expect("the reviewed native-v2/revision-7 corpus validates");
+    let outcomes = corpus
+        .outcome_projections(ceremony)
+        .unwrap_or_else(|| panic!("the current corpus omits {ceremony}"));
+    let mut refusals = outcomes
+        .iter()
+        .filter(|outcome| outcome.target_identity().is_none());
+    let refusal = refusals
+        .next()
+        .unwrap_or_else(|| panic!("{ceremony} carries no current refusal"));
+    assert!(
+        refusals.next().is_none(),
+        "{ceremony} carries more than one current refusal",
+    );
+    refusal.detail()
+}
+
 /// The register: every enumerated shape, with both verdicts.
 ///
 /// Total over [`BlindedShape::ALL`] by construction — the match has no
@@ -1035,8 +1068,13 @@ pub struct ShapeCensusEntry {
 /// possible on the tally, and both draw the same cardinality refusal.
 /// What separates them is the merge's zero-blinder degeneracy, which is
 /// a property of the removal path rather than of the row.
+///
+/// # Panics
+///
+/// Panics only if the embedded reviewed native-v2/revision-7 corpus no
+/// longer supplies exactly one acceptance for a shape recorded as current.
 #[must_use]
-pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
+pub fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
     let (consensus, first_party) = match shape {
         // The strict one-to-one, which the two-output floor refused until
         // the floor was removed and which a target has now accepted. Its
@@ -1044,7 +1082,7 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
         // only "constructible" would have lost the wall's history.
         BlindedShape::OneToOne => (
             ConsensusVerdict::ObservedAccepted {
-                identity: crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
+                identity: current_acceptance_identity("multi-strict-one-to-one"),
             },
             FirstPartyStatus::ConstructibleAfterRemoval {
                 removed: Limitation::TwoOutputFloor,
@@ -1065,7 +1103,7 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
         // carries the arc neither row can.
         BlindedShape::TwoToOne => (
             ConsensusVerdict::ObservedAccepted {
-                identity: crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID,
+                identity: current_acceptance_identity("multi-private-merge"),
             },
             FirstPartyStatus::ConstructibleAfterRemoval {
                 removed: Limitation::CancelingPredecessorOnly,
@@ -1079,7 +1117,7 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
         // covenant this workspace wrote rather than any rule about fees.
         BlindedShape::OneToOneWithFee => (
             ConsensusVerdict::ObservedAccepted {
-                identity: crate::live_multi_shapes::run_of_record::FEE_BEARING_SUCCESSOR_IDENTITY,
+                identity: current_acceptance_identity("multi-one-to-one-with-fee"),
             },
             FirstPartyStatus::ConstructibleAfterRemoval {
                 removed: Limitation::SponsorlessShapeHasNoFeeMember,
@@ -1088,25 +1126,25 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
         ),
         BlindedShape::OneToTwo => (
             ConsensusVerdict::ObservedAccepted {
-                identity: crate::live_private_restart::run_of_record::ACCEPTED_TXID,
+                identity: current_acceptance_identity("private-restart-control"),
             },
             FirstPartyStatus::ConstructibleAndObserved,
         ),
         BlindedShape::OneToThree => (
             ConsensusVerdict::ObservedAccepted {
-                identity: crate::live_multi_shapes::run_of_record::SPLIT_ACCEPTED_TXID,
+                identity: current_acceptance_identity("multi-split"),
             },
             FirstPartyStatus::ConstructibleAndObserved,
         ),
         BlindedShape::TwoToTwo => (
             ConsensusVerdict::ObservedAccepted {
-                identity: crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID,
+                identity: current_acceptance_identity("multi-several-owners"),
             },
             FirstPartyStatus::ConstructibleAndObserved,
         ),
         BlindedShape::TwoToThree => (
             ConsensusVerdict::ObservedAccepted {
-                identity: crate::live_multi_shapes::run_of_record::MANY_TO_MANY_ACCEPTED_TXID,
+                identity: current_acceptance_identity("multi-many-to-many"),
             },
             FirstPartyStatus::ConstructibleAndObserved,
         ),
@@ -1134,7 +1172,7 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
         // receipt constructor's program, which is the whole difference.
         BlindedShape::EntryCrossing => (
             ConsensusVerdict::ObservedAccepted {
-                identity: crate::live_multi_shapes::run_of_record::ENTRY_CROSSING_ACCEPTED_TXID,
+                identity: current_acceptance_identity("multi-entry-crossing"),
             },
             FirstPartyStatus::ConstructibleAfterRemoval {
                 removed: Limitation::HomogeneousRepresentationOnly,
@@ -1155,7 +1193,7 @@ pub const fn census_entry(shape: BlindedShape) -> ShapeCensusEntry {
         // carrying the transaction's only range proof.
         BlindedShape::ExitCrossing => (
             ConsensusVerdict::ObservedAccepted {
-                identity: crate::live_multi_shapes::run_of_record::EXIT_CROSSING_ACCEPTED_TXID,
+                identity: current_acceptance_identity("multi-exit-crossing"),
             },
             FirstPartyStatus::ConstructibleAfterRemoval {
                 removed: Limitation::HomogeneousRepresentationOnly,
@@ -2332,8 +2370,8 @@ impl FormVerdict {
 /// 2. the tally predicate decides possibility, over both assets at once,
 ///    by [`TransferForm::blinder_sum_is_absorbable`];
 /// 3. a small PINNED set of cells carries what a node actually said,
-///    accepting or refusing, and cites the run-of-record constant by
-///    name rather than a literal;
+///    accepting or refusing, and selects a typed validated-corpus
+///    projection by ceremony rather than copying a literal;
 /// 4. everything else inherits, and the inheritance is what makes the
 ///    register a closure rule: a cell is expressible unless a named
 ///    layer refuses it, and every such layer is enumerated in
@@ -2344,8 +2382,13 @@ impl FormVerdict {
 /// vocabulary for every cell and require the derived verdict to be the
 /// one those layers actually return, which means an inherited claim is
 /// recomputed exactly as hard as a written one.
+///
+/// # Panics
+///
+/// Panics only if the embedded reviewed native-v2/revision-7 corpus no
+/// longer supplies the acceptance or refusal selected by a current cell.
 #[must_use]
-pub const fn form_verdict(form: TransferForm) -> FormVerdict {
+pub fn form_verdict(form: TransferForm) -> FormVerdict {
     // 1. Contradicted axes, before any arithmetic. A form nobody can
     //    state has no verdict to derive and saying so is not a refusal.
     if let Some(reason) = outside_the_space(form) {
@@ -2363,7 +2406,7 @@ pub const fn form_verdict(form: TransferForm) -> FormVerdict {
         && matches!(form.fee, FeeAxis::Present)
     {
         return FormVerdict::ObservedRefusedOnBalance {
-            detail: crate::live_sponsor_shapes::sponsored_run_of_record::COMMITTED_SPONSOR_REFUSAL,
+            detail: current_refusal_detail("sponsored-committed-value"),
             proves: "A committed sponsor value needs a BLINDED output somewhere in the \
                      transaction, and an explicit change output is not one. The candidate was \
                      refused before script verification, so the refusal is the balance rule \
@@ -2394,7 +2437,7 @@ pub const fn form_verdict(form: TransferForm) -> FormVerdict {
         };
     }
 
-    // 3b. The cells a node accepted, each citing its own run of record.
+    // 3b. The cells a node accepted, each citing its current corpus run.
     if let Some(identity) = accepted_identity(form) {
         return FormVerdict::ObservedAccepted { identity };
     }
@@ -2467,13 +2510,11 @@ const fn outside_the_space(form: TransferForm) -> Option<&'static str> {
     None
 }
 
-/// The run-of-record identity for a cell a node accepted.
+/// The validated current-corpus identity for a cell a node accepted.
 ///
-/// Cited by constant and never as a literal, so a wave that re-ran and
-/// recorded different bytes would move this register with it.
-const fn accepted_identity(form: TransferForm) -> Option<&'static str> {
-    use crate::live_sponsor_shapes::sponsored_run_of_record as sponsored;
-
+/// Selected by ceremony and never copied as a literal, so a predecessor
+/// identity cannot remain current after the corpus moves.
+fn accepted_identity(form: TransferForm) -> Option<&'static str> {
     // The sponsored acceptances, which had NO census row anywhere before
     // this one. Three forms, three lanes, three identities.
     match (
@@ -2489,21 +2530,21 @@ const fn accepted_identity(form: TransferForm) -> Option<&'static str> {
             ConsumedArity::Two,
             CreatedArity::Two,
             FeeAxis::Present,
-        ) => return Some(sponsored::SPONSORED_ACCEPTED_TXID),
+        ) => return Some(current_acceptance_identity("sponsored-change-absent")),
         (
             RepresentationAxis::HomogeneousExplicit,
             SponsorAxis::ExplicitValueExplicitChange,
             ConsumedArity::Two,
             CreatedArity::Two,
             FeeAxis::Present,
-        ) => return Some(sponsored::SPONSORED_CHANGE_ACCEPTED_TXID),
+        ) => return Some(current_acceptance_identity("sponsored-change-present")),
         (
             RepresentationAxis::HomogeneousPrivate,
             SponsorAxis::CommittedValueCommittedChange,
             ConsumedArity::Two,
             CreatedArity::Two,
             FeeAxis::Present,
-        ) => return Some(sponsored::SPONSORED_PRIVATE_TXID),
+        ) => return Some(current_acceptance_identity("sponsored-private-with-change")),
         // The fourth sponsored acceptance, and the one this register
         // predicted. It sat here as expressible-and-unrun with row
         // T5-056 named as the wave driving it; that wave has since run
@@ -2523,22 +2564,24 @@ const fn accepted_identity(form: TransferForm) -> Option<&'static str> {
             ConsumedArity::Two,
             CreatedArity::One,
             FeeAxis::Present,
-        ) => return Some(sponsored::SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_TXID),
+        ) => {
+            return Some(current_acceptance_identity(
+                "sponsored-private-explicit-no-change",
+            ));
+        }
         _ => {}
     }
 
     // The sponsorless acceptances, which are exactly the blinded-shape
     // enumeration's observed rows. Read THROUGH that register rather
     // than copied out of it, so the two cannot disagree.
-    match form.as_blinded_shape() {
-        None => None,
-        Some(shape) => match census_entry(shape).consensus {
+    form.as_blinded_shape()
+        .and_then(|shape| match census_entry(shape).consensus {
             ConsensusVerdict::ObservedAccepted { identity } => Some(identity),
             ConsensusVerdict::SourceDerivedPossible | ConsensusVerdict::SourceDerivedImpossible => {
                 None
             }
-        },
-    }
+        })
 }
 
 /// The named layer that refuses a consensus-possible cell, if one does.
@@ -2669,7 +2712,8 @@ mod tests {
     use super::{
         BlindedShape, ConsensusVerdict, ConsumedArity, CreatedArity, FeeAxis, FirstPartyStatus,
         FormLimitation, FormVerdict, Limitation, RemovalPath, RepresentationAxis, SponsorAxis,
-        TransferForm, census_entry, form_verdict,
+        TransferForm, census_entry, current_acceptance_identity, current_refusal_detail,
+        form_verdict,
     };
     use crate::live_proof_bearing_observation::registry_refusal_for;
     use std::collections::{BTreeMap, BTreeSet};
@@ -2985,50 +3029,50 @@ mod tests {
         );
     }
 
-    /// Every constructible row cites a run-of-record identity.
+    /// Every constructible row cites its current corpus identity.
     ///
-    /// Cited rather than copied: the expected values below are the
-    /// `run_of_record` constants themselves, so this compares the
-    /// register against the evidence rather than against a literal
-    /// somebody transcribed.
+    /// Projected rather than copied: the expected values below come from
+    /// the same validated corpus through independently selected ceremony
+    /// names, so this compares the register against current authority
+    /// rather than against a literal somebody transcribed.
     #[test]
-    fn every_observed_row_cites_its_run_of_record_identity() {
+    fn every_observed_row_cites_its_current_corpus_identity() {
         let expected = [
             (
                 BlindedShape::OneToOne,
-                crate::live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID,
+                current_acceptance_identity("multi-strict-one-to-one"),
             ),
             (
                 BlindedShape::OneToOneWithFee,
-                crate::live_multi_shapes::run_of_record::FEE_BEARING_SUCCESSOR_IDENTITY,
+                current_acceptance_identity("multi-one-to-one-with-fee"),
             ),
             (
                 BlindedShape::OneToTwo,
-                crate::live_private_restart::run_of_record::ACCEPTED_TXID,
+                current_acceptance_identity("private-restart-control"),
             ),
             (
                 BlindedShape::OneToThree,
-                crate::live_multi_shapes::run_of_record::SPLIT_ACCEPTED_TXID,
+                current_acceptance_identity("multi-split"),
             ),
             (
                 BlindedShape::TwoToTwo,
-                crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID,
+                current_acceptance_identity("multi-several-owners"),
             ),
             (
                 BlindedShape::TwoToThree,
-                crate::live_multi_shapes::run_of_record::MANY_TO_MANY_ACCEPTED_TXID,
+                current_acceptance_identity("multi-many-to-many"),
             ),
             (
                 BlindedShape::TwoToOne,
-                crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID,
+                current_acceptance_identity("multi-private-merge"),
             ),
             (
                 BlindedShape::ExitCrossing,
-                crate::live_multi_shapes::run_of_record::EXIT_CROSSING_ACCEPTED_TXID,
+                current_acceptance_identity("multi-exit-crossing"),
             ),
             (
                 BlindedShape::EntryCrossing,
-                crate::live_multi_shapes::run_of_record::ENTRY_CROSSING_ACCEPTED_TXID,
+                current_acceptance_identity("multi-entry-crossing"),
             ),
         ];
         for (shape, identity) in expected {
@@ -3036,7 +3080,7 @@ mod tests {
             assert_eq!(
                 entry.consensus,
                 ConsensusVerdict::ObservedAccepted { identity },
-                "{} cites its own run of record",
+                "{} cites its own current corpus run",
                 shape.handle(),
             );
             assert!(
@@ -3089,7 +3133,7 @@ mod tests {
     /// disagree.
     #[test]
     fn the_observed_cardinalities_match_the_recorded_run_counts() {
-        use crate::live_multi_shapes::run_of_record::{OUTPUT_COUNTS, RECEIPT_LEAVES};
+        use crate::live_history_v1::multi_shapes::{OUTPUT_COUNTS, RECEIPT_LEAVES};
 
         // The fee-bearing shape is in this list even though it was never
         // accepted, because what the list checks is that the register
@@ -3117,7 +3161,7 @@ mod tests {
             );
         }
         assert_eq!(
-            crate::live_private_restart::run_of_record::RECEIPT_LEAVES,
+            crate::live_history_v1::private_restart::RECEIPT_LEAVES,
             BlindedShape::OneToTwo.blinded_inputs(),
             "the one-to-two control consumed the recorded number of receipts",
         );
@@ -3307,7 +3351,7 @@ mod tests {
             Limitation::HomogeneousRepresentationOnly
                 .removal()
                 .and_then(|removal| removal.proven_by),
-            Some(crate::live_multi_shapes::run_of_record::EXIT_CROSSING_ACCEPTED_TXID),
+            Some(crate::live_history_v1::multi_shapes::EXIT_CROSSING_ACCEPTED_TXID),
             "the crossing removal names the first shape that carried it to a chain",
         );
     }
@@ -4075,8 +4119,6 @@ mod tests {
     /// register with it.
     #[test]
     fn the_sponsor_axis_cites_its_runs_of_record() {
-        use crate::live_sponsor_shapes::sponsored_run_of_record as sponsored;
-
         let sponsored_cell = |sponsor, representation| TransferForm {
             consumed: ConsumedArity::Two,
             created: CreatedArity::Two,
@@ -4091,7 +4133,7 @@ mod tests {
                 RepresentationAxis::HomogeneousExplicit,
             )),
             FormVerdict::ObservedAccepted {
-                identity: sponsored::SPONSORED_ACCEPTED_TXID,
+                identity: current_acceptance_identity("sponsored-change-absent"),
             },
         );
         assert_eq!(
@@ -4100,7 +4142,7 @@ mod tests {
                 RepresentationAxis::HomogeneousExplicit,
             )),
             FormVerdict::ObservedAccepted {
-                identity: sponsored::SPONSORED_CHANGE_ACCEPTED_TXID,
+                identity: current_acceptance_identity("sponsored-change-present"),
             },
         );
         assert_eq!(
@@ -4109,7 +4151,7 @@ mod tests {
                 RepresentationAxis::HomogeneousPrivate,
             )),
             FormVerdict::ObservedAccepted {
-                identity: sponsored::SPONSORED_PRIVATE_TXID,
+                identity: current_acceptance_identity("sponsored-private-with-change"),
             },
         );
 
@@ -4127,7 +4169,7 @@ mod tests {
                 representation: RepresentationAxis::HomogeneousPrivate,
             }),
             FormVerdict::ObservedAccepted {
-                identity: sponsored::SPONSORED_PRIVATE_EXPLICIT_NO_CHANGE_TXID,
+                identity: current_acceptance_identity("sponsored-private-explicit-no-change"),
             },
         );
 
@@ -4142,7 +4184,7 @@ mod tests {
         let verdict = form_verdict(refused);
         assert!(
             matches!(verdict, FormVerdict::ObservedRefusedOnBalance { detail, .. }
-                if detail == sponsored::COMMITTED_SPONSOR_REFUSAL),
+                if detail == current_refusal_detail("sponsored-committed-value")),
             "the refused sponsor cell carries the target's own words: {verdict:?}",
         );
         assert!(

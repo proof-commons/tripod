@@ -78,6 +78,10 @@ use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::error::VectorError;
 use crate::live_capability::OracleFixtureValues;
+use crate::live_corpus_native_v2_r7::{
+    NativeV2AcceptanceProjection, NativeV2ImportRefusal, ValidatedNativeV2R7Corpus,
+    run_of_record as validated_native_v2_corpus,
+};
 use crate::live_evidence::UNAUTHORIZING_SIGNATURE;
 use crate::live_owner_observation::ObservedFundedCoin;
 use crate::live_plan::{
@@ -88,32 +92,42 @@ use crate::live_plan::{
 /// The published randomness the private construction consumes.
 const PUBLISHED_RANDOMNESS: [u8; 32] = [0x7e; 32];
 
-/// How many bytes the explicit transfer of record serialized to.
-///
-/// From the run [`observed_run_of_record`] describes: the exact length of
-/// the byte string handed to the node, recorded so the weight beside it
-/// can be read as a weight *of something* rather than as a bare figure.
-const RECORDED_EXPLICIT_SERIALIZED_BYTES: u64 = 1_164;
+/// Verbatim resource values recorded by the historical-v1 native run.
+pub mod historical_v1_record {
+    pub use super::historical_v1_transcript as transcript;
 
-/// The weight this workspace computed for those exact bytes.
-///
-/// §18.4's prediction half, taken by decoding the submitted serialization
-/// and weighing the result.
-const RECORDED_EXPLICIT_PREDICTED_WEIGHT: u64 = 1_911;
+    /// How many bytes the explicit transfer of record serialized to.
+    ///
+    /// From the run [`transcript`] describes: the exact length of the byte
+    /// string handed to the node, recorded so the weight beside it can be
+    /// read as a weight *of something* rather than as a bare figure.
+    pub const RECORDED_EXPLICIT_SERIALIZED_BYTES: u64 = 1_164;
 
-/// The weight the node computed for those exact bytes.
-///
-/// §18.4's observation half, and the figure this whole comparison rests
-/// on. It exists because the executor reads a weight back from the node's
-/// own `decoderawtransaction` even for a transaction the node refused —
-/// which is the only reason a candidate that cannot be accepted (§1.7)
-/// has any target resource figure at all.
-///
-/// It is a *separate constant* from the prediction above, and equal to it
-/// only because the run made it so. Spelling one constant and using it
-/// twice would have made the agreement true by construction, which is the
-/// one thing §18.4's comparison must never be.
-const RECORDED_EXPLICIT_OBSERVED_WEIGHT: u64 = 1_911;
+    /// The weight this workspace computed for those exact bytes.
+    ///
+    /// §18.4's prediction half, taken by decoding the submitted
+    /// serialization and weighing the result.
+    pub const RECORDED_EXPLICIT_PREDICTED_WEIGHT: u64 = 1_911;
+
+    /// The weight the node computed for those exact bytes.
+    ///
+    /// §18.4's observation half, and the figure this whole comparison
+    /// rests on. It exists because the executor reads a weight back from
+    /// the node's own `decoderawtransaction` even for a transaction the
+    /// node refused — which is the only reason a candidate that cannot be
+    /// accepted (§1.7) has any target resource figure at all.
+    ///
+    /// It is a *separate constant* from the prediction above, and equal to
+    /// it only because the run made it so. Spelling one constant and using
+    /// it twice would have made the agreement true by construction, which
+    /// is the one thing §18.4's comparison must never be.
+    pub const RECORDED_EXPLICIT_OBSERVED_WEIGHT: u64 = 1_911;
+}
+
+use historical_v1_record::{
+    RECORDED_EXPLICIT_OBSERVED_WEIGHT, RECORDED_EXPLICIT_PREDICTED_WEIGHT,
+    RECORDED_EXPLICIT_SERIALIZED_BYTES,
+};
 
 /// What the plan is doing next.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -964,7 +978,7 @@ impl TargetOperationPlanner for LiveTransferOperationPlanner {
 /// construction, because no first-party component computes the message
 /// they would have to be over.
 #[must_use]
-pub fn observed_run_of_record() -> LiveNativeTranscript {
+pub fn historical_v1_transcript() -> LiveNativeTranscript {
     LiveNativeTranscript {
         issued_asset: Some(
             "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb".to_owned(),
@@ -1026,6 +1040,93 @@ pub fn observed_run_of_record() -> LiveNativeTranscript {
         ],
         refusal: None,
     }
+}
+
+fn current_projection_refusal(ceremony: &str, check: &'static str) -> NativeV2ImportRefusal {
+    NativeV2ImportRefusal::RowAttribution {
+        row: "current-resource-projection",
+        ceremony: ceremony.to_owned(),
+        check,
+    }
+}
+
+fn sole_current_acceptance<'a>(
+    corpus: &'a ValidatedNativeV2R7Corpus,
+    ceremony: &str,
+) -> Result<&'a NativeV2AcceptanceProjection, NativeV2ImportRefusal> {
+    let projections = corpus
+        .acceptance_projections(ceremony)
+        .ok_or_else(|| current_projection_refusal(ceremony, "missing-ceremony"))?;
+    let [projection] = projections else {
+        return Err(current_projection_refusal(ceremony, "acceptance-census"));
+    };
+    Ok(projection)
+}
+
+/// The current resource transcript projected from the validated
+/// native-v2/revision-7 corpus.
+///
+/// Exact submitted bytes and target identities come from the corpus's
+/// accepted-operation projections. Predicted weights are recomputed from those
+/// same bytes; an observed weight is carried only when the validated semantic
+/// rendering records it independently.
+///
+/// # Errors
+///
+/// Returns [`NativeV2ImportRefusal`] if the reviewed corpus no longer contains
+/// exactly one accepted explicit and private one-to-one request or if either
+/// accepted byte string cannot supply its validated resource projection.
+pub fn current_native_v2_transcript() -> Result<LiveNativeTranscript, NativeV2ImportRefusal> {
+    let corpus = validated_native_v2_corpus()?;
+    let explicit = sole_current_acceptance(corpus, "explicit-one-to-one")?;
+    let private = sole_current_acceptance(corpus, "private-restart-control")?;
+    let predicted = [
+        (LiveTransferRepresentationPlan::Explicit, explicit),
+        (LiveTransferRepresentationPlan::PrivateCommitted, private),
+    ]
+    .into_iter()
+    .map(|(plan, projection)| {
+        let serialized_bytes = u64::try_from(projection.submitted_bytes().len()).map_err(|_| {
+            current_projection_refusal(projection.ceremony(), "submitted-byte-count")
+        })?;
+        let weight = weight_of(projection.submitted_bytes()).ok_or_else(|| {
+            current_projection_refusal(projection.ceremony(), "submitted-byte-decode")
+        })?;
+        Ok((
+            plan,
+            PredictedTransferResources {
+                serialized_bytes,
+                weight: Some(weight),
+            },
+        ))
+    })
+    .collect::<Result<BTreeMap<_, _>, NativeV2ImportRefusal>>()?;
+    let observations = [
+        (LiveNativeStep::SubmitExplicitTransfer, explicit),
+        (LiveNativeStep::SubmitPrivateTransfer, private),
+    ]
+    .into_iter()
+    .map(|(step, projection)| LiveNativeObservation {
+        step,
+        layer: ObservedOutcomeLayer::Accepted,
+        detail: None,
+        accepted_txid: Some(projection.identity().to_target_display()),
+        funded: 0,
+        observed_weight: projection.observed_weight(),
+    })
+    .collect();
+    Ok(LiveNativeTranscript {
+        issued_asset: None,
+        relinked: true,
+        not_submitted: BTreeSet::new(),
+        explicit_program: Vec::new(),
+        private_program: Vec::new(),
+        explicit_coins: Vec::new(),
+        private_coins: Vec::new(),
+        observations,
+        predicted,
+        refusal: None,
+    })
 }
 
 /// One observation with a different weight, for staging a disagreement.
@@ -1155,7 +1256,10 @@ pub fn render_live_native_run(transcript: &LiveNativeTranscript) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{LiveNativeStep, LiveTransferOperationPlanner, render_live_native_run};
+    use super::{
+        LiveNativeStep, LiveTransferOperationPlanner, current_native_v2_transcript,
+        render_live_native_run, weight_of,
+    };
     use linker::live_backend::LiveTransferRepresentationPlan;
 
     #[test]
@@ -1188,7 +1292,7 @@ mod tests {
         // that the blocker the evidence plan carries was *observed*.
         use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
-        let record = super::observed_run_of_record();
+        let record = super::historical_v1_transcript();
         assert!(record.relinked());
         assert!(record.issued_asset().is_some());
         assert!(record.refusal().is_none());
@@ -1231,6 +1335,47 @@ mod tests {
         let rendered = render_live_native_run(&record);
         assert!(rendered.contains("discharges_no_matrix_row true"));
         assert!(rendered.contains("ScriptPathRejection"));
+    }
+
+    #[test]
+    fn current_resource_values_are_typed_corpus_projections() {
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates");
+        let current =
+            current_native_v2_transcript().expect("the current resource projection validates");
+        for (ceremony, plan, step) in [
+            (
+                "explicit-one-to-one",
+                LiveTransferRepresentationPlan::Explicit,
+                LiveNativeStep::SubmitExplicitTransfer,
+            ),
+            (
+                "private-restart-control",
+                LiveTransferRepresentationPlan::PrivateCommitted,
+                LiveNativeStep::SubmitPrivateTransfer,
+            ),
+        ] {
+            let [projection] = corpus
+                .acceptance_projections(ceremony)
+                .expect("the current ceremony has an acceptance projection")
+            else {
+                panic!("{ceremony} does not have exactly one accepted request");
+            };
+            let observation = current
+                .observation(step)
+                .expect("the current transcript retains the acceptance");
+            assert_eq!(
+                observation.accepted_txid(),
+                Some(projection.identity().to_target_display().as_str()),
+            );
+            assert_eq!(observation.observed_weight(), projection.observed_weight());
+            let predicted = current.predicted()[&plan];
+            assert_eq!(
+                usize::try_from(predicted.serialized_bytes()),
+                Ok(projection.submitted_bytes().len()),
+            );
+            assert_eq!(predicted.weight(), weight_of(projection.submitted_bytes()));
+        }
     }
 
     #[test]

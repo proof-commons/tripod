@@ -19,7 +19,7 @@
 //! blocker is discharged — a real node accepted a sponsor-signed control
 //! — and the arc's entry condition CITES that acceptance by the identity
 //! the target computed for it
-//! ([`crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID`])
+//! ([`crate::live_corpus_native_v2_r7::ValidatedNativeV2R7Corpus`])
 //! rather than restating the discharge in prose. A reader can check the
 //! condition against a chain.
 //!
@@ -211,12 +211,24 @@ pub struct PairArcEntryCondition {
 }
 
 impl PairArcEntryCondition {
-    /// The condition, resolved against the sponsor lane's run of record.
+    /// The condition, resolved against the validated current corpus.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the embedded reviewed native-v2/revision-7 corpus no
+    /// longer carries exactly one accepted sponsor-change-absent request.
     #[must_use]
-    pub const fn stands() -> Self {
+    pub fn stands() -> Self {
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed native-v2/revision-7 corpus validates");
+        let [acceptance] = corpus
+            .acceptance_projections("sponsored-change-absent")
+            .expect("the current corpus carries the sponsor acceptance")
+        else {
+            panic!("the sponsor entry condition has a different acceptance census");
+        };
         Self {
-            cited_acceptance:
-                crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            cited_acceptance: acceptance.identity_display(),
         }
     }
 
@@ -1423,7 +1435,7 @@ pub fn render_pair_arc(record: &PairArcRecord) -> String {
     out
 }
 
-/// What the arc's own run against a real node observed.
+/// Historical-v1 data from the arc's own run against a real node.
 ///
 /// ONE run, ONE disposable chain, ONE issued asset, and two accepted
 /// identities. Every figure here is the target's own: the identities and
@@ -1433,7 +1445,9 @@ pub fn render_pair_arc(record: &PairArcRecord) -> String {
 /// The two members are not the two acceptances anybody had before. The
 /// campaign's explicit one-to-one and private strict one-to-one are
 /// independent ceremonies whose shapes match; these two are one fixture
-/// materialized twice, and neither shape carries a literal of its own.
+/// materialized twice, and neither shape carries a literal of its own. New
+/// historical callers use [`crate::live_history_v1::pair_arc`]; this
+/// compatibility path remains for the separately owned native-guide cleanup.
 pub mod run_of_record {
     /// The identity the target computed for the accepted EXPLICIT member.
     ///
@@ -1504,7 +1518,6 @@ mod tests {
     use super::{
         PAIR_ARC_AMOUNT, PAIR_ARC_DESTINATION_OWNER, PAIR_ARC_SOURCE_OWNER, PairArcEntryCondition,
         PairArcMember, REPRESENTATION_EQUIVALENCE_TERMS, pair_arc_fixture, published_scalar,
-        run_of_record,
     };
     use crate::confidential_predecessor::PREDECESSOR_AMOUNTS;
     use crate::live_explicit_shapes::ExplicitShape;
@@ -1573,7 +1586,11 @@ mod tests {
         assert!(entry.cites_a_target_identity());
         assert_eq!(
             entry.cited_acceptance(),
-            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            crate::live_corpus_native_v2_r7::run_of_record()
+                .expect("the reviewed corpus validates")
+                .acceptance_projections("sponsored-change-absent")
+                .expect("the sponsor acceptance is projected")[0]
+                .identity_display(),
         );
     }
 
@@ -1601,9 +1618,12 @@ mod tests {
         // keeps them from drifting: a flag saying a ledger exists while
         // no identity is recorded would be the claim the whole run of
         // record discipline exists to prevent.
-        let both = run_of_record::EXPLICIT_MEMBER_ACCEPTED_IDENTITY.is_some()
-            && run_of_record::PRIVATE_MEMBER_ACCEPTED_IDENTITY.is_some();
-        assert_eq!(run_of_record::A_PAIR_ARC_LEDGER_EXISTS, both);
+        let both = crate::live_history_v1::pair_arc::EXPLICIT_MEMBER_ACCEPTED_IDENTITY.is_some()
+            && crate::live_history_v1::pair_arc::PRIVATE_MEMBER_ACCEPTED_IDENTITY.is_some();
+        assert_eq!(
+            crate::live_history_v1::pair_arc::A_PAIR_ARC_LEDGER_EXISTS,
+            both
+        );
     }
 
     #[test]
@@ -1611,9 +1631,15 @@ mod tests {
         // What the arc's whole claim rests on, checked rather than read.
         // One identity recorded twice would be one transaction, and a
         // relation over one transaction is not a relation.
-        let explicit = run_of_record::EXPLICIT_MEMBER_ACCEPTED_IDENTITY.expect("the arc has run");
-        let private = run_of_record::PRIVATE_MEMBER_ACCEPTED_IDENTITY.expect("the arc has run");
-        for identity in [explicit, private, run_of_record::PAIR_ISSUED_ASSET] {
+        let explicit = crate::live_history_v1::pair_arc::EXPLICIT_MEMBER_ACCEPTED_IDENTITY
+            .expect("the historical arc ran");
+        let private = crate::live_history_v1::pair_arc::PRIVATE_MEMBER_ACCEPTED_IDENTITY
+            .expect("the historical arc ran");
+        for identity in [
+            explicit,
+            private,
+            crate::live_history_v1::pair_arc::PAIR_ISSUED_ASSET,
+        ] {
             assert_eq!(identity.len(), 64);
             assert!(identity.chars().all(|digit| digit.is_ascii_hexdigit()));
         }
@@ -1631,16 +1657,16 @@ mod tests {
         // one, or withheld nothing, would mean the run did not build
         // what this module says it built.
         let weights = (
-            run_of_record::EXPLICIT_MEMBER_TARGET_WEIGHT,
-            run_of_record::PRIVATE_MEMBER_TARGET_WEIGHT,
+            crate::live_history_v1::pair_arc::EXPLICIT_MEMBER_TARGET_WEIGHT,
+            crate::live_history_v1::pair_arc::PRIVATE_MEMBER_TARGET_WEIGHT,
         );
         assert!(weights.1 > weights.0);
         let bytes = (
-            run_of_record::EXPLICIT_MEMBER_SUBMITTED_BYTES,
-            run_of_record::PRIVATE_MEMBER_SUBMITTED_BYTES,
+            crate::live_history_v1::pair_arc::EXPLICIT_MEMBER_SUBMITTED_BYTES,
+            crate::live_history_v1::pair_arc::PRIVATE_MEMBER_SUBMITTED_BYTES,
         );
         assert!(bytes.1 > bytes.0);
-        let withheld = run_of_record::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER;
+        let withheld = crate::live_history_v1::pair_arc::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER;
         assert!(withheld > 0);
         assert!(
             withheld < REPRESENTATION_EQUIVALENCE_TERMS.len(),

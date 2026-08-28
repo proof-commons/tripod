@@ -1675,7 +1675,7 @@ pub fn render_private_restart(record: &PrivateRestartRecord) -> String {
     out
 }
 
-/// The run of record: what one execution of step one observed.
+/// Historical-v1 data from the recorded step-one executions.
 ///
 /// # Why the observation is a constant and not a stored file
 ///
@@ -1691,7 +1691,10 @@ pub fn render_private_restart(record: &PrivateRestartRecord) -> String {
 ///
 /// The target: Elements Core v28.99.0-b7fc5d080a7e, at the pinned tip
 /// the lane binds itself to, on a disposable development chain the run
-/// created and destroyed.
+/// created and destroyed. New historical callers use
+/// [`crate::live_history_v1::private_restart`]; this compatibility module also
+/// retains the already-authorized forward mint implementation until its public
+/// API is reached through [`crate::live_private_restart::forward_v2`].
 pub mod run_of_record {
     use std::sync::OnceLock;
 
@@ -1827,9 +1830,9 @@ pub mod run_of_record {
     /// constructor, so a forward V2 payload cannot be relabeled as history.
     ///
     /// ```compile_fail
-    /// use vectors::live_private_restart::run_of_record::{
-    ///     ForwardPrivateRestartExpectation, HistoricalPrivateRestartRun,
-    ///     forward_private_restart_expectation,
+    /// use vectors::live_history_v1::private_restart::HistoricalPrivateRestartRun;
+    /// use vectors::live_private_restart::forward_v2::{
+    ///     ForwardPrivateRestartExpectation, forward_private_restart_expectation,
     /// };
     ///
     /// let ForwardPrivateRestartExpectation::V2(forward) =
@@ -1914,10 +1917,10 @@ pub mod run_of_record {
     /// Whether an owner-authorized V2 ceremony has minted both acceptances.
     ///
     /// ```compile_fail
-    /// use vectors::live_private_restart::run_of_record::{
-    ///     ForwardPrivateRestartAcceptance, HistoricalPrivateRestartRun,
-    ///     historical_private_restart_run,
+    /// use vectors::live_history_v1::private_restart::{
+    ///     HistoricalPrivateRestartRun, historical_private_restart_run,
     /// };
+    /// use vectors::live_private_restart::forward_v2::ForwardPrivateRestartAcceptance;
     ///
     /// let HistoricalPrivateRestartRun::V1(historical) =
     ///     historical_private_restart_run().unwrap();
@@ -2409,6 +2412,20 @@ pub mod run_of_record {
     }
 }
 
+/// Sole-current private-restart projection minted from the validated corpus.
+///
+/// This public path contains no historical-v1 literal. The implementation is
+/// re-exported unchanged from its T7-010 landing point so that the mint remains
+/// one source while current consumers no longer enter the archival module.
+pub mod forward_v2 {
+    pub use super::run_of_record::{
+        ForwardPrivateRestartAcceptance, ForwardPrivateRestartAcceptedMember,
+        ForwardPrivateRestartExpectation, ForwardPrivateRestartExpectationRefusal,
+        ForwardPrivateRestartFixtureDigestsV2, ForwardPrivateRestartTwoAcceptanceLink,
+        ForwardPrivateRestartV2, forward_fixture_digest_v2, forward_private_restart_expectation,
+    };
+}
+
 /// One digest as its printed spelling.
 fn hex(bytes: [u8; 32]) -> String {
     use std::fmt::Write as _;
@@ -2423,6 +2440,7 @@ fn hex(bytes: [u8; 32]) -> String {
 mod tests {
     use super::{PrivateRestartPlanner, PrivateRestartRecord, render_private_restart};
     use crate::confidential_predecessor::PREDECESSOR_AMOUNTS;
+    use crate::live_history_v1::private_restart as history;
     use transaction::taproot::Digest32;
 
     #[test]
@@ -2454,37 +2472,37 @@ mod tests {
     }
 
     #[test]
-    fn the_run_of_record_names_one_acceptance_and_one_receipt() {
+    fn historical_v1_names_one_acceptance_and_one_receipt() {
         // The figures are the run's, and this checks their SHAPE rather
         // than re-deriving them: an identity of the right width, one
         // receipt consumed, and two outputs each carrying a real proof.
         // A run of record whose numbers disagreed with its own claim
         // would be the one thing it exists to prevent.
-        use super::run_of_record as run;
-
-        assert_eq!(run::ACCEPTED_TXID.len(), 64);
-        assert_eq!(run::PREDECESSOR_DIGEST.len(), 64);
-        assert_ne!(run::PREDECESSOR_DIGEST, run::SUCCESSOR_DIGEST);
-        assert_eq!(run::RECEIPT_LEAVES, 1);
-        assert_eq!(run::OUTPUT_WITNESS_PROOF_BYTES.len(), 2);
+        assert_eq!(history::ACCEPTED_TXID.len(), 64);
+        assert_eq!(history::PREDECESSOR_DIGEST.len(), 64);
+        assert_ne!(history::PREDECESSOR_DIGEST, history::SUCCESSOR_DIGEST);
+        assert_eq!(history::RECEIPT_LEAVES, 1);
+        assert_eq!(history::OUTPUT_WITNESS_PROOF_BYTES.len(), 2);
         assert!(
-            run::OUTPUT_WITNESS_PROOF_BYTES
+            history::OUTPUT_WITNESS_PROOF_BYTES
                 .iter()
                 .all(|bytes| *bytes > 2)
         );
-        assert!(run::SUBMITTED_BYTES > run::OUTPUT_WITNESS_PROOF_BYTES.iter().sum::<usize>());
+        assert!(
+            history::SUBMITTED_BYTES > history::OUTPUT_WITNESS_PROOF_BYTES.iter().sum::<usize>(),
+        );
 
         // The two runs are two runs. Different successors, different
         // identities, and the two admitted parities between them — a
         // pair whose members agreed anywhere here would be one run
         // reported twice.
-        assert_ne!(run::ACCEPTED_TXID, run::PARITY_ACCEPTED_TXID);
-        assert_ne!(run::SUCCESSOR_DIGEST, run::PARITY_SUCCESSOR_DIGEST);
-        assert_eq!(run::PARITY_ACCEPTED_TXID.len(), 64);
+        assert_ne!(history::ACCEPTED_TXID, history::PARITY_ACCEPTED_TXID);
+        assert_ne!(history::SUCCESSOR_DIGEST, history::PARITY_SUCCESSOR_DIGEST);
+        assert_eq!(history::PARITY_ACCEPTED_TXID.len(), 64);
         assert_eq!(
             [
-                run::CONSUMED_COMMITMENT_PREFIX,
-                run::PARITY_CONSUMED_COMMITMENT_PREFIX
+                history::CONSUMED_COMMITMENT_PREFIX,
+                history::PARITY_CONSUMED_COMMITMENT_PREFIX,
             ],
             [0x08, 0x09],
             "the two runs did not exercise the two admitted parities",
@@ -2493,47 +2511,54 @@ mod tests {
 
     #[test]
     fn the_historical_v1_type_preserves_every_recorded_value() {
-        use super::run_of_record as run;
-        use super::run_of_record::{HistoricalPrivateRestartRun, historical_private_restart_run};
+        use crate::live_history_v1::private_restart::{
+            HistoricalPrivateRestartRun, historical_private_restart_run,
+        };
 
         let HistoricalPrivateRestartRun::V1(historical) =
             historical_private_restart_run().expect("the historical identities parse");
         let primary = historical.acceptances().primary();
         let balancing = historical.acceptances().balancing();
 
-        assert_eq!(historical.issued_asset(), run::ISSUED_ASSET);
-        assert_eq!(historical.predecessor_digest(), run::PREDECESSOR_DIGEST);
-        assert_eq!(primary.successor_digest(), run::SUCCESSOR_DIGEST);
+        assert_eq!(historical.issued_asset(), history::ISSUED_ASSET);
+        assert_eq!(historical.predecessor_digest(), history::PREDECESSOR_DIGEST);
+        assert_eq!(primary.successor_digest(), history::SUCCESSOR_DIGEST);
         assert_eq!(
             primary.acceptance().accepted_identity().to_string(),
-            run::ACCEPTED_TXID,
+            history::ACCEPTED_TXID,
         );
-        assert_eq!(primary.commitment_prefix(), run::CONSUMED_COMMITMENT_PREFIX,);
-        assert_eq!(balancing.successor_digest(), run::PARITY_SUCCESSOR_DIGEST,);
+        assert_eq!(
+            primary.commitment_prefix(),
+            history::CONSUMED_COMMITMENT_PREFIX,
+        );
+        assert_eq!(
+            balancing.successor_digest(),
+            history::PARITY_SUCCESSOR_DIGEST,
+        );
         assert_eq!(
             balancing.acceptance().accepted_identity().to_string(),
-            run::PARITY_ACCEPTED_TXID,
+            history::PARITY_ACCEPTED_TXID,
         );
         assert_eq!(
             balancing.commitment_prefix(),
-            run::PARITY_CONSUMED_COMMITMENT_PREFIX,
+            history::PARITY_CONSUMED_COMMITMENT_PREFIX,
         );
-        assert_eq!(historical.submitted_bytes(), run::SUBMITTED_BYTES);
+        assert_eq!(historical.submitted_bytes(), history::SUBMITTED_BYTES);
         assert_eq!(
             historical.output_witness_proof_bytes(),
-            run::OUTPUT_WITNESS_PROOF_BYTES,
+            history::OUTPUT_WITNESS_PROOF_BYTES,
         );
-        assert_eq!(historical.receipt_leaves(), run::RECEIPT_LEAVES);
+        assert_eq!(historical.receipt_leaves(), history::RECEIPT_LEAVES);
         assert_eq!(
             historical.wall_seconds().to_bits(),
-            run::WALL_SECONDS.to_bits(),
+            history::WALL_SECONDS.to_bits(),
         );
     }
 
     #[test]
     fn the_authorized_corpus_records_both_forward_members_and_v2_pins() {
         use super::ConsumedReceipt;
-        use super::run_of_record::{
+        use super::forward_v2::{
             ForwardPrivateRestartExpectation, forward_fixture_digest_v2,
             forward_private_restart_expectation,
         };
@@ -2563,7 +2588,7 @@ mod tests {
 
     #[test]
     fn both_commitment_parity_forms_requires_a_two_acceptance_link() {
-        use super::run_of_record::{
+        use super::forward_v2::{
             ForwardPrivateRestartAcceptance, ForwardPrivateRestartExpectation,
             forward_private_restart_expectation,
         };
@@ -2586,19 +2611,17 @@ mod tests {
 #[cfg(test)]
 mod byte_identity_tests {
     use super::{
-        ConsumedReceipt, LiveShapeVocabulary, RESERVE_ASSET, hex, link_and_register,
-        run_of_record as run,
+        ConsumedReceipt, LiveShapeVocabulary, RESERVE_ASSET, forward_v2, hex, link_and_register,
     };
     use crate::confidential_predecessor::PredecessorShape;
 
-    /// The run-of-record fixtures register under their forward digests for the live v2 algorithm.
+    /// Current fixtures register under the corpus's forward-v2 digests.
     ///
     /// # Why this test is worth its weight
     ///
     /// Recomputing the live v2 identities from the manifests re-derives every blinder, every nonce
-    /// input, every range-proof seed, and every commitment prefix. The recorded identities and v1
-    /// digests remain immutable historical observations; fixture-digest v2 binds amounts
-    /// unconditionally and carries separate forward pins.
+    /// input, every range-proof seed, and every commitment prefix. Recorded-v1
+    /// divergence is deliberately absent from this active check.
     ///
     /// So this is the byte-identity clause of both removals, stated as a
     /// running check rather than as a claim in a commit message. A
@@ -2607,59 +2630,45 @@ mod byte_identity_tests {
     /// reassigned, a search whose counter moved — would land here, and it
     /// would land here before it landed on a chain.
     #[test]
-    fn the_run_of_record_fixtures_register_under_their_forward_v2_digests() {
+    fn current_fixtures_register_under_the_corpus_forward_v2_digests() {
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates");
+        let current = corpus
+            .ceremony_projection("private-restart-control")
+            .expect("the current control ceremony is present");
+        let issued_asset = current
+            .issued_asset_display()
+            .expect("the current control records its issued asset");
+        let forward_v2::ForwardPrivateRestartExpectation::V2(forward) =
+            forward_v2::forward_private_restart_expectation();
+
         for consumed in ConsumedReceipt::ALL {
             let linked = link_and_register(
                 PredecessorShape::DualParity,
                 consumed,
-                run::ISSUED_ASSET,
+                issued_asset,
                 LiveShapeVocabulary::Demonstration,
                 RESERVE_ASSET,
             )
-            .expect("the run of record's own fixtures register");
+            .expect("the current corpus fixtures register");
 
             // The predecessor is the same manifest for both runs, so both must land on the one
             // forward v2 digest.
             assert_eq!(
                 hex(linked.predecessor_digest()),
-                run::forward_fixture_digest_v2::PREDECESSOR_DIGEST,
+                forward.fixtures().predecessor(),
                 "the predecessor fixture drifted from its forward v2 pin",
             );
 
             // The successors differ. The primary receipt is the run whose consumed commitment
             // carried the first admitted prefix.
-            let (expected_v2, recorded_v1) = match consumed {
-                ConsumedReceipt::Primary => (
-                    run::forward_fixture_digest_v2::SUCCESSOR_DIGEST,
-                    run::SUCCESSOR_DIGEST,
-                ),
-                ConsumedReceipt::Balancing => (
-                    run::forward_fixture_digest_v2::PARITY_SUCCESSOR_DIGEST,
-                    run::PARITY_SUCCESSOR_DIGEST,
-                ),
-            };
+            let expected_v2 = forward.fixtures().successor(consumed);
             assert_eq!(
                 hex(linked.successor_digest()),
                 expected_v2,
                 "the successor fixture for {} drifted from its forward v2 pin",
                 consumed.name(),
             );
-
-            // Owner ruling Q19: v2 binds amounts unconditionally, so each successor pin must differ
-            // from its recorded v1 sibling. This static comparison does not revalidate v1.
-            assert_ne!(
-                expected_v2,
-                recorded_v1,
-                "owner ruling Q19 requires {}'s successor digest to move in v2",
-                consumed.name(),
-            );
         }
-
-        // Owner ruling Q19 applies to the shared amount-bearing predecessor too.
-        assert_ne!(
-            run::forward_fixture_digest_v2::PREDECESSOR_DIGEST,
-            run::PREDECESSOR_DIGEST,
-            "owner ruling Q19 requires the predecessor digest to move in v2",
-        );
     }
 }

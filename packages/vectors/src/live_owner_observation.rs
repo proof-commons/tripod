@@ -246,7 +246,7 @@ impl OwnerObservationCase {
     }
 }
 
-/// The accepted T5-026 run, in the vocabulary of this ceremony.
+/// The historical-v1 T5-026 run, in the vocabulary of this ceremony.
 ///
 /// Every value below is recovered from the ceremony, the Wave-3 records,
 /// and the closed T5-026 backlog row. The six controls were refused at the
@@ -258,7 +258,9 @@ impl OwnerObservationCase {
 /// These values are an immutable record, not defaults for the next run. A
 /// future rerun that differs must fail the native binding and remain failed
 /// pending owner review. It must not advance this record automatically or
-/// rewrite the historical T5-026 result.
+/// rewrite the historical T5-026 result. New historical callers use
+/// [`crate::live_history_v1::owner_observation`]; this compatibility path
+/// remains for the separately owned native-guide cleanup.
 pub mod run_of_record {
     use super::{ObservedOutcomeLayer, OwnerObservationCase};
 
@@ -1496,7 +1498,7 @@ pub(crate) fn printed(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::run_of_record;
+    use crate::live_history_v1::owner_observation as history;
 
     #[test]
     fn selected_profile_identity_matches_target_elements_authorization() {
@@ -1504,7 +1506,7 @@ mod tests {
         // in OWNER_OBSERVATION. The integration verdict reads this vectors
         // constant, so either side drifting independently fails.
         assert_eq!(
-            run_of_record::SELECTED_PROFILE_ACCEPTED_TXID,
+            history::SELECTED_PROFILE_ACCEPTED_TXID,
             "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029",
         );
     }

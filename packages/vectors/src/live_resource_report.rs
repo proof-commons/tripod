@@ -43,11 +43,12 @@ use target_elements::TargetProjection;
 use crate::live_comparison::{
     ComparisonStanding, PlanResourceComparison, compare_run, run_agreements, run_failures,
 };
+use crate::live_corpus_native_v2_r7::NativeV2ImportRefusal;
 use crate::live_measurements::{
     CaseMeasurement, DimensionStanding, LiveResourceRecord, ResourceStudyRefusal,
     measure_resource_cases,
 };
-use crate::live_native::observed_run_of_record;
+use crate::live_native::current_native_v2_transcript;
 use crate::live_report::{LiveLifecycleStatus, RecomputedItem, VolatileField};
 use crate::live_resources::{assignments_realized_by, research_bound_assignments};
 
@@ -354,6 +355,8 @@ pub enum LiveResourceReportRefusal {
     TargetDiffers,
     /// The study could not be measured.
     StudyUnavailable(ResourceStudyRefusal),
+    /// The validated current native corpus could not supply the resource projection.
+    CorpusUnavailable(NativeV2ImportRefusal),
     /// The measured cases differ from the study's own.
     CasesDiffer,
     /// The comparisons differ from the run's own.
@@ -534,7 +537,9 @@ pub fn assemble_live_resource_report(
     target: TargetProjection,
 ) -> Result<LiveTransferResourceReport, LiveResourceReportRefusal> {
     let cases = measure_resource_cases().map_err(LiveResourceReportRefusal::StudyUnavailable)?;
-    let comparisons = compare_run(&observed_run_of_record());
+    let current =
+        current_native_v2_transcript().map_err(LiveResourceReportRefusal::CorpusUnavailable)?;
+    let comparisons = compare_run(&current);
     let census = resource_census(&cases, &comparisons);
 
     Ok(LiveTransferResourceReport {
@@ -586,7 +591,9 @@ pub fn validate_live_resource_report(
         return Err(LiveResourceReportRefusal::CasesDiffer);
     }
 
-    let comparisons = compare_run(&observed_run_of_record());
+    let current =
+        current_native_v2_transcript().map_err(LiveResourceReportRefusal::CorpusUnavailable)?;
+    let comparisons = compare_run(&current);
     if report.comparisons != comparisons {
         return Err(LiveResourceReportRefusal::ComparisonsDiffer);
     }
@@ -853,7 +860,7 @@ mod tests {
         }
 
         assert!(
-            crate::live_private_restart::run_of_record::OUTPUT_WITNESS_PROOF_BYTES
+            crate::live_history_v1::private_restart::OUTPUT_WITNESS_PROOF_BYTES
                 .iter()
                 .all(|bytes| *bytes > 0),
             "the separate proof-bearing run must continue to carry real proofs",

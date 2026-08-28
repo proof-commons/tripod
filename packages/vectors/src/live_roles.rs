@@ -410,7 +410,7 @@ mod tests {
     use crate::live_evidence::LiveInfrastructureBlocker;
 
     fn recorded_acceptance() -> crate::RecordedAcceptance {
-        crate::live_private_restart::run_of_record::accepted()
+        crate::live_history_v1::private_restart::accepted()
             .expect("the committed acceptance identity parses")
     }
 

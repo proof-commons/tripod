@@ -818,6 +818,134 @@ pub struct NativeV2MintOutcome {
     detail: String,
 }
 
+/// One accepted request projected from the validated current corpus.
+///
+/// The identity and exact submitted bytes come from the already validated
+/// operation journal. `observed_weight` is present only when the ceremony's
+/// canonical semantic rendering carries one unambiguous target weight for its
+/// sole accepted request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeV2AcceptanceProjection {
+    ceremony: String,
+    identity: Txid,
+    identity_display: String,
+    submitted_bytes: Vec<u8>,
+    observed_weight: Option<u64>,
+}
+
+/// One submitted current-corpus outcome in ceremony order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeV2OutcomeProjection {
+    ceremony: String,
+    layer: ObservedOutcomeLayer,
+    target_identity: Option<Txid>,
+    submitted_bytes: Vec<u8>,
+    detail: String,
+}
+
+/// Read-only current facts shared by every validated ceremony.
+///
+/// Unlike [`NativeV2MintCeremony`], this view grants no record-minting
+/// authority. It exposes only manifest-bound data already admitted as part of
+/// the indivisible corpus.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeV2CeremonyProjection {
+    ceremony: String,
+    fixture_digests: BTreeMap<String, [u8; 32]>,
+    issued_asset_display: Option<String>,
+    semantic_rendering: Vec<u8>,
+}
+
+impl NativeV2CeremonyProjection {
+    /// The fixed-roster ceremony identity.
+    #[must_use]
+    pub fn ceremony(&self) -> &str {
+        &self.ceremony
+    }
+
+    /// One named forward-v2 fixture digest.
+    #[must_use]
+    pub fn fixture_digest(&self, name: &str) -> Option<&[u8; 32]> {
+        self.fixture_digests.get(name)
+    }
+
+    /// The canonical issued-asset spelling carried by the semantic transcript.
+    #[must_use]
+    pub fn issued_asset_display(&self) -> Option<&str> {
+        self.issued_asset_display.as_deref()
+    }
+
+    /// The exact semantic transcript bytes bound into the corpus.
+    #[must_use]
+    pub fn semantic_rendering(&self) -> &[u8] {
+        &self.semantic_rendering
+    }
+}
+
+impl NativeV2OutcomeProjection {
+    /// The ceremony that submitted this request.
+    #[must_use]
+    pub fn ceremony(&self) -> &str {
+        &self.ceremony
+    }
+
+    /// The target boundary recorded for the request.
+    #[must_use]
+    pub const fn layer(&self) -> ObservedOutcomeLayer {
+        self.layer
+    }
+
+    /// The target-computed identity, present only for an acceptance.
+    #[must_use]
+    pub const fn target_identity(&self) -> Option<Txid> {
+        self.target_identity
+    }
+
+    /// The exact submitted request bytes.
+    #[must_use]
+    pub fn submitted_bytes(&self) -> &[u8] {
+        &self.submitted_bytes
+    }
+
+    /// The target's exact detail, empty for an acceptance.
+    #[must_use]
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+}
+
+impl NativeV2AcceptanceProjection {
+    /// The ceremony that produced this acceptance.
+    #[must_use]
+    pub fn ceremony(&self) -> &str {
+        &self.ceremony
+    }
+
+    /// The target-computed identity.
+    #[must_use]
+    pub const fn identity(&self) -> Txid {
+        self.identity
+    }
+
+    /// The canonical target-display spelling of the identity.
+    #[must_use]
+    pub fn identity_display(&self) -> &str {
+        &self.identity_display
+    }
+
+    /// The exact bytes submitted to the target.
+    #[must_use]
+    pub fn submitted_bytes(&self) -> &[u8] {
+        &self.submitted_bytes
+    }
+
+    /// The target-reported weight, when the canonical rendering records one.
+    #[must_use]
+    pub const fn observed_weight(&self) -> Option<u64> {
+        self.observed_weight
+    }
+}
+
 impl NativeV2MintOutcome {
     /// The target boundary recorded for this submission.
     #[must_use]
@@ -906,6 +1034,9 @@ pub struct ValidatedNativeV2R7Corpus {
     links: Vec<ProvenNativeV2Link>,
     attributions: Vec<NativeV2RowAttribution>,
     mint_ceremonies: Vec<NativeV2MintCeremony>,
+    ceremony_projections: BTreeMap<String, NativeV2CeremonyProjection>,
+    acceptance_projections: BTreeMap<String, Vec<NativeV2AcceptanceProjection>>,
+    outcome_projections: BTreeMap<String, Vec<NativeV2OutcomeProjection>>,
     outcome_count: usize,
     content_address: String,
 }
@@ -947,6 +1078,27 @@ impl ValidatedNativeV2R7Corpus {
         self.mint_ceremonies
             .iter()
             .find(|projection| projection.ceremony == ceremony)
+    }
+
+    /// Read-only current facts for one ceremony in the fixed corpus roster.
+    #[must_use]
+    pub fn ceremony_projection(&self, ceremony: &str) -> Option<&NativeV2CeremonyProjection> {
+        self.ceremony_projections.get(ceremony)
+    }
+
+    /// Accepted requests from one validated current ceremony, in operation order.
+    #[must_use]
+    pub fn acceptance_projections(
+        &self,
+        ceremony: &str,
+    ) -> Option<&[NativeV2AcceptanceProjection]> {
+        self.acceptance_projections.get(ceremony).map(Vec::as_slice)
+    }
+
+    /// Submitted outcomes from one validated current ceremony, in operation order.
+    #[must_use]
+    pub fn outcome_projections(&self, ceremony: &str) -> Option<&[NativeV2OutcomeProjection]> {
+        self.outcome_projections.get(ceremony).map(Vec::as_slice)
     }
 
     /// The report's complete 40-outcome suite census.
@@ -4012,6 +4164,200 @@ const AUTHORIZED_MINT_CEREMONY_ROSTER: [&str; 3] = [
     "proof-bearing-observation",
 ];
 
+fn unique_semantic_value<'a>(bytes: &'a [u8], field: &str) -> Result<Option<&'a str>, ()> {
+    let text = std::str::from_utf8(bytes).map_err(|_| ())?;
+    let prefix = format!("{field} ");
+    let mut values = text.lines().filter_map(|line| line.strip_prefix(&prefix));
+    let value = values.next();
+    if values.next().is_some() {
+        return Err(());
+    }
+    Ok(value)
+}
+
+fn build_outcome_projections(
+    parsed: &[ParsedTranscript],
+) -> BTreeMap<String, Vec<NativeV2OutcomeProjection>> {
+    parsed
+        .iter()
+        .map(|transcript| {
+            let ceremony = transcript.summary.ceremony();
+            let outcomes = transcript
+                .operations
+                .iter()
+                .filter(|operation| !operation.request_bytes.is_empty())
+                .map(|operation| NativeV2OutcomeProjection {
+                    ceremony: ceremony.to_owned(),
+                    layer: operation.layer,
+                    target_identity: operation.accepted_identity,
+                    submitted_bytes: operation.request_bytes.clone(),
+                    detail: operation.detail.clone(),
+                })
+                .collect();
+            (ceremony.to_owned(), outcomes)
+        })
+        .collect()
+}
+
+fn build_ceremony_projections(
+    parsed: &[ParsedTranscript],
+) -> Result<BTreeMap<String, NativeV2CeremonyProjection>, NativeV2ImportRefusal> {
+    parsed
+        .iter()
+        .map(|transcript| {
+            let ceremony = transcript.summary.ceremony();
+            let fixture_digests = transcript
+                .digests
+                .iter()
+                .map(|(name, digest)| {
+                    decode_digest(digest)
+                        .map(|decoded| (name.clone(), decoded))
+                        .ok_or_else(|| {
+                            row_attribution_refusal(
+                                "current-ceremony-projection",
+                                ceremony,
+                                "digest-grammar",
+                            )
+                        })
+                })
+                .collect::<Result<BTreeMap<_, _>, _>>()?;
+            let issued_asset_display =
+                unique_semantic_value(&transcript.legacy_rendering, "issued_asset")
+                    .map_err(|()| {
+                        row_attribution_refusal(
+                            "current-ceremony-projection",
+                            ceremony,
+                            "issued-asset-census",
+                        )
+                    })?
+                    .filter(|value| !matches!(*value, "none" | "absent"))
+                    .map(str::to_owned);
+            if issued_asset_display
+                .as_deref()
+                .is_some_and(|value| decode_digest(value).is_none())
+            {
+                return Err(row_attribution_refusal(
+                    "current-ceremony-projection",
+                    ceremony,
+                    "issued-asset-grammar",
+                ));
+            }
+            Ok((
+                ceremony.to_owned(),
+                NativeV2CeremonyProjection {
+                    ceremony: ceremony.to_owned(),
+                    fixture_digests,
+                    issued_asset_display,
+                    semantic_rendering: transcript.legacy_rendering.clone(),
+                },
+            ))
+        })
+        .collect()
+}
+
+fn build_acceptance_projections(
+    parsed: &[ParsedTranscript],
+) -> Result<BTreeMap<String, Vec<NativeV2AcceptanceProjection>>, NativeV2ImportRefusal> {
+    parsed
+        .iter()
+        .map(|transcript| {
+            let ceremony = transcript.summary.ceremony();
+            let accepted = transcript
+                .operations
+                .iter()
+                .filter(|operation| {
+                    operation.accepted_identity.is_some() && !operation.request_bytes.is_empty()
+                })
+                .collect::<Vec<_>>();
+            let observed_weight = if accepted.len() == 1 {
+                unique_semantic_value(&transcript.legacy_rendering, "observed_weight")
+                    .map_err(|()| {
+                        row_attribution_refusal(
+                            "current-acceptance-projection",
+                            ceremony,
+                            "observed-weight-census",
+                        )
+                    })?
+                    .map(str::parse::<u64>)
+                    .transpose()
+                    .map_err(|_| {
+                        row_attribution_refusal(
+                            "current-acceptance-projection",
+                            ceremony,
+                            "observed-weight-grammar",
+                        )
+                    })?
+            } else {
+                None
+            };
+            if let [operation] = accepted.as_slice() {
+                if let Some(submitted_bytes) =
+                    unique_semantic_value(&transcript.legacy_rendering, "submitted_bytes").map_err(
+                        |()| {
+                            row_attribution_refusal(
+                                "current-acceptance-projection",
+                                ceremony,
+                                "submitted-bytes-census",
+                            )
+                        },
+                    )?
+                {
+                    let submitted_bytes = submitted_bytes.parse::<usize>().map_err(|_| {
+                        row_attribution_refusal(
+                            "current-acceptance-projection",
+                            ceremony,
+                            "submitted-bytes-grammar",
+                        )
+                    })?;
+                    if submitted_bytes != operation.request_bytes.len() {
+                        return Err(row_attribution_refusal(
+                            "current-acceptance-projection",
+                            ceremony,
+                            "submitted-bytes-differ",
+                        ));
+                    }
+                }
+                if let Some(identity) =
+                    unique_semantic_value(&transcript.legacy_rendering, "accepted_txid").map_err(
+                        |()| {
+                            row_attribution_refusal(
+                                "current-acceptance-projection",
+                                ceremony,
+                                "accepted-identity-census",
+                            )
+                        },
+                    )?
+                    && operation
+                        .accepted_identity
+                        .map(|value| value.to_target_display())
+                        != Some(identity.to_owned())
+                {
+                    return Err(row_attribution_refusal(
+                        "current-acceptance-projection",
+                        ceremony,
+                        "accepted-identity-differs",
+                    ));
+                }
+            }
+            let projections = accepted
+                .into_iter()
+                .filter_map(|operation| {
+                    operation
+                        .accepted_identity
+                        .map(|identity| NativeV2AcceptanceProjection {
+                            ceremony: ceremony.to_owned(),
+                            identity,
+                            identity_display: identity.to_target_display(),
+                            submitted_bytes: operation.request_bytes.clone(),
+                            observed_weight,
+                        })
+                })
+                .collect::<Vec<_>>();
+            Ok((ceremony.to_owned(), projections))
+        })
+        .collect()
+}
+
 fn build_mint_ceremonies(
     parsed: &[ParsedTranscript],
     corpus_content_address: &str,
@@ -4127,6 +4473,9 @@ fn validate_inputs(
     let (observations, links, attributions) = build_material(&parsed, &run_ids)?;
     let content_address = hex_bytes(&report_hash);
     let mint_ceremonies = build_mint_ceremonies(&parsed, &content_address)?;
+    let ceremony_projections = build_ceremony_projections(&parsed)?;
+    let acceptance_projections = build_acceptance_projections(&parsed)?;
+    let outcome_projections = build_outcome_projections(&parsed);
     Ok(ValidatedNativeV2R7Corpus {
         transcripts: parsed
             .into_iter()
@@ -4137,6 +4486,9 @@ fn validate_inputs(
         links,
         attributions,
         mint_ceremonies,
+        ceremony_projections,
+        acceptance_projections,
+        outcome_projections,
         outcome_count: 40,
         content_address,
     })
@@ -4316,6 +4668,69 @@ mod tests {
         assert_eq!(bound_run_ids, linked_run_ids);
         assert_eq!(bound_request_ids, linked_request_ids);
         assert!(crate::live_corpus_rerun_day::parse_rerun_day_archive().is_ok());
+    }
+
+    #[test]
+    fn current_acceptance_projections_equal_the_bound_corpus_values() {
+        let corpus = run_of_record().expect("the reviewed archive admits");
+        for ceremony in NATIVE_V2_R7_CEREMONY_ROSTER {
+            let ceremony_projection = corpus
+                .ceremony_projection(ceremony)
+                .expect("every roster ceremony has a read-only current projection");
+            assert_eq!(ceremony_projection.ceremony(), ceremony);
+            assert_ne!(ceremony_projection.semantic_rendering(), b"".as_slice());
+            let acceptances = corpus
+                .acceptance_projections(ceremony)
+                .expect("every roster ceremony has an acceptance projection bucket");
+            let accepted_outcomes = corpus
+                .outcome_projections(ceremony)
+                .expect("every roster ceremony has an outcome projection bucket")
+                .iter()
+                .filter(|outcome| outcome.target_identity().is_some())
+                .collect::<Vec<_>>();
+            assert_eq!(acceptances.len(), accepted_outcomes.len(), "{ceremony}");
+            for (acceptance, outcome) in acceptances.iter().zip(accepted_outcomes) {
+                assert_eq!(Some(acceptance.identity()), outcome.target_identity());
+                assert_eq!(
+                    acceptance.identity_display(),
+                    acceptance.identity().to_target_display(),
+                );
+                assert_eq!(acceptance.submitted_bytes(), outcome.submitted_bytes());
+            }
+        }
+        for (ceremony, row, expected_weight) in [
+            ("explicit-one-to-one", "one-input-to-one-output", Some(983)),
+            ("private-restart-control", "private-one-to-one", None),
+        ] {
+            let [projection] = corpus
+                .acceptance_projections(ceremony)
+                .expect("the ceremony has an acceptance projection")
+            else {
+                panic!("{ceremony} does not have exactly one accepted request");
+            };
+            let (run_id, request_id, identity) = corpus
+                .observations()
+                .iter()
+                .find_map(|observation| match observation {
+                    LiveReportObservation::NativeAcceptance {
+                        row: candidate,
+                        run_id,
+                        request_id,
+                        identity,
+                    } if *candidate == row => Some((run_id, request_id, *identity)),
+                    _ => None,
+                })
+                .expect("the acceptance is bound to its row");
+            let request = corpus
+                .runs()
+                .iter()
+                .find(|run| run.run_id() == run_id)
+                .and_then(|run| run.requests().get(request_id))
+                .expect("the bound request is retained");
+            assert_eq!(projection.identity(), identity);
+            assert_eq!(projection.submitted_bytes(), request);
+            assert_eq!(projection.observed_weight(), expected_weight);
+        }
     }
 
     #[test]

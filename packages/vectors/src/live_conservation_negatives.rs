@@ -57,9 +57,9 @@
 //! # Recording and binding stay separate
 //!
 //! The recorder captures a layer and the node's own words without grading
-//! them. [`assert_conservation_matches_the_run_of_record`] is the separate
+//! them. [`assert_conservation_matches_current_corpus`] is the separate
 //! reproduction gate: after the transcript is preserved, it binds the fresh
-//! ceremony to every stable semantic fact the committed record carries.
+//! ceremony to the validated native-v2/revision-7 corpus.
 
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
@@ -67,7 +67,7 @@ use target_elements_conformance::protocol::{
     TargetSubmissionSubject,
 };
 use transaction::bytes::{
-    AssetId, COMMITMENT_BYTES, OutputWitness, TargetOutput, TargetTransaction, Txid, ValueField,
+    AssetId, COMMITMENT_BYTES, OutputWitness, TargetOutput, TargetTransaction, ValueField,
 };
 use transaction::live_materialize::IndependentCommitmentCheck as _;
 use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message};
@@ -859,7 +859,7 @@ pub fn render_conservation_negatives(record: &ConservationNegativeRecord) -> Str
     out
 }
 
-/// The run of record: what one execution of steps three and four observed.
+/// Historical-v1 data: what one execution of steps three and four observed.
 ///
 /// # Why the observation is a constant and not a stored file
 ///
@@ -870,6 +870,10 @@ pub fn render_conservation_negatives(record: &ConservationNegativeRecord) -> Str
 /// v28.99.0-b7fc5d080a7e, at the pinned tip, on a disposable development
 /// chain the run created and destroyed. It re-runs nothing and proves
 /// nothing by existing; it makes the run's own answer quotable.
+///
+/// New consumers use [`crate::live_history_v1::conservation_negatives`]. This
+/// compatibility path remains for the untouched native guide consumer until
+/// its separately owned cleanup.
 pub mod run_of_record {
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
@@ -944,202 +948,75 @@ pub mod run_of_record {
     pub const WALL_SECONDS: f64 = 12.7;
 }
 
-/// Bind one completed conservation-negatives ceremony to every stable
-/// semantic fact in its committed run of record.
+/// Bind one completed conservation-negatives ceremony to the validated
+/// native-v2/revision-7 corpus.
 ///
 /// Wall time is intentionally absent: it is machine telemetry rather than
 /// a reproducible result.
 ///
-/// Under Q19, the recorded v1 fixture digests remain immutable historical
-/// run data. A fresh conservation ceremony builds the same `DualParity`,
-/// `Primary` predecessor and successor as private restart, so its fixture
-/// assertions import that shared fixture's sole-live forward-v2 identities
-/// from
-/// [`crate::live_private_restart::run_of_record::forward_fixture_digest_v2`].
+/// Under Q19, the fresh ceremony's fixture digests are compared only with the
+/// corpus's `forward-v2` digest records. Historical-v1 divergence belongs to
+/// [`crate::live_history_v1`] and is not an active execution oracle.
 ///
 /// # Panics
 ///
-/// Panics if a recorded fact is absent or differs, or if a mutant cannot be
-/// attributed solely to its case-derived serialized field.
-pub fn assert_conservation_matches_the_run_of_record(record: &ConservationNegativeRecord) {
-    use run_of_record as run;
-
-    let control = assert_recorded_control(record);
+/// Panics if the fresh semantic rendering differs from the bound current
+/// rendering, a current digest is absent or differs, or a mutant is not
+/// attributable solely to its declared field.
+pub fn assert_conservation_matches_current_corpus(record: &ConservationNegativeRecord) {
+    let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+        .expect("the reviewed native-v2/revision-7 corpus validates");
+    let current = corpus
+        .ceremony_projection("conservation-negatives")
+        .expect("the current corpus carries conservation-negatives");
     assert_eq!(
-        record.mutants().len(),
-        4,
-        "the ceremony did not record exactly four proof-negative mutants",
+        render_conservation_negatives(record).as_bytes(),
+        current.semantic_rendering(),
+        "the conservation ceremony differs from the current corpus",
     );
-    for (case, field_range) in [
-        (
-            ProofNegativeCase::WrongBlinder,
-            run::WRONG_BLINDER_FIELD_RANGE,
-        ),
-        (
-            ProofNegativeCase::MissingRangeproof,
-            run::RANGEPROOF_FIELD_RANGE,
-        ),
-        (
-            ProofNegativeCase::PrivateCtImbalance,
-            run::PRIVATE_CT_IMBALANCE_FIELD_RANGE,
-        ),
-        (
-            ProofNegativeCase::MalformedRangeproof,
-            run::RANGEPROOF_FIELD_RANGE,
-        ),
-    ] {
-        assert_recorded_mutant(record, &control, case, field_range);
-    }
-    assert_recorded_fixture(record);
-}
-
-fn assert_recorded_control(record: &ConservationNegativeRecord) -> BalanceValidControl {
-    use run_of_record as run;
-
-    assert_eq!(
-        record.control_observed_layer(),
-        Some(ObservedOutcomeLayer::Accepted),
-        "the control was not ACCEPTED, so no mutant refusal is attributable",
-    );
-    let recorded_acceptance =
-        run::control_accepted().expect("the run-of-record control identity parses");
-    let observed_acceptance = record
-        .control_accepted_txid()
-        .map(Txid::from_target_display)
-        .transpose()
-        .expect("the observed control identity is valid hexadecimal");
-    assert_eq!(
-        observed_acceptance,
-        Some(recorded_acceptance.accepted_identity()),
-        "the control was accepted at an identity the run of record does not carry",
-    );
-    assert_eq!(
-        record.control_submitted_bytes,
-        run::CONTROL_SUBMITTED_BYTES,
-        "the control handed the node a different number of bytes",
-    );
-    assert_eq!(
-        record.consumed_commitment_prefix,
-        Some(run::CONSUMED_COMMITMENT_PREFIX),
-        "the consumed coin carried a different commitment prefix",
-    );
-
-    let reverification = record
-        .reverification()
-        .expect("the accepted control carries unconditional reverification");
-    assert!(
-        reverification.readback_matches_submission(),
-        "the bytes the node reported are not the bytes it was handed",
-    );
-    assert!(
-        reverification.verified(),
-        "the accepted witness does not verify against the recomputed message",
-    );
+    assert_current_fixture(record);
 
     let control = record
         .balance_valid_control()
         .expect("the accepted run carries a balance-valid control");
-    assert_eq!(
-        control.accepted_identity(),
-        run::CONTROL_ACCEPTED_TXID,
-        "the balance-valid control does not carry the recorded identity",
-    );
-    control
+    for mutant in record.mutants() {
+        mutant.attribute(&control).unwrap_or_else(|refusal| {
+            panic!(
+                "the {} mutant is not confined to its declared field: {refusal:?}",
+                mutant.case().name(),
+            )
+        });
+    }
 }
 
-fn assert_recorded_mutant(
-    record: &ConservationNegativeRecord,
-    control: &BalanceValidControl,
-    case: ProofNegativeCase,
-    field_range: (usize, usize),
-) {
-    use run_of_record as run;
-
-    let mut matching = record
-        .mutants()
-        .iter()
-        .filter(|mutant| mutant.case() == case);
-    let mutant = matching
-        .next()
-        .unwrap_or_else(|| panic!("the {} mutant is absent", case.name()));
-    assert!(
-        matching.next().is_none(),
-        "the {} mutant was recorded more than once",
-        case.name(),
-    );
-    assert_eq!(
-        mutant.observed_layer(),
-        Some(run::MUTANT_OBSERVED_LAYER),
-        "the {} mutant was not refused at the recorded layer",
-        case.name(),
-    );
-    assert_eq!(
-        mutant.observed_detail(),
-        Some(run::MUTANT_REJECT_DETAIL),
-        "the {} mutant drew words the run of record does not carry",
-        case.name(),
-    );
-
-    let attribution = mutant.attribute(control).unwrap_or_else(|refusal| {
-        panic!(
-            "the {} mutant is not confined to its declared field: {refusal:?}",
-            case.name(),
-        )
-    });
-    assert_eq!(
-        attribution.case(),
-        case,
-        "the attributed mutant changed case",
-    );
-    assert_eq!(
-        attribution.serialized_field(),
-        case.serialized_field(),
-        "the attributed mutant changed serialized field",
-    );
-    assert_eq!(
-        attribution.control_identity(),
-        run::CONTROL_ACCEPTED_TXID,
-        "the mutant attributed against a different control",
-    );
-    assert_eq!(
-        attribution.observed_layer(),
-        run::MUTANT_OBSERVED_LAYER,
-        "the attributed mutant changed observed layer",
-    );
-    assert_eq!(
-        attribution.detail(),
-        Some(run::MUTANT_REJECT_DETAIL),
-        "the attributed mutant changed target detail",
-    );
-    let expected_range = field_range.0..field_range.1;
-    assert_eq!(
-        attribution.located_field().control_range(),
-        &expected_range,
-        "the {} mutant's field moved outside the run-of-record range",
-        case.name(),
-    );
+/// Compatibility spelling for the untouched native-guide caller.
+///
+/// This now binds to the sole current native-v2/revision-7 corpus. It does
+/// not consult historical-v1 constants.
+///
+/// # Panics
+///
+/// Panics under the same conditions as
+/// [`assert_conservation_matches_current_corpus`].
+pub fn assert_conservation_matches_the_run_of_record(record: &ConservationNegativeRecord) {
+    assert_conservation_matches_current_corpus(record);
 }
 
-fn assert_recorded_fixture(record: &ConservationNegativeRecord) {
-    use crate::live_private_restart::run_of_record::forward_fixture_digest_v2 as forward;
-    use run_of_record as run;
-
+fn assert_current_fixture(record: &ConservationNegativeRecord) {
+    let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+        .expect("the reviewed native-v2/revision-7 corpus validates");
+    let current = corpus
+        .ceremony_projection("conservation-negatives")
+        .expect("the current corpus carries conservation-negatives");
     assert_eq!(
-        record.issued_asset(),
-        Some(run::ISSUED_ASSET),
-        "the ceremony issued a different asset",
+        record.predecessor_digest.as_ref(),
+        current.fixture_digest("predecessor"),
+        "the predecessor digest differs from the current forward-v2 fixture",
     );
-    let predecessor_digest = record.predecessor_digest.map(hex);
     assert_eq!(
-        predecessor_digest.as_deref(),
-        Some(forward::PREDECESSOR_DIGEST),
-        "the predecessor digest differs from the shared forward-v2 fixture",
-    );
-    let successor_digest = record.successor_digest.map(hex);
-    assert_eq!(
-        successor_digest.as_deref(),
-        Some(forward::SUCCESSOR_DIGEST),
-        "the successor digest differs from the shared forward-v2 fixture",
+        record.successor_digest.as_ref(),
+        current.fixture_digest("successor"),
+        "the successor digest differs from the current forward-v2 fixture",
     );
 }
 
@@ -1147,10 +1024,9 @@ fn assert_recorded_fixture(record: &ConservationNegativeRecord) {
 mod tests {
     use super::{
         ConservationNegativeRecord, ControlReverification, MutantObservation, ProofNegativeCase,
-        ProofNegativeMutation, assert_conservation_matches_the_run_of_record,
-        assert_recorded_fixture, render_conservation_negatives, run_of_record as run,
+        ProofNegativeMutation, assert_current_fixture, render_conservation_negatives,
     };
-    use crate::live_private_restart::run_of_record::forward_fixture_digest_v2 as forward;
+    use crate::live_history_v1::conservation_negatives as history;
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
     use transaction::bytes::{
         AssetField, AssetId, InputWitness, NonceField, Outpoint, OutputWitness, TargetInput,
@@ -1210,22 +1086,22 @@ mod tests {
         MutantObservation {
             submitted_bytes: mutant.encode().len(),
             mutation: ProofNegativeMutation::at_output(case, 0, mutant),
-            observed_layer: Some(run::MUTANT_OBSERVED_LAYER),
-            observed_detail: Some(run::MUTANT_REJECT_DETAIL.to_owned()),
+            observed_layer: Some(history::MUTANT_OBSERVED_LAYER),
+            observed_detail: Some(history::MUTANT_REJECT_DETAIL.to_owned()),
         }
     }
 
     fn synthetic_record() -> ConservationNegativeRecord {
         let control = renderer_transaction([0x08; 33]);
         ConservationNegativeRecord {
-            issued_asset: Some(run::ISSUED_ASSET.to_owned()),
-            predecessor_digest: Some(recorded_digest(run::PREDECESSOR_DIGEST)),
-            successor_digest: Some(recorded_digest(run::SUCCESSOR_DIGEST)),
-            consumed_commitment_prefix: Some(run::CONSUMED_COMMITMENT_PREFIX),
+            issued_asset: Some(history::ISSUED_ASSET.to_owned()),
+            predecessor_digest: Some(recorded_digest(history::PREDECESSOR_DIGEST)),
+            successor_digest: Some(recorded_digest(history::SUCCESSOR_DIGEST)),
+            consumed_commitment_prefix: Some(history::CONSUMED_COMMITMENT_PREFIX),
             control_bytes: Some(control.encode()),
-            control_submitted_bytes: run::CONTROL_SUBMITTED_BYTES,
+            control_submitted_bytes: history::CONTROL_SUBMITTED_BYTES,
             control_observed_layer: Some(ObservedOutcomeLayer::Accepted),
-            control_accepted_txid: Some(run::CONTROL_ACCEPTED_TXID.to_owned()),
+            control_accepted_txid: Some(history::CONTROL_ACCEPTED_TXID.to_owned()),
             reverification: Some(ControlReverification {
                 readback_matches_submission: true,
                 verified: true,
@@ -1241,77 +1117,35 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "predecessor digest differs from the shared forward-v2 fixture")]
-    fn recorded_v1_fixture_digests_refuse_the_forward_binding() {
-        let record = synthetic_record();
-
-        assert_recorded_fixture(&record);
-    }
-
-    #[test]
-    fn forward_v2_fixture_digests_pass_the_forward_binding() {
+    fn current_forward_v2_fixture_digests_pass_the_corpus_binding() {
         let mut record = synthetic_record();
-        record.predecessor_digest = Some(recorded_digest(forward::PREDECESSOR_DIGEST));
-        record.successor_digest = Some(recorded_digest(forward::SUCCESSOR_DIGEST));
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates");
+        let current = corpus
+            .ceremony_projection("conservation-negatives")
+            .expect("the conservation ceremony is present");
+        record.predecessor_digest = current.fixture_digest("predecessor").copied();
+        record.successor_digest = current.fixture_digest("successor").copied();
 
-        assert_recorded_fixture(&record);
+        assert_current_fixture(&record);
     }
 
     #[test]
-    #[should_panic(expected = "accepted at an identity the run of record does not carry")]
-    fn a_flipped_control_identity_refuses_the_record_binding() {
-        let mut record = synthetic_record();
-        record
-            .control_accepted_txid
-            .as_mut()
-            .expect("the synthetic control has an accepted identity")
-            .replace_range(..1, "0");
-
-        assert_conservation_matches_the_run_of_record(&record);
-    }
-
-    #[test]
-    #[should_panic(expected = "drew words the run of record does not carry")]
-    fn a_flipped_mutant_detail_refuses_the_record_binding() {
-        let mut record = synthetic_record();
-        record.mutants[0].observed_detail = Some("bad-txns-in-ne-ou0".to_owned());
-
-        assert_conservation_matches_the_run_of_record(&record);
-    }
-
-    #[test]
-    #[should_panic(expected = "accepted control carries unconditional reverification")]
-    fn missing_reverification_refuses_the_record_binding() {
-        let mut record = synthetic_record();
-        record.reverification = None;
-
-        assert_conservation_matches_the_run_of_record(&record);
-    }
-
-    #[test]
-    #[should_panic(expected = "field moved outside the run-of-record range")]
-    fn a_wrong_located_field_range_refuses_the_record_binding() {
-        let record = synthetic_record();
-
-        assert_conservation_matches_the_run_of_record(&record);
-    }
-
-    #[test]
-    fn the_run_of_record_names_one_control_and_four_field_ranges() {
+    fn historical_v1_names_one_control_and_four_field_ranges() {
         // The figures are the run's, and this checks their SHAPE rather
         // than re-deriving them: a 64-hex control identity, two
         // value-commitment fields exactly 33 bytes wide at DIFFERENT
         // offsets, and a range-proof field wide enough to hold a real
         // proof.
-        assert_eq!(run::CONTROL_ACCEPTED_TXID.len(), 64);
-        assert_eq!(run::PREDECESSOR_DIGEST.len(), 64);
-        assert_ne!(run::PREDECESSOR_DIGEST, run::SUCCESSOR_DIGEST);
-        assert_eq!(run::CONSUMED_COMMITMENT_PREFIX, 0x08);
-        assert_eq!(run::WRONG_BLINDER_FIELD_RANGE, (81, 114));
-        assert_eq!(run::PRIVATE_CT_IMBALANCE_FIELD_RANGE, (215, 248));
-        assert_eq!(run::RANGEPROOF_FIELD_RANGE, (781, 4_958));
+        assert_eq!(history::CONTROL_ACCEPTED_TXID.len(), 64);
+        assert_eq!(history::PREDECESSOR_DIGEST.len(), 64);
+        assert_ne!(history::PREDECESSOR_DIGEST, history::SUCCESSOR_DIGEST);
+        assert_eq!(history::CONSUMED_COMMITMENT_PREFIX, 0x08);
+        assert_eq!(history::WRONG_BLINDER_FIELD_RANGE, (81, 114));
+        assert_eq!(history::PRIVATE_CT_IMBALANCE_FIELD_RANGE, (215, 248));
+        assert_eq!(history::RANGEPROOF_FIELD_RANGE, (781, 4_958));
 
-        let (wb_start, wb_end) = run::WRONG_BLINDER_FIELD_RANGE;
+        let (wb_start, wb_end) = history::WRONG_BLINDER_FIELD_RANGE;
         assert_eq!(
             wb_end - wb_start,
             33,
@@ -1321,7 +1155,7 @@ mod tests {
         // The imbalance mutant's field is also 33 bytes and sits at a
         // DIFFERENT offset: the two do not overlap, which is what separates
         // the two rows that share the target's words.
-        let (im_start, im_end) = run::PRIVATE_CT_IMBALANCE_FIELD_RANGE;
+        let (im_start, im_end) = history::PRIVATE_CT_IMBALANCE_FIELD_RANGE;
         assert_eq!(
             im_end - im_start,
             33,
@@ -1332,7 +1166,7 @@ mod tests {
             "the two value-commitment fields do not overlap"
         );
 
-        let (rp_start, rp_end) = run::RANGEPROOF_FIELD_RANGE;
+        let (rp_start, rp_end) = history::RANGEPROOF_FIELD_RANGE;
         assert!(
             rp_end - rp_start > 1000,
             "the range-proof field holds a real proof"

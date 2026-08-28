@@ -963,6 +963,8 @@ impl RecordedConfidentialCoin {
 pub enum RunOfRecordProjectionRefusal {
     /// A forward-v2 live record was offered to the historical-v1 schema.
     HistoricalV1DigestRequired,
+    /// Emitting a new schema-1 record from live data is retired.
+    HistoricalV1ProjectionRetired,
     /// A historical-v1 live record was offered to the forward-v2 schema.
     ForwardV2DigestRequired,
     /// The ceremony stopped under a typed refusal.
@@ -1133,69 +1135,7 @@ impl TryFrom<&ProofBearingObservationRecord> for ProofBearingRunOfRecord {
         if record.fixture_digest_algorithm() != FixtureDigestAlgorithm::HistoricalV1 {
             return Err(RunOfRecordProjectionRefusal::HistoricalV1DigestRequired);
         }
-        if record.refusal().is_some() {
-            return Err(RunOfRecordProjectionRefusal::CeremonyRefused);
-        }
-        let issued_asset = record
-            .issued_asset()
-            .ok_or(RunOfRecordProjectionRefusal::MissingIssuedAsset)?;
-        let predecessor_digest = record
-            .predecessor_digest()
-            .copied()
-            .ok_or(RunOfRecordProjectionRefusal::MissingPredecessorDigest)?;
-        if record.coins().len() != PREDECESSOR_AMOUNTS.len() {
-            return Err(RunOfRecordProjectionRefusal::IncompleteCoins);
-        }
-        let output_witness_vector_length = record
-            .output_witness_vector_length()
-            .ok_or(RunOfRecordProjectionRefusal::MissingOutputWitnessVectorLength)?;
-        if record.output_witness_proof_bytes().len() != SUCCESSOR_AMOUNTS.len() {
-            return Err(RunOfRecordProjectionRefusal::IncompleteOutputWitnessProofBytes);
-        }
-        if record.spent_value_prefixes().len() != record.coins().len() {
-            return Err(RunOfRecordProjectionRefusal::IncompleteSpentValuePrefixes);
-        }
-        if record.observations().len() != ProofBearingCase::ALL.len() {
-            return Err(RunOfRecordProjectionRefusal::IncompleteObservations);
-        }
-        if record.construction_refusals().len() != ProofBearingConstructionControl::ALL.len() {
-            return Err(RunOfRecordProjectionRefusal::IncompleteConstructionRefusals);
-        }
-        let construction_refusals = record
-            .construction_refusals()
-            .iter()
-            .map(RecordedProofBearingConstructionRefusal::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
-        let reverification = record
-            .reverification()
-            .cloned()
-            .ok_or(RunOfRecordProjectionRefusal::MissingReverification)?;
-        if record.candidate_messages().len() != ProofBearingCase::ALL.len() {
-            return Err(RunOfRecordProjectionRefusal::IncompleteCandidateMessages);
-        }
-        Ok(Self {
-            schema_version: PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION,
-            issued_asset: issued_asset.to_owned(),
-            predecessor_digest,
-            coins: record
-                .coins()
-                .iter()
-                .map(|coin| RecordedConfidentialCoin {
-                    asset: coin.asset(),
-                    value: coin.value(),
-                    program: coin.program().to_vec(),
-                    rangeproof_bytes: coin.rangeproof_bytes(),
-                    matches_expectation: coin.matches_expectation(),
-                })
-                .collect(),
-            output_witness_vector_length,
-            output_witness_proof_bytes: record.output_witness_proof_bytes().to_vec(),
-            spent_value_prefixes: record.spent_value_prefixes().to_vec(),
-            observations: record.observations().to_vec(),
-            construction_refusals: RecordedConstructionRefusals::Captured(construction_refusals),
-            reverification,
-            candidate_messages: record.candidate_messages().clone(),
-        })
+        Err(RunOfRecordProjectionRefusal::HistoricalV1ProjectionRetired)
     }
 }
 
@@ -1945,8 +1885,8 @@ fn mint_forward_corpus_record(
 /// The schema-2 forward-v2 expectation for a fresh proof-bearing run.
 ///
 /// This is the selection point N1-F uses instead of the historical
-/// [`construction_run_of_record_v2`] surface. Both members mint together
-/// from the validated corpus or both remain Pending.
+/// [`historical_v1_construction_run_of_record`] surface. Both members
+/// mint together from the validated corpus or both remain Pending.
 #[must_use]
 pub fn forward_v2_proof_bearing_run_of_record() -> &'static ForwardV2ProofBearingRunOfRecord {
     static RECORD: OnceLock<ForwardV2ProofBearingRunOfRecord> = OnceLock::new();
@@ -2000,7 +1940,7 @@ impl ProofBearingRunOfRecordV2 {
 /// against elements tip `b7fc5d080a`. The evidence source is
 /// `rerun-bf211dd.proof-bearing-observation`; its enclosing RUN-REPORT
 /// records 40 of 40 green at exit zero and 420.7 seconds wall time.
-mod v2_run_of_record {
+mod historical_v1_run_of_record {
     use std::sync::OnceLock;
 
     use super::{
@@ -2160,8 +2100,8 @@ ebcdbb8675319b48b2e04fae3ca4fbcaa4030aa618f8d2b6084a6f45ba9b7408";
 /// Panics only if a committed transcript literal is not valid hexadecimal
 /// of its recorded byte length, which a caller cannot arrange.
 #[must_use]
-pub fn construction_run_of_record_v2() -> ProofBearingRunOfRecordV2 {
-    ProofBearingRunOfRecordV2::Recorded(v2_run_of_record::get())
+pub fn historical_v1_construction_run_of_record() -> ProofBearingRunOfRecordV2 {
+    ProofBearingRunOfRecordV2::Recorded(historical_v1_run_of_record::get())
 }
 
 // --- The owner's single-leaf tree --------------------------------------
@@ -3483,7 +3423,7 @@ fn record_header_lines(record: &ProofBearingObservationRecord) -> Vec<String> {
         FixtureDigestAlgorithm::HistoricalV1 => {
             lines.push(format!(
                 "run_of_record_v2 {}",
-                construction_run_of_record_v2().name()
+                historical_v1_construction_run_of_record().name()
             ));
             match ProofBearingRunOfRecord::try_from(record) {
                 Ok(projection) => lines.push(format!(
@@ -3649,128 +3589,120 @@ pub fn render_proof_bearing_observation(record: &ProofBearingObservationRecord) 
     lines.join("\n") + "\n"
 }
 
-// --- The run of record -------------------------------------------------
+// --- Historical-v1 mirrors --------------------------------------------
 
-// The callable T5-031 transcription is deliberately gone. Its immutable
-// literals remain unchanged for historical pinning and the projection
-// regressions below; the normal library build no longer consumes them,
-// which is why the legacy-only declarations carry a narrow dead-code
-// allowance.
-
-/// The issued asset the run of record was funded against.
-#[allow(dead_code)]
-const RECORDED_ASSET: &str = "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
-
-/// The digest the predecessor fixture was registered under, on the run
-/// of record.
-#[allow(dead_code)]
-const RECORDED_PREDECESSOR_DIGEST: &str =
-    "00da5ef7aaef159237ef5479b419abeee6307e913cc4e244f3226c64c5489262";
-
-/// How many range-proof bytes each output-witness entry carried.
+/// Verbatim mirrors retained from the schema-1 proof-bearing recording.
 ///
-/// The single figure that separates this lane from the explicit one,
-/// where every entry is an empty surjection proof and an empty range
-/// proof — two bytes in total. Four thousand one hundred and
-/// seventy-four bytes of it are in the message the owner signed, and
-/// none of them is recoverable from the witnessless serialization at any
-/// length.
-#[allow(dead_code)]
-const RECORDED_RANGEPROOF_BYTES: usize = 4174;
+/// They are data, not inputs to a current algorithm. The explicit namespace
+/// prevents a caller from mistaking them for the validated current corpus.
+pub mod historical_v1_mirrors {
+    use super::{ObservationIdentity, ProofBearingCase};
 
-/// The serialized prefixes the two spent value commitments carried.
-///
-/// The two the target admits, one square and one non-square, which is
-/// what the other guide's bounded parity search settles on. They are
-/// written down here because the accepted message hashed them; what they
-/// establish about the target's reading of a confidential value field is
-/// that guide's question and not this one's.
-#[allow(dead_code)]
-const RECORDED_SPENT_VALUE_PREFIXES: [u8; 2] = [0x08, 0x09];
+    /// The issued asset the run of record was funded against.
+    pub const RECORDED_ASSET: &str =
+        "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
 
-/// The identity the target computed over the bytes it accepted.
-const RECORDED_ACCEPTED_TXID: &str =
-    "a176394a67fa839058b4efbba53f59af47899dab718a85251a1106f496671d86";
+    /// The digest the predecessor fixture was registered under, on the run
+    /// of record.
+    pub const RECORDED_PREDECESSOR_DIGEST: &str =
+        "00da5ef7aaef159237ef5479b419abeee6307e913cc4e244f3226c64c5489262";
 
-/// The witness identity the target reported for it.
-#[allow(dead_code)]
-const RECORDED_WITNESS_TXID: &str =
-    "2ddc8694242459a9e65d60616f9c4133f8eacf10332ef008319004bf85241c5e";
+    /// How many range-proof bytes each output-witness entry carried.
+    ///
+    /// The single figure that separates this lane from the explicit one,
+    /// where every entry is an empty surjection proof and an empty range
+    /// proof — two bytes in total. Four thousand one hundred and
+    /// seventy-four bytes of it are in the message the owner signed, and
+    /// none of them is recoverable from the witnessless serialization at any
+    /// length.
+    pub const RECORDED_RANGEPROOF_BYTES: usize = 4174;
 
-/// The height the target confirmed it at.
-#[allow(dead_code)]
-const RECORDED_BLOCK_HEIGHT: u32 = 6;
+    /// The serialized prefixes the two spent value commitments carried.
+    ///
+    /// The two the target admits, one square and one non-square, which is
+    /// what the other guide's bounded parity search settles on. They are
+    /// written down here because the accepted message hashed them; what they
+    /// establish about the target's reading of a confidential value field is
+    /// that guide's question and not this one's.
+    pub const RECORDED_SPENT_VALUE_PREFIXES: [u8; 2] = [0x08, 0x09];
 
-/// The message the accepted authorization was taken over.
-#[allow(dead_code)]
-const RECORDED_ACCEPTED_MESSAGE: &str =
-    "c7931addeeefa3e4ac4b67c9ee5cb5ab65f6de9409007e2415e8c749c61bd27f";
+    /// The identity the target computed over the bytes it accepted.
+    pub const RECORDED_ACCEPTED_TXID: &str =
+        "a176394a67fa839058b4efbba53f59af47899dab718a85251a1106f496671d86";
 
-/// The signature as it stood in the target's own copy.
-#[allow(dead_code)]
-const RECORDED_SIGNATURE: &str = "582cc46a31e0111a7894a702d976741fb16711500bdcd719dcc16e211e89e39c\
+    /// The witness identity the target reported for it.
+    pub const RECORDED_WITNESS_TXID: &str =
+        "2ddc8694242459a9e65d60616f9c4133f8eacf10332ef008319004bf85241c5e";
+
+    /// The height the target confirmed it at.
+    pub const RECORDED_BLOCK_HEIGHT: u32 = 6;
+
+    /// The message the accepted authorization was taken over.
+    pub const RECORDED_ACCEPTED_MESSAGE: &str =
+        "c7931addeeefa3e4ac4b67c9ee5cb5ab65f6de9409007e2415e8c749c61bd27f";
+
+    /// The signature as it stood in the target's own copy.
+    pub const RECORDED_SIGNATURE: &str = "582cc46a31e0111a7894a702d976741fb16711500bdcd719dcc16e211e89e39c\
 ebcdbb8675319b48b2e04fae3ca4fbcaa4030aa618f8d2b6084a6f45ba9b7408";
 
-/// The node's own words for every refused control.
-///
-/// All three drew the same sentence, which is the result rather than a
-/// simplification: each control moved a different term of the message
-/// and the target's answer to a message it did not form is one answer.
-#[allow(dead_code)]
-const RECORDED_REFUSAL_DETAIL: &str =
-    "mandatory-script-verify-flag-failed (Invalid Schnorr signature)";
+    /// The node's own words for every refused control.
+    ///
+    /// All three drew the same sentence, which is the result rather than a
+    /// simplification: each control moved a different term of the message
+    /// and the target's answer to a message it did not form is one answer.
+    pub const RECORDED_REFUSAL_DETAIL: &str =
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)";
 
-/// The messages each submitted case's signatures were taken over.
-///
-/// Four distinct digests, in case order. They are committed because
-/// their DISTINCTNESS is what gives the three refusals content: a run in
-/// which two of them had coincided would have offered one control twice
-/// and reported it as two.
-#[allow(dead_code)]
-const RECORDED_MESSAGES: [(ProofBearingCase, &str); 4] = [
-    (
-        ProofBearingCase::ProofBearingVectorEmptied,
-        "16a454854658413c97c281b1f20c84cead7ee08cdf06ed0e0a8b19bb0de47c4d",
-    ),
-    (
-        ProofBearingCase::PreimageOnlySigner,
-        "94c5ed3bc5734102a6fa6949d54355dcced4763af838892ccf38868cbe8ed042",
-    ),
-    (
-        ProofBearingCase::AnotherProofBearingCandidate,
-        "7f56f606a9678dab6158e913778cbe8c6612d9aaab8b4fe5052f46ecd075f7a4",
-    ),
-    (ProofBearingCase::SelectedProfile, RECORDED_ACCEPTED_MESSAGE),
-];
+    /// The messages each submitted case's signatures were taken over.
+    ///
+    /// Four distinct digests, in case order. They are committed because
+    /// their DISTINCTNESS is what gives the three refusals content: a run in
+    /// which two of them had coincided would have offered one control twice
+    /// and reported it as two.
+    pub const RECORDED_MESSAGES: [(ProofBearingCase, &str); 4] = [
+        (
+            ProofBearingCase::ProofBearingVectorEmptied,
+            "16a454854658413c97c281b1f20c84cead7ee08cdf06ed0e0a8b19bb0de47c4d",
+        ),
+        (
+            ProofBearingCase::PreimageOnlySigner,
+            "94c5ed3bc5734102a6fa6949d54355dcced4763af838892ccf38868cbe8ed042",
+        ),
+        (
+            ProofBearingCase::AnotherProofBearingCandidate,
+            "7f56f606a9678dab6158e913778cbe8c6612d9aaab8b4fe5052f46ecd075f7a4",
+        ),
+        (ProofBearingCase::SelectedProfile, RECORDED_ACCEPTED_MESSAGE),
+    ];
 
-/// The identity of the run of record, in the shape the reviewed
-/// contract already names an observation by.
-///
-/// The explicit lane's run is named this way where the six established
-/// dimensions cite it, and the Wave-4 audit found the gap on this side:
-/// a ceremony whose evidence was a file at a path an operator chose
-/// named nothing a later reader could cite. So this run carries the same
-/// three members — the ceremony's own name for the case, the identity
-/// the TARGET computed, and where the run is recorded.
-///
-/// It is deliberately NOT added to the reviewed contract's dimension
-/// table. Those six dimensions are established, they were established on
-/// the explicit run, and a second identity beside them would read as a
-/// second establishment of things this run did not re-establish.
-pub const PROOF_BEARING_OBSERVATION: ObservationIdentity = ObservationIdentity::new(
-    "selected-profile-proof-bearing-authorization",
-    RECORDED_ACCEPTED_TXID,
-    "plans/backlog.md T5-031",
-);
+    /// The identity of the run of record, in the shape the reviewed
+    /// contract already names an observation by.
+    ///
+    /// The explicit lane's run is named this way where the six established
+    /// dimensions cite it, and the Wave-4 audit found the gap on this side:
+    /// a ceremony whose evidence was a file at a path an operator chose
+    /// named nothing a later reader could cite. So this run carries the same
+    /// three members — the ceremony's own name for the case, the identity
+    /// the TARGET computed, and where the run is recorded.
+    ///
+    /// It is deliberately NOT added to the reviewed contract's dimension
+    /// table. Those six dimensions are established, they were established on
+    /// the explicit run, and a second identity beside them would read as a
+    /// second establishment of things this run did not re-establish.
+    pub const PROOF_BEARING_OBSERVATION: ObservationIdentity = ObservationIdentity::new(
+        "selected-profile-proof-bearing-authorization",
+        RECORDED_ACCEPTED_TXID,
+        "plans/backlog.md T5-031",
+    );
 
-/// How many bytes each case handed the node, on the run of record.
-///
-/// The same figure for every case, which is the point: the SUBMITTED
-/// candidate is one candidate and only the message its signatures were
-/// taken over varies, so a refusal is attributable to the term that
-/// moved rather than to a different transaction.
-#[allow(dead_code)]
-const RECORDED_SUBMITTED_BYTES: usize = 8993;
+    /// How many bytes each case handed the node, on the run of record.
+    ///
+    /// The same figure for every case, which is the point: the SUBMITTED
+    /// candidate is one candidate and only the message its signatures were
+    /// taken over varies, so a refusal is attributable to the term that
+    /// moved rather than to a different transaction.
+    pub const RECORDED_SUBMITTED_BYTES: usize = 8993;
+}
 
 /// One recorded digest, from the order this workspace prints them in.
 #[cfg(test)]
@@ -3786,13 +3718,14 @@ fn recorded_bytes(text: &str) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use super::historical_v1_mirrors::*;
     use super::*;
 
-    const MINTED_RENDERED_LINES: &[&str] = &[
+    const HISTORICAL_V1_RENDERED_LINES: &[&str] = &[
         "issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb",
         "predecessor_fixture_digest 00da5ef7aaef159237ef5479b419abeee6307e913cc4e244f3226c64c5489262",
         "run_of_record_v2 recorded",
-        "run_of_record_projection ready schema_version 1",
+        "run_of_record_projection refused HistoricalV1ProjectionRetired",
         "coin 0 asset explicit fb93ca056d92e29c27986a508f4bd3566f64ea04543f65aa51825fd8d4c84fd7",
         "coin 0 value commitment 0828d616da18038066f8af4af94a5c6afa9195ece494b9520fc7c81916dc68f000",
         "coin 0 program 5120508f7d2b9339123105ec650f9e93ae232b9e21b1d8781295d7a34a80acf8a235",
@@ -4055,19 +3988,24 @@ mod tests {
     }
 
     #[test]
-    fn the_legacy_literals_still_build_the_projection_fixture() {
-        assert!(ProofBearingRunOfRecord::try_from(&synthetic_completed_live_record()).is_ok());
+    fn schema_one_emission_from_live_data_is_retired() {
+        assert_eq!(
+            ProofBearingRunOfRecord::try_from(&synthetic_completed_live_record()),
+            Err(RunOfRecordProjectionRefusal::HistoricalV1ProjectionRetired),
+        );
     }
 
-    fn minted_v2_run_of_record() -> &'static ProofBearingRunOfRecord {
-        let ProofBearingRunOfRecordV2::Recorded(recorded) = construction_run_of_record_v2() else {
-            panic!("the V2 run of record is still pending");
+    fn historical_v1_run_of_record_fixture() -> &'static ProofBearingRunOfRecord {
+        let ProofBearingRunOfRecordV2::Recorded(recorded) =
+            historical_v1_construction_run_of_record()
+        else {
+            panic!("the historical-v1 run of record is still pending");
         };
         recorded
     }
 
-    fn minted_completed_live_record() -> ProofBearingObservationRecord {
-        let recorded = minted_v2_run_of_record();
+    fn historical_v1_live_fixture() -> ProofBearingObservationRecord {
+        let recorded = historical_v1_run_of_record_fixture();
         let txid = transaction::bytes::Txid::from_internal([
             213, 210, 27, 55, 227, 24, 92, 57, 222, 119, 186, 29, 24, 224, 62, 88, 113, 54, 186, 1,
             131, 115, 165, 46, 214, 152, 125, 0, 58, 228, 153, 219,
@@ -4127,16 +4065,16 @@ mod tests {
     }
 
     #[test]
-    fn the_v2_run_of_record_is_recorded() {
+    fn the_historical_v1_run_is_recorded() {
         assert!(matches!(
-            construction_run_of_record_v2(),
+            historical_v1_construction_run_of_record(),
             ProofBearingRunOfRecordV2::Recorded(_)
         ));
     }
 
     #[test]
-    fn the_v2_construction_refusals_are_captured_in_ceremony_order() {
-        let recorded = minted_v2_run_of_record();
+    fn the_historical_v1_construction_refusals_are_captured_in_ceremony_order() {
+        let recorded = historical_v1_run_of_record_fixture();
         let refusals = recorded
             .construction_refusals()
             .captured()
@@ -4153,8 +4091,8 @@ mod tests {
     }
 
     #[test]
-    fn the_minted_recorded_coins_are_internally_consistent() {
-        let recorded = minted_v2_run_of_record();
+    fn the_historical_v1_recorded_coins_are_internally_consistent() {
+        let recorded = historical_v1_run_of_record_fixture();
         let issued_asset = asset_of(recorded.issued_asset()).expect("the recorded asset is valid");
         let owners = [
             OwnerLeaf::derive(&FIRST_SCALAR).expect("the first owner derives"),
@@ -4183,14 +4121,11 @@ mod tests {
     }
 
     #[test]
-    fn the_report_emits_the_minted_record_byte_for_byte() {
-        let live = minted_completed_live_record();
-        let projected = ProofBearingRunOfRecord::try_from(&live)
-            .expect("the minted renderer fixture projects completely");
+    fn the_historical_rendering_stays_byte_for_byte_except_for_the_retired_emitter() {
+        let live = historical_v1_live_fixture();
         let rendered = render_proof_bearing_observation(&live);
 
-        assert_eq!(&projected, minted_v2_run_of_record());
-        for expected in MINTED_RENDERED_LINES {
+        for expected in HISTORICAL_V1_RENDERED_LINES {
             assert!(
                 rendered.lines().any(|line| line == *expected),
                 "the renderer omitted or changed `{expected}`",
@@ -4199,10 +4134,10 @@ mod tests {
     }
 
     #[test]
-    fn an_incomplete_live_record_refuses_archival_projection() {
+    fn a_historical_live_record_refuses_archival_emission() {
         assert_eq!(
-            ProofBearingRunOfRecord::try_from(&ProofBearingObservationRecord::default()),
-            Err(RunOfRecordProjectionRefusal::MissingIssuedAsset)
+            ProofBearingRunOfRecord::try_from(&synthetic_completed_live_record()),
+            Err(RunOfRecordProjectionRefusal::HistoricalV1ProjectionRetired),
         );
     }
 
@@ -4349,7 +4284,7 @@ mod tests {
 
     #[test]
     fn schema_one_is_explicitly_historical_v1() {
-        let historical = minted_v2_run_of_record();
+        let historical = historical_v1_run_of_record_fixture();
 
         assert_eq!(historical.schema_version(), 1);
         assert_eq!(
@@ -4375,7 +4310,7 @@ mod tests {
 
     #[test]
     fn schema_one_historical_facts_refuse_the_forward_v2_projection() {
-        let historical = minted_completed_live_record();
+        let historical = historical_v1_live_fixture();
 
         assert_eq!(
             ForwardV2ProofBearingRunOfRecord::try_from(&historical),
@@ -4397,14 +4332,6 @@ mod tests {
         );
         assert_eq!(forward.observations().name(), "recorded");
         assert_eq!(forward.acceptance().name(), "recorded");
-        assert_ne!(
-            forward
-                .observations()
-                .recorded()
-                .expect("the projected observations are recorded")
-                .predecessor_digest(),
-            minted_v2_run_of_record().predecessor_digest()
-        );
         assert!(
             rendered.contains("forward_v2_run_of_record observations_recorded acceptance_recorded")
         );

@@ -1961,7 +1961,7 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
     out
 }
 
-/// The run of record: what one execution against a real node observed.
+/// Historical-v1 data: what one execution against a real node observed.
 ///
 /// # Why the observation is a constant and not a stored file
 ///
@@ -1970,6 +1970,9 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
 /// figures ONE run against a real node produced, written down so a later
 /// reader can ask the chain the same question. They re-run nothing and
 /// prove nothing by existing; they make the run's own answer quotable.
+/// New historical callers use
+/// [`crate::live_history_v1::owner_signing_negatives`]; this compatibility
+/// path remains for the separately owned native-guide cleanup.
 pub mod run_of_record {
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
@@ -2128,6 +2131,7 @@ pub mod run_of_record {
 #[cfg(test)]
 mod tests {
     use super::{BARE_U_PROGRAM, changed_range};
+    use crate::live_history_v1::owner_signing_negatives as history;
 
     #[test]
     fn changed_range_bounds_a_mutation_from_both_ends() {
@@ -2144,11 +2148,10 @@ mod tests {
         // OP_EQUALVERIFY or OP_VERIFY. The control reveals coordinator then
         // member; two-coordinators collapses to coordinator at both, and
         // no-coordinator to member at both.
-        use super::run_of_record as run;
         let arrangements = [
-            run::CONTROL_ARRANGEMENT,
-            run::TWO_COORDINATORS_ARRANGEMENT,
-            run::NO_COORDINATOR_ARRANGEMENT,
+            history::CONTROL_ARRANGEMENT,
+            history::TWO_COORDINATORS_ARRANGEMENT,
+            history::NO_COORDINATOR_ARRANGEMENT,
         ];
         let mut seen = std::collections::BTreeSet::new();
         for arrangement in arrangements {
@@ -2160,19 +2163,19 @@ mod tests {
         // The two driven verdicts are distinct clauses: the coordinator
         // index EqualVerify and the member bound Verify.
         assert_ne!(
-            run::TWO_COORDINATORS_REJECT_DETAIL,
-            run::NO_COORDINATOR_REJECT_DETAIL,
+            history::TWO_COORDINATORS_REJECT_DETAIL,
+            history::NO_COORDINATOR_REJECT_DETAIL,
             "the two leaf-arrangement rows draw one verdict",
         );
         // The ceremony's own map from arrangement to row matches the run of
         // record's constants.
         assert_eq!(
             super::LeafArrangement::TwoCoordinators.sources(),
-            run::TWO_COORDINATORS_ARRANGEMENT,
+            history::TWO_COORDINATORS_ARRANGEMENT,
         );
         assert_eq!(
             super::LeafArrangement::NoCoordinator.sources(),
-            run::NO_COORDINATOR_ARRANGEMENT,
+            history::NO_COORDINATOR_ARRANGEMENT,
         );
     }
 
@@ -2195,22 +2198,24 @@ mod tests {
         // separate by range; the three structural surgeries change the
         // shape, which is what separates the two output-cardinality mutants
         // that share the un-localizable structural range.
-        use super::run_of_record as run;
         let field = |range| (range, (2_usize, 2_usize));
         let separators = [
-            field(run::WRONG_EXPLICIT_ASSET_FIELD_RANGE),
-            field(run::CONFIDENTIAL_ASSET_COMMITMENT_FIELD_RANGE),
-            field(run::OUTPUT_TOTAL_ONE_BELOW_FIELD_RANGE),
-            field(run::OUTPUT_TOTAL_ONE_ABOVE_FIELD_RANGE),
+            field(history::WRONG_EXPLICIT_ASSET_FIELD_RANGE),
+            field(history::CONFIDENTIAL_ASSET_COMMITMENT_FIELD_RANGE),
+            field(history::OUTPUT_TOTAL_ONE_BELOW_FIELD_RANGE),
+            field(history::OUTPUT_TOTAL_ONE_ABOVE_FIELD_RANGE),
             (
-                run::OUTPUT_CARDINALITY_FIELD_RANGE,
-                run::PRIVATE_OUTPUT_OMITTED_SHAPE,
+                history::OUTPUT_CARDINALITY_FIELD_RANGE,
+                history::PRIVATE_OUTPUT_OMITTED_SHAPE,
             ),
             (
-                run::OUTPUT_CARDINALITY_FIELD_RANGE,
-                run::HIDDEN_PRIVATE_U_OUTPUT_SHAPE,
+                history::OUTPUT_CARDINALITY_FIELD_RANGE,
+                history::HIDDEN_PRIVATE_U_OUTPUT_SHAPE,
             ),
-            (run::OMITTED_SOURCE_FIELD_RANGE, run::OMITTED_SOURCE_SHAPE),
+            (
+                history::OMITTED_SOURCE_FIELD_RANGE,
+                history::OMITTED_SOURCE_SHAPE,
+            ),
         ];
         let mut seen = std::collections::BTreeSet::new();
         for separator in separators {

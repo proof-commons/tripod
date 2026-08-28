@@ -1776,81 +1776,90 @@ fn hex(bytes: [u8; 32]) -> String {
     })
 }
 
-/// Forward expectations under the sole live fixture-digest v2 algorithm.
+/// Active forward-v2 pins retained for derivation and corpus equality tests.
 ///
-/// These are fixture identities, not run observations. Each awaits a node-accepted v2 run before
-/// it can pair with an accepted identity as historical evidence.
+/// These are fixture identities, not substitutes for target acceptances. Every
+/// corpus-bearing pin is checked against the validated current projection.
 #[cfg(test)]
 mod forward_fixture_digest_v2 {
     /// The private-split successor fixture's forward digest under fixture-digest v2.
     ///
-    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
-    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
-    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    /// This fixture's recorded v1 digest and accepted identity are immutable
+    /// halves of one historical observation in
+    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// unconditionally; the active derivation and validated corpus bind here.
     pub const SPLIT_SUCCESSOR_DIGEST: &str =
         "52f9d832e9ff93070ea9849cd8d5f817746fdb8bc544e6d94207810e594014ca";
 
     /// The many-to-many successor fixture's forward digest under fixture-digest v2.
     ///
-    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
-    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
-    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    /// This fixture's recorded v1 digest and accepted identity are immutable
+    /// halves of one historical observation in
+    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// unconditionally; the active derivation and validated corpus bind here.
     pub const MANY_TO_MANY_SUCCESSOR_DIGEST: &str =
         "67ec9e516460e453fcc0bf6cfacfdc58141afefa0b4e4c2d3ff3c2d7a2495b98";
 
     /// The several-distinct-owners successor fixture's forward digest under fixture-digest v2.
     ///
-    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
-    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
-    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    /// This fixture's recorded v1 digest and accepted identity are immutable
+    /// halves of one historical observation in
+    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// unconditionally; the active derivation and validated corpus bind here.
     pub const SEVERAL_OWNERS_SUCCESSOR_DIGEST: &str =
         "6d86b884565d6d4bc1f81fb6915dc91987d97a62e5a3ca896403ef6d4963e30c";
 
     /// The strict one-to-one successor fixture's forward digest under fixture-digest v2.
     ///
-    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
-    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
-    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    /// This fixture's recorded v1 digest and accepted identity are immutable
+    /// halves of one historical observation in
+    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// unconditionally; the active derivation and validated corpus bind here.
     pub const STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST: &str =
         "7ec97a6e6cf6bf7e6c4308c007e55cf6ac799113abb3b93e3fb3d559c510ec14";
 
     /// The fee-bearing successor fixture's forward digest under fixture-digest v2.
     ///
-    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
-    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
-    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    /// This fixture's recorded v1 digest and accepted identity are immutable
+    /// halves of one historical observation in
+    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// unconditionally; the active derivation and validated corpus bind here.
     pub const FEE_BEARING_SUCCESSOR_DIGEST: &str =
         "bba4ea6e919b8619d75d035b5f6ee9e8aac3a87c00336c8a86c5973a84936bad";
 
     /// The private-merge successor fixture's forward digest under fixture-digest v2.
     ///
-    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
-    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
-    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    /// This fixture's recorded v1 digest and accepted identity are immutable
+    /// halves of one historical observation in
+    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// unconditionally; the active derivation and validated corpus bind here.
     pub const MERGE_SUCCESSOR_DIGEST: &str =
         "d4a4a2e4371a81d4d74ad2fbceef64303091496c374e11e2208c6d3bde1ea0d9";
 
     /// The exit-crossing successor fixture's forward digest under fixture-digest v2.
     ///
-    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
-    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
-    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    /// This fixture's recorded v1 digest and accepted identity are immutable
+    /// halves of one historical observation in
+    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// unconditionally; the active derivation and validated corpus bind here.
     pub const EXIT_CROSSING_SUCCESSOR_DIGEST: &str =
         "013df551e2862b4018f2e9b2c2cc83174571234f1ad200605de66232514ea001";
 
     /// The entry-crossing successor fixture's forward digest under fixture-digest v2.
     ///
-    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
-    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
-    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    /// This fixture's recorded v1 digest and accepted identity are immutable
+    /// halves of one historical observation in
+    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// unconditionally; the active derivation and validated corpus bind here.
     pub const ENTRY_CROSSING_SUCCESSOR_DIGEST: &str =
         "7c3bda6049cb80635b0580148002c185eeee8ea48e67bfd1fd698e28a65b17c0";
 
     /// The pure-split successor fixture's forward digest under fixture-digest v2.
     ///
-    /// This is the same fixture whose recorded v1 digest and accepted identity are immutable halves
-    /// of one historical observation in [`super::run_of_record`]. Algorithm v2 binds amounts
-    /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+    /// This fixture's recorded v1 digest and accepted identity are immutable
+    /// halves of one historical observation in
+    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// unconditionally; the active derivation and validated corpus bind here.
     pub const PURE_SPLIT_SUCCESSOR_DIGEST: &str =
         "2c8318413c8a726c6c65587d4c48d60af1ba82f1622152d216266c5858658671";
 
@@ -1865,10 +1874,39 @@ mod forward_fixture_digest_v2 {
 
 #[cfg(test)]
 mod byte_identity_tests {
-    use super::{
-        MultiShapePlanner, PrivateShape, forward_fixture_digest_v2 as forward_v2, hex,
-        run_of_record as run,
-    };
+    use super::{MultiShapePlanner, PrivateShape, forward_fixture_digest_v2 as forward_v2, hex};
+
+    fn current_ceremony(shape: PrivateShape) -> &'static str {
+        match shape {
+            PrivateShape::Split => "multi-split",
+            PrivateShape::PureSplit => "multi-pure-split",
+            PrivateShape::ManyToMany => "multi-many-to-many",
+            PrivateShape::SeveralDistinctOwners => "multi-several-owners",
+            PrivateShape::StrictOneToOne => "multi-strict-one-to-one",
+            PrivateShape::OneToOneWithFee => "multi-one-to-one-with-fee",
+            PrivateShape::PrivateMerge => "multi-private-merge",
+            PrivateShape::ExitCrossing => "multi-exit-crossing",
+            PrivateShape::EntryCrossing => "multi-entry-crossing",
+            PrivateShape::PairedOneToOne => "pairs-arc",
+        }
+    }
+
+    fn current_issued_asset(shape: PrivateShape) -> &'static str {
+        crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates")
+            .ceremony_projection(current_ceremony(shape))
+            .expect("the current shape ceremony is present")
+            .issued_asset_display()
+            .expect("the current shape ceremony records its issued asset")
+    }
+
+    fn current_corpus_successor(shape: PrivateShape) -> Option<&'static [u8; 32]> {
+        crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates")
+            .ceremony_projection(current_ceremony(shape))
+            .expect("the current shape ceremony is present")
+            .fixture_digest("successor")
+    }
 
     /// Every pre-wave shape registers its successor under the forward digest for the live v2
     /// algorithm.
@@ -1890,10 +1928,10 @@ mod byte_identity_tests {
     /// lands on a chain; the algorithm move itself is represented by separate forward pins rather
     /// than by rewriting or live-revalidating the recorded v1 digests.
     ///
-    /// Four accepted identities remain paired with their immutable recorded v1 digests. The paired
-    /// arc recorded an accepted identity but no v1 fixture digest, so its forward pin has no
-    /// historical digest sibling. The predecessor half is checked by the sibling test in the
-    /// private-restart module.
+    /// Historical-v1 comparisons are absent from this active test. The paired
+    /// arc has no corpus digest record, so its retained forward pin is checked
+    /// against derivation only; every other pin is also checked against the
+    /// validated corpus projection.
     #[test]
     fn the_pre_wave_shapes_register_under_their_forward_v2_digests() {
         // The genesis identity is not a term of any fixture digest, and
@@ -1921,8 +1959,8 @@ mod byte_identity_tests {
             let mut planner =
                 MultiShapePlanner::for_shape(shape, genesis).expect("the ceremony builds");
             planner
-                .settle_asset(run::ISSUED_ASSET)
-                .expect("the run of record's own fixtures register");
+                .settle_asset(current_issued_asset(shape))
+                .expect("the current corpus fixtures register");
             assert_eq!(
                 planner
                     .record()
@@ -1933,37 +1971,14 @@ mod byte_identity_tests {
                 "{}'s successor fixture drifted from its forward v2 pin",
                 shape.name(),
             );
-        }
-
-        // Owner ruling Q19: v2 binds amounts unconditionally, so every fixture with a recorded v1
-        // digest must differ from that historical sibling. Per Q21 these compare static pins; they
-        // do not revalidate v1 with a legacy algorithm.
-        for (shape, digest_v2, recorded_v1) in [
-            (
-                "private-split",
-                forward_v2::SPLIT_SUCCESSOR_DIGEST,
-                run::SPLIT_SUCCESSOR_DIGEST,
-            ),
-            (
-                "many-to-many",
-                forward_v2::MANY_TO_MANY_SUCCESSOR_DIGEST,
-                run::MANY_TO_MANY_SUCCESSOR_DIGEST,
-            ),
-            (
-                "several-distinct-owners",
-                forward_v2::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
-                run::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
-            ),
-            (
-                "strict-one-to-one",
-                forward_v2::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST,
-                run::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST,
-            ),
-        ] {
-            assert_ne!(
-                digest_v2, recorded_v1,
-                "owner ruling Q19 requires {shape}'s amount-bearing fixture digest to move in v2",
-            );
+            if let Some(corpus_pin) = current_corpus_successor(shape) {
+                assert_eq!(
+                    expected_v2,
+                    hex(*corpus_pin),
+                    "{}'s active pin differs from the corpus",
+                    shape.name(),
+                );
+            }
         }
     }
 
@@ -1974,9 +1989,8 @@ mod byte_identity_tests {
     /// would mean the handle is not a term of the transcript, which is a
     /// defect and not a coincidence.
     ///
-    /// Each accepted identity and recorded v1 digest remains the immutable pair from its historical
-    /// run. The v2 pin names the same fixture under the live algorithm and awaits its own accepted
-    /// run before it can become half of a new observation pair.
+    /// The historical pairs remain outside this active uniqueness check. The
+    /// values here are current derivations and forward-v2 pins only.
     #[test]
     fn the_shapes_this_wave_added_carry_digests_of_their_own() {
         let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
@@ -1985,15 +1999,22 @@ mod byte_identity_tests {
             let mut planner =
                 MultiShapePlanner::for_shape(shape, genesis).expect("the ceremony builds");
             planner
-                .settle_asset(run::ISSUED_ASSET)
+                .settle_asset(current_issued_asset(shape))
                 .expect("every shape's fixtures register");
-            digests.push(
-                planner
-                    .record()
-                    .successor_digest()
-                    .map(hex)
-                    .expect("the successor registered"),
-            );
+            let digest = planner
+                .record()
+                .successor_digest()
+                .map(hex)
+                .expect("the successor registered");
+            if let Some(corpus_pin) = current_corpus_successor(shape) {
+                assert_eq!(
+                    digest,
+                    hex(*corpus_pin),
+                    "{}'s active derivation differs from the corpus",
+                    shape.name(),
+                );
+            }
+            digests.push(digest);
         }
         assert_eq!(digests.len(), PrivateShape::ALL.len());
 
@@ -2006,63 +2027,26 @@ mod byte_identity_tests {
             "two shapes registered the same successor fixture: {digests:?}",
         );
 
+        assert_eq!(digests[0], forward_v2::SPLIT_SUCCESSOR_DIGEST);
+        assert_eq!(digests[1], forward_v2::MANY_TO_MANY_SUCCESSOR_DIGEST);
+        assert_eq!(digests[2], forward_v2::SEVERAL_OWNERS_SUCCESSOR_DIGEST);
+        assert_eq!(digests[3], forward_v2::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST);
         assert_eq!(digests[4], forward_v2::FEE_BEARING_SUCCESSOR_DIGEST);
         assert_eq!(digests[5], forward_v2::MERGE_SUCCESSOR_DIGEST);
         assert_eq!(digests[6], forward_v2::EXIT_CROSSING_SUCCESSOR_DIGEST);
         assert_eq!(digests[7], forward_v2::ENTRY_CROSSING_SUCCESSOR_DIGEST);
         assert_eq!(digests[8], forward_v2::PURE_SPLIT_SUCCESSOR_DIGEST);
-
-        // Owner ruling Q19: v2 binds amounts unconditionally, so every amount-bearing fixture's
-        // digest must differ from its recorded v1 sibling. Per Q21 these compare static pins; they
-        // do not revalidate v1 with a legacy algorithm.
-        for (shape, digest_v2, recorded_v1) in [
-            (
-                "fee-bearing",
-                forward_v2::FEE_BEARING_SUCCESSOR_DIGEST,
-                run::FEE_BEARING_SUCCESSOR_DIGEST,
-            ),
-            (
-                "merge",
-                forward_v2::MERGE_SUCCESSOR_DIGEST,
-                run::MERGE_SUCCESSOR_DIGEST,
-            ),
-            (
-                "exit-crossing",
-                forward_v2::EXIT_CROSSING_SUCCESSOR_DIGEST,
-                run::EXIT_CROSSING_SUCCESSOR_DIGEST,
-            ),
-            (
-                "entry-crossing",
-                forward_v2::ENTRY_CROSSING_SUCCESSOR_DIGEST,
-                run::ENTRY_CROSSING_SUCCESSOR_DIGEST,
-            ),
-            (
-                "pure-split",
-                forward_v2::PURE_SPLIT_SUCCESSOR_DIGEST,
-                run::PURE_SPLIT_SUCCESSOR_DIGEST,
-            ),
-        ] {
-            assert_ne!(
-                digest_v2, recorded_v1,
-                "owner ruling Q19 requires {shape}'s amount-bearing fixture digest to move in v2",
-            );
-        }
+        assert_eq!(digests[9], forward_v2::PAIRED_ONE_TO_ONE_SUCCESSOR_DIGEST);
     }
 
-    /// The fee-bearing recorded v1 digest and accepted identity remain one historical observation,
-    /// while the live v2 fixture identity is checked separately.
-    ///
-    /// The historical pair does not move and is not live-revalidated. Under owner ruling Q19,
-    /// fixture-digest v2 binds amounts unconditionally, so the same fixture now has a distinct
-    /// forward digest. No node is claimed to have accepted a candidate under v2; that would require
-    /// a new run and observation pair.
+    /// The fee-bearing current derivation remains pinned to the corpus.
     #[test]
-    fn the_fee_bearing_digest_and_its_acceptance_belong_to_one_run() {
+    fn the_fee_bearing_current_digest_is_pinned() {
         let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
         let mut planner = MultiShapePlanner::for_shape(PrivateShape::OneToOneWithFee, genesis)
             .expect("the ceremony builds");
         planner
-            .settle_asset(run::ISSUED_ASSET)
+            .settle_asset(current_issued_asset(PrivateShape::OneToOneWithFee))
             .expect("the fee-bearing successor registers");
         let digest_v2 = planner
             .record()
@@ -2075,23 +2059,11 @@ mod byte_identity_tests {
             forward_v2::FEE_BEARING_SUCCESSOR_DIGEST,
             "the fee-bearing fixture registers under its forward v2 digest",
         );
-
-        // The acceptance is present, is the identity the register cites,
-        // and is a target-computed one rather than a placeholder.
         assert_eq!(
-            run::FEE_BEARING_ACCEPTED_IDENTITY,
-            Some(run::FEE_BEARING_SUCCESSOR_IDENTITY),
-            "the optional acceptance and the cited identity are the same run",
-        );
-        assert_eq!(
-            run::FEE_BEARING_SUCCESSOR_IDENTITY.len(),
-            64,
-            "an accepted identity is a target-computed transaction identity",
-        );
-        assert_ne!(
-            run::FEE_BEARING_SUCCESSOR_IDENTITY,
-            run::FEE_BEARING_SUCCESSOR_DIGEST,
-            "the identity a node computed is not the digest a registry computed",
+            digest_v2,
+            current_corpus_successor(PrivateShape::OneToOneWithFee)
+                .map(|digest| hex(*digest))
+                .expect("the current corpus carries the fee-bearing successor digest"),
         );
     }
 }
@@ -2141,6 +2113,21 @@ mod tests {
         bytes[31] = 0x2a;
         bytes
     };
+
+    #[test]
+    fn historical_fee_bearing_digest_and_acceptance_remain_distinct_fields() {
+        use crate::live_history_v1::multi_shapes as history;
+
+        assert_eq!(
+            history::FEE_BEARING_ACCEPTED_IDENTITY,
+            Some(history::FEE_BEARING_SUCCESSOR_IDENTITY),
+        );
+        assert_eq!(history::FEE_BEARING_SUCCESSOR_IDENTITY.len(), 64);
+        assert_ne!(
+            history::FEE_BEARING_SUCCESSOR_IDENTITY,
+            history::FEE_BEARING_SUCCESSOR_DIGEST,
+        );
+    }
 
     /// The multi-output constructor the step-five stop said was absent
     /// now builds a three-output successor: the split shape's fixture,
@@ -2398,7 +2385,7 @@ mod tests {
     }
 }
 
-/// The run of record: what one execution of the fifth step observed.
+/// Historical-v1 data from the recorded fifth-step executions.
 ///
 /// # Why the observation is a constant and not a stored file
 ///
@@ -2421,7 +2408,9 @@ mod tests {
 /// lane binds itself to, on a disposable development chain the run
 /// created and destroyed. All three shapes ran serialized against one
 /// node, because the shared instance does not sustain the parallel lane's
-/// concurrent nodes.
+/// concurrent nodes. New historical callers use
+/// [`crate::live_history_v1::multi_shapes`]; this compatibility path remains
+/// for the separately owned native-guide cleanup.
 pub mod run_of_record {
     /// The disposable asset all three runs issued.
     ///

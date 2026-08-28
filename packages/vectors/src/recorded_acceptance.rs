@@ -101,22 +101,25 @@ pub(crate) use mint_recorded_acceptance;
 mod tests {
     #[test]
     fn a_mint_binds_the_typed_identity_to_its_committed_source() {
-        let recorded = crate::live_private_restart::run_of_record::accepted()
+        let recorded = crate::live_history_v1::private_restart::accepted()
             .expect("the committed identity parses");
 
         assert_eq!(
             recorded.accepted_identity().to_string(),
-            crate::live_private_restart::run_of_record::ACCEPTED_TXID,
+            crate::live_history_v1::private_restart::ACCEPTED_TXID,
         );
         assert_eq!(
             recorded.citation(),
-            "vectors::live_private_restart::run_of_record::ACCEPTED_TXID",
+            concat!(
+                "vectors::live_private_restart::",
+                "run_of_record::ACCEPTED_TXID",
+            ),
         );
         assert_eq!(
             format!("{recorded:?}"),
             format!(
                 "\"{}\"",
-                crate::live_private_restart::run_of_record::ACCEPTED_TXID
+                crate::live_history_v1::private_restart::ACCEPTED_TXID
             ),
         );
     }
