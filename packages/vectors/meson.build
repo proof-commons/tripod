@@ -27,6 +27,7 @@ vectors_source_files = files(
   'src/live_first_party.rs',
   'src/live_history_v1.rs',
   'src/live_history_v1/conservation_negatives.rs',
+  'src/live_history_v1/pair_arc.rs',
   'src/live_keypath_probe.rs',
   'src/live_measurements.rs',
   'src/live_minimality_report.rs',

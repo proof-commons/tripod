@@ -57,9 +57,7 @@ pub mod keypath_probe_phase_b {
 }
 
 /// Historical paired explicit/private observation.
-pub mod pair_arc {
-    pub use crate::live_pair_arc::run_of_record::*;
-}
+pub mod pair_arc;
 
 /// Historical selected-owner observation and its seven expected outcomes.
 pub mod owner_observation {
@@ -182,10 +180,7 @@ mod tests {
             super::keypath_probe_phase_b::REFUSAL_DETAIL,
             crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_DETAIL,
         );
-        assert_eq!(
-            super::pair_arc::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER,
-            crate::live_pair_arc::run_of_record::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER,
-        );
+        assert_eq!(super::pair_arc::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER, 2,);
         assert_eq!(
             super::owner_observation::EXPECTED_CASE_OUTCOMES,
             crate::live_owner_observation::run_of_record::EXPECTED_CASE_OUTCOMES,

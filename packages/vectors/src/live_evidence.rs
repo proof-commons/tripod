@@ -3021,7 +3021,7 @@ pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 /// materializations. It is not a claim about §16.1's other four pairs,
 /// whose members remain unsubmitted and whose registry entries say so.
 pub const A_PAIRED_ACCEPTED_PROJECTION_COMPARISON_EXISTS: bool =
-    crate::live_pair_arc::run_of_record::A_PAIR_ARC_LEDGER_EXISTS;
+    crate::live_history_v1::pair_arc::A_PAIR_ARC_LEDGER_EXISTS;
 
 /// The relation one PAIRS ARC observed over its two accepted members.
 ///
@@ -3038,7 +3038,7 @@ pub const A_PAIRED_ACCEPTED_PROJECTION_COMPARISON_EXISTS: bool =
 fn observed_row_paired_relation(
     row: &LiveSafetyRow,
 ) -> Option<(&'static str, &'static str, &'static str)> {
-    use crate::live_pair_arc::run_of_record as arc;
+    use crate::live_history_v1::pair_arc as arc;
 
     match row.name() {
         "projection-equality-with-paired-explicit" => {
