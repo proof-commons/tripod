@@ -535,6 +535,10 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
 ///
 /// Whatever [`derive_live_evidence_plan`] returns when a source artifact
 /// does not build.
+///
+/// The returned public plan is already the validated corpus overlay view. This
+/// consumer never receives the immutable raw classifier or a caller-authored
+/// standing, so incomplete archive facts cannot shrink the register.
 pub fn outstanding_rows() -> Result<Vec<&'static str>, VectorError> {
     let plan = derive_live_evidence_plan()?;
     Ok(plan
