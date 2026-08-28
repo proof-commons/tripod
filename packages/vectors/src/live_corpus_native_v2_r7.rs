@@ -2167,17 +2167,35 @@ fn parse_transcript(
     })
 }
 
-fn changed_range(left: &[u8], right: &[u8]) -> (usize, usize) {
-    let prefix = left.iter().zip(right).take_while(|(a, b)| a == b).count();
+fn exact_changed_range(left: &[u8], right: &[u8]) -> Option<(usize, usize)> {
+    if left == right {
+        return None;
+    }
+    let start = left.iter().zip(right).take_while(|(a, b)| a == b).count();
     let suffix = left
         .iter()
         .rev()
         .zip(right.iter().rev())
         .take_while(|(a, b)| a == b)
         .count()
-        .min(left.len().saturating_sub(prefix))
-        .min(right.len().saturating_sub(prefix));
-    (prefix, left.len().saturating_sub(suffix))
+        .min(left.len().saturating_sub(start))
+        .min(right.len().saturating_sub(start));
+    Some((start, left.len().saturating_sub(suffix)))
+}
+
+fn changed_bytes_are_within(control: &[u8], mutant: &[u8], start: usize, end: usize) -> bool {
+    if start >= end {
+        return false;
+    }
+    if end > control.len() {
+        return false;
+    }
+    exact_changed_range(control, mutant).is_some_and(|(changed_start, changed_end)| {
+        if changed_start < start {
+            return false;
+        }
+        changed_end <= end
+    })
 }
 
 fn witness_item_is_exact(
@@ -2387,7 +2405,9 @@ fn committed_leaves_match(
 
 fn locator_matches(
     control: &TargetTransaction,
-    mutant: &TargetTransaction,
+    control_bytes: &[u8],
+    mutant: Option<&TargetTransaction>,
+    mutant_bytes: &[u8],
     mutant_kind: LiveMutantKind,
     locator: &LiveMutationLocator,
 ) -> bool {
@@ -2396,33 +2416,31 @@ fn locator_matches(
             let Ok(control_field) = control.locate_serialized_field(*locator) else {
                 return false;
             };
-            let Ok(mutant_field) = mutant.locate_serialized_field(*locator) else {
-                return false;
-            };
-            let (start, end) = changed_range(&control.encode(), &mutant.encode());
-            start < end
-                && start >= control_field.range().start
-                && end <= control_field.range().end
-                && start >= mutant_field.range().start
-                && end <= mutant_field.range().end
+            changed_bytes_are_within(
+                control_bytes,
+                mutant_bytes,
+                control_field.range().start,
+                control_field.range().end,
+            )
         }
         LiveMutationLocator::WitnessItem {
             input_index,
             item_index,
-        } => witness_item_is_exact(control, mutant, *input_index, *item_index),
-        LiveMutationLocator::WitnesslessRange { start, end } => {
-            *start < *end
-                && changed_range(
-                    &control.encode_without_witness(),
-                    &mutant.encode_without_witness(),
-                ) == (*start, *end)
-        }
+        } => mutant.is_some_and(|mutant| {
+            witness_item_is_exact(control, mutant, *input_index, *item_index)
+        }),
+        LiveMutationLocator::WitnesslessRange { start, end } => mutant.is_some_and(|mutant| {
+            exact_changed_range(
+                &control.encode_without_witness(),
+                &mutant.encode_without_witness(),
+            ) == Some((*start, *end))
+        }),
         LiveMutationLocator::TransactionShape {
             control_inputs,
             mutant_inputs,
             control_outputs,
             mutant_outputs,
-        } => {
+        } => mutant.is_some_and(|mutant| {
             control.inputs().len() == *control_inputs
                 && mutant.inputs().len() == *mutant_inputs
                 && control.outputs().len() == *control_outputs
@@ -2430,13 +2448,12 @@ fn locator_matches(
                 && (control_inputs != mutant_inputs || control_outputs != mutant_outputs)
                 && control.version() == mutant.version()
                 && control.lock_time() == mutant.lock_time()
-        }
+        }),
         LiveMutationLocator::WitnessPathShape { .. } => {
-            witness_path_matches(control, mutant, locator)
+            mutant.is_some_and(|mutant| witness_path_matches(control, mutant, locator))
         }
-        LiveMutationLocator::CommittedLeafArrangement { .. } => {
-            committed_leaves_match(control, mutant, mutant_kind, locator)
-        }
+        LiveMutationLocator::CommittedLeafArrangement { .. } => mutant
+            .is_some_and(|mutant| committed_leaves_match(control, mutant, mutant_kind, locator)),
     }
 }
 
@@ -2575,7 +2592,12 @@ fn pair_recomputes(explicit: &ParsedOperation, private: &ParsedOperation) -> boo
 
 struct DecodedTranscript<'a> {
     roles: [usize; 6],
-    transactions: BTreeMap<&'a str, TargetTransaction>,
+    accepted_transactions: BTreeMap<&'a str, TargetTransaction>,
+}
+
+fn decode_exact_transaction(bytes: &[u8]) -> Option<TargetTransaction> {
+    let transaction = TargetTransaction::decode(bytes).ok()?;
+    (transaction.encode() == bytes).then_some(transaction)
 }
 
 fn decode_transcript_operations(
@@ -2585,7 +2607,7 @@ fn decode_transcript_operations(
     let mut operation_ids = BTreeSet::new();
     let mut request_ids = BTreeSet::new();
     let mut response_ids = BTreeSet::new();
-    let mut transactions = BTreeMap::new();
+    let mut accepted_transactions = BTreeMap::new();
     let mut roles = [0; 6];
     for operation in &transcript.operations {
         let role_index = match operation.role {
@@ -2624,37 +2646,42 @@ fn decode_transcript_operations(
             }
             continue;
         }
-        let transaction = TargetTransaction::decode(&operation.request_bytes).map_err(|_| {
+        if !matches!(
+            operation.role,
+            OperationRole::Acceptance | OperationRole::Control | OperationRole::Paired(_)
+        ) {
+            // Refusal and auxiliary carriers are validated by their role-specific evidence.
+            continue;
+        }
+        let transaction = decode_exact_transaction(&operation.request_bytes).ok_or_else(|| {
             NativeV2ImportRefusal::TransactionDecode {
                 ceremony: ceremony.to_owned(),
                 request: operation.request_id.clone(),
             }
         })?;
-        if transaction.encode() != operation.request_bytes {
-            return Err(NativeV2ImportRefusal::TransactionDecode {
+        let identity = operation.accepted_identity.ok_or_else(|| {
+            NativeV2ImportRefusal::TransactionIdentity {
+                ceremony: ceremony.to_owned(),
+                request: operation.request_id.clone(),
+            }
+        })?;
+        let recomputed = txid_for(&operation.request_bytes).map_err(|()| {
+            NativeV2ImportRefusal::TransactionDecode {
+                ceremony: ceremony.to_owned(),
+                request: operation.request_id.clone(),
+            }
+        })?;
+        if recomputed != identity {
+            return Err(NativeV2ImportRefusal::TransactionIdentity {
                 ceremony: ceremony.to_owned(),
                 request: operation.request_id.clone(),
             });
         }
-        if let Some(identity) = operation.accepted_identity {
-            let recomputed = txid_for(&operation.request_bytes).map_err(|()| {
-                NativeV2ImportRefusal::TransactionDecode {
-                    ceremony: ceremony.to_owned(),
-                    request: operation.request_id.clone(),
-                }
-            })?;
-            if recomputed != identity {
-                return Err(NativeV2ImportRefusal::TransactionIdentity {
-                    ceremony: ceremony.to_owned(),
-                    request: operation.request_id.clone(),
-                });
-            }
-        }
-        transactions.insert(operation.request_id.as_str(), transaction);
+        accepted_transactions.insert(operation.request_id.as_str(), transaction);
     }
     Ok(DecodedTranscript {
         roles,
-        transactions,
+        accepted_transactions,
     })
 }
 
@@ -2694,22 +2721,18 @@ fn validate_refusal_locators(
             });
         }
         let control_transaction = decoded
-            .transactions
+            .accepted_transactions
             .get(control.request_id.as_str())
             .ok_or_else(|| NativeV2ImportRefusal::TransactionDecode {
                 ceremony: ceremony.to_owned(),
                 request: control.request_id.clone(),
             })?;
-        let mutant_transaction = decoded
-            .transactions
-            .get(operation.request_id.as_str())
-            .ok_or_else(|| NativeV2ImportRefusal::TransactionDecode {
-                ceremony: ceremony.to_owned(),
-                request: operation.request_id.clone(),
-            })?;
+        let mutant_transaction = decode_exact_transaction(&operation.request_bytes);
         if !locator_matches(
             control_transaction,
-            mutant_transaction,
+            &control.request_bytes,
+            mutant_transaction.as_ref(),
+            &operation.request_bytes,
             operation
                 .mutant
                 .ok_or_else(|| NativeV2ImportRefusal::MutationLocator {
