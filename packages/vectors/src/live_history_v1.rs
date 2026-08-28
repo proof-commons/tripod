@@ -229,4 +229,56 @@ mod tests {
             current.fixtures().balancing_successor(),
         );
     }
+
+    #[test]
+    fn multi_shape_q19_divergence_is_archival_only() {
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates");
+        for (historical, ceremony) in [
+            (super::multi_shapes::SPLIT_SUCCESSOR_DIGEST, "multi-split"),
+            (
+                super::multi_shapes::MANY_TO_MANY_SUCCESSOR_DIGEST,
+                "multi-many-to-many",
+            ),
+            (
+                super::multi_shapes::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
+                "multi-several-owners",
+            ),
+            (
+                super::multi_shapes::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST,
+                "multi-strict-one-to-one",
+            ),
+            (
+                super::multi_shapes::FEE_BEARING_SUCCESSOR_DIGEST,
+                "multi-one-to-one-with-fee",
+            ),
+            (
+                super::multi_shapes::MERGE_SUCCESSOR_DIGEST,
+                "multi-private-merge",
+            ),
+            (
+                super::multi_shapes::EXIT_CROSSING_SUCCESSOR_DIGEST,
+                "multi-exit-crossing",
+            ),
+            (
+                super::multi_shapes::ENTRY_CROSSING_SUCCESSOR_DIGEST,
+                "multi-entry-crossing",
+            ),
+            (
+                super::multi_shapes::PURE_SPLIT_SUCCESSOR_DIGEST,
+                "multi-pure-split",
+            ),
+        ] {
+            let current = corpus
+                .ceremony_projection(ceremony)
+                .expect("the current multi-shape ceremony is present");
+            assert_ne!(
+                recorded_digest(historical),
+                *current
+                    .fixture_digest("successor")
+                    .expect("the current successor digest is present"),
+                "{ceremony}",
+            );
+        }
+    }
 }
