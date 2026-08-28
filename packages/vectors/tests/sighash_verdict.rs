@@ -34,7 +34,17 @@ use tapscript::authorization::{
     DimensionRefusal, DimensionRole, OwnerProfileDisposition, selected_owner_profile,
 };
 use target_elements::{SighashDimension, UnreviewedGround, reviewed_elements_tapscript};
-use vectors::live_owner_observation::run_of_record::SELECTED_PROFILE_ACCEPTED_TXID;
+use vectors::live_proof_bearing_observation::forward_v2_proof_bearing_run_of_record;
+
+// The selected-profile identity minted from the validated current corpus.
+fn current_selected_profile_accepted_txid() -> &'static str {
+    forward_v2_proof_bearing_run_of_record()
+        .acceptance()
+        .recorded()
+        .expect("the authorized forward proof-bearing acceptance is recorded")
+        .reverification()
+        .accepted_txid()
+}
 
 /// The reviewed contract's sighash capability.
 fn capability() -> target_elements::SighashCapability {
@@ -77,6 +87,7 @@ fn every_required_dimension_rests_on_the_run_that_was_observed() {
     // other run fails here.
     let profile = selected_owner_profile();
     let capability = capability();
+    let accepted_txid = current_selected_profile_accepted_txid();
 
     let mut walked = 0_usize;
     for dimension in profile.required() {
@@ -88,7 +99,7 @@ fn every_required_dimension_rests_on_the_run_that_was_observed() {
         assert!(!ground.citation().terms().is_empty(), "{dimension:?}");
         assert_eq!(
             ground.exercised_by().observation().accepted_transaction(),
-            SELECTED_PROFILE_ACCEPTED_TXID,
+            accepted_txid,
             "{dimension:?} rests on the run that was observed",
         );
         walked += 1;
