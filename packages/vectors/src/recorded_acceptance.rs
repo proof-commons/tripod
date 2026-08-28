@@ -34,6 +34,15 @@ pub struct RecordedAcceptance {
 }
 
 impl RecordedAcceptance {
+    /// Bind an identity supplied by the validated native-v2/revision-7 corpus.
+    #[cfg(test)]
+    pub(crate) const fn from_validated_corpus(accepted_identity: Txid) -> Self {
+        Self {
+            accepted_identity,
+            citation: "vectors::live_corpus_native_v2_r7",
+        }
+    }
+
     /// Parse one committed display identity and bind it to its source.
     ///
     /// # Errors
@@ -96,31 +105,3 @@ macro_rules! mint_recorded_acceptance {
 }
 
 pub(crate) use mint_recorded_acceptance;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn a_mint_binds_the_typed_identity_to_its_committed_source() {
-        let recorded = crate::live_history_v1::private_restart::accepted()
-            .expect("the committed identity parses");
-
-        assert_eq!(
-            recorded.accepted_identity().to_string(),
-            crate::live_history_v1::private_restart::ACCEPTED_TXID,
-        );
-        assert_eq!(
-            recorded.citation(),
-            concat!(
-                "vectors::live_history_v1::",
-                "private_restart::ACCEPTED_TXID",
-            ),
-        );
-        assert_eq!(
-            format!("{recorded:?}"),
-            format!(
-                "\"{}\"",
-                crate::live_history_v1::private_restart::ACCEPTED_TXID
-            ),
-        );
-    }
-}

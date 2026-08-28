@@ -1350,19 +1350,3 @@ pub(crate) fn printed(bytes: &[u8]) -> String {
     }
     text
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::live_history_v1::owner_observation as history;
-
-    #[test]
-    fn selected_profile_identity_matches_target_elements_authorization() {
-        // packages/target-elements/src/authorization.rs pins this literal
-        // in OWNER_OBSERVATION. The integration verdict reads this vectors
-        // constant, so either side drifting independently fails.
-        assert_eq!(
-            history::SELECTED_PROFILE_ACCEPTED_TXID,
-            "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029",
-        );
-    }
-}

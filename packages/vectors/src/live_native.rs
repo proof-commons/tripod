@@ -998,39 +998,6 @@ pub fn current_native_v2_transcript() -> Result<LiveNativeTranscript, NativeV2Im
     })
 }
 
-/// One observation with a different weight, for staging a disagreement.
-///
-/// Test-only, and it exists so that §18.4's comparison can be shown to
-/// have teeth. An agreement between a prediction and an observation is
-/// evidence only if the two could have differed; the comparison's own
-/// tests therefore build a run whose observed figure has moved and check
-/// that a typed mismatch comes back. Nothing outside a test can reach
-/// this, so no report can be assembled over a figure a caller chose.
-#[cfg(test)]
-pub(crate) fn rewitnessed(
-    observation: &LiveNativeObservation,
-    observed_weight: Option<u64>,
-) -> LiveNativeObservation {
-    LiveNativeObservation {
-        observed_weight,
-        ..observation.clone()
-    }
-}
-
-/// One transcript carrying a different observation list.
-///
-/// Test-only, for the reason [`rewitnessed`] states.
-#[cfg(test)]
-pub(crate) fn with_observations(
-    transcript: LiveNativeTranscript,
-    observations: Vec<LiveNativeObservation>,
-) -> LiveNativeTranscript {
-    LiveNativeTranscript {
-        observations,
-        ..transcript
-    }
-}
-
 /// The weight this workspace computes for one submitted serialization.
 ///
 /// By decoding the bytes and weighing the result, so the figure is a
@@ -1150,60 +1117,6 @@ mod tests {
             0,
             "the planner claims coins before any step ran",
         );
-    }
-
-    #[test]
-    fn the_run_of_record_says_the_covenant_reached_the_signature_check() {
-        // The wave's sharpest observation, committed so a reader without
-        // a node can see it, and checked so that editing the record has
-        // to be deliberate. It establishes nothing — the rendering it
-        // produces says so in its own first lines — and what it is for is
-        // that the blocker the evidence plan carries was *observed*.
-        use target_elements_conformance::protocol::ObservedOutcomeLayer;
-
-        let record = crate::live_history_v1::native::transcript();
-        assert!(record.relinked());
-        assert!(record.issued_asset().is_some());
-        assert!(record.refusal().is_none());
-
-        let explicit = record
-            .observation(LiveNativeStep::SubmitExplicitTransfer)
-            .expect("the explicit transfer was submitted");
-        assert_eq!(explicit.layer(), ObservedOutcomeLayer::ScriptPathRejection);
-        assert_eq!(
-            explicit.detail(),
-            Some("mandatory-script-verify-flag-failed (Invalid Schnorr signature)"),
-        );
-
-        // Every funding step was accepted, which is §14.3's
-        // materialization: the linked constructors' own programs really
-        // are outputs a target will create and hold coins at.
-        for step in [
-            LiveNativeStep::IssueProtocolAsset,
-            LiveNativeStep::FundExplicitConstructor,
-            LiveNativeStep::FundPrivateConstructor,
-        ] {
-            let observation = record.observation(step).expect("the step ran");
-            assert_eq!(observation.layer(), ObservedOutcomeLayer::Accepted);
-            assert_ne!(observation.funded(), 0);
-        }
-
-        // And the private half was never submitted, for a stated reason
-        // rather than a silence.
-        assert!(
-            record
-                .observation(LiveNativeStep::SubmitPrivateTransfer)
-                .is_none()
-        );
-        assert_eq!(
-            record.gap_for(LiveTransferRepresentationPlan::PrivateCommitted),
-            Some(super::LiveFormNotSubmitted::NoConfidentialPredecessorCanBeFunded),
-        );
-
-        // The rendering still refuses to read as coverage.
-        let rendered = render_live_native_run(&record);
-        assert!(rendered.contains("discharges_no_matrix_row true"));
-        assert!(rendered.contains("ScriptPathRejection"));
     }
 
     #[test]

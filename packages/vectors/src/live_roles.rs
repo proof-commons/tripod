@@ -410,8 +410,13 @@ mod tests {
     use crate::live_evidence::LiveInfrastructureBlocker;
 
     fn recorded_acceptance() -> crate::RecordedAcceptance {
-        crate::live_history_v1::private_restart::accepted()
-            .expect("the committed acceptance identity parses")
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the native-v2/revision-7 corpus validates");
+        let acceptance = corpus
+            .acceptance_projections("private-restart-control")
+            .and_then(|acceptances| acceptances.first())
+            .expect("the current private-restart acceptance is present");
+        crate::RecordedAcceptance::from_validated_corpus(acceptance.identity())
     }
 
     fn outside(owner: &str) -> RoleGround {
