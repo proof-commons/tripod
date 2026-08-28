@@ -211,4 +211,22 @@ mod tests {
                 .expect("the current successor digest is present"),
         );
     }
+
+    #[test]
+    fn private_restart_q19_divergence_is_archival_only() {
+        let crate::live_private_restart::forward_v2::ForwardPrivateRestartExpectation::V2(current) =
+            crate::live_private_restart::forward_v2::forward_private_restart_expectation();
+        assert_ne!(
+            super::private_restart::PREDECESSOR_DIGEST,
+            current.fixtures().predecessor(),
+        );
+        assert_ne!(
+            super::private_restart::SUCCESSOR_DIGEST,
+            current.fixtures().primary_successor(),
+        );
+        assert_ne!(
+            super::private_restart::PARITY_SUCCESSOR_DIGEST,
+            current.fixtures().balancing_successor(),
+        );
+    }
 }
