@@ -661,10 +661,7 @@ fn validate_hex_fields(parsed: &ParsedLines<'_>) -> Result<(), RerunDayCorpusRef
                 validate_token_hex(parsed.name, field, value, "message", 32)?;
                 validate_optional_transaction_id(parsed.name, field, value, "txid")?;
             }
-            "control_observed" => {
-                validate_optional_transaction_id(parsed.name, field, value, "accepted_txid")?;
-            }
-            "negative" => {
+            "control_observed" | "negative" => {
                 validate_optional_transaction_id(parsed.name, field, value, "accepted_txid")?;
             }
             "provenance" => validate_provenance_hex(parsed.name, field, value)?,
