@@ -2438,6 +2438,20 @@ mod tests {
     }
 
     #[test]
+    fn schema_four_is_hard_rejected() {
+        // Red before schema 5: four is the accepted schema at this commit,
+        // so this regression reaches validation instead of refusing.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let target = projection();
+        let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
+        report.schema = 4;
+        assert_eq!(
+            validate_live_safety_report(report, &plan, &target),
+            Err(LiveSafetyReportRefusal::UnsupportedSchema(4)),
+        );
+    }
+
+    #[test]
     fn the_canonical_bytes_carry_no_volatile_field() {
         // §13.5's exclusion, checked rather than argued. Each of the ten
         // fields is given a value nothing else in the workspace produces,
