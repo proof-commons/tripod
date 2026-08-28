@@ -19,9 +19,7 @@ pub mod private_restart {
 }
 
 /// Historical private multi-shape observations.
-pub mod multi_shapes {
-    pub use crate::live_multi_shapes::run_of_record::*;
-}
+pub mod multi_shapes;
 
 /// Historical conservation control and refusal observations.
 pub mod conservation_negatives;
@@ -142,10 +140,7 @@ mod tests {
             super::private_restart::ACCEPTED_TXID,
             crate::live_private_restart::run_of_record::ACCEPTED_TXID,
         );
-        assert_eq!(
-            super::multi_shapes::OUTPUT_COUNTS,
-            crate::live_multi_shapes::run_of_record::OUTPUT_COUNTS,
-        );
+        assert_eq!(super::multi_shapes::OUTPUT_COUNTS, [3, 3, 2, 1, 2, 1, 2],);
         assert_eq!(
             super::conservation_negatives::WRONG_BLINDER_FIELD_RANGE,
             (81, 114),

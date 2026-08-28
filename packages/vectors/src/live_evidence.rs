@@ -2118,18 +2118,18 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         }
         // One receipt consumed and THREE outputs created: two recipients
         // and the balancing change back to the sender.
-        "private-split" => Some(crate::live_multi_shapes::run_of_record::SPLIT_ACCEPTED_TXID),
+        "private-split" => Some(crate::live_history_v1::multi_shapes::SPLIT_ACCEPTED_TXID),
         // TWO receipts consumed and THREE outputs created. The
         // representative case is named as representative: its input and
         // output counts both exceed the one-to-one control's, and no
         // claim is made here about any other cardinality.
         "private-many-to-many-representative" => {
-            Some(crate::live_multi_shapes::run_of_record::MANY_TO_MANY_ACCEPTED_TXID)
+            Some(crate::live_history_v1::multi_shapes::MANY_TO_MANY_ACCEPTED_TXID)
         }
         // TWO receipts under two DISTINCT published owners, each input
         // carrying the leaf its own position executes.
         "private-several-distinct-owners" => {
-            Some(crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID)
+            Some(crate::live_history_v1::multi_shapes::SEVERAL_OWNERS_ACCEPTED_TXID)
         }
         // TWO receipts consumed and ONE output created: the merge.
         //
@@ -2143,7 +2143,7 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // what answers it is an acceptance of a merge that HIDES, and the
         // ceremony writes the forced blinder's nonzero-ness into its own
         // transcript rather than leaving it to be assumed.
-        "private-merge" => Some(crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID),
+        "private-merge" => Some(crate::live_history_v1::multi_shapes::MERGE_ACCEPTED_TXID),
 
         // §15.1, the positive explicit table. Thirteen of its sixteen
         // rows are answered by thirteen runs of the explicit shape

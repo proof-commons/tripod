@@ -31,6 +31,7 @@ vectors_source_files = files(
   'src/live_history_v1/explicit_witness_negatives.rs',
   'src/live_history_v1/keypath_probe.rs',
   'src/live_history_v1/keypath_probe_phase_b.rs',
+  'src/live_history_v1/multi_shapes.rs',
   'src/live_history_v1/owner_observation.rs',
   'src/live_history_v1/owner_signing_negatives.rs',
   'src/live_history_v1/pair_arc.rs',
