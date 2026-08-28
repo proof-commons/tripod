@@ -828,8 +828,51 @@ pub struct NativeV2MintOutcome {
 pub struct NativeV2AcceptanceProjection {
     ceremony: String,
     identity: Txid,
+    identity_display: String,
     submitted_bytes: Vec<u8>,
     observed_weight: Option<u64>,
+}
+
+/// One submitted current-corpus outcome in ceremony order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeV2OutcomeProjection {
+    ceremony: String,
+    layer: ObservedOutcomeLayer,
+    target_identity: Option<Txid>,
+    submitted_bytes: Vec<u8>,
+    detail: String,
+}
+
+impl NativeV2OutcomeProjection {
+    /// The ceremony that submitted this request.
+    #[must_use]
+    pub fn ceremony(&self) -> &str {
+        &self.ceremony
+    }
+
+    /// The target boundary recorded for the request.
+    #[must_use]
+    pub const fn layer(&self) -> ObservedOutcomeLayer {
+        self.layer
+    }
+
+    /// The target-computed identity, present only for an acceptance.
+    #[must_use]
+    pub const fn target_identity(&self) -> Option<Txid> {
+        self.target_identity
+    }
+
+    /// The exact submitted request bytes.
+    #[must_use]
+    pub fn submitted_bytes(&self) -> &[u8] {
+        &self.submitted_bytes
+    }
+
+    /// The target's exact detail, empty for an acceptance.
+    #[must_use]
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
 }
 
 impl NativeV2AcceptanceProjection {
@@ -843,6 +886,12 @@ impl NativeV2AcceptanceProjection {
     #[must_use]
     pub const fn identity(&self) -> Txid {
         self.identity
+    }
+
+    /// The canonical target-display spelling of the identity.
+    #[must_use]
+    pub fn identity_display(&self) -> &str {
+        &self.identity_display
     }
 
     /// The exact bytes submitted to the target.
@@ -947,6 +996,7 @@ pub struct ValidatedNativeV2R7Corpus {
     attributions: Vec<NativeV2RowAttribution>,
     mint_ceremonies: Vec<NativeV2MintCeremony>,
     acceptance_projections: BTreeMap<String, Vec<NativeV2AcceptanceProjection>>,
+    outcome_projections: BTreeMap<String, Vec<NativeV2OutcomeProjection>>,
     outcome_count: usize,
     content_address: String,
 }
@@ -997,6 +1047,12 @@ impl ValidatedNativeV2R7Corpus {
         ceremony: &str,
     ) -> Option<&[NativeV2AcceptanceProjection]> {
         self.acceptance_projections.get(ceremony).map(Vec::as_slice)
+    }
+
+    /// Submitted outcomes from one validated current ceremony, in operation order.
+    #[must_use]
+    pub fn outcome_projections(&self, ceremony: &str) -> Option<&[NativeV2OutcomeProjection]> {
+        self.outcome_projections.get(ceremony).map(Vec::as_slice)
     }
 
     /// The report's complete 40-outcome suite census.
@@ -4073,6 +4129,30 @@ fn unique_semantic_value<'a>(bytes: &'a [u8], field: &str) -> Result<Option<&'a 
     Ok(value)
 }
 
+fn build_outcome_projections(
+    parsed: &[ParsedTranscript],
+) -> BTreeMap<String, Vec<NativeV2OutcomeProjection>> {
+    parsed
+        .iter()
+        .map(|transcript| {
+            let ceremony = transcript.summary.ceremony();
+            let outcomes = transcript
+                .operations
+                .iter()
+                .filter(|operation| !operation.request_bytes.is_empty())
+                .map(|operation| NativeV2OutcomeProjection {
+                    ceremony: ceremony.to_owned(),
+                    layer: operation.layer,
+                    target_identity: operation.accepted_identity,
+                    submitted_bytes: operation.request_bytes.clone(),
+                    detail: operation.detail.clone(),
+                })
+                .collect();
+            (ceremony.to_owned(), outcomes)
+        })
+        .collect()
+}
+
 fn build_acceptance_projections(
     parsed: &[ParsedTranscript],
 ) -> Result<BTreeMap<String, Vec<NativeV2AcceptanceProjection>>, NativeV2ImportRefusal> {
@@ -4167,6 +4247,7 @@ fn build_acceptance_projections(
                         .map(|identity| NativeV2AcceptanceProjection {
                             ceremony: ceremony.to_owned(),
                             identity,
+                            identity_display: identity.to_target_display(),
                             submitted_bytes: operation.request_bytes.clone(),
                             observed_weight,
                         })
@@ -4293,6 +4374,7 @@ fn validate_inputs(
     let content_address = hex_bytes(&report_hash);
     let mint_ceremonies = build_mint_ceremonies(&parsed, &content_address)?;
     let acceptance_projections = build_acceptance_projections(&parsed)?;
+    let outcome_projections = build_outcome_projections(&parsed);
     Ok(ValidatedNativeV2R7Corpus {
         transcripts: parsed
             .into_iter()
@@ -4304,6 +4386,7 @@ fn validate_inputs(
         attributions,
         mint_ceremonies,
         acceptance_projections,
+        outcome_projections,
         outcome_count: 40,
         content_address,
     })
@@ -4488,6 +4571,26 @@ mod tests {
     #[test]
     fn current_acceptance_projections_equal_the_bound_corpus_values() {
         let corpus = run_of_record().expect("the reviewed archive admits");
+        for ceremony in NATIVE_V2_R7_CEREMONY_ROSTER {
+            let acceptances = corpus
+                .acceptance_projections(ceremony)
+                .expect("every roster ceremony has an acceptance projection bucket");
+            let accepted_outcomes = corpus
+                .outcome_projections(ceremony)
+                .expect("every roster ceremony has an outcome projection bucket")
+                .iter()
+                .filter(|outcome| outcome.target_identity().is_some())
+                .collect::<Vec<_>>();
+            assert_eq!(acceptances.len(), accepted_outcomes.len(), "{ceremony}");
+            for (acceptance, outcome) in acceptances.iter().zip(accepted_outcomes) {
+                assert_eq!(Some(acceptance.identity()), outcome.target_identity());
+                assert_eq!(
+                    acceptance.identity_display(),
+                    acceptance.identity().to_target_display(),
+                );
+                assert_eq!(acceptance.submitted_bytes(), outcome.submitted_bytes());
+            }
+        }
         for (ceremony, row, expected_weight) in [
             ("explicit-one-to-one", "one-input-to-one-output", Some(983)),
             ("private-restart-control", "private-one-to-one", None),

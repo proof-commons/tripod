@@ -41,7 +41,7 @@
 //! copy verified against a message this workspace recomputed. Those
 //! three are separate observations and the record keeps them separate.
 //!
-//! The recorded identities live in [`run_of_record`], and
+//! The recorded identities live in [`crate::live_history_v1::explicit_shapes`], and
 //! [`crate::live_evidence`] cites them from there, so a reader
 //! following a row's answer arrives at a value one execution against a
 //! real node produced rather than at a claim in a source file.
@@ -1908,12 +1908,12 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
 /// So the identity is shared and the sharing is stated:
 ///
 /// - `one-input-to-one-output` and `sponsorless` share
-///   [`run_of_record::ONE_TO_ONE_ACCEPTED_TXID`]. The accepted bytes are both.
+///   [`crate::live_history_v1::explicit_shapes::ONE_TO_ONE_ACCEPTED_TXID`]. The accepted bytes are both.
 /// - `one-input-split-into-two` and `several-destination-owners` share
-///   [`run_of_record::SPLIT_ACCEPTED_TXID`]. A split into two destinations belonging to
+///   [`crate::live_history_v1::explicit_shapes::SPLIT_ACCEPTED_TXID`]. A split into two destinations belonging to
 ///   two distinct owners is both.
 /// - `several-inputs-merged-into-one` and
-///   `canonical-input-normalization` share [`run_of_record::MERGE_ACCEPTED_TXID`], and
+///   `canonical-input-normalization` share [`crate::live_history_v1::explicit_shapes::MERGE_ACCEPTED_TXID`], and
 ///   this pair is the strongest of the three rather than the weakest.
 ///   The normalization run offered its two receipts in the REVERSE of
 ///   their canonical order and the merge run offered them in it; the two
@@ -2131,6 +2131,27 @@ pub mod run_of_record {
     pub const SELF_PAID_FEE_WALL_SECONDS: f64 = 6.0;
 }
 
+fn current_acceptance_identity_at(ceremony: &str, index: usize, expected: usize) -> &'static str {
+    let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+        .expect("the reviewed native-v2/revision-7 corpus validates");
+    let acceptances = corpus
+        .acceptance_projections(ceremony)
+        .unwrap_or_else(|| panic!("the current corpus omits {ceremony}"));
+    assert_eq!(
+        acceptances.len(),
+        expected,
+        "{ceremony} carries a different current acceptance census",
+    );
+    acceptances
+        .get(index)
+        .unwrap_or_else(|| panic!("{ceremony} omits current acceptance {index}"))
+        .identity_display()
+}
+
+fn current_acceptance_identity(ceremony: &str) -> &'static str {
+    current_acceptance_identity_at(ceremony, 0, 1)
+}
+
 impl ExplicitShape {
     /// The identity the target computed for this shape's accepted
     /// transaction.
@@ -2142,35 +2163,43 @@ impl ExplicitShape {
     /// answered, and a placeholder that looked like one would be a claim
     /// nothing observed.
     ///
-    /// Three identities are each shared by two shapes, and
-    /// [`run_of_record`] states which and why.
+    /// Each current identity is selected by ceremony from the validated
+    /// native-v2/revision-7 corpus; no historical identity is a fallback.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the embedded reviewed corpus no longer carries exactly
+    /// one acceptance for this shape's ceremony.
     #[must_use]
-    pub const fn observed_identity(self) -> Option<&'static str> {
+    pub fn observed_identity(self) -> Option<&'static str> {
         match self {
-            Self::OneToOne | Self::Sponsorless => Some(run_of_record::ONE_TO_ONE_ACCEPTED_TXID),
-            Self::SplitIntoTwo | Self::SeveralDestinationOwners => {
-                Some(run_of_record::SPLIT_ACCEPTED_TXID)
+            Self::OneToOne => Some(current_acceptance_identity("explicit-one-to-one")),
+            Self::Sponsorless => Some(current_acceptance_identity("explicit-sponsorless")),
+            Self::SplitIntoTwo => Some(current_acceptance_identity("explicit-split")),
+            Self::SeveralDestinationOwners => Some(current_acceptance_identity(
+                "explicit-several-destination-owners",
+            )),
+            Self::MergedIntoOne => Some(current_acceptance_identity("explicit-merge")),
+            Self::CanonicalInputNormalization => {
+                Some(current_acceptance_identity("explicit-normalization"))
             }
-            Self::MergedIntoOne | Self::CanonicalInputNormalization => {
-                Some(run_of_record::MERGE_ACCEPTED_TXID)
+            Self::SeveralToSeveral => {
+                Some(current_acceptance_identity("explicit-several-to-several"))
             }
-            Self::SeveralToSeveral => Some(run_of_record::SEVERAL_TO_SEVERAL_ACCEPTED_TXID),
-            Self::RepeatedOwner => Some(run_of_record::REPEATED_OWNER_ACCEPTED_TXID),
+            Self::RepeatedOwner => Some(current_acceptance_identity("explicit-repeated-owner")),
             Self::SeveralDistinctOwners => {
-                Some(run_of_record::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID)
+                Some(current_acceptance_identity("explicit-several-owners"))
             }
-            Self::OneDestinationOwner => Some(run_of_record::ONE_DESTINATION_OWNER_ACCEPTED_TXID),
-            Self::SemanticBoundaryValues => Some(run_of_record::BOUNDARY_VALUES_ACCEPTED_TXID),
-            Self::MaximumInputs => Some(run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID),
-            Self::MaximumOutputs => Some(run_of_record::MAXIMUM_OUTPUTS_ACCEPTED_TXID),
-            Self::SelfPaidFee => run_of_record::SELF_PAID_FEE_ACCEPTED_IDENTITY,
-            // The arc's own run, cited from the arc's module rather than
-            // copied here: the identity belongs to the ledger that
-            // observed it, and this lane's own run of record never
-            // submitted this shape.
-            Self::PairedOneToOne => {
-                crate::live_pair_arc::run_of_record::EXPLICIT_MEMBER_ACCEPTED_IDENTITY
+            Self::OneDestinationOwner => Some(current_acceptance_identity(
+                "explicit-one-destination-owner",
+            )),
+            Self::SemanticBoundaryValues => {
+                Some(current_acceptance_identity("explicit-boundary-values"))
             }
+            Self::MaximumInputs => Some(current_acceptance_identity("explicit-maximum-inputs")),
+            Self::MaximumOutputs => Some(current_acceptance_identity("explicit-maximum-outputs")),
+            Self::SelfPaidFee => Some(current_acceptance_identity("explicit-self-paid-fee")),
+            Self::PairedOneToOne => Some(current_acceptance_identity_at("pairs-arc", 0, 2)),
         }
     }
 }
@@ -2181,7 +2210,8 @@ mod tests {
 
     use transaction::live_construct::ExplicitDestinationRole::Fee;
 
-    use super::{ExplicitShape, LiveShapeVocabulary, run_of_record};
+    use super::{ExplicitShape, LiveShapeVocabulary};
+    use crate::live_history_v1::explicit_shapes as history;
 
     #[test]
     fn every_shape_names_a_distinct_row_of_the_explicit_table() {
@@ -2222,7 +2252,7 @@ mod tests {
             );
             assert!(identity.chars().all(|digit| digit.is_ascii_hexdigit()));
         }
-        assert_eq!(run_of_record::ISSUED_ASSET.len(), 64);
+        assert_eq!(history::ISSUED_ASSET.len(), 64);
     }
 
     #[test]
@@ -2281,11 +2311,11 @@ mod tests {
         // the covenant that ran. Recomputed here from the recorded
         // figures so a register edited on one side fails.
         assert_eq!(
-            run_of_record::SELF_PAID_FEE_DESTINATION + run_of_record::SELF_PAID_FEE_AMOUNT,
-            run_of_record::SELF_PAID_FEE_CONSUMED,
+            history::SELF_PAID_FEE_DESTINATION + history::SELF_PAID_FEE_AMOUNT,
+            history::SELF_PAID_FEE_CONSUMED,
         );
         assert_eq!(
-            run_of_record::SELF_PAID_FEE_AMOUNT,
+            history::SELF_PAID_FEE_AMOUNT,
             ExplicitShape::SelfPaidFee
                 .self_paid_fee()
                 .expect("the self-paying shape states a fee"),
