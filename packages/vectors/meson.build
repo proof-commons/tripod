@@ -27,6 +27,8 @@ vectors_source_files = files(
   'src/live_first_party.rs',
   'src/live_history_v1.rs',
   'src/live_history_v1/conservation_negatives.rs',
+  'src/live_history_v1/explicit_shapes.rs',
+  'src/live_history_v1/explicit_witness_negatives.rs',
   'src/live_history_v1/keypath_probe.rs',
   'src/live_history_v1/keypath_probe_phase_b.rs',
   'src/live_history_v1/owner_observation.rs',

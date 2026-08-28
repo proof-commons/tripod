@@ -2166,14 +2166,14 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // that each row could cite its own hex string would be dressing
         // one fact up as two.
         "one-input-to-one-output" | "sponsorless" => {
-            Some(crate::live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::ONE_TO_ONE_ACCEPTED_TXID)
         }
         // The split acceptance, likewise both: one receipt split into
         // two destinations belonging to two DISTINCT published owners is
         // an instance of the split class and of the
         // several-destination-owners class.
         "one-input-split-into-two" | "several-destination-owners" => {
-            Some(crate::live_explicit_shapes::run_of_record::SPLIT_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::SPLIT_ACCEPTED_TXID)
         }
         // The merge acceptance, and this pair is the strongest of the
         // three rather than the weakest. The normalization run offered
@@ -2184,38 +2184,38 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // rather than asserted -- a second identity would have been
         // evidence that the request does not normalize.
         "several-inputs-merged-into-one" | "canonical-input-normalization" => {
-            Some(crate::live_explicit_shapes::run_of_record::MERGE_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::MERGE_ACCEPTED_TXID)
         }
         "several-inputs-to-several-outputs" => {
-            Some(crate::live_explicit_shapes::run_of_record::SEVERAL_TO_SEVERAL_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::SEVERAL_TO_SEVERAL_ACCEPTED_TXID)
         }
         // TWO inputs under ONE owner: the repetition is the subject, and
         // both signatures verify out of the node's own copy, each over
         // its own position's recomputed message.
         "repeated-owner" => {
-            Some(crate::live_explicit_shapes::run_of_record::REPEATED_OWNER_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::REPEATED_OWNER_ACCEPTED_TXID)
         }
         // TWO inputs under two DISTINCT owners. Its destinations are the
         // several-to-several run's exactly and the identities differ
         // anyway, because the SPENT programs differ -- which is what
         // makes this run about its input owners.
         "several-distinct-owners" => {
-            Some(crate::live_explicit_shapes::run_of_record::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID)
         }
         "one-destination-owner" => {
-            Some(crate::live_explicit_shapes::run_of_record::ONE_DESTINATION_OWNER_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::ONE_DESTINATION_OWNER_ACCEPTED_TXID)
         }
         // Destinations of one unit and the remainder. One is the
         // boundary the request type states rather than a small number
         // somebody picked, and the node took it.
         "semantic-boundary-values" => {
-            Some(crate::live_explicit_shapes::run_of_record::BOUNDARY_VALUES_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::BOUNDARY_VALUES_ACCEPTED_TXID)
         }
         "candidate-maximum-inputs" => {
-            Some(crate::live_explicit_shapes::run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::MAXIMUM_INPUTS_ACCEPTED_TXID)
         }
         "candidate-maximum-outputs" => {
-            Some(crate::live_explicit_shapes::run_of_record::MAXIMUM_OUTPUTS_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::MAXIMUM_OUTPUTS_ACCEPTED_TXID)
         }
         // The sponsor-signed explicit control, cited by both rows it is
         // an instance of. It carries a sponsor region -- a sponsor
@@ -2287,7 +2287,7 @@ struct RecordedNativeRefusal {
 }
 
 fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
-    use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
+    use crate::live_history_v1::explicit_witness_negatives as witness;
 
     match row.name() {
         // §10.2 types the signature position as an unconstrained item
@@ -3583,7 +3583,7 @@ mod tests {
         // accepted control's identity -- the half a reader can check
         // against a chain, the refusal having left no transaction to
         // look up -- and the target's own words.
-        use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
+        use crate::live_history_v1::explicit_witness_negatives as witness;
 
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let mut recorded = BTreeSet::new();

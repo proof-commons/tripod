@@ -27,14 +27,10 @@ pub mod multi_shapes {
 pub mod conservation_negatives;
 
 /// Historical explicit-shape acceptance observations.
-pub mod explicit_shapes {
-    pub use crate::live_explicit_shapes::run_of_record::*;
-}
+pub mod explicit_shapes;
 
 /// Historical explicit witness-negative observations.
-pub mod explicit_witness_negatives {
-    pub use crate::live_explicit_shapes::witness_negatives_run_of_record::*;
-}
+pub mod explicit_witness_negatives;
 
 /// Historical sponsored-shape observations.
 pub mod sponsor_shapes {
@@ -158,7 +154,7 @@ mod tests {
         );
         assert_eq!(
             super::explicit_shapes::MAXIMUM_INPUTS_ACCEPTED_TXID,
-            crate::live_explicit_shapes::run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID,
+            "fce6e069897f841297803e36da5d51f3e7b4e15422ff0083a1cac4735147c112",
         );
         assert_eq!(
             super::sponsor_shapes::SPONSORED_ACCEPTED_TXID,
