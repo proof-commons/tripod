@@ -1435,7 +1435,7 @@ pub fn render_pair_arc(record: &PairArcRecord) -> String {
     out
 }
 
-/// What the arc's own run against a real node observed.
+/// Historical-v1 data from the arc's own run against a real node.
 ///
 /// ONE run, ONE disposable chain, ONE issued asset, and two accepted
 /// identities. Every figure here is the target's own: the identities and
@@ -1445,7 +1445,9 @@ pub fn render_pair_arc(record: &PairArcRecord) -> String {
 /// The two members are not the two acceptances anybody had before. The
 /// campaign's explicit one-to-one and private strict one-to-one are
 /// independent ceremonies whose shapes match; these two are one fixture
-/// materialized twice, and neither shape carries a literal of its own.
+/// materialized twice, and neither shape carries a literal of its own. New
+/// historical callers use [`crate::live_history_v1::pair_arc`]; this
+/// compatibility path remains for the separately owned native-guide cleanup.
 pub mod run_of_record {
     /// The identity the target computed for the accepted EXPLICIT member.
     ///
