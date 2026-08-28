@@ -92,32 +92,42 @@ use crate::live_plan::{
 /// The published randomness the private construction consumes.
 const PUBLISHED_RANDOMNESS: [u8; 32] = [0x7e; 32];
 
-/// How many bytes the explicit transfer of record serialized to.
-///
-/// From the run [`historical_v1_transcript`] describes: the exact length of
-/// the byte string handed to the node, recorded so the weight beside it
-/// can be read as a weight *of something* rather than as a bare figure.
-const RECORDED_EXPLICIT_SERIALIZED_BYTES: u64 = 1_164;
+/// Verbatim resource values recorded by the historical-v1 native run.
+pub mod historical_v1_record {
+    pub use super::historical_v1_transcript as transcript;
 
-/// The weight this workspace computed for those exact bytes.
-///
-/// §18.4's prediction half, taken by decoding the submitted serialization
-/// and weighing the result.
-const RECORDED_EXPLICIT_PREDICTED_WEIGHT: u64 = 1_911;
+    /// How many bytes the explicit transfer of record serialized to.
+    ///
+    /// From the run [`transcript`] describes: the exact length of the byte
+    /// string handed to the node, recorded so the weight beside it can be
+    /// read as a weight *of something* rather than as a bare figure.
+    pub const RECORDED_EXPLICIT_SERIALIZED_BYTES: u64 = 1_164;
 
-/// The weight the node computed for those exact bytes.
-///
-/// §18.4's observation half, and the figure this whole comparison rests
-/// on. It exists because the executor reads a weight back from the node's
-/// own `decoderawtransaction` even for a transaction the node refused —
-/// which is the only reason a candidate that cannot be accepted (§1.7)
-/// has any target resource figure at all.
-///
-/// It is a *separate constant* from the prediction above, and equal to it
-/// only because the run made it so. Spelling one constant and using it
-/// twice would have made the agreement true by construction, which is the
-/// one thing §18.4's comparison must never be.
-const RECORDED_EXPLICIT_OBSERVED_WEIGHT: u64 = 1_911;
+    /// The weight this workspace computed for those exact bytes.
+    ///
+    /// §18.4's prediction half, taken by decoding the submitted
+    /// serialization and weighing the result.
+    pub const RECORDED_EXPLICIT_PREDICTED_WEIGHT: u64 = 1_911;
+
+    /// The weight the node computed for those exact bytes.
+    ///
+    /// §18.4's observation half, and the figure this whole comparison
+    /// rests on. It exists because the executor reads a weight back from
+    /// the node's own `decoderawtransaction` even for a transaction the
+    /// node refused — which is the only reason a candidate that cannot be
+    /// accepted (§1.7) has any target resource figure at all.
+    ///
+    /// It is a *separate constant* from the prediction above, and equal to
+    /// it only because the run made it so. Spelling one constant and using
+    /// it twice would have made the agreement true by construction, which
+    /// is the one thing §18.4's comparison must never be.
+    pub const RECORDED_EXPLICIT_OBSERVED_WEIGHT: u64 = 1_911;
+}
+
+use historical_v1_record::{
+    RECORDED_EXPLICIT_OBSERVED_WEIGHT, RECORDED_EXPLICIT_PREDICTED_WEIGHT,
+    RECORDED_EXPLICIT_SERIALIZED_BYTES,
+};
 
 /// What the plan is doing next.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

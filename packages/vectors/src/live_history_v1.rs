@@ -80,7 +80,7 @@ pub mod proof_bearing {
 
 /// Historical native transcript and resource observations.
 pub mod native {
-    pub use crate::live_native::historical_v1_transcript as transcript;
+    pub use crate::live_native::historical_v1_record::*;
 }
 
 #[cfg(test)]
@@ -190,6 +190,9 @@ mod tests {
             super::owner_observation::EXPECTED_CASE_OUTCOMES,
             crate::live_owner_observation::run_of_record::EXPECTED_CASE_OUTCOMES,
         );
+        assert_eq!(super::native::RECORDED_EXPLICIT_SERIALIZED_BYTES, 1_164);
+        assert_eq!(super::native::RECORDED_EXPLICIT_PREDICTED_WEIGHT, 1_911);
+        assert_eq!(super::native::RECORDED_EXPLICIT_OBSERVED_WEIGHT, 1_911);
     }
 
     #[test]
