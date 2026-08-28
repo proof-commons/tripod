@@ -491,7 +491,7 @@ pub fn validate_closeout(
 /// that did both would let a reader lose track of which sentences were
 /// observations.
 fn wave_five_ledger() -> Result<RestartLedger, CloseoutRefusal> {
-    use crate::live_private_restart::run_of_record as run;
+    use crate::live_history_v1::private_restart as run;
     use crate::live_restart::RestartStep;
 
     let mut ledger = RestartLedger::new();
@@ -538,7 +538,7 @@ fn wave_five_ledger() -> Result<RestartLedger, CloseoutRefusal> {
 /// entry filled from another entry's evidence, which is the property
 /// the builder refuses one call at a time.
 fn wave_five_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
-    use crate::live_private_restart::run_of_record as run;
+    use crate::live_history_v1::private_restart as run;
     use crate::live_restart::RestartStep;
 
     let mut roles = CeremonyEvidenceRolesBuilder::new();
@@ -612,7 +612,7 @@ fn wave_five_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
 /// than a value precisely so that the invariants are checked on every
 /// call rather than at the moment somebody wrote the numbers down.
 pub fn wave_five_closeout() -> Result<ConfidentialFundingCloseoutReport, CloseoutRefusal> {
-    use crate::live_private_restart::run_of_record as run;
+    use crate::live_history_v1::private_restart as run;
     use crate::live_restart::RestartStep;
 
     validate_closeout(CloseoutParts {
@@ -718,8 +718,7 @@ pub fn wave_five_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeou
 /// a constructor absence like the predecessor one, not a target verdict:
 /// a following wave clears it by building the fixtures.
 fn wave_six_ledger() -> Result<RestartLedger, CloseoutRefusal> {
-    use crate::live_conservation_negatives::run_of_record as cn;
-    use crate::live_private_restart::run_of_record as run;
+    use crate::live_history_v1::{conservation_negatives as cn, private_restart as run};
     use crate::live_restart::RestartStep;
 
     let mut ledger = RestartLedger::new();
@@ -795,8 +794,7 @@ fn wave_six_ledger() -> Result<RestartLedger, CloseoutRefusal> {
 /// order-not-reached, which is the whole difference from Wave 5: the run
 /// that stopped that entry has been taken.
 fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
-    use crate::live_conservation_negatives::run_of_record as cn;
-    use crate::live_private_restart::run_of_record as run;
+    use crate::live_history_v1::{conservation_negatives as cn, private_restart as run};
     use crate::live_restart::RestartStep;
 
     let mut roles = CeremonyEvidenceRolesBuilder::new();
@@ -866,8 +864,7 @@ fn wave_six_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
 }
 
 fn wave_six_matrix_delta() -> Result<Vec<MovedMatrixRow>, CloseoutRefusal> {
-    use crate::live_conservation_negatives::run_of_record as cn;
-    use crate::live_private_restart::run_of_record as run;
+    use crate::live_history_v1::{conservation_negatives as cn, private_restart as run};
 
     Ok(vec![
         moved_on_acceptance(
@@ -892,8 +889,7 @@ fn wave_six_matrix_delta() -> Result<Vec<MovedMatrixRow>, CloseoutRefusal> {
 /// Every member of [`CloseoutRefusal`]. It returns a `Result` rather than
 /// a value precisely so that the invariants are checked on every call.
 pub fn wave_six_closeout() -> Result<ConfidentialFundingCloseoutReport, CloseoutRefusal> {
-    use crate::live_conservation_negatives::run_of_record as cn;
-    use crate::live_private_restart::run_of_record as run;
+    use crate::live_history_v1::{conservation_negatives as cn, private_restart as run};
     use crate::live_restart::RestartStep;
 
     validate_closeout(CloseoutParts {
@@ -1062,9 +1058,9 @@ fn wave_seven_ledger() -> Result<RestartLedger, CloseoutRefusal> {
 /// said; it inherits it, which is what "each step's entry is the
 /// previous step's observed result" means.
 fn wave_seven_steps_one_to_five() -> Result<RestartLedger, CloseoutRefusal> {
-    use crate::live_conservation_negatives::run_of_record as cn;
-    use crate::live_multi_shapes::run_of_record as ms;
-    use crate::live_private_restart::run_of_record as run;
+    use crate::live_history_v1::{
+        conservation_negatives as cn, multi_shapes as ms, private_restart as run,
+    };
     use crate::live_restart::RestartStep;
 
     let mut ledger = RestartLedger::new();
@@ -1146,9 +1142,9 @@ fn wave_seven_steps_one_to_five() -> Result<RestartLedger, CloseoutRefusal> {
 /// six positive private rows are answered, and the identity carried is the
 /// widest shape the wave submitted rather than the earliest.
 fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
-    use crate::live_conservation_negatives::run_of_record as cn;
-    use crate::live_multi_shapes::run_of_record as ms;
-    use crate::live_private_restart::run_of_record as run;
+    use crate::live_history_v1::{
+        conservation_negatives as cn, multi_shapes as ms, private_restart as run,
+    };
     use crate::live_restart::RestartStep;
 
     let mut roles = CeremonyEvidenceRolesBuilder::new();
@@ -1227,7 +1223,7 @@ fn wave_seven_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
 /// out from the closeout itself because a list this long inside it makes
 /// one function of two jobs.
 fn wave_seven_target_facts() -> Vec<String> {
-    use crate::live_multi_shapes::run_of_record as ms;
+    use crate::live_history_v1::multi_shapes as ms;
 
     vec![
         "target Elements Core v28.99.0-b7fc5d080a7e".to_owned(),
@@ -1266,9 +1262,9 @@ fn wave_seven_target_facts() -> Vec<String> {
 }
 
 fn wave_seven_matrix_delta() -> Result<Vec<MovedMatrixRow>, CloseoutRefusal> {
-    use crate::live_conservation_negatives::run_of_record as cn;
-    use crate::live_multi_shapes::run_of_record as ms;
-    use crate::live_private_restart::run_of_record as run;
+    use crate::live_history_v1::{
+        conservation_negatives as cn, multi_shapes as ms, private_restart as run,
+    };
 
     Ok(vec![
         moved_on_acceptance(
@@ -1319,9 +1315,9 @@ fn wave_seven_matrix_delta() -> Result<Vec<MovedMatrixRow>, CloseoutRefusal> {
 /// Every member of [`CloseoutRefusal`]. It returns a `Result` rather than
 /// a value precisely so that the invariants are checked on every call.
 pub fn wave_seven_closeout() -> Result<ConfidentialFundingCloseoutReport, CloseoutRefusal> {
-    use crate::live_conservation_negatives::run_of_record as cn;
-    use crate::live_multi_shapes::run_of_record as ms;
-    use crate::live_private_restart::run_of_record as run;
+    use crate::live_history_v1::{
+        conservation_negatives as cn, multi_shapes as ms, private_restart as run,
+    };
     use crate::live_restart::RestartStep;
 
     validate_closeout(CloseoutParts {
@@ -1435,10 +1431,9 @@ pub fn wave_seven_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
 /// accepted on the items that met it, with the shortfall stated in its
 /// own entry. Step seven is three pairs of five and says so.
 fn wave_eight_ledger() -> Result<RestartLedger, CloseoutRefusal> {
-    use crate::live_explicit_shapes::run_of_record as ex;
-    use crate::live_multi_shapes::run_of_record as ms;
+    use crate::live_history_v1::sponsor_shapes as sp;
+    use crate::live_history_v1::{explicit_shapes as ex, multi_shapes as ms};
     use crate::live_restart::RestartStep;
-    use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
 
     let mut ledger = wave_seven_steps_one_to_five()?;
     ledger.record(
@@ -1528,10 +1523,10 @@ fn wave_eight_ledger() -> Result<RestartLedger, CloseoutRefusal> {
 ///
 /// Every member of [`CloseoutRefusal`].
 pub fn wave_eight_closeout() -> Result<ConfidentialFundingCloseoutReport, CloseoutRefusal> {
-    use crate::live_conservation_negatives::run_of_record as cn;
-    use crate::live_multi_shapes::run_of_record as ms;
-    use crate::live_private_restart::run_of_record as run;
-    use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
+    use crate::live_history_v1::{
+        conservation_negatives as cn, multi_shapes as ms, private_restart as run,
+        sponsor_shapes as sp,
+    };
 
     validate_closeout(CloseoutParts {
         disposition: CloseoutDisposition::Completed,
@@ -1636,8 +1631,7 @@ pub fn wave_eight_closeout() -> Result<ConfidentialFundingCloseoutReport, Closeo
 /// Appended rather than restated, because the shape wave's facts are
 /// observations and a later wave inherits them.
 fn wave_eight_target_facts() -> Vec<String> {
-    use crate::live_multi_shapes::run_of_record as ms;
-    use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
+    use crate::live_history_v1::{multi_shapes as ms, sponsor_shapes as sp};
 
     let mut facts = wave_seven_target_facts();
     facts.push(format!(
@@ -1671,9 +1665,9 @@ fn wave_eight_target_facts() -> Vec<String> {
 /// about: minimality stood at `OrderNotReached` while step seven was
 /// unreachable, and the order has now reached it.
 fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
-    use crate::live_multi_shapes::run_of_record as ms;
-    use crate::live_private_restart::run_of_record as run;
-    use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
+    use crate::live_history_v1::{
+        multi_shapes as ms, private_restart as run, sponsor_shapes as sp,
+    };
 
     let mut roles = CeremonyEvidenceRolesBuilder::new();
     settle_role(
@@ -1715,7 +1709,7 @@ fn wave_eight_roles() -> Result<CeremonyEvidenceRoles, CloseoutRefusal> {
         CandidateEvidenceRole::CtConservation,
         RoleGround::ObservedAcceptance {
             accepted_identity: recorded_identity(
-                crate::live_conservation_negatives::run_of_record::control_accepted,
+                crate::live_history_v1::conservation_negatives::control_accepted,
             )?,
             independent_check: "the target's own commitment-balance rule accepted the conserving \
                                 control and refused the wrong-blinder mutant at the balance layer"
@@ -1790,10 +1784,10 @@ mod tests {
 
     #[test]
     fn all_four_closeouts_render_the_exact_recorded_identities() {
-        use crate::live_conservation_negatives::run_of_record as cn;
-        use crate::live_multi_shapes::run_of_record as ms;
-        use crate::live_private_restart::run_of_record as run;
-        use crate::live_sponsor_shapes::sponsored_run_of_record as sp;
+        use crate::live_history_v1::{
+            conservation_negatives as cn, multi_shapes as ms, private_restart as run,
+            sponsor_shapes as sp,
+        };
 
         let five = super::wave_five_closeout().expect("wave five validates");
         assert_exact_moved_identities(
@@ -2121,8 +2115,8 @@ mod tests {
         // quietly been re-grounded on some other run.
         assert_eq!(identities.len(), 5, "six rows over five observed runs");
         assert_eq!(
-            crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
-            crate::live_private_restart::run_of_record::ACCEPTED_TXID,
+            crate::live_history_v1::conservation_negatives::CONTROL_ACCEPTED_TXID,
+            crate::live_history_v1::private_restart::ACCEPTED_TXID,
             "the conserving control is the one-to-one control",
         );
 
@@ -2130,15 +2124,15 @@ mod tests {
         // three runs reported once each rather than one run reported three
         // times.
         let shapes: BTreeSet<&str> = BTreeSet::from([
-            crate::live_multi_shapes::run_of_record::SPLIT_ACCEPTED_TXID,
-            crate::live_multi_shapes::run_of_record::MANY_TO_MANY_ACCEPTED_TXID,
-            crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID,
+            crate::live_history_v1::multi_shapes::SPLIT_ACCEPTED_TXID,
+            crate::live_history_v1::multi_shapes::MANY_TO_MANY_ACCEPTED_TXID,
+            crate::live_history_v1::multi_shapes::SEVERAL_OWNERS_ACCEPTED_TXID,
         ]);
         assert_eq!(shapes.len(), 3, "three shapes, three identities");
         assert!(
             shapes.is_disjoint(&BTreeSet::from([
-                crate::live_private_restart::run_of_record::ACCEPTED_TXID,
-                crate::live_private_restart::run_of_record::PARITY_ACCEPTED_TXID,
+                crate::live_history_v1::private_restart::ACCEPTED_TXID,
+                crate::live_history_v1::private_restart::PARITY_ACCEPTED_TXID,
             ])),
             "a shape claims an identity an earlier wave's run produced",
         );
@@ -2250,14 +2244,13 @@ mod tests {
         // gone. What has NOT changed is that the row moves on an
         // acceptance and on nothing else -- the constructor still takes
         // an identity, and a caller with no run has none to hand it.
-        let recorded =
-            crate::live_sponsor_shapes::sponsored_run_of_record::sponsored_private_accepted()
-                .expect("the committed identity parses");
+        let recorded = crate::live_history_v1::sponsor_shapes::sponsored_private_accepted()
+            .expect("the committed identity parses");
         let moved = moved_on_acceptance(PositivePrivateClass::PrivateSponsorValues, recorded);
         assert_eq!(moved.class(), PositivePrivateClass::PrivateSponsorValues);
         assert_eq!(
             moved.accepted_identity().to_string(),
-            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_TXID,
+            crate::live_history_v1::sponsor_shapes::SPONSORED_PRIVATE_TXID,
         );
     }
 
@@ -2266,7 +2259,7 @@ mod tests {
         // Counted over the whole vocabulary rather than asserted of the
         // one that changed, so a class added later with no run behind it
         // is caught here.
-        let recorded = crate::live_private_restart::run_of_record::accepted()
+        let recorded = crate::live_history_v1::private_restart::accepted()
             .expect("the committed primary identity parses");
         let moved: Vec<_> = PositivePrivateClass::ALL
             .into_iter()
@@ -2464,12 +2457,12 @@ mod tests {
         offered.wave5_matrix_delta = vec![
             moved_on_acceptance(
                 PositivePrivateClass::OneToOne,
-                crate::live_private_restart::run_of_record::accepted()
+                crate::live_history_v1::private_restart::accepted()
                     .expect("the committed primary identity parses"),
             ),
             moved_on_acceptance(
                 PositivePrivateClass::OneToOne,
-                crate::live_private_restart::run_of_record::parity_accepted()
+                crate::live_history_v1::private_restart::parity_accepted()
                     .expect("the committed parity identity parses"),
             ),
         ];
