@@ -1880,7 +1880,7 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
     out
 }
 
-/// What one execution of every shape against a real node produced.
+/// Historical-v1 data from one execution of every shape against a real node.
 ///
 /// Hand-recorded from the transcripts that run wrote, on the pattern the
 /// private lane's own register sets and for the same reason: a matrix
@@ -1924,7 +1924,9 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
 ///
 /// What the rule this register is held to actually forbids is citing an
 /// acceptance of a DIFFERENT shape. None of these does: in each pair the
-/// accepted bytes are an instance of both rows' classes.
+/// accepted bytes are an instance of both rows' classes. New historical
+/// callers use [`crate::live_history_v1::explicit_shapes`]; this compatibility
+/// path remains for the separately owned native-guide cleanup.
 pub mod run_of_record {
     /// The disposable asset every run issued.
     pub const ISSUED_ASSET: &str =
@@ -2382,7 +2384,7 @@ mod tests {
     }
 }
 
-/// What the witness-content negative run observed.
+/// Historical-v1 data from the witness-content negative run.
 ///
 /// §15.3's two witness-content rows, answered by ONE run that submitted
 /// three candidates to one node on one chain: two mutants first, then
@@ -2404,7 +2406,9 @@ mod tests {
 /// attributability rule exists to prevent: a refusal counted for a row
 /// whose class had nothing to do with it. The mutants now go first, and
 /// the target's answers changed with the order — which is itself the
-/// demonstration that the earlier answers were about the order.
+/// demonstration that the earlier answers were about the order. New
+/// historical callers use
+/// [`crate::live_history_v1::explicit_witness_negatives`].
 pub mod witness_negatives_run_of_record {
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
