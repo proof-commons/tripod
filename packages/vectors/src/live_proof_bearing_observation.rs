@@ -4470,7 +4470,13 @@ mod tests {
                 .expect("the digest exists"),
         );
         assert_eq!(observations.case_observations().len(), input.outcomes.len());
-        for (observation, outcome) in observations.case_observations().iter().zip(&input.outcomes) {
+        for ((observation, outcome), case) in observations
+            .case_observations()
+            .iter()
+            .zip(&input.outcomes)
+            .zip(ProofBearingCase::ALL)
+        {
+            assert_eq!(observation.case(), *case);
             assert_eq!(observation.layer(), outcome.layer);
             assert_eq!(
                 observation.detail(),
@@ -4497,6 +4503,105 @@ mod tests {
             acceptance.reverification().accepted_txid(),
             accepted_identity.as_str(),
         );
+    }
+
+    #[test]
+    fn real_corpus_keeps_issued_and_predecessor_assets_distinct() {
+        let input = corpus_mint_input();
+        let projected =
+            project_forward_corpus_record(&input).expect("the complete corpus projection mints");
+        let observations = projected
+            .observations()
+            .recorded()
+            .expect("the observation half is recorded");
+        let issued_asset = asset_of(observations.issued_asset())
+            .expect("the corpus-issued asset has target grammar");
+
+        for coin in observations.coins() {
+            assert_ne!(coin.asset(), AssetField::Explicit(issued_asset));
+        }
+    }
+
+    #[test]
+    fn every_forward_acceptance_fact_is_sourced_from_the_corpus_projection() {
+        let input = corpus_mint_input();
+        let rendering = ForwardMintRendering::new(
+            input
+                .semantic_rendering
+                .as_deref()
+                .expect("the corpus carries its semantic rendering"),
+        )
+        .expect("the corpus rendering has canonical grammar");
+        let projected =
+            project_forward_corpus_record(&input).expect("the complete corpus projection mints");
+        let observations = projected
+            .observations()
+            .recorded()
+            .expect("the observation half is recorded");
+        let acceptance = projected
+            .acceptance()
+            .recorded()
+            .expect("the acceptance half is recorded");
+        let accepted = input
+            .outcomes
+            .last()
+            .expect("the corpus carries the accepted outcome last");
+        let reverification = acceptance.reverification();
+
+        assert_eq!(
+            acceptance.submitted_bytes(),
+            accepted.submitted_bytes.as_slice(),
+        );
+        assert_eq!(
+            reverification.accepted_txid(),
+            rendering
+                .value("reverification accepted_txid ")
+                .expect("the rendering carries the accepted identity"),
+        );
+        assert_eq!(
+            reverification.witness_txid(),
+            rendering
+                .value("reverification witness_txid ")
+                .expect("the rendering carries the witness identity"),
+        );
+        assert_eq!(
+            reverification.block_height(),
+            forward_mint_number::<u32>(
+                rendering
+                    .value("reverification block_height ")
+                    .expect("the rendering carries the block height"),
+            )
+            .expect("the block height has target grammar"),
+        );
+        assert!(reverification.readback_matches_submission());
+        let recomputed_message = forward_mint_digest(
+            rendering
+                .value("reverification recomputed_message ")
+                .expect("the rendering carries the recomputed message"),
+        )
+        .expect("the recomputed message has digest grammar");
+        assert_eq!(reverification.recomputed_message(), &recomputed_message);
+        assert_eq!(
+            observations
+                .candidate_messages()
+                .get(&ProofBearingCase::SelectedProfile),
+            Some(&recomputed_message),
+        );
+        let signature = decode_hex(
+            rendering
+                .value("reverification signature_from_readback ")
+                .expect("the rendering carries the readback signature"),
+        )
+        .expect("the readback signature has hex grammar");
+        assert_eq!(
+            reverification.signature_from_readback(),
+            signature.as_slice(),
+        );
+        assert_eq!(
+            reverification.verified(),
+            &Result::<(), SignatureRejection>::Ok(()),
+        );
+        assert!(!reverification.verifies_against_emptied_vector_message());
     }
 
     #[test]
