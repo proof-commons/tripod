@@ -902,8 +902,12 @@ pub enum NativeV2ImportRefusal {
     MutationLocator { ceremony: String, request: String },
     /// The paired members do not independently prove all 13 terms.
     PairProjection,
-    /// The fixed R01 through R42 attribution did not cross-foot.
-    RowAttribution,
+    /// One R01 through R42 attribution fact did not cross-foot.
+    RowAttribution {
+        row: &'static str,
+        ceremony: String,
+        check: &'static str,
+    },
     /// Schema-6 run material could not be minted from one ceremony's validated facts.
     RunBinding {
         ceremony: String,
@@ -2851,7 +2855,7 @@ fn row_ceremonies(row: &str) -> Option<&'static [&'static str]> {
         }
         "candidate-maximum-inputs" => Some(&["explicit-maximum-inputs"]),
         "candidate-maximum-outputs" => Some(&["explicit-maximum-outputs"]),
-        "canonical-input-normalization" => Some(&["explicit-normalization", "explicit-merge"]),
+        "canonical-input-normalization" => Some(&["explicit-normalization"]),
         "one-destination-owner" => Some(&["explicit-one-destination-owner"]),
         "one-input-split-into-two" => Some(&["explicit-split"]),
         "one-input-to-one-output" => Some(&["explicit-one-to-one"]),
@@ -3007,23 +3011,40 @@ fn build_runs(
 
 fn semantic_operation<'a>(
     transcripts: &'a BTreeMap<&str, &'a ParsedTranscript>,
+    row: &'static str,
     ceremony: &str,
     role: OperationRole,
 ) -> Result<&'a ParsedOperation, NativeV2ImportRefusal> {
     let transcript = transcripts
         .get(ceremony)
-        .ok_or(NativeV2ImportRefusal::RowAttribution)?;
+        .ok_or_else(|| row_attribution_refusal(row, ceremony, "missing-transcript"))?;
     let mut matching = transcript
         .operations
         .iter()
         .filter(|operation| operation.role == role);
     let operation = matching
         .next()
-        .ok_or(NativeV2ImportRefusal::RowAttribution)?;
+        .ok_or_else(|| row_attribution_refusal(row, ceremony, "missing-operation-role"))?;
     if matching.next().is_some() {
-        return Err(NativeV2ImportRefusal::RowAttribution);
+        return Err(row_attribution_refusal(
+            row,
+            ceremony,
+            "duplicate-operation-role",
+        ));
     }
     Ok(operation)
+}
+
+fn row_attribution_refusal(
+    row: &'static str,
+    ceremony: &str,
+    check: &'static str,
+) -> NativeV2ImportRefusal {
+    NativeV2ImportRefusal::RowAttribution {
+        row,
+        ceremony: ceremony.to_owned(),
+        check,
+    }
 }
 
 fn boundary_for(mutant: LiveMutantKind) -> Option<EvidenceBoundary> {
@@ -3033,14 +3054,21 @@ fn boundary_for(mutant: LiveMutantKind) -> Option<EvidenceBoundary> {
         .and_then(crate::live_safety::LiveSafetyRow::refusing_layer)
 }
 
+fn decode_attributed_transaction(
+    operation: &ParsedOperation,
+    row: &'static str,
+    ceremony: &str,
+) -> Result<TargetTransaction, NativeV2ImportRefusal> {
+    TargetTransaction::decode(&operation.request_bytes)
+        .map_err(|_| row_attribution_refusal(row, ceremony, "request-decode"))
+}
+
 fn parity_output_index(
     first: &ParsedOperation,
     second: &ParsedOperation,
 ) -> Result<usize, NativeV2ImportRefusal> {
-    let first = TargetTransaction::decode(&first.request_bytes)
-        .map_err(|_| NativeV2ImportRefusal::RowAttribution)?;
-    let second = TargetTransaction::decode(&second.request_bytes)
-        .map_err(|_| NativeV2ImportRefusal::RowAttribution)?;
+    let first = decode_attributed_transaction(first, ROW_ROSTER[0], "private-restart-control")?;
+    let second = decode_attributed_transaction(second, ROW_ROSTER[0], "private-restart-parity")?;
     let matching = first
         .outputs()
         .iter()
@@ -3056,40 +3084,54 @@ fn parity_output_index(
         })
         .collect::<Vec<_>>();
     let [index] = matching.as_slice() else {
-        return Err(NativeV2ImportRefusal::RowAttribution);
+        return Err(row_attribution_refusal(
+            ROW_ROSTER[0],
+            "private-restart-control+private-restart-parity",
+            "commitment-parity-census",
+        ));
     };
     Ok(*index)
 }
 
-fn sponsor_predicates(
-    absent: &ParsedOperation,
-    present: &ParsedOperation,
-) -> Result<BTreeMap<&'static str, LiveRowSemanticPredicate>, NativeV2ImportRefusal> {
-    let absent = TargetTransaction::decode(&absent.request_bytes)
-        .map_err(|_| NativeV2ImportRefusal::RowAttribution)?;
-    let present = TargetTransaction::decode(&present.request_bytes)
-        .map_err(|_| NativeV2ImportRefusal::RowAttribution)?;
-    let sponsor_inputs = absent
+fn sponsor_shape_indices(
+    transaction: &TargetTransaction,
+) -> Result<(usize, usize), NativeV2ImportRefusal> {
+    let sponsor_inputs = transaction
         .witnesses()
         .iter()
         .enumerate()
         .filter_map(|(index, witness)| {
-            (decoded_witness_path_role(witness.stack()) == Some(LiveWitnessPathRole::KeyPath))
-                .then_some(index)
+            let stack = witness.stack();
+            (stack.len() == 2 && stack.iter().all(|item| !item.is_empty())).then_some(index)
         })
         .collect::<Vec<_>>();
-    let fee_outputs = absent
+    let fee_outputs = transaction
         .outputs()
         .iter()
         .enumerate()
         .filter_map(|(index, output)| output.is_fee().then_some(index))
         .collect::<Vec<_>>();
     let [sponsor_input_index] = sponsor_inputs.as_slice() else {
-        return Err(NativeV2ImportRefusal::RowAttribution);
+        return Err(row_attribution_refusal(
+            ROW_ROSTER[19],
+            "sponsored-change-absent",
+            "sponsor-input-census",
+        ));
     };
     let [fee_output_index] = fee_outputs.as_slice() else {
-        return Err(NativeV2ImportRefusal::RowAttribution);
+        return Err(row_attribution_refusal(
+            ROW_ROSTER[19],
+            "sponsored-change-absent",
+            "fee-output-census",
+        ));
     };
+    Ok((*sponsor_input_index, *fee_output_index))
+}
+
+fn sponsor_change_program(
+    absent: &TargetTransaction,
+    present: &TargetTransaction,
+) -> Result<Vec<u8>, NativeV2ImportRefusal> {
     let absent_programs = absent
         .outputs()
         .iter()
@@ -3108,29 +3150,49 @@ fn sponsor_predicates(
         .map(|output| output.program().to_vec())
         .collect::<Vec<_>>();
     let [change_program] = change_programs.as_slice() else {
-        return Err(NativeV2ImportRefusal::RowAttribution);
+        return Err(row_attribution_refusal(
+            ROW_ROSTER[19],
+            "sponsored-change-present",
+            "change-program-census",
+        ));
     };
     if absent
         .outputs()
         .iter()
         .any(|output| output.program() == change_program.as_slice())
     {
-        return Err(NativeV2ImportRefusal::RowAttribution);
+        return Err(row_attribution_refusal(
+            ROW_ROSTER[19],
+            "sponsored-change-absent",
+            "change-program-present",
+        ));
     }
+    Ok(change_program.clone())
+}
+
+fn sponsor_predicates(
+    absent: &ParsedOperation,
+    present: &ParsedOperation,
+) -> Result<BTreeMap<&'static str, LiveRowSemanticPredicate>, NativeV2ImportRefusal> {
+    let absent = decode_attributed_transaction(absent, ROW_ROSTER[19], "sponsored-change-absent")?;
+    let present =
+        decode_attributed_transaction(present, ROW_ROSTER[20], "sponsored-change-present")?;
+    let (sponsor_input_index, fee_output_index) = sponsor_shape_indices(&absent)?;
+    let change_program = sponsor_change_program(&absent, &present)?;
     Ok(BTreeMap::from([
         (
             "sponsor-change-absent",
             LiveRowSemanticPredicate::SponsorChangeAbsent {
-                sponsor_input_index: *sponsor_input_index,
-                fee_output_index: *fee_output_index,
-                sponsor_change_program: change_program.clone(),
+                sponsor_input_index,
+                fee_output_index,
+                sponsor_change_program: change_program,
             },
         ),
         (
             "sponsored",
             LiveRowSemanticPredicate::Sponsored {
-                sponsor_input_index: *sponsor_input_index,
-                fee_output_index: *fee_output_index,
+                sponsor_input_index,
+                fee_output_index,
             },
         ),
     ]))
@@ -3156,11 +3218,13 @@ fn add_parity_material(
 ) -> Result<(), NativeV2ImportRefusal> {
     let first = semantic_operation(
         transcripts,
+        ROW_ROSTER[0],
         "private-restart-control",
         OperationRole::Acceptance,
     )?;
     let second = semantic_operation(
         transcripts,
+        ROW_ROSTER[0],
         "private-restart-parity",
         OperationRole::Acceptance,
     )?;
@@ -3173,11 +3237,11 @@ fn add_parity_material(
             run_ids
                 .get(ceremony)
                 .cloned()
-                .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+                .ok_or_else(|| row_attribution_refusal(ROW_ROSTER[0], ceremony, "missing-run"))?,
             global_request_id(ceremony, &operation.request_id),
-            operation
-                .accepted_identity
-                .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+            operation.accepted_identity.ok_or_else(|| {
+                row_attribution_refusal(ROW_ROSTER[0], ceremony, "accepted-identity")
+            })?,
             parity_index,
         ))
     };
@@ -3201,7 +3265,7 @@ fn add_parity_material(
             run_id: run_ids
                 .get(ceremony)
                 .cloned()
-                .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+                .ok_or_else(|| row_attribution_refusal(ROW_ROSTER[0], ceremony, "missing-run"))?,
             request_id: global_request_id(ceremony, &operation.request_id),
         });
     }
@@ -3236,11 +3300,11 @@ fn add_positive_material(
         (ROW_ROSTER[22], "explicit-sponsorless"),
     ];
     for (row, ceremony) in positive_rows {
-        let operation = semantic_operation(transcripts, ceremony, OperationRole::Acceptance)?;
+        let operation = semantic_operation(transcripts, row, ceremony, OperationRole::Acceptance)?;
         let run_id = run_ids
             .get(ceremony)
             .cloned()
-            .ok_or(NativeV2ImportRefusal::RowAttribution)?;
+            .ok_or_else(|| row_attribution_refusal(row, ceremony, "missing-run"))?;
         let request_id = global_request_id(ceremony, &operation.request_id);
         material
             .observations
@@ -3250,7 +3314,7 @@ fn add_positive_material(
                 request_id: request_id.clone(),
                 identity: operation
                     .accepted_identity
-                    .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+                    .ok_or_else(|| row_attribution_refusal(row, ceremony, "accepted-identity"))?,
             });
         material.links.push(ProvenNativeV2Link {
             row,
@@ -3270,18 +3334,22 @@ fn add_sponsor_material(
 ) -> Result<(), NativeV2ImportRefusal> {
     let absent = semantic_operation(
         transcripts,
+        ROW_ROSTER[19],
         "sponsored-change-absent",
         OperationRole::Acceptance,
     )?;
     let present = semantic_operation(
         transcripts,
+        ROW_ROSTER[20],
         "sponsored-change-present",
         OperationRole::Acceptance,
     )?;
     let absent_run_id = run_ids
         .get("sponsored-change-absent")
         .cloned()
-        .ok_or(NativeV2ImportRefusal::RowAttribution)?;
+        .ok_or_else(|| {
+            row_attribution_refusal(ROW_ROSTER[19], "sponsored-change-absent", "missing-run")
+        })?;
     let absent_request_id = global_request_id("sponsored-change-absent", &absent.request_id);
     material
         .observations
@@ -3289,9 +3357,13 @@ fn add_sponsor_material(
             witness: LiveMultiRowSemanticWitness::new(
                 absent_run_id.clone(),
                 absent_request_id.clone(),
-                absent
-                    .accepted_identity
-                    .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+                absent.accepted_identity.ok_or_else(|| {
+                    row_attribution_refusal(
+                        ROW_ROSTER[19],
+                        "sponsored-change-absent",
+                        "accepted-identity",
+                    )
+                })?,
                 BTreeSet::from([ROW_ROSTER[19], ROW_ROSTER[21]]),
                 sponsor_predicates(absent, present)?,
             ),
@@ -3315,13 +3387,16 @@ fn add_conservation_material(
 ) -> Result<(), NativeV2ImportRefusal> {
     let conservation = semantic_operation(
         transcripts,
+        ROW_ROSTER[23],
         "conservation-negatives",
         OperationRole::Control,
     )?;
     let conservation_run_id = run_ids
         .get("conservation-negatives")
         .cloned()
-        .ok_or(NativeV2ImportRefusal::RowAttribution)?;
+        .ok_or_else(|| {
+            row_attribution_refusal(ROW_ROSTER[23], "conservation-negatives", "missing-run")
+        })?;
     let conservation_request_id =
         global_request_id("conservation-negatives", &conservation.request_id);
     material
@@ -3330,9 +3405,13 @@ fn add_conservation_material(
             row: ROW_ROSTER[23],
             run_id: conservation_run_id.clone(),
             request_id: conservation_request_id.clone(),
-            identity: conservation
-                .accepted_identity
-                .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+            identity: conservation.accepted_identity.ok_or_else(|| {
+                row_attribution_refusal(
+                    ROW_ROSTER[23],
+                    "conservation-negatives",
+                    "accepted-identity",
+                )
+            })?,
         });
     material.links.push(ProvenNativeV2Link {
         row: ROW_ROSTER[23],
@@ -3357,29 +3436,34 @@ fn add_refusal_material(
             .iter()
             .filter(|operation| operation.role == OperationRole::Refusal)
         {
-            let mutant = operation
-                .mutant
-                .ok_or(NativeV2ImportRefusal::RowAttribution)?;
+            let mutant = operation.mutant.ok_or_else(|| {
+                row_attribution_refusal("refusal-row", ceremony, "missing-mutant")
+            })?;
             let row = mutant.row();
             let run_id = run_ids
                 .get(ceremony)
                 .cloned()
-                .ok_or(NativeV2ImportRefusal::RowAttribution)?;
+                .ok_or_else(|| row_attribution_refusal(row, ceremony, "missing-run"))?;
             let request_id = global_request_id(ceremony, &operation.request_id);
             let control_id = operation
                 .control_request_id
                 .as_deref()
-                .ok_or(NativeV2ImportRefusal::RowAttribution)?;
-            let control = semantic_operation(transcripts, ceremony, OperationRole::Control)?;
+                .ok_or_else(|| row_attribution_refusal(row, ceremony, "missing-control-link"))?;
+            let control = semantic_operation(transcripts, row, ceremony, OperationRole::Control)?;
             if control.request_id != control_id {
-                return Err(NativeV2ImportRefusal::RowAttribution);
+                return Err(row_attribution_refusal(
+                    row,
+                    ceremony,
+                    "control-link-differs",
+                ));
             }
             let support_request_id = global_request_id(ceremony, control_id);
             let support = LiveSupportLink::new(
                 run_id.clone(),
                 support_request_id.clone(),
                 control.request_bytes.clone(),
-                operation_response(control).map_err(|()| NativeV2ImportRefusal::RowAttribution)?,
+                operation_response(control)
+                    .map_err(|()| row_attribution_refusal(row, ceremony, "control-response"))?,
             );
             material
                 .observations
@@ -3387,8 +3471,9 @@ fn add_refusal_material(
                     row,
                     run_id: run_id.clone(),
                     request_id: request_id.clone(),
-                    declared_boundary: boundary_for(mutant)
-                        .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+                    declared_boundary: boundary_for(mutant).ok_or_else(|| {
+                        row_attribution_refusal(row, ceremony, "missing-boundary")
+                    })?,
                     observed_layer: operation.layer,
                     detail: operation.detail.clone(),
                     support,
@@ -3421,11 +3506,13 @@ fn add_pair_material(
 ) -> Result<(), NativeV2ImportRefusal> {
     let explicit = semantic_operation(
         transcripts,
+        ROW_ROSTER[41],
         "pairs-arc",
         OperationRole::Paired(LivePairMember::Explicit),
     )?;
     let private = semantic_operation(
         transcripts,
+        ROW_ROSTER[41],
         "pairs-arc",
         OperationRole::Paired(LivePairMember::Private),
     )?;
@@ -3435,7 +3522,7 @@ fn add_pair_material(
     let pair_run_id = run_ids
         .get("pairs-arc")
         .cloned()
-        .ok_or(NativeV2ImportRefusal::RowAttribution)?;
+        .ok_or_else(|| row_attribution_refusal(ROW_ROSTER[41], "pairs-arc", "missing-run"))?;
     let explicit_request_id = global_request_id("pairs-arc", &explicit.request_id);
     let private_request_id = global_request_id("pairs-arc", &private.request_id);
     material
@@ -3444,14 +3531,14 @@ fn add_pair_material(
             row: ROW_ROSTER[41],
             explicit_run_id: pair_run_id.clone(),
             explicit_request_id: explicit_request_id.clone(),
-            explicit_identity: explicit
-                .accepted_identity
-                .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+            explicit_identity: explicit.accepted_identity.ok_or_else(|| {
+                row_attribution_refusal(ROW_ROSTER[41], "pairs-arc", "explicit-identity")
+            })?,
             private_run_id: pair_run_id.clone(),
             private_request_id: private_request_id.clone(),
-            private_identity: private
-                .accepted_identity
-                .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+            private_identity: private.accepted_identity.ok_or_else(|| {
+                row_attribution_refusal(ROW_ROSTER[41], "pairs-arc", "private-identity")
+            })?,
             relation: VALIDATED_PAIR_RELATION.to_owned(),
         });
     for request_id in [explicit_request_id, private_request_id] {
@@ -3466,7 +3553,194 @@ fn add_pair_material(
     Ok(())
 }
 
+fn validate_observation_rows(material: &MaterialBuilder) -> Result<(), NativeV2ImportRefusal> {
+    let mut observed = BTreeSet::new();
+    for observation in &material.observations {
+        match observation {
+            LiveReportObservation::NativeAcceptance { row, .. }
+            | LiveReportObservation::CompositeTwoAcceptance { row, .. }
+            | LiveReportObservation::NativeRefusalWithSupport { row, .. }
+            | LiveReportObservation::PairedRelation { row, .. } => {
+                if !observed.insert(*row) {
+                    return Err(row_attribution_refusal(
+                        *row,
+                        "observation",
+                        "duplicate-observation-row",
+                    ));
+                }
+            }
+            LiveReportObservation::MultiRowSemantic { witness } => {
+                for row in witness.rows() {
+                    if !observed.insert(*row) {
+                        return Err(row_attribution_refusal(
+                            *row,
+                            "observation",
+                            "duplicate-observation-row",
+                        ));
+                    }
+                }
+            }
+            LiveReportObservation::RecordedObservationUnbound { row, .. }
+            | LiveReportObservation::Determinism { row, .. }
+            | LiveReportObservation::FirstPartyFact { row, .. } => {
+                return Err(row_attribution_refusal(
+                    *row,
+                    "observation",
+                    "unbound-observation-shape",
+                ));
+            }
+        }
+    }
+    for row in ROW_ROSTER {
+        if !observed.contains(row) {
+            return Err(row_attribution_refusal(
+                row,
+                "observation",
+                "missing-observation-row",
+            ));
+        }
+    }
+    Ok(())
+}
+
+type PrimaryReuse<'a> = BTreeMap<(&'a str, &'a str), BTreeSet<&'static str>>;
+
+fn validate_primary_reuse(reuse: &PrimaryReuse<'_>) -> Result<(), NativeV2ImportRefusal> {
+    let parity_reuse = BTreeSet::from([ROW_ROSTER[0], ROW_ROSTER[10]]);
+    let sponsor_reuse = BTreeSet::from([ROW_ROSTER[19], ROW_ROSTER[21]]);
+    for ((_, request_id), rows) in reuse {
+        if rows.len() == 1 || rows == &parity_reuse || rows == &sponsor_reuse {
+            continue;
+        }
+        let row = rows.iter().next().copied().unwrap_or("row-roster");
+        let ceremony = request_id.split_once('/').map_or("request", |pair| pair.0);
+        return Err(row_attribution_refusal(
+            row,
+            ceremony,
+            "unauthorized-primary-reuse",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_row_links(material: &MaterialBuilder) -> Result<(), NativeV2ImportRefusal> {
+    let mut primary_links = BTreeSet::new();
+    let mut primary_reuse = PrimaryReuse::new();
+    let mut support_bindings = BTreeMap::<&str, (&str, &str)>::new();
+    for (index, row) in ROW_ROSTER.into_iter().enumerate() {
+        let expected_ceremonies = row_ceremonies(row)
+            .ok_or_else(|| row_attribution_refusal(row, "row-map", "missing-row-map"))?
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let primary = material
+            .links
+            .iter()
+            .filter(|link| link.row == row && link.class == NativeV2LinkClass::Primary)
+            .collect::<Vec<_>>();
+        let expected_primary = if matches!(index, 0 | 41) { 2 } else { 1 };
+        if primary.len() != expected_primary {
+            return Err(row_attribution_refusal(
+                row,
+                "primary-link",
+                "primary-link-census",
+            ));
+        }
+        let ceremonies = primary
+            .iter()
+            .map(|link| link.ceremony.as_str())
+            .collect::<BTreeSet<_>>();
+        if ceremonies != expected_ceremonies {
+            return Err(row_attribution_refusal(
+                row,
+                "primary-link",
+                "primary-ceremony-map",
+            ));
+        }
+        for link in primary {
+            if !primary_links.insert((
+                link.row,
+                link.ceremony.as_str(),
+                link.run_id.as_str(),
+                link.request_id.as_str(),
+            )) {
+                return Err(row_attribution_refusal(
+                    row,
+                    &link.ceremony,
+                    "duplicate-primary-link",
+                ));
+            }
+            primary_reuse
+                .entry((link.run_id.as_str(), link.request_id.as_str()))
+                .or_default()
+                .insert(row);
+        }
+        let supports = material
+            .links
+            .iter()
+            .filter(|link| link.row == row && link.class == NativeV2LinkClass::Support)
+            .collect::<Vec<_>>();
+        let expected_supports = usize::from((24..=40).contains(&index));
+        if supports.len() != expected_supports {
+            return Err(row_attribution_refusal(
+                row,
+                "support-link",
+                "support-link-census",
+            ));
+        }
+        for link in supports {
+            let binding = (link.run_id.as_str(), link.request_id.as_str());
+            if support_bindings
+                .insert(link.ceremony.as_str(), binding)
+                .is_some_and(|previous| previous != binding)
+            {
+                return Err(row_attribution_refusal(
+                    row,
+                    &link.ceremony,
+                    "support-link-differs",
+                ));
+            }
+        }
+    }
+    validate_primary_reuse(&primary_reuse)
+}
+
+type SupportMaterial<'a> = (&'a str, &'a [u8], &'a LiveTargetResponse);
+
+fn validate_support_repeats(material: &MaterialBuilder) -> Result<(), NativeV2ImportRefusal> {
+    let mut supports = BTreeMap::<&str, SupportMaterial<'_>>::new();
+    for observation in &material.observations {
+        let LiveReportObservation::NativeRefusalWithSupport { row, support, .. } = observation
+        else {
+            continue;
+        };
+        let offered = (
+            support.run_id(),
+            support.request_bytes(),
+            support.response(),
+        );
+        let Some(previous) = supports.insert(support.request_id(), offered) else {
+            continue;
+        };
+        if previous != offered {
+            let ceremony = support
+                .request_id()
+                .split_once('/')
+                .map_or("support", |pair| pair.0);
+            return Err(row_attribution_refusal(
+                *row,
+                ceremony,
+                "support-bytes-differ",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn finish_material(mut material: MaterialBuilder) -> Result<MaterialParts, NativeV2ImportRefusal> {
+    validate_observation_rows(&material)?;
+    validate_row_links(&material)?;
+    validate_support_repeats(&material)?;
     material.links.sort_by(|left, right| {
         ROW_ROSTER
             .iter()
@@ -3482,7 +3756,7 @@ fn finish_material(mut material: MaterialBuilder) -> Result<MaterialParts, Nativ
             Ok(NativeV2RowAttribution {
                 row,
                 ceremonies: row_ceremonies(row)
-                    .ok_or(NativeV2ImportRefusal::RowAttribution)?
+                    .ok_or_else(|| row_attribution_refusal(row, "row-map", "missing-attribution"))?
                     .iter()
                     .map(ToString::to_string)
                     .collect(),
@@ -3490,10 +3764,18 @@ fn finish_material(mut material: MaterialBuilder) -> Result<MaterialParts, Nativ
         })
         .collect::<Result<Vec<_>, NativeV2ImportRefusal>>()?;
     if material.observations.len() != 41 {
-        return Err(NativeV2ImportRefusal::RowAttribution);
+        return Err(row_attribution_refusal(
+            "row-roster",
+            "observation",
+            "observation-census",
+        ));
     }
     if attributions.len() != ROW_ROSTER.len() {
-        return Err(NativeV2ImportRefusal::RowAttribution);
+        return Err(row_attribution_refusal(
+            "row-roster",
+            "row-map",
+            "attribution-census",
+        ));
     }
     Ok((material.observations, material.links, attributions))
 }
@@ -3514,6 +3796,43 @@ fn build_material(
     add_refusal_material(&mut material, parsed, &transcripts, run_ids)?;
     add_pair_material(&mut material, &transcripts, run_ids)?;
     finish_material(material)
+}
+
+fn validate_corpus_semantic_census(
+    parsed: &[ParsedTranscript],
+    role_census: [usize; 6],
+) -> Result<(), NativeV2ImportRefusal> {
+    if parsed
+        .iter()
+        .map(|transcript| transcript.summary.ceremony())
+        .ne(NATIVE_V2_R7_CEREMONY_ROSTER)
+    {
+        return Err(row_attribution_refusal(
+            "row-roster",
+            "corpus",
+            "ceremony-order",
+        ));
+    }
+    if role_census != [107, 31, 5, 17, 1, 1] {
+        return Err(row_attribution_refusal(
+            "row-roster",
+            "corpus",
+            "role-census",
+        ));
+    }
+    if parsed
+        .iter()
+        .map(|transcript| transcript.summary.operation_count())
+        .sum::<usize>()
+        != 162
+    {
+        return Err(row_attribution_refusal(
+            "row-roster",
+            "corpus",
+            "operation-census",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_inputs(
@@ -3562,24 +3881,7 @@ fn validate_inputs(
         }
         parsed.push(transcript);
     }
-    if parsed
-        .iter()
-        .map(|transcript| transcript.summary.ceremony())
-        .ne(NATIVE_V2_R7_CEREMONY_ROSTER)
-    {
-        return Err(NativeV2ImportRefusal::RowAttribution);
-    }
-    if role_census != [107, 31, 5, 17, 1, 1] {
-        return Err(NativeV2ImportRefusal::RowAttribution);
-    }
-    if parsed
-        .iter()
-        .map(|transcript| transcript.summary.operation_count())
-        .sum::<usize>()
-        != 162
-    {
-        return Err(NativeV2ImportRefusal::RowAttribution);
-    }
+    validate_corpus_semantic_census(&parsed, role_census)?;
     let (runs, run_ids) = build_runs(&parsed)?;
     let (observations, links, attributions) = build_material(&parsed, &run_ids)?;
     Ok(ValidatedNativeV2R7Corpus {
@@ -3750,10 +4052,22 @@ mod tests {
             .iter()
             .map(ProvenNativeV2Link::request_id)
             .collect::<BTreeSet<_>>();
+        let primary_count = corpus
+            .links()
+            .iter()
+            .filter(|link| link.class() == NativeV2LinkClass::Primary)
+            .count();
+        let support_count = corpus
+            .links()
+            .iter()
+            .filter(|link| link.class() == NativeV2LinkClass::Support)
+            .count();
         assert_eq!(corpus.transcripts().len(), 39);
         assert_eq!(corpus.outcome_count(), 40);
         assert_eq!(corpus.attributions().len(), 42);
         assert_eq!(corpus.observations().len(), 41);
+        assert_eq!(primary_count, 44);
+        assert_eq!(support_count, 17);
         assert_eq!(corpus.content_address(), NATIVE_V2_R7_RUN_ADDRESS);
         assert_eq!(bound_run_ids, linked_run_ids);
         assert_eq!(bound_request_ids, linked_request_ids);
