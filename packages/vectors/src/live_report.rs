@@ -41,6 +41,7 @@ use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
 use target_elements::TargetProjection;
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use transaction::Txid;
+use transaction::bytes::SerializedFieldLocator;
 
 use crate::live_evidence::{
     LiveEvidenceCensus, LiveInfrastructureBlocker, LiveRowStanding, LiveTransferEvidencePlan,
@@ -73,7 +74,12 @@ use crate::matrix::EvidenceBoundary;
 /// records required and observed report-layer census buckets separately.
 /// Schema 3 is hard-rejected because its plan-derived report observations
 /// are capability claims rather than validated evidence.
-pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 4;
+///
+/// Revision 5 binds every run to the archive bytes it came from, a closed
+/// protocol revision, algorithm-tagged fixture digests, and typed request
+/// roles. Schema 4 is hard-rejected because it cannot distinguish a
+/// historical-v1 digest from a forward-v2 digest or detect a revision lie.
+pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 5;
 
 /// What a safety report is, said in the bytes.
 ///
@@ -200,6 +206,223 @@ impl LiveExecutorProvenance {
     }
 }
 
+/// The native protocol revision an archived run actually spoke.
+///
+/// This is archival data. In particular, retaining revision 6 here does
+/// not make revision 6 acceptable to the current live executor.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum NativeProtocolRevision {
+    /// The historical rerun-day protocol.
+    Revision6,
+    /// The current forward-capture protocol.
+    Revision7,
+}
+
+impl NativeProtocolRevision {
+    /// The integer carried by the archived handshake.
+    #[must_use]
+    pub const fn code(self) -> u32 {
+        match self {
+            Self::Revision6 => 6,
+            Self::Revision7 => 7,
+        }
+    }
+}
+
+/// Which fixture-digest algorithm produced one archived value.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FixtureDigestAlgorithm {
+    /// The immutable algorithm used by historical revision-6 runs.
+    HistoricalV1,
+    /// The sole algorithm used by forward revision-7 capture.
+    ForwardV2,
+}
+
+impl FixtureDigestAlgorithm {
+    /// The canonical report spelling.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::HistoricalV1 => "historical-v1",
+            Self::ForwardV2 => "forward-v2",
+        }
+    }
+}
+
+/// One digest value and the algorithm it belongs to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FixtureDigestFact {
+    algorithm: FixtureDigestAlgorithm,
+    value: [u8; 32],
+}
+
+impl FixtureDigestFact {
+    /// The algorithm that produced the archived value.
+    #[must_use]
+    pub const fn algorithm(self) -> FixtureDigestAlgorithm {
+        self.algorithm
+    }
+
+    /// The exact archived value.
+    #[must_use]
+    pub const fn value(self) -> [u8; 32] {
+        self.value
+    }
+}
+
+/// The matrix mutation one refused request stages.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LiveMutantKind {
+    /// The confidential asset-commitment mutant.
+    ConfidentialAssetCommitment,
+    /// The empty-signature mutant.
+    EmptySignature,
+    /// The hidden private-U output mutant.
+    HiddenPrivateUOutput,
+    /// The key-path escape mutant.
+    KeyPathEscape,
+    /// The malformed range-proof mutant.
+    MalformedRangeproof,
+    /// The malformed signature mutant.
+    MalformedSignature,
+    /// The missing sponsor-authorization mutant.
+    MissingSponsorAuthorization,
+    /// The no-coordinator leaf arrangement.
+    NoCoordinator,
+    /// The omitted-source mutant.
+    OmittedSource,
+    /// The one-above input/output tally mutant.
+    OutputTotalOneAboveInput,
+    /// The one-below input/output tally mutant.
+    OutputTotalOneBelowInput,
+    /// The private commitment-imbalance mutant.
+    PrivateCtImbalance,
+    /// The private-output omission mutant.
+    PrivateOutputOmitted,
+    /// The two-coordinator leaf arrangement.
+    TwoCoordinators,
+    /// The vault-control entitlement or bare-U program mutant.
+    VaultControlEntitlementOrBareUOutput,
+    /// The wrong explicit-asset mutant.
+    WrongExplicitAsset,
+    /// The wrong private blinding-balance mutant.
+    WrongPrivateBlindingBalance,
+}
+
+impl LiveMutantKind {
+    /// The matrix row this typed mutant stages.
+    #[must_use]
+    pub const fn row(self) -> &'static str {
+        match self {
+            Self::ConfidentialAssetCommitment => "confidential-asset-commitment",
+            Self::EmptySignature => "empty-signature",
+            Self::HiddenPrivateUOutput => "hidden-private-u-output",
+            Self::KeyPathEscape => "key-path-escape",
+            Self::MalformedRangeproof => "malformed-rangeproof",
+            Self::MalformedSignature => "malformed-signature",
+            Self::MissingSponsorAuthorization => "missing-sponsor-authorization",
+            Self::NoCoordinator => "no-coordinator",
+            Self::OmittedSource => "omitted-source",
+            Self::OutputTotalOneAboveInput => "output-total-one-above-input",
+            Self::OutputTotalOneBelowInput => "output-total-one-below-input",
+            Self::PrivateCtImbalance => "private-ct-imbalance",
+            Self::PrivateOutputOmitted => "private-output-omitted",
+            Self::TwoCoordinators => "two-coordinators",
+            Self::VaultControlEntitlementOrBareUOutput => {
+                "vault-control-entitlement-or-bare-u-output"
+            }
+            Self::WrongExplicitAsset => "wrong-explicit-asset",
+            Self::WrongPrivateBlindingBalance => "wrong-private-blinding-balance",
+        }
+    }
+}
+
+/// Where a typed mutation claims to differ from its accepted control.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LiveMutationLocator {
+    /// One encoder-located output field.
+    SerializedOutputField(SerializedFieldLocator),
+    /// One item of one input witness stack.
+    WitnessItem {
+        /// The input position.
+        input_index: usize,
+        /// The witness-item position.
+        item_index: usize,
+    },
+    /// The exact differing range in witnessless target bytes.
+    WitnesslessRange {
+        /// Inclusive start.
+        start: usize,
+        /// Exclusive end.
+        end: usize,
+    },
+    /// A structural input/output-census mutation.
+    TransactionShape {
+        /// Control input count.
+        control_inputs: usize,
+        /// Mutant input count.
+        mutant_inputs: usize,
+        /// Control output count.
+        control_outputs: usize,
+        /// Mutant output count.
+        mutant_outputs: usize,
+    },
+}
+
+/// Which half of a paired equality request one archive member is.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LivePairMember {
+    /// The explicit member.
+    Explicit,
+    /// The private committed member.
+    Private,
+}
+
+impl LivePairMember {
+    /// The canonical report spelling.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Explicit => "explicit",
+            Self::Private => "private",
+        }
+    }
+}
+
+/// Public constructor inputs needed to recompute one paired projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LivePairProjectionInput {
+    input_owners: Vec<String>,
+    semantic_input_amounts: Vec<u64>,
+    destination_programs: BTreeMap<String, Vec<u8>>,
+    semantic_destination_amounts: BTreeMap<String, u64>,
+}
+
+/// What one exact request does inside its ceremony.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LiveRequestFact {
+    /// A row-bearing accepted request.
+    Acceptance,
+    /// An accepted control used to attribute one or more refusals.
+    Control,
+    /// A refused typed mutant and its same-ceremony control.
+    Refusal {
+        /// The staged matrix mutation.
+        mutant: LiveMutantKind,
+        /// The accepted control request in this run.
+        control_request_id: String,
+        /// The mutation's decoded-byte locator or shape.
+        locator: LiveMutationLocator,
+    },
+    /// One accepted member of a paired projection comparison.
+    Paired {
+        /// Which representation this request carries.
+        member: LivePairMember,
+        /// Public inputs needed for the independent projection.
+        projection: LivePairProjectionInput,
+    },
+}
+
 /// One exact target response retained by a validated run binding.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -224,9 +447,13 @@ pub enum LiveTargetResponse {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveRunBinding {
     run_id: String,
+    archive_bytes: Vec<u8>,
+    revision: NativeProtocolRevision,
+    digest_facts: BTreeMap<String, FixtureDigestFact>,
     deployment: LiveDeploymentBinding,
     executor: LiveExecutorProvenance,
     requests: BTreeMap<String, Vec<u8>>,
+    request_facts: BTreeMap<String, LiveRequestFact>,
     responses: BTreeMap<String, LiveTargetResponse>,
 }
 
@@ -235,6 +462,24 @@ impl LiveRunBinding {
     #[must_use]
     pub fn run_id(&self) -> &str {
         &self.run_id
+    }
+
+    /// The exact archived bytes the typed provenance was parsed from.
+    #[must_use]
+    pub fn archive_bytes(&self) -> &[u8] {
+        &self.archive_bytes
+    }
+
+    /// The archived protocol revision.
+    #[must_use]
+    pub const fn revision(&self) -> NativeProtocolRevision {
+        self.revision
+    }
+
+    /// Every algorithm-tagged fixture digest carried by the run.
+    #[must_use]
+    pub const fn digest_facts(&self) -> &BTreeMap<String, FixtureDigestFact> {
+        &self.digest_facts
     }
 
     /// The exact deployment binding.
@@ -253,6 +498,12 @@ impl LiveRunBinding {
     #[must_use]
     pub const fn requests(&self) -> &BTreeMap<String, Vec<u8>> {
         &self.requests
+    }
+
+    /// The typed role and validation inputs for every exact request.
+    #[must_use]
+    pub const fn request_facts(&self) -> &BTreeMap<String, LiveRequestFact> {
+        &self.request_facts
     }
 
     /// Exact responses, keyed by the same request identity.
@@ -392,7 +643,7 @@ impl LiveReportLayerRequirement {
     }
 }
 
-/// One report-layer property established against canonical schema-4 bytes.
+/// One report-layer property established against canonical schema-5 bytes.
 ///
 /// There is deliberately no public constructor. Values live only inside a
 /// [`ValidatedLiveTransferSafetyReport`] returned after disclosure validation.
@@ -687,6 +938,12 @@ pub enum LiveSafetyReportRefusal {
     },
     /// The report and the derived corpus carry different run identities.
     RunCensusDiffers,
+    /// One run's typed fields were not parsed from these archive bytes.
+    RunArchiveDiffers(String),
+    /// One run's typed protocol revision differs from its archive.
+    RunProtocolRevisionDiffers(String),
+    /// One run's digest values or algorithm tags differ from its archive.
+    RunDigestFactsDiffer(String),
     /// One run's deployment differs from the validated ledger.
     RunDeploymentDiffers(String),
     /// One run's exact request census or bytes differ.
@@ -1139,12 +1396,28 @@ fn compare_run_bindings(
         if offered.run_id != expected.run_id {
             return Err(LiveSafetyReportRefusal::RunCensusDiffers);
         }
+        if offered.archive_bytes != expected.archive_bytes {
+            return Err(LiveSafetyReportRefusal::RunArchiveDiffers(
+                offered.run_id.clone(),
+            ));
+        }
+        if offered.revision != expected.revision {
+            return Err(LiveSafetyReportRefusal::RunProtocolRevisionDiffers(
+                offered.run_id.clone(),
+            ));
+        }
+        if offered.digest_facts != expected.digest_facts {
+            return Err(LiveSafetyReportRefusal::RunDigestFactsDiffer(
+                offered.run_id.clone(),
+            ));
+        }
         if offered.deployment != expected.deployment {
             return Err(LiveSafetyReportRefusal::RunDeploymentDiffers(
                 offered.run_id.clone(),
             ));
         }
-        if offered.requests != expected.requests {
+        if offered.requests != expected.requests || offered.request_facts != expected.request_facts
+        {
             return Err(LiveSafetyReportRefusal::RunRequestDiffers(
                 offered.run_id.clone(),
             ));
@@ -1683,6 +1956,16 @@ fn hex_bytes(bytes: &[u8]) -> String {
 fn render_run_bindings(text: &mut String, runs: &[LiveRunBinding]) {
     for run in runs {
         let _ = writeln!(text, "run {}", run.run_id);
+        let _ = writeln!(text, "run_archive {}", hex_bytes(&run.archive_bytes));
+        let _ = writeln!(text, "run_protocol_revision {}", run.revision.code());
+        for (name, fact) in &run.digest_facts {
+            let _ = writeln!(
+                text,
+                "run_digest {name} {} {}",
+                fact.algorithm.name(),
+                hex_bytes(&fact.value)
+            );
+        }
         let _ = writeln!(
             text,
             "run_deployment_environment {:?}",
@@ -1722,6 +2005,9 @@ fn render_run_bindings(text: &mut String, runs: &[LiveRunBinding]) {
         );
         for (request_id, bytes) in &run.requests {
             let _ = writeln!(text, "run_request {request_id} {}", hex_bytes(bytes));
+        }
+        for (request_id, fact) in &run.request_facts {
+            let _ = writeln!(text, "run_request_fact {request_id} {fact:?}");
         }
         for (request_id, response) in &run.responses {
             match response {
@@ -2007,9 +2293,10 @@ pub fn section_scoreboard(
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveDeploymentBinding, LiveExecutorProvenance, LiveRecordedObservation,
-        LiveReportObservation, LiveRunBinding, LiveSafetyCompleteness, LiveSafetyDiagnostics,
-        LiveSafetyReportRefusal, LiveSafetyReportRole, LiveTargetResponse, RecomputedItem,
+        FixtureDigestAlgorithm, FixtureDigestFact, LiveDeploymentBinding, LiveExecutorProvenance,
+        LiveRecordedObservation, LiveReportObservation, LiveRequestFact, LiveRunBinding,
+        LiveSafetyCompleteness, LiveSafetyDiagnostics, LiveSafetyReportRefusal,
+        LiveSafetyReportRole, LiveTargetResponse, NativeProtocolRevision, RecomputedItem,
         VolatileField, assemble_live_safety_report, compare_run_bindings,
         render_live_safety_report, section_scoreboard, target_evidence_name,
         validate_live_safety_report, validate_report_disclosures,
@@ -2034,6 +2321,15 @@ mod tests {
             parsed_identity("40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029");
         LiveRunBinding {
             run_id: "synthetic-bound-run".to_owned(),
+            archive_bytes: b"synthetic archive facts\n".to_vec(),
+            revision: NativeProtocolRevision::Revision6,
+            digest_facts: std::collections::BTreeMap::from([(
+                "fixture".to_owned(),
+                FixtureDigestFact {
+                    algorithm: FixtureDigestAlgorithm::HistoricalV1,
+                    value: [0x33; 32],
+                },
+            )]),
             deployment: LiveDeploymentBinding {
                 environment: "development".to_owned(),
                 network_id: [0x11; 32],
@@ -2050,6 +2346,10 @@ mod tests {
             requests: std::collections::BTreeMap::from([(
                 "request-a".to_owned(),
                 vec![0x01, 0x02, 0x03],
+            )]),
+            request_facts: std::collections::BTreeMap::from([(
+                "request-a".to_owned(),
+                LiveRequestFact::Acceptance,
             )]),
             responses: std::collections::BTreeMap::from([(
                 "request-a".to_owned(),
@@ -2183,12 +2483,12 @@ mod tests {
                 (
                     "report-publishes-sponsor-amount",
                     LiveReportRequirement::SponsorAmountAbsent,
-                    4,
+                    5,
                 ),
                 (
                     "report-publishes-sponsor-opening",
                     LiveReportRequirement::SponsorOpeningAbsent,
-                    4,
+                    5,
                 ),
             ],
         );
@@ -2410,7 +2710,7 @@ mod tests {
     #[test]
     fn schema_two_is_hard_rejected() {
         // Schema 2 is historical and never a legacy-validated route into
-        // the evidence-bearing schema 4 report.
+        // the evidence-bearing schema 5 report.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
         let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
