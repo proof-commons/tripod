@@ -4224,20 +4224,20 @@ mod tests {
         assert!(rendered.contains("output_witness_vector_length none"));
     }
 
-    fn synthetic_forward_v2_live_record() -> ProofBearingObservationRecord {
-        const ISSUED_ASSET: &str =
-            "4242424242424242424242424242424242424242424242424242424242424242";
-        const ACCEPTED_TXID: &str =
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        const WITNESS_TXID: &str =
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const SYNTHETIC_FORWARD_V2_ISSUED_ASSET: &str =
+        "4242424242424242424242424242424242424242424242424242424242424242";
+    const SYNTHETIC_FORWARD_V2_ACCEPTED_TXID: &str =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const SYNTHETIC_FORWARD_V2_WITNESS_TXID: &str =
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
+    fn synthetic_forward_v2_coins() -> Vec<ObservedConfidentialCoin> {
         let owners = [
             OwnerLeaf::derive(&FIRST_SCALAR).expect("the first owner derives"),
             OwnerLeaf::derive(&SECOND_SCALAR).expect("the second owner derives"),
         ];
         let txid = transaction::bytes::Txid::from_internal([0x66; 32]);
-        let coins: Vec<_> = owners
+        owners
             .iter()
             .enumerate()
             .map(|(index, owner)| {
@@ -4256,12 +4256,11 @@ mod tests {
                     matches_expectation: true,
                 }
             })
-            .collect();
-        let first_outpoint = coins
-            .first()
-            .expect("the synthetic forward record carries a predecessor coin")
-            .outpoint();
-        let observations = ProofBearingCase::ALL
+            .collect()
+    }
+
+    fn synthetic_forward_v2_observations() -> Vec<ProofBearingObservation> {
+        ProofBearingCase::ALL
             .iter()
             .copied()
             .map(|case| ProofBearingObservation {
@@ -4275,11 +4274,16 @@ mod tests {
                     .is_negative_control()
                     .then(|| "synthetic forward-v2 refusal".to_owned()),
                 accepted_txid: matches!(case, ProofBearingCase::SelectedProfile)
-                    .then(|| ACCEPTED_TXID.to_owned()),
+                    .then(|| SYNTHETIC_FORWARD_V2_ACCEPTED_TXID.to_owned()),
                 submitted_bytes: 9_100,
             })
-            .collect();
-        let construction_refusals = ProofBearingConstructionControl::ALL
+            .collect()
+    }
+
+    fn synthetic_forward_v2_construction_refusals(
+        first_outpoint: Outpoint,
+    ) -> Vec<ProofBearingConstructionRefusal> {
+        ProofBearingConstructionControl::ALL
             .iter()
             .copied()
             .map(|control| ProofBearingConstructionRefusal {
@@ -4288,8 +4292,11 @@ mod tests {
                     outpoint: first_outpoint,
                 },
             })
-            .collect();
-        let candidate_messages = ProofBearingCase::ALL
+            .collect()
+    }
+
+    fn synthetic_forward_v2_candidate_messages() -> BTreeMap<ProofBearingCase, Digest32> {
+        ProofBearingCase::ALL
             .iter()
             .copied()
             .enumerate()
@@ -4297,8 +4304,11 @@ mod tests {
                 let byte = u8::try_from(index).expect("the four-case index fits") + 0x40;
                 (case, [byte; 32])
             })
-            .collect();
-        let submitted_transactions = ProofBearingCase::ALL
+            .collect()
+    }
+
+    fn synthetic_forward_v2_submitted_transactions() -> BTreeMap<ProofBearingCase, Vec<u8>> {
+        ProofBearingCase::ALL
             .iter()
             .copied()
             .enumerate()
@@ -4306,30 +4316,42 @@ mod tests {
                 let byte = u8::try_from(index).expect("the four-case index fits");
                 (case, vec![byte; 9_100])
             })
-            .collect();
+            .collect()
+    }
+
+    fn synthetic_forward_v2_reverification() -> ProofBearingReverification {
+        ProofBearingReverification {
+            accepted_txid: SYNTHETIC_FORWARD_V2_ACCEPTED_TXID.to_owned(),
+            witness_txid: SYNTHETIC_FORWARD_V2_WITNESS_TXID.to_owned(),
+            block_height: 9,
+            readback_matches_submission: true,
+            recomputed_message: [0x43; 32],
+            signature_from_readback: vec![0x5a; 64],
+            verified: Ok(()),
+            verifies_against_emptied_vector_message: false,
+        }
+    }
+
+    fn synthetic_forward_v2_live_record() -> ProofBearingObservationRecord {
+        let coins = synthetic_forward_v2_coins();
+        let first_outpoint = coins
+            .first()
+            .expect("the synthetic forward record carries a predecessor coin")
+            .outpoint();
 
         ProofBearingObservationRecord {
             fixture_digest_algorithm: FixtureDigestAlgorithm::ForwardV2,
-            issued_asset: Some(ISSUED_ASSET.to_owned()),
+            issued_asset: Some(SYNTHETIC_FORWARD_V2_ISSUED_ASSET.to_owned()),
             predecessor_digest: Some([0xa2; 32]),
             coins,
             output_witness_vector_length: Some(2),
             output_witness_proof_bytes: vec![4_200, 4_200],
             spent_value_prefixes: vec![0x0a, 0x0b],
-            observations,
-            submitted_transactions,
-            construction_refusals,
-            reverification: Some(ProofBearingReverification {
-                accepted_txid: ACCEPTED_TXID.to_owned(),
-                witness_txid: WITNESS_TXID.to_owned(),
-                block_height: 9,
-                readback_matches_submission: true,
-                recomputed_message: [0x43; 32],
-                signature_from_readback: vec![0x5a; 64],
-                verified: Ok(()),
-                verifies_against_emptied_vector_message: false,
-            }),
-            candidate_messages,
+            observations: synthetic_forward_v2_observations(),
+            submitted_transactions: synthetic_forward_v2_submitted_transactions(),
+            construction_refusals: synthetic_forward_v2_construction_refusals(first_outpoint),
+            reverification: Some(synthetic_forward_v2_reverification()),
+            candidate_messages: synthetic_forward_v2_candidate_messages(),
             refusal: None,
         }
     }
