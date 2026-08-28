@@ -841,6 +841,8 @@ pub struct NativeV2OutcomeProjection {
     target_identity: Option<Txid>,
     submitted_bytes: Vec<u8>,
     detail: String,
+    mutant_kind: Option<LiveMutantKind>,
+    mutation_locator: Option<LiveMutationLocator>,
 }
 
 /// Read-only current facts shared by every validated ceremony.
@@ -880,6 +882,14 @@ impl NativeV2CeremonyProjection {
     pub fn semantic_rendering(&self) -> &[u8] {
         &self.semantic_rendering
     }
+
+    /// One uniquely rendered semantic field from this validated ceremony.
+    #[must_use]
+    pub fn semantic_value(&self, field: &str) -> Option<&str> {
+        unique_semantic_value(&self.semantic_rendering, field)
+            .ok()
+            .flatten()
+    }
 }
 
 impl NativeV2OutcomeProjection {
@@ -911,6 +921,18 @@ impl NativeV2OutcomeProjection {
     #[must_use]
     pub fn detail(&self) -> &str {
         &self.detail
+    }
+
+    /// The typed matrix mutant staged by this outcome, when it is a refusal.
+    #[must_use]
+    pub const fn mutant_kind(&self) -> Option<LiveMutantKind> {
+        self.mutant_kind
+    }
+
+    /// The validated location and shape of this outcome's mutation.
+    #[must_use]
+    pub const fn mutation_locator(&self) -> Option<&LiveMutationLocator> {
+        self.mutation_locator.as_ref()
     }
 }
 
@@ -4192,6 +4214,8 @@ fn build_outcome_projections(
                     target_identity: operation.accepted_identity,
                     submitted_bytes: operation.request_bytes.clone(),
                     detail: operation.detail.clone(),
+                    mutant_kind: operation.mutant,
+                    mutation_locator: operation.locator.clone(),
                 })
                 .collect();
             (ceremony.to_owned(), outcomes)

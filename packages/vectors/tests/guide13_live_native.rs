@@ -3237,80 +3237,166 @@ fn one_owner_authorization_is_observed_on_the_explicit_lane() {
     assert!(rendered.contains("discharges_no_matrix_row true"));
 }
 
+fn current_native_v2_corpus()
+-> &'static vectors::live_corpus_native_v2_r7::ValidatedNativeV2R7Corpus {
+    vectors::live_corpus_native_v2_r7::run_of_record()
+        .expect("the reviewed native-v2/revision-7 corpus validates")
+}
+
+fn current_ceremony_projection(
+    ceremony: &str,
+) -> &'static vectors::live_corpus_native_v2_r7::NativeV2CeremonyProjection {
+    current_native_v2_corpus()
+        .ceremony_projection(ceremony)
+        .unwrap_or_else(|| panic!("the current corpus projects {ceremony}"))
+}
+
+fn current_outcome_projections(
+    ceremony: &str,
+) -> &'static [vectors::live_corpus_native_v2_r7::NativeV2OutcomeProjection] {
+    current_native_v2_corpus()
+        .outcome_projections(ceremony)
+        .unwrap_or_else(|| panic!("the current corpus projects outcomes for {ceremony}"))
+}
+
+fn current_acceptance_projections(
+    ceremony: &str,
+) -> &'static [vectors::live_corpus_native_v2_r7::NativeV2AcceptanceProjection] {
+    current_native_v2_corpus()
+        .acceptance_projections(ceremony)
+        .unwrap_or_else(|| panic!("the current corpus projects acceptances for {ceremony}"))
+}
+
+fn sole_current_acceptance(
+    ceremony: &str,
+) -> &'static vectors::live_corpus_native_v2_r7::NativeV2AcceptanceProjection {
+    let [acceptance] = current_acceptance_projections(ceremony) else {
+        panic!("the current {ceremony} ceremony has one acceptance")
+    };
+    acceptance
+}
+
+fn current_accepted_outcome(
+    ceremony: &str,
+) -> &'static vectors::live_corpus_native_v2_r7::NativeV2OutcomeProjection {
+    let acceptance = sole_current_acceptance(ceremony);
+    current_outcome_projections(ceremony)
+        .iter()
+        .find(|outcome| outcome.target_identity() == Some(acceptance.identity()))
+        .unwrap_or_else(|| panic!("the current {ceremony} acceptance has its typed outcome"))
+}
+
+fn current_outcome_for_mutant(
+    ceremony: &str,
+    kind: LiveMutantKind,
+) -> &'static vectors::live_corpus_native_v2_r7::NativeV2OutcomeProjection {
+    current_outcome_projections(ceremony)
+        .iter()
+        .find(|outcome| outcome.mutant_kind() == Some(kind))
+        .unwrap_or_else(|| panic!("the current {ceremony} ceremony carries {}", kind.row()))
+}
+
+fn current_semantic_value(ceremony: &str, field: &str) -> &'static str {
+    current_ceremony_projection(ceremony)
+        .semantic_value(field)
+        .unwrap_or_else(|| panic!("the current {ceremony} ceremony carries {field}"))
+}
+
+fn current_semantic_u64(ceremony: &str, field: &str) -> u64 {
+    current_semantic_value(ceremony, field)
+        .parse()
+        .unwrap_or_else(|_| panic!("the current {ceremony} field {field} is an integer"))
+}
+
+fn current_semantic_line(ceremony: &str, prefix: &str) -> &'static str {
+    let rendering = std::str::from_utf8(current_ceremony_projection(ceremony).semantic_rendering())
+        .expect("the validated semantic rendering is UTF-8");
+    let mut matches = rendering.lines().filter(|line| line.starts_with(prefix));
+    let line = matches
+        .next()
+        .unwrap_or_else(|| panic!("the current {ceremony} ceremony carries {prefix}"));
+    assert!(
+        matches.next().is_none(),
+        "the current {ceremony} ceremony carries {prefix} once",
+    );
+    line
+}
+
+fn current_semantic_line_value(ceremony: &str, prefix: &str, field: &str) -> &'static str {
+    current_semantic_line(ceremony, prefix)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .find_map(|pair| match pair {
+            [candidate, value] if *candidate == field => Some(*value),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("the current {ceremony} line carries {field}"))
+}
+
+fn current_semantic_line_u64(ceremony: &str, prefix: &str, field: &str) -> u64 {
+    current_semantic_line_value(ceremony, prefix, field)
+        .parse()
+        .unwrap_or_else(|_| panic!("the current {ceremony} line's {field} is an integer"))
+}
+
+fn current_transaction(bytes: &[u8]) -> transaction::bytes::TargetTransaction {
+    transaction::bytes::TargetTransaction::decode(bytes)
+        .expect("validated current-corpus transaction bytes decode")
+}
+
 /// Bind every T5-026 answer after the transcript has been written.
 fn assert_owner_observation_matches_run_of_record(
     record: &vectors::live_owner_observation::OwnerObservationRecord,
 ) {
-    use vectors::live_owner_observation::run_of_record::{
-        self, ExpectedAcceptance, ExpectedCaseOutcome,
-    };
+    use vectors::live_owner_observation::OwnerObservationCase;
 
+    let expected = current_outcome_projections("owner-observation");
     assert_eq!(
         record.observations().len(),
-        run_of_record::EXPECTED_CASE_OUTCOMES.len(),
+        expected.len(),
         "the ceremony did not answer the full run-of-record census",
     );
+    assert_eq!(expected.len(), OwnerObservationCase::ALL.len());
 
     let mut expected_reverification_identity = None;
-    for (observation, expected) in record
+    for ((observation, case), expected) in record
         .observations()
         .iter()
-        .zip(run_of_record::EXPECTED_CASE_OUTCOMES)
+        .zip(OwnerObservationCase::ALL)
+        .zip(expected)
     {
-        match expected {
-            ExpectedCaseOutcome::Recorded {
-                case,
-                name,
-                layer,
-                acceptance,
-            } => {
-                assert_eq!(observation.case(), case, "the recorded case order drifted");
-                assert_eq!(
-                    observation.case().name(),
-                    name,
-                    "the recorded case name drifted",
-                );
-                assert_eq!(
-                    observation.layer(),
-                    layer,
-                    "{name} reached a different target layer",
-                );
-                match acceptance {
-                    ExpectedAcceptance::Refused => assert_eq!(
-                        observation.accepted_txid(),
-                        None,
-                        "{name} was refused but carried an accepted identity",
-                    ),
-                    ExpectedAcceptance::Accepted {
-                        identity,
-                        reverification_identity,
-                    } => {
-                        assert_eq!(
-                            observation.accepted_txid(),
-                            Some(identity),
-                            "{name} was accepted at a different identity",
-                        );
-                        assert!(
-                            expected_reverification_identity
-                                .replace(reverification_identity)
-                                .is_none(),
-                            "the run of record names more than one reverification",
-                        );
-                    }
-                }
-            }
-            ExpectedCaseOutcome::NotRecorded { case, name } => {
-                assert_eq!(
-                    observation.case(),
-                    case,
-                    "the unrecorded case order drifted"
-                );
-                assert_eq!(
-                    observation.case().name(),
-                    name,
-                    "the unrecorded case name drifted",
-                );
-            }
+        let name = case.name();
+        assert_eq!(observation.case(), *case, "the recorded case order drifted");
+        assert_eq!(
+            observation.layer(),
+            expected.layer(),
+            "{name} changed layer"
+        );
+        assert_eq!(
+            observation.detail(),
+            (!expected.detail().is_empty()).then_some(expected.detail()),
+            "{name} drew different target words",
+        );
+        assert_eq!(
+            observation.submitted_bytes(),
+            expected.submitted_bytes().len(),
+            "{name} submitted different bytes",
+        );
+        let identity = expected
+            .target_identity()
+            .map(|identity| identity.to_target_display());
+        assert_eq!(
+            observation.accepted_txid(),
+            identity.as_deref(),
+            "{name} changed accepted identity",
+        );
+        if let Some(identity) = identity {
+            assert_eq!(*case, OwnerObservationCase::SelectedProfile);
+            assert!(
+                expected_reverification_identity.replace(identity).is_none(),
+                "the current corpus names more than one reverification",
+            );
         }
     }
 
@@ -3323,7 +3409,7 @@ fn assert_owner_observation_matches_run_of_record(
         .expect("the selected acceptance carries its two-origin readback check");
     assert_eq!(
         check.accepted_txid(),
-        expected_reverification_identity,
+        expected_reverification_identity.as_str(),
         "the reverification named a different accepted transaction",
     );
     assert!(
@@ -3692,22 +3778,22 @@ fn check_proof_bearing_record(
 }
 
 // Bind the freshly written private-restart transcript to the forward-v2
-// fixture selector and its explicit acceptance state. Historical fixture
-// digests never enter this gate. While forward acceptance is pending, only
-// the matching receipt's recorded transaction identity remains an honest
-// bridge: the deterministic transaction bytes, unlike their fixture names,
-// are independent of the digest algorithm.
+// fixture selector and its recorded acceptance. T7-010 minted the link from
+// the validated current corpus, so no historical fallback remains honest or
+// reachable here.
 fn assert_private_restart_matches_the_run_of_record(
     record: &vectors::live_private_restart::PrivateRestartRecord,
     consumed: vectors::live_private_restart::ConsumedReceipt,
 ) {
-    use target_elements_conformance::protocol::ObservedOutcomeLayer;
     use vectors::live_private_restart::run_of_record::{
-        ForwardPrivateRestartExpectation, ForwardPrivateRestartExpectationRefusal,
-        HistoricalPrivateRestartRun, forward_private_restart_expectation,
-        historical_private_restart_run,
+        ForwardPrivateRestartExpectation, forward_private_restart_expectation,
     };
 
+    let ceremony = match consumed {
+        vectors::live_private_restart::ConsumedReceipt::Primary => "private-restart-control",
+        vectors::live_private_restart::ConsumedReceipt::Balancing => "private-restart-parity",
+    };
+    let current_outcome = current_accepted_outcome(ceremony);
     let ForwardPrivateRestartExpectation::V2(forward) = forward_private_restart_expectation();
     assert_eq!(
         record.predecessor_digest(),
@@ -3718,32 +3804,27 @@ fn assert_private_restart_matches_the_run_of_record(
         Some(identifier(forward.fixtures().successor(consumed))),
     );
     assert_eq!(record.consumed_receipt(), Some(consumed.name()));
-    assert_eq!(
-        record.observed_layer(),
-        Some(ObservedOutcomeLayer::Accepted),
-    );
+    assert_eq!(record.observed_layer(), Some(current_outcome.layer()));
     assert!(record.produced_an_accepted_control());
 
-    let expected_identity = match forward.acceptance().recorded_link() {
-        Ok(link) => {
-            let member = link.for_receipt(consumed);
-            assert_eq!(
-                record.consumed_commitment_prefix(),
-                Some(member.commitment_prefix()),
-            );
-            member.identity()
-        }
-        Err(ForwardPrivateRestartExpectationRefusal::AcceptancePending) => {
-            let HistoricalPrivateRestartRun::V1(historical) = historical_private_restart_run()
-                .expect("the immutable historical acceptance identities parse");
-            historical
-                .acceptances()
-                .for_receipt(consumed)
-                .acceptance()
-                .accepted_identity()
-        }
-    };
+    let link = forward
+        .acceptance()
+        .recorded_link()
+        .expect("T7-010 records the corpus-backed private-restart link");
+    let member = link.for_receipt(consumed);
+    assert_eq!(
+        record.consumed_commitment_prefix(),
+        Some(member.commitment_prefix()),
+    );
+    let expected_identity = member.identity();
     let expected_identity = expected_identity.to_string();
+    let current_identity = current_outcome
+        .target_identity()
+        .map(|identity| identity.to_target_display());
+    assert_eq!(
+        current_identity.as_deref(),
+        Some(expected_identity.as_str())
+    );
     assert_eq!(record.accepted_txid(), Some(expected_identity.as_str()));
 
     let reverification = record
@@ -4262,47 +4343,50 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
 fn assert_mutant_and_control_match_the_record(
     record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
 ) {
-    use target_elements_conformance::protocol::ObservedOutcomeLayer;
-    use vectors::live_owner_signing_negatives::run_of_record;
-
+    let expected = current_outcome_for_mutant(
+        "owner-signing-negatives",
+        LiveMutantKind::VaultControlEntitlementOrBareUOutput,
+    );
     let mutant = record.mutant().expect("the mutant was built and submitted");
-    // BOUND to the run of record's own typed layer rather than to a
-    // literal written here. The constant is what the live evidence
-    // classifier compares against a row's declared boundary, so a run
-    // whose layer moved must fail here — where the transcript is already
-    // on disk — rather than silently disagreeing with the classifier.
     assert_eq!(
         mutant.observed_layer(),
-        Some(run_of_record::MUTANT_OBSERVED_LAYER),
+        Some(expected.layer()),
         "the bare-u mutant was not refused at the script path",
     );
     assert_eq!(
         mutant.observed_detail(),
-        Some(run_of_record::MUTANT_REJECT_DETAIL),
+        Some(expected.detail()),
         "the bare-u mutant drew words the run of record does not carry",
     );
+    let LiveMutationLocator::WitnesslessRange { start, end } = expected
+        .mutation_locator()
+        .expect("the validated bare-u mutant carries its locator")
+    else {
+        panic!("the validated bare-u mutant has another locator shape")
+    };
     assert_eq!(
         mutant.declared_field_range(),
-        run_of_record::DECLARED_FIELD_RANGE,
+        (*start, *end),
         "the mutation did not stay in the range the run of record declares",
     );
     assert_eq!(
         mutant.submitted_bytes(),
-        run_of_record::MUTANT_SUBMITTED_BYTES,
+        expected.submitted_bytes().len(),
         "the mutant handed the node a different number of bytes",
     );
 
+    let expected_control = sole_current_acceptance("owner-signing-negatives");
     let control = record
         .control()
         .expect("the control was built and submitted");
     assert_eq!(
         control.observed_layer(),
-        Some(ObservedOutcomeLayer::Accepted),
+        Some(current_accepted_outcome("owner-signing-negatives").layer()),
         "the control was not ACCEPTED, so no refusal in this run is attributable",
     );
     assert_eq!(
         control.accepted_txid(),
-        Some(run_of_record::CONTROL_ACCEPTED_TXID),
+        Some(expected_control.identity_display()),
         "the control was accepted at an identity the run of record does not carry",
     );
 
@@ -4318,22 +4402,50 @@ fn assert_mutant_and_control_match_the_record(
     );
 }
 
-/// Each leaf-arrangement row, the revealed-leaf arrangement the run of
-/// record declares for it, and the words the target answered it with.
-const fn recorded_leaf_arrangements() -> [(&'static str, &'static [u16], &'static str); 2] {
-    use vectors::live_owner_signing_negatives::run_of_record;
+fn arrangement_indices(reference: &[Vec<u8>], programs: &[Vec<u8>]) -> Vec<usize> {
+    programs
+        .iter()
+        .map(|program| {
+            reference
+                .iter()
+                .position(|candidate| candidate == program)
+                .expect("the validated locator names a committed control leaf")
+        })
+        .collect()
+}
+
+/// Each leaf-arrangement row and its corpus-proven revealed-leaf arrangement.
+fn recorded_leaf_arrangements() -> [(LiveMutantKind, Vec<usize>, Vec<usize>); 2] {
     [
-        (
-            "two-coordinators",
-            &run_of_record::TWO_COORDINATORS_ARRANGEMENT,
-            run_of_record::TWO_COORDINATORS_REJECT_DETAIL,
-        ),
-        (
-            "no-coordinator",
-            &run_of_record::NO_COORDINATOR_ARRANGEMENT,
-            run_of_record::NO_COORDINATOR_REJECT_DETAIL,
-        ),
+        LiveMutantKind::TwoCoordinators,
+        LiveMutantKind::NoCoordinator,
     ]
+    .map(|kind| {
+        let outcome = current_outcome_for_mutant("owner-signing-negatives", kind);
+        let LiveMutationLocator::CommittedLeafArrangement {
+            input_indices,
+            control_committed_leaf_programs,
+            mutant_committed_leaf_programs,
+            ..
+        } = outcome
+            .mutation_locator()
+            .expect("the validated leaf mutant carries its locator")
+        else {
+            panic!("the validated leaf mutant has another locator shape")
+        };
+        assert_eq!(input_indices.len(), mutant_committed_leaf_programs.len());
+        (
+            kind,
+            arrangement_indices(
+                control_committed_leaf_programs,
+                mutant_committed_leaf_programs,
+            ),
+            arrangement_indices(
+                control_committed_leaf_programs,
+                control_committed_leaf_programs,
+            ),
+        )
+    })
 }
 
 /// The two leaf-arrangement mutants were each refused at the script path in
@@ -4348,7 +4460,7 @@ fn assert_leaf_arrangements_drive(
     record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
 ) {
     use std::collections::BTreeSet;
-    use vectors::live_owner_signing_negatives::{LeafArrangementObservation, run_of_record};
+    use vectors::live_owner_signing_negatives::LeafArrangementObservation;
     let arrangements = record.leaf_arrangements();
     assert_eq!(
         arrangements.len(),
@@ -4367,45 +4479,49 @@ fn assert_leaf_arrangements_drive(
         built,
         recorded
             .iter()
-            .map(|(row, ..)| *row)
+            .map(|(kind, ..)| kind.row())
             .collect::<BTreeSet<_>>(),
         "the leaf-arrangement mutants are not the two recorded rows",
     );
     for mutant in arrangements {
-        let (_, arrangement, detail) = recorded
+        let (kind, arrangement, control_arrangement) = recorded
             .iter()
-            .find(|(row, ..)| *row == mutant.row())
+            .find(|(kind, ..)| kind.row() == mutant.row())
             .expect("every built mutant is a recorded row");
-        // BOUND per row to that row's own recorded layer constant, not
-        // to one literal covering both: the two rows are separate
-        // observations and a shared literal would hide a run in which
-        // only one of them moved.
-        let recorded_layer = match mutant.row() {
-            "two-coordinators" => run_of_record::TWO_COORDINATORS_OBSERVED_LAYER,
-            "no-coordinator" => run_of_record::NO_COORDINATOR_OBSERVED_LAYER,
-            other => panic!("{other} is not a recorded leaf-arrangement row"),
-        };
+        let expected = current_outcome_for_mutant("owner-signing-negatives", *kind);
         assert_eq!(
             mutant.observed_layer(),
-            Some(recorded_layer),
+            Some(expected.layer()),
             "{} was not refused at the script path",
             mutant.row(),
         );
+        let revealed = mutant
+            .revealed_arrangement()
+            .iter()
+            .copied()
+            .map(usize::from)
+            .collect::<Vec<_>>();
         assert_eq!(
-            mutant.revealed_arrangement(),
-            *arrangement,
+            revealed.as_slice(),
+            arrangement.as_slice(),
             "{} revealed an arrangement the run of record does not carry",
             mutant.row(),
         );
         assert_eq!(
             mutant.observed_detail(),
-            Some(*detail),
+            Some(expected.detail()),
             "{} drew words the run of record does not carry",
             mutant.row(),
         );
+        assert_eq!(
+            mutant.submitted_bytes(),
+            expected.submitted_bytes().len(),
+            "{} submitted a different current candidate",
+            mutant.row(),
+        );
         assert_ne!(
-            mutant.revealed_arrangement(),
-            run_of_record::CONTROL_ARRANGEMENT.as_slice(),
+            revealed.as_slice(),
+            control_arrangement.as_slice(),
             "{} reveals the control's own arrangement and rearranges nothing",
             mutant.row(),
         );
@@ -4432,6 +4548,62 @@ fn assert_leaf_arrangements_drive(
 /// mutant handed the node.
 type ConsensusSeparator = ((usize, usize), (usize, usize));
 
+const OWNER_SIGNING_CONSENSUS_MUTANTS: [LiveMutantKind; 7] = [
+    LiveMutantKind::WrongExplicitAsset,
+    LiveMutantKind::ConfidentialAssetCommitment,
+    LiveMutantKind::OutputTotalOneBelowInput,
+    LiveMutantKind::OutputTotalOneAboveInput,
+    LiveMutantKind::PrivateOutputOmitted,
+    LiveMutantKind::HiddenPrivateUOutput,
+    LiveMutantKind::OmittedSource,
+];
+
+fn changed_current_range(left: &[u8], right: &[u8]) -> (usize, usize) {
+    let prefix = left.iter().zip(right).take_while(|(a, b)| a == b).count();
+    let suffix = left
+        .iter()
+        .rev()
+        .zip(right.iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count()
+        .min(left.len() - prefix)
+        .min(right.len().saturating_sub(prefix));
+    (prefix, left.len() - suffix)
+}
+
+fn current_consensus_separator(kind: LiveMutantKind) -> ConsensusSeparator {
+    let outcome = current_outcome_for_mutant("owner-signing-negatives", kind);
+    let mutant = current_transaction(outcome.submitted_bytes());
+    let shape = (mutant.inputs().len(), mutant.outputs().len());
+    let range = match outcome
+        .mutation_locator()
+        .expect("the validated consensus mutant carries its locator")
+    {
+        LiveMutationLocator::WitnesslessRange { start, end } => (*start, *end),
+        LiveMutationLocator::TransactionShape {
+            control_inputs,
+            mutant_inputs,
+            control_outputs,
+            mutant_outputs,
+        } => {
+            assert_eq!(shape, (*mutant_inputs, *mutant_outputs));
+            let control = current_transaction(
+                sole_current_acceptance("owner-signing-negatives").submitted_bytes(),
+            );
+            assert_eq!(
+                (control.inputs().len(), control.outputs().len()),
+                (*control_inputs, *control_outputs),
+            );
+            changed_current_range(
+                &control.encode_without_witness(),
+                &mutant.encode_without_witness(),
+            )
+        }
+        _ => panic!("the validated consensus mutant has another locator shape"),
+    };
+    (range, shape)
+}
+
 /// Each consensus row and the `(range, shape)` separator the run of record
 /// declares for it.
 ///
@@ -4439,52 +4611,8 @@ type ConsensusSeparator = ((usize, usize), (usize, usize));
 /// by four distinct ranges; the two output-cardinality surgeries share the
 /// structural range `changed_range` cannot localize past the output-count
 /// varint and separate by shape; `omitted-source` separates by both.
-const fn recorded_consensus_separators() -> [(&'static str, ConsensusSeparator); 7] {
-    use vectors::live_owner_signing_negatives::run_of_record;
-    /// The control's own shape, which the four field surgeries keep.
-    const KEPT: (usize, usize) = (2, 2);
-    [
-        (
-            "wrong-explicit-asset",
-            (run_of_record::WRONG_EXPLICIT_ASSET_FIELD_RANGE, KEPT),
-        ),
-        (
-            "confidential-asset-commitment",
-            (
-                run_of_record::CONFIDENTIAL_ASSET_COMMITMENT_FIELD_RANGE,
-                KEPT,
-            ),
-        ),
-        (
-            "output-total-one-below-input",
-            (run_of_record::OUTPUT_TOTAL_ONE_BELOW_FIELD_RANGE, KEPT),
-        ),
-        (
-            "output-total-one-above-input",
-            (run_of_record::OUTPUT_TOTAL_ONE_ABOVE_FIELD_RANGE, KEPT),
-        ),
-        (
-            "private-output-omitted",
-            (
-                run_of_record::OUTPUT_CARDINALITY_FIELD_RANGE,
-                run_of_record::PRIVATE_OUTPUT_OMITTED_SHAPE,
-            ),
-        ),
-        (
-            "hidden-private-u-output",
-            (
-                run_of_record::OUTPUT_CARDINALITY_FIELD_RANGE,
-                run_of_record::HIDDEN_PRIVATE_U_OUTPUT_SHAPE,
-            ),
-        ),
-        (
-            "omitted-source",
-            (
-                run_of_record::OMITTED_SOURCE_FIELD_RANGE,
-                run_of_record::OMITTED_SOURCE_SHAPE,
-            ),
-        ),
-    ]
+fn recorded_consensus_separators() -> [(&'static str, ConsensusSeparator); 7] {
+    OWNER_SIGNING_CONSENSUS_MUTANTS.map(|kind| (kind.row(), current_consensus_separator(kind)))
 }
 
 /// The seven consensus-conservation mutants are the seven recorded rows,
@@ -4499,7 +4627,7 @@ fn assert_consensus_mutants_separate(
     record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
 ) {
     use std::collections::BTreeSet;
-    use vectors::live_owner_signing_negatives::{ConsensusMutantObservation, run_of_record};
+    use vectors::live_owner_signing_negatives::ConsensusMutantObservation;
     let consensus = record.consensus_mutants();
     assert_eq!(consensus.len(), 7, "the seven consensus mutants were built");
     let recorded = recorded_consensus_separators();
@@ -4519,24 +4647,32 @@ fn assert_consensus_mutants_separate(
         "the consensus mutants are not the seven recorded rows",
     );
     for mutant in consensus {
+        let kind = OWNER_SIGNING_CONSENSUS_MUTANTS
+            .iter()
+            .copied()
+            .find(|kind| kind.row() == mutant.row())
+            .expect("every built mutant has a typed current-corpus row");
+        let expected = current_outcome_for_mutant("owner-signing-negatives", kind);
         let (_, separator) = recorded
             .iter()
             .find(|(row, _)| *row == mutant.row())
             .expect("every built mutant is a recorded row");
-        // BOUND to the consensus layer constant the seven rows' retype
-        // rests on. If a rerun ever answered these at the script path
-        // instead, this fails and the retype is revisited by ruling
-        // rather than by drift.
         assert_eq!(
             mutant.observed_layer(),
-            Some(run_of_record::CONSENSUS_MUTANT_OBSERVED_LAYER),
+            Some(expected.layer()),
             "{} was not refused at consensus before script",
             mutant.row(),
         );
         assert_eq!(
             mutant.observed_detail(),
-            Some(run_of_record::CONSENSUS_MUTANT_REJECT_DETAIL),
+            Some(expected.detail()),
             "{} drew words the run of record does not carry",
+            mutant.row(),
+        );
+        assert_eq!(
+            mutant.submitted_bytes(),
+            expected.submitted_bytes().len(),
+            "{} submitted a different current candidate",
             mutant.row(),
         );
         assert_eq!(
@@ -4794,51 +4930,66 @@ fn assert_the_pair_is_one_candidate_answered_twice(
     );
 }
 
-/// The two verdicts and the two candidates, held against phase B's run of
-/// record.
-///
-/// # Why this was unbound, and why binding it costs no report
-///
-/// The probe's first form recorded both verdicts and asserted neither, so
-/// that an unexpected layer would reach a reader instead of a panic. The
-/// rendered transcript is what delivers that, and it is written to disk
-/// BEFORE any assertion in this test runs — so nothing here costs the
-/// report on the day an answer changes. What the unasserted form actually
-/// left green was every drift the run of record exists to make checkable:
-/// an ACCEPTED attempt against a REFUSED control differ in layer just as
-/// the run that happened does, so the pair's one assertion passed on the
-/// exact inversion that makes the seventeenth refusal row unattributable.
-/// Each figure below is phase B's own, and each now fails on drift.
-fn assert_the_verdicts_match_the_run_of_record(
+// The two verdicts and the two candidates, held against phase B's run of
+// record.
+//
+// Why this was unbound, and why binding it costs no report:
+//
+// The probe's first form recorded both verdicts and asserted neither, so
+// that an unexpected layer would reach a reader instead of a panic. The
+// rendered transcript is what delivers that, and it is written to disk
+// BEFORE any assertion in this test runs — so nothing here costs the
+// report on the day an answer changes. What the unasserted form actually
+// left green was every drift the run of record exists to make checkable:
+// an ACCEPTED attempt against a REFUSED control differ in layer just as
+// the run that happened does, so the pair's one assertion passed on the
+// exact inversion that makes the seventeenth refusal row unattributable.
+// Each figure below is phase B's own, and each now fails on drift.
+fn assert_keypath_phase_a_matches_current_corpus(
     record: &vectors::live_keypath_probe::KeyPathProbeRecord,
-) {
-    use target_elements_conformance::protocol::ObservedOutcomeLayer;
-    use vectors::live_keypath_probe::{run_of_record, run_of_record_phase_b};
-
+    expected_attempt: &vectors::live_corpus_native_v2_r7::NativeV2OutcomeProjection,
+    input_index: usize,
+    mutant_stack_items: usize,
+) -> transaction::bytes::TargetTransaction {
     // One chain, one issuance: the asset the probe's own run recorded.
+    let ceremony = current_ceremony_projection("keypath-probe");
     assert_eq!(
         record.issued_asset(),
-        Some(run_of_record::ISSUED_ASSET),
+        ceremony.issued_asset_display(),
         "the probe ran against an asset the run of record does not carry",
     );
 
+    let expected_attempt_transaction = current_transaction(expected_attempt.submitted_bytes());
+    let expected_attempt_witness = expected_attempt_transaction
+        .witnesses()
+        .get(input_index)
+        .expect("the validated key-path locator names an input")
+        .stack();
+    assert_eq!(expected_attempt_witness.len(), mutant_stack_items);
     let attempt = record
         .attempt()
         .expect("the ceremony built the key-path attempt");
     assert_eq!(
         attempt.submitted_bytes().len(),
-        run_of_record::SUBMITTED_BYTES,
+        expected_attempt.submitted_bytes().len(),
         "the attempt handed the node a different number of bytes",
     );
     assert_eq!(
         attempt.witness_stack().len(),
-        run_of_record::WITNESS_ITEMS,
+        expected_attempt_witness.len(),
         "the attempt is not the recorded one-item witness",
     );
     assert_eq!(
-        attempt.witness_stack()[0].len(),
-        run_of_record::WITNESS_ITEM_BYTES,
-        "the attempt's one witness item is not the recorded width",
+        attempt
+            .witness_stack()
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
+        expected_attempt_witness
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
+        "the attempt's witness items do not have the recorded widths",
     );
     // The bytes carry a whole transaction and not only the witness item,
     // which is the cheapest check that the attempt was assembled rather
@@ -4847,7 +4998,17 @@ fn assert_the_verdicts_match_the_run_of_record(
         attempt.submitted_bytes().len() > attempt.witness_stack()[0].len(),
         "the submitted bytes are no larger than the witness item",
     );
+    expected_attempt_transaction
+}
 
+fn assert_keypath_phase_b_matches_current_corpus(
+    record: &vectors::live_keypath_probe::KeyPathProbeRecord,
+    expected_attempt: &vectors::live_corpus_native_v2_r7::NativeV2OutcomeProjection,
+    expected_attempt_transaction: &transaction::bytes::TargetTransaction,
+    input_index: usize,
+    control_stack_items: usize,
+    witnessless_serialization_equal: bool,
+) {
     // The ATTEMPT's verdict, exactly. Phase B's whole content is the name
     // the refusal is filed under, so the layer is asserted as the enum AND
     // the recorded spelling is held against that enum: a constant that had
@@ -4855,39 +5016,44 @@ fn assert_the_verdicts_match_the_run_of_record(
     let observation = record.observation().expect("the attempt was answered");
     assert_eq!(
         observation.layer(),
-        run_of_record_phase_b::REFUSAL_OBSERVED_LAYER,
+        expected_attempt.layer(),
         "the attempt was not refused at the key path",
     );
     assert_eq!(
         format!("{:?}", observation.layer()),
-        run_of_record_phase_b::OBSERVED_LAYER,
+        format!("{:?}", expected_attempt.layer()),
         "the recorded layer name is not the vocabulary's own spelling",
     );
     assert_eq!(
         observation.detail(),
-        Some(run_of_record_phase_b::REFUSAL_DETAIL),
+        Some(expected_attempt.detail()),
         "the attempt drew words the run of record does not carry",
     );
     assert_eq!(
         observation.accepted_txid(),
-        None,
+        expected_attempt
+            .target_identity()
+            .map(|identity| identity.to_target_display())
+            .as_deref(),
         "a refused attempt was given an accepted identity",
     );
 
     // The CONTROL's verdict, exactly. A refused control makes every
     // refusal in the run unattributable, and its identity is the half of
     // the pair a reader can check against a chain.
+    let expected_control = sole_current_acceptance("keypath-probe");
+    let expected_control_outcome = current_accepted_outcome("keypath-probe");
     let control_observation = record
         .control_observation()
         .expect("the control was answered");
     assert_eq!(
         control_observation.layer(),
-        ObservedOutcomeLayer::Accepted,
+        expected_control_outcome.layer(),
         "the control was not ACCEPTED, so the attempt's refusal is not attributable",
     );
     assert_eq!(
         control_observation.accepted_txid(),
-        Some(run_of_record_phase_b::CONTROL_ACCEPTED_TXID),
+        Some(expected_control.identity_display()),
         "the control was accepted at an identity the run of record does not carry",
     );
 
@@ -4899,20 +5065,65 @@ fn assert_the_verdicts_match_the_run_of_record(
     let control = record
         .control()
         .expect("the ceremony built the script-path control");
+    let expected_control_transaction = current_transaction(expected_control.submitted_bytes());
+    let expected_control_witness = expected_control_transaction
+        .witnesses()
+        .get(input_index)
+        .expect("the validated key-path control carries the linked input")
+        .stack();
+    assert_eq!(expected_control_witness.len(), control_stack_items);
     assert_eq!(
         control.submitted_bytes().len(),
-        run_of_record_phase_b::CONTROL_SUBMITTED_BYTES,
+        expected_control.submitted_bytes().len(),
         "the control handed the node a different number of bytes",
     );
     assert_eq!(
         control.witness_items(),
-        run_of_record_phase_b::CONTROL_WITNESS_ITEMS,
+        expected_control_witness.len(),
         "the control is not the recorded script-path witness census",
     );
     assert_eq!(
         control.shares_the_attempts_witnessless_bytes(),
-        run_of_record_phase_b::CONTROL_SHARES_THE_ATTEMPTS_WITNESSLESS_BYTES,
+        witnessless_serialization_equal,
         "the pair no longer differs in the witness alone",
+    );
+    assert_eq!(
+        expected_control_transaction.encode_without_witness(),
+        expected_attempt_transaction.encode_without_witness(),
+        "the current corpus's pair differs outside the witness",
+    );
+}
+
+fn assert_the_verdicts_match_the_run_of_record(
+    record: &vectors::live_keypath_probe::KeyPathProbeRecord,
+) {
+    let expected_attempt =
+        current_outcome_for_mutant("keypath-probe", LiveMutantKind::KeyPathEscape);
+    let LiveMutationLocator::WitnessPathShape {
+        input_index,
+        control_stack_items,
+        mutant_stack_items,
+        witnessless_serialization_equal,
+        ..
+    } = expected_attempt
+        .mutation_locator()
+        .expect("the current key-path outcome carries its validated locator")
+    else {
+        panic!("the current key-path outcome has another locator shape")
+    };
+    let expected_attempt_transaction = assert_keypath_phase_a_matches_current_corpus(
+        record,
+        expected_attempt,
+        *input_index,
+        *mutant_stack_items,
+    );
+    assert_keypath_phase_b_matches_current_corpus(
+        record,
+        expected_attempt,
+        &expected_attempt_transaction,
+        *input_index,
+        *control_stack_items,
+        *witnessless_serialization_equal,
     );
 }
 
@@ -6256,9 +6467,7 @@ fn judge_the_sponsor_value_form(
     rendered: &str,
     value_form: vectors::live_sponsor_shapes::SponsorValueForm,
 ) {
-    use vectors::live_sponsor_shapes::{
-        CommittedSponsorCheck, SponsorValueForm, sponsored_run_of_record as record_of,
-    };
+    use vectors::live_sponsor_shapes::{CommittedSponsorCheck, SponsorValueForm};
 
     // The value form, judged where a reader of the test sees it.
     match value_form {
@@ -6275,6 +6484,7 @@ fn judge_the_sponsor_value_form(
             assert!(rendered.contains("does_not_establish confidential-sponsor-values"));
         }
         SponsorValueForm::Committed => {
+            let ceremony = "sponsored-committed-value";
             let census = record
                 .committed()
                 .expect("a committed run reported no committed sponsor census");
@@ -6294,12 +6504,18 @@ fn judge_the_sponsor_value_form(
             // is not a substitute for one.
             assert_eq!(
                 record.committed_funding_txid(),
-                Some(record_of::COMMITTED_SPONSOR_FUNDING_TXID),
+                Some(current_semantic_value(
+                    ceremony,
+                    "committed_sponsor_funding_txid",
+                )),
                 "the committed sponsor coin was mined under another identity",
             );
             assert_eq!(
                 record.committed_funding_weight(),
-                Some(record_of::COMMITTED_SPONSOR_FUNDING_WEIGHT),
+                Some(current_semantic_u64(
+                    ceremony,
+                    "committed_sponsor_funding_weight",
+                )),
             );
             // No amount was observed for the coin the control spends,
             // which is the whole difference the axis makes.
@@ -6325,16 +6541,20 @@ fn judge_the_sponsor_value_form(
             // nothing in the transaction absorbs the difference — so the
             // target's balance check cannot close whatever the amounts
             // are.
+            let [candidate] = current_outcome_projections(ceremony) else {
+                panic!("the current committed-sponsor ceremony submits one candidate")
+            };
             assert_eq!(
                 record.observed_layer(),
-                Some(
-                    target_elements_conformance::protocol::ObservedOutcomeLayer::ConsensusRejectionBeforeScript
-                ),
+                Some(candidate.layer()),
                 "a committed sponsor value was not refused at the balance check",
             );
-            assert!(record.accepted_txid().is_none());
+            let accepted_identity = candidate
+                .target_identity()
+                .map(|identity| identity.to_target_display());
+            assert_eq!(record.accepted_txid(), accepted_identity.as_deref());
             assert!(
-                rendered.contains(record_of::COMMITTED_SPONSOR_REFUSAL),
+                rendered.contains(candidate.detail()),
                 "the target named something other than its balance check",
             );
 
@@ -6343,22 +6563,21 @@ fn judge_the_sponsor_value_form(
             // these bytes at all: this submission and the explicit
             // control's are the same shape at the same width, and the
             // refusal is attributable to which coin was reached for.
+            assert_eq!(record.submitted_bytes(), candidate.submitted_bytes().len(),);
+            let control = sole_current_acceptance("sponsored-change-present");
+            assert_eq!(record.submitted_bytes(), control.submitted_bytes().len(),);
+            let candidate_weight = current_semantic_u64(ceremony, "target_weight");
             assert_eq!(
-                record.submitted_bytes(),
-                record_of::COMMITTED_SPONSOR_SUBMITTED_BYTES,
+                candidate_weight,
+                current_transaction(candidate.submitted_bytes()).weight(),
             );
+            assert_eq!(record.target_weight(), Some(candidate_weight),);
+            let control_weight = current_semantic_u64("sponsored-change-present", "target_weight");
             assert_eq!(
-                record.submitted_bytes(),
-                record_of::SPONSORED_CHANGE_SUBMITTED_BYTES,
+                control_weight,
+                current_transaction(control.submitted_bytes()).weight(),
             );
-            assert_eq!(
-                record.target_weight(),
-                Some(record_of::COMMITTED_SPONSOR_TARGET_WEIGHT),
-            );
-            assert_eq!(
-                record.target_weight(),
-                Some(record_of::SPONSORED_CHANGE_TARGET_WEIGHT),
-            );
+            assert_eq!(record.target_weight(), Some(control_weight),);
         }
     }
 }
@@ -6760,20 +6979,24 @@ fn assert_pair_arc(record: &vectors::live_pair_arc::PairArcRecord, rendered: &st
 /// carries what the node said either way, and the lane now FAILS instead
 /// of passing over a record nothing reads.
 fn assert_the_arc_ledger_matches_the_run_of_record(record: &vectors::live_pair_arc::PairArcRecord) {
-    use vectors::live_pair_arc::{REPRESENTATION_EQUIVALENCE_TERMS, run_of_record};
+    use vectors::live_pair_arc::REPRESENTATION_EQUIVALENCE_TERMS;
 
+    let acceptances = current_acceptance_projections("pairs-arc");
+    let [explicit, private] = acceptances else {
+        panic!("the current pairs arc carries two accepted members")
+    };
     let ledger = record.ledger().expect("a completed arc writes a ledger");
     assert_eq!(
         record.ledger().is_some(),
-        run_of_record::A_PAIR_ARC_LEDGER_EXISTS,
+        !acceptances.is_empty(),
         "the flag the evidence matrix reads disagrees with the run",
     );
 
     // ONE asset, and the one the run of record names. §6.6's exact
     // explicit U term is a claim about THIS asset, not about some asset.
     assert_eq!(
-        ledger.issued_asset(),
-        run_of_record::PAIR_ISSUED_ASSET,
+        Some(ledger.issued_asset()),
+        current_ceremony_projection("pairs-arc").issued_asset_display(),
         "the arc issued an asset the run of record does not carry",
     );
 
@@ -6781,14 +7004,20 @@ fn assert_the_arc_ledger_matches_the_run_of_record(record: &vectors::live_pair_a
     // constant. These are the figures the phase card prints and the
     // paired-relation standing rests on, and they are what a reader
     // checks against a chain.
+    let explicit_identity =
+        current_semantic_line_value("pairs-arc", "member explicit ", "accepted_txid");
+    assert_eq!(explicit.identity_display(), explicit_identity);
     assert_eq!(
         Some(ledger.explicit().accepted_txid()),
-        run_of_record::EXPLICIT_MEMBER_ACCEPTED_IDENTITY,
+        Some(explicit_identity),
         "the explicit member was accepted at an identity the run of record does not carry",
     );
+    let private_identity =
+        current_semantic_line_value("pairs-arc", "member private ", "accepted_txid");
+    assert_eq!(private.identity_display(), private_identity);
     assert_eq!(
         Some(ledger.private().accepted_txid()),
-        run_of_record::PRIVATE_MEMBER_ACCEPTED_IDENTITY,
+        Some(private_identity),
         "the private member was accepted at an identity the run of record does not carry",
     );
     assert_ne!(
@@ -6800,24 +7029,48 @@ fn assert_the_arc_ledger_matches_the_run_of_record(record: &vectors::live_pair_a
     // The two widths and the two weights, each the target's own figure.
     // The eight-fold gap between them is the REPRESENTATION, and it is
     // the measurement the arc exists to make.
+    let explicit_bytes = usize::try_from(current_semantic_line_u64(
+        "pairs-arc",
+        "member explicit ",
+        "submitted_bytes",
+    ))
+    .expect("the current explicit member's width fits usize");
+    assert_eq!(explicit.submitted_bytes().len(), explicit_bytes);
     assert_eq!(
         ledger.explicit().submitted_bytes(),
-        run_of_record::EXPLICIT_MEMBER_SUBMITTED_BYTES,
+        explicit_bytes,
         "the explicit member handed the node a different number of bytes",
     );
+    let private_bytes = usize::try_from(current_semantic_line_u64(
+        "pairs-arc",
+        "member private ",
+        "submitted_bytes",
+    ))
+    .expect("the current private member's width fits usize");
+    assert_eq!(private.submitted_bytes().len(), private_bytes);
     assert_eq!(
         ledger.private().submitted_bytes(),
-        run_of_record::PRIVATE_MEMBER_SUBMITTED_BYTES,
+        private_bytes,
         "the private member handed the node a different number of bytes",
+    );
+    let explicit_weight = current_semantic_line_u64("pairs-arc", "member explicit ", "weight");
+    assert_eq!(
+        explicit_weight,
+        current_transaction(explicit.submitted_bytes()).weight(),
     );
     assert_eq!(
         ledger.explicit().target_weight(),
-        Some(run_of_record::EXPLICIT_MEMBER_TARGET_WEIGHT),
+        Some(explicit_weight),
         "the target computed a weight for the explicit member the run of record does not carry",
+    );
+    let private_weight = current_semantic_line_u64("pairs-arc", "member private ", "weight");
+    assert_eq!(
+        private_weight,
+        current_transaction(private.submitted_bytes()).weight(),
     );
     assert_eq!(
         ledger.private().target_weight(),
-        Some(run_of_record::PRIVATE_MEMBER_TARGET_WEIGHT),
+        Some(private_weight),
         "the target computed a weight for the private member the run of record does not carry",
     );
 
@@ -6832,9 +7085,14 @@ fn assert_the_arc_ledger_matches_the_run_of_record(record: &vectors::live_pair_a
         REPRESENTATION_EQUIVALENCE_TERMS.len(),
         "the pair was compared on fewer §6.6 terms than the section names",
     );
+    let withheld = usize::try_from(current_semantic_u64(
+        "pairs-arc",
+        "terms_withheld_by_the_private_member",
+    ))
+    .expect("the current pair's withheld-term count fits usize");
     assert_eq!(
         observation.terms_withheld_by_the_private_member(),
-        run_of_record::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER,
+        withheld,
         "the private member withheld a different number of terms than the run of record carries",
     );
 }
