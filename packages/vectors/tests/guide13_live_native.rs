@@ -45,7 +45,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
-    reviewed_elements_tapscript, validate_reviewed_development_binding,
+    ReproducibilityContract, reviewed_elements_tapscript, validate_reviewed_development_binding,
 };
 use target_elements_conformance::executor::{
     DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust,
@@ -53,10 +53,14 @@ use target_elements_conformance::executor::{
     execute_operations_captured,
 };
 use target_elements_conformance::protocol::{
-    ExecutorCapability, FundingCustodyProfile, FundingMaterializerProfile,
-    FundingRepresentationProfile, NativeOperationResponse, NativeVerdict, ObservedOutcomeLayer,
-    OperationCaseId, OperationSubject, TargetSubmissionSubject, WireEnvironment,
-    WireExecutionDomain,
+    ConfidentialFixtureDigest, ConfidentialFixtureHandle, ConfidentialFundingBinding,
+    ConfidentialFundingDestination, ConfidentialFundingProfiles, ExecutorCapability,
+    FundingCustodyProfile, FundingMaterializerProfile, FundingRepresentationProfile,
+    NativeOperationResponse, NativeVerdict, ObservedOutcomeLayer, OperationCaseId,
+    OperationSubject, TargetConfidentialFundingSubject, TargetConfidentialSponsorFundingSubject,
+    TargetFundingSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject,
+    TargetSubmissionSubject, WireEnvironment, WireExecutionDomain, WireOutpoint,
+    WireSighashProfile,
 };
 use vectors::live_native::{LiveNativeStep, LiveTransferOperationPlanner, render_live_native_run};
 use vectors::live_report::{LiveMutantKind, LiveMutationLocator, LiveWitnessPathRole};
@@ -1860,24 +1864,25 @@ struct ScriptedPlan {
 }
 
 impl ScriptedPlan {
+    fn new(steps: Vec<OperationStep>) -> Self {
+        Self { steps, next: 0 }
+    }
+
     fn two_submissions() -> Self {
-        Self {
-            steps: vec![
-                OperationStep::new(
-                    "empty-signature",
-                    OperationSubject::Submission(Box::new(TargetSubmissionSubject {
-                        transaction_bytes: vec![0x00, 0x01, 0x80, 0xff],
-                    })),
-                ),
-                OperationStep::new(
-                    "explicit-one-to-one",
-                    OperationSubject::Submission(Box::new(TargetSubmissionSubject {
-                        transaction_bytes: vec![0x02, 0x03],
-                    })),
-                ),
-            ],
-            next: 0,
-        }
+        Self::new(vec![
+            OperationStep::new(
+                "empty-signature",
+                OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                    transaction_bytes: vec![0x00, 0x01, 0x80, 0xff],
+                })),
+            ),
+            OperationStep::new(
+                "explicit-one-to-one",
+                OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                    transaction_bytes: vec![0x02, 0x03],
+                })),
+            ),
+        ])
     }
 }
 
@@ -1893,61 +1898,240 @@ impl TargetOperationPlanner for ScriptedPlan {
     }
 }
 
-#[cfg(unix)]
-fn scripted_capture() -> NativeOperationCapture {
-    use std::os::unix::fs::PermissionsExt as _;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScriptedOperationKind {
+    Funding,
+    Submission,
+    SponsorFunding,
+    SponsorSigning,
+    ConfidentialFunding,
+    ConfidentialSponsorFunding,
+}
 
-    let directory = test_directory("scripted");
-    let adapter = directory.join("adapter.sh");
+impl ScriptedOperationKind {
+    const fn wire(self) -> &'static str {
+        match self {
+            Self::Funding => "fund",
+            Self::Submission => "submit",
+            Self::SponsorFunding => "fund_sponsor",
+            Self::SponsorSigning => "sign_sponsor",
+            Self::ConfidentialFunding => "fund_confidential",
+            Self::ConfidentialSponsorFunding => "fund_confidential_sponsor",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ScriptedCeremonyOperation {
+    kind: ScriptedOperationKind,
+    step: &'static str,
+    accepted: bool,
+}
+
+const fn scripted_operation(
+    kind: ScriptedOperationKind,
+    step: &'static str,
+    accepted: bool,
+) -> ScriptedCeremonyOperation {
+    ScriptedCeremonyOperation {
+        kind,
+        step,
+        accepted,
+    }
+}
+
+fn scripted_binding() -> ConfidentialFundingBinding {
+    ConfidentialFundingBinding {
+        fixture_handle: ConfidentialFixtureHandle::new("capture-scripted-fixture".to_owned()),
+        fixture_digest: ConfidentialFixtureDigest::new([0x44; 32]),
+        profiles: ConfidentialFundingProfiles {
+            representation: FundingRepresentationProfile::ExplicitAssetConfidentialValue,
+            custody: FundingCustodyProfile::CentralPublicFixtures,
+            materializer: FundingMaterializerProfile::GuideCtfDeterministicV1,
+            reproducibility_contract: ReproducibilityContract::ByteIdentity,
+        },
+    }
+}
+
+fn scripted_step(operation: ScriptedCeremonyOperation) -> OperationStep {
+    let subject = match operation.kind {
+        ScriptedOperationKind::Funding => {
+            OperationSubject::Funding(Box::new(TargetFundingSubject {
+                issue_asset: true,
+                asset: None,
+                output_program: vec![0x51],
+                outputs: 1,
+                amount_per_output: 1,
+            }))
+        }
+        ScriptedOperationKind::Submission => {
+            OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                transaction_bytes: vec![0x02, 0x00, 0x00, 0x00],
+            }))
+        }
+        ScriptedOperationKind::SponsorFunding => {
+            OperationSubject::SponsorFunding(Box::new(TargetSponsorFundingSubject {
+                sponsor_outputs: 1,
+                amount_per_sponsor_output: 1,
+            }))
+        }
+        ScriptedOperationKind::SponsorSigning => {
+            OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                finalized_transaction: vec![0x02, 0x00, 0x00, 0x00],
+                sponsor_input_index: 0,
+                sponsor_outpoint: WireOutpoint {
+                    txid: "00".repeat(32),
+                    vout: 0,
+                },
+                sighash_profile: WireSighashProfile::AllInputsAllOutputs,
+            }))
+        }
+        ScriptedOperationKind::ConfidentialFunding => {
+            OperationSubject::ConfidentialFunding(Box::new(TargetConfidentialFundingSubject {
+                issue_asset: false,
+                asset: Some("11".repeat(32)),
+                destinations: vec![ConfidentialFundingDestination {
+                    output_program: vec![0x51],
+                }],
+                binding: scripted_binding(),
+            }))
+        }
+        ScriptedOperationKind::ConfidentialSponsorFunding => {
+            OperationSubject::ConfidentialSponsorFunding(Box::new(
+                TargetConfidentialSponsorFundingSubject {
+                    destinations: vec![ConfidentialFundingDestination {
+                        output_program: vec![0x51],
+                    }],
+                    binding: scripted_binding(),
+                },
+            ))
+        }
+    };
+    OperationStep::new(operation.step, subject)
+}
+
+fn scripted_response(operation: ScriptedCeremonyOperation) -> String {
+    let common = format!(
+        "\"schema\":7,\"case\":{{\"operation\":\"{}\",\"step\":\"{}\"}}",
+        operation.kind.wire(),
+        operation.step,
+    );
+    if operation.accepted {
+        let accepted_txid = "aa".repeat(32);
+        return format!(
+            "{{{common},\"observed_layer\":\"accepted\",\"observed_detail\":\"accepted exactly\",\"issued_asset\":null,\"funded_outputs\":[],\"confidential_funded_outputs\":[],\"mined_readback\":{{\"transaction_id\":\"{accepted_txid}\",\"witness_transaction_id\":\"{}\",\"block_hash\":\"{}\",\"block_height\":17,\"raw_transaction\":[2,0,0,0]}},\"accepted_txid\":\"{accepted_txid}\",\"sponsor_witness\":[],\"signature_bound_to\":null,\"resources\":{{\"script_bytes\":null,\"initial_stack_items\":null,\"peak_stack_items\":null,\"peak_altstack_items\":null,\"maximum_element_bytes\":null,\"validation_budget_used\":null,\"transaction_weight\":200}}}}",
+            "bb".repeat(32),
+            "cc".repeat(32),
+        );
+    }
+    format!(
+        "{{{common},\"observed_layer\":\"script_path_rejection\",\"observed_detail\":\"scripted refusal\",\"issued_asset\":null,\"funded_outputs\":[],\"confidential_funded_outputs\":[],\"mined_readback\":null,\"accepted_txid\":null,\"sponsor_witness\":[],\"signature_bound_to\":null,\"resources\":{{\"script_bytes\":null,\"initial_stack_items\":null,\"peak_stack_items\":null,\"peak_altstack_items\":null,\"maximum_element_bytes\":null,\"validation_budget_used\":null,\"transaction_weight\":null}}}}",
+    )
+}
+
+fn scripted_ceremony_operations(ceremony: CeremonyId) -> Vec<ScriptedCeremonyOperation> {
+    use ScriptedOperationKind::{
+        ConfidentialFunding, ConfidentialSponsorFunding, Funding, SponsorFunding, SponsorSigning,
+        Submission,
+    };
+
+    match ceremony {
+        CeremonyId::ConservationNegatives => vec![
+            scripted_operation(Funding, "issue-confidential-protocol-asset", false),
+            scripted_operation(ConfidentialFunding, "fund-confidential-predecessor", false),
+            scripted_operation(Submission, "wrong-blinder", false),
+            scripted_operation(Submission, "missing-rangeproof", false),
+            scripted_operation(Submission, "private-ct-imbalance", false),
+            scripted_operation(Submission, "malformed-rangeproof", false),
+            scripted_operation(Submission, "submit-balance-valid-control", true),
+        ],
+        CeremonyId::OwnerObservation => {
+            let mut operations = vec![
+                scripted_operation(Funding, "issue-protocol-asset", false),
+                scripted_operation(Funding, "fund-explicit-constructor", false),
+            ];
+            operations.extend(
+                vectors::live_owner_observation::OwnerObservationCase::ALL
+                    .iter()
+                    .copied()
+                    .map(|case| {
+                        scripted_operation(Submission, case.name(), !case.is_negative_control())
+                    }),
+            );
+            operations
+        }
+        CeremonyId::ProofBearingObservation => {
+            let mut operations = vec![
+                scripted_operation(Funding, "issue-proof-bearing-protocol-asset", false),
+                scripted_operation(ConfidentialFunding, "fund-proof-bearing-predecessor", false),
+            ];
+            operations.extend(
+                vectors::live_proof_bearing_observation::ProofBearingCase::ALL
+                    .iter()
+                    .copied()
+                    .map(|case| {
+                        scripted_operation(Submission, case.name(), !case.is_negative_control())
+                    }),
+            );
+            operations
+        }
+        CeremonyId::Report => vec![
+            scripted_operation(Funding, "issue-protocol-asset", false),
+            scripted_operation(Funding, "fund-explicit-constructor", false),
+            scripted_operation(Funding, "fund-private-constructor", false),
+            scripted_operation(Submission, "submit-explicit-transfer", false),
+        ],
+        CeremonyId::SponsoredCommittedValue => vec![
+            scripted_operation(Funding, "issue-protocol-asset", false),
+            scripted_operation(SponsorFunding, "fund-sponsor-region", false),
+            scripted_operation(
+                ConfidentialSponsorFunding,
+                "fund-confidential-sponsor-reserve",
+                false,
+            ),
+            scripted_operation(Funding, "fund-explicit-constructor", false),
+            scripted_operation(SponsorSigning, "authorize-sponsor-input", false),
+            scripted_operation(Submission, "submit-sponsor-signed-control", false),
+        ],
+        _ => panic!("no scripted census for this ceremony"),
+    }
+}
+
+fn scripted_adapter(capabilities: &[&str], responses: &[String]) -> String {
+    let capabilities = capabilities
+        .iter()
+        .map(|capability| format!("\"{capability}\""))
+        .collect::<Vec<_>>()
+        .join(",");
     let network = std::iter::repeat_n("17", 32).collect::<Vec<_>>().join(",");
     let genesis = std::iter::repeat_n("34", 32).collect::<Vec<_>>().join(",");
-    let handshake = concat!(
-        "{\"protocol_schema\":7,",
-        "\"adapter_name\":\"capture-adapter\",",
-        "\"adapter_version\":\"1.2.3\",",
-        "\"framework_revision\":\"framework-tip\",",
-        "\"node_name\":\"elementsd\",",
-        "\"node_version\":\"23.2.1\",",
-        "\"binary_reported_revision\":\"binary-tip\",",
-        "\"intended_executed_tip\":\"intended-tip\",",
-        "\"upstream_base\":\"upstream-base\",",
-        "\"included_local_topics\":[\"topic-a\",\"topic-b\"],",
-        "\"supported_domains\":[\"tapscript\"],",
-        "\"supported_leaf_versions\":[196],",
-        "\"capabilities\":[\"target_transaction_submission\",",
-        "\"confidential_value_test_funding\"],",
-        "\"confidential_funding\":{",
-        "\"representation_profiles\":[\"explicit_asset_confidential_value\"],",
-        "\"custody_profiles\":[\"central_public_fixtures\"],",
-        "\"materializer_profiles\":[\"guide_ctf_deterministic_v1\"],",
-        "\"reproducibility_contracts\":[\"byte_identity\"]}}",
+    let handshake = format!(
+        "{{\"protocol_schema\":7,\"adapter_name\":\"capture-adapter\",\"adapter_version\":\"1.2.3\",\"framework_revision\":\"framework-tip\",\"node_name\":\"elementsd\",\"node_version\":\"23.2.1\",\"binary_reported_revision\":\"binary-tip\",\"intended_executed_tip\":\"intended-tip\",\"upstream_base\":\"upstream-base\",\"included_local_topics\":[\"topic-a\",\"topic-b\"],\"supported_domains\":[\"tapscript\"],\"supported_leaf_versions\":[196],\"capabilities\":[{capabilities}],\"confidential_funding\":{{\"representation_profiles\":[\"explicit_asset_confidential_value\"],\"custody_profiles\":[\"central_public_fixtures\"],\"materializer_profiles\":[\"guide_ctf_deterministic_v1\"],\"reproducibility_contracts\":[\"byte_identity\"]}}}}",
     );
     let observed_environment = format!(
         "{{\"schema\":7,\"environment\":\"development\",\"chain_name\":\"elementsregtest\",\"network_id\":[{network}],\"genesis_id\":[{genesis}],\"active_domains\":[\"tapscript\"],\"active_leaf_versions\":[196]}}",
     );
-    let refused = concat!(
-        "{\"schema\":7,\"case\":{\"operation\":\"submit\",",
-        "\"step\":\"empty-signature\"},",
-        "\"observed_layer\":\"script_path_rejection\",",
-        "\"observed_detail\":\"mutant refused\",",
-        "\"issued_asset\":null,\"funded_outputs\":[],",
-        "\"confidential_funded_outputs\":[],\"mined_readback\":null,",
-        "\"accepted_txid\":null,\"sponsor_witness\":[],",
-        "\"signature_bound_to\":null,\"resources\":{",
-        "\"script_bytes\":4,\"initial_stack_items\":1,",
-        "\"peak_stack_items\":2,\"peak_altstack_items\":0,",
-        "\"maximum_element_bytes\":64,\"validation_budget_used\":50,",
-        "\"transaction_weight\":100}}",
+    let mut script = format!(
+        "#!/bin/sh\nIFS= read -r request\nprintf '%s\\n' '{handshake}'\nprintf '%s\\n' '{observed_environment}'\n",
     );
-    let accepted_txid = "aa".repeat(32);
-    let accepted = format!(
-        "{{\"schema\":7,\"case\":{{\"operation\":\"submit\",\"step\":\"explicit-one-to-one\"}},\"observed_layer\":\"accepted\",\"observed_detail\":\"accepted exactly\",\"issued_asset\":null,\"funded_outputs\":[],\"confidential_funded_outputs\":[],\"mined_readback\":{{\"transaction_id\":\"{accepted_txid}\",\"witness_transaction_id\":\"{}\",\"block_hash\":\"{}\",\"block_height\":17,\"raw_transaction\":[2,0,0,0]}},\"accepted_txid\":\"{accepted_txid}\",\"sponsor_witness\":[],\"signature_bound_to\":null,\"resources\":{{\"script_bytes\":null,\"initial_stack_items\":null,\"peak_stack_items\":null,\"peak_altstack_items\":null,\"maximum_element_bytes\":null,\"validation_budget_used\":null,\"transaction_weight\":200}}}}",
-        "bb".repeat(32),
-        "cc".repeat(32),
-    );
-    let script = format!(
-        "#!/bin/sh\nIFS= read -r request\nprintf '%s\\n' '{handshake}'\nprintf '%s\\n' '{observed_environment}'\nIFS= read -r request\nprintf '%s\\n' '{refused}'\nIFS= read -r request\nprintf '%s\\n' '{accepted}'\n",
-    );
+    for response in responses {
+        let _ = writeln!(script, "IFS= read -r request\nprintf '%s\\n' '{response}'",);
+    }
+    script
+}
+
+#[cfg(unix)]
+fn run_scripted_capture(
+    label: &str,
+    capabilities: &[&str],
+    steps: Vec<OperationStep>,
+    responses: &[String],
+) -> NativeOperationCapture {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let directory = test_directory(label);
+    let adapter = directory.join("adapter.sh");
+    let script = scripted_adapter(capabilities, responses);
     std::fs::write(&adapter, script).expect("the scripted adapter is written");
     let mut permissions = std::fs::metadata(&adapter)
         .expect("the scripted adapter has metadata")
@@ -1974,11 +2158,67 @@ fn scripted_capture() -> NativeOperationCapture {
         Duration::from_secs(2),
         ExecutorDiagnostics::in_directory(&directory.join("diagnostics")),
     );
-    let mut planner = ScriptedPlan::two_submissions();
+    let mut planner = ScriptedPlan::new(steps);
     let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     outcome.expect("the scripted adapter exchange completes");
     std::fs::remove_dir_all(directory).expect("the scripted test directory is removed");
     capture
+}
+
+#[cfg(unix)]
+fn scripted_capture() -> NativeOperationCapture {
+    let refused = concat!(
+        "{\"schema\":7,\"case\":{\"operation\":\"submit\",",
+        "\"step\":\"empty-signature\"},",
+        "\"observed_layer\":\"script_path_rejection\",",
+        "\"observed_detail\":\"mutant refused\",",
+        "\"issued_asset\":null,\"funded_outputs\":[],",
+        "\"confidential_funded_outputs\":[],\"mined_readback\":null,",
+        "\"accepted_txid\":null,\"sponsor_witness\":[],",
+        "\"signature_bound_to\":null,\"resources\":{",
+        "\"script_bytes\":4,\"initial_stack_items\":1,",
+        "\"peak_stack_items\":2,\"peak_altstack_items\":0,",
+        "\"maximum_element_bytes\":64,\"validation_budget_used\":50,",
+        "\"transaction_weight\":100}}",
+    )
+    .to_owned();
+    let accepted = scripted_response(scripted_operation(
+        ScriptedOperationKind::Submission,
+        "explicit-one-to-one",
+        true,
+    ));
+    run_scripted_capture(
+        "scripted",
+        &[
+            "target_transaction_submission",
+            "confidential_value_test_funding",
+        ],
+        ScriptedPlan::two_submissions().steps,
+        &[refused, accepted],
+    )
+}
+
+#[cfg(unix)]
+fn scripted_ceremony_capture(ceremony: CeremonyId) -> NativeOperationCapture {
+    let operations = scripted_ceremony_operations(ceremony);
+    let steps = operations.iter().copied().map(scripted_step).collect();
+    let responses = operations
+        .iter()
+        .copied()
+        .map(scripted_response)
+        .collect::<Vec<_>>();
+    run_scripted_capture(
+        ceremony.as_str(),
+        &[
+            "test_funding_ceremony",
+            "target_transaction_submission",
+            "test_sponsor_authorization",
+            "confidential_value_test_funding",
+            "confidential_value_sponsor_authorization",
+        ],
+        steps,
+        &responses,
+    )
 }
 
 #[test]
@@ -2080,6 +2320,112 @@ fn the_legacy_report_variable_keeps_its_original_path_contract() {
     );
     assert_eq!(legacy_report_for(Some(&directory), Some(&base), None), None);
     std::fs::remove_dir_all(directory).expect("the legacy path test directory is removed");
+}
+
+#[cfg(unix)]
+#[test]
+fn conservation_fact_assembly_matches_its_seven_operation_census() {
+    use transaction::bytes::{SerializedFieldLocator, SerializedOutputField};
+
+    let capture = scripted_ceremony_capture(CeremonyId::ConservationNegatives);
+    let mut facts = CeremonyCaptureFacts::from_capture(CeremonyId::ConservationNegatives, &capture)
+        .with_digest("predecessor", Some([0x31; 32]))
+        .with_digest("successor", Some([0x32; 32]));
+    for step in [
+        "wrong-blinder",
+        "missing-rangeproof",
+        "private-ct-imbalance",
+        "malformed-rangeproof",
+    ] {
+        let locator = mutation_fact(step).1.unwrap_or_else(|| {
+            LiveMutationLocator::SerializedOutputField(SerializedFieldLocator::new(
+                0,
+                SerializedOutputField::RangeproofBytes,
+            ))
+        });
+        facts = facts.with_locator(step, locator);
+    }
+
+    validate_capture_facts(&capture, &facts).expect("the conservation facts are complete");
+    assert_eq!(facts.operations.len(), 7);
+    let missing = facts
+        .operation("operation-3")
+        .expect("the missing-rangeproof operation is present");
+    assert_eq!(missing.case_step, "missing-rangeproof");
+    assert_eq!(missing.role, RequestRole::Auxiliary);
+    assert_eq!((missing.mutant, missing.locator.as_ref()), (None, None));
+    assert_eq!(facts.digests.len(), 2);
+}
+
+#[cfg(unix)]
+#[test]
+fn owner_observation_fact_assembly_distinguishes_controls_from_the_acceptance() {
+    let capture = scripted_ceremony_capture(CeremonyId::OwnerObservation);
+    let facts = CeremonyCaptureFacts::from_capture(CeremonyId::OwnerObservation, &capture);
+
+    validate_capture_facts(&capture, &facts).expect("the owner-observation facts are complete");
+    assert_eq!(facts.operations.len(), 9);
+    assert!(
+        facts.operations[2..8]
+            .iter()
+            .all(|operation| operation.role == RequestRole::Auxiliary),
+    );
+    assert_eq!(facts.operations[8].role, RequestRole::Acceptance);
+    assert!(facts.digests.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn proof_bearing_fact_assembly_distinguishes_controls_from_the_acceptance() {
+    let capture = scripted_ceremony_capture(CeremonyId::ProofBearingObservation);
+    let facts = CeremonyCaptureFacts::from_capture(CeremonyId::ProofBearingObservation, &capture)
+        .with_digest("predecessor", Some([0x41; 32]));
+
+    validate_capture_facts(&capture, &facts).expect("the proof-bearing facts are complete");
+    assert_eq!(facts.operations.len(), 6);
+    assert!(
+        facts.operations[2..5]
+            .iter()
+            .all(|operation| operation.role == RequestRole::Auxiliary),
+    );
+    assert_eq!(facts.operations[5].role, RequestRole::Acceptance);
+    assert_eq!(facts.digests.len(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn report_fact_assembly_keeps_the_observational_submission_auxiliary() {
+    let capture = scripted_ceremony_capture(CeremonyId::Report);
+    let facts = CeremonyCaptureFacts::from_capture(CeremonyId::Report, &capture);
+
+    validate_capture_facts(&capture, &facts).expect("the report facts are complete");
+    assert_eq!(facts.operations.len(), 4);
+    assert!(
+        facts
+            .operations
+            .iter()
+            .all(|operation| operation.role == RequestRole::Auxiliary),
+    );
+    assert!(facts.digests.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn committed_sponsor_fact_assembly_keeps_the_observation_and_fixture_digest() {
+    let capture = scripted_ceremony_capture(CeremonyId::SponsoredCommittedValue);
+    let facts = CeremonyCaptureFacts::from_capture(CeremonyId::SponsoredCommittedValue, &capture)
+        .with_digest("predecessor", Some([0x44; 32]));
+
+    validate_capture_facts(&capture, &facts).expect("the committed-sponsor facts are complete");
+    assert_eq!(facts.operations.len(), 6);
+    assert!(
+        facts
+            .operations
+            .iter()
+            .all(|operation| operation.role == RequestRole::Auxiliary),
+    );
+    assert_eq!(facts.digests.len(), 1);
+    assert_eq!(facts.digests[0].value, [0x44; 32]);
 }
 
 #[cfg(unix)]
