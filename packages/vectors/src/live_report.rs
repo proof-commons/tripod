@@ -80,7 +80,16 @@ use crate::matrix::EvidenceBoundary;
 /// protocol revision, algorithm-tagged fixture digests, and typed request
 /// roles. Schema 4 is hard-rejected because it cannot distinguish a
 /// historical-v1 digest from a forward-v2 digest or detect a revision lie.
-pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 5;
+///
+/// Revision 6 adds the narrow forward-capture vocabulary: one composite
+/// two-acceptance observation, two decoded witness locators, reusable
+/// accepted-control support links, and one independently proven multi-row
+/// semantic witness. Schema 5 remains a closed historical reader and cannot
+/// consume any of those additions.
+pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 6;
+
+/// The retained historical report schema read by the schema-5 validator.
+pub const HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA: u32 = 5;
 
 /// What a safety report is, said in the bytes.
 ///
@@ -368,6 +377,262 @@ pub enum LiveMutationLocator {
         /// Mutant output count.
         mutant_outputs: usize,
     },
+    /// One input whose witness changes between key-path and script-path shape.
+    WitnessPathShape {
+        /// The input position whose witness changes.
+        input_index: usize,
+        /// The control witness-stack item count.
+        control_stack_items: usize,
+        /// The mutant witness-stack item count.
+        mutant_stack_items: usize,
+        /// Every changed or inserted witness-item position.
+        changed_positions: Vec<usize>,
+        /// The control's decoded witness path.
+        control_role: LiveWitnessPathRole,
+        /// The mutant's decoded witness path.
+        mutant_role: LiveWitnessPathRole,
+        /// Whether the declaration requires equal witnessless bytes.
+        witnessless_serialization_equal: bool,
+    },
+    /// A control and mutant's exact revealed committed-leaf arrangement.
+    CommittedLeafArrangement {
+        /// Input positions, in strictly increasing order.
+        input_indices: Vec<usize>,
+        /// Positions in `input_indices` revealing the control coordinator leaf.
+        control_coordinator_leaf_indices: Vec<usize>,
+        /// Positions in `input_indices` revealing the mutant coordinator leaf.
+        mutant_coordinator_leaf_indices: Vec<usize>,
+        /// The control's exact revealed committed leaf at every named input.
+        control_committed_leaf_programs: Vec<Vec<u8>>,
+        /// The mutant's exact revealed committed leaf at every named input.
+        mutant_committed_leaf_programs: Vec<Vec<u8>>,
+    },
+}
+
+/// The path shape recomputed from one decoded input witness.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LiveWitnessPathRole {
+    /// One signature-like item and no revealed leaf or control block.
+    KeyPath,
+    /// A revealed leaf program followed by a structurally valid control block.
+    ScriptPath,
+}
+
+/// One exact accepted member of a composite two-acceptance observation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveCompositeAcceptanceMember {
+    ceremony: String,
+    run_id: String,
+    request_id: String,
+    identity: Txid,
+    consumed_commitment_output_index: usize,
+}
+
+impl LiveCompositeAcceptanceMember {
+    /// Name one accepted request and the decoded output carrying its consumed parity.
+    #[must_use]
+    pub const fn new(
+        ceremony: String,
+        run_id: String,
+        request_id: String,
+        identity: Txid,
+        consumed_commitment_output_index: usize,
+    ) -> Self {
+        Self {
+            ceremony,
+            run_id,
+            request_id,
+            identity,
+            consumed_commitment_output_index,
+        }
+    }
+
+    /// The distinct named ceremony this member came from.
+    #[must_use]
+    pub fn ceremony(&self) -> &str {
+        &self.ceremony
+    }
+
+    /// The bound run identity.
+    #[must_use]
+    pub fn run_id(&self) -> &str {
+        &self.run_id
+    }
+
+    /// The exact request identity within the run.
+    #[must_use]
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    /// The accepted target identity.
+    #[must_use]
+    pub const fn identity(&self) -> Txid {
+        self.identity
+    }
+
+    /// The decoded output position carrying this member's parity commitment.
+    #[must_use]
+    pub const fn consumed_commitment_output_index(&self) -> usize {
+        self.consumed_commitment_output_index
+    }
+}
+
+/// Exactly two primary accepted members answering one matrix row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveCompositeTwoAcceptance {
+    members: [LiveCompositeAcceptanceMember; 2],
+}
+
+impl LiveCompositeTwoAcceptance {
+    /// Bind exactly two accepted members; validation proves their identities and parity.
+    #[must_use]
+    pub const fn new(
+        first: LiveCompositeAcceptanceMember,
+        second: LiveCompositeAcceptanceMember,
+    ) -> Self {
+        Self {
+            members: [first, second],
+        }
+    }
+
+    /// The structurally exact two-member census.
+    #[must_use]
+    pub const fn members(&self) -> &[LiveCompositeAcceptanceMember; 2] {
+        &self.members
+    }
+}
+
+/// One accepted-control support link carried by a schema-6 refusal observation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveSupportLink {
+    run_id: String,
+    request_id: String,
+    request_bytes: Vec<u8>,
+    response: LiveTargetResponse,
+}
+
+impl LiveSupportLink {
+    /// Carry the exact request and response facts the link resolves to.
+    #[must_use]
+    pub const fn new(
+        run_id: String,
+        request_id: String,
+        request_bytes: Vec<u8>,
+        response: LiveTargetResponse,
+    ) -> Self {
+        Self {
+            run_id,
+            request_id,
+            request_bytes,
+            response,
+        }
+    }
+
+    /// The run containing this support request.
+    #[must_use]
+    pub fn run_id(&self) -> &str {
+        &self.run_id
+    }
+
+    /// The accepted-control request identity.
+    #[must_use]
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    /// The exact accepted-control request bytes.
+    #[must_use]
+    pub fn request_bytes(&self) -> &[u8] {
+        &self.request_bytes
+    }
+
+    /// The exact accepted-control response facts.
+    #[must_use]
+    pub const fn response(&self) -> &LiveTargetResponse {
+        &self.response
+    }
+}
+
+/// A closed semantic predicate one row can independently prove from request bytes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LiveRowSemanticPredicate {
+    /// The request has a key-path sponsor input and one exact fee output.
+    Sponsored {
+        /// The sponsor input position.
+        sponsor_input_index: usize,
+        /// The explicit fee output position.
+        fee_output_index: usize,
+    },
+    /// The sponsored request has no output paying the sponsor-change program.
+    SponsorChangeAbsent {
+        /// The sponsor input position.
+        sponsor_input_index: usize,
+        /// The explicit fee output position.
+        fee_output_index: usize,
+        /// The deployment's exact sponsor-change program.
+        sponsor_change_program: Vec<u8>,
+    },
+}
+
+/// One primary accepted request that may answer only its declared semantic row set.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveMultiRowSemanticWitness {
+    run_id: String,
+    request_id: String,
+    identity: Txid,
+    rows: BTreeSet<&'static str>,
+    predicates: BTreeMap<&'static str, LiveRowSemanticPredicate>,
+}
+
+impl LiveMultiRowSemanticWitness {
+    /// Bind one acceptance to a named row set and exactly one predicate per row.
+    #[must_use]
+    pub const fn new(
+        run_id: String,
+        request_id: String,
+        identity: Txid,
+        rows: BTreeSet<&'static str>,
+        predicates: BTreeMap<&'static str, LiveRowSemanticPredicate>,
+    ) -> Self {
+        Self {
+            run_id,
+            request_id,
+            identity,
+            rows,
+            predicates,
+        }
+    }
+
+    /// The rows this one request claims to answer.
+    #[must_use]
+    pub const fn rows(&self) -> &BTreeSet<&'static str> {
+        &self.rows
+    }
+
+    /// The run carrying the one primary request.
+    #[must_use]
+    pub fn run_id(&self) -> &str {
+        &self.run_id
+    }
+
+    /// The one primary request identity.
+    #[must_use]
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    /// The accepted target identity recomputed from the request.
+    #[must_use]
+    pub const fn identity(&self) -> Txid {
+        self.identity
+    }
+
+    /// Exactly one closed semantic predicate for every declared row.
+    #[must_use]
+    pub const fn predicates(&self) -> &BTreeMap<&'static str, LiveRowSemanticPredicate> {
+        &self.predicates
+    }
 }
 
 /// Which half of a paired equality request one archive member is.
@@ -570,6 +835,7 @@ impl LiveRunBinding {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ParsedRunArchive {
+    ceremony_id: Option<String>,
     revision: NativeProtocolRevision,
     digest_facts: BTreeMap<String, FixtureDigestFact>,
     deployment: LiveDeploymentBinding,
@@ -578,6 +844,7 @@ struct ParsedRunArchive {
 
 #[derive(Debug, Default)]
 struct RunArchiveFields {
+    ceremony_id: Option<String>,
     revision: Option<NativeProtocolRevision>,
     environment: Option<String>,
     network_id: Option<[u8; 32]>,
@@ -627,6 +894,16 @@ fn set_once<T>(slot: &mut Option<T>, value: T) -> Result<(), LiveSafetyReportRef
 }
 
 impl RunArchiveFields {
+    fn parse_ceremony(&mut self, fields: &[&str]) -> Result<(), LiveSafetyReportRefusal> {
+        let ["ceremony_id", value] = fields else {
+            return Err(LiveSafetyReportRefusal::MalformedRunArchive);
+        };
+        if value.is_empty() {
+            return Err(LiveSafetyReportRefusal::MalformedRunArchive);
+        }
+        set_once(&mut self.ceremony_id, (*value).to_owned())
+    }
+
     fn parse_revision(&mut self, fields: &[&str]) -> Result<(), LiveSafetyReportRefusal> {
         let ["protocol_revision", value] = fields else {
             return Err(LiveSafetyReportRefusal::MalformedRunArchive);
@@ -716,6 +993,7 @@ impl RunArchiveFields {
 
     fn parse_line(&mut self, fields: &[&str]) -> Result<(), LiveSafetyReportRefusal> {
         match fields.first().copied() {
+            Some("ceremony_id") => self.parse_ceremony(fields),
             Some("protocol_revision") => self.parse_revision(fields),
             Some(
                 "deployment_environment"
@@ -740,6 +1018,7 @@ impl RunArchiveFields {
             return Err(LiveSafetyReportRefusal::MalformedRunArchive);
         }
         Ok(ParsedRunArchive {
+            ceremony_id: self.ceremony_id,
             revision: self
                 .revision
                 .ok_or(LiveSafetyReportRefusal::MalformedRunArchive)?,
@@ -882,6 +1161,13 @@ pub enum LiveReportObservation {
         /// The target-computed identity.
         identity: Txid,
     },
+    /// Two accepted requests from distinct ceremonies proving both parity forms.
+    CompositeTwoAcceptance {
+        /// The one matrix row the fixed pair answers.
+        row: &'static str,
+        /// Exactly two primary acceptance links.
+        acceptance: LiveCompositeTwoAcceptance,
+    },
     /// A bound target refusal.
     NativeRefusal {
         /// The matrix row.
@@ -898,6 +1184,23 @@ pub enum LiveReportObservation {
         control_identity: Txid,
         /// The target's exact refusal detail.
         detail: String,
+    },
+    /// A schema-6 bound refusal with an explicitly reusable support link.
+    NativeRefusalWithSupport {
+        /// The matrix row.
+        row: &'static str,
+        /// The mutant's bound run.
+        run_id: String,
+        /// The mutant request within the run.
+        request_id: String,
+        /// The row's declared boundary.
+        declared_boundary: EvidenceBoundary,
+        /// The observed layer.
+        observed_layer: ObservedOutcomeLayer,
+        /// The target's exact refusal detail.
+        detail: String,
+        /// The accepted control supporting this refusal.
+        support: LiveSupportLink,
     },
     /// A bound relation over two accepted members.
     PairedRelation {
@@ -917,6 +1220,11 @@ pub enum LiveReportObservation {
         private_identity: Txid,
         /// The validated relation.
         relation: String,
+    },
+    /// One accepted request proving more than one named row independently.
+    MultiRowSemantic {
+        /// The typed row set, predicates, primary link, and response identity.
+        witness: LiveMultiRowSemanticWitness,
     },
     /// A preserved historical observation lacking a complete run binding.
     RecordedObservationUnbound {
@@ -966,7 +1274,7 @@ impl LiveReportLayerRequirement {
     }
 }
 
-/// One report-layer property established against canonical schema-5 bytes.
+/// One report-layer property established against canonical versioned bytes.
 ///
 /// There is deliberately no public constructor. Values live only inside a
 /// [`ValidatedLiveTransferSafetyReport`] returned after disclosure validation.
@@ -1230,6 +1538,8 @@ impl LiveTransferSafetyReport {
 pub enum LiveSafetyReportRefusal {
     /// The report states a schema this validator does not read.
     UnsupportedSchema(u32),
+    /// An observation or locator belongs to another schema's closed vocabulary.
+    SchemaVocabularyDiffers(u32),
     /// The report states a role that is not the safety one.
     ///
     /// §13.6's separation, enforced: a minimality report handed to the
@@ -1313,6 +1623,16 @@ pub enum LiveSafetyReportRefusal {
     },
     /// One request is aliased to more than one row observation.
     ObservationAliased(String),
+    /// Two composite acceptance members claim the same named ceremony.
+    CompositeCeremonyReused(String),
+    /// The two decoded commitment prefixes do not carry opposite parity.
+    CompositeParityNotOpposite(&'static str),
+    /// A support-link copy differs from the request or response facts it resolves to.
+    SupportLinkFactsDiffer(String, String),
+    /// A multi-row witness's row set and predicate keys do not agree.
+    MultiRowWitnessRowsDiffer,
+    /// One named row's semantic predicate did not recompute from request bytes.
+    SemanticPredicateNotProven(&'static str),
     /// Run, response, control and observation counts do not cross-foot.
     RunObservationCensusDiffers,
     /// A pair's decoded projections do not prove its stated equality.
@@ -1544,9 +1864,14 @@ impl ObservationCensus {
         let mut census = Self::default();
         for observation in observations {
             match observation {
-                LiveReportObservation::NativeAcceptance { .. } => census.accepted += 1,
-                LiveReportObservation::NativeRefusal { .. } => census.refused += 1,
+                LiveReportObservation::NativeAcceptance { .. }
+                | LiveReportObservation::CompositeTwoAcceptance { .. } => census.accepted += 1,
+                LiveReportObservation::NativeRefusal { .. }
+                | LiveReportObservation::NativeRefusalWithSupport { .. } => census.refused += 1,
                 LiveReportObservation::PairedRelation { .. } => census.paired_relation += 1,
+                LiveReportObservation::MultiRowSemantic { witness } => {
+                    census.accepted += witness.rows.len();
+                }
                 LiveReportObservation::RecordedObservationUnbound { observation, .. } => {
                     census.recorded_unbound += 1;
                     match observation {
@@ -1788,9 +2113,173 @@ fn witness_item_is_exact(
     differences == 1
 }
 
+const CONTROL_BLOCK_BASE_BYTES: usize = 33;
+const CONTROL_BLOCK_DIGEST_BYTES: usize = 32;
+const TAPSCRIPT_LEAF_VERSION: u8 = 0xc0;
+const MAXIMUM_CONTROL_BLOCK_DEPTH: usize = 128;
+
+const fn control_block_is_structurally_valid(block: &[u8]) -> bool {
+    block.len() >= CONTROL_BLOCK_BASE_BYTES
+        && (block.len() - CONTROL_BLOCK_BASE_BYTES).is_multiple_of(CONTROL_BLOCK_DIGEST_BYTES)
+        && (block.len() - CONTROL_BLOCK_BASE_BYTES) / CONTROL_BLOCK_DIGEST_BYTES
+            <= MAXIMUM_CONTROL_BLOCK_DEPTH
+        && block[0] & 0xfe == TAPSCRIPT_LEAF_VERSION
+}
+
+fn decoded_witness_path_role(stack: &[Vec<u8>]) -> Option<LiveWitnessPathRole> {
+    if stack.len() == 1 && !stack[0].is_empty() {
+        return Some(LiveWitnessPathRole::KeyPath);
+    }
+    let (control_block, preceding) = stack.split_last()?;
+    let leaf_program = preceding.last()?;
+    (!leaf_program.is_empty() && control_block_is_structurally_valid(control_block))
+        .then_some(LiveWitnessPathRole::ScriptPath)
+}
+
+fn exact_changed_witness_positions(control: &[Vec<u8>], mutant: &[Vec<u8>]) -> Vec<usize> {
+    (0..control.len().max(mutant.len()))
+        .filter(|position| control.get(*position) != mutant.get(*position))
+        .collect()
+}
+
+fn witness_path_shape_matches(
+    control: &TargetTransaction,
+    mutant: &TargetTransaction,
+    locator: &LiveMutationLocator,
+) -> bool {
+    let LiveMutationLocator::WitnessPathShape {
+        input_index,
+        control_stack_items,
+        mutant_stack_items,
+        changed_positions,
+        control_role,
+        mutant_role,
+        witnessless_serialization_equal,
+    } = locator
+    else {
+        return false;
+    };
+    if !*witnessless_serialization_equal
+        || control.encode_without_witness() != mutant.encode_without_witness()
+        || control.output_witnesses() != mutant.output_witnesses()
+        || control.witnesses().len() != mutant.witnesses().len()
+        || changed_positions
+            .windows(2)
+            .any(|positions| positions[0] >= positions[1])
+    {
+        return false;
+    }
+    let Some(control_witness) = control.witnesses().get(*input_index) else {
+        return false;
+    };
+    let Some(mutant_witness) = mutant.witnesses().get(*input_index) else {
+        return false;
+    };
+    if control
+        .witnesses()
+        .iter()
+        .zip(mutant.witnesses())
+        .enumerate()
+        .any(|(index, pair)| index != *input_index && pair.0 != pair.1)
+    {
+        return false;
+    }
+    let control_stack = control_witness.stack();
+    let mutant_stack = mutant_witness.stack();
+    control_stack.len() == *control_stack_items
+        && mutant_stack.len() == *mutant_stack_items
+        && decoded_witness_path_role(control_stack) == Some(*control_role)
+        && decoded_witness_path_role(mutant_stack) == Some(*mutant_role)
+        && exact_changed_witness_positions(control_stack, mutant_stack).as_slice()
+            == changed_positions.as_slice()
+        && !changed_positions.is_empty()
+}
+
+fn revealed_committed_leaf_program(
+    transaction: &TargetTransaction,
+    input_index: usize,
+) -> Option<Vec<u8>> {
+    let stack = transaction.witnesses().get(input_index)?.stack();
+    if decoded_witness_path_role(stack) != Some(LiveWitnessPathRole::ScriptPath) {
+        return None;
+    }
+    stack.get(stack.len().checked_sub(2)?).cloned()
+}
+
+fn committed_leaf_arrangement_matches(
+    control: &TargetTransaction,
+    mutant: &TargetTransaction,
+    mutant_kind: LiveMutantKind,
+    locator: &LiveMutationLocator,
+) -> bool {
+    let LiveMutationLocator::CommittedLeafArrangement {
+        input_indices,
+        control_coordinator_leaf_indices,
+        mutant_coordinator_leaf_indices,
+        control_committed_leaf_programs,
+        mutant_committed_leaf_programs,
+    } = locator
+    else {
+        return false;
+    };
+    if input_indices.is_empty()
+        || input_indices
+            .windows(2)
+            .any(|positions| positions[0] >= positions[1])
+        || control.encode_without_witness() != mutant.encode_without_witness()
+        || control.output_witnesses() != mutant.output_witnesses()
+        || control.witnesses().len() != mutant.witnesses().len()
+        || input_indices.len() != control_committed_leaf_programs.len()
+        || input_indices.len() != mutant_committed_leaf_programs.len()
+    {
+        return false;
+    }
+    let Some(control_programs) = input_indices
+        .iter()
+        .map(|index| revealed_committed_leaf_program(control, *index))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    let Some(mutant_programs) = input_indices
+        .iter()
+        .map(|index| revealed_committed_leaf_program(mutant, *index))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    if control_programs.as_slice() != control_committed_leaf_programs.as_slice()
+        || mutant_programs.as_slice() != mutant_committed_leaf_programs.as_slice()
+        || control_programs == mutant_programs
+    {
+        return false;
+    }
+    let coordinator_program = &control_programs[0];
+    let recomputed_control_indices = input_indices
+        .iter()
+        .zip(&control_programs)
+        .filter_map(|(index, program)| (program == coordinator_program).then_some(*index))
+        .collect::<Vec<_>>();
+    let recomputed_mutant_indices = input_indices
+        .iter()
+        .zip(&mutant_programs)
+        .filter_map(|(index, program)| (program == coordinator_program).then_some(*index))
+        .collect::<Vec<_>>();
+    let expected_mutant_coordinators = match mutant_kind {
+        LiveMutantKind::TwoCoordinators => 2,
+        LiveMutantKind::NoCoordinator => 0,
+        _ => return false,
+    };
+    recomputed_control_indices.as_slice() == control_coordinator_leaf_indices.as_slice()
+        && recomputed_control_indices.as_slice() == [input_indices[0]]
+        && recomputed_mutant_indices.as_slice() == mutant_coordinator_leaf_indices.as_slice()
+        && recomputed_mutant_indices.len() == expected_mutant_coordinators
+}
+
 fn mutation_locator_matches(
     control: &TargetTransaction,
     mutant: &TargetTransaction,
+    mutant_kind: LiveMutantKind,
     locator: &LiveMutationLocator,
 ) -> bool {
     match locator {
@@ -1832,6 +2321,12 @@ fn mutation_locator_matches(
                 && (control_inputs != mutant_inputs || control_outputs != mutant_outputs)
                 && control.version() == mutant.version()
                 && control.lock_time() == mutant.lock_time()
+        }
+        LiveMutationLocator::WitnessPathShape { .. } => {
+            witness_path_shape_matches(control, mutant, locator)
+        }
+        LiveMutationLocator::CommittedLeafArrangement { .. } => {
+            committed_leaf_arrangement_matches(control, mutant, mutant_kind, locator)
         }
     }
 }
@@ -1935,16 +2430,26 @@ fn validate_refusal_links(
     run: &LiveRunBinding,
     request_owners: &BTreeMap<&str, &str>,
     decoded: &BTreeMap<String, TargetTransaction>,
+    schema: u32,
 ) -> Result<(), LiveSafetyReportRefusal> {
     for (request_id, fact) in &run.request_facts {
         let LiveRequestFact::Refusal {
+            mutant,
             control_request_id,
             locator,
-            ..
         } = fact
         else {
             continue;
         };
+        if schema == HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA
+            && matches!(
+                locator,
+                LiveMutationLocator::WitnessPathShape { .. }
+                    | LiveMutationLocator::CommittedLeafArrangement { .. }
+            )
+        {
+            return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
+        }
         let Some(control_owner) = request_owners.get(control_request_id.as_str()) else {
             return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
                 run.run_id.clone(),
@@ -1988,7 +2493,12 @@ fn validate_refusal_links(
                 request_id.clone(),
             ));
         }
-        if !mutation_locator_matches(&decoded[control_request_id], &decoded[request_id], locator) {
+        if !mutation_locator_matches(
+            &decoded[control_request_id],
+            &decoded[request_id],
+            *mutant,
+            locator,
+        ) {
             return Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
                 run.run_id.clone(),
                 request_id.clone(),
@@ -2001,17 +2511,26 @@ fn validate_refusal_links(
 fn validate_run_binding(
     run: &LiveRunBinding,
     request_owners: &BTreeMap<&str, &str>,
+    schema: u32,
 ) -> Result<(), LiveSafetyReportRefusal> {
     validate_archived_run_facts(run)?;
+    if schema == HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA
+        && parse_run_archive(&run.archive_bytes)?.ceremony_id.is_some()
+    {
+        return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
+    }
     let decoded = decode_run_requests(run)?;
-    validate_refusal_links(run, request_owners, &decoded)?;
+    validate_refusal_links(run, request_owners, &decoded, schema)?;
     if run.run_id != content_address_run(run) {
         return Err(LiveSafetyReportRefusal::RunIdDiffers(run.run_id.clone()));
     }
     Ok(())
 }
 
-fn validate_run_bindings(runs: &[LiveRunBinding]) -> Result<(), LiveSafetyReportRefusal> {
+fn validate_run_bindings_for_schema(
+    runs: &[LiveRunBinding],
+    schema: u32,
+) -> Result<(), LiveSafetyReportRefusal> {
     if runs.windows(2).any(|pair| pair[0].run_id >= pair[1].run_id) {
         return Err(LiveSafetyReportRefusal::RunCensusDiffers);
     }
@@ -2027,20 +2546,21 @@ fn validate_run_bindings(runs: &[LiveRunBinding]) -> Result<(), LiveSafetyReport
         }
     }
     for run in runs {
-        validate_run_binding(run, &request_owners)?;
+        validate_run_binding(run, &request_owners, schema)?;
     }
     Ok(())
 }
 
-fn compare_run_bindings(
+fn compare_run_bindings_for_schema(
     offered: &[LiveRunBinding],
     expected: &[LiveRunBinding],
+    schema: u32,
 ) -> Result<(), LiveSafetyReportRefusal> {
     if offered.len() != expected.len() {
         return Err(LiveSafetyReportRefusal::RunCensusDiffers);
     }
-    validate_run_bindings(offered)?;
-    validate_run_bindings(expected)?;
+    validate_run_bindings_for_schema(offered, schema)?;
+    validate_run_bindings_for_schema(expected, schema)?;
     for (offered, expected) in offered.iter().zip(expected) {
         if offered.run_id != expected.run_id {
             return Err(LiveSafetyReportRefusal::RunCensusDiffers);
@@ -2256,6 +2776,7 @@ fn insert_observation_link(
 struct BoundObservationValidation {
     compared: usize,
     observed_links: BTreeSet<(String, String)>,
+    support_links: BTreeMap<String, LiveSupportLink>,
     used_requests: BTreeSet<(String, String)>,
 }
 
@@ -2290,6 +2811,87 @@ impl BoundObservationValidation {
         }
         self.used_requests
             .insert((run_id.clone(), request_id.clone()));
+        self.compared += 1;
+        Ok(())
+    }
+
+    fn composite_two_acceptance(
+        &mut self,
+        observation: &LiveReportObservation,
+        runs: &[LiveRunBinding],
+    ) -> Result<(), LiveSafetyReportRefusal> {
+        let LiveReportObservation::CompositeTwoAcceptance { row, acceptance } = observation else {
+            return Ok(());
+        };
+        let [first, second] = acceptance.members();
+        for member in [first, second] {
+            let run = runs
+                .iter()
+                .find(|run| run.run_id == member.run_id)
+                .ok_or(LiveSafetyReportRefusal::BoundObservationUnbacked { row })?;
+            let parsed = parse_run_archive(&run.archive_bytes)?;
+            if parsed.ceremony_id.as_deref() != Some(member.ceremony.as_str()) {
+                return Err(LiveSafetyReportRefusal::RunArchiveDiffers(
+                    member.run_id.clone(),
+                ));
+            }
+        }
+        if first.ceremony.is_empty()
+            || second.ceremony.is_empty()
+            || first.ceremony == second.ceremony
+            || first.run_id == second.run_id
+        {
+            return Err(LiveSafetyReportRefusal::CompositeCeremonyReused(
+                first.ceremony.clone(),
+            ));
+        }
+        let mut prefixes = Vec::with_capacity(2);
+        for member in [first, second] {
+            insert_observation_link(&mut self.observed_links, &member.run_id, &member.request_id)?;
+            let (fact, response, bytes) =
+                request_for(runs, &member.run_id, &member.request_id, row)?;
+            if fact != &LiveRequestFact::Acceptance {
+                return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                    member.run_id.clone(),
+                    member.request_id.clone(),
+                ));
+            }
+            let expected = LiveTargetResponse::Accepted {
+                identity: member.identity,
+            };
+            if response != &expected {
+                return Err(LiveSafetyReportRefusal::RunResponseDiffers(
+                    member.run_id.clone(),
+                ));
+            }
+            if recomputed_txid(bytes) != Some(member.identity) {
+                return Err(LiveSafetyReportRefusal::AcceptedIdentityDiffers(
+                    member.run_id.clone(),
+                    member.request_id.clone(),
+                ));
+            }
+            let transaction = TargetTransaction::decode(bytes).map_err(|_| {
+                LiveSafetyReportRefusal::RequestDecodeRefused(
+                    member.run_id.clone(),
+                    member.request_id.clone(),
+                )
+            })?;
+            let prefix = transaction
+                .outputs()
+                .get(member.consumed_commitment_output_index)
+                .and_then(|output| match output.value() {
+                    ValueField::Commitment(commitment) => Some(commitment[0]),
+                    _ => None,
+                })
+                .filter(|prefix| matches!(*prefix, 0x08 | 0x09))
+                .ok_or(LiveSafetyReportRefusal::CompositeParityNotOpposite(row))?;
+            prefixes.push(prefix);
+            self.used_requests
+                .insert((member.run_id.clone(), member.request_id.clone()));
+        }
+        if prefixes.as_slice() != [0x08, 0x09] && prefixes.as_slice() != [0x09, 0x08] {
+            return Err(LiveSafetyReportRefusal::CompositeParityNotOpposite(row));
+        }
         self.compared += 1;
         Ok(())
     }
@@ -2350,6 +2952,124 @@ impl BoundObservationValidation {
         Ok(())
     }
 
+    fn support_identity(
+        &mut self,
+        support: &LiveSupportLink,
+        mutant_run_id: &str,
+        linked_request_id: &str,
+        row: &'static str,
+        runs: &[LiveRunBinding],
+    ) -> Result<Txid, LiveSafetyReportRefusal> {
+        if support.run_id != mutant_run_id {
+            return Err(LiveSafetyReportRefusal::CrossRunRequestLink(
+                linked_request_id.to_owned(),
+                support.request_id.clone(),
+            ));
+        }
+        if support.request_id != linked_request_id {
+            return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                support.run_id.clone(),
+                support.request_id.clone(),
+            ));
+        }
+        if let Some(previous) = self.support_links.get(&support.request_id) {
+            if previous.run_id != support.run_id {
+                return Err(LiveSafetyReportRefusal::CrossRunRequestLink(
+                    previous.request_id.clone(),
+                    support.request_id.clone(),
+                ));
+            }
+            if previous.request_bytes != support.request_bytes
+                || previous.response != support.response
+            {
+                return Err(LiveSafetyReportRefusal::SupportLinkFactsDiffer(
+                    support.run_id.clone(),
+                    support.request_id.clone(),
+                ));
+            }
+        }
+        let (fact, response, bytes) = request_for(runs, &support.run_id, &support.request_id, row)?;
+        if fact != &LiveRequestFact::Control {
+            return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                support.run_id.clone(),
+                support.request_id.clone(),
+            ));
+        }
+        if bytes != support.request_bytes.as_slice() || response != &support.response {
+            return Err(LiveSafetyReportRefusal::SupportLinkFactsDiffer(
+                support.run_id.clone(),
+                support.request_id.clone(),
+            ));
+        }
+        let LiveTargetResponse::Accepted { identity } = response else {
+            return Err(LiveSafetyReportRefusal::RequestResponseShapeDiffers(
+                support.run_id.clone(),
+                support.request_id.clone(),
+            ));
+        };
+        self.support_links
+            .insert(support.request_id.clone(), support.clone());
+        self.used_requests
+            .insert((support.run_id.clone(), support.request_id.clone()));
+        Ok(*identity)
+    }
+
+    fn refusal_with_support(
+        &mut self,
+        observation: &LiveReportObservation,
+        runs: &[LiveRunBinding],
+    ) -> Result<(), LiveSafetyReportRefusal> {
+        let LiveReportObservation::NativeRefusalWithSupport {
+            row,
+            run_id,
+            request_id,
+            observed_layer,
+            detail,
+            declared_boundary,
+            support,
+        } = observation
+        else {
+            return Ok(());
+        };
+        insert_observation_link(&mut self.observed_links, run_id, request_id)?;
+        let (fact, response, _) = request_for(runs, run_id, request_id, row)?;
+        let LiveRequestFact::Refusal {
+            mutant,
+            control_request_id,
+            ..
+        } = fact
+        else {
+            return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                run_id.clone(),
+                request_id.clone(),
+            ));
+        };
+        let boundary = crate::live_safety::required_safety_matrix()
+            .into_iter()
+            .find(|candidate| candidate.name() == mutant.row())
+            .and_then(crate::live_safety::LiveSafetyRow::refusing_layer);
+        if mutant.row() != *row || boundary != Some(*declared_boundary) {
+            return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                run_id.clone(),
+                request_id.clone(),
+            ));
+        }
+        let control_identity =
+            self.support_identity(support, run_id, control_request_id, row, runs)?;
+        let expected = LiveTargetResponse::Refused {
+            observed_layer: *observed_layer,
+            detail: detail.clone(),
+            control_identity,
+        };
+        if response != &expected {
+            return Err(LiveSafetyReportRefusal::RunResponseDiffers(run_id.clone()));
+        }
+        self.used_requests
+            .insert((run_id.clone(), request_id.clone()));
+        self.compared += 1;
+        Ok(())
+    }
+
     fn pair(
         &mut self,
         observation: &LiveReportObservation,
@@ -2404,6 +3124,121 @@ impl BoundObservationValidation {
             .insert((private_run_id.clone(), private_request_id.clone()));
         self.compared += 1;
         Ok(())
+    }
+
+    fn multi_row_semantic(
+        &mut self,
+        observation: &LiveReportObservation,
+        runs: &[LiveRunBinding],
+    ) -> Result<(), LiveSafetyReportRefusal> {
+        let LiveReportObservation::MultiRowSemantic { witness } = observation else {
+            return Ok(());
+        };
+        let expected_rows = BTreeSet::from(["sponsor-change-absent", "sponsored"]);
+        if witness.rows != expected_rows
+            || !witness
+                .rows
+                .iter()
+                .copied()
+                .eq(witness.predicates.keys().copied())
+        {
+            return Err(LiveSafetyReportRefusal::MultiRowWitnessRowsDiffer);
+        }
+        insert_observation_link(
+            &mut self.observed_links,
+            &witness.run_id,
+            &witness.request_id,
+        )?;
+        let row = "sponsored";
+        let (fact, response, bytes) = request_for(runs, &witness.run_id, &witness.request_id, row)?;
+        if fact != &LiveRequestFact::Acceptance {
+            return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                witness.run_id.clone(),
+                witness.request_id.clone(),
+            ));
+        }
+        let expected = LiveTargetResponse::Accepted {
+            identity: witness.identity,
+        };
+        if response != &expected || recomputed_txid(bytes) != Some(witness.identity) {
+            return Err(LiveSafetyReportRefusal::AcceptedIdentityDiffers(
+                witness.run_id.clone(),
+                witness.request_id.clone(),
+            ));
+        }
+        let transaction = TargetTransaction::decode(bytes).map_err(|_| {
+            LiveSafetyReportRefusal::RequestDecodeRefused(
+                witness.run_id.clone(),
+                witness.request_id.clone(),
+            )
+        })?;
+        for (predicate_row, predicate) in &witness.predicates {
+            if !semantic_predicate_recomputes(predicate_row, predicate, &transaction) {
+                return Err(LiveSafetyReportRefusal::SemanticPredicateNotProven(
+                    predicate_row,
+                ));
+            }
+        }
+        self.used_requests
+            .insert((witness.run_id.clone(), witness.request_id.clone()));
+        self.compared += witness.rows.len();
+        Ok(())
+    }
+}
+
+fn sponsored_request_shape_recomputes(
+    transaction: &TargetTransaction,
+    sponsor_input_index: usize,
+    fee_output_index: usize,
+) -> bool {
+    let Some(sponsor_witness) = transaction.witnesses().get(sponsor_input_index) else {
+        return false;
+    };
+    let Some(fee_output) = transaction.outputs().get(fee_output_index) else {
+        return false;
+    };
+    transaction.inputs().len() > 1
+        && decoded_witness_path_role(sponsor_witness.stack()) == Some(LiveWitnessPathRole::KeyPath)
+        && fee_output.program().is_empty()
+        && matches!(fee_output.asset(), AssetField::Explicit(_))
+        && matches!(fee_output.value(), ValueField::Explicit(amount) if amount > 0)
+}
+
+fn semantic_predicate_recomputes(
+    row: &'static str,
+    predicate: &LiveRowSemanticPredicate,
+    transaction: &TargetTransaction,
+) -> bool {
+    match (row, predicate) {
+        (
+            "sponsored",
+            LiveRowSemanticPredicate::Sponsored {
+                sponsor_input_index,
+                fee_output_index,
+            },
+        ) => {
+            sponsored_request_shape_recomputes(transaction, *sponsor_input_index, *fee_output_index)
+        }
+        (
+            "sponsor-change-absent",
+            LiveRowSemanticPredicate::SponsorChangeAbsent {
+                sponsor_input_index,
+                fee_output_index,
+                sponsor_change_program,
+            },
+        ) => {
+            !sponsor_change_program.is_empty()
+                && sponsored_request_shape_recomputes(
+                    transaction,
+                    *sponsor_input_index,
+                    *fee_output_index,
+                )
+                && transaction
+                    .outputs()
+                    .iter()
+                    .all(|output| output.program() != sponsor_change_program)
+        }
+        _ => false,
     }
 }
 
@@ -2479,22 +3314,44 @@ fn validate_pair_claim(
     Ok(())
 }
 
-fn validate_bound_observations(
+fn validate_bound_observations_for_schema(
     observations: &[LiveReportObservation],
     runs: &[LiveRunBinding],
+    schema: u32,
 ) -> Result<usize, LiveSafetyReportRefusal> {
-    validate_run_bindings(runs)?;
+    validate_run_bindings_for_schema(runs, schema)?;
     let mut validation = BoundObservationValidation::default();
     for observation in observations {
         match observation {
             LiveReportObservation::NativeAcceptance { .. } => {
                 validation.acceptance(observation, runs)?;
             }
+            LiveReportObservation::CompositeTwoAcceptance { .. } => {
+                if schema != LIVE_SAFETY_REPORT_SCHEMA {
+                    return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
+                }
+                validation.composite_two_acceptance(observation, runs)?;
+            }
             LiveReportObservation::NativeRefusal { .. } => {
+                if schema != HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA {
+                    return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
+                }
                 validation.refusal(observation, runs)?;
+            }
+            LiveReportObservation::NativeRefusalWithSupport { .. } => {
+                if schema != LIVE_SAFETY_REPORT_SCHEMA {
+                    return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
+                }
+                validation.refusal_with_support(observation, runs)?;
             }
             LiveReportObservation::PairedRelation { .. } => {
                 validation.pair(observation, runs)?;
+            }
+            LiveReportObservation::MultiRowSemantic { .. } => {
+                if schema != LIVE_SAFETY_REPORT_SCHEMA {
+                    return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
+                }
+                validation.multi_row_semantic(observation, runs)?;
             }
             LiveReportObservation::RecordedObservationUnbound { .. }
             | LiveReportObservation::Determinism { .. }
@@ -2513,8 +3370,9 @@ fn validate_report_envelope(
     plan: &LiveTransferEvidencePlan,
     target: &TargetProjection,
     progress: &mut RecomputationProgress,
+    expected_schema: u32,
 ) -> Result<(), LiveSafetyReportRefusal> {
-    if report.schema != LIVE_SAFETY_REPORT_SCHEMA {
+    if report.schema != expected_schema {
         return Err(LiveSafetyReportRefusal::UnsupportedSchema(report.schema));
     }
     progress.mark(RecomputedItem::Schema);
@@ -2536,7 +3394,7 @@ fn validate_report_envelope(
     }
 
     let expected_runs = Vec::new();
-    compare_run_bindings(&report.runs, &expected_runs)?;
+    compare_run_bindings_for_schema(&report.runs, &expected_runs, expected_schema)?;
     if !report.runs.is_empty() {
         progress.mark(RecomputedItem::TargetDeploymentBinding);
         progress.mark(RecomputedItem::RequestResponseCensus);
@@ -2549,6 +3407,7 @@ fn validate_report_observation_ledger(
     report: &LiveTransferSafetyReport,
     plan: &LiveTransferEvidencePlan,
     progress: &mut RecomputationProgress,
+    schema: u32,
 ) -> Result<(), LiveSafetyReportRefusal> {
     let expected_observations = observations_from_plan(plan)?;
     let expected_requirements = report_layer_requirements_from_plan(plan);
@@ -2564,7 +3423,8 @@ fn validate_report_observation_ledger(
         return Err(LiveSafetyReportRefusal::ObservationCensusDiffers);
     }
 
-    let bound_compared = validate_bound_observations(&report.observations, &report.runs)?;
+    let bound_compared =
+        validate_bound_observations_for_schema(&report.observations, &report.runs, schema)?;
     progress.mark(RecomputedItem::CaseCensus);
     progress.mark(RecomputedItem::RelationCensus);
     progress.mark(RecomputedItem::MutationLinks);
@@ -2669,9 +3529,40 @@ pub fn validate_live_safety_report(
     plan: &LiveTransferEvidencePlan,
     target: &TargetProjection,
 ) -> Result<ValidatedLiveTransferSafetyReport, LiveSafetyReportRefusal> {
+    validate_live_safety_report_for_schema(report, plan, target, LIVE_SAFETY_REPORT_SCHEMA)
+}
+
+/// Validate one committed historical schema-5 safety report.
+///
+/// This reader is deliberately separate from [`validate_live_safety_report`]:
+/// the historical path accepts only schema 5 and the live path accepts only
+/// schema 6, so neither document can silently enter the other path.
+///
+/// # Errors
+///
+/// [`LiveSafetyReportRefusal`], naming the first historical-schema disagreement.
+pub fn validate_schema_five_live_safety_report(
+    report: LiveTransferSafetyReport,
+    plan: &LiveTransferEvidencePlan,
+    target: &TargetProjection,
+) -> Result<ValidatedLiveTransferSafetyReport, LiveSafetyReportRefusal> {
+    validate_live_safety_report_for_schema(
+        report,
+        plan,
+        target,
+        HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+    )
+}
+
+fn validate_live_safety_report_for_schema(
+    report: LiveTransferSafetyReport,
+    plan: &LiveTransferEvidencePlan,
+    target: &TargetProjection,
+    expected_schema: u32,
+) -> Result<ValidatedLiveTransferSafetyReport, LiveSafetyReportRefusal> {
     let mut progress = RecomputationProgress::default();
-    validate_report_envelope(&report, plan, target, &mut progress)?;
-    validate_report_observation_ledger(&report, plan, &mut progress)?;
+    validate_report_envelope(&report, plan, target, &mut progress, expected_schema)?;
+    validate_report_observation_ledger(&report, plan, &mut progress, expected_schema)?;
     let recomputed = plan.census();
     validate_report_summary(&report, recomputed, &mut progress)?;
 
@@ -2702,7 +3593,7 @@ pub fn validate_live_safety_report(
         .map(|requirement| ValidatedReportLayerObservation {
             row: requirement.row,
             requirement: requirement.requirement,
-            schema: LIVE_SAFETY_REPORT_SCHEMA,
+            schema: report.schema,
         })
         .collect();
 
@@ -2744,7 +3635,11 @@ fn render_canonical_report(validated: &CanonicalReportView<'_>) -> String {
         validated.report_layer_requirements.len(),
     );
     render_observations(&mut text, &report.observations);
-    render_validated_report_layer_observations(&mut text, validated.report_layer_requirements);
+    render_validated_report_layer_observations(
+        &mut text,
+        validated.report_layer_requirements,
+        report.schema,
+    );
     render_validation_summary(&mut text, validated);
     text
 }
@@ -3056,6 +3951,40 @@ fn render_observations(text: &mut String, observations: &[LiveReportObservation]
     }
 }
 
+fn render_composite_two_acceptance(
+    text: &mut String,
+    row: &str,
+    acceptance: &LiveCompositeTwoAcceptance,
+) {
+    let [first, second] = acceptance.members();
+    let _ = writeln!(
+        text,
+        "observation {row} composite-two-acceptance first-ceremony {:?} first-run {} first-request {} first-identity {} first-commitment-output {} second-ceremony {:?} second-run {} second-request {} second-identity {} second-commitment-output {}",
+        first.ceremony,
+        first.run_id,
+        first.request_id,
+        first.identity.to_target_display(),
+        first.consumed_commitment_output_index,
+        second.ceremony,
+        second.run_id,
+        second.request_id,
+        second.identity.to_target_display(),
+        second.consumed_commitment_output_index,
+    );
+}
+
+fn render_multi_row_semantic(text: &mut String, witness: &LiveMultiRowSemanticWitness) {
+    let rows = witness.rows.iter().copied().collect::<Vec<_>>().join(",");
+    let _ = writeln!(
+        text,
+        "observation multi-row-semantic rows {rows:?} run {} request {} identity {} predicates {:?}",
+        witness.run_id,
+        witness.request_id,
+        witness.identity.to_target_display(),
+        witness.predicates,
+    );
+}
+
 fn render_observation(text: &mut String, observation: &LiveReportObservation) {
     match observation {
         LiveReportObservation::NativeAcceptance {
@@ -3070,6 +3999,9 @@ fn render_observation(text: &mut String, observation: &LiveReportObservation) {
                 identity.to_target_display()
             );
         }
+        LiveReportObservation::CompositeTwoAcceptance { row, acceptance } => {
+            render_composite_two_acceptance(text, row, acceptance);
+        }
         LiveReportObservation::NativeRefusal {
             row,
             run_id,
@@ -3083,6 +4015,21 @@ fn render_observation(text: &mut String, observation: &LiveReportObservation) {
                 text,
                 "observation {row} refused run {run_id} request {request_id} declared {declared_boundary:?} observed {observed_layer:?} control {} detail {detail:?}",
                 control_identity.to_target_display()
+            );
+        }
+        LiveReportObservation::NativeRefusalWithSupport {
+            row,
+            run_id,
+            request_id,
+            declared_boundary,
+            observed_layer,
+            detail,
+            support,
+        } => {
+            let _ = writeln!(
+                text,
+                "observation {row} refused run {run_id} request {request_id} declared {declared_boundary:?} observed {observed_layer:?} support-run {} support-request {} detail {detail:?}",
+                support.run_id, support.request_id,
             );
         }
         LiveReportObservation::PairedRelation {
@@ -3101,6 +4048,9 @@ fn render_observation(text: &mut String, observation: &LiveReportObservation) {
                 explicit_identity.to_target_display(),
                 private_identity.to_target_display()
             );
+        }
+        LiveReportObservation::MultiRowSemantic { witness } => {
+            render_multi_row_semantic(text, witness);
         }
         LiveReportObservation::RecordedObservationUnbound { row, observation } => {
             render_recorded_observation_unbound(text, row, observation);
@@ -3131,6 +4081,7 @@ fn render_observation(text: &mut String, observation: &LiveReportObservation) {
 fn render_validated_report_layer_observations(
     text: &mut String,
     requirements: &[LiveReportLayerRequirement],
+    schema: u32,
 ) {
     for requirement in requirements {
         let _ = writeln!(
@@ -3138,7 +4089,7 @@ fn render_validated_report_layer_observations(
             "observation {} report-layer requirement {} validated-by canonical-bytes schema {}",
             requirement.row,
             requirement.requirement.name(),
-            LIVE_SAFETY_REPORT_SCHEMA
+            schema
         );
     }
 }
@@ -3309,13 +4260,17 @@ pub fn section_scoreboard(
 #[cfg(test)]
 mod tests {
     use super::{
-        FixtureDigestAlgorithm, LiveMutantKind, LiveMutationLocator, LivePairMember,
-        LivePairProjectionInput, LiveRecordedObservation, LiveReportObservation, LiveRequestFact,
+        FixtureDigestAlgorithm, HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA, LIVE_SAFETY_REPORT_SCHEMA,
+        LiveCompositeAcceptanceMember, LiveCompositeTwoAcceptance, LiveMultiRowSemanticWitness,
+        LiveMutantKind, LiveMutationLocator, LivePairMember, LivePairProjectionInput,
+        LiveRecordedObservation, LiveReportObservation, LiveRequestFact, LiveRowSemanticPredicate,
         LiveRunBinding, LiveSafetyCompleteness, LiveSafetyDiagnostics, LiveSafetyReportRefusal,
-        LiveSafetyReportRole, LiveTargetResponse, NativeProtocolRevision, RecomputedItem,
-        VALIDATED_PAIR_RELATION, VolatileField, assemble_live_safety_report, compare_run_bindings,
-        recomputed_txid, render_live_safety_report, section_scoreboard, target_evidence_name,
-        validate_bound_observations, validate_live_safety_report, validate_report_disclosures,
+        LiveSafetyReportRole, LiveSupportLink, LiveTargetResponse, LiveWitnessPathRole,
+        NativeProtocolRevision, RecomputedItem, VALIDATED_PAIR_RELATION, VolatileField,
+        assemble_live_safety_report, compare_run_bindings_for_schema, recomputed_txid,
+        render_live_safety_report, section_scoreboard, target_evidence_name,
+        validate_bound_observations_for_schema, validate_live_safety_report,
+        validate_report_disclosures, validate_schema_five_live_safety_report,
     };
     use crate::live_evidence::derive_live_evidence_plan;
     use crate::live_plan::reviewed_target;
@@ -3332,9 +4287,32 @@ mod tests {
         transaction::Txid::from_target_display(value).expect("the test identity parses")
     }
 
+    fn compare_schema_five_run_bindings(
+        offered: &[LiveRunBinding],
+        expected: &[LiveRunBinding],
+    ) -> Result<(), LiveSafetyReportRefusal> {
+        compare_run_bindings_for_schema(offered, expected, HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA)
+    }
+
+    fn validate_schema_five_bound_observations(
+        observations: &[LiveReportObservation],
+        runs: &[LiveRunBinding],
+    ) -> Result<usize, LiveSafetyReportRefusal> {
+        validate_bound_observations_for_schema(
+            observations,
+            runs,
+            HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+        )
+    }
+
     fn synthetic_archive(revision: u32, algorithm: &str, source_tip: &str) -> Vec<u8> {
+        let ceremony = if revision == 7 {
+            format!("ceremony_id {source_tip}\n")
+        } else {
+            String::new()
+        };
         format!(
-            "protocol_revision {revision}\n\
+            "{ceremony}protocol_revision {revision}\n\
              deployment_environment development\n\
              deployment_network {}\n\
              deployment_genesis {}\n\
@@ -3377,6 +4355,428 @@ mod tests {
         )
         .expect("the synthetic transaction is well formed")
         .encode()
+    }
+
+    fn synthetic_committed_transaction(seed: u8, prefix: u8) -> Vec<u8> {
+        use transaction::bytes::OutputWitness;
+        use transaction::{
+            AssetField, AssetId, InputWitness, NonceField, Outpoint, TargetInput, TargetOutput,
+            TargetTransaction, Txid, ValueField,
+        };
+
+        let mut commitment = [0x44; 33];
+        commitment[0] = prefix;
+        TargetTransaction::with_output_witnesses(
+            3,
+            vec![TargetInput::new(
+                Outpoint::new(Txid::from_internal([seed; 32]), 0)
+                    .expect("the committed synthetic outpoint is admissible"),
+                u32::MAX,
+            )],
+            vec![TargetOutput::new(
+                AssetField::Explicit(AssetId::from_internal([0xa1; 32])),
+                ValueField::Commitment(commitment),
+                NonceField::Null,
+                vec![0x51],
+            )],
+            0,
+            vec![InputWitness::new(vec![vec![0x31]])],
+            vec![OutputWitness::range_proof_only(vec![0xaa])],
+        )
+        .expect("the committed synthetic transaction is well formed")
+        .encode()
+    }
+
+    fn synthetic_acceptance_run(
+        ceremony: &str,
+        request_id: &str,
+        seed: u8,
+        prefix: u8,
+    ) -> LiveRunBinding {
+        let request = synthetic_committed_transaction(seed, prefix);
+        let identity = recomputed_txid(&request).expect("the acceptance identity recomputes");
+        LiveRunBinding::from_archive(
+            synthetic_archive(7, "forward-v2", ceremony),
+            std::collections::BTreeMap::from([(request_id.to_owned(), request)]),
+            std::collections::BTreeMap::from([(
+                request_id.to_owned(),
+                LiveRequestFact::Acceptance,
+            )]),
+            std::collections::BTreeMap::from([(
+                request_id.to_owned(),
+                LiveTargetResponse::Accepted { identity },
+            )]),
+        )
+        .expect("the synthetic acceptance run parses")
+    }
+
+    fn composite_observation(
+        first: &LiveRunBinding,
+        first_ceremony: &str,
+        first_request: &str,
+        second: &LiveRunBinding,
+        second_ceremony: &str,
+        second_request: &str,
+    ) -> LiveReportObservation {
+        let LiveTargetResponse::Accepted {
+            identity: first_identity,
+        } = &first.responses[first_request]
+        else {
+            panic!("the first composite response is accepted");
+        };
+        let LiveTargetResponse::Accepted {
+            identity: second_identity,
+        } = &second.responses[second_request]
+        else {
+            panic!("the second composite response is accepted");
+        };
+        LiveReportObservation::CompositeTwoAcceptance {
+            row: "both-commitment-parity-forms",
+            acceptance: LiveCompositeTwoAcceptance::new(
+                LiveCompositeAcceptanceMember::new(
+                    first_ceremony.to_owned(),
+                    first.run_id.clone(),
+                    first_request.to_owned(),
+                    *first_identity,
+                    0,
+                ),
+                LiveCompositeAcceptanceMember::new(
+                    second_ceremony.to_owned(),
+                    second.run_id.clone(),
+                    second_request.to_owned(),
+                    *second_identity,
+                    0,
+                ),
+            ),
+        }
+    }
+
+    fn synthetic_witness_transaction(seed: u8, stacks: Vec<Vec<Vec<u8>>>) -> Vec<u8> {
+        use transaction::{
+            AssetField, AssetId, InputWitness, NonceField, Outpoint, TargetInput, TargetOutput,
+            TargetTransaction, Txid, ValueField,
+        };
+
+        let inputs = (0..stacks.len())
+            .map(|index| {
+                let offset = u8::try_from(index).unwrap_or(u8::MAX);
+                TargetInput::new(
+                    Outpoint::new(Txid::from_internal([seed.wrapping_add(offset); 32]), 0)
+                        .expect("the witness synthetic outpoint is admissible"),
+                    u32::MAX,
+                )
+            })
+            .collect();
+        let witnesses = stacks.into_iter().map(InputWitness::new).collect();
+        TargetTransaction::new(
+            3,
+            inputs,
+            vec![TargetOutput::new(
+                AssetField::Explicit(AssetId::from_internal([0xa1; 32])),
+                ValueField::Explicit(50),
+                NonceField::Null,
+                vec![0x51],
+            )],
+            0,
+            witnesses,
+        )
+        .expect("the witness synthetic transaction is well formed")
+        .encode()
+    }
+
+    fn synthetic_control_block() -> Vec<u8> {
+        let mut block = vec![0xc0];
+        block.extend_from_slice(&[0x22; 32]);
+        block
+    }
+
+    fn synthetic_refusal_run(
+        source_tip: &str,
+        control: Vec<u8>,
+        mutant: Vec<u8>,
+        mutant_kind: LiveMutantKind,
+        locator: LiveMutationLocator,
+    ) -> LiveRunBinding {
+        use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
+        let control_identity = recomputed_txid(&control).expect("the control identity recomputes");
+        LiveRunBinding::from_archive(
+            synthetic_archive(7, "forward-v2", source_tip),
+            std::collections::BTreeMap::from([
+                ("control".to_owned(), control),
+                ("mutant".to_owned(), mutant),
+            ]),
+            std::collections::BTreeMap::from([
+                ("control".to_owned(), LiveRequestFact::Control),
+                (
+                    "mutant".to_owned(),
+                    LiveRequestFact::Refusal {
+                        mutant: mutant_kind,
+                        control_request_id: "control".to_owned(),
+                        locator,
+                    },
+                ),
+            ]),
+            std::collections::BTreeMap::from([
+                (
+                    "control".to_owned(),
+                    LiveTargetResponse::Accepted {
+                        identity: control_identity,
+                    },
+                ),
+                (
+                    "mutant".to_owned(),
+                    LiveTargetResponse::Refused {
+                        observed_layer: ObservedOutcomeLayer::ScriptPathRejection,
+                        detail: "synthetic refusal".to_owned(),
+                        control_identity,
+                    },
+                ),
+            ]),
+        )
+        .expect("the schema-six refusal run parses")
+    }
+
+    fn witness_path_shape_run() -> LiveRunBinding {
+        let signature = vec![0x31; 64];
+        let control = synthetic_witness_transaction(0x61, vec![vec![signature.clone()]]);
+        let mutant = synthetic_witness_transaction(
+            0x61,
+            vec![vec![signature, vec![0x51], synthetic_control_block()]],
+        );
+        synthetic_refusal_run(
+            "witness-path-tip",
+            control,
+            mutant,
+            LiveMutantKind::KeyPathEscape,
+            LiveMutationLocator::WitnessPathShape {
+                input_index: 0,
+                control_stack_items: 1,
+                mutant_stack_items: 3,
+                changed_positions: vec![1, 2],
+                control_role: LiveWitnessPathRole::KeyPath,
+                mutant_role: LiveWitnessPathRole::ScriptPath,
+                witnessless_serialization_equal: true,
+            },
+        )
+    }
+
+    fn committed_leaf_arrangement_run() -> LiveRunBinding {
+        let coordinator = vec![0x51, 0x00];
+        let member = vec![0x51, 0x01];
+        let signature = vec![0x31; 64];
+        let block = synthetic_control_block();
+        let control = synthetic_witness_transaction(
+            0x71,
+            vec![
+                vec![signature.clone(), coordinator.clone(), block.clone()],
+                vec![signature.clone(), member.clone(), block.clone()],
+            ],
+        );
+        let mutant = synthetic_witness_transaction(
+            0x71,
+            vec![
+                vec![signature.clone(), coordinator.clone(), block.clone()],
+                vec![signature, coordinator.clone(), block],
+            ],
+        );
+        synthetic_refusal_run(
+            "leaf-arrangement-tip",
+            control,
+            mutant,
+            LiveMutantKind::TwoCoordinators,
+            LiveMutationLocator::CommittedLeafArrangement {
+                input_indices: vec![0, 1],
+                control_coordinator_leaf_indices: vec![0],
+                mutant_coordinator_leaf_indices: vec![0, 1],
+                control_committed_leaf_programs: vec![coordinator.clone(), member],
+                mutant_committed_leaf_programs: vec![coordinator.clone(), coordinator],
+            },
+        )
+    }
+
+    fn repeated_support_run() -> LiveRunBinding {
+        use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
+        let control = synthetic_transaction(0x81, 50, 0x31);
+        let mutant_a = synthetic_transaction(0x81, 50, 0x32);
+        let mutant_b = synthetic_transaction(0x81, 50, 0x33);
+        let control_identity = recomputed_txid(&control).expect("the support identity recomputes");
+        LiveRunBinding::from_archive(
+            synthetic_archive(7, "forward-v2", "support-tip"),
+            std::collections::BTreeMap::from([
+                ("control".to_owned(), control),
+                ("mutant-a".to_owned(), mutant_a),
+                ("mutant-b".to_owned(), mutant_b),
+            ]),
+            std::collections::BTreeMap::from([
+                ("control".to_owned(), LiveRequestFact::Control),
+                (
+                    "mutant-a".to_owned(),
+                    LiveRequestFact::Refusal {
+                        mutant: LiveMutantKind::MalformedSignature,
+                        control_request_id: "control".to_owned(),
+                        locator: LiveMutationLocator::WitnessItem {
+                            input_index: 0,
+                            item_index: 0,
+                        },
+                    },
+                ),
+                (
+                    "mutant-b".to_owned(),
+                    LiveRequestFact::Refusal {
+                        mutant: LiveMutantKind::MalformedSignature,
+                        control_request_id: "control".to_owned(),
+                        locator: LiveMutationLocator::WitnessItem {
+                            input_index: 0,
+                            item_index: 0,
+                        },
+                    },
+                ),
+            ]),
+            std::collections::BTreeMap::from([
+                (
+                    "control".to_owned(),
+                    LiveTargetResponse::Accepted {
+                        identity: control_identity,
+                    },
+                ),
+                (
+                    "mutant-a".to_owned(),
+                    LiveTargetResponse::Refused {
+                        observed_layer: ObservedOutcomeLayer::ScriptPathRejection,
+                        detail: "first synthetic refusal".to_owned(),
+                        control_identity,
+                    },
+                ),
+                (
+                    "mutant-b".to_owned(),
+                    LiveTargetResponse::Refused {
+                        observed_layer: ObservedOutcomeLayer::ScriptPathRejection,
+                        detail: "second synthetic refusal".to_owned(),
+                        control_identity,
+                    },
+                ),
+            ]),
+        )
+        .expect("the repeated-support run parses")
+    }
+
+    fn support_observation(run: &LiveRunBinding, mutant_request_id: &str) -> LiveReportObservation {
+        let LiveTargetResponse::Refused {
+            observed_layer,
+            detail,
+            ..
+        } = &run.responses[mutant_request_id]
+        else {
+            panic!("the support fixture mutant is refused");
+        };
+        LiveReportObservation::NativeRefusalWithSupport {
+            row: "malformed-signature",
+            run_id: run.run_id.clone(),
+            request_id: mutant_request_id.to_owned(),
+            declared_boundary: crate::matrix::EvidenceBoundary::ScriptPathRejection,
+            observed_layer: *observed_layer,
+            detail: detail.clone(),
+            support: LiveSupportLink::new(
+                run.run_id.clone(),
+                "control".to_owned(),
+                run.requests["control"].clone(),
+                run.responses["control"].clone(),
+            ),
+        }
+    }
+
+    fn synthetic_multi_row_transaction() -> Vec<u8> {
+        use transaction::{
+            AssetField, AssetId, InputWitness, NonceField, Outpoint, TargetInput, TargetOutput,
+            TargetTransaction, Txid, ValueField,
+        };
+
+        let receipt = TargetInput::new(
+            Outpoint::new(Txid::from_internal([0x91; 32]), 0)
+                .expect("the receipt outpoint is admissible"),
+            u32::MAX,
+        );
+        let sponsor = TargetInput::new(
+            Outpoint::new(Txid::from_internal([0x92; 32]), 0)
+                .expect("the sponsor outpoint is admissible"),
+            u32::MAX,
+        );
+        TargetTransaction::new(
+            3,
+            vec![receipt, sponsor],
+            vec![
+                TargetOutput::new(
+                    AssetField::Explicit(AssetId::from_internal([0xa1; 32])),
+                    ValueField::Explicit(45),
+                    NonceField::Null,
+                    vec![0x51],
+                ),
+                TargetOutput::new(
+                    AssetField::Explicit(AssetId::from_internal([0xb1; 32])),
+                    ValueField::Explicit(5),
+                    NonceField::Null,
+                    Vec::new(),
+                ),
+            ],
+            0,
+            vec![
+                InputWitness::new(vec![vec![0x31; 64], vec![0x51], synthetic_control_block()]),
+                InputWitness::new(vec![vec![0x32; 64]]),
+            ],
+        )
+        .expect("the multi-row transaction is well formed")
+        .encode()
+    }
+
+    fn synthetic_multi_row_run() -> LiveRunBinding {
+        let request = synthetic_multi_row_transaction();
+        let identity = recomputed_txid(&request).expect("the multi-row identity recomputes");
+        LiveRunBinding::from_archive(
+            synthetic_archive(7, "forward-v2", "multi-row-tip"),
+            std::collections::BTreeMap::from([("sponsored".to_owned(), request)]),
+            std::collections::BTreeMap::from([(
+                "sponsored".to_owned(),
+                LiveRequestFact::Acceptance,
+            )]),
+            std::collections::BTreeMap::from([(
+                "sponsored".to_owned(),
+                LiveTargetResponse::Accepted { identity },
+            )]),
+        )
+        .expect("the multi-row run parses")
+    }
+
+    fn multi_row_observation(run: &LiveRunBinding) -> LiveReportObservation {
+        let LiveTargetResponse::Accepted { identity } = &run.responses["sponsored"] else {
+            panic!("the multi-row response is accepted");
+        };
+        LiveReportObservation::MultiRowSemantic {
+            witness: LiveMultiRowSemanticWitness::new(
+                run.run_id.clone(),
+                "sponsored".to_owned(),
+                *identity,
+                std::collections::BTreeSet::from(["sponsor-change-absent", "sponsored"]),
+                std::collections::BTreeMap::from([
+                    (
+                        "sponsor-change-absent",
+                        LiveRowSemanticPredicate::SponsorChangeAbsent {
+                            sponsor_input_index: 1,
+                            fee_output_index: 1,
+                            sponsor_change_program: vec![0x51, 0x99],
+                        },
+                    ),
+                    (
+                        "sponsored",
+                        LiveRowSemanticPredicate::Sponsored {
+                            sponsor_input_index: 1,
+                            fee_output_index: 1,
+                        },
+                    ),
+                ]),
+            ),
+        }
     }
 
     fn synthetic_run() -> LiveRunBinding {
@@ -3593,6 +4993,410 @@ mod tests {
     }
 
     #[test]
+    fn schema_five_history_and_schema_six_live_validation_are_two_sided() {
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let target = projection();
+        let live =
+            assemble_live_safety_report(&plan, target.clone()).expect("the live report assembles");
+        let mut historical = live.clone();
+        historical.schema = HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA;
+
+        assert_eq!(
+            validate_live_safety_report(historical.clone(), &plan, &target),
+            Err(LiveSafetyReportRefusal::UnsupportedSchema(
+                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+            )),
+        );
+        assert_eq!(
+            validate_schema_five_live_safety_report(live, &plan, &target),
+            Err(LiveSafetyReportRefusal::UnsupportedSchema(
+                LIVE_SAFETY_REPORT_SCHEMA,
+            )),
+        );
+        let validated = validate_schema_five_live_safety_report(historical, &plan, &target)
+            .expect("the retained schema-five report validates");
+        assert!(render_live_safety_report(&validated).starts_with("schema 5\n"));
+        assert!(
+            validated
+                .report_layer_observations()
+                .iter()
+                .all(|observation| observation.schema() == HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA),
+        );
+    }
+
+    #[test]
+    fn the_composite_two_acceptance_is_schema_six_only_and_proves_opposite_parity() {
+        let first = synthetic_acceptance_run("primary-ceremony", "primary", 0x51, 0x08);
+        let second = synthetic_acceptance_run("balancing-ceremony", "balancing", 0x52, 0x09);
+        let observation = composite_observation(
+            &first,
+            "primary-ceremony",
+            "primary",
+            &second,
+            "balancing-ceremony",
+            "balancing",
+        );
+        let mut runs = vec![first, second];
+        runs.sort_by(|left, right| left.run_id.cmp(&right.run_id));
+        assert_eq!(
+            validate_bound_observations_for_schema(
+                std::slice::from_ref(&observation),
+                &runs,
+                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(
+                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+            )),
+        );
+        assert_eq!(
+            validate_bound_observations_for_schema(
+                &[observation],
+                &runs,
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Ok(1),
+        );
+    }
+
+    #[test]
+    fn a_forged_composite_member_identity_refuses() {
+        let first = synthetic_acceptance_run("primary-ceremony", "primary", 0x53, 0x08);
+        let second = synthetic_acceptance_run("balancing-ceremony", "balancing", 0x54, 0x09);
+        let mut runs = vec![first, second];
+        runs.sort_by(|left, right| left.run_id.cmp(&right.run_id));
+        let forged_identity =
+            parsed_identity("75e823f7c5c70ddfbd9584f90f67298f2570907947829828066c7047b21b53b1");
+        let forged_run = runs
+            .iter_mut()
+            .find(|run| run.responses.contains_key("primary"))
+            .expect("the primary run is present");
+        let forged_run_id = forged_run.run_id.clone();
+        forged_run.responses.insert(
+            "primary".to_owned(),
+            LiveTargetResponse::Accepted {
+                identity: forged_identity,
+            },
+        );
+        let primary = runs
+            .iter()
+            .find(|run| run.responses.contains_key("primary"))
+            .expect("the primary run remains present");
+        let balancing = runs
+            .iter()
+            .find(|run| run.responses.contains_key("balancing"))
+            .expect("the balancing run remains present");
+        let observation = composite_observation(
+            primary,
+            "primary-ceremony",
+            "primary",
+            balancing,
+            "balancing-ceremony",
+            "balancing",
+        );
+        assert_eq!(
+            validate_bound_observations_for_schema(
+                &[observation],
+                &runs,
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::AcceptedIdentityDiffers(
+                forged_run_id,
+                "primary".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
+    fn same_ceremony_and_same_parity_composites_refuse_independently() {
+        let first = synthetic_acceptance_run("one-ceremony", "primary", 0x55, 0x08);
+        let second = synthetic_acceptance_run("one-ceremony", "balancing", 0x56, 0x09);
+        let mut same_ceremony = composite_observation(
+            &first,
+            "one-ceremony",
+            "primary",
+            &second,
+            "one-ceremony",
+            "balancing",
+        );
+        let mut runs = vec![first, second];
+        runs.sort_by(|left, right| left.run_id.cmp(&right.run_id));
+        assert_eq!(
+            validate_bound_observations_for_schema(
+                std::slice::from_ref(&same_ceremony),
+                &runs,
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::CompositeCeremonyReused(
+                "one-ceremony".to_owned(),
+            )),
+        );
+
+        let first = synthetic_acceptance_run("primary-ceremony", "primary", 0x57, 0x08);
+        let second = synthetic_acceptance_run("balancing-ceremony", "balancing", 0x58, 0x08);
+        same_ceremony = composite_observation(
+            &first,
+            "primary-ceremony",
+            "primary",
+            &second,
+            "balancing-ceremony",
+            "balancing",
+        );
+        let mut runs = vec![first, second];
+        runs.sort_by(|left, right| left.run_id.cmp(&right.run_id));
+        assert_eq!(
+            validate_bound_observations_for_schema(
+                &[same_ceremony],
+                &runs,
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::CompositeParityNotOpposite(
+                "both-commitment-parity-forms",
+            )),
+        );
+    }
+
+    #[test]
+    fn witness_path_shape_is_schema_six_only_and_recomputed() {
+        let run = witness_path_shape_run();
+        assert_eq!(
+            compare_run_bindings_for_schema(
+                std::slice::from_ref(&run),
+                std::slice::from_ref(&run),
+                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(
+                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+            )),
+        );
+        assert_eq!(
+            compare_run_bindings_for_schema(
+                std::slice::from_ref(&run),
+                std::slice::from_ref(&run),
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Ok(()),
+        );
+        let mut forged = run;
+        let run_id = forged.run_id.clone();
+        let LiveRequestFact::Refusal { locator, .. } = forged
+            .request_facts
+            .get_mut("mutant")
+            .expect("the witness-path mutant fact is present")
+        else {
+            panic!("the witness-path mutant is a refusal");
+        };
+        let LiveMutationLocator::WitnessPathShape {
+            changed_positions, ..
+        } = locator
+        else {
+            panic!("the locator carries a witness-path shape");
+        };
+        *changed_positions = vec![0];
+        assert_eq!(
+            compare_run_bindings_for_schema(
+                std::slice::from_ref(&forged),
+                std::slice::from_ref(&forged),
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                run_id,
+                "mutant".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
+    fn committed_leaf_arrangement_is_schema_six_only_and_recomputed() {
+        let run = committed_leaf_arrangement_run();
+        assert_eq!(
+            compare_run_bindings_for_schema(
+                std::slice::from_ref(&run),
+                std::slice::from_ref(&run),
+                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(
+                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+            )),
+        );
+        assert_eq!(
+            compare_run_bindings_for_schema(
+                std::slice::from_ref(&run),
+                std::slice::from_ref(&run),
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Ok(()),
+        );
+        let mut forged = run;
+        let run_id = forged.run_id.clone();
+        let LiveRequestFact::Refusal { locator, .. } = forged
+            .request_facts
+            .get_mut("mutant")
+            .expect("the arrangement mutant fact is present")
+        else {
+            panic!("the arrangement mutant is a refusal");
+        };
+        let LiveMutationLocator::CommittedLeafArrangement {
+            mutant_coordinator_leaf_indices,
+            ..
+        } = locator
+        else {
+            panic!("the locator carries a committed-leaf arrangement");
+        };
+        *mutant_coordinator_leaf_indices = vec![0];
+        assert_eq!(
+            compare_run_bindings_for_schema(
+                std::slice::from_ref(&forged),
+                std::slice::from_ref(&forged),
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                run_id,
+                "mutant".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
+    fn reused_primary_links_refuse_in_schema_five_and_schema_six() {
+        let run = synthetic_run();
+        let LiveTargetResponse::Accepted { identity } = &run.responses["request-a"] else {
+            panic!("the primary response is accepted");
+        };
+        let observation = LiveReportObservation::NativeAcceptance {
+            row: "row-a",
+            run_id: run.run_id.clone(),
+            request_id: "request-a".to_owned(),
+            identity: *identity,
+        };
+        for schema in [
+            HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+            LIVE_SAFETY_REPORT_SCHEMA,
+        ] {
+            assert_eq!(
+                validate_bound_observations_for_schema(
+                    &[observation.clone(), observation.clone()],
+                    std::slice::from_ref(&run),
+                    schema,
+                ),
+                Err(LiveSafetyReportRefusal::ObservationAliased(
+                    "request-a".to_owned(),
+                )),
+            );
+        }
+    }
+
+    #[test]
+    fn one_byte_identical_support_link_may_repeat_within_one_run() {
+        let run = repeated_support_run();
+        let observations = [
+            support_observation(&run, "mutant-a"),
+            support_observation(&run, "mutant-b"),
+        ];
+        assert_eq!(
+            validate_bound_observations_for_schema(
+                &observations,
+                std::slice::from_ref(&run),
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Ok(2),
+        );
+    }
+
+    #[test]
+    fn a_cross_run_support_link_refuses() {
+        let run = repeated_support_run();
+        let mut observation = support_observation(&run, "mutant-a");
+        let LiveReportObservation::NativeRefusalWithSupport { support, .. } = &mut observation
+        else {
+            panic!("the observation carries a support link");
+        };
+        support.run_id = "another-run".to_owned();
+        assert_eq!(
+            validate_bound_observations_for_schema(
+                &[observation],
+                std::slice::from_ref(&run),
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::CrossRunRequestLink(
+                "control".to_owned(),
+                "control".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
+    fn a_byte_divergent_support_repeat_refuses() {
+        let run = repeated_support_run();
+        let first = support_observation(&run, "mutant-a");
+        let mut second = support_observation(&run, "mutant-b");
+        let LiveReportObservation::NativeRefusalWithSupport { support, .. } = &mut second else {
+            panic!("the second observation carries a support link");
+        };
+        support.request_bytes[0] ^= 1;
+        assert_eq!(
+            validate_bound_observations_for_schema(
+                &[first, second],
+                std::slice::from_ref(&run),
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::SupportLinkFactsDiffer(
+                run.run_id.clone(),
+                "control".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
+    fn the_multi_row_witness_is_schema_six_only_and_proves_each_row() {
+        let run = synthetic_multi_row_run();
+        let observation = multi_row_observation(&run);
+        assert_eq!(
+            validate_bound_observations_for_schema(
+                std::slice::from_ref(&observation),
+                std::slice::from_ref(&run),
+                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(
+                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
+            )),
+        );
+        assert_eq!(
+            validate_bound_observations_for_schema(
+                &[observation],
+                std::slice::from_ref(&run),
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Ok(2),
+        );
+    }
+
+    #[test]
+    fn a_multi_row_witness_with_one_unproven_predicate_refuses() {
+        let run = synthetic_multi_row_run();
+        let mut observation = multi_row_observation(&run);
+        let LiveReportObservation::MultiRowSemantic { witness } = &mut observation else {
+            panic!("the observation carries a multi-row witness");
+        };
+        witness.predicates.insert(
+            "sponsored",
+            LiveRowSemanticPredicate::Sponsored {
+                sponsor_input_index: 1,
+                fee_output_index: 0,
+            },
+        );
+        assert_eq!(
+            validate_bound_observations_for_schema(
+                &[observation],
+                std::slice::from_ref(&run),
+                LIVE_SAFETY_REPORT_SCHEMA,
+            ),
+            Err(LiveSafetyReportRefusal::SemanticPredicateNotProven(
+                "sponsored",
+            )),
+        );
+    }
+
+    #[test]
     fn an_unexpected_boundary_refusal_is_outstanding_and_fails_the_report() {
         use super::{completeness_of, standing_name};
         use crate::live_evidence::{LiveEvidenceCensus, LiveRowStanding};
@@ -3717,12 +5521,12 @@ mod tests {
                 (
                     "report-publishes-sponsor-amount",
                     LiveReportRequirement::SponsorAmountAbsent,
-                    5,
+                    LIVE_SAFETY_REPORT_SCHEMA,
                 ),
                 (
                     "report-publishes-sponsor-opening",
                     LiveReportRequirement::SponsorOpeningAbsent,
-                    5,
+                    LIVE_SAFETY_REPORT_SCHEMA,
                 ),
             ],
         );
@@ -3780,14 +5584,14 @@ mod tests {
         let run_id = wrong.run_id.clone();
         wrong.revision = NativeProtocolRevision::Revision7;
         assert_eq!(
-            compare_run_bindings(&[wrong.clone()], &[wrong]),
+            compare_schema_five_run_bindings(&[wrong.clone()], &[wrong]),
             Err(LiveSafetyReportRefusal::RunProtocolRevisionDiffers(run_id)),
         );
 
         let mut unknown = synthetic_run();
         unknown.archive_bytes = synthetic_archive(99, "historical-v1", "recorded-tip");
         assert_eq!(
-            compare_run_bindings(&[unknown.clone()], &[unknown]),
+            compare_schema_five_run_bindings(&[unknown.clone()], &[unknown]),
             Err(LiveSafetyReportRefusal::UnknownProtocolRevision(99)),
         );
     }
@@ -3802,7 +5606,7 @@ mod tests {
             .expect("the fixture digest is present")
             .algorithm = FixtureDigestAlgorithm::ForwardV2;
         assert_eq!(
-            compare_run_bindings(&[wrong.clone()], &[wrong]),
+            compare_schema_five_run_bindings(&[wrong.clone()], &[wrong]),
             Err(LiveSafetyReportRefusal::RunDigestFactsDiffer(run_id)),
         );
 
@@ -3815,7 +5619,7 @@ mod tests {
         )
         .expect("the relabeled archive is structurally typed");
         assert_eq!(
-            compare_run_bindings(
+            compare_schema_five_run_bindings(
                 std::slice::from_ref(&relabeled),
                 std::slice::from_ref(&relabeled),
             ),
@@ -3827,7 +5631,7 @@ mod tests {
         let mut unknown = synthetic_run();
         unknown.archive_bytes = synthetic_archive(6, "invented-v3", "recorded-tip");
         assert_eq!(
-            compare_run_bindings(&[unknown.clone()], &[unknown]),
+            compare_schema_five_run_bindings(&[unknown.clone()], &[unknown]),
             Err(LiveSafetyReportRefusal::UnknownDigestAlgorithm(
                 "invented-v3".to_owned(),
             )),
@@ -3849,14 +5653,17 @@ mod tests {
         .expect("the changed run parses");
         assert_ne!(first.run_id, changed.run_id);
         assert_eq!(
-            compare_run_bindings(std::slice::from_ref(&first), std::slice::from_ref(&first),),
+            compare_schema_five_run_bindings(
+                std::slice::from_ref(&first),
+                std::slice::from_ref(&first),
+            ),
             Ok(()),
         );
 
         let mut forged_address = first;
         forged_address.run_id = "not-the-content-address".to_owned();
         assert_eq!(
-            compare_run_bindings(
+            compare_schema_five_run_bindings(
                 std::slice::from_ref(&forged_address),
                 std::slice::from_ref(&forged_address),
             ),
@@ -3891,7 +5698,7 @@ mod tests {
             synthetic_transaction(0x43, 51, 0x31),
         );
         assert_eq!(
-            compare_run_bindings(&[forged.clone()], &[forged]),
+            compare_schema_five_run_bindings(&[forged.clone()], &[forged]),
             Err(LiveSafetyReportRefusal::AcceptedIdentityDiffers(
                 run_id,
                 "request-a".to_owned(),
@@ -3915,7 +5722,7 @@ mod tests {
         *control_identity =
             parsed_identity("75e823f7c5c70ddfbd9584f90f67298f2570907947829828066c7047b21b53b1");
         assert_eq!(
-            compare_run_bindings(&[run.clone()], &[run]),
+            compare_schema_five_run_bindings(&[run.clone()], &[run]),
             Err(LiveSafetyReportRefusal::RefusalControlIdentityDiffers(
                 run_id,
                 "mutant".to_owned(),
@@ -3934,7 +5741,7 @@ mod tests {
         };
         *detail = "a matching importer invented this detail".to_owned();
         assert_eq!(
-            validate_bound_observations(&[observation], std::slice::from_ref(&run)),
+            validate_schema_five_bound_observations(&[observation], std::slice::from_ref(&run),),
             Err(LiveSafetyReportRefusal::RunResponseDiffers(
                 run.run_id.clone(),
             )),
@@ -3946,14 +5753,17 @@ mod tests {
         };
         *observed_layer = ObservedOutcomeLayer::ConsensusRejectionBeforeScript;
         assert_eq!(
-            validate_bound_observations(&[wrong_layer], std::slice::from_ref(&run)),
+            validate_schema_five_bound_observations(&[wrong_layer], std::slice::from_ref(&run),),
             Err(LiveSafetyReportRefusal::RunResponseDiffers(
                 run.run_id.clone(),
             )),
         );
 
         assert_eq!(
-            validate_bound_observations(&[mutation_observation(&run)], std::slice::from_ref(&run),),
+            validate_schema_five_bound_observations(
+                &[mutation_observation(&run)],
+                std::slice::from_ref(&run),
+            ),
             Ok(1),
         );
     }
@@ -3971,7 +5781,7 @@ mod tests {
             },
         );
         assert_eq!(
-            compare_run_bindings(&[orphan.clone()], &[orphan]),
+            compare_schema_five_run_bindings(&[orphan.clone()], &[orphan]),
             Err(LiveSafetyReportRefusal::RequestResponseCensusDiffers(
                 run_id,
             )),
@@ -3991,7 +5801,7 @@ mod tests {
             vec![second, first]
         };
         assert_eq!(
-            compare_run_bindings(&runs, &runs),
+            compare_schema_five_run_bindings(&runs, &runs),
             Err(LiveSafetyReportRefusal::ReusedRequestId(
                 "request-a".to_owned(),
             )),
@@ -4036,7 +5846,7 @@ mod tests {
             vec![mutant_run, control_run]
         };
         assert_eq!(
-            compare_run_bindings(&runs, &runs),
+            compare_schema_five_run_bindings(&runs, &runs),
             Err(LiveSafetyReportRefusal::CrossRunRequestLink(
                 "mutant".to_owned(),
                 "control".to_owned(),
@@ -4060,7 +5870,7 @@ mod tests {
             item_index: 1,
         };
         assert_eq!(
-            compare_run_bindings(&[run.clone()], &[run]),
+            compare_schema_five_run_bindings(&[run.clone()], &[run]),
             Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
                 run_id,
                 "mutant".to_owned(),
@@ -4081,7 +5891,7 @@ mod tests {
             identity: *identity,
         };
         assert_eq!(
-            validate_bound_observations(
+            validate_schema_five_bound_observations(
                 &[observation("row-a"), observation("row-b")],
                 std::slice::from_ref(&run),
             ),
@@ -4095,7 +5905,7 @@ mod tests {
     fn run_response_and_observation_counts_cross_foot() {
         let run = synthetic_run();
         assert_eq!(
-            validate_bound_observations(&[], std::slice::from_ref(&run)),
+            validate_schema_five_bound_observations(&[], std::slice::from_ref(&run)),
             Err(LiveSafetyReportRefusal::RunObservationCensusDiffers),
         );
     }
@@ -4105,7 +5915,7 @@ mod tests {
         let run = synthetic_pair_run();
         let observation = pair_observation(&run, "transcript-says-the-pair-is-equal");
         assert_eq!(
-            validate_bound_observations(&[observation], std::slice::from_ref(&run)),
+            validate_schema_five_bound_observations(&[observation], std::slice::from_ref(&run),),
             Err(LiveSafetyReportRefusal::PairedRelationNotRecomputed(
                 "projection-equality-with-paired-explicit",
             )),
@@ -4113,7 +5923,7 @@ mod tests {
 
         let recomputed = pair_observation(&run, VALIDATED_PAIR_RELATION);
         assert_eq!(
-            validate_bound_observations(&[recomputed], std::slice::from_ref(&run)),
+            validate_schema_five_bound_observations(&[recomputed], std::slice::from_ref(&run),),
             Ok(1),
         );
     }
@@ -4139,7 +5949,7 @@ mod tests {
         let observation = pair_observation(&forged, VALIDATED_PAIR_RELATION);
 
         assert_eq!(
-            validate_bound_observations(&[observation], std::slice::from_ref(&forged)),
+            validate_schema_five_bound_observations(&[observation], std::slice::from_ref(&forged),),
             Err(LiveSafetyReportRefusal::PairedRelationNotRecomputed(
                 "projection-equality-with-paired-explicit",
             )),
@@ -4148,7 +5958,7 @@ mod tests {
 
     #[test]
     fn two_matching_lies_no_longer_validate() {
-        // Red before the validator repair: today `compare_run_bindings`
+        // Red before the validator repair: today `compare_run_bindings_for_schema`
         // checks one caller-authored run against another caller-authored
         // copy. These undecodable request bytes, invented identity and
         // matching expected copy therefore return `Ok(())` together.
@@ -4168,7 +5978,7 @@ mod tests {
         let matching_expected_lie = vec![invented];
         assert_eq!(offered, matching_expected_lie);
         assert_eq!(
-            compare_run_bindings(&offered, &matching_expected_lie),
+            compare_schema_five_run_bindings(&offered, &matching_expected_lie),
             Err(LiveSafetyReportRefusal::RequestDecodeRefused(
                 offered[0].run_id.clone(),
                 "request-a".to_owned(),
@@ -4184,7 +5994,7 @@ mod tests {
         let mut deployment = expected.clone();
         deployment[0].deployment.genesis_id[0] ^= 1;
         assert_eq!(
-            compare_run_bindings(&deployment, &expected),
+            compare_schema_five_run_bindings(&deployment, &expected),
             Err(LiveSafetyReportRefusal::RunDeploymentDiffers(
                 run_id.clone()
             )),
@@ -4195,7 +6005,7 @@ mod tests {
             .requests
             .insert("request-a".to_owned(), vec![0xff]);
         assert_eq!(
-            compare_run_bindings(&request, &expected),
+            compare_schema_five_run_bindings(&request, &expected),
             Err(LiveSafetyReportRefusal::RequestDecodeRefused(
                 run_id.clone(),
                 "request-a".to_owned(),
@@ -4215,7 +6025,7 @@ mod tests {
             },
         );
         assert_eq!(
-            compare_run_bindings(&response, &expected),
+            compare_schema_five_run_bindings(&response, &expected),
             Err(LiveSafetyReportRefusal::RequestResponseShapeDiffers(
                 run_id.clone(),
                 "request-a".to_owned(),
@@ -4225,7 +6035,7 @@ mod tests {
         let mut executor = expected.clone();
         executor[0].executor.node_version = "another-version".to_owned();
         assert_eq!(
-            compare_run_bindings(&executor, &expected),
+            compare_schema_five_run_bindings(&executor, &expected),
             Err(LiveSafetyReportRefusal::RunExecutorProvenanceDiffers(
                 run_id
             )),
@@ -4349,7 +6159,7 @@ mod tests {
     #[test]
     fn schema_two_is_hard_rejected() {
         // Schema 2 is historical and never a legacy-validated route into
-        // the evidence-bearing schema 5 report.
+        // the evidence-bearing live report.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
         let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
