@@ -805,6 +805,98 @@ impl NativeV2RowAttribution {
     }
 }
 
+/// One submitted outcome retained for an authorized forward-record mint.
+///
+/// The request bytes and target identity have already passed the corpus
+/// parser's transaction and response-link validation. Construction-only
+/// operations with no submitted bytes are absent by construction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeV2MintOutcome {
+    layer: ObservedOutcomeLayer,
+    target_identity: Option<Txid>,
+    submitted_bytes: Vec<u8>,
+    detail: String,
+}
+
+impl NativeV2MintOutcome {
+    /// The target boundary recorded for this submission.
+    #[must_use]
+    pub const fn layer(&self) -> ObservedOutcomeLayer {
+        self.layer
+    }
+
+    /// The target-computed identity, present only for an acceptance.
+    #[must_use]
+    pub const fn target_identity(&self) -> Option<Txid> {
+        self.target_identity
+    }
+
+    /// The exact bytes submitted to the target.
+    #[must_use]
+    pub fn submitted_bytes(&self) -> &[u8] {
+        &self.submitted_bytes
+    }
+
+    /// The target's exact detail, empty for an acceptance.
+    #[must_use]
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+}
+
+/// One fully validated ceremony projection used only by authorized mints.
+///
+/// This is a read-only view over the admitted corpus. It does not admit a
+/// ceremony independently and has no public constructor, so consumers cannot
+/// assemble a mixed or half-validated capture through this API.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeV2MintCeremony {
+    corpus_content_address: String,
+    ceremony: String,
+    fixture_digests: BTreeMap<String, [u8; 32]>,
+    consumed_commitment_prefix: Option<u8>,
+    outcomes: Vec<NativeV2MintOutcome>,
+    semantic_rendering: Vec<u8>,
+}
+
+impl NativeV2MintCeremony {
+    /// The indivisible corpus this ceremony belongs to.
+    #[must_use]
+    pub fn corpus_content_address(&self) -> &str {
+        &self.corpus_content_address
+    }
+
+    /// The exact ceremony identity from the fixed roster.
+    #[must_use]
+    pub fn ceremony(&self) -> &str {
+        &self.ceremony
+    }
+
+    /// One named forward-v2 digest record.
+    #[must_use]
+    pub fn fixture_digest(&self, name: &str) -> Option<&[u8; 32]> {
+        self.fixture_digests.get(name)
+    }
+
+    /// The decoded spent-value commitment prefix for a restart ceremony.
+    #[must_use]
+    pub const fn consumed_commitment_prefix(&self) -> Option<u8> {
+        self.consumed_commitment_prefix
+    }
+
+    /// Every submitted outcome in ceremony order.
+    #[must_use]
+    pub fn outcomes(&self) -> &[NativeV2MintOutcome] {
+        &self.outcomes
+    }
+
+    /// The exact manifest-bound semantic rendering emitted by the ceremony.
+    #[must_use]
+    pub fn semantic_rendering(&self) -> &[u8] {
+        &self.semantic_rendering
+    }
+}
+
 /// Fully admitted native-v2/revision-7 run of record.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedNativeV2R7Corpus {
@@ -813,6 +905,7 @@ pub struct ValidatedNativeV2R7Corpus {
     observations: Vec<LiveReportObservation>,
     links: Vec<ProvenNativeV2Link>,
     attributions: Vec<NativeV2RowAttribution>,
+    mint_ceremonies: Vec<NativeV2MintCeremony>,
     outcome_count: usize,
     content_address: String,
 }
@@ -846,6 +939,14 @@ impl ValidatedNativeV2R7Corpus {
     #[must_use]
     pub fn attributions(&self) -> &[NativeV2RowAttribution] {
         &self.attributions
+    }
+
+    /// One of the three corpus projections authorized to mint forward records.
+    #[must_use]
+    pub fn mint_ceremony(&self, ceremony: &str) -> Option<&NativeV2MintCeremony> {
+        self.mint_ceremonies
+            .iter()
+            .find(|projection| projection.ceremony == ceremony)
     }
 
     /// The report's complete 40-outcome suite census.
@@ -982,6 +1083,7 @@ impl ParsedProjection {
 struct ParsedTranscript {
     summary: NativeV2Transcript,
     run_archive: Vec<u8>,
+    digests: Vec<(String, String)>,
     operations: Vec<ParsedOperation>,
     legacy_rendering: Vec<u8>,
 }
@@ -2197,6 +2299,7 @@ fn parse_transcript(
             content_sha256,
         },
         run_archive: render_run_archive(&header, &digests),
+        digests,
         operations,
         legacy_rendering,
     })
@@ -3903,6 +4006,76 @@ fn validate_corpus_semantic_census(
     Ok(())
 }
 
+const AUTHORIZED_MINT_CEREMONY_ROSTER: [&str; 3] = [
+    "private-restart-control",
+    "private-restart-parity",
+    "proof-bearing-observation",
+];
+
+fn build_mint_ceremonies(
+    parsed: &[ParsedTranscript],
+    corpus_content_address: &str,
+) -> Result<Vec<NativeV2MintCeremony>, NativeV2ImportRefusal> {
+    AUTHORIZED_MINT_CEREMONY_ROSTER
+        .iter()
+        .map(|ceremony| {
+            let transcript = parsed
+                .iter()
+                .find(|transcript| transcript.summary.ceremony() == *ceremony)
+                .ok_or_else(|| {
+                    row_attribution_refusal("authorized-mint", ceremony, "missing-transcript")
+                })?;
+            let fixture_digests = transcript
+                .digests
+                .iter()
+                .map(|(name, digest)| {
+                    decode_digest(digest)
+                        .map(|decoded| (name.clone(), decoded))
+                        .ok_or_else(|| {
+                            row_attribution_refusal("authorized-mint", ceremony, "digest-grammar")
+                        })
+                })
+                .collect::<Result<BTreeMap<_, _>, _>>()?;
+            let outcomes = transcript
+                .operations
+                .iter()
+                .filter(|operation| !operation.request_bytes.is_empty())
+                .map(|operation| NativeV2MintOutcome {
+                    layer: operation.layer,
+                    target_identity: operation.accepted_identity,
+                    submitted_bytes: operation.request_bytes.clone(),
+                    detail: operation.detail.clone(),
+                })
+                .collect::<Vec<_>>();
+            let acceptance_count = outcomes
+                .iter()
+                .filter(|outcome| outcome.layer == ObservedOutcomeLayer::Accepted)
+                .count();
+            if outcomes.is_empty() || acceptance_count != 1 {
+                return Err(row_attribution_refusal(
+                    "authorized-mint",
+                    ceremony,
+                    "outcome-census",
+                ));
+            }
+            let consumed_commitment_prefix = match *ceremony {
+                "private-restart-control" | "private-restart-parity" => {
+                    Some(declared_consumed_commitment_prefix(transcript, ceremony)?)
+                }
+                _ => None,
+            };
+            Ok(NativeV2MintCeremony {
+                corpus_content_address: corpus_content_address.to_owned(),
+                ceremony: (*ceremony).to_owned(),
+                fixture_digests,
+                consumed_commitment_prefix,
+                outcomes,
+                semantic_rendering: transcript.legacy_rendering.clone(),
+            })
+        })
+        .collect()
+}
+
 fn validate_inputs(
     inputs: &CorpusInputs<'_>,
     expected_manifest_hash: &str,
@@ -3952,6 +4125,8 @@ fn validate_inputs(
     validate_corpus_semantic_census(&parsed, role_census)?;
     let (runs, run_ids) = build_runs(&parsed)?;
     let (observations, links, attributions) = build_material(&parsed, &run_ids)?;
+    let content_address = hex_bytes(&report_hash);
+    let mint_ceremonies = build_mint_ceremonies(&parsed, &content_address)?;
     Ok(ValidatedNativeV2R7Corpus {
         transcripts: parsed
             .into_iter()
@@ -3961,8 +4136,9 @@ fn validate_inputs(
         observations,
         links,
         attributions,
+        mint_ceremonies,
         outcome_count: 40,
-        content_address: hex_bytes(&report_hash),
+        content_address,
     })
 }
 
@@ -4246,6 +4422,38 @@ mod tests {
                 .as_ref()
                 .expect("the sponsor-negative mutant carries its locator"),
         ));
+    }
+
+    #[test]
+    fn authorized_mint_accessors_are_complete_and_corpus_bound() {
+        let corpus = run_of_record().expect("the reviewed corpus validates");
+
+        for (ceremony, outcomes, prefix) in [
+            ("private-restart-control", 1, Some(0x08)),
+            ("private-restart-parity", 1, Some(0x09)),
+            ("proof-bearing-observation", 4, None),
+        ] {
+            let projection = corpus
+                .mint_ceremony(ceremony)
+                .expect("the authorized mint ceremony is projected");
+            assert_eq!(
+                projection.corpus_content_address(),
+                corpus.content_address()
+            );
+            assert_eq!(projection.ceremony(), ceremony);
+            assert!(projection.fixture_digest("predecessor").is_some());
+            assert_eq!(projection.consumed_commitment_prefix(), prefix);
+            assert_eq!(projection.outcomes().len(), outcomes);
+            assert_eq!(
+                projection
+                    .outcomes()
+                    .iter()
+                    .filter(|outcome| outcome.layer() == ObservedOutcomeLayer::Accepted)
+                    .count(),
+                1,
+            );
+            assert!(!projection.semantic_rendering().is_empty());
+        }
     }
 
     #[test]
