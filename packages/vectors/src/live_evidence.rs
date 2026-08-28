@@ -3997,10 +3997,13 @@ mod tests {
     #[test]
     fn a_historical_v1_identity_cannot_replace_a_fresh_identity() {
         let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
+        // The C1 capture reproduces the historical maximum-inputs bytes and
+        // therefore its txid. Use another admitted v1-era identity so the
+        // adversary actually substitutes an unbacked value.
         let historical = raw_plan
             .rows()
             .iter()
-            .find(|row| row.row().name() == "candidate-maximum-inputs")
+            .find(|row| row.row().name() == "candidate-maximum-outputs")
             .and_then(|row| match row.standing() {
                 LiveRowStanding::RecordedObservationUnbound(
                     RecordedObservation::NativeAcceptance { accepted_identity },
@@ -4023,7 +4026,10 @@ mod tests {
                 _ => None,
             })
             .expect("the fresh corpus has the row");
-        assert_ne!(fresh, historical, "the adversary did not change identity");
+        assert_ne!(
+            fresh, historical,
+            "the historical identity must differ from the fresh row"
+        );
         let refusal = ValidatedCorpusEvidence::try_from_overlay_inputs(&raw_plan, inputs)
             .expect_err("the historical identity is not backed by the fresh run");
 
