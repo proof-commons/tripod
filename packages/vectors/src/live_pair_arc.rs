@@ -1439,7 +1439,8 @@ pub fn render_pair_arc(record: &PairArcRecord) -> String {
 mod tests {
     use super::{
         PAIR_ARC_AMOUNT, PAIR_ARC_DESTINATION_OWNER, PAIR_ARC_SOURCE_OWNER, PairArcEntryCondition,
-        PairArcMember, REPRESENTATION_EQUIVALENCE_TERMS, pair_arc_fixture, published_scalar,
+        PairArcMember, REPRESENTATION_EQUIVALENCE_TERMS, TargetTransaction, pair_arc_fixture,
+        published_scalar,
     };
     use crate::confidential_predecessor::PREDECESSOR_AMOUNTS;
     use crate::live_explicit_shapes::ExplicitShape;
@@ -1575,13 +1576,13 @@ mod tests {
             panic!("the pairs arc does not have exactly two current acceptances");
         };
         assert!(private.submitted_bytes().len() > explicit.submitted_bytes().len());
+        let explicit_transaction = TargetTransaction::decode(explicit.submitted_bytes())
+            .expect("the validated explicit acceptance decodes");
+        let private_transaction = TargetTransaction::decode(private.submitted_bytes())
+            .expect("the validated private acceptance decodes");
         assert!(
-            private
-                .observed_weight()
-                .expect("the private member has a current weight")
-                > explicit
-                    .observed_weight()
-                    .expect("the explicit member has a current weight"),
+            private_transaction.weight() > explicit_transaction.weight(),
+            "the private member has the wider decoded current transaction",
         );
 
         let evidence = crate::live_evidence::derive_live_evidence_plan()
