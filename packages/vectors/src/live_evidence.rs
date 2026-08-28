@@ -1139,7 +1139,10 @@ impl LiveEvidenceCensus {
         mut self,
         observed: usize,
     ) -> Option<Self> {
-        if self.report_layer_observed != 0 || self.report_layer_required != observed {
+        if self.report_layer_observed != 0 {
+            return None;
+        }
+        if self.report_layer_required != observed {
             return None;
         }
         self.report_layer_required = 0;
@@ -1392,7 +1395,7 @@ impl OverlayInputs {
         }
     }
 
-    fn is_empty(&self) -> bool {
+    const fn is_empty(&self) -> bool {
         self.runs.is_empty()
             && self.observations.is_empty()
             && self.links.is_empty()
@@ -1483,8 +1486,10 @@ impl ValidatedCorpusEvidence {
                 attributions: Vec::new(),
             });
         }
-        if inputs.attributions.len() != 42 || raw_plan.census().recorded_observation_unbound() != 42
-        {
+        if inputs.attributions.len() != 42 {
+            return Err(CorpusEvidenceRefusal::AttributionCensus);
+        }
+        if raw_plan.census().recorded_observation_unbound() != 42 {
             return Err(CorpusEvidenceRefusal::AttributionCensus);
         }
         validate_unique_links(&inputs.links)?;
@@ -1904,9 +1909,10 @@ fn retype_validated_observation(
                 ..
             },
         ) => {
-            if recorded_boundary != declared_boundary
-                || observed_boundary(*observed_layer) != Some(*declared_boundary)
-            {
+            if recorded_boundary != declared_boundary {
+                return Err(CorpusEvidenceRefusal::RefusalBoundaryMismatch);
+            }
+            if observed_boundary(*observed_layer) != Some(*declared_boundary) {
                 return Err(CorpusEvidenceRefusal::RefusalBoundaryMismatch);
             }
             let LiveTargetResponse::Accepted { identity } = support.response() else {
@@ -3863,8 +3869,8 @@ mod tests {
                 .expect("the absent overlay is the unchanged rerun-day path");
 
         assert_eq!(validated.plan(), &raw_plan);
-        assert!(validated.runs().is_empty());
-        assert!(validated.attributions().is_empty());
+        assert_eq!(validated.runs(), []);
+        assert_eq!(validated.attributions(), []);
         assert_eq!(validated.census().recorded_observation_unbound(), 42);
         assert_eq!(38 + 2 + 1 + 25 + 42, validated.census().rows());
     }
