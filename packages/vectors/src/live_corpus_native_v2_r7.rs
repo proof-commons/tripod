@@ -4678,7 +4678,7 @@ mod tests {
                 .ceremony_projection(ceremony)
                 .expect("every roster ceremony has a read-only current projection");
             assert_eq!(ceremony_projection.ceremony(), ceremony);
-            assert!(!ceremony_projection.semantic_rendering().is_empty());
+            assert_ne!(ceremony_projection.semantic_rendering(), b"".as_slice());
             let acceptances = corpus
                 .acceptance_projections(ceremony)
                 .expect("every roster ceremony has an acceptance projection bucket");
