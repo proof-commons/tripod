@@ -79,7 +79,7 @@ pub mod proof_bearing {
 
 /// Historical native transcript and resource observations.
 pub mod native {
-    pub use crate::live_native::observed_run_of_record as transcript;
+    pub use crate::live_native::historical_v1_transcript as transcript;
 }
 
 #[cfg(test)]

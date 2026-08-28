@@ -446,8 +446,9 @@ mod tests {
         compare_run, run_agreements, run_failures, unobservable,
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
+    use crate::live_history_v1::native::transcript;
     use crate::live_measurements::{LiveResourceCase, LiveResourceRecord, measure_resource_cases};
-    use crate::live_native::{LiveNativeObservation, LiveNativeStep, observed_run_of_record};
+    use crate::live_native::{LiveNativeObservation, LiveNativeStep};
     use std::collections::BTreeSet;
     use tapscript::upstream::LiveTransferRepresentationPlan;
 
@@ -495,7 +496,7 @@ mod tests {
         // forbids reading that as agreement. Its comparison exists,
         // carries the blocker that stopped it, and contributes no
         // agreement to the run.
-        let comparisons = compare_run(&observed_run_of_record());
+        let comparisons = compare_run(&transcript());
         let private = comparisons
             .iter()
             .find(|comparison| {
@@ -525,7 +526,7 @@ mod tests {
         // asserted, because the first without the second is what an empty
         // table also says — and an empty table reporting success is the
         // reading §18.4's absent-observation rule exists to refuse.
-        let comparisons = compare_run(&observed_run_of_record());
+        let comparisons = compare_run(&transcript());
         assert_eq!(run_failures(&comparisons), vec![]);
         assert_eq!(comparisons.len(), 2);
         assert_eq!(run_agreements(&comparisons), 1);
@@ -564,7 +565,7 @@ mod tests {
         // RED before NEW-N2's repair: the old fallback called this the
         // retired owner-sighash infrastructure blocker even though these
         // exact bytes were submitted and only their weight is absent.
-        let run = observed_run_of_record();
+        let run = transcript();
         let observations = run
             .observations()
             .iter()
@@ -591,7 +592,7 @@ mod tests {
 
     #[test]
     fn a_present_weight_keeps_its_wire_spelling_byte_identical() {
-        let comparisons = compare_run(&observed_run_of_record());
+        let comparisons = compare_run(&transcript());
         let explicit = comparisons
             .iter()
             .find(|comparison| comparison.plan() == LiveTransferRepresentationPlan::Explicit)
@@ -630,7 +631,7 @@ mod tests {
             .figure(LiveResourceRecord::CompleteWeight)
             .expect("the sponsorless case is weighed");
 
-        let observed = observed_run_of_record()
+        let observed = transcript()
             .observation(LiveNativeStep::SubmitExplicitTransfer)
             .and_then(LiveNativeObservation::observed_weight)
             .expect("the run of record observed a weight");
@@ -650,7 +651,7 @@ mod tests {
         // Without this, a comparison that ignored the observation
         // entirely and always answered `Agree` would pass every other
         // test in this module.
-        let mut run = observed_run_of_record();
+        let mut run = transcript();
         let moved = run
             .observations()
             .iter()

@@ -123,7 +123,7 @@ pub use live_minimality_report::{
 pub use live_native::{
     LiveFormNotSubmitted, LiveNativeObservation, LiveNativeRefusal, LiveNativeStep,
     LiveNativeTranscript, LiveTransferOperationPlanner, PredictedTransferResources,
-    observed_run_of_record, render_live_native_run,
+    render_live_native_run,
 };
 pub use live_pairs::{
     ExpectedTransferSemantics, MinimalityConditionStanding, MinimalityPair, MinimalityPairRefusal,

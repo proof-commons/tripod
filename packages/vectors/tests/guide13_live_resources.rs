@@ -14,12 +14,13 @@ use std::collections::BTreeSet;
 // two lists are deliberately different — a crate-root re-export would
 // have had to rename one of them and hide which document a caller was
 // checking.
+use vectors::live_native::current_native_v2_transcript;
 use vectors::live_resource_report::canonical_bytes_publish_no_forbidden_key;
 use vectors::{
     CandidateBoundsResult, ComparisonStanding, DimensionStanding, LiveResourceCase,
     LiveResourceRecord, ResourceNonClaim, assemble_live_resource_report, assignments_realized_by,
-    compare_run, measure_resource_cases, observed_run_of_record, render_live_resource_report,
-    research_bound_assignments, run_agreements, run_failures, validate_live_resource_report,
+    compare_run, measure_resource_cases, render_live_resource_report, research_bound_assignments,
+    run_agreements, run_failures, validate_live_resource_report,
 };
 
 /// The reviewed target's projection.
@@ -132,7 +133,8 @@ fn the_comparison_names_an_absence_for_every_dimension_it_could_not_observe() {
     // or as agreement. Every dimension appears in the table, one of them
     // was compared, and every other one names which kind of absence it
     // is.
-    let comparisons = compare_run(&observed_run_of_record());
+    let current = current_native_v2_transcript().expect("the validated corpus projects resources");
+    let comparisons = compare_run(&current);
     assert_eq!(run_failures(&comparisons), vec![]);
     assert_eq!(run_agreements(&comparisons), 1);
 
