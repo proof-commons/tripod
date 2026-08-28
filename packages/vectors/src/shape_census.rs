@@ -2575,15 +2575,13 @@ fn accepted_identity(form: TransferForm) -> Option<&'static str> {
     // The sponsorless acceptances, which are exactly the blinded-shape
     // enumeration's observed rows. Read THROUGH that register rather
     // than copied out of it, so the two cannot disagree.
-    match form.as_blinded_shape() {
-        None => None,
-        Some(shape) => match census_entry(shape).consensus {
+    form.as_blinded_shape()
+        .and_then(|shape| match census_entry(shape).consensus {
             ConsensusVerdict::ObservedAccepted { identity } => Some(identity),
             ConsensusVerdict::SourceDerivedPossible | ConsensusVerdict::SourceDerivedImpossible => {
                 None
             }
-        },
-    }
+        })
 }
 
 /// The named layer that refuses a consensus-possible cell, if one does.
