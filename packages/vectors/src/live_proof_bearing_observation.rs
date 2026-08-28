@@ -75,7 +75,7 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use target_elements::{LeafVersion, ObservationIdentity};
+use target_elements::LeafVersion;
 use target_elements_conformance::confidential_fixture::{
     ConfidentialFixtureManifest, ConfidentialFixtureOutput, ConfidentialFixtureRegistry,
     FixtureDerivationProfile, FixtureOpenings, FixtureOutputRole,
@@ -123,6 +123,8 @@ use crate::confidential_predecessor::{PREDECESSOR_AMOUNTS, selected_profiles};
 use crate::error::VectorError;
 use crate::live_capability::OracleLiveCurve;
 use crate::live_corpus_native_v2_r7::{NativeV2MintCeremony, run_of_record as validated_corpus};
+pub use crate::live_history_v1::proof_bearing::ProofBearingRunOfRecord;
+use crate::live_history_v1::proof_bearing::historical_v1_construction_run_of_record;
 use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed, printed_order};
 use crate::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, published_owner, reviewed_target, signing_material,
@@ -521,11 +523,11 @@ impl ObservedConfidentialCoin {
 /// is not an entitlement.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProofBearingObservation {
-    case: ProofBearingCase,
-    layer: ObservedOutcomeLayer,
-    detail: Option<String>,
-    accepted_txid: Option<String>,
-    submitted_bytes: usize,
+    pub(crate) case: ProofBearingCase,
+    pub(crate) layer: ObservedOutcomeLayer,
+    pub(crate) detail: Option<String>,
+    pub(crate) accepted_txid: Option<String>,
+    pub(crate) submitted_bytes: usize,
 }
 
 impl ProofBearingObservation {
@@ -594,14 +596,14 @@ impl ProofBearingConstructionRefusal {
 /// construction.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProofBearingReverification {
-    accepted_txid: String,
-    witness_txid: String,
-    block_height: u32,
-    readback_matches_submission: bool,
-    recomputed_message: Digest32,
-    signature_from_readback: Vec<u8>,
-    verified: Result<(), SignatureRejection>,
-    verifies_against_emptied_vector_message: bool,
+    pub(crate) accepted_txid: String,
+    pub(crate) witness_txid: String,
+    pub(crate) block_height: u32,
+    pub(crate) readback_matches_submission: bool,
+    pub(crate) recomputed_message: Digest32,
+    pub(crate) signature_from_readback: Vec<u8>,
+    pub(crate) verified: Result<(), SignatureRejection>,
+    pub(crate) verifies_against_emptied_vector_message: bool,
 }
 
 impl ProofBearingReverification {
@@ -830,13 +832,6 @@ impl ProofBearingObservationRecord {
     }
 }
 
-/// The schema version of [`ProofBearingRunOfRecord`].
-///
-/// The recorded ceremony-generation V2 run uses this first archival
-/// schema, whose fixture digest is historical v1. Ceremony generation,
-/// archive schema and digest algorithm are three separate dimensions.
-pub const PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION: u32 = 1;
-
 /// The schema version of [`ForwardV2ProofBearingRunOfRecord`].
 ///
 /// Unlike schema 1, this surface admits only freshly projected
@@ -869,8 +864,8 @@ impl RecordedMaterializationRefusal {
 /// One construction control and its stable archival refusal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordedProofBearingConstructionRefusal {
-    control: ProofBearingConstructionControl,
-    refusal: RecordedMaterializationRefusal,
+    pub(crate) control: ProofBearingConstructionControl,
+    pub(crate) refusal: RecordedMaterializationRefusal,
 }
 
 impl RecordedProofBearingConstructionRefusal {
@@ -917,11 +912,11 @@ impl RecordedConstructionRefusals {
 /// is absent structurally rather than replaced by a sentinel identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordedConfidentialCoin {
-    asset: AssetField,
-    value: ValueField,
-    program: Vec<u8>,
-    rangeproof_bytes: usize,
-    matches_expectation: bool,
+    pub(crate) asset: AssetField,
+    pub(crate) value: ValueField,
+    pub(crate) program: Vec<u8>,
+    pub(crate) rangeproof_bytes: usize,
+    pub(crate) matches_expectation: bool,
 }
 
 impl RecordedConfidentialCoin {
@@ -1031,111 +1026,6 @@ impl TryFrom<&ProofBearingConstructionRefusal> for RecordedProofBearingConstruct
             control: refusal.control(),
             refusal: RecordedMaterializationRefusal::try_from(refusal.refusal())?,
         })
-    }
-}
-
-/// A complete, versioned and outpoint-free archival projection of one
-/// proof-bearing ceremony.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProofBearingRunOfRecord {
-    schema_version: u32,
-    issued_asset: String,
-    predecessor_digest: Digest32,
-    coins: Vec<RecordedConfidentialCoin>,
-    output_witness_vector_length: usize,
-    output_witness_proof_bytes: Vec<usize>,
-    spent_value_prefixes: Vec<u8>,
-    observations: Vec<ProofBearingObservation>,
-    construction_refusals: RecordedConstructionRefusals,
-    reverification: ProofBearingReverification,
-    candidate_messages: BTreeMap<ProofBearingCase, Digest32>,
-}
-
-impl ProofBearingRunOfRecord {
-    /// The archival schema version.
-    #[must_use]
-    pub const fn schema_version(&self) -> u32 {
-        self.schema_version
-    }
-
-    /// The digest algorithm of every digest fact in schema 1.
-    ///
-    /// The marker is structural rather than a new stored field, so the
-    /// archived schema-1 value remains byte-identical.
-    #[must_use]
-    pub const fn fixture_digest_algorithm(&self) -> FixtureDigestAlgorithm {
-        FixtureDigestAlgorithm::HistoricalV1
-    }
-
-    /// The asset identity the target chose.
-    #[must_use]
-    pub fn issued_asset(&self) -> &str {
-        &self.issued_asset
-    }
-
-    /// The predecessor fixture digest.
-    #[must_use]
-    pub const fn predecessor_digest(&self) -> &Digest32 {
-        &self.predecessor_digest
-    }
-
-    /// The outpoint-free node-reported predecessor coins.
-    #[must_use]
-    pub fn coins(&self) -> &[RecordedConfidentialCoin] {
-        &self.coins
-    }
-
-    /// The output-witness vector length.
-    #[must_use]
-    pub const fn output_witness_vector_length(&self) -> usize {
-        self.output_witness_vector_length
-    }
-
-    /// The range-proof bytes in each output-witness entry.
-    #[must_use]
-    pub fn output_witness_proof_bytes(&self) -> &[usize] {
-        &self.output_witness_proof_bytes
-    }
-
-    /// The spent value prefixes in input order.
-    #[must_use]
-    pub fn spent_value_prefixes(&self) -> &[u8] {
-        &self.spent_value_prefixes
-    }
-
-    /// Every submitted-case observation in ceremony order.
-    #[must_use]
-    pub fn observations(&self) -> &[ProofBearingObservation] {
-        &self.observations
-    }
-
-    /// The explicit construction-refusal capture state.
-    #[must_use]
-    pub const fn construction_refusals(&self) -> &RecordedConstructionRefusals {
-        &self.construction_refusals
-    }
-
-    /// The exact second-origin reverification outcome.
-    #[must_use]
-    pub const fn reverification(&self) -> &ProofBearingReverification {
-        &self.reverification
-    }
-
-    /// Every candidate message in case order.
-    #[must_use]
-    pub const fn candidate_messages(&self) -> &BTreeMap<ProofBearingCase, Digest32> {
-        &self.candidate_messages
-    }
-}
-
-impl TryFrom<&ProofBearingObservationRecord> for ProofBearingRunOfRecord {
-    type Error = RunOfRecordProjectionRefusal;
-
-    fn try_from(record: &ProofBearingObservationRecord) -> Result<Self, Self::Error> {
-        if record.fixture_digest_algorithm() != FixtureDigestAlgorithm::HistoricalV1 {
-            return Err(RunOfRecordProjectionRefusal::HistoricalV1DigestRequired);
-        }
-        Err(RunOfRecordProjectionRefusal::HistoricalV1ProjectionRetired)
     }
 }
 
@@ -1898,210 +1788,6 @@ pub fn forward_v2_proof_bearing_run_of_record() -> &'static ForwardV2ProofBearin
         });
         mint_forward_corpus_record(input.as_ref())
     })
-}
-
-/// T5-031 did not capture either construction refusal in its committed
-/// conversion.
-///
-/// This is an evidence-binding erratum, not a replacement record. The
-/// historical DONE standing remains, and the omitted refusals are not
-/// reconstructed from current code.
-pub const T5_031_CONSTRUCTION_REFUSALS: RecordedConstructionRefusals =
-    RecordedConstructionRefusals::NotCaptured;
-
-/// Whether the ceremony-generation V2 historical-v1 archive is present.
-///
-/// This archival name is retained because it was minted with the run.
-/// Its `V2` means ceremony generation, not forward-v2 digest semantics;
-/// fresh native selection uses [`forward_v2_proof_bearing_run_of_record`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProofBearingRunOfRecordV2 {
-    /// The authorized native rerun has not minted constants yet.
-    Pending,
-    /// The exact record minted by the authorized native rerun.
-    Recorded(&'static ProofBearingRunOfRecord),
-}
-
-impl ProofBearingRunOfRecordV2 {
-    /// The report spelling of this evidence state.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Recorded(_) => "recorded",
-        }
-    }
-}
-
-/// Exact constants from the serialized ceremony-generation V2 native
-/// run of record, carrying historical-v1 fixture digest semantics.
-///
-/// Minted from the 2026-08-27 serialized native lane at tree `bf211dd9`
-/// against elements tip `b7fc5d080a`. The evidence source is
-/// `rerun-bf211dd.proof-bearing-observation`; its enclosing RUN-REPORT
-/// records 40 of 40 green at exit zero and 420.7 seconds wall time.
-mod historical_v1_run_of_record {
-    use std::sync::OnceLock;
-
-    use super::{
-        AssetField, AssetId, BTreeMap, Digest32, ObservedOutcomeLayer,
-        PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION, ProofBearingCase,
-        ProofBearingConstructionControl, ProofBearingObservation, ProofBearingReverification,
-        ProofBearingRunOfRecord, RecordedConfidentialCoin, RecordedConstructionRefusals,
-        RecordedMaterializationRefusal, RecordedProofBearingConstructionRefusal, ValueField,
-        decode_hex,
-    };
-
-    const ISSUED_ASSET: &str = "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
-    const PREDECESSOR_DIGEST: &str =
-        "00da5ef7aaef159237ef5479b419abeee6307e913cc4e244f3226c64c5489262";
-    const COIN_ASSET_INTERNAL: &str =
-        "fb93ca056d92e29c27986a508f4bd3566f64ea04543f65aa51825fd8d4c84fd7";
-    const COIN_VALUES: [&str; 2] = [
-        "0828d616da18038066f8af4af94a5c6afa9195ece494b9520fc7c81916dc68f000",
-        "096543b29336752436d03b1bfc6e6cbc46b1667e203856c58ba0ec67f0d6a37071",
-    ];
-    const COIN_PROGRAMS: [&str; 2] = [
-        "5120508f7d2b9339123105ec650f9e93ae232b9e21b1d8781295d7a34a80acf8a235",
-        "512065078b646dd98a4bb31f69ae7264fe713a7b167605dfca99f451ce8639719136",
-    ];
-    const RANGEPROOF_BYTES: usize = 4174;
-    const SPENT_VALUE_PREFIXES: [u8; 2] = [0x08, 0x09];
-    const ACCEPTED_TXID: &str = "a176394a67fa839058b4efbba53f59af47899dab718a85251a1106f496671d86";
-    const WITNESS_TXID: &str = "2ddc8694242459a9e65d60616f9c4133f8eacf10332ef008319004bf85241c5e";
-    const RECOMPUTED_MESSAGE: &str =
-        "c7931addeeefa3e4ac4b67c9ee5cb5ab65f6de9409007e2415e8c749c61bd27f";
-    const SIGNATURE: &str = "582cc46a31e0111a7894a702d976741fb16711500bdcd719dcc16e211e89e39c\
-ebcdbb8675319b48b2e04fae3ca4fbcaa4030aa618f8d2b6084a6f45ba9b7408";
-    const REFUSAL_DETAIL: &str = "mandatory-script-verify-flag-failed (Invalid Schnorr signature)";
-    const SUBMITTED_BYTES: usize = 8993;
-    const MESSAGES: [(ProofBearingCase, &str); 4] = [
-        (
-            ProofBearingCase::ProofBearingVectorEmptied,
-            "16a454854658413c97c281b1f20c84cead7ee08cdf06ed0e0a8b19bb0de47c4d",
-        ),
-        (
-            ProofBearingCase::PreimageOnlySigner,
-            "94c5ed3bc5734102a6fa6949d54355dcced4763af838892ccf38868cbe8ed042",
-        ),
-        (
-            ProofBearingCase::AnotherProofBearingCandidate,
-            "7f56f606a9678dab6158e913778cbe8c6612d9aaab8b4fe5052f46ecd075f7a4",
-        ),
-        (ProofBearingCase::SelectedProfile, RECOMPUTED_MESSAGE),
-    ];
-
-    fn fixed<const N: usize>(text: &str) -> [u8; N] {
-        decode_hex(text)
-            .and_then(|bytes| bytes.try_into().ok())
-            .expect("the minted transcript literal has the required byte length")
-    }
-
-    fn coins() -> Vec<RecordedConfidentialCoin> {
-        COIN_VALUES
-            .iter()
-            .zip(COIN_PROGRAMS)
-            .map(|(value, program)| RecordedConfidentialCoin {
-                asset: AssetField::Explicit(AssetId::from_internal(fixed(COIN_ASSET_INTERNAL))),
-                value: ValueField::Commitment(fixed(value)),
-                program: decode_hex(program).expect("the minted coin program is hexadecimal"),
-                rangeproof_bytes: RANGEPROOF_BYTES,
-                matches_expectation: true,
-            })
-            .collect()
-    }
-
-    fn observations() -> Vec<ProofBearingObservation> {
-        ProofBearingCase::ALL
-            .iter()
-            .copied()
-            .map(|case| ProofBearingObservation {
-                case,
-                layer: if matches!(case, ProofBearingCase::SelectedProfile) {
-                    ObservedOutcomeLayer::Accepted
-                } else {
-                    ObservedOutcomeLayer::ScriptPathRejection
-                },
-                detail: case
-                    .is_negative_control()
-                    .then(|| REFUSAL_DETAIL.to_owned()),
-                accepted_txid: matches!(case, ProofBearingCase::SelectedProfile)
-                    .then(|| ACCEPTED_TXID.to_owned()),
-                submitted_bytes: SUBMITTED_BYTES,
-            })
-            .collect()
-    }
-
-    fn construction_refusals() -> RecordedConstructionRefusals {
-        RecordedConstructionRefusals::Captured(
-            ProofBearingConstructionControl::ALL
-                .iter()
-                .copied()
-                .map(|control| RecordedProofBearingConstructionRefusal {
-                    control,
-                    refusal: RecordedMaterializationRefusal::PredecessorOpeningMismatch,
-                })
-                .collect(),
-        )
-    }
-
-    fn reverification() -> ProofBearingReverification {
-        ProofBearingReverification {
-            accepted_txid: ACCEPTED_TXID.to_owned(),
-            witness_txid: WITNESS_TXID.to_owned(),
-            block_height: 6,
-            readback_matches_submission: true,
-            recomputed_message: fixed(RECOMPUTED_MESSAGE),
-            signature_from_readback: decode_hex(SIGNATURE)
-                .expect("the minted readback signature is hexadecimal"),
-            verified: Ok(()),
-            verifies_against_emptied_vector_message: false,
-        }
-    }
-
-    fn candidate_messages() -> BTreeMap<ProofBearingCase, Digest32> {
-        MESSAGES
-            .iter()
-            .map(|(case, message)| (*case, fixed(message)))
-            .collect()
-    }
-
-    fn build() -> ProofBearingRunOfRecord {
-        ProofBearingRunOfRecord {
-            schema_version: PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION,
-            issued_asset: ISSUED_ASSET.to_owned(),
-            predecessor_digest: fixed(PREDECESSOR_DIGEST),
-            coins: coins(),
-            output_witness_vector_length: 2,
-            output_witness_proof_bytes: vec![RANGEPROOF_BYTES, RANGEPROOF_BYTES],
-            spent_value_prefixes: SPENT_VALUE_PREFIXES.to_vec(),
-            observations: observations(),
-            construction_refusals: construction_refusals(),
-            reverification: reverification(),
-            candidate_messages: candidate_messages(),
-        }
-    }
-
-    pub(super) fn get() -> &'static ProofBearingRunOfRecord {
-        static RUN: OnceLock<ProofBearingRunOfRecord> = OnceLock::new();
-        RUN.get_or_init(build)
-    }
-}
-
-/// The recorded ceremony-generation V2 historical-v1 run-of-record
-/// state.
-///
-/// Minted only from the persisted transcript named above. Returning the
-/// recorded variant flips both live equality gates from conditional to
-/// enforcing while retaining the typed state used by the renderer.
-///
-/// # Panics
-///
-/// Panics only if a committed transcript literal is not valid hexadecimal
-/// of its recorded byte length, which a caller cannot arrange.
-#[must_use]
-pub fn historical_v1_construction_run_of_record() -> ProofBearingRunOfRecordV2 {
-    ProofBearingRunOfRecordV2::Recorded(historical_v1_run_of_record::get())
 }
 
 // --- The owner's single-leaf tree --------------------------------------
@@ -3589,121 +3275,6 @@ pub fn render_proof_bearing_observation(record: &ProofBearingObservationRecord) 
     lines.join("\n") + "\n"
 }
 
-// --- Historical-v1 mirrors --------------------------------------------
-
-/// Verbatim mirrors retained from the schema-1 proof-bearing recording.
-///
-/// They are data, not inputs to a current algorithm. The explicit namespace
-/// prevents a caller from mistaking them for the validated current corpus.
-pub mod historical_v1_mirrors {
-    use super::{ObservationIdentity, ProofBearingCase};
-
-    /// The issued asset the run of record was funded against.
-    pub const RECORDED_ASSET: &str =
-        "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
-
-    /// The digest the predecessor fixture was registered under, on the run
-    /// of record.
-    pub const RECORDED_PREDECESSOR_DIGEST: &str =
-        "00da5ef7aaef159237ef5479b419abeee6307e913cc4e244f3226c64c5489262";
-
-    /// How many range-proof bytes each output-witness entry carried.
-    ///
-    /// The single figure that separates this lane from the explicit one,
-    /// where every entry is an empty surjection proof and an empty range
-    /// proof — two bytes in total. Four thousand one hundred and
-    /// seventy-four bytes of it are in the message the owner signed, and
-    /// none of them is recoverable from the witnessless serialization at any
-    /// length.
-    pub const RECORDED_RANGEPROOF_BYTES: usize = 4174;
-
-    /// The serialized prefixes the two spent value commitments carried.
-    ///
-    /// The two the target admits, one square and one non-square, which is
-    /// what the other guide's bounded parity search settles on. They are
-    /// written down here because the accepted message hashed them; what they
-    /// establish about the target's reading of a confidential value field is
-    /// that guide's question and not this one's.
-    pub const RECORDED_SPENT_VALUE_PREFIXES: [u8; 2] = [0x08, 0x09];
-
-    /// The identity the target computed over the bytes it accepted.
-    pub const RECORDED_ACCEPTED_TXID: &str =
-        "a176394a67fa839058b4efbba53f59af47899dab718a85251a1106f496671d86";
-
-    /// The witness identity the target reported for it.
-    pub const RECORDED_WITNESS_TXID: &str =
-        "2ddc8694242459a9e65d60616f9c4133f8eacf10332ef008319004bf85241c5e";
-
-    /// The height the target confirmed it at.
-    pub const RECORDED_BLOCK_HEIGHT: u32 = 6;
-
-    /// The message the accepted authorization was taken over.
-    pub const RECORDED_ACCEPTED_MESSAGE: &str =
-        "c7931addeeefa3e4ac4b67c9ee5cb5ab65f6de9409007e2415e8c749c61bd27f";
-
-    /// The signature as it stood in the target's own copy.
-    pub const RECORDED_SIGNATURE: &str = "582cc46a31e0111a7894a702d976741fb16711500bdcd719dcc16e211e89e39c\
-ebcdbb8675319b48b2e04fae3ca4fbcaa4030aa618f8d2b6084a6f45ba9b7408";
-
-    /// The node's own words for every refused control.
-    ///
-    /// All three drew the same sentence, which is the result rather than a
-    /// simplification: each control moved a different term of the message
-    /// and the target's answer to a message it did not form is one answer.
-    pub const RECORDED_REFUSAL_DETAIL: &str =
-        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)";
-
-    /// The messages each submitted case's signatures were taken over.
-    ///
-    /// Four distinct digests, in case order. They are committed because
-    /// their DISTINCTNESS is what gives the three refusals content: a run in
-    /// which two of them had coincided would have offered one control twice
-    /// and reported it as two.
-    pub const RECORDED_MESSAGES: [(ProofBearingCase, &str); 4] = [
-        (
-            ProofBearingCase::ProofBearingVectorEmptied,
-            "16a454854658413c97c281b1f20c84cead7ee08cdf06ed0e0a8b19bb0de47c4d",
-        ),
-        (
-            ProofBearingCase::PreimageOnlySigner,
-            "94c5ed3bc5734102a6fa6949d54355dcced4763af838892ccf38868cbe8ed042",
-        ),
-        (
-            ProofBearingCase::AnotherProofBearingCandidate,
-            "7f56f606a9678dab6158e913778cbe8c6612d9aaab8b4fe5052f46ecd075f7a4",
-        ),
-        (ProofBearingCase::SelectedProfile, RECORDED_ACCEPTED_MESSAGE),
-    ];
-
-    /// The identity of the run of record, in the shape the reviewed
-    /// contract already names an observation by.
-    ///
-    /// The explicit lane's run is named this way where the six established
-    /// dimensions cite it, and the Wave-4 audit found the gap on this side:
-    /// a ceremony whose evidence was a file at a path an operator chose
-    /// named nothing a later reader could cite. So this run carries the same
-    /// three members — the ceremony's own name for the case, the identity
-    /// the TARGET computed, and where the run is recorded.
-    ///
-    /// It is deliberately NOT added to the reviewed contract's dimension
-    /// table. Those six dimensions are established, they were established on
-    /// the explicit run, and a second identity beside them would read as a
-    /// second establishment of things this run did not re-establish.
-    pub const PROOF_BEARING_OBSERVATION: ObservationIdentity = ObservationIdentity::new(
-        "selected-profile-proof-bearing-authorization",
-        RECORDED_ACCEPTED_TXID,
-        "plans/backlog.md T5-031",
-    );
-
-    /// How many bytes each case handed the node, on the run of record.
-    ///
-    /// The same figure for every case, which is the point: the SUBMITTED
-    /// candidate is one candidate and only the message its signatures were
-    /// taken over varies, so a refusal is attributable to the term that
-    /// moved rather than to a different transaction.
-    pub const RECORDED_SUBMITTED_BYTES: usize = 8993;
-}
-
 /// One recorded digest, from the order this workspace prints them in.
 #[cfg(test)]
 fn recorded_digest(text: &str) -> Option<Digest32> {
@@ -3718,8 +3289,8 @@ fn recorded_bytes(text: &str) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::historical_v1_mirrors::*;
     use super::*;
+    use crate::live_history_v1::proof_bearing::*;
 
     const HISTORICAL_V1_RENDERED_LINES: &[&str] = &[
         "issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb",
