@@ -12,7 +12,6 @@ pub mod error;
 pub mod first_party;
 pub mod fixture;
 pub mod live_capability;
-pub mod live_closeout;
 pub mod live_comparison;
 pub mod live_conservation_negatives;
 pub mod live_corpus_native_v2_r7;

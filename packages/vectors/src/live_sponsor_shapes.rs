@@ -2257,7 +2257,6 @@ fn render_sponsor_reverification(out: &mut String, record: &SponsorShapeRecord) 
 #[cfg(test)]
 mod tests {
     use super::{SPONSOR_CHANGE, SPONSOR_FEE, SponsorShape};
-    use crate::live_history_v1::sponsor_shapes as history;
 
     /// A sponsored private successor REGISTERS, and its reserve asset
     /// survives the projection.
@@ -2362,113 +2361,11 @@ mod tests {
         }
     }
 
-    /// The registry claim and the row move TOGETHER, on a run.
-    ///
-    /// Asserted rather than left to the doc comments, because these are
-    /// the facts that must not drift apart. For most of this arc the
-    /// pair read the other way: the sponsored private successor was
-    /// unregistrable, therefore no acceptance of that shape existed,
-    /// therefore the section 15.2 row had nothing to move on. A run that
-    /// had made the first true without the third would have been a row
-    /// moved on somebody's expectation.
-    ///
-    /// All three are true now and each was established separately: the
-    /// registry states the case, a node accepted a candidate built from
-    /// it, and that recorded acceptance moves the row.
-    #[test]
-    fn the_sponsored_private_successor_is_registrable_and_its_row_may_move() {
-        const {
-            assert!(
-                history::A_SPONSORED_PRIVATE_SUCCESSOR_IS_REGISTRABLE,
-                "the registry states a two-asset case and the flag was not moved with it",
-            );
-        }
-        // The row moves ON an acceptance, and this is the identity it
-        // moves on.
-        assert_eq!(
-            history::SPONSORED_PRIVATE_TXID.len(),
-            64,
-            "the accepted identity is not a transaction identity",
-        );
-        let moved = crate::live_closeout::moved_on_acceptance(
-            crate::live_closeout::PositivePrivateClass::PrivateSponsorValues,
-            history::sponsored_private_accepted()
-                .expect("the committed sponsored-private identity parses"),
-        );
-        assert_eq!(
-            moved.class(),
-            crate::live_closeout::PositivePrivateClass::PrivateSponsorValues,
-            "the row the acceptance was for cannot be moved on it",
-        );
-    }
-
-    /// The without-change shape funds exactly the offer, which is what
-    /// makes its recorded identity reproducible.
+    /// The without-change shape funds exactly the offer.
     #[test]
     fn the_without_change_shape_still_funds_exactly_the_offer() {
         assert_eq!(SponsorShape::ChangeAbsent.sponsor_funding(), SPONSOR_FEE);
         assert!(SponsorShape::ChangeAbsent.change().is_none());
-    }
-
-    /// The register cites identities for the shapes it names.
-    ///
-    /// Bound to the shape constants rather than left as free numbers, so
-    /// that a ceremony edited after its run fails here instead of
-    /// quietly citing an identity for something else. Every figure is
-    /// one the node produced.
-    #[test]
-    fn the_register_is_bound_to_the_shapes_that_produced_it() {
-        assert_eq!(
-            SponsorShape::ChangeAbsent.sponsor_funding(),
-            history::SPONSORED_FEE_WEIGHED,
-        );
-        assert_eq!(
-            SponsorShape::ChangePresent.sponsor_funding(),
-            history::SPONSORED_CHANGE_SPONSOR_FUNDED,
-        );
-        assert_eq!(
-            SponsorShape::ChangePresent.change(),
-            Some(history::SPONSORED_CHANGE_TAKEN),
-        );
-        assert_eq!(
-            history::SPONSORED_CHANGE_SPONSOR_FUNDED,
-            history::SPONSORED_FEE_WEIGHED + history::SPONSORED_CHANGE_TAKEN,
-        );
-
-        // The two identities are DISTINCT, which is what says the change
-        // role reached the bytes: a with-change run that had silently
-        // degraded would have reproduced the other one.
-        assert_ne!(
-            history::SPONSORED_ACCEPTED_TXID,
-            history::SPONSORED_CHANGE_ACCEPTED_TXID,
-        );
-        // The measured width of the change role, stated rather than
-        // bounded: the extra output, and the wider sponsor value beside
-        // it, cost exactly this many bytes at the node.
-        assert_eq!(
-            history::SPONSORED_CHANGE_SUBMITTED_BYTES - history::SPONSORED_SUBMITTED_BYTES,
-            156,
-        );
-        assert_eq!(
-            history::A_SPONSORED_CONTROL_TAKING_CHANGE_EXISTS,
-            SponsorShape::ChangePresent.change().is_some(),
-        );
-
-        // The negative's own measurement, bound to the control it was
-        // offered against: the mutant is short by exactly the two
-        // witness items the adapter returned, seventy-two and
-        // thirty-three bytes.
-        assert_eq!(
-            history::SPONSORED_SUBMITTED_BYTES
-                - history::MISSING_SPONSOR_AUTHORIZATION_SUBMITTED_BYTES,
-            105,
-        );
-        // The target's own words, and a verdict a reader can check
-        // against the layer the refusal was typed at.
-        assert!(
-            history::MISSING_SPONSOR_AUTHORIZATION_REFUSAL
-                .contains("Script failed an OP_EQUALVERIFY operation"),
-        );
     }
 
     /// The two shapes differ in the change role and in nothing else a

@@ -47,7 +47,6 @@ pub mod native;
 #[cfg(test)]
 mod tests {
     const ACTIVE_CONSUMERS: &[(&str, &str)] = &[
-        ("live_closeout.rs", include_str!("live_closeout.rs")),
         ("live_comparison.rs", include_str!("live_comparison.rs")),
         (
             "live_resource_report.rs",

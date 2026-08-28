@@ -9,9 +9,9 @@
 //! record of its own run. What was unreachable was unreachable IN THAT
 //! ORDER, so the pairs step is chartered here as a new arc with its own
 //! entry condition and its own ledger, and nothing in
-//! [`crate::live_restart`] or [`crate::live_closeout`] moves. Editing a
-//! recorded ledger to make a later run fit it would be backdating, and it
-//! is the one thing this module may not do.
+//! [`crate::live_restart`] moves. Editing a recorded ledger to make a later
+//! run fit it would be backdating, and it is the one thing this module may
+//! not do.
 //!
 //! # The entry condition, cited rather than asserted
 //!

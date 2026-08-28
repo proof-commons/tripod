@@ -15,7 +15,6 @@ vectors_source_files = files(
   'src/confidential_sponsor_reserve.rs',
   'src/lib.rs',
   'src/live_capability.rs',
-  'src/live_closeout.rs',
   'src/live_comparison.rs',
   'src/live_conservation_negatives.rs',
   'src/live_corpus_native_v2_r7.rs',
