@@ -537,6 +537,13 @@ fn mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveMutationLoca
             LiveMutantKind::VaultControlEntitlementOrBareUOutput,
             LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
         ),
+        _ => return structural_mutation_fact(step),
+    };
+    (Some(fact.0), Some(fact.1))
+}
+
+fn structural_mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveMutationLocator>) {
+    let fact = match step {
         "consensus-wrong-explicit-asset" => (
             LiveMutantKind::WrongExplicitAsset,
             LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
@@ -605,7 +612,7 @@ fn mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveMutationLoca
     (Some(fact.0), Some(fact.1))
 }
 
-fn pair_projection_input(programs: Vec<Vec<u8>>) -> Result<ProjectionInput, String> {
+fn pair_projection_input(programs: &[Vec<u8>]) -> Result<ProjectionInput, String> {
     let fixture = vectors::live_pair_arc::pair_arc_fixture();
     let owners = fixture
         .sources()
@@ -781,9 +788,10 @@ impl Drop for CaptureGuard {
             self.ceremony.as_str(),
         );
         let result = std::fs::write(timing_path(path), sidecar);
-        if result.is_err() && !std::thread::panicking() {
-            panic!("the enhanced timing sidecar is written");
-        }
+        assert!(
+            result.is_ok() || std::thread::panicking(),
+            "the enhanced timing sidecar is written",
+        );
     }
 }
 
@@ -863,7 +871,6 @@ fn write_capture_before_gates(
     };
     if guard.ceremony.is_setup() {
         let mut file = std::fs::OpenOptions::new()
-            .write(true)
             .create(true)
             .append(true)
             .open(&path)
@@ -903,15 +910,35 @@ fn render_enhanced_capture(
     legacy_rendering: &str,
 ) -> Result<String, String> {
     validate_capture_facts(capture, facts)?;
+    let mut out = String::new();
+    render_run_identity(&mut out, destination, ceremony, capture)?;
+    render_executor_context(&mut out, capture)?;
+    render_digests(&mut out, facts);
+    render_operations(&mut out, capture, facts)?;
+    write_bytes_field(&mut out, "legacy-rendering", legacy_rendering.as_bytes());
+    let terminal = capture
+        .terminal_state()
+        .map_or("incomplete", |state| state.as_str());
+    let _ = writeln!(out, "terminal-state {terminal}");
+    let _ = writeln!(out, "run-id-input end");
+    let content_hash = sha256(out.as_bytes());
+    let _ = writeln!(out, "capture-content-sha256 {}", hex_bytes(&content_hash));
+    let _ = writeln!(out, "native-capture-end {}", ceremony.as_str());
+    Ok(out)
+}
+
+fn render_run_identity(
+    out: &mut String,
+    destination: &CaptureDestination,
+    ceremony: CeremonyId,
+    capture: &NativeOperationCapture,
+) -> Result<(), String> {
     let deployment = capture
         .deployment()
         .ok_or_else(|| "the journal carries no deployment".to_owned())?;
     let target = capture
         .target()
         .ok_or_else(|| "the journal carries no target".to_owned())?;
-    let handshake = capture
-        .handshake()
-        .ok_or_else(|| "the journal carries no handshake".to_owned())?;
     let observed_environment = capture
         .environment()
         .ok_or_else(|| "the journal carries no environment".to_owned())?;
@@ -922,11 +949,9 @@ fn render_enhanced_capture(
     }
     let suite_commit = &destination.suite_commit;
     let suite_tree = &destination.suite_tree;
-
-    let mut out = String::new();
     let _ = writeln!(out, "native-capture-schema 1");
     let _ = writeln!(out, "ceremony-id {}", ceremony.as_str());
-    write_text_field(&mut out, "rust-test-name", ceremony.rust_test_name());
+    write_text_field(out, "rust-test-name", ceremony.rust_test_name());
     let _ = writeln!(out, "suite-commit {suite_commit}");
     let _ = writeln!(out, "suite-tree {suite_tree}");
     let _ = writeln!(out, "fixture-digest-algorithm forward-v2");
@@ -937,50 +962,59 @@ fn render_enhanced_capture(
         deployment_environment(deployment.environment()),
     );
     write_text_field(
-        &mut out,
+        out,
         "deployment-network-id",
         &hex_bytes(&deployment.network_id()),
     );
     write_text_field(
-        &mut out,
+        out,
         "deployment-genesis-id",
         &hex_bytes(&deployment.genesis_id()),
     );
     write_text_field(
-        &mut out,
+        out,
         "deployment-target-contract",
         target_contract(target.version()),
     );
+    Ok(())
+}
+
+fn render_executor_context(
+    out: &mut String,
+    capture: &NativeOperationCapture,
+) -> Result<(), String> {
+    let handshake = capture
+        .handshake()
+        .ok_or_else(|| "the journal carries no handshake".to_owned())?;
+    let observed_environment = capture
+        .environment()
+        .ok_or_else(|| "the journal carries no environment".to_owned())?;
     let _ = writeln!(
         out,
         "handshake-protocol-schema {}",
         handshake.protocol_schema,
     );
-    write_text_field(&mut out, "handshake-adapter-name", &handshake.adapter_name);
-    write_text_field(
-        &mut out,
-        "handshake-adapter-version",
-        &handshake.adapter_version,
-    );
+    write_text_field(out, "handshake-adapter-name", &handshake.adapter_name);
+    write_text_field(out, "handshake-adapter-version", &handshake.adapter_version);
     write_optional_text_field(
-        &mut out,
+        out,
         "handshake-framework-revision",
         handshake.framework_revision.as_deref(),
     );
-    write_text_field(&mut out, "handshake-node-name", &handshake.node_name);
-    write_text_field(&mut out, "handshake-node-version", &handshake.node_version);
+    write_text_field(out, "handshake-node-name", &handshake.node_name);
+    write_text_field(out, "handshake-node-version", &handshake.node_version);
     write_optional_text_field(
-        &mut out,
+        out,
         "handshake-binary-reported-revision",
         handshake.binary_reported_revision.as_deref(),
     );
     write_optional_text_field(
-        &mut out,
+        out,
         "handshake-intended-executed-tip",
         handshake.intended_executed_tip.as_deref(),
     );
     write_optional_text_field(
-        &mut out,
+        out,
         "handshake-upstream-base",
         handshake.upstream_base.as_deref(),
     );
@@ -998,26 +1032,25 @@ fn render_enhanced_capture(
         );
     }
     let _ = writeln!(out, "environment-schema {}", observed_environment.schema);
+    write_text_field(out, "environment-chain", &observed_environment.chain_name);
     write_text_field(
-        &mut out,
-        "environment-chain",
-        &observed_environment.chain_name,
-    );
-    write_text_field(
-        &mut out,
+        out,
         "environment-network-id",
         &hex_bytes(&observed_environment.network_id),
     );
     write_text_field(
-        &mut out,
+        out,
         "environment-genesis-id",
         &hex_bytes(&observed_environment.genesis_id),
     );
-    render_domains(&mut out, handshake, observed_environment);
-    render_leaf_versions(&mut out, handshake, observed_environment);
-    render_capabilities(&mut out, &handshake.capabilities);
-    render_funding_advertisement(&mut out, handshake);
+    render_domains(out, handshake, observed_environment);
+    render_leaf_versions(out, handshake, observed_environment);
+    render_capabilities(out, &handshake.capabilities);
+    render_funding_advertisement(out, handshake);
+    Ok(())
+}
 
+fn render_digests(out: &mut String, facts: &CeremonyCaptureFacts) {
     let _ = writeln!(out, "digest-count {}", facts.digests.len());
     for (ordinal, digest) in facts.digests.iter().enumerate() {
         let _ = writeln!(
@@ -1027,15 +1060,21 @@ fn render_enhanced_capture(
             hex_bytes(&digest.value),
         );
     }
+}
 
+fn render_operations(
+    out: &mut String,
+    capture: &NativeOperationCapture,
+    facts: &CeremonyCaptureFacts,
+) -> Result<(), String> {
     let _ = writeln!(out, "operation-count {}", capture.operations().len());
     for (ordinal, operation) in capture.operations().iter().enumerate() {
-        let operation_facts = facts.operation(operation.operation_id()).ok_or_else(|| {
-            format!("ceremony facts omit operation {}", operation.operation_id(),)
-        })?;
+        let operation_facts = facts
+            .operation(operation.operation_id())
+            .ok_or_else(|| format!("ceremony facts omit operation {}", operation.operation_id()))?;
         let _ = writeln!(out, "operation {ordinal} begin");
-        write_text_field(&mut out, "operation-id", operation.operation_id());
-        write_text_field(&mut out, "request-id", operation.request_id());
+        write_text_field(out, "operation-id", operation.operation_id());
+        write_text_field(out, "request-id", operation.request_id());
         let _ = writeln!(out, "request-role {}", operation_facts.role.as_str());
         let request_bytes = operation.transaction_bytes().unwrap_or_default();
         let _ = writeln!(
@@ -1044,14 +1083,10 @@ fn render_enhanced_capture(
             request_bytes.len(),
             hex_bytes(request_bytes),
         );
-        write_optional_text_field(&mut out, "response-id", operation.response_id());
+        write_optional_text_field(out, "response-id", operation.response_id());
+        write_optional_text_field(out, "response-request-id", operation.response_request_id());
         write_optional_text_field(
-            &mut out,
-            "response-request-id",
-            operation.response_request_id(),
-        );
-        write_optional_text_field(
-            &mut out,
+            out,
             "response-operation-id",
             operation.response_operation_id(),
         );
@@ -1074,12 +1109,12 @@ fn render_enhanced_capture(
             }
         }
         write_bytes_field(
-            &mut out,
+            out,
             "response-detail",
             operation.detail().unwrap_or_default().as_bytes(),
         );
         write_optional_control_id(
-            &mut out,
+            out,
             "attribution-control-request-id",
             operation_facts.control_request_id.as_deref(),
         );
@@ -1096,20 +1131,11 @@ fn render_enhanced_capture(
             "mutation-kind {}",
             operation_facts.mutant.map_or("none", LiveMutantKind::row),
         );
-        render_locator(&mut out, operation_facts.locator.as_ref());
-        render_projection(&mut out, operation_facts.projection.as_ref());
+        render_locator(out, operation_facts.locator.as_ref());
+        render_projection(out, operation_facts.projection.as_ref());
         let _ = writeln!(out, "operation {ordinal} end");
     }
-    write_bytes_field(&mut out, "legacy-rendering", legacy_rendering.as_bytes());
-    let terminal = capture
-        .terminal_state()
-        .map_or("incomplete", |state| state.as_str());
-    let _ = writeln!(out, "terminal-state {terminal}");
-    let _ = writeln!(out, "run-id-input end");
-    let content_hash = sha256(out.as_bytes());
-    let _ = writeln!(out, "capture-content-sha256 {}", hex_bytes(&content_hash),);
-    let _ = writeln!(out, "native-capture-end {}", ceremony.as_str());
-    Ok(out)
+    Ok(())
 }
 
 fn validate_capture_facts(
@@ -1131,9 +1157,7 @@ fn validate_capture_facts(
             .operations()
             .iter()
             .find(|operation| operation.operation_id() == fact.operation_id)
-            .ok_or_else(
-                || format!("ceremony fact names absent operation {}", fact.operation_id,),
-            )?;
+            .ok_or_else(|| format!("ceremony fact names absent operation {}", fact.operation_id))?;
         let expected_verdict = match fact.role {
             RequestRole::Acceptance
             | RequestRole::Control
@@ -1337,7 +1361,7 @@ fn render_locator(out: &mut String, locator: Option<&LiveMutationLocator>) {
             );
         }
         Some(LiveMutationLocator::WitnesslessRange { start, end }) => {
-            let _ = writeln!(out, "mutation-locator witnessless-range {start} {end}",);
+            let _ = writeln!(out, "mutation-locator witnessless-range {start} {end}");
         }
         Some(LiveMutationLocator::TransactionShape {
             control_inputs,
@@ -1580,7 +1604,6 @@ const fn response_verdict(verdict: NativeVerdict) -> &'static str {
     match verdict {
         NativeVerdict::Accepted => "accepted",
         NativeVerdict::Rejected => "refused",
-        NativeVerdict::InfrastructureError => "incomplete",
         _ => "incomplete",
     }
 }
@@ -1605,84 +1628,85 @@ const fn witness_path_role(role: LiveWitnessPathRole) -> &'static str {
     }
 }
 
-fn sha256(input: &[u8]) -> [u8; 32] {
-    const INITIAL: [u32; 8] = [
-        0x6a09_e667,
-        0xbb67_ae85,
-        0x3c6e_f372,
-        0xa54f_f53a,
-        0x510e_527f,
-        0x9b05_688c,
-        0x1f83_d9ab,
-        0x5be0_cd19,
-    ];
-    const ROUND: [u32; 64] = [
-        0x428a_2f98,
-        0x7137_4491,
-        0xb5c0_fbcf,
-        0xe9b5_dba5,
-        0x3956_c25b,
-        0x59f1_11f1,
-        0x923f_82a4,
-        0xab1c_5ed5,
-        0xd807_aa98,
-        0x1283_5b01,
-        0x2431_85be,
-        0x550c_7dc3,
-        0x72be_5d74,
-        0x80de_b1fe,
-        0x9bdc_06a7,
-        0xc19b_f174,
-        0xe49b_69c1,
-        0xefbe_4786,
-        0x0fc1_9dc6,
-        0x240c_a1cc,
-        0x2de9_2c6f,
-        0x4a74_84aa,
-        0x5cb0_a9dc,
-        0x76f9_88da,
-        0x983e_5152,
-        0xa831_c66d,
-        0xb003_27c8,
-        0xbf59_7fc7,
-        0xc6e0_0bf3,
-        0xd5a7_9147,
-        0x06ca_6351,
-        0x1429_2967,
-        0x27b7_0a85,
-        0x2e1b_2138,
-        0x4d2c_6dfc,
-        0x5338_0d13,
-        0x650a_7354,
-        0x766a_0abb,
-        0x81c2_c92e,
-        0x9272_2c85,
-        0xa2bf_e8a1,
-        0xa81a_664b,
-        0xc24b_8b70,
-        0xc76c_51a3,
-        0xd192_e819,
-        0xd699_0624,
-        0xf40e_3585,
-        0x106a_a070,
-        0x19a4_c116,
-        0x1e37_6c08,
-        0x2748_774c,
-        0x34b0_bcb5,
-        0x391c_0cb3,
-        0x4ed8_aa4a,
-        0x5b9c_ca4f,
-        0x682e_6ff3,
-        0x748f_82ee,
-        0x78a5_636f,
-        0x84c8_7814,
-        0x8cc7_0208,
-        0x90be_fffa,
-        0xa450_6ceb,
-        0xbef9_a3f7,
-        0xc671_78f2,
-    ];
+const SHA256_INITIAL: [u32; 8] = [
+    0x6a09_e667,
+    0xbb67_ae85,
+    0x3c6e_f372,
+    0xa54f_f53a,
+    0x510e_527f,
+    0x9b05_688c,
+    0x1f83_d9ab,
+    0x5be0_cd19,
+];
 
+const SHA256_ROUND: [u32; 64] = [
+    0x428a_2f98,
+    0x7137_4491,
+    0xb5c0_fbcf,
+    0xe9b5_dba5,
+    0x3956_c25b,
+    0x59f1_11f1,
+    0x923f_82a4,
+    0xab1c_5ed5,
+    0xd807_aa98,
+    0x1283_5b01,
+    0x2431_85be,
+    0x550c_7dc3,
+    0x72be_5d74,
+    0x80de_b1fe,
+    0x9bdc_06a7,
+    0xc19b_f174,
+    0xe49b_69c1,
+    0xefbe_4786,
+    0x0fc1_9dc6,
+    0x240c_a1cc,
+    0x2de9_2c6f,
+    0x4a74_84aa,
+    0x5cb0_a9dc,
+    0x76f9_88da,
+    0x983e_5152,
+    0xa831_c66d,
+    0xb003_27c8,
+    0xbf59_7fc7,
+    0xc6e0_0bf3,
+    0xd5a7_9147,
+    0x06ca_6351,
+    0x1429_2967,
+    0x27b7_0a85,
+    0x2e1b_2138,
+    0x4d2c_6dfc,
+    0x5338_0d13,
+    0x650a_7354,
+    0x766a_0abb,
+    0x81c2_c92e,
+    0x9272_2c85,
+    0xa2bf_e8a1,
+    0xa81a_664b,
+    0xc24b_8b70,
+    0xc76c_51a3,
+    0xd192_e819,
+    0xd699_0624,
+    0xf40e_3585,
+    0x106a_a070,
+    0x19a4_c116,
+    0x1e37_6c08,
+    0x2748_774c,
+    0x34b0_bcb5,
+    0x391c_0cb3,
+    0x4ed8_aa4a,
+    0x5b9c_ca4f,
+    0x682e_6ff3,
+    0x748f_82ee,
+    0x78a5_636f,
+    0x84c8_7814,
+    0x8cc7_0208,
+    0x90be_fffa,
+    0xa450_6ceb,
+    0xbef9_a3f7,
+    0xc671_78f2,
+];
+
+fn sha256(input: &[u8]) -> [u8; 32] {
     let mut padded = input.to_vec();
     let bit_length = u64::try_from(input.len())
         .unwrap_or(u64::MAX)
@@ -1693,11 +1717,15 @@ fn sha256(input: &[u8]) -> [u8; 32] {
     }
     padded.extend_from_slice(&bit_length.to_be_bytes());
 
-    let mut state = INITIAL;
-    for block in padded.chunks_exact(64) {
+    let mut state = SHA256_INITIAL;
+    let (blocks, remainder) = padded.as_chunks::<64>();
+    debug_assert!(remainder.is_empty());
+    for block in blocks {
         let mut schedule = [0_u32; 64];
-        for (index, word) in block.chunks_exact(4).enumerate() {
-            schedule[index] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
+        let (words, remainder) = block.as_chunks::<4>();
+        debug_assert!(remainder.is_empty());
+        for (index, word) in words.iter().enumerate() {
+            schedule[index] = u32::from_be_bytes(*word);
         }
         for index in 16..64 {
             let left = schedule[index - 15];
@@ -1727,7 +1755,7 @@ fn sha256(input: &[u8]) -> [u8; 32] {
             let first = state_seven
                 .wrapping_add(upper)
                 .wrapping_add(choose)
-                .wrapping_add(ROUND[index])
+                .wrapping_add(SHA256_ROUND[index])
                 .wrapping_add(schedule[index]);
             let lower = state_zero.rotate_right(2)
                 ^ state_zero.rotate_right(13)
@@ -1754,7 +1782,9 @@ fn sha256(input: &[u8]) -> [u8; 32] {
         state[7] = state[7].wrapping_add(state_seven);
     }
     let mut digest = [0_u8; 32];
-    for (chunk, word) in digest.chunks_exact_mut(4).zip(state) {
+    let (chunks, remainder) = digest.as_chunks_mut::<4>();
+    debug_assert!(remainder.is_empty());
+    for (chunk, word) in chunks.iter_mut().zip(state) {
         chunk.copy_from_slice(&word.to_be_bytes());
     }
     digest
@@ -1791,9 +1821,7 @@ fn timing_path(report: &Path) -> PathBuf {
 }
 
 fn test_directory(label: &str) -> PathBuf {
-    let base = environment("TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
+    let base = environment("TMPDIR").map_or_else(std::env::temp_dir, PathBuf::from);
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -2084,6 +2112,50 @@ fn the_sha256_implementation_matches_the_published_empty_and_abc_vectors() {
     );
 }
 
+const GOLDEN_CAPTURE_PREFIX: &str = concat!(
+    "native-capture-schema 1\n",
+    "ceremony-id explicit-witness-negatives\n",
+    "rust-test-name 62 7468655f7769746e6573735f636f6e74656e745f6e65676174697665735f6172655f6f6666657265645f6265736964655f74686569725f636f6e74726f6c\n",
+    "suite-commit 1111111111111111111111111111111111111111\n",
+    "suite-tree 2222222222222222222222222222222222222222\n",
+    "fixture-digest-algorithm forward-v2\n",
+    "run-id-input begin\n",
+    "deployment-environment development\n",
+    "deployment-network-id 64 31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131\n",
+    "deployment-genesis-id 64 32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232\n",
+    "deployment-target-contract 21 656c656d656e74732d7461707363726970742d7632\n",
+    "handshake-protocol-schema 7\n",
+    "handshake-adapter-name 15 636170747572652d61646170746572\n",
+    "handshake-adapter-version 5 312e322e33\n",
+    "handshake-framework-revision 13 6672616d65776f726b2d746970\n",
+    "handshake-node-name 9 656c656d656e747364\n",
+    "handshake-node-version 6 32332e322e31\n",
+    "handshake-binary-reported-revision 10 62696e6172792d746970\n",
+    "handshake-intended-executed-tip 12 696e74656e6465642d746970\n",
+    "handshake-upstream-base 13 757073747265616d2d62617365\n",
+    "handshake-topic-count 2\n",
+    "handshake-topic 0 7 746f7069632d61\n",
+    "handshake-topic 1 7 746f7069632d62\n",
+    "environment-schema 7\n",
+    "environment-chain 15 656c656d656e747372656774657374\n",
+    "environment-network-id 64 31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131\n",
+    "environment-genesis-id 64 32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232\n",
+    "environment-domain-count 1\n",
+    "environment-domain 0 tapscript supported true active true\n",
+    "environment-leaf-count 1\n",
+    "environment-leaf 0 196 supported true active true\n",
+    "environment-capability-count 2\n",
+    "environment-capability 0 target-transaction-submission\n",
+    "environment-capability 1 confidential-value-test-funding\n",
+    "environment-funding-count 4\n",
+    "environment-funding 0 representation explicit-asset-confidential-value\n",
+    "environment-funding 1 custody central-public-fixtures\n",
+    "environment-funding 2 materializer guide-ctf-deterministic-v1\n",
+    "environment-funding 3 reproducibility byte_identity\n",
+    "digest-count 1\n",
+    "digest 0 successor forward-v2 3333333333333333333333333333333333333333333333333333333333333333\n",
+);
+
 #[cfg(unix)]
 #[test]
 fn the_enhanced_capture_format_matches_exact_golden_bytes() {
@@ -2110,48 +2182,9 @@ fn the_enhanced_capture_format_matches_exact_golden_bytes() {
         "legacy\n",
     )
     .expect("the exhaustive capture renders");
-    let expected_content = concat!(
-        "native-capture-schema 1\n",
-        "ceremony-id explicit-witness-negatives\n",
-        "rust-test-name 62 7468655f7769746e6573735f636f6e74656e745f6e65676174697665735f6172655f6f6666657265645f6265736964655f74686569725f636f6e74726f6c\n",
-        "suite-commit 1111111111111111111111111111111111111111\n",
-        "suite-tree 2222222222222222222222222222222222222222\n",
-        "fixture-digest-algorithm forward-v2\n",
-        "run-id-input begin\n",
-        "deployment-environment development\n",
-        "deployment-network-id 64 31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131\n",
-        "deployment-genesis-id 64 32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232\n",
-        "deployment-target-contract 21 656c656d656e74732d7461707363726970742d7632\n",
-        "handshake-protocol-schema 7\n",
-        "handshake-adapter-name 15 636170747572652d61646170746572\n",
-        "handshake-adapter-version 5 312e322e33\n",
-        "handshake-framework-revision 13 6672616d65776f726b2d746970\n",
-        "handshake-node-name 9 656c656d656e747364\n",
-        "handshake-node-version 6 32332e322e31\n",
-        "handshake-binary-reported-revision 10 62696e6172792d746970\n",
-        "handshake-intended-executed-tip 12 696e74656e6465642d746970\n",
-        "handshake-upstream-base 13 757073747265616d2d62617365\n",
-        "handshake-topic-count 2\n",
-        "handshake-topic 0 7 746f7069632d61\n",
-        "handshake-topic 1 7 746f7069632d62\n",
-        "environment-schema 7\n",
-        "environment-chain 15 656c656d656e747372656774657374\n",
-        "environment-network-id 64 31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131\n",
-        "environment-genesis-id 64 32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232\n",
-        "environment-domain-count 1\n",
-        "environment-domain 0 tapscript supported true active true\n",
-        "environment-leaf-count 1\n",
-        "environment-leaf 0 196 supported true active true\n",
-        "environment-capability-count 2\n",
-        "environment-capability 0 target-transaction-submission\n",
-        "environment-capability 1 confidential-value-test-funding\n",
-        "environment-funding-count 4\n",
-        "environment-funding 0 representation explicit-asset-confidential-value\n",
-        "environment-funding 1 custody central-public-fixtures\n",
-        "environment-funding 2 materializer guide-ctf-deterministic-v1\n",
-        "environment-funding 3 reproducibility byte_identity\n",
-        "digest-count 1\n",
-        "digest 0 successor forward-v2 3333333333333333333333333333333333333333333333333333333333333333\n",
+    let expected_content = [
+        GOLDEN_CAPTURE_PREFIX,
+        concat!(
         "operation-count 2\n",
         "operation 0 begin\n",
         "operation-id 11 6f7065726174696f6e2d30\n",
@@ -2202,7 +2235,9 @@ fn the_enhanced_capture_format_matches_exact_golden_bytes() {
         "legacy-rendering 7 6c65676163790a\n",
         "terminal-state complete\n",
         "run-id-input end\n",
-    );
+        ),
+    ]
+    .concat();
     let expected = format!(
         "{expected_content}capture-content-sha256 750db245b5d6cacde581c3d4ce90add65ee5ac7b465319a37e09d7c5bcd104cc\nnative-capture-end explicit-witness-negatives\n",
     );
@@ -2417,8 +2452,7 @@ fn fund_one_confidential_predecessor(
         ReferenceRangeproofVerifier, ReferenceReadbackDecoder,
     };
     use target_elements_conformance::confidential_record::{
-        ConfidentialFundingEvidence, FieldAgreement, FundingAgreementField,
-        validate_confidential_funding_record,
+        ConfidentialFundingEvidence, validate_confidential_funding_record,
     };
     use vectors::confidential_predecessor::{
         AdapterReportedInclusion, ConfidentialPredecessorPlan,
@@ -2429,32 +2463,8 @@ fn fund_one_confidential_predecessor(
     let (outcome, capture) = execute_and_capture(target, binding, configuration, &mut plan);
     lines.push(format!("run {attempt}"));
 
-    // A stopped result is a valid outcome and is written as one. It is
-    // an infrastructure or construction fact and never a target verdict.
-    let transcript = match outcome {
-        Ok(transcript) => {
-            let facts = CeremonyCaptureFacts::from_capture(
-                CeremonyId::ConfidentialPredecessorSetup,
-                &capture,
-            );
-            let prelude = lines.join("\n") + "\n";
-            write_capture_before_gates(capture_guard, &capture, &facts, &prelude);
-            transcript
-        }
-        Err(error) => {
-            lines.push(format!("run {attempt} executor_refused {error}"));
-            if let Some(refusal) = plan.refusal() {
-                lines.push(format!("run {attempt} plan_refused {refusal:?}"));
-            }
-            let facts = CeremonyCaptureFacts::from_capture(
-                CeremonyId::ConfidentialPredecessorSetup,
-                &capture,
-            );
-            let refused = lines.join("\n") + "\n";
-            write_capture_before_gates(capture_guard, &capture, &facts, &refused);
-            panic!("the confidential predecessor ceremony did not reach the target: {error}");
-        }
-    };
+    let transcript =
+        complete_confidential_capture(outcome, &plan, &capture, &mut lines, attempt, capture_guard);
     let written_lines = lines.len();
 
     let case = ConfidentialPredecessorPlan::funding_case();
@@ -2508,13 +2518,7 @@ fn fund_one_confidential_predecessor(
 
     lines.extend(census_lines(record, attempt));
 
-    assert_eq!(record.agreement().len(), 2);
-    for census in record.agreement() {
-        assert_eq!(census.fields().len(), FundingAgreementField::ALL.len());
-        assert!(census.fields().iter().all(FieldAgreement::agrees));
-    }
-    assert_eq!(record.summary().observed_parities(), &[0x08, 0x09]);
-    assert_eq!(record.non_claims().len(), 10);
+    assert_confidential_funding_record(record);
 
     let facts =
         CeremonyCaptureFacts::from_capture(CeremonyId::ConfidentialPredecessorSetup, &capture);
@@ -2526,6 +2530,59 @@ fn fund_one_confidential_predecessor(
         mined: readback.raw_transaction.clone(),
         capture,
     }
+}
+
+fn complete_confidential_capture(
+    outcome: Result<
+        target_elements_conformance::executor::ExecutionTranscript,
+        target_elements_conformance::error::NativeConformanceError,
+    >,
+    plan: &vectors::confidential_predecessor::ConfidentialPredecessorPlan,
+    capture: &NativeOperationCapture,
+    lines: &mut Vec<String>,
+    attempt: u8,
+    capture_guard: &mut CaptureGuard,
+) -> target_elements_conformance::executor::ExecutionTranscript {
+    // A stopped result is a valid outcome and is written as one. It is
+    // an infrastructure or construction fact and never a target verdict.
+    match outcome {
+        Ok(transcript) => {
+            let facts = CeremonyCaptureFacts::from_capture(
+                CeremonyId::ConfidentialPredecessorSetup,
+                capture,
+            );
+            let prelude = lines.join("\n") + "\n";
+            write_capture_before_gates(capture_guard, capture, &facts, &prelude);
+            transcript
+        }
+        Err(error) => {
+            lines.push(format!("run {attempt} executor_refused {error}"));
+            if let Some(refusal) = plan.refusal() {
+                lines.push(format!("run {attempt} plan_refused {refusal:?}"));
+            }
+            let facts = CeremonyCaptureFacts::from_capture(
+                CeremonyId::ConfidentialPredecessorSetup,
+                capture,
+            );
+            let refused = lines.join("\n") + "\n";
+            write_capture_before_gates(capture_guard, capture, &facts, &refused);
+            panic!("the confidential predecessor ceremony did not reach the target: {error}");
+        }
+    }
+}
+
+fn assert_confidential_funding_record(
+    record: &target_elements_conformance::confidential_record::ConfidentialFundingRecord,
+) {
+    use target_elements_conformance::confidential_record::{FieldAgreement, FundingAgreementField};
+
+    assert_eq!(record.agreement().len(), 2);
+    for census in record.agreement() {
+        assert_eq!(census.fields().len(), FundingAgreementField::ALL.len());
+        assert!(census.fields().iter().all(FieldAgreement::agrees));
+    }
+    assert_eq!(record.summary().observed_parities(), &[0x08, 0x09]);
+    assert_eq!(record.non_claims().len(), 10);
 }
 
 /// One confidential predecessor, funded, mined, and read back.
@@ -2596,7 +2653,7 @@ fn one_confidential_predecessor_is_funded_mined_and_read_back() {
     let identical = first.mined == second.mined;
     let mut lines = first.lines;
     lines.extend(second.lines);
-    let summary = vec![
+    let summary = [
         format!("byte_identity_satisfied {identical}"),
         "discharges_no_matrix_row true".to_owned(),
         "clears_owner_sighash_blockers false".to_owned(),
@@ -3436,6 +3493,14 @@ fn run_one_private_control(
     }
     outcome.expect("the ceremony reached the target");
 
+    assert_private_control(record, consumed, &rendered);
+}
+
+fn assert_private_control(
+    record: &vectors::live_private_restart::PrivateRestartRecord,
+    consumed: vectors::live_private_restart::ConsumedReceipt,
+    rendered: &str,
+) {
     assert_private_restart_matches_the_run_of_record(record, consumed);
 
     // The predecessor is confidential and is the one the ceremony asked
@@ -4214,6 +4279,10 @@ fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
 
     outcome.expect("the ceremony reached the target");
 
+    assert_keypath_probe(record, &rendered);
+}
+
+fn assert_keypath_probe(record: &vectors::live_keypath_probe::KeyPathProbeRecord, rendered: &str) {
     // The deployment was welded to the chain before anything was funded,
     // so the program the attempt spends belongs to a deployment of the
     // asset the target issued.
@@ -5080,6 +5149,14 @@ fn run_one_multi_shape(shape: vectors::live_multi_shapes::PrivateShape, extensio
     }
     outcome.expect("the ceremony reached the target");
 
+    assert_multi_shape(shape, record, &rendered);
+}
+
+fn assert_multi_shape(
+    shape: vectors::live_multi_shapes::PrivateShape,
+    record: &vectors::live_multi_shapes::MultiShapeRecord,
+    rendered: &str,
+) {
     // The predecessor is the confidential one the ceremony asked for,
     // and its COUNT is the shape's own choice of predecessor rather than
     // a constant: the merge funds a three-output predecessor because a
@@ -5241,6 +5318,14 @@ fn run_one_explicit_shape(shape: vectors::live_explicit_shapes::ExplicitShape, e
     }
     outcome.expect("the ceremony reached the target");
 
+    assert_explicit_shape(shape, record, &rendered);
+}
+
+fn assert_explicit_shape(
+    shape: vectors::live_explicit_shapes::ExplicitShape,
+    record: &vectors::live_explicit_shapes::ExplicitShapeRecord,
+    rendered: &str,
+) {
     // The shape's own cardinalities, read off the record rather than off
     // the shape's name.
     assert_eq!(
@@ -6149,19 +6234,7 @@ fn the_pairs_arc_submits_both_members_of_one_fixture_to_a_real_target() {
         )
         .expect("the run's wall time is written");
     }
-    let mut facts = CeremonyCaptureFacts::from_capture(CeremonyId::PairsArc, &capture);
-    if let Some(programs) =
-        planner.capture_destination_programs(vectors::live_pair_arc::PairArcMember::Explicit)
-        && let Ok(projection) = pair_projection_input(programs)
-    {
-        facts = facts.with_projection(RequestRole::PairedExplicit, projection);
-    }
-    if let Some(programs) =
-        planner.capture_destination_programs(vectors::live_pair_arc::PairArcMember::Private)
-        && let Ok(projection) = pair_projection_input(programs)
-    {
-        facts = facts.with_projection(RequestRole::PairedPrivate, projection);
-    }
+    let facts = pair_capture_facts(&planner, &capture);
     write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
     if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
@@ -6176,6 +6249,30 @@ fn the_pairs_arc_submits_both_members_of_one_fixture_to_a_real_target() {
     }
     outcome.expect("the ceremony reached the target");
 
+    assert_pair_arc(record, &rendered);
+}
+
+fn pair_capture_facts(
+    planner: &vectors::live_pair_arc::PairArcPlanner,
+    capture: &NativeOperationCapture,
+) -> CeremonyCaptureFacts {
+    let mut facts = CeremonyCaptureFacts::from_capture(CeremonyId::PairsArc, capture);
+    if let Some(programs) =
+        planner.capture_destination_programs(vectors::live_pair_arc::PairArcMember::Explicit)
+        && let Ok(projection) = pair_projection_input(&programs)
+    {
+        facts = facts.with_projection(RequestRole::PairedExplicit, projection);
+    }
+    if let Some(programs) =
+        planner.capture_destination_programs(vectors::live_pair_arc::PairArcMember::Private)
+        && let Ok(projection) = pair_projection_input(&programs)
+    {
+        facts = facts.with_projection(RequestRole::PairedPrivate, projection);
+    }
+    facts
+}
+
+fn assert_pair_arc(record: &vectors::live_pair_arc::PairArcRecord, rendered: &str) {
     // The arc's own fixture, and the fact every later claim rests on.
     assert!(record.fixture_conserves());
 
