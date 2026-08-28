@@ -470,6 +470,12 @@ impl LiveCompositeAcceptanceMember {
     pub const fn identity(&self) -> Txid {
         self.identity
     }
+
+    /// The decoded output position carrying this member's parity commitment.
+    #[must_use]
+    pub const fn consumed_commitment_output_index(&self) -> usize {
+        self.consumed_commitment_output_index
+    }
 }
 
 /// Exactly two primary accepted members answering one matrix row.
@@ -534,6 +540,18 @@ impl LiveSupportLink {
     pub fn request_id(&self) -> &str {
         &self.request_id
     }
+
+    /// The exact accepted-control request bytes.
+    #[must_use]
+    pub fn request_bytes(&self) -> &[u8] {
+        &self.request_bytes
+    }
+
+    /// The exact accepted-control response facts.
+    #[must_use]
+    pub const fn response(&self) -> &LiveTargetResponse {
+        &self.response
+    }
 }
 
 /// A closed semantic predicate one row can independently prove from request bytes.
@@ -590,6 +608,30 @@ impl LiveMultiRowSemanticWitness {
     #[must_use]
     pub const fn rows(&self) -> &BTreeSet<&'static str> {
         &self.rows
+    }
+
+    /// The run carrying the one primary request.
+    #[must_use]
+    pub fn run_id(&self) -> &str {
+        &self.run_id
+    }
+
+    /// The one primary request identity.
+    #[must_use]
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    /// The accepted target identity recomputed from the request.
+    #[must_use]
+    pub const fn identity(&self) -> Txid {
+        self.identity
+    }
+
+    /// Exactly one closed semantic predicate for every declared row.
+    #[must_use]
+    pub const fn predicates(&self) -> &BTreeMap<&'static str, LiveRowSemanticPredicate> {
+        &self.predicates
     }
 }
 
@@ -793,6 +835,7 @@ impl LiveRunBinding {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ParsedRunArchive {
+    ceremony_id: Option<String>,
     revision: NativeProtocolRevision,
     digest_facts: BTreeMap<String, FixtureDigestFact>,
     deployment: LiveDeploymentBinding,
@@ -801,6 +844,7 @@ struct ParsedRunArchive {
 
 #[derive(Debug, Default)]
 struct RunArchiveFields {
+    ceremony_id: Option<String>,
     revision: Option<NativeProtocolRevision>,
     environment: Option<String>,
     network_id: Option<[u8; 32]>,
@@ -850,6 +894,16 @@ fn set_once<T>(slot: &mut Option<T>, value: T) -> Result<(), LiveSafetyReportRef
 }
 
 impl RunArchiveFields {
+    fn parse_ceremony(&mut self, fields: &[&str]) -> Result<(), LiveSafetyReportRefusal> {
+        let ["ceremony_id", value] = fields else {
+            return Err(LiveSafetyReportRefusal::MalformedRunArchive);
+        };
+        if value.is_empty() {
+            return Err(LiveSafetyReportRefusal::MalformedRunArchive);
+        }
+        set_once(&mut self.ceremony_id, (*value).to_owned())
+    }
+
     fn parse_revision(&mut self, fields: &[&str]) -> Result<(), LiveSafetyReportRefusal> {
         let ["protocol_revision", value] = fields else {
             return Err(LiveSafetyReportRefusal::MalformedRunArchive);
@@ -939,6 +993,7 @@ impl RunArchiveFields {
 
     fn parse_line(&mut self, fields: &[&str]) -> Result<(), LiveSafetyReportRefusal> {
         match fields.first().copied() {
+            Some("ceremony_id") => self.parse_ceremony(fields),
             Some("protocol_revision") => self.parse_revision(fields),
             Some(
                 "deployment_environment"
@@ -963,6 +1018,7 @@ impl RunArchiveFields {
             return Err(LiveSafetyReportRefusal::MalformedRunArchive);
         }
         Ok(ParsedRunArchive {
+            ceremony_id: self.ceremony_id,
             revision: self
                 .revision
                 .ok_or(LiveSafetyReportRefusal::MalformedRunArchive)?,
@@ -1218,7 +1274,7 @@ impl LiveReportLayerRequirement {
     }
 }
 
-/// One report-layer property established against canonical schema-5 bytes.
+/// One report-layer property established against canonical versioned bytes.
 ///
 /// There is deliberately no public constructor. Values live only inside a
 /// [`ValidatedLiveTransferSafetyReport`] returned after disclosure validation.
@@ -2059,10 +2115,15 @@ fn witness_item_is_exact(
 
 const CONTROL_BLOCK_BASE_BYTES: usize = 33;
 const CONTROL_BLOCK_DIGEST_BYTES: usize = 32;
+const TAPSCRIPT_LEAF_VERSION: u8 = 0xc0;
+const MAXIMUM_CONTROL_BLOCK_DEPTH: usize = 128;
 
 fn control_block_is_structurally_valid(block: &[u8]) -> bool {
     block.len() >= CONTROL_BLOCK_BASE_BYTES
         && (block.len() - CONTROL_BLOCK_BASE_BYTES).is_multiple_of(CONTROL_BLOCK_DIGEST_BYTES)
+        && (block.len() - CONTROL_BLOCK_BASE_BYTES) / CONTROL_BLOCK_DIGEST_BYTES
+            <= MAXIMUM_CONTROL_BLOCK_DEPTH
+        && block[0] & 0xfe == TAPSCRIPT_LEAF_VERSION
 }
 
 fn decoded_witness_path_role(stack: &[Vec<u8>]) -> Option<LiveWitnessPathRole> {
@@ -2453,6 +2514,11 @@ fn validate_run_binding(
     schema: u32,
 ) -> Result<(), LiveSafetyReportRefusal> {
     validate_archived_run_facts(run)?;
+    if schema == HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA
+        && parse_run_archive(&run.archive_bytes)?.ceremony_id.is_some()
+    {
+        return Err(LiveSafetyReportRefusal::SchemaVocabularyDiffers(schema));
+    }
     let decoded = decode_run_requests(run)?;
     validate_refusal_links(run, request_owners, &decoded, schema)?;
     if run.run_id != content_address_run(run) {
@@ -2766,6 +2832,18 @@ impl BoundObservationValidation {
             return Ok(());
         };
         let [first, second] = acceptance.members();
+        for member in [first, second] {
+            let run = runs
+                .iter()
+                .find(|run| run.run_id == member.run_id)
+                .ok_or(LiveSafetyReportRefusal::BoundObservationUnbacked { row: *row })?;
+            let parsed = parse_run_archive(&run.archive_bytes)?;
+            if parsed.ceremony_id.as_deref() != Some(member.ceremony.as_str()) {
+                return Err(LiveSafetyReportRefusal::RunArchiveDiffers(
+                    member.run_id.clone(),
+                ));
+            }
+        }
         if first.ceremony.is_empty()
             || second.ceremony.is_empty()
             || first.ceremony == second.ceremony
@@ -2779,7 +2857,7 @@ impl BoundObservationValidation {
         for member in [first, second] {
             insert_observation_link(&mut self.observed_links, &member.run_id, &member.request_id)?;
             let (fact, response, bytes) =
-                request_for(runs, &member.run_id, &member.request_id, row)?;
+                request_for(runs, &member.run_id, &member.request_id, *row)?;
             if fact != &LiveRequestFact::Acceptance {
                 return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
                     member.run_id.clone(),
@@ -2815,13 +2893,13 @@ impl BoundObservationValidation {
                     _ => None,
                 })
                 .filter(|prefix| matches!(*prefix, 0x08 | 0x09))
-                .ok_or(LiveSafetyReportRefusal::CompositeParityNotOpposite(row))?;
+                .ok_or(LiveSafetyReportRefusal::CompositeParityNotOpposite(*row))?;
             prefixes.push(prefix);
             self.used_requests
                 .insert((member.run_id.clone(), member.request_id.clone()));
         }
         if prefixes.as_slice() != [0x08, 0x09] && prefixes.as_slice() != [0x09, 0x08] {
-            return Err(LiveSafetyReportRefusal::CompositeParityNotOpposite(row));
+            return Err(LiveSafetyReportRefusal::CompositeParityNotOpposite(*row));
         }
         self.compared += 1;
         Ok(())
@@ -3908,15 +3986,17 @@ fn render_observation(text: &mut String, observation: &LiveReportObservation) {
             let [first, second] = acceptance.members();
             let _ = writeln!(
                 text,
-                "observation {row} composite-two-acceptance first-ceremony {:?} first-run {} first-request {} first-identity {} second-ceremony {:?} second-run {} second-request {} second-identity {}",
+                "observation {row} composite-two-acceptance first-ceremony {:?} first-run {} first-request {} first-identity {} first-commitment-output {} second-ceremony {:?} second-run {} second-request {} second-identity {} second-commitment-output {}",
                 first.ceremony,
                 first.run_id,
                 first.request_id,
                 first.identity.to_target_display(),
+                first.consumed_commitment_output_index,
                 second.ceremony,
                 second.run_id,
                 second.request_id,
                 second.identity.to_target_display(),
+                second.consumed_commitment_output_index,
             );
         }
         LiveReportObservation::NativeRefusal {
@@ -3970,10 +4050,11 @@ fn render_observation(text: &mut String, observation: &LiveReportObservation) {
             let rows = witness.rows.iter().copied().collect::<Vec<_>>().join(",");
             let _ = writeln!(
                 text,
-                "observation multi-row-semantic rows {rows:?} run {} request {} identity {}",
+                "observation multi-row-semantic rows {rows:?} run {} request {} identity {} predicates {:?}",
                 witness.run_id,
                 witness.request_id,
                 witness.identity.to_target_display(),
+                witness.predicates,
             );
         }
         LiveReportObservation::RecordedObservationUnbound { row, observation } => {
@@ -4213,8 +4294,13 @@ mod tests {
     }
 
     fn synthetic_archive(revision: u32, algorithm: &str, source_tip: &str) -> Vec<u8> {
+        let ceremony = if revision == 7 {
+            format!("ceremony_id {source_tip}\n")
+        } else {
+            String::new()
+        };
         format!(
-            "protocol_revision {revision}\n\
+            "{ceremony}protocol_revision {revision}\n\
              deployment_environment development\n\
              deployment_network {}\n\
              deployment_genesis {}\n\
@@ -5010,8 +5096,8 @@ mod tests {
 
     #[test]
     fn same_ceremony_and_same_parity_composites_refuse_independently() {
-        let first = synthetic_acceptance_run("primary-ceremony", "primary", 0x55, 0x08);
-        let second = synthetic_acceptance_run("balancing-ceremony", "balancing", 0x56, 0x09);
+        let first = synthetic_acceptance_run("one-ceremony", "primary", 0x55, 0x08);
+        let second = synthetic_acceptance_run("one-ceremony", "balancing", 0x56, 0x09);
         let mut same_ceremony = composite_observation(
             &first,
             "one-ceremony",
@@ -6055,7 +6141,7 @@ mod tests {
     #[test]
     fn schema_two_is_hard_rejected() {
         // Schema 2 is historical and never a legacy-validated route into
-        // the evidence-bearing schema 5 report.
+        // the evidence-bearing live report.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
         let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
