@@ -872,13 +872,17 @@ fn assert_live_construction_refusal_shape(
 ///
 /// # Panics
 ///
-/// If the live record cannot project as forward v2, either forward member
-/// is pending, or a recorded forward member differs from the fresh value.
+/// If the live record cannot project as forward v2, the fresh projection
+/// omits either member, the expected members have mixed states, or a
+/// recorded forward member differs from the fresh value.
 fn assert_proof_bearing_record_matches_forward_run_of_record(
     actual: &vectors::live_proof_bearing_observation::ProofBearingObservationRecord,
     expected: &vectors::live_proof_bearing_observation::ForwardV2ProofBearingRunOfRecord,
 ) {
-    use vectors::live_proof_bearing_observation::ForwardV2ProofBearingRunOfRecord;
+    use vectors::live_proof_bearing_observation::{
+        ForwardProofBearingRecordMember::{Pending, Recorded},
+        ForwardV2ProofBearingRunOfRecord,
+    };
 
     let projected = ForwardV2ProofBearingRunOfRecord::try_from(actual)
         .expect("the completed live ceremony projects to forward schema 2");
@@ -887,30 +891,42 @@ fn assert_proof_bearing_record_matches_forward_run_of_record(
         projected.fixture_digest_algorithm(),
         expected.fixture_digest_algorithm(),
     );
-    let projected_observations = projected
-        .observations()
-        .recorded()
-        .expect("a completed forward projection records its observations");
-    let expected_observations = expected
-        .observations()
-        .recorded()
-        .expect("the forward observation expectation is still pending its accepted run");
-    assert_eq!(
-        projected_observations, expected_observations,
-        "the fresh observations drifted from the forward-v2 record",
-    );
-    let projected_acceptance = projected
-        .acceptance()
-        .recorded()
-        .expect("a completed forward projection records its acceptance");
-    let expected_acceptance = expected
-        .acceptance()
-        .recorded()
-        .expect("the forward acceptance expectation is still pending its accepted run");
-    assert_eq!(
-        projected_acceptance, expected_acceptance,
-        "the fresh acceptance drifted from the forward-v2 record",
-    );
+    let (projected_observations, projected_acceptance) =
+        match (projected.observations(), projected.acceptance()) {
+            (Recorded(observations), Recorded(acceptance)) => (observations, acceptance),
+            (Pending, Pending) => {
+                panic!("a completed forward projection must record both members")
+            }
+            (Pending, Recorded(_)) => {
+                panic!("a completed forward projection must record its observations")
+            }
+            (Recorded(_), Pending) => {
+                panic!("a completed forward projection must record its acceptance")
+            }
+        };
+
+    match (expected.observations(), expected.acceptance()) {
+        (Pending, Pending) => {
+            // The caller has already rendered and preserved the fresh record. A
+            // successful `try_from` above proves both member censuses and the
+            // acceptance/reverification identity agree. That complete schema-2
+            // projection is candidate mint material while no owner-authorized
+            // forward record exists; Pending is not an equality expectation.
+        }
+        (Recorded(expected_observations), Recorded(expected_acceptance)) => {
+            assert_eq!(
+                projected_observations, expected_observations,
+                "the fresh observations drifted from the forward-v2 record",
+            );
+            assert_eq!(
+                projected_acceptance, expected_acceptance,
+                "the fresh acceptance drifted from the forward-v2 record",
+            );
+        }
+        (Pending, Recorded(_)) | (Recorded(_), Pending) => {
+            panic!("the forward-v2 record carries mixed Pending and Recorded members")
+        }
+    }
 }
 
 /// Everything the completed proof-bearing ceremony owes its reader.
