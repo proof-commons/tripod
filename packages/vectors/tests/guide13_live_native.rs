@@ -2587,6 +2587,7 @@ fn one_confidential_predecessor_is_funded_mined_and_read_back() {
             report.as_deref(),
         )),
     );
+
     let first =
         fund_one_confidential_predecessor(&target, &binding, &configuration, 0, &mut capture_guard);
     let second =
