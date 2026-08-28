@@ -70,7 +70,7 @@ pub const SECOND_SCALAR: [u8; FIELD_ELEMENT_BYTES] = [
 ///
 /// Beside the two above and published on the same footing — BIP-340's
 /// own appendix vector, a value with no secrecy to lose
-/// (`[ADR015-rule:security:test-material]`). It differs from them in
+/// `(´[ADR015-rule:security:test-material]´)`. It differs from them in
 /// PURPOSE rather than in kind: nothing is linked for this owner in the
 /// demonstration deployment, and that is exactly what it is for. A
 /// discharge asking what happens to a receipt whose owner metadata
