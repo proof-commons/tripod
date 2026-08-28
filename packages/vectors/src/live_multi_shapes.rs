@@ -902,6 +902,12 @@ impl MultiShapeRecord {
         self.issued_asset.as_deref()
     }
 
+    /// The predecessor fixture's digest.
+    #[must_use]
+    pub const fn predecessor_digest(&self) -> Option<[u8; 32]> {
+        self.predecessor_digest
+    }
+
     /// The successor fixture's digest.
     #[must_use]
     pub const fn successor_digest(&self) -> Option<[u8; 32]> {

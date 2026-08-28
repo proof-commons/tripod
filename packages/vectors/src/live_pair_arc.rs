@@ -744,6 +744,19 @@ impl PairArcPlanner {
         &self.record
     }
 
+    /// The destination programs supplied to one member's projection.
+    ///
+    /// This is read-only constructor metadata. Exact submitted bytes and
+    /// target responses remain available only from the executor journal.
+    ///
+    /// `None` if the planner has no issued asset or that asset cannot be
+    /// linked to the published destination constructors.
+    #[must_use]
+    pub fn capture_destination_programs(&self, member: PairArcMember) -> Option<Vec<Vec<u8>>> {
+        let asset = self.record.issued_asset.as_deref()?;
+        destination_programs(asset, member.plan()).ok()
+    }
+
     /// Record a refusal and stop.
     const fn refuse(&mut self, refusal: PairArcRefusal) -> PlanRefused {
         if self.record.refusal.is_none() {

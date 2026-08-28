@@ -38,8 +38,10 @@
 //! might wish it were about, and `vectors::live_evidence` records the
 //! whole matrix as blocked for exactly that reason.
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
@@ -47,9 +49,1755 @@ use target_elements::{
 };
 use target_elements_conformance::executor::{
     DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust,
-    execute_operations,
+    NativeOperationCapture, OperationStep, PlanRefused, TargetOperationPlanner,
+    execute_operations_captured,
+};
+use target_elements_conformance::protocol::{
+    ExecutorCapability, FundingCustodyProfile, FundingMaterializerProfile,
+    FundingRepresentationProfile, NativeOperationResponse, NativeVerdict, ObservedOutcomeLayer,
+    OperationCaseId, OperationSubject, TargetSubmissionSubject, WireEnvironment,
+    WireExecutionDomain,
 };
 use vectors::live_native::{LiveNativeStep, LiveTransferOperationPlanner, render_live_native_run};
+use vectors::live_report::{LiveMutantKind, LiveMutationLocator, LiveWitnessPathRole};
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum CeremonyId {
+    ConservationNegatives,
+    ExplicitBoundaryValues,
+    ExplicitMaximumInputs,
+    ExplicitMaximumOutputs,
+    ExplicitMerge,
+    ExplicitNormalization,
+    ExplicitOneDestinationOwner,
+    ExplicitOneToOne,
+    ExplicitRepeatedOwner,
+    ExplicitSelfPaidFee,
+    ExplicitSeveralDestinationOwners,
+    ExplicitSeveralOwners,
+    ExplicitSeveralToSeveral,
+    ExplicitSplit,
+    ExplicitSponsorless,
+    ExplicitWitnessNegatives,
+    KeypathProbe,
+    MultiEntryCrossing,
+    MultiExitCrossing,
+    MultiManyToMany,
+    MultiOneToOneWithFee,
+    MultiPrivateMerge,
+    MultiPureSplit,
+    MultiSeveralOwners,
+    MultiSplit,
+    MultiStrictOneToOne,
+    OwnerObservation,
+    OwnerSigningNegatives,
+    PairsArc,
+    PrivateRestartControl,
+    PrivateRestartParity,
+    ProofBearingObservation,
+    Report,
+    SponsoredChangeAbsent,
+    SponsoredChangePresent,
+    SponsoredCommittedValue,
+    SponsoredMissingAuthorization,
+    SponsoredPrivateExplicitNoChange,
+    SponsoredPrivateWithChange,
+    ConfidentialPredecessorSetup,
+}
+
+impl CeremonyId {
+    const ALL: [Self; 40] = [
+        Self::ConservationNegatives,
+        Self::ExplicitBoundaryValues,
+        Self::ExplicitMaximumInputs,
+        Self::ExplicitMaximumOutputs,
+        Self::ExplicitMerge,
+        Self::ExplicitNormalization,
+        Self::ExplicitOneDestinationOwner,
+        Self::ExplicitOneToOne,
+        Self::ExplicitRepeatedOwner,
+        Self::ExplicitSelfPaidFee,
+        Self::ExplicitSeveralDestinationOwners,
+        Self::ExplicitSeveralOwners,
+        Self::ExplicitSeveralToSeveral,
+        Self::ExplicitSplit,
+        Self::ExplicitSponsorless,
+        Self::ExplicitWitnessNegatives,
+        Self::KeypathProbe,
+        Self::MultiEntryCrossing,
+        Self::MultiExitCrossing,
+        Self::MultiManyToMany,
+        Self::MultiOneToOneWithFee,
+        Self::MultiPrivateMerge,
+        Self::MultiPureSplit,
+        Self::MultiSeveralOwners,
+        Self::MultiSplit,
+        Self::MultiStrictOneToOne,
+        Self::OwnerObservation,
+        Self::OwnerSigningNegatives,
+        Self::PairsArc,
+        Self::PrivateRestartControl,
+        Self::PrivateRestartParity,
+        Self::ProofBearingObservation,
+        Self::Report,
+        Self::SponsoredChangeAbsent,
+        Self::SponsoredChangePresent,
+        Self::SponsoredCommittedValue,
+        Self::SponsoredMissingAuthorization,
+        Self::SponsoredPrivateExplicitNoChange,
+        Self::SponsoredPrivateWithChange,
+        Self::ConfidentialPredecessorSetup,
+    ];
+
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::ConservationNegatives => "conservation-negatives",
+            Self::ExplicitBoundaryValues => "explicit-boundary-values",
+            Self::ExplicitMaximumInputs => "explicit-maximum-inputs",
+            Self::ExplicitMaximumOutputs => "explicit-maximum-outputs",
+            Self::ExplicitMerge => "explicit-merge",
+            Self::ExplicitNormalization => "explicit-normalization",
+            Self::ExplicitOneDestinationOwner => "explicit-one-destination-owner",
+            Self::ExplicitOneToOne => "explicit-one-to-one",
+            Self::ExplicitRepeatedOwner => "explicit-repeated-owner",
+            Self::ExplicitSelfPaidFee => "explicit-self-paid-fee",
+            Self::ExplicitSeveralDestinationOwners => "explicit-several-destination-owners",
+            Self::ExplicitSeveralOwners => "explicit-several-owners",
+            Self::ExplicitSeveralToSeveral => "explicit-several-to-several",
+            Self::ExplicitSplit => "explicit-split",
+            Self::ExplicitSponsorless => "explicit-sponsorless",
+            Self::ExplicitWitnessNegatives => "explicit-witness-negatives",
+            Self::KeypathProbe => "keypath-probe",
+            Self::MultiEntryCrossing => "multi-entry-crossing",
+            Self::MultiExitCrossing => "multi-exit-crossing",
+            Self::MultiManyToMany => "multi-many-to-many",
+            Self::MultiOneToOneWithFee => "multi-one-to-one-with-fee",
+            Self::MultiPrivateMerge => "multi-private-merge",
+            Self::MultiPureSplit => "multi-pure-split",
+            Self::MultiSeveralOwners => "multi-several-owners",
+            Self::MultiSplit => "multi-split",
+            Self::MultiStrictOneToOne => "multi-strict-one-to-one",
+            Self::OwnerObservation => "owner-observation",
+            Self::OwnerSigningNegatives => "owner-signing-negatives",
+            Self::PairsArc => "pairs-arc",
+            Self::PrivateRestartControl => "private-restart-control",
+            Self::PrivateRestartParity => "private-restart-parity",
+            Self::ProofBearingObservation => "proof-bearing-observation",
+            Self::Report => "report",
+            Self::SponsoredChangeAbsent => "sponsored-change-absent",
+            Self::SponsoredChangePresent => "sponsored-change-present",
+            Self::SponsoredCommittedValue => "sponsored-committed-value",
+            Self::SponsoredMissingAuthorization => "sponsored-missing-authorization",
+            Self::SponsoredPrivateExplicitNoChange => "sponsored-private-explicit-no-change",
+            Self::SponsoredPrivateWithChange => "sponsored-private-with-change",
+            Self::ConfidentialPredecessorSetup => "confidential-predecessor",
+        }
+    }
+
+    const fn rust_test_name(self) -> &'static str {
+        match self {
+            Self::ConservationNegatives => {
+                "conservation_is_recorded_against_a_control_the_proof_negatives_mutate"
+            }
+            Self::ExplicitBoundaryValues => {
+                "the_explicit_boundary_values_shape_is_submitted_to_a_real_target"
+            }
+            Self::ExplicitMaximumInputs => {
+                "the_explicit_maximum_inputs_shape_is_submitted_to_a_real_target"
+            }
+            Self::ExplicitMaximumOutputs => {
+                "the_explicit_maximum_outputs_shape_is_submitted_to_a_real_target"
+            }
+            Self::ExplicitMerge => "the_explicit_merge_shape_is_submitted_to_a_real_target",
+            Self::ExplicitNormalization => {
+                "the_explicit_normalization_shape_is_submitted_to_a_real_target"
+            }
+            Self::ExplicitOneDestinationOwner => {
+                "the_explicit_one_destination_owner_shape_is_submitted_to_a_real_target"
+            }
+            Self::ExplicitOneToOne => "the_explicit_one_to_one_shape_is_submitted_to_a_real_target",
+            Self::ExplicitRepeatedOwner => {
+                "the_explicit_repeated_owner_shape_is_submitted_to_a_real_target"
+            }
+            Self::ExplicitSelfPaidFee => {
+                "the_explicit_self_paid_fee_shape_is_submitted_to_a_real_target"
+            }
+            Self::ExplicitSeveralDestinationOwners => {
+                "the_explicit_several_destination_owners_shape_is_submitted_to_a_real_target"
+            }
+            Self::ExplicitSeveralOwners => {
+                "the_explicit_several_owners_shape_is_submitted_to_a_real_target"
+            }
+            Self::ExplicitSeveralToSeveral => {
+                "the_explicit_several_to_several_shape_is_submitted_to_a_real_target"
+            }
+            Self::ExplicitSplit => "the_explicit_split_shape_is_submitted_to_a_real_target",
+            Self::ExplicitSponsorless => {
+                "the_explicit_sponsorless_shape_is_submitted_to_a_real_target"
+            }
+            Self::ExplicitWitnessNegatives => {
+                "the_witness_content_negatives_are_offered_beside_their_control"
+            }
+            Self::KeypathProbe => "one_key_path_spend_attempt_is_offered_to_a_real_target",
+            Self::MultiEntryCrossing => "the_entry_crossing_shape_is_submitted_to_a_real_target",
+            Self::MultiExitCrossing => "the_exit_crossing_shape_is_submitted_to_a_real_target",
+            Self::MultiManyToMany => "the_many_to_many_shape_is_submitted_to_a_real_target",
+            Self::MultiOneToOneWithFee => {
+                "the_fee_bearing_one_to_one_shape_is_submitted_to_a_real_target"
+            }
+            Self::MultiPrivateMerge => "the_private_merge_shape_is_submitted_to_a_real_target",
+            Self::MultiPureSplit => "the_pure_split_shape_is_submitted_to_a_real_target",
+            Self::MultiSeveralOwners => {
+                "the_several_distinct_owners_shape_is_submitted_to_a_real_target"
+            }
+            Self::MultiSplit => "the_split_shape_is_submitted_to_a_real_target",
+            Self::MultiStrictOneToOne => {
+                "the_strict_one_to_one_shape_is_submitted_to_a_real_target"
+            }
+            Self::OwnerObservation => "one_owner_authorization_is_observed_on_the_explicit_lane",
+            Self::OwnerSigningNegatives => {
+                "one_bare_u_output_mutant_is_refused_before_the_control_is_accepted"
+            }
+            Self::PairsArc => "the_pairs_arc_submits_both_members_of_one_fixture_to_a_real_target",
+            Self::PrivateRestartControl => {
+                "one_private_one_to_one_control_is_submitted_to_a_real_target"
+            }
+            Self::PrivateRestartParity => {
+                "the_other_commitment_parity_is_exercised_in_a_complete_successor"
+            }
+            Self::ProofBearingObservation => {
+                "one_owner_authorization_is_observed_on_the_proof_bearing_lane"
+            }
+            Self::Report => "the_live_transfer_candidate_runs_against_a_real_target",
+            Self::SponsoredChangeAbsent => {
+                "the_sponsored_change_absent_shape_is_submitted_to_a_real_target"
+            }
+            Self::SponsoredChangePresent => {
+                "the_sponsored_change_present_shape_is_submitted_to_a_real_target"
+            }
+            Self::SponsoredCommittedValue => {
+                "the_committed_sponsor_value_shape_is_submitted_to_a_real_target"
+            }
+            Self::SponsoredMissingAuthorization => {
+                "the_missing_sponsor_authorization_negative_is_refused_behind_its_control"
+            }
+            Self::SponsoredPrivateExplicitNoChange => {
+                "the_sponsored_explicit_no_change_shape_is_submitted_to_a_real_target"
+            }
+            Self::SponsoredPrivateWithChange => {
+                "the_sponsored_confidential_with_change_shape_is_submitted_to_a_real_target"
+            }
+            Self::ConfidentialPredecessorSetup => {
+                "one_confidential_predecessor_is_funded_mined_and_read_back"
+            }
+        }
+    }
+
+    const fn is_setup(self) -> bool {
+        matches!(self, Self::ConfidentialPredecessorSetup)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RequestRole {
+    Acceptance,
+    Control,
+    Refusal,
+    PairedExplicit,
+    PairedPrivate,
+    Auxiliary,
+}
+
+impl RequestRole {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Acceptance => "acceptance",
+            Self::Control => "control",
+            Self::Refusal => "refusal",
+            Self::PairedExplicit => "paired-explicit",
+            Self::PairedPrivate => "paired-private",
+            Self::Auxiliary => "auxiliary",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CaptureDigest {
+    name: &'static str,
+    value: [u8; 32],
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ProjectionInput {
+    owners: Vec<Vec<u8>>,
+    amounts: Vec<u64>,
+    destinations: BTreeMap<Vec<u8>, (Vec<u8>, u64)>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CeremonyOperationFacts {
+    operation_id: String,
+    case_step: String,
+    role: RequestRole,
+    control_request_id: Option<String>,
+    control_identity: Option<String>,
+    mutant: Option<LiveMutantKind>,
+    locator: Option<LiveMutationLocator>,
+    projection: Option<ProjectionInput>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct CeremonyCaptureFacts {
+    digests: Vec<CaptureDigest>,
+    operations: Vec<CeremonyOperationFacts>,
+}
+
+impl CeremonyCaptureFacts {
+    fn from_capture(ceremony: CeremonyId, capture: &NativeOperationCapture) -> Self {
+        let submission_indices: Vec<_> = capture
+            .operations()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, operation)| {
+                matches!(operation.request().subject, OperationSubject::Submission(_))
+                    .then_some(index)
+            })
+            .collect();
+        let control_index = control_submission(ceremony, capture, &submission_indices);
+        let control = control_index.and_then(|index| capture.operations().get(index));
+        let control_request_id = control.map(|operation| operation.request_id().to_owned());
+        let control_identity = control
+            .and_then(|operation| operation.target_identity())
+            .map(str::to_owned);
+
+        let operations = capture
+            .operations()
+            .iter()
+            .enumerate()
+            .map(|(index, operation)| {
+                let is_submission =
+                    matches!(operation.request().subject, OperationSubject::Submission(_));
+                let (mutant, locator) = mutation_fact(operation.request().case.step.as_str());
+                let role = if !is_submission {
+                    RequestRole::Auxiliary
+                } else if Some(index) == control_index {
+                    RequestRole::Control
+                } else if ceremony == CeremonyId::PairsArc {
+                    match operation.request().case.step.as_str() {
+                        "explicit-paired-one-to-one" => RequestRole::PairedExplicit,
+                        "private-paired-one-to-one" => RequestRole::PairedPrivate,
+                        _ => RequestRole::Auxiliary,
+                    }
+                } else if is_negative_ceremony(ceremony) && mutant.is_some() {
+                    RequestRole::Refusal
+                } else {
+                    RequestRole::Auxiliary
+                };
+                let role = if is_submission
+                    && !is_negative_ceremony(ceremony)
+                    && ceremony != CeremonyId::PairsArc
+                {
+                    RequestRole::Acceptance
+                } else {
+                    role
+                };
+                let attributed = role == RequestRole::Refusal;
+                CeremonyOperationFacts {
+                    operation_id: operation.operation_id().to_owned(),
+                    case_step: operation.request().case.step.clone(),
+                    role,
+                    control_request_id: attributed.then(|| control_request_id.clone()).flatten(),
+                    control_identity: attributed.then(|| control_identity.clone()).flatten(),
+                    mutant,
+                    locator,
+                    projection: None,
+                }
+            })
+            .collect();
+        Self {
+            digests: Vec::new(),
+            operations,
+        }
+    }
+
+    fn with_digest(mut self, name: &'static str, value: Option<[u8; 32]>) -> Self {
+        if let Some(value) = value {
+            self.digests.push(CaptureDigest { name, value });
+        }
+        self
+    }
+
+    fn with_projection(mut self, role: RequestRole, projection: ProjectionInput) -> Self {
+        if let Some(operation) = self
+            .operations
+            .iter_mut()
+            .find(|operation| operation.role == role)
+        {
+            operation.projection = Some(projection);
+        }
+        self
+    }
+
+    fn with_locator(mut self, step: &str, locator: LiveMutationLocator) -> Self {
+        if let Some(operation) = self
+            .operations
+            .iter_mut()
+            .find(|operation| operation.case_step == step)
+        {
+            operation.locator = Some(locator);
+        }
+        self
+    }
+
+    fn operation(&self, operation_id: &str) -> Option<&CeremonyOperationFacts> {
+        self.operations
+            .iter()
+            .find(|operation| operation.operation_id == operation_id)
+    }
+}
+
+const fn is_negative_ceremony(ceremony: CeremonyId) -> bool {
+    matches!(
+        ceremony,
+        CeremonyId::ConservationNegatives
+            | CeremonyId::ExplicitWitnessNegatives
+            | CeremonyId::KeypathProbe
+            | CeremonyId::OwnerSigningNegatives
+            | CeremonyId::SponsoredMissingAuthorization
+    )
+}
+
+fn control_submission(
+    ceremony: CeremonyId,
+    capture: &NativeOperationCapture,
+    submissions: &[usize],
+) -> Option<usize> {
+    let named = match ceremony {
+        CeremonyId::ConservationNegatives => Some("submit-balance-valid-control"),
+        CeremonyId::KeypathProbe => Some("script-path-control"),
+        CeremonyId::OwnerSigningNegatives => Some("vault-control-entitlement-control"),
+        CeremonyId::SponsoredMissingAuthorization => Some("submit-sponsor-signed-control"),
+        _ => None,
+    };
+    named
+        .and_then(|wanted| {
+            submissions
+                .iter()
+                .copied()
+                .find(|index| capture.operations()[*index].request().case.step == wanted)
+        })
+        .or_else(|| {
+            is_negative_ceremony(ceremony)
+                .then(|| submissions.last().copied())
+                .flatten()
+        })
+}
+
+fn mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveMutationLocator>) {
+    use transaction::bytes::{SerializedFieldLocator, SerializedOutputField};
+
+    let witness_item = || LiveMutationLocator::WitnessItem {
+        input_index: 0,
+        item_index: 0,
+    };
+    let field = |output_index, field| {
+        LiveMutationLocator::SerializedOutputField(SerializedFieldLocator::new(output_index, field))
+    };
+    let fact = match step {
+        "wrong-blinder" => (
+            LiveMutantKind::WrongPrivateBlindingBalance,
+            field(0, SerializedOutputField::ValueCommitment),
+        ),
+        "private-ct-imbalance" => (
+            LiveMutantKind::PrivateCtImbalance,
+            field(1, SerializedOutputField::ValueCommitment),
+        ),
+        "malformed-rangeproof" => (
+            LiveMutantKind::MalformedRangeproof,
+            field(0, SerializedOutputField::RangeproofBytes),
+        ),
+        "empty-signature" => (LiveMutantKind::EmptySignature, witness_item()),
+        "malformed-signature" => (LiveMutantKind::MalformedSignature, witness_item()),
+        "key-path-spend-attempt" => (
+            LiveMutantKind::KeyPathEscape,
+            LiveMutationLocator::WitnessPathShape {
+                input_index: 0,
+                control_stack_items: 3,
+                mutant_stack_items: 1,
+                changed_positions: vec![0, 1, 2],
+                control_role: LiveWitnessPathRole::ScriptPath,
+                mutant_role: LiveWitnessPathRole::KeyPath,
+                witnessless_serialization_equal: true,
+            },
+        ),
+        "submit-unauthorized-sponsor-control" => {
+            (LiveMutantKind::MissingSponsorAuthorization, witness_item())
+        }
+        "bare-u-output-mutant" => (
+            LiveMutantKind::VaultControlEntitlementOrBareUOutput,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        _ => return structural_mutation_fact(step),
+    };
+    (Some(fact.0), Some(fact.1))
+}
+
+fn structural_mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveMutationLocator>) {
+    let fact = match step {
+        "consensus-wrong-explicit-asset" => (
+            LiveMutantKind::WrongExplicitAsset,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        "consensus-confidential-asset-commitment" => (
+            LiveMutantKind::ConfidentialAssetCommitment,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        "consensus-output-total-one-below-input" => (
+            LiveMutantKind::OutputTotalOneBelowInput,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        "consensus-output-total-one-above-input" => (
+            LiveMutantKind::OutputTotalOneAboveInput,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        "consensus-private-output-omitted" => (
+            LiveMutantKind::PrivateOutputOmitted,
+            LiveMutationLocator::TransactionShape {
+                control_inputs: 2,
+                mutant_inputs: 2,
+                control_outputs: 2,
+                mutant_outputs: 1,
+            },
+        ),
+        "consensus-hidden-private-u-output" => (
+            LiveMutantKind::HiddenPrivateUOutput,
+            LiveMutationLocator::TransactionShape {
+                control_inputs: 2,
+                mutant_inputs: 2,
+                control_outputs: 2,
+                mutant_outputs: 3,
+            },
+        ),
+        "consensus-omitted-source" => (
+            LiveMutantKind::OmittedSource,
+            LiveMutationLocator::TransactionShape {
+                control_inputs: 2,
+                mutant_inputs: 1,
+                control_outputs: 2,
+                mutant_outputs: 2,
+            },
+        ),
+        "leaf-arrangement-two-coordinators" => (
+            LiveMutantKind::TwoCoordinators,
+            LiveMutationLocator::CommittedLeafArrangement {
+                input_indices: vec![0, 1],
+                control_coordinator_leaf_indices: vec![0],
+                mutant_coordinator_leaf_indices: vec![0, 1],
+                control_committed_leaf_programs: Vec::new(),
+                mutant_committed_leaf_programs: Vec::new(),
+            },
+        ),
+        "leaf-arrangement-no-coordinator" => (
+            LiveMutantKind::NoCoordinator,
+            LiveMutationLocator::CommittedLeafArrangement {
+                input_indices: vec![0, 1],
+                control_coordinator_leaf_indices: vec![0],
+                mutant_coordinator_leaf_indices: Vec::new(),
+                control_committed_leaf_programs: Vec::new(),
+                mutant_committed_leaf_programs: Vec::new(),
+            },
+        ),
+        _ => return (None, None),
+    };
+    (Some(fact.0), Some(fact.1))
+}
+
+fn pair_projection_input(programs: &[Vec<u8>]) -> Result<ProjectionInput, String> {
+    let fixture = vectors::live_pair_arc::pair_arc_fixture();
+    let owners = fixture
+        .sources()
+        .iter()
+        .map(|source| vectors::live_pair_arc::published_scalar(source.owner()).to_vec())
+        .collect();
+    let amounts = fixture
+        .sources()
+        .iter()
+        .map(|source| source.amount())
+        .collect();
+    let destinations = fixture
+        .destinations()
+        .iter()
+        .map(|destination| {
+            programs
+                .get(destination.owner())
+                .cloned()
+                .map(|program| {
+                    (
+                        vectors::live_pair_arc::published_scalar(destination.owner()).to_vec(),
+                        (program, destination.amount()),
+                    )
+                })
+                .ok_or_else(|| "the pair projection program census differs".to_owned())
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(ProjectionInput {
+        owners,
+        amounts,
+        destinations,
+    })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CaptureDestination {
+    directory: PathBuf,
+    short_sha: String,
+    suite_commit: String,
+    suite_tree: String,
+}
+
+impl CaptureDestination {
+    fn from_environment() -> Result<Option<Self>, String> {
+        let Some(directory) = environment("TRIPOD_LIVE_REPORT_DIR") else {
+            return Ok(None);
+        };
+        let short_sha = environment("TRIPOD_LIVE_SUITE_SHORT_SHA").ok_or_else(|| {
+            "TRIPOD_LIVE_SUITE_SHORT_SHA is required for enhanced capture".to_owned()
+        })?;
+        let suite_commit = environment("TRIPOD_LIVE_SUITE_COMMIT")
+            .ok_or_else(|| "TRIPOD_LIVE_SUITE_COMMIT is required".to_owned())?;
+        let suite_tree = environment("TRIPOD_LIVE_SUITE_TREE")
+            .ok_or_else(|| "TRIPOD_LIVE_SUITE_TREE is required".to_owned())?;
+        Self::new(
+            PathBuf::from(directory),
+            short_sha,
+            suite_commit,
+            suite_tree,
+        )
+        .map(Some)
+    }
+
+    fn new(
+        directory: PathBuf,
+        short_sha: String,
+        suite_commit: String,
+        suite_tree: String,
+    ) -> Result<Self, String> {
+        if short_sha.is_empty()
+            || !short_sha
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err("TRIPOD_LIVE_SUITE_SHORT_SHA is not canonical lower-case hex".to_owned());
+        }
+        require_lower_hex(&suite_commit, 40, "suite commit")?;
+        require_lower_hex(&suite_tree, 40, "suite tree")?;
+        Ok(Self {
+            directory,
+            short_sha,
+            suite_commit,
+            suite_tree,
+        })
+    }
+
+    fn capture_path(
+        &self,
+        ceremony: CeremonyId,
+        current_test_name: &str,
+    ) -> Result<PathBuf, String> {
+        if current_test_name != ceremony.rust_test_name() {
+            return Err(format!(
+                "ceremony {} belongs to {}, not {current_test_name}",
+                ceremony.as_str(),
+                ceremony.rust_test_name(),
+            ));
+        }
+        let filename = if ceremony.is_setup() {
+            format!("{}.{}.setup", self.short_sha, ceremony.as_str())
+        } else {
+            format!("{}.{}.capture", self.short_sha, ceremony.as_str())
+        };
+        let path = self.directory.join(filename);
+        if path.exists() {
+            return Err(format!(
+                "capture destination already exists: {}",
+                path.display()
+            ));
+        }
+        Ok(path)
+    }
+}
+
+#[derive(Debug)]
+struct CaptureGuard {
+    ceremony: CeremonyId,
+    destination: Option<CaptureDestination>,
+    path: Option<PathBuf>,
+    transcript_written: bool,
+}
+
+impl CaptureGuard {
+    fn new(ceremony: CeremonyId) -> Self {
+        let capture = capture_path(ceremony).expect("the enhanced capture path is valid");
+        let (destination, path) = capture.unzip();
+        Self {
+            ceremony,
+            destination,
+            path,
+            transcript_written: false,
+        }
+    }
+
+    fn for_test(ceremony: CeremonyId, destination: CaptureDestination) -> Self {
+        let path = destination
+            .capture_path(ceremony, ceremony.rust_test_name())
+            .expect("the test capture path is valid");
+        Self {
+            ceremony,
+            destination: Some(destination),
+            path: Some(path),
+            transcript_written: false,
+        }
+    }
+
+    fn capture_path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    const fn mark_transcript_written(&mut self) {
+        self.transcript_written = true;
+    }
+}
+
+impl Drop for CaptureGuard {
+    fn drop(&mut self) {
+        let Some(path) = self.path.as_deref() else {
+            return;
+        };
+        if self.ceremony.is_setup() {
+            return;
+        }
+        let status = if !self.transcript_written {
+            "incomplete"
+        } else if std::thread::panicking() {
+            "failed-after-transcript"
+        } else {
+            "passed"
+        };
+        let sidecar = format!(
+            "timing-schema 1\nceremony-id {}\nstatus {status}\n",
+            self.ceremony.as_str(),
+        );
+        let result = std::fs::write(timing_path(path), sidecar);
+        assert!(
+            result.is_ok() || std::thread::panicking(),
+            "the enhanced timing sidecar is written",
+        );
+    }
+}
+
+fn capture_path(ceremony: CeremonyId) -> Result<Option<(CaptureDestination, PathBuf)>, String> {
+    let Some(destination) = CaptureDestination::from_environment()? else {
+        return Ok(None);
+    };
+    let thread = std::thread::current();
+    let current = thread
+        .name()
+        .and_then(|name| name.rsplit("::").next())
+        .ok_or_else(|| "the current Rust test has no name".to_owned())?;
+    let path = destination.capture_path(ceremony, current)?;
+    Ok(Some((destination, path)))
+}
+
+fn capture_diagnostics(ceremony: CeremonyId, legacy_report: Option<&Path>) -> PathBuf {
+    if let Some(directory) = environment("TRIPOD_LIVE_REPORT_DIR") {
+        return Path::new(&directory)
+            .join("diagnostics")
+            .join(ceremony.as_str());
+    }
+    legacy_report
+        .and_then(Path::parent)
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf()
+}
+
+fn legacy_report(extension: Option<&str>) -> Option<PathBuf> {
+    let enhanced_directory = environment("TRIPOD_LIVE_REPORT_DIR").map(PathBuf::from);
+    let legacy_base = environment("TRIPOD_LIVE_REPORT").map(PathBuf::from);
+    legacy_report_for(
+        enhanced_directory.as_deref(),
+        legacy_base.as_deref(),
+        extension,
+    )
+}
+
+fn legacy_report_for(
+    enhanced_directory: Option<&Path>,
+    legacy_base: Option<&Path>,
+    extension: Option<&str>,
+) -> Option<PathBuf> {
+    if enhanced_directory.is_some() {
+        return None;
+    }
+    let base = legacy_base?;
+    Some(extension.map_or_else(|| base.to_path_buf(), |value| base.with_extension(value)))
+}
+
+fn execute_and_capture(
+    target: &target_elements::ReviewedElementsTapscriptDefinition,
+    binding: &target_elements::ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    planner: &mut dyn TargetOperationPlanner,
+) -> (
+    Result<
+        target_elements_conformance::executor::ExecutionTranscript,
+        target_elements_conformance::error::NativeConformanceError,
+    >,
+    NativeOperationCapture,
+) {
+    let mut capture = NativeOperationCapture::default();
+    let outcome =
+        execute_operations_captured(target, binding, configuration, planner, &mut capture);
+    (outcome, capture)
+}
+
+fn write_capture_before_gates(
+    guard: &mut CaptureGuard,
+    capture: &NativeOperationCapture,
+    facts: &CeremonyCaptureFacts,
+    legacy_rendering: &str,
+) {
+    let Some(path) = guard.capture_path().map(Path::to_path_buf) else {
+        return;
+    };
+    if guard.ceremony.is_setup() {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .expect("the setup artifact is opened for append");
+        std::io::Write::write_all(&mut file, legacy_rendering.as_bytes())
+            .expect("the setup artifact is written");
+        guard.mark_transcript_written();
+        return;
+    }
+    let destination = guard
+        .destination
+        .as_ref()
+        .expect("an enhanced path carries its capture destination");
+    let rendered = render_enhanced_capture(
+        destination,
+        guard.ceremony,
+        capture,
+        facts,
+        legacy_rendering,
+    )
+    .expect("the enhanced transcript facts are complete");
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .expect("the enhanced capture destination is new");
+    std::io::Write::write_all(&mut file, rendered.as_bytes())
+        .expect("the enhanced capture is written");
+    guard.mark_transcript_written();
+}
+
+fn render_enhanced_capture(
+    destination: &CaptureDestination,
+    ceremony: CeremonyId,
+    capture: &NativeOperationCapture,
+    facts: &CeremonyCaptureFacts,
+    legacy_rendering: &str,
+) -> Result<String, String> {
+    validate_capture_facts(capture, facts)?;
+    let mut out = String::new();
+    render_run_identity(&mut out, destination, ceremony, capture)?;
+    render_executor_context(&mut out, capture)?;
+    render_digests(&mut out, facts);
+    render_operations(&mut out, capture, facts)?;
+    write_bytes_field(&mut out, "legacy-rendering", legacy_rendering.as_bytes());
+    let terminal = capture
+        .terminal_state()
+        .map_or("incomplete", |state| state.as_str());
+    let _ = writeln!(out, "terminal-state {terminal}");
+    let _ = writeln!(out, "run-id-input end");
+    let content_hash = sha256(out.as_bytes());
+    let _ = writeln!(out, "capture-content-sha256 {}", hex_bytes(&content_hash));
+    let _ = writeln!(out, "native-capture-end {}", ceremony.as_str());
+    Ok(out)
+}
+
+fn render_run_identity(
+    out: &mut String,
+    destination: &CaptureDestination,
+    ceremony: CeremonyId,
+    capture: &NativeOperationCapture,
+) -> Result<(), String> {
+    let deployment = capture
+        .deployment()
+        .ok_or_else(|| "the journal carries no deployment".to_owned())?;
+    let target = capture
+        .target()
+        .ok_or_else(|| "the journal carries no target".to_owned())?;
+    let observed_environment = capture
+        .environment()
+        .ok_or_else(|| "the journal carries no environment".to_owned())?;
+    if deployment_environment(deployment.environment())
+        != wire_environment(observed_environment.environment)
+    {
+        return Err("the deployment and observed environment differ".to_owned());
+    }
+    let suite_commit = &destination.suite_commit;
+    let suite_tree = &destination.suite_tree;
+    let _ = writeln!(out, "native-capture-schema 1");
+    let _ = writeln!(out, "ceremony-id {}", ceremony.as_str());
+    write_text_field(out, "rust-test-name", ceremony.rust_test_name());
+    let _ = writeln!(out, "suite-commit {suite_commit}");
+    let _ = writeln!(out, "suite-tree {suite_tree}");
+    let _ = writeln!(out, "fixture-digest-algorithm forward-v2");
+    let _ = writeln!(out, "run-id-input begin");
+    let _ = writeln!(
+        out,
+        "deployment-environment {}",
+        deployment_environment(deployment.environment()),
+    );
+    write_text_field(
+        out,
+        "deployment-network-id",
+        &hex_bytes(&deployment.network_id()),
+    );
+    write_text_field(
+        out,
+        "deployment-genesis-id",
+        &hex_bytes(&deployment.genesis_id()),
+    );
+    write_text_field(
+        out,
+        "deployment-target-contract",
+        target_contract(target.version()),
+    );
+    Ok(())
+}
+
+fn render_executor_context(
+    out: &mut String,
+    capture: &NativeOperationCapture,
+) -> Result<(), String> {
+    let handshake = capture
+        .handshake()
+        .ok_or_else(|| "the journal carries no handshake".to_owned())?;
+    let observed_environment = capture
+        .environment()
+        .ok_or_else(|| "the journal carries no environment".to_owned())?;
+    let _ = writeln!(
+        out,
+        "handshake-protocol-schema {}",
+        handshake.protocol_schema,
+    );
+    write_text_field(out, "handshake-adapter-name", &handshake.adapter_name);
+    write_text_field(out, "handshake-adapter-version", &handshake.adapter_version);
+    write_optional_text_field(
+        out,
+        "handshake-framework-revision",
+        handshake.framework_revision.as_deref(),
+    );
+    write_text_field(out, "handshake-node-name", &handshake.node_name);
+    write_text_field(out, "handshake-node-version", &handshake.node_version);
+    write_optional_text_field(
+        out,
+        "handshake-binary-reported-revision",
+        handshake.binary_reported_revision.as_deref(),
+    );
+    write_optional_text_field(
+        out,
+        "handshake-intended-executed-tip",
+        handshake.intended_executed_tip.as_deref(),
+    );
+    write_optional_text_field(
+        out,
+        "handshake-upstream-base",
+        handshake.upstream_base.as_deref(),
+    );
+    let _ = writeln!(
+        out,
+        "handshake-topic-count {}",
+        handshake.included_local_topics.len(),
+    );
+    for (ordinal, topic) in handshake.included_local_topics.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "handshake-topic {ordinal} {} {}",
+            topic.len(),
+            hex_bytes(topic.as_bytes()),
+        );
+    }
+    let _ = writeln!(out, "environment-schema {}", observed_environment.schema);
+    write_text_field(out, "environment-chain", &observed_environment.chain_name);
+    write_text_field(
+        out,
+        "environment-network-id",
+        &hex_bytes(&observed_environment.network_id),
+    );
+    write_text_field(
+        out,
+        "environment-genesis-id",
+        &hex_bytes(&observed_environment.genesis_id),
+    );
+    render_domains(out, handshake, observed_environment);
+    render_leaf_versions(out, handshake, observed_environment);
+    render_capabilities(out, &handshake.capabilities);
+    render_funding_advertisement(out, handshake);
+    Ok(())
+}
+
+fn render_digests(out: &mut String, facts: &CeremonyCaptureFacts) {
+    let _ = writeln!(out, "digest-count {}", facts.digests.len());
+    for (ordinal, digest) in facts.digests.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "digest {ordinal} {} forward-v2 {}",
+            digest.name,
+            hex_bytes(&digest.value),
+        );
+    }
+}
+
+fn render_operations(
+    out: &mut String,
+    capture: &NativeOperationCapture,
+    facts: &CeremonyCaptureFacts,
+) -> Result<(), String> {
+    let _ = writeln!(out, "operation-count {}", capture.operations().len());
+    for (ordinal, operation) in capture.operations().iter().enumerate() {
+        let operation_facts = facts
+            .operation(operation.operation_id())
+            .ok_or_else(|| format!("ceremony facts omit operation {}", operation.operation_id()))?;
+        let _ = writeln!(out, "operation {ordinal} begin");
+        write_text_field(out, "operation-id", operation.operation_id());
+        write_text_field(out, "request-id", operation.request_id());
+        let _ = writeln!(out, "request-role {}", operation_facts.role.as_str());
+        let request_bytes = operation.transaction_bytes().unwrap_or_default();
+        let _ = writeln!(
+            out,
+            "request-bytes {} {}",
+            request_bytes.len(),
+            hex_bytes(request_bytes),
+        );
+        write_optional_text_field(out, "response-id", operation.response_id());
+        write_optional_text_field(out, "response-request-id", operation.response_request_id());
+        write_optional_text_field(
+            out,
+            "response-operation-id",
+            operation.response_operation_id(),
+        );
+        let _ = writeln!(
+            out,
+            "response-verdict {}",
+            operation.verdict().map_or("none", response_verdict),
+        );
+        let _ = writeln!(
+            out,
+            "response-layer {}",
+            operation.observed_layer().map_or("none", response_layer),
+        );
+        match operation.target_identity() {
+            Some(identity) => {
+                let _ = writeln!(out, "response-target-identity {identity}");
+            }
+            None => {
+                let _ = writeln!(out, "response-target-identity none");
+            }
+        }
+        write_bytes_field(
+            out,
+            "response-detail",
+            operation.detail().unwrap_or_default().as_bytes(),
+        );
+        write_optional_control_id(
+            out,
+            "attribution-control-request-id",
+            operation_facts.control_request_id.as_deref(),
+        );
+        match operation_facts.control_identity.as_deref() {
+            Some(identity) => {
+                let _ = writeln!(out, "attribution-control-identity {identity}");
+            }
+            None => {
+                let _ = writeln!(out, "attribution-control-identity none");
+            }
+        }
+        let _ = writeln!(
+            out,
+            "mutation-kind {}",
+            operation_facts.mutant.map_or("none", LiveMutantKind::row),
+        );
+        render_locator(out, operation_facts.locator.as_ref());
+        render_projection(out, operation_facts.projection.as_ref());
+        let _ = writeln!(out, "operation {ordinal} end");
+    }
+    Ok(())
+}
+
+fn validate_capture_facts(
+    capture: &NativeOperationCapture,
+    facts: &CeremonyCaptureFacts,
+) -> Result<(), String> {
+    if facts.operations.len() != capture.operations().len() {
+        return Err("the ceremony fact census differs from the journal".to_owned());
+    }
+    let mut seen = BTreeSet::new();
+    for fact in &facts.operations {
+        if !seen.insert(fact.operation_id.as_str()) {
+            return Err(format!(
+                "duplicate ceremony fact for operation {}",
+                fact.operation_id,
+            ));
+        }
+        let operation = capture
+            .operations()
+            .iter()
+            .find(|operation| operation.operation_id() == fact.operation_id)
+            .ok_or_else(|| format!("ceremony fact names absent operation {}", fact.operation_id))?;
+        let expected_verdict = match fact.role {
+            RequestRole::Acceptance
+            | RequestRole::Control
+            | RequestRole::PairedExplicit
+            | RequestRole::PairedPrivate => Some(NativeVerdict::Accepted),
+            RequestRole::Refusal => Some(NativeVerdict::Rejected),
+            RequestRole::Auxiliary => None,
+        };
+        if expected_verdict.is_some() && operation.verdict() != expected_verdict {
+            return Err(format!(
+                "operation {} role {} disagrees with its journal verdict",
+                fact.operation_id,
+                fact.role.as_str(),
+            ));
+        }
+        if fact.mutant.is_some() != fact.locator.is_some() {
+            return Err(format!(
+                "operation {} has an incomplete mutation declaration",
+                fact.operation_id,
+            ));
+        }
+        if fact.mutant.is_some() && fact.role != RequestRole::Refusal {
+            return Err(format!(
+                "operation {} carries a mutation outside the refusal role",
+                fact.operation_id,
+            ));
+        }
+        if fact.projection.is_some()
+            && !matches!(
+                fact.role,
+                RequestRole::PairedExplicit | RequestRole::PairedPrivate
+            )
+        {
+            return Err(format!(
+                "operation {} carries a projection outside a paired role",
+                fact.operation_id,
+            ));
+        }
+        validate_control_attribution(capture, fact)?;
+    }
+    Ok(())
+}
+
+fn validate_control_attribution(
+    capture: &NativeOperationCapture,
+    fact: &CeremonyOperationFacts,
+) -> Result<(), String> {
+    if fact.role != RequestRole::Refusal {
+        if fact.control_request_id.is_some() || fact.control_identity.is_some() {
+            return Err(format!(
+                "operation {} carries control attribution outside a refusal",
+                fact.operation_id,
+            ));
+        }
+        return Ok(());
+    }
+    let request_id = fact.control_request_id.as_deref().ok_or_else(|| {
+        format!(
+            "refusal operation {} has no control request link",
+            fact.operation_id,
+        )
+    })?;
+    let control = capture
+        .operations()
+        .iter()
+        .find(|operation| operation.request_id() == request_id)
+        .ok_or_else(|| format!("refusal control request {request_id} is absent"))?;
+    if control.verdict() != Some(NativeVerdict::Accepted)
+        || control.target_identity() != fact.control_identity.as_deref()
+    {
+        return Err(format!(
+            "refusal operation {} has a non-accepted or mismatched control",
+            fact.operation_id,
+        ));
+    }
+    Ok(())
+}
+
+fn render_domains(
+    out: &mut String,
+    handshake: &target_elements_conformance::protocol::ExecutorHandshake,
+    observed_environment: &target_elements_conformance::protocol::ExecutorEnvironmentObservation,
+) {
+    let domains: BTreeSet<_> = handshake
+        .supported_domains
+        .union(&observed_environment.active_domains)
+        .copied()
+        .collect();
+    let _ = writeln!(out, "environment-domain-count {}", domains.len());
+    for (ordinal, domain) in domains.into_iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "environment-domain {ordinal} {} supported {} active {}",
+            execution_domain(domain),
+            handshake.supported_domains.contains(&domain),
+            observed_environment.active_domains.contains(&domain),
+        );
+    }
+}
+
+fn render_leaf_versions(
+    out: &mut String,
+    handshake: &target_elements_conformance::protocol::ExecutorHandshake,
+    observed_environment: &target_elements_conformance::protocol::ExecutorEnvironmentObservation,
+) {
+    let leaves: BTreeSet<_> = handshake
+        .supported_leaf_versions
+        .union(&observed_environment.active_leaf_versions)
+        .copied()
+        .collect();
+    let _ = writeln!(out, "environment-leaf-count {}", leaves.len());
+    for (ordinal, leaf) in leaves.into_iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "environment-leaf {ordinal} {leaf} supported {} active {}",
+            handshake.supported_leaf_versions.contains(&leaf),
+            observed_environment.active_leaf_versions.contains(&leaf),
+        );
+    }
+}
+
+fn render_capabilities(out: &mut String, capabilities: &BTreeSet<ExecutorCapability>) {
+    let _ = writeln!(out, "environment-capability-count {}", capabilities.len());
+    for (ordinal, capability) in capabilities.iter().copied().enumerate() {
+        let _ = writeln!(
+            out,
+            "environment-capability {ordinal} {}",
+            executor_capability(capability),
+        );
+    }
+}
+
+fn render_funding_advertisement(
+    out: &mut String,
+    handshake: &target_elements_conformance::protocol::ExecutorHandshake,
+) {
+    let Some(advertisement) = handshake.confidential_funding.as_ref() else {
+        let _ = writeln!(out, "environment-funding-count 0");
+        return;
+    };
+    let count = advertisement.representation_profiles.len()
+        + advertisement.custody_profiles.len()
+        + advertisement.materializer_profiles.len()
+        + advertisement.reproducibility_contracts.len();
+    let _ = writeln!(out, "environment-funding-count {count}");
+    let mut ordinal = 0_usize;
+    for profile in advertisement.representation_profiles.iter().copied() {
+        let _ = writeln!(
+            out,
+            "environment-funding {ordinal} representation {}",
+            funding_representation(profile),
+        );
+        ordinal += 1;
+    }
+    for profile in advertisement.custody_profiles.iter().copied() {
+        let _ = writeln!(
+            out,
+            "environment-funding {ordinal} custody {}",
+            funding_custody(profile),
+        );
+        ordinal += 1;
+    }
+    for profile in advertisement.materializer_profiles.iter().copied() {
+        let _ = writeln!(
+            out,
+            "environment-funding {ordinal} materializer {}",
+            funding_materializer(profile),
+        );
+        ordinal += 1;
+    }
+    for contract in &advertisement.reproducibility_contracts {
+        let _ = writeln!(
+            out,
+            "environment-funding {ordinal} reproducibility {}",
+            contract.code(),
+        );
+        ordinal += 1;
+    }
+}
+
+fn render_locator(out: &mut String, locator: Option<&LiveMutationLocator>) {
+    match locator {
+        None => {
+            let _ = writeln!(out, "mutation-locator none");
+        }
+        Some(LiveMutationLocator::SerializedOutputField(locator)) => {
+            let _ = writeln!(
+                out,
+                "mutation-locator serialized-output-field {} {}",
+                locator.output_index(),
+                locator.field().name(),
+            );
+        }
+        Some(LiveMutationLocator::WitnessItem {
+            input_index,
+            item_index,
+        }) => {
+            let _ = writeln!(
+                out,
+                "mutation-locator witness-item {input_index} {item_index}",
+            );
+        }
+        Some(LiveMutationLocator::WitnesslessRange { start, end }) => {
+            let _ = writeln!(out, "mutation-locator witnessless-range {start} {end}");
+        }
+        Some(LiveMutationLocator::TransactionShape {
+            control_inputs,
+            mutant_inputs,
+            control_outputs,
+            mutant_outputs,
+        }) => {
+            let _ = writeln!(
+                out,
+                "mutation-locator transaction-shape {control_inputs} {mutant_inputs} {control_outputs} {mutant_outputs}",
+            );
+        }
+        Some(LiveMutationLocator::WitnessPathShape {
+            input_index,
+            control_stack_items,
+            mutant_stack_items,
+            changed_positions,
+            control_role,
+            mutant_role,
+            witnessless_serialization_equal,
+        }) => {
+            let positions = changed_positions
+                .iter()
+                .map(usize::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            let _ = writeln!(
+                out,
+                "mutation-locator witness-path-shape input {input_index} control-stack-count {control_stack_items} mutant-stack-count {mutant_stack_items} changed-count {} changed {positions} control-role {} mutant-role {} witnessless-equal {witnessless_serialization_equal}",
+                changed_positions.len(),
+                witness_path_role(*control_role),
+                witness_path_role(*mutant_role),
+            );
+        }
+        Some(LiveMutationLocator::CommittedLeafArrangement {
+            input_indices,
+            control_coordinator_leaf_indices,
+            mutant_coordinator_leaf_indices,
+            control_committed_leaf_programs,
+            mutant_committed_leaf_programs,
+        }) => {
+            let _ = writeln!(
+                out,
+                "mutation-locator committed-leaf-arrangement inputs {} control-coordinators {} mutant-coordinators {} control-programs {} mutant-programs {}",
+                decimal_list(input_indices),
+                decimal_list(control_coordinator_leaf_indices),
+                decimal_list(mutant_coordinator_leaf_indices),
+                byte_list(control_committed_leaf_programs),
+                byte_list(mutant_committed_leaf_programs),
+            );
+        }
+    }
+}
+
+fn render_projection(out: &mut String, projection: Option<&ProjectionInput>) {
+    let Some(projection) = projection else {
+        let _ = writeln!(out, "projection-input none");
+        return;
+    };
+    let _ = writeln!(out, "projection-input begin");
+    let _ = writeln!(
+        out,
+        "projection-input-owner-count {}",
+        projection.owners.len(),
+    );
+    for (ordinal, owner) in projection.owners.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "projection-input-owner {ordinal} {} {}",
+            owner.len(),
+            hex_bytes(owner),
+        );
+    }
+    let _ = writeln!(
+        out,
+        "projection-input-amount-count {}",
+        projection.amounts.len(),
+    );
+    for (ordinal, amount) in projection.amounts.iter().enumerate() {
+        let _ = writeln!(out, "projection-input-amount {ordinal} {amount}");
+    }
+    let _ = writeln!(
+        out,
+        "projection-destination-count {}",
+        projection.destinations.len(),
+    );
+    for (ordinal, (_name, (program, amount))) in projection.destinations.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "projection-destination {ordinal} {} {} {amount}",
+            program.len(),
+            hex_bytes(program),
+        );
+    }
+    let _ = writeln!(out, "projection-input end");
+}
+
+fn write_text_field(out: &mut String, field: &str, value: &str) {
+    let _ = writeln!(
+        out,
+        "{field} {} {}",
+        value.len(),
+        hex_bytes(value.as_bytes()),
+    );
+}
+
+fn write_optional_text_field(out: &mut String, field: &str, value: Option<&str>) {
+    write_text_field(out, field, value.unwrap_or_default());
+}
+
+fn write_optional_control_id(out: &mut String, field: &str, value: Option<&str>) {
+    match value {
+        Some(value) => write_text_field(out, field, value),
+        None => {
+            let _ = writeln!(out, "{field} none");
+        }
+    }
+}
+
+fn write_bytes_field(out: &mut String, field: &str, value: &[u8]) {
+    let _ = writeln!(out, "{field} {} {}", value.len(), hex_bytes(value));
+}
+
+fn decimal_list(values: &[usize]) -> String {
+    let members = values
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{}:{members}", values.len())
+}
+
+fn byte_list(values: &[Vec<u8>]) -> String {
+    let members = values
+        .iter()
+        .map(|value| format!("{}:{}", value.len(), hex_bytes(value)))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{}:{members}", values.len())
+}
+
+fn require_lower_hex(value: &str, width: usize, name: &str) -> Result<(), String> {
+    if value.len() == width
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        Ok(())
+    } else {
+        Err(format!("{name} is not {width} lower-case hex digits"))
+    }
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        out.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    out
+}
+
+const fn deployment_environment(environment: DeploymentEnvironment) -> &'static str {
+    match environment {
+        DeploymentEnvironment::Development => "development",
+        _ => "unknown",
+    }
+}
+
+const fn wire_environment(environment: WireEnvironment) -> &'static str {
+    match environment {
+        WireEnvironment::Development => "development",
+        _ => "unknown",
+    }
+}
+
+const fn execution_domain(domain: WireExecutionDomain) -> &'static str {
+    match domain {
+        WireExecutionDomain::Tapscript => "tapscript",
+        _ => "unknown",
+    }
+}
+
+fn target_contract(version: target_elements::TargetContractVersion) -> &'static str {
+    if version == target_elements::TargetContractVersion::V2 {
+        "elements-tapscript-v2"
+    } else {
+        "unknown"
+    }
+}
+
+const fn executor_capability(capability: ExecutorCapability) -> &'static str {
+    match capability {
+        ExecutorCapability::FinalStackReporting => "final-stack-reporting",
+        ExecutorCapability::FinalAltstackReporting => "final-altstack-reporting",
+        ExecutorCapability::FailureClassReporting => "failure-class-reporting",
+        ExecutorCapability::TransactionContext => "transaction-context",
+        ExecutorCapability::ResourceObservation => "resource-observation",
+        ExecutorCapability::TreeMaterialization => "tree-materialization",
+        ExecutorCapability::ConfidentialConservation => "confidential-conservation",
+        ExecutorCapability::OwnerAuthorizedNormalization => "owner-authorized-normalization",
+        ExecutorCapability::CompoundPrototypeFixtures => "compound-prototype-fixtures",
+        ExecutorCapability::FreshProcessLifecycle => "fresh-process-lifecycle",
+        ExecutorCapability::TestFundingCeremony => "test-funding-ceremony",
+        ExecutorCapability::TargetTransactionSubmission => "target-transaction-submission",
+        ExecutorCapability::TestSponsorAuthorization => "test-sponsor-authorization",
+        ExecutorCapability::ConfidentialValueTestFunding => "confidential-value-test-funding",
+        ExecutorCapability::ConfidentialValueSponsorAuthorization => {
+            "confidential-value-sponsor-authorization"
+        }
+        _ => "unknown",
+    }
+}
+
+const fn funding_representation(profile: FundingRepresentationProfile) -> &'static str {
+    match profile {
+        FundingRepresentationProfile::ExplicitAssetConfidentialValue => {
+            "explicit-asset-confidential-value"
+        }
+        _ => "unknown",
+    }
+}
+
+const fn funding_custody(profile: FundingCustodyProfile) -> &'static str {
+    match profile {
+        FundingCustodyProfile::CentralPublicFixtures => "central-public-fixtures",
+        _ => "unknown",
+    }
+}
+
+const fn funding_materializer(profile: FundingMaterializerProfile) -> &'static str {
+    match profile {
+        FundingMaterializerProfile::GuideCtfDeterministicV1 => "guide-ctf-deterministic-v1",
+        _ => "unknown",
+    }
+}
+
+const fn response_verdict(verdict: NativeVerdict) -> &'static str {
+    match verdict {
+        NativeVerdict::Accepted => "accepted",
+        NativeVerdict::Rejected => "refused",
+        _ => "incomplete",
+    }
+}
+
+const fn response_layer(layer: ObservedOutcomeLayer) -> &'static str {
+    match layer {
+        ObservedOutcomeLayer::FixtureConstructionFailure => "fixture-construction-failure",
+        ObservedOutcomeLayer::ExecutorInfrastructureFailure => "executor-infrastructure-failure",
+        ObservedOutcomeLayer::ConsensusRejectionBeforeScript => "consensus-rejection-before-script",
+        ObservedOutcomeLayer::ScriptPathRejection => "script-path-rejection",
+        ObservedOutcomeLayer::KeyPathRejection => "key-path-rejection",
+        ObservedOutcomeLayer::RelayPolicyRejection => "relay-policy-rejection",
+        ObservedOutcomeLayer::Accepted => "accepted",
+        _ => "unknown",
+    }
+}
+
+const fn witness_path_role(role: LiveWitnessPathRole) -> &'static str {
+    match role {
+        LiveWitnessPathRole::KeyPath => "key-path",
+        LiveWitnessPathRole::ScriptPath => "script-path",
+    }
+}
+
+const SHA256_INITIAL: [u32; 8] = [
+    0x6a09_e667,
+    0xbb67_ae85,
+    0x3c6e_f372,
+    0xa54f_f53a,
+    0x510e_527f,
+    0x9b05_688c,
+    0x1f83_d9ab,
+    0x5be0_cd19,
+];
+
+const SHA256_ROUND: [u32; 64] = [
+    0x428a_2f98,
+    0x7137_4491,
+    0xb5c0_fbcf,
+    0xe9b5_dba5,
+    0x3956_c25b,
+    0x59f1_11f1,
+    0x923f_82a4,
+    0xab1c_5ed5,
+    0xd807_aa98,
+    0x1283_5b01,
+    0x2431_85be,
+    0x550c_7dc3,
+    0x72be_5d74,
+    0x80de_b1fe,
+    0x9bdc_06a7,
+    0xc19b_f174,
+    0xe49b_69c1,
+    0xefbe_4786,
+    0x0fc1_9dc6,
+    0x240c_a1cc,
+    0x2de9_2c6f,
+    0x4a74_84aa,
+    0x5cb0_a9dc,
+    0x76f9_88da,
+    0x983e_5152,
+    0xa831_c66d,
+    0xb003_27c8,
+    0xbf59_7fc7,
+    0xc6e0_0bf3,
+    0xd5a7_9147,
+    0x06ca_6351,
+    0x1429_2967,
+    0x27b7_0a85,
+    0x2e1b_2138,
+    0x4d2c_6dfc,
+    0x5338_0d13,
+    0x650a_7354,
+    0x766a_0abb,
+    0x81c2_c92e,
+    0x9272_2c85,
+    0xa2bf_e8a1,
+    0xa81a_664b,
+    0xc24b_8b70,
+    0xc76c_51a3,
+    0xd192_e819,
+    0xd699_0624,
+    0xf40e_3585,
+    0x106a_a070,
+    0x19a4_c116,
+    0x1e37_6c08,
+    0x2748_774c,
+    0x34b0_bcb5,
+    0x391c_0cb3,
+    0x4ed8_aa4a,
+    0x5b9c_ca4f,
+    0x682e_6ff3,
+    0x748f_82ee,
+    0x78a5_636f,
+    0x84c8_7814,
+    0x8cc7_0208,
+    0x90be_fffa,
+    0xa450_6ceb,
+    0xbef9_a3f7,
+    0xc671_78f2,
+];
+
+fn sha256(input: &[u8]) -> [u8; 32] {
+    let mut padded = input.to_vec();
+    let bit_length = u64::try_from(input.len())
+        .unwrap_or(u64::MAX)
+        .wrapping_mul(8);
+    padded.push(0x80);
+    while padded.len() % 64 != 56 {
+        padded.push(0);
+    }
+    padded.extend_from_slice(&bit_length.to_be_bytes());
+
+    let mut state = SHA256_INITIAL;
+    let (blocks, remainder) = padded.as_chunks::<64>();
+    assert!(
+        remainder.is_empty(),
+        "SHA-256 padding must produce whole 64-byte blocks",
+    );
+    for block in blocks {
+        let mut schedule = [0_u32; 64];
+        let (words, remainder) = block.as_chunks::<4>();
+        assert!(
+            remainder.is_empty(),
+            "a SHA-256 block must contain whole four-byte words",
+        );
+        for (index, word) in words.iter().enumerate() {
+            schedule[index] = u32::from_be_bytes(*word);
+        }
+        for index in 16..64 {
+            let left = schedule[index - 15];
+            let right = schedule[index - 2];
+            let sigma0 = left.rotate_right(7) ^ left.rotate_right(18) ^ (left >> 3);
+            let sigma1 = right.rotate_right(17) ^ right.rotate_right(19) ^ (right >> 10);
+            schedule[index] = schedule[index - 16]
+                .wrapping_add(sigma0)
+                .wrapping_add(schedule[index - 7])
+                .wrapping_add(sigma1);
+        }
+        let [
+            mut state_zero,
+            mut state_one,
+            mut state_two,
+            mut state_three,
+            mut state_four,
+            mut state_five,
+            mut state_six,
+            mut state_seven,
+        ] = state;
+        for index in 0..64 {
+            let upper = state_four.rotate_right(6)
+                ^ state_four.rotate_right(11)
+                ^ state_four.rotate_right(25);
+            let choose = (state_four & state_five) ^ ((!state_four) & state_six);
+            let first = state_seven
+                .wrapping_add(upper)
+                .wrapping_add(choose)
+                .wrapping_add(SHA256_ROUND[index])
+                .wrapping_add(schedule[index]);
+            let lower = state_zero.rotate_right(2)
+                ^ state_zero.rotate_right(13)
+                ^ state_zero.rotate_right(22);
+            let majority =
+                (state_zero & state_one) ^ (state_zero & state_two) ^ (state_one & state_two);
+            let second = lower.wrapping_add(majority);
+            state_seven = state_six;
+            state_six = state_five;
+            state_five = state_four;
+            state_four = state_three.wrapping_add(first);
+            state_three = state_two;
+            state_two = state_one;
+            state_one = state_zero;
+            state_zero = first.wrapping_add(second);
+        }
+        state[0] = state[0].wrapping_add(state_zero);
+        state[1] = state[1].wrapping_add(state_one);
+        state[2] = state[2].wrapping_add(state_two);
+        state[3] = state[3].wrapping_add(state_three);
+        state[4] = state[4].wrapping_add(state_four);
+        state[5] = state[5].wrapping_add(state_five);
+        state[6] = state[6].wrapping_add(state_six);
+        state[7] = state[7].wrapping_add(state_seven);
+    }
+    let mut digest = [0_u8; 32];
+    let (chunks, remainder) = digest.as_chunks_mut::<4>();
+    assert!(
+        remainder.is_empty(),
+        "a SHA-256 digest must contain whole four-byte words",
+    );
+    for (chunk, word) in chunks.iter_mut().zip(state) {
+        chunk.copy_from_slice(&word.to_be_bytes());
+    }
+    digest
+}
 
 fn environment(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
@@ -81,18 +1829,455 @@ fn timing_path(report: &Path) -> PathBuf {
     path
 }
 
+fn test_directory(label: &str) -> PathBuf {
+    let base = environment("TMPDIR").map_or_else(std::env::temp_dir, PathBuf::from);
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let directory = base.join(format!(
+        "guide13-live-native-{label}-{}-{nonce}",
+        std::process::id(),
+    ));
+    std::fs::create_dir(&directory).expect("the test directory is created");
+    directory
+}
+
+fn test_capture_destination(directory: &Path) -> CaptureDestination {
+    CaptureDestination::new(
+        directory.to_path_buf(),
+        "abc123".to_owned(),
+        "1".repeat(40),
+        "2".repeat(40),
+    )
+    .expect("the test capture destination is valid")
+}
+
+#[derive(Clone)]
+struct ScriptedPlan {
+    steps: Vec<OperationStep>,
+    next: usize,
+}
+
+impl ScriptedPlan {
+    fn two_submissions() -> Self {
+        Self {
+            steps: vec![
+                OperationStep::new(
+                    "empty-signature",
+                    OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                        transaction_bytes: vec![0x00, 0x01, 0x80, 0xff],
+                    })),
+                ),
+                OperationStep::new(
+                    "explicit-one-to-one",
+                    OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                        transaction_bytes: vec![0x02, 0x03],
+                    })),
+                ),
+            ],
+            next: 0,
+        }
+    }
+}
+
+impl TargetOperationPlanner for ScriptedPlan {
+    fn next_step(
+        &mut self,
+        previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+    ) -> Result<Option<OperationStep>, PlanRefused> {
+        if previous.is_some() {
+            self.next += 1;
+        }
+        Ok(self.steps.get(self.next).cloned())
+    }
+}
+
+#[cfg(unix)]
+fn scripted_capture() -> NativeOperationCapture {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let directory = test_directory("scripted");
+    let adapter = directory.join("adapter.sh");
+    let network = std::iter::repeat_n("17", 32).collect::<Vec<_>>().join(",");
+    let genesis = std::iter::repeat_n("34", 32).collect::<Vec<_>>().join(",");
+    let handshake = concat!(
+        "{\"protocol_schema\":7,",
+        "\"adapter_name\":\"capture-adapter\",",
+        "\"adapter_version\":\"1.2.3\",",
+        "\"framework_revision\":\"framework-tip\",",
+        "\"node_name\":\"elementsd\",",
+        "\"node_version\":\"23.2.1\",",
+        "\"binary_reported_revision\":\"binary-tip\",",
+        "\"intended_executed_tip\":\"intended-tip\",",
+        "\"upstream_base\":\"upstream-base\",",
+        "\"included_local_topics\":[\"topic-a\",\"topic-b\"],",
+        "\"supported_domains\":[\"tapscript\"],",
+        "\"supported_leaf_versions\":[196],",
+        "\"capabilities\":[\"target_transaction_submission\",",
+        "\"confidential_value_test_funding\"],",
+        "\"confidential_funding\":{",
+        "\"representation_profiles\":[\"explicit_asset_confidential_value\"],",
+        "\"custody_profiles\":[\"central_public_fixtures\"],",
+        "\"materializer_profiles\":[\"guide_ctf_deterministic_v1\"],",
+        "\"reproducibility_contracts\":[\"byte_identity\"]}}",
+    );
+    let observed_environment = format!(
+        "{{\"schema\":7,\"environment\":\"development\",\"chain_name\":\"elementsregtest\",\"network_id\":[{network}],\"genesis_id\":[{genesis}],\"active_domains\":[\"tapscript\"],\"active_leaf_versions\":[196]}}",
+    );
+    let refused = concat!(
+        "{\"schema\":7,\"case\":{\"operation\":\"submit\",",
+        "\"step\":\"empty-signature\"},",
+        "\"observed_layer\":\"script_path_rejection\",",
+        "\"observed_detail\":\"mutant refused\",",
+        "\"issued_asset\":null,\"funded_outputs\":[],",
+        "\"confidential_funded_outputs\":[],\"mined_readback\":null,",
+        "\"accepted_txid\":null,\"sponsor_witness\":[],",
+        "\"signature_bound_to\":null,\"resources\":{",
+        "\"script_bytes\":4,\"initial_stack_items\":1,",
+        "\"peak_stack_items\":2,\"peak_altstack_items\":0,",
+        "\"maximum_element_bytes\":64,\"validation_budget_used\":50,",
+        "\"transaction_weight\":100}}",
+    );
+    let accepted_txid = "aa".repeat(32);
+    let accepted = format!(
+        "{{\"schema\":7,\"case\":{{\"operation\":\"submit\",\"step\":\"explicit-one-to-one\"}},\"observed_layer\":\"accepted\",\"observed_detail\":\"accepted exactly\",\"issued_asset\":null,\"funded_outputs\":[],\"confidential_funded_outputs\":[],\"mined_readback\":{{\"transaction_id\":\"{accepted_txid}\",\"witness_transaction_id\":\"{}\",\"block_hash\":\"{}\",\"block_height\":17,\"raw_transaction\":[2,0,0,0]}},\"accepted_txid\":\"{accepted_txid}\",\"sponsor_witness\":[],\"signature_bound_to\":null,\"resources\":{{\"script_bytes\":null,\"initial_stack_items\":null,\"peak_stack_items\":null,\"peak_altstack_items\":null,\"maximum_element_bytes\":null,\"validation_budget_used\":null,\"transaction_weight\":200}}}}",
+        "bb".repeat(32),
+        "cc".repeat(32),
+    );
+    let script = format!(
+        "#!/bin/sh\nIFS= read -r request\nprintf '%s\\n' '{handshake}'\nprintf '%s\\n' '{observed_environment}'\nIFS= read -r request\nprintf '%s\\n' '{refused}'\nIFS= read -r request\nprintf '%s\\n' '{accepted}'\n",
+    );
+    std::fs::write(&adapter, script).expect("the scripted adapter is written");
+    let mut permissions = std::fs::metadata(&adapter)
+        .expect("the scripted adapter has metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&adapter, permissions).expect("the scripted adapter is executable");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            [0x11; 32],
+            [0x22; 32],
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+    let configuration = ExecutorConfiguration::new(
+        &adapter,
+        ExecutorTrust::Mock,
+        Duration::from_secs(2),
+        ExecutorDiagnostics::in_directory(&directory.join("diagnostics")),
+    );
+    let mut planner = ScriptedPlan::two_submissions();
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
+    outcome.expect("the scripted adapter exchange completes");
+    std::fs::remove_dir_all(directory).expect("the scripted test directory is removed");
+    capture
+}
+
+#[test]
+fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
+    const SEMANTIC_IDS: [&str; 39] = [
+        "conservation-negatives",
+        "explicit-boundary-values",
+        "explicit-maximum-inputs",
+        "explicit-maximum-outputs",
+        "explicit-merge",
+        "explicit-normalization",
+        "explicit-one-destination-owner",
+        "explicit-one-to-one",
+        "explicit-repeated-owner",
+        "explicit-self-paid-fee",
+        "explicit-several-destination-owners",
+        "explicit-several-owners",
+        "explicit-several-to-several",
+        "explicit-split",
+        "explicit-sponsorless",
+        "explicit-witness-negatives",
+        "keypath-probe",
+        "multi-entry-crossing",
+        "multi-exit-crossing",
+        "multi-many-to-many",
+        "multi-one-to-one-with-fee",
+        "multi-private-merge",
+        "multi-pure-split",
+        "multi-several-owners",
+        "multi-split",
+        "multi-strict-one-to-one",
+        "owner-observation",
+        "owner-signing-negatives",
+        "pairs-arc",
+        "private-restart-control",
+        "private-restart-parity",
+        "proof-bearing-observation",
+        "report",
+        "sponsored-change-absent",
+        "sponsored-change-present",
+        "sponsored-committed-value",
+        "sponsored-missing-authorization",
+        "sponsored-private-explicit-no-change",
+        "sponsored-private-with-change",
+    ];
+    let observed: Vec<_> = CeremonyId::ALL
+        .iter()
+        .copied()
+        .filter(|ceremony| !ceremony.is_setup())
+        .map(CeremonyId::as_str)
+        .collect();
+    assert_eq!(observed, SEMANTIC_IDS);
+    assert_eq!(CeremonyId::ALL.len(), 40);
+    let names: BTreeSet<_> = CeremonyId::ALL
+        .iter()
+        .copied()
+        .map(CeremonyId::rust_test_name)
+        .collect();
+    assert_eq!(names.len(), CeremonyId::ALL.len());
+}
+
+#[test]
+fn a_second_capture_at_one_derived_destination_is_refused() {
+    let directory = test_directory("path");
+    let destination = test_capture_destination(&directory);
+    let first = destination
+        .capture_path(CeremonyId::Report, CeremonyId::Report.rust_test_name())
+        .expect("the first path is derived");
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&first)
+        .expect("the first writer creates the destination");
+    let second = destination.capture_path(CeremonyId::Report, CeremonyId::Report.rust_test_name());
+    assert!(second.is_err(), "the second writer was admitted");
+    assert!(
+        destination
+            .capture_path(
+                CeremonyId::Report,
+                CeremonyId::OwnerObservation.rust_test_name(),
+            )
+            .is_err(),
+        "a different Rust test claimed the report ceremony",
+    );
+    std::fs::remove_dir_all(directory).expect("the path test directory is removed");
+}
+
+#[test]
+fn the_legacy_report_variable_keeps_its_original_path_contract() {
+    let directory = test_directory("legacy-path");
+    let base = directory.join("report.txt");
+    assert_eq!(
+        legacy_report_for(None, Some(&base), None),
+        Some(base.clone())
+    );
+    assert_eq!(
+        legacy_report_for(None, Some(&base), Some("explicit-one-to-one")),
+        Some(base.with_extension("explicit-one-to-one")),
+    );
+    assert_eq!(legacy_report_for(Some(&directory), Some(&base), None), None);
+    std::fs::remove_dir_all(directory).expect("the legacy path test directory is removed");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_gate_panic_after_a_response_leaves_capture_and_timing() {
+    let capture = scripted_capture();
+    let facts = CeremonyCaptureFacts::from_capture(CeremonyId::ExplicitWitnessNegatives, &capture);
+    let directory = test_directory("panic");
+    let destination = test_capture_destination(&directory);
+    let path = destination
+        .capture_path(
+            CeremonyId::ExplicitWitnessNegatives,
+            CeremonyId::ExplicitWitnessNegatives.rust_test_name(),
+        )
+        .expect("the panic test path is derived");
+    let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut guard = CaptureGuard::for_test(CeremonyId::ExplicitWitnessNegatives, destination);
+        write_capture_before_gates(&mut guard, &capture, &facts, "legacy\n");
+        panic!("post-response gate");
+    }));
+    assert!(panic_result.is_err());
+    let transcript = std::fs::read_to_string(&path).expect("the transcript survived the panic");
+    assert!(transcript.ends_with("native-capture-end explicit-witness-negatives\n"));
+    let timing =
+        std::fs::read_to_string(timing_path(&path)).expect("the timing survived the panic");
+    assert!(timing.contains("status failed-after-transcript\n"));
+    std::fs::remove_dir_all(directory).expect("the panic test directory is removed");
+}
+
+#[test]
+fn the_sha256_implementation_matches_the_published_empty_and_abc_vectors() {
+    assert_eq!(
+        hex_bytes(&sha256(b"")),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    );
+    assert_eq!(
+        hex_bytes(&sha256(b"abc")),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
+}
+
+const GOLDEN_CAPTURE_PREFIX: &str = concat!(
+    "native-capture-schema 1\n",
+    "ceremony-id explicit-witness-negatives\n",
+    "rust-test-name 62 7468655f7769746e6573735f636f6e74656e745f6e65676174697665735f6172655f6f6666657265645f6265736964655f74686569725f636f6e74726f6c\n",
+    "suite-commit 1111111111111111111111111111111111111111\n",
+    "suite-tree 2222222222222222222222222222222222222222\n",
+    "fixture-digest-algorithm forward-v2\n",
+    "run-id-input begin\n",
+    "deployment-environment development\n",
+    "deployment-network-id 64 31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131\n",
+    "deployment-genesis-id 64 32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232\n",
+    "deployment-target-contract 21 656c656d656e74732d7461707363726970742d7632\n",
+    "handshake-protocol-schema 7\n",
+    "handshake-adapter-name 15 636170747572652d61646170746572\n",
+    "handshake-adapter-version 5 312e322e33\n",
+    "handshake-framework-revision 13 6672616d65776f726b2d746970\n",
+    "handshake-node-name 9 656c656d656e747364\n",
+    "handshake-node-version 6 32332e322e31\n",
+    "handshake-binary-reported-revision 10 62696e6172792d746970\n",
+    "handshake-intended-executed-tip 12 696e74656e6465642d746970\n",
+    "handshake-upstream-base 13 757073747265616d2d62617365\n",
+    "handshake-topic-count 2\n",
+    "handshake-topic 0 7 746f7069632d61\n",
+    "handshake-topic 1 7 746f7069632d62\n",
+    "environment-schema 7\n",
+    "environment-chain 15 656c656d656e747372656774657374\n",
+    "environment-network-id 64 31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131\n",
+    "environment-genesis-id 64 32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232\n",
+    "environment-domain-count 1\n",
+    "environment-domain 0 tapscript supported true active true\n",
+    "environment-leaf-count 1\n",
+    "environment-leaf 0 196 supported true active true\n",
+    "environment-capability-count 2\n",
+    "environment-capability 0 target-transaction-submission\n",
+    "environment-capability 1 confidential-value-test-funding\n",
+    "environment-funding-count 4\n",
+    "environment-funding 0 representation explicit-asset-confidential-value\n",
+    "environment-funding 1 custody central-public-fixtures\n",
+    "environment-funding 2 materializer guide-ctf-deterministic-v1\n",
+    "environment-funding 3 reproducibility byte_identity\n",
+    "digest-count 1\n",
+    "digest 0 successor forward-v2 3333333333333333333333333333333333333333333333333333333333333333\n",
+);
+
+#[cfg(unix)]
+#[test]
+fn the_enhanced_capture_format_matches_exact_golden_bytes() {
+    let directory = test_directory("format");
+    let destination = test_capture_destination(&directory);
+    let capture = scripted_capture();
+    let mut facts =
+        CeremonyCaptureFacts::from_capture(CeremonyId::ExplicitWitnessNegatives, &capture)
+            .with_digest("successor", Some([0x33; 32]));
+    facts.operations[1].role = RequestRole::PairedExplicit;
+    facts.operations[1].projection = Some(ProjectionInput {
+        owners: vec![b"alice".to_vec(), b"bob".to_vec()],
+        amounts: vec![5, 7],
+        destinations: BTreeMap::from([
+            (b"alice".to_vec(), (vec![0xaa, 0xbb], 11)),
+            (b"bob".to_vec(), (vec![0xcc], 13)),
+        ]),
+    });
+    let rendered = render_enhanced_capture(
+        &destination,
+        CeremonyId::ExplicitWitnessNegatives,
+        &capture,
+        &facts,
+        "legacy\n",
+    )
+    .expect("the exhaustive capture renders");
+    let expected_content = [
+        GOLDEN_CAPTURE_PREFIX,
+        concat!(
+        "operation-count 2\n",
+        "operation 0 begin\n",
+        "operation-id 11 6f7065726174696f6e2d30\n",
+        "request-id 9 726571756573742d30\n",
+        "request-role refusal\n",
+        "request-bytes 4 000180ff\n",
+        "response-id 10 726573706f6e73652d30\n",
+        "response-request-id 9 726571756573742d30\n",
+        "response-operation-id 11 6f7065726174696f6e2d30\n",
+        "response-verdict refused\n",
+        "response-layer script-path-rejection\n",
+        "response-target-identity none\n",
+        "response-detail 14 6d7574616e742072656675736564\n",
+        "attribution-control-request-id 9 726571756573742d31\n",
+        "attribution-control-identity aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        "mutation-kind empty-signature\n",
+        "mutation-locator witness-item 0 0\n",
+        "projection-input none\n",
+        "operation 0 end\n",
+        "operation 1 begin\n",
+        "operation-id 11 6f7065726174696f6e2d31\n",
+        "request-id 9 726571756573742d31\n",
+        "request-role paired-explicit\n",
+        "request-bytes 2 0203\n",
+        "response-id 10 726573706f6e73652d31\n",
+        "response-request-id 9 726571756573742d31\n",
+        "response-operation-id 11 6f7065726174696f6e2d31\n",
+        "response-verdict accepted\n",
+        "response-layer accepted\n",
+        "response-target-identity aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        "response-detail 16 61636365707465642065786163746c79\n",
+        "attribution-control-request-id none\n",
+        "attribution-control-identity none\n",
+        "mutation-kind none\n",
+        "mutation-locator none\n",
+        "projection-input begin\n",
+        "projection-input-owner-count 2\n",
+        "projection-input-owner 0 5 616c696365\n",
+        "projection-input-owner 1 3 626f62\n",
+        "projection-input-amount-count 2\n",
+        "projection-input-amount 0 5\n",
+        "projection-input-amount 1 7\n",
+        "projection-destination-count 2\n",
+        "projection-destination 0 2 aabb 11\n",
+        "projection-destination 1 1 cc 13\n",
+        "projection-input end\n",
+        "operation 1 end\n",
+        "legacy-rendering 7 6c65676163790a\n",
+        "terminal-state complete\n",
+        "run-id-input end\n",
+        ),
+    ]
+    .concat();
+    let expected = format!(
+        "{expected_content}capture-content-sha256 750db245b5d6cacde581c3d4ce90add65ee5ac7b465319a37e09d7c5bcd104cc\nnative-capture-end explicit-witness-negatives\n",
+    );
+    assert_eq!(rendered, expected);
+    let mut mismatched = facts;
+    mismatched.operations[0].role = RequestRole::Acceptance;
+    assert!(
+        render_enhanced_capture(
+            &destination,
+            CeremonyId::ExplicitWitnessNegatives,
+            &capture,
+            &mismatched,
+            "legacy\n",
+        )
+        .is_err(),
+        "a role that disagrees with the journal verdict was rendered",
+    );
+    std::fs::remove_dir_all(directory).expect("the format test directory is removed");
+}
+
 #[test]
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn the_live_transfer_candidate_runs_against_a_real_target() {
+    let mut capture_guard = CaptureGuard::new(CeremonyId::Report);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let report = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = legacy_report(None);
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -118,26 +2303,33 @@ fn the_live_transfer_candidate_runs_against_a_real_target() {
         // transcript rather than a gate verdict.
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::Report,
+            report.as_deref(),
+        )),
     );
 
     let mut planner = LiveTransferOperationPlanner::new().expect("the planner builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let transcript = planner.transcript();
     let rendered = render_live_native_run(transcript);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let facts = CeremonyCaptureFacts::from_capture(CeremonyId::Report, &capture);
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
     // A refused run is written down beside the transcript rather than
     // printed: the file is the artifact, and a lane whose only record was
     // captured console output would leave nothing behind.
-    if let Err(error) = &outcome {
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -247,6 +2439,7 @@ fn census_lines(
 struct ConfidentialAttempt {
     lines: Vec<String>,
     mined: Vec<u8>,
+    capture: NativeOperationCapture,
 }
 
 /// Runs one confidential predecessor ceremony end to end and validates it.
@@ -259,6 +2452,7 @@ fn fund_one_confidential_predecessor(
     binding: &target_elements::ReviewedDevelopmentBinding,
     configuration: &ExecutorConfiguration,
     attempt: u8,
+    capture_guard: &mut CaptureGuard,
 ) -> ConfidentialAttempt {
     use target_elements_conformance::confidential_funding::{
         ConfidentialFundingOracles, ConfidentialReadbackDecoder as _,
@@ -267,8 +2461,7 @@ fn fund_one_confidential_predecessor(
         ReferenceRangeproofVerifier, ReferenceReadbackDecoder,
     };
     use target_elements_conformance::confidential_record::{
-        ConfidentialFundingEvidence, FieldAgreement, FundingAgreementField,
-        validate_confidential_funding_record,
+        ConfidentialFundingEvidence, validate_confidential_funding_record,
     };
     use vectors::confidential_predecessor::{
         AdapterReportedInclusion, ConfidentialPredecessorPlan,
@@ -276,25 +2469,12 @@ fn fund_one_confidential_predecessor(
 
     let mut lines = Vec::new();
     let mut plan = ConfidentialPredecessorPlan::new();
-    let started = Instant::now();
-    let outcome = execute_operations(target, binding, configuration, &mut plan);
-    lines.push(format!(
-        "run {attempt} wall_seconds {:.1}",
-        started.elapsed().as_secs_f64()
-    ));
+    let (outcome, capture) = execute_and_capture(target, binding, configuration, &mut plan);
+    lines.push(format!("run {attempt}"));
 
-    // A stopped result is a valid outcome and is written as one. It is
-    // an infrastructure or construction fact and never a target verdict.
-    let transcript = match outcome {
-        Ok(transcript) => transcript,
-        Err(error) => {
-            lines.push(format!("run {attempt} executor_refused {error}"));
-            if let Some(refusal) = plan.refusal() {
-                lines.push(format!("run {attempt} plan_refused {refusal:?}"));
-            }
-            panic!("the confidential predecessor ceremony did not reach the target: {error}");
-        }
-    };
+    let transcript =
+        complete_confidential_capture(outcome, &plan, &capture, &mut lines, attempt, capture_guard);
+    let written_lines = lines.len();
 
     let case = ConfidentialPredecessorPlan::funding_case();
     let response = transcript
@@ -347,6 +2527,64 @@ fn fund_one_confidential_predecessor(
 
     lines.extend(census_lines(record, attempt));
 
+    assert_confidential_funding_record(record);
+
+    let facts =
+        CeremonyCaptureFacts::from_capture(CeremonyId::ConfidentialPredecessorSetup, &capture);
+    let validated = lines[written_lines..].join("\n") + "\n";
+    write_capture_before_gates(capture_guard, &capture, &facts, &validated);
+
+    ConfidentialAttempt {
+        lines,
+        mined: readback.raw_transaction.clone(),
+        capture,
+    }
+}
+
+fn complete_confidential_capture(
+    outcome: Result<
+        target_elements_conformance::executor::ExecutionTranscript,
+        target_elements_conformance::error::NativeConformanceError,
+    >,
+    plan: &vectors::confidential_predecessor::ConfidentialPredecessorPlan,
+    capture: &NativeOperationCapture,
+    lines: &mut Vec<String>,
+    attempt: u8,
+    capture_guard: &mut CaptureGuard,
+) -> target_elements_conformance::executor::ExecutionTranscript {
+    // A stopped result is a valid outcome and is written as one. It is
+    // an infrastructure or construction fact and never a target verdict.
+    match outcome {
+        Ok(transcript) => {
+            let facts = CeremonyCaptureFacts::from_capture(
+                CeremonyId::ConfidentialPredecessorSetup,
+                capture,
+            );
+            let prelude = lines.join("\n") + "\n";
+            write_capture_before_gates(capture_guard, capture, &facts, &prelude);
+            transcript
+        }
+        Err(error) => {
+            lines.push(format!("run {attempt} executor_refused {error}"));
+            if let Some(refusal) = plan.refusal() {
+                lines.push(format!("run {attempt} plan_refused {refusal:?}"));
+            }
+            let facts = CeremonyCaptureFacts::from_capture(
+                CeremonyId::ConfidentialPredecessorSetup,
+                capture,
+            );
+            let refused = lines.join("\n") + "\n";
+            write_capture_before_gates(capture_guard, capture, &facts, &refused);
+            panic!("the confidential predecessor ceremony did not reach the target: {error}");
+        }
+    }
+}
+
+fn assert_confidential_funding_record(
+    record: &target_elements_conformance::confidential_record::ConfidentialFundingRecord,
+) {
+    use target_elements_conformance::confidential_record::{FieldAgreement, FundingAgreementField};
+
     assert_eq!(record.agreement().len(), 2);
     for census in record.agreement() {
         assert_eq!(census.fields().len(), FundingAgreementField::ALL.len());
@@ -354,11 +2592,6 @@ fn fund_one_confidential_predecessor(
     }
     assert_eq!(record.summary().observed_parities(), &[0x08, 0x09]);
     assert_eq!(record.non_claims().len(), 10);
-
-    ConfidentialAttempt {
-        lines,
-        mined: readback.raw_transaction.clone(),
-    }
 }
 
 /// One confidential predecessor, funded, mined, and read back.
@@ -386,16 +2619,14 @@ fn fund_one_confidential_predecessor(
 #[test]
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_confidential_predecessor_is_funded_mined_and_read_back() {
+    let mut capture_guard = CaptureGuard::new(CeremonyId::ConfidentialPredecessorSetup);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension("confidential-predecessor");
+    let report = legacy_report(Some("confidential-predecessor"));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -417,24 +2648,41 @@ fn one_confidential_predecessor_is_funded_mined_and_read_back() {
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::ConfidentialPredecessorSetup,
+            report.as_deref(),
+        )),
     );
 
-    let started = Instant::now();
-    let first = fund_one_confidential_predecessor(&target, &binding, &configuration, 0);
-    let second = fund_one_confidential_predecessor(&target, &binding, &configuration, 1);
+    let first =
+        fund_one_confidential_predecessor(&target, &binding, &configuration, 0, &mut capture_guard);
+    let second =
+        fund_one_confidential_predecessor(&target, &binding, &configuration, 1, &mut capture_guard);
 
     let identical = first.mined == second.mined;
     let mut lines = first.lines;
     lines.extend(second.lines);
-    lines.push(format!("byte_identity_satisfied {identical}"));
-    lines.push(format!(
-        "total_wall_seconds {:.1}",
-        started.elapsed().as_secs_f64()
-    ));
-    lines.push("discharges_no_matrix_row true".to_owned());
-    lines.push("clears_owner_sighash_blockers false".to_owned());
-    std::fs::write(&report, lines.join("\n") + "\n").expect("the transcript is written");
+    let summary = [
+        format!("byte_identity_satisfied {identical}"),
+        "discharges_no_matrix_row true".to_owned(),
+        "clears_owner_sighash_blockers false".to_owned(),
+    ];
+    lines.extend(summary.iter().cloned());
+    let rendered = lines.join("\n") + "\n";
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+    }
+    let facts = CeremonyCaptureFacts::from_capture(
+        CeremonyId::ConfidentialPredecessorSetup,
+        &second.capture,
+    );
+    let enhanced_summary = summary.join("\n") + "\n";
+    write_capture_before_gates(
+        &mut capture_guard,
+        &second.capture,
+        &facts,
+        &enhanced_summary,
+    );
 
     assert!(
         identical,
@@ -480,16 +2728,14 @@ fn one_owner_authorization_is_observed_on_the_explicit_lane() {
         OwnerObservationCase, OwnerObservationPlanner, render_owner_observation,
     };
 
+    let mut capture_guard = CaptureGuard::new(CeremonyId::OwnerObservation);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension("owner-observation");
+    let report = legacy_report(Some("owner-observation"));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -512,7 +2758,10 @@ fn one_owner_authorization_is_observed_on_the_explicit_lane() {
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::OwnerObservation,
+            report.as_deref(),
+        )),
     );
 
     // The genesis block hash the message hasher is seeded with, taken
@@ -522,18 +2771,22 @@ fn one_owner_authorization_is_observed_on_the_explicit_lane() {
     let mut planner =
         OwnerObservationPlanner::new(identifier(&genesis)).expect("the ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_owner_observation(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let facts = CeremonyCaptureFacts::from_capture(CeremonyId::OwnerObservation, &capture);
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -731,16 +2984,14 @@ fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
         render_proof_bearing_observation,
     };
 
+    let mut capture_guard = CaptureGuard::new(CeremonyId::ProofBearingObservation);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension("proof-bearing-observation");
+    let report = legacy_report(Some("proof-bearing-observation"));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -763,24 +3014,32 @@ fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::ProofBearingObservation,
+            report.as_deref(),
+        )),
     );
 
     let mut planner =
         ProofBearingObservationPlanner::new(identifier(&genesis)).expect("the ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_proof_bearing_observation(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let facts = CeremonyCaptureFacts::from_capture(CeremonyId::ProofBearingObservation, &capture)
+        .with_digest("predecessor", record.predecessor_digest().copied());
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -1169,16 +3428,19 @@ fn run_one_private_control(
 ) {
     use vectors::live_private_restart::{PrivateRestartPlanner, render_private_restart};
 
+    let ceremony = match extension {
+        "private-restart-control" => CeremonyId::PrivateRestartControl,
+        "private-restart-parity" => CeremonyId::PrivateRestartParity,
+        _ => panic!("unknown private-restart ceremony"),
+    };
+    let mut capture_guard = CaptureGuard::new(ceremony);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension(extension);
+    let report = legacy_report(Some(extension));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -1201,24 +3463,30 @@ fn run_one_private_control(
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(ceremony, report.as_deref())),
     );
 
     let mut planner = PrivateRestartPlanner::spending(identifier(&genesis), consumed)
         .expect("the restart ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_private_restart(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let facts = CeremonyCaptureFacts::from_capture(ceremony, &capture)
+        .with_digest("predecessor", record.predecessor_digest())
+        .with_digest("successor", record.successor_digest());
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -1234,6 +3502,14 @@ fn run_one_private_control(
     }
     outcome.expect("the ceremony reached the target");
 
+    assert_private_control(record, consumed, &rendered);
+}
+
+fn assert_private_control(
+    record: &vectors::live_private_restart::PrivateRestartRecord,
+    consumed: vectors::live_private_restart::ConsumedReceipt,
+    rendered: &str,
+) {
     assert_private_restart_matches_the_run_of_record(record, consumed);
 
     // The predecessor is confidential and is the one the ceremony asked
@@ -1324,16 +3600,14 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
         render_conservation_negatives,
     };
 
+    let mut capture_guard = CaptureGuard::new(CeremonyId::ConservationNegatives);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let report = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written")
-        .with_extension("conservation-negatives");
+    let report = legacy_report(Some("conservation-negatives"));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -1356,24 +3630,39 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::ConservationNegatives,
+            report.as_deref(),
+        )),
     );
 
     let mut planner =
         ConservationNegativePlanner::new(identifier(&genesis)).expect("the ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_conservation_negatives(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let mut facts = CeremonyCaptureFacts::from_capture(CeremonyId::ConservationNegatives, &capture)
+        .with_digest("predecessor", record.predecessor_digest())
+        .with_digest("successor", record.successor_digest());
+    for mutant in record.mutants() {
+        facts = facts.with_locator(
+            mutant.case().name(),
+            LiveMutationLocator::SerializedOutputField(mutant.capture_locator()),
+        );
+    }
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -1436,16 +3725,14 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
         OwnerSigningNegativePlanner, render_owner_signing_negatives,
     };
 
+    let mut capture_guard = CaptureGuard::new(CeremonyId::OwnerSigningNegatives);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let report = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written")
-        .with_extension("owner-signing-negatives");
+    let report = legacy_report(Some("owner-signing-negatives"));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -1468,24 +3755,37 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::OwnerSigningNegatives,
+            report.as_deref(),
+        )),
     );
 
     let mut planner =
         OwnerSigningNegativePlanner::new(identifier(&genesis)).expect("the ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_owner_signing_negatives(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let mut facts = CeremonyCaptureFacts::from_capture(CeremonyId::OwnerSigningNegatives, &capture);
+    for operation in capture.operations() {
+        let step = operation.request().case.step.as_str();
+        if let Some(locator) = record.capture_locator(step) {
+            facts = facts.with_locator(step, locator);
+        }
+    }
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -1909,16 +4209,14 @@ fn assert_consensus_mutants_separate(
 fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
     use vectors::live_keypath_probe::{KeyPathProbePlanner, ProbeProvenance, render_keypath_probe};
 
+    let mut capture_guard = CaptureGuard::new(CeremonyId::KeypathProbe);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension("keypath-probe");
+    let report = legacy_report(Some("keypath-probe"));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -1941,7 +4239,10 @@ fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::KeypathProbe,
+            report.as_deref(),
+        )),
     );
 
     // The target's provenance, as the run's own environment reports it.
@@ -1959,18 +4260,25 @@ fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
     let mut planner =
         KeyPathProbePlanner::new(identifier(&genesis), provenance).expect("the ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_keypath_probe(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let mut facts = CeremonyCaptureFacts::from_capture(CeremonyId::KeypathProbe, &capture);
+    if let Some(locator) = record.capture_locator() {
+        facts = facts.with_locator(vectors::live_keypath_probe::ATTEMPT_STEP, locator);
+    }
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -1980,6 +4288,10 @@ fn one_key_path_spend_attempt_is_offered_to_a_real_target() {
 
     outcome.expect("the ceremony reached the target");
 
+    assert_keypath_probe(record, &rendered);
+}
+
+fn assert_keypath_probe(record: &vectors::live_keypath_probe::KeyPathProbeRecord, rendered: &str) {
     // The deployment was welded to the chain before anything was funded,
     // so the program the attempt spends belongs to a deployment of the
     // asset the target issued.
@@ -2403,16 +4715,14 @@ fn the_private_merge_shape_is_submitted_to_a_real_target() {
 fn the_sponsored_confidential_with_change_shape_is_submitted_to_a_real_target() {
     use vectors::live_sponsored_private::{SponsoredPrivatePlanner, render_sponsored_private};
 
+    let mut capture_guard = CaptureGuard::new(CeremonyId::SponsoredPrivateWithChange);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension("sponsored-private-with-change");
+    let report = legacy_report(Some("sponsored-private-with-change"));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -2435,23 +4745,33 @@ fn the_sponsored_confidential_with_change_shape_is_submitted_to_a_real_target() 
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::SponsoredPrivateWithChange,
+            report.as_deref(),
+        )),
     );
 
     let mut planner =
         SponsoredPrivatePlanner::new(identifier(&genesis)).expect("the ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
-    std::fs::write(&report, render_sponsored_private(record)).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    let rendered = render_sponsored_private(record);
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let facts =
+        CeremonyCaptureFacts::from_capture(CeremonyId::SponsoredPrivateWithChange, &capture)
+            .with_digest("successor", planner.capture_successor_digest());
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -2542,16 +4862,14 @@ fn the_sponsored_explicit_no_change_shape_is_submitted_to_a_real_target() {
         SponsoredPrivatePlanner, SponsoredPrivateShape, render_sponsored_private,
     };
 
+    let mut capture_guard = CaptureGuard::new(CeremonyId::SponsoredPrivateExplicitNoChange);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension("sponsored-private-explicit-no-change");
+    let report = legacy_report(Some("sponsored-private-explicit-no-change"));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -2574,7 +4892,10 @@ fn the_sponsored_explicit_no_change_shape_is_submitted_to_a_real_target() {
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::SponsoredPrivateExplicitNoChange,
+            report.as_deref(),
+        )),
     );
 
     let mut planner = SponsoredPrivatePlanner::for_shape(
@@ -2583,17 +4904,23 @@ fn the_sponsored_explicit_no_change_shape_is_submitted_to_a_real_target() {
     )
     .expect("the ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
-    std::fs::write(&report, render_sponsored_private(record)).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    let rendered = render_sponsored_private(record);
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let facts =
+        CeremonyCaptureFacts::from_capture(CeremonyId::SponsoredPrivateExplicitNoChange, &capture);
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -2750,16 +5077,26 @@ fn assert_proofs_match_the_shape(
 fn run_one_multi_shape(shape: vectors::live_multi_shapes::PrivateShape, extension: &str) {
     use vectors::live_multi_shapes::{MultiShapePlanner, render_multi_shape};
 
+    let ceremony = match extension {
+        "multi-entry-crossing" => CeremonyId::MultiEntryCrossing,
+        "multi-exit-crossing" => CeremonyId::MultiExitCrossing,
+        "multi-many-to-many" => CeremonyId::MultiManyToMany,
+        "multi-one-to-one-with-fee" => CeremonyId::MultiOneToOneWithFee,
+        "multi-private-merge" => CeremonyId::MultiPrivateMerge,
+        "multi-pure-split" => CeremonyId::MultiPureSplit,
+        "multi-several-owners" => CeremonyId::MultiSeveralOwners,
+        "multi-split" => CeremonyId::MultiSplit,
+        "multi-strict-one-to-one" => CeremonyId::MultiStrictOneToOne,
+        _ => panic!("unknown multi-shape ceremony"),
+    };
+    let mut capture_guard = CaptureGuard::new(ceremony);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension(extension);
+    let report = legacy_report(Some(extension));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -2782,24 +5119,30 @@ fn run_one_multi_shape(shape: vectors::live_multi_shapes::PrivateShape, extensio
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(ceremony, report.as_deref())),
     );
 
     let mut planner = MultiShapePlanner::for_shape(shape, identifier(&genesis))
         .expect("the shape ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_multi_shape(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let facts = CeremonyCaptureFacts::from_capture(ceremony, &capture)
+        .with_digest("predecessor", record.predecessor_digest())
+        .with_digest("successor", record.successor_digest());
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -2815,6 +5158,14 @@ fn run_one_multi_shape(shape: vectors::live_multi_shapes::PrivateShape, extensio
     }
     outcome.expect("the ceremony reached the target");
 
+    assert_multi_shape(shape, record, &rendered);
+}
+
+fn assert_multi_shape(
+    shape: vectors::live_multi_shapes::PrivateShape,
+    record: &vectors::live_multi_shapes::MultiShapeRecord,
+    rendered: &str,
+) {
     // The predecessor is the confidential one the ceremony asked for,
     // and its COUNT is the shape's own choice of predecessor rather than
     // a constant: the merge funds a three-output predecessor because a
@@ -2892,16 +5243,31 @@ fn run_one_multi_shape(shape: vectors::live_multi_shapes::PrivateShape, extensio
 fn run_one_explicit_shape(shape: vectors::live_explicit_shapes::ExplicitShape, extension: &str) {
     use vectors::live_explicit_shapes::{ExplicitShapePlanner, render_explicit_shape};
 
+    let ceremony = match extension {
+        "explicit-boundary-values" => CeremonyId::ExplicitBoundaryValues,
+        "explicit-maximum-inputs" => CeremonyId::ExplicitMaximumInputs,
+        "explicit-maximum-outputs" => CeremonyId::ExplicitMaximumOutputs,
+        "explicit-merge" => CeremonyId::ExplicitMerge,
+        "explicit-normalization" => CeremonyId::ExplicitNormalization,
+        "explicit-one-destination-owner" => CeremonyId::ExplicitOneDestinationOwner,
+        "explicit-one-to-one" => CeremonyId::ExplicitOneToOne,
+        "explicit-repeated-owner" => CeremonyId::ExplicitRepeatedOwner,
+        "explicit-self-paid-fee" => CeremonyId::ExplicitSelfPaidFee,
+        "explicit-several-destination-owners" => CeremonyId::ExplicitSeveralDestinationOwners,
+        "explicit-several-owners" => CeremonyId::ExplicitSeveralOwners,
+        "explicit-several-to-several" => CeremonyId::ExplicitSeveralToSeveral,
+        "explicit-split" => CeremonyId::ExplicitSplit,
+        "explicit-sponsorless" => CeremonyId::ExplicitSponsorless,
+        _ => panic!("unknown explicit-shape ceremony"),
+    };
+    let mut capture_guard = CaptureGuard::new(ceremony);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension(extension);
+    let report = legacy_report(Some(extension));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -2924,24 +5290,28 @@ fn run_one_explicit_shape(shape: vectors::live_explicit_shapes::ExplicitShape, e
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(ceremony, report.as_deref())),
     );
 
     let mut planner = ExplicitShapePlanner::for_shape(shape, identifier(&genesis))
         .expect("the shape ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_explicit_shape(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let facts = CeremonyCaptureFacts::from_capture(ceremony, &capture);
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -2957,6 +5327,14 @@ fn run_one_explicit_shape(shape: vectors::live_explicit_shapes::ExplicitShape, e
     }
     outcome.expect("the ceremony reached the target");
 
+    assert_explicit_shape(shape, record, &rendered);
+}
+
+fn assert_explicit_shape(
+    shape: vectors::live_explicit_shapes::ExplicitShape,
+    record: &vectors::live_explicit_shapes::ExplicitShapeRecord,
+    rendered: &str,
+) {
     // The shape's own cardinalities, read off the record rather than off
     // the shape's name.
     assert_eq!(
@@ -3190,16 +5568,14 @@ fn the_explicit_self_paid_fee_shape_is_submitted_to_a_real_target() {
 fn the_witness_content_negatives_are_offered_beside_their_control() {
     use vectors::live_explicit_shapes::{ExplicitShapePlanner, render_explicit_shape};
 
+    let mut capture_guard = CaptureGuard::new(CeremonyId::ExplicitWitnessNegatives);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension("explicit-witness-negatives");
+    let report = legacy_report(Some("explicit-witness-negatives"));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -3222,24 +5598,31 @@ fn the_witness_content_negatives_are_offered_beside_their_control() {
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::ExplicitWitnessNegatives,
+            report.as_deref(),
+        )),
     );
 
     let mut planner = ExplicitShapePlanner::for_witness_negatives(identifier(&genesis))
         .expect("the negative ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_explicit_shape(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let facts = CeremonyCaptureFacts::from_capture(CeremonyId::ExplicitWitnessNegatives, &capture);
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -3302,16 +5685,20 @@ fn run_one_sponsor_shape(
         SponsorShapePlanner, SponsorValueForm, render_sponsor_shape,
     };
 
+    let ceremony = match extension {
+        "sponsored-change-absent" => CeremonyId::SponsoredChangeAbsent,
+        "sponsored-change-present" => CeremonyId::SponsoredChangePresent,
+        "sponsored-committed-value" => CeremonyId::SponsoredCommittedValue,
+        _ => panic!("unknown sponsor-shape ceremony"),
+    };
+    let mut capture_guard = CaptureGuard::new(ceremony);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension(extension);
+    let report = legacy_report(Some(extension));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -3334,7 +5721,7 @@ fn run_one_sponsor_shape(
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(ceremony, report.as_deref())),
     );
 
     let mut planner = match value_form {
@@ -3345,18 +5732,22 @@ fn run_one_sponsor_shape(
     }
     .expect("the sponsored ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_sponsor_shape(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let facts = CeremonyCaptureFacts::from_capture(ceremony, &capture);
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -3648,16 +6039,14 @@ fn the_committed_sponsor_value_shape_is_submitted_to_a_real_target() {
 fn the_missing_sponsor_authorization_negative_is_refused_behind_its_control() {
     use vectors::live_sponsor_shapes::{SponsorShape, SponsorShapePlanner, render_sponsor_shape};
 
+    let mut capture_guard = CaptureGuard::new(CeremonyId::SponsoredMissingAuthorization);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension("sponsored-missing-authorization");
+    let report = legacy_report(Some("sponsored-missing-authorization"));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -3680,7 +6069,10 @@ fn the_missing_sponsor_authorization_negative_is_refused_behind_its_control() {
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::SponsoredMissingAuthorization,
+            report.as_deref(),
+        )),
     );
 
     let mut planner = SponsorShapePlanner::for_missing_authorization_negative(
@@ -3689,17 +6081,35 @@ fn the_missing_sponsor_authorization_negative_is_refused_behind_its_control() {
     )
     .expect("the sponsored ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_sponsor_shape(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let sponsor_input = record
+        .round()
+        .map(vectors::live_sponsor_shapes::SponsorRoundTrip::input)
+        .map(usize::from);
+    let mut facts =
+        CeremonyCaptureFacts::from_capture(CeremonyId::SponsoredMissingAuthorization, &capture);
+    if let Some(input_index) = sponsor_input {
+        facts = facts.with_locator(
+            "submit-unauthorized-sponsor-control",
+            LiveMutationLocator::WitnessItem {
+                input_index,
+                item_index: 0,
+            },
+        );
+    }
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
 
     if let Some(refusal) = record.refusal() {
         panic!("the sponsored ceremony refused before the node: {refusal:?}");
@@ -3782,16 +6192,14 @@ fn the_missing_sponsor_authorization_negative_is_refused_behind_its_control() {
 fn the_pairs_arc_submits_both_members_of_one_fixture_to_a_real_target() {
     use vectors::live_pair_arc::{PairArcPlanner, render_pair_arc};
 
+    let mut capture_guard = CaptureGuard::new(CeremonyId::PairsArc);
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
         .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
     let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
         .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
-    let base = environment("TRIPOD_LIVE_REPORT")
-        .map(PathBuf::from)
-        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
-    let report = base.with_extension("pairs-arc");
+    let report = legacy_report(Some("pairs-arc"));
 
     let target = reviewed_elements_tapscript().expect("the reviewed target validates");
     let binding = validate_reviewed_development_binding(
@@ -3814,23 +6222,30 @@ fn the_pairs_arc_submits_both_members_of_one_fixture_to_a_real_target() {
         Path::new(&executor),
         ExecutorTrust::ReviewedNonMock,
         timeout,
-        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::PairsArc,
+            report.as_deref(),
+        )),
     );
 
     let mut planner = PairArcPlanner::new(identifier(&genesis)).expect("the arc ceremony builds");
     let started = Instant::now();
-    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
     let wall = started.elapsed();
 
     let record = planner.record();
     let rendered = render_pair_arc(record);
-    std::fs::write(&report, &rendered).expect("the transcript is written");
-    std::fs::write(
-        timing_path(&report),
-        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
-    )
-    .expect("the run's wall time is written");
-    if let Err(error) = &outcome {
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let facts = pair_capture_facts(&planner, &capture);
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(
             report.with_extension("executor-refusal"),
             format!("{error}\n"),
@@ -3843,6 +6258,30 @@ fn the_pairs_arc_submits_both_members_of_one_fixture_to_a_real_target() {
     }
     outcome.expect("the ceremony reached the target");
 
+    assert_pair_arc(record, &rendered);
+}
+
+fn pair_capture_facts(
+    planner: &vectors::live_pair_arc::PairArcPlanner,
+    capture: &NativeOperationCapture,
+) -> CeremonyCaptureFacts {
+    let mut facts = CeremonyCaptureFacts::from_capture(CeremonyId::PairsArc, capture);
+    if let Some(programs) =
+        planner.capture_destination_programs(vectors::live_pair_arc::PairArcMember::Explicit)
+        && let Ok(projection) = pair_projection_input(&programs)
+    {
+        facts = facts.with_projection(RequestRole::PairedExplicit, projection);
+    }
+    if let Some(programs) =
+        planner.capture_destination_programs(vectors::live_pair_arc::PairArcMember::Private)
+        && let Ok(projection) = pair_projection_input(&programs)
+    {
+        facts = facts.with_projection(RequestRole::PairedPrivate, projection);
+    }
+    facts
+}
+
+fn assert_pair_arc(record: &vectors::live_pair_arc::PairArcRecord, rendered: &str) {
     // The arc's own fixture, and the fact every later claim rests on.
     assert!(record.fixture_conserves());
 

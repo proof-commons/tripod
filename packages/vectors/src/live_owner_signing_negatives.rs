@@ -144,6 +144,7 @@ use crate::live_plan::{
     FEE_PROGRAM_DIGEST, FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, demonstration_live_abi,
     live_abi_for_asset, published_owner, reviewed_target, signing_material,
 };
+use crate::live_report::LiveMutationLocator;
 
 /// What each funded receipt holds.
 ///
@@ -678,6 +679,70 @@ impl OwnerSigningNegativeRecord {
         &self.leaf_arrangements
     }
 
+    /// The exact locator staged for one submitted mutant.
+    ///
+    /// This accessor returns only the planner's typed mutation metadata.
+    /// Exact request bytes and target responses remain owned by the
+    /// executor journal.
+    #[must_use]
+    pub fn capture_locator(&self, step: &str) -> Option<LiveMutationLocator> {
+        if step == "bare-u-output-mutant" {
+            let (start, end) = self.mutant.as_ref()?.declared_field_range();
+            return Some(LiveMutationLocator::WitnesslessRange { start, end });
+        }
+        if let Some(row) = step.strip_prefix("consensus-") {
+            let mutant = self
+                .consensus_mutants
+                .iter()
+                .find(|mutant| mutant.row() == row)?;
+            let (mutant_inputs, mutant_outputs) = mutant.shape();
+            if mutant_inputs != usize::from(RECEIPT_COUNT)
+                || mutant_outputs != usize::from(RECEIPT_COUNT)
+            {
+                return Some(LiveMutationLocator::TransactionShape {
+                    control_inputs: usize::from(RECEIPT_COUNT),
+                    mutant_inputs,
+                    control_outputs: usize::from(RECEIPT_COUNT),
+                    mutant_outputs,
+                });
+            }
+            let (start, end) = mutant.declared_field_range();
+            return Some(LiveMutationLocator::WitnesslessRange { start, end });
+        }
+        let row = step.strip_prefix("leaf-arrangement-")?;
+        let mutant = self
+            .leaf_arrangements
+            .iter()
+            .find(|observation| observation.row() == row)?;
+        let coordinator = self
+            .leaf_arrangements
+            .iter()
+            .find(|observation| observation.row() == "two-coordinators")
+            .and_then(|observation| revealed_leaf_programs(&observation.mutant_bytes))?
+            .first()
+            .cloned()?;
+        let member = self
+            .leaf_arrangements
+            .iter()
+            .find(|observation| observation.row() == "no-coordinator")
+            .and_then(|observation| revealed_leaf_programs(&observation.mutant_bytes))?
+            .first()
+            .cloned()?;
+        let mutant_programs = revealed_leaf_programs(&mutant.mutant_bytes)?;
+        let mutant_coordinator_leaf_indices = mutant_programs
+            .iter()
+            .enumerate()
+            .filter_map(|(index, program)| (program == &coordinator).then_some(index))
+            .collect();
+        Some(LiveMutationLocator::CommittedLeafArrangement {
+            input_indices: (0..mutant_programs.len()).collect(),
+            control_coordinator_leaf_indices: vec![0],
+            mutant_coordinator_leaf_indices,
+            control_committed_leaf_programs: vec![coordinator, member],
+            mutant_committed_leaf_programs: mutant_programs,
+        })
+    }
+
     /// The asset identity the target chose.
     #[must_use]
     pub fn issued_asset(&self) -> Option<&str> {
@@ -738,6 +803,22 @@ impl OwnerSigningNegativeRecord {
             "claims nothing about any deployment but the one this run created and destroyed",
         ]
     }
+}
+
+fn revealed_leaf_programs(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
+    let transaction = TargetTransaction::decode(bytes).ok()?;
+    transaction
+        .witnesses()
+        .iter()
+        .map(|witness| {
+            witness
+                .stack()
+                .len()
+                .checked_sub(2)
+                .and_then(|index| witness.stack().get(index))
+                .cloned()
+        })
+        .collect()
 }
 
 /// What the plan is doing next.

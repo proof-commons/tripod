@@ -115,6 +115,7 @@ use crate::live_plan::{
     FEE_PROGRAM_DIGEST, FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, demonstration_live_abi,
     live_abi_for_asset, published_owner, reviewed_target, signing_material,
 };
+use crate::live_report::{LiveMutationLocator, LiveWitnessPathRole};
 
 /// What the single funded receipt holds.
 ///
@@ -467,6 +468,33 @@ impl KeyPathProbeRecord {
     #[must_use]
     pub const fn control_observation(&self) -> Option<&KeyPathObservation> {
         self.control_observation.as_ref()
+    }
+
+    /// The exact witness-path shape staged by the completed planner.
+    ///
+    /// The accessor returns only typed mutation metadata derived from the
+    /// record. Exact request bytes remain owned by the executor journal.
+    #[must_use]
+    pub fn capture_locator(&self) -> Option<LiveMutationLocator> {
+        let attempt = TargetTransaction::decode(self.attempt.as_ref()?.submitted_bytes()).ok()?;
+        let control = TargetTransaction::decode(self.control.as_ref()?.submitted_bytes()).ok()?;
+        let mutant_stack = attempt.witnesses().first()?.stack();
+        let control_stack = control.witnesses().first()?.stack();
+        let changed_positions = (0..control_stack.len().max(mutant_stack.len()))
+            .filter(|position| control_stack.get(*position) != mutant_stack.get(*position))
+            .collect();
+        Some(LiveMutationLocator::WitnessPathShape {
+            input_index: 0,
+            control_stack_items: control_stack.len(),
+            mutant_stack_items: mutant_stack.len(),
+            changed_positions,
+            control_role: LiveWitnessPathRole::ScriptPath,
+            mutant_role: LiveWitnessPathRole::KeyPath,
+            witnessless_serialization_equal: self
+                .control
+                .as_ref()?
+                .shares_the_attempts_witnessless_bytes(),
+        })
     }
 
     /// Why the ceremony stopped, where it stopped.
