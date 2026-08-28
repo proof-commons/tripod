@@ -713,13 +713,21 @@ fn assert_owner_observation_matches_run_of_record(
 /// The shape of a completed ceremony: every case submitted and
 /// answered, the vector at its real proof-bearing length, both
 /// construction controls refused before any message was formed, and the
-/// two-origin agreement where an acceptance was observed. What each
-/// case's layer WAS is written into the artifact and asserted nowhere.
+/// two-origin agreement where an acceptance was observed. No schema-1
+/// layer or acceptance is compared with this fresh run; once schema 2 is
+/// recorded, its own exact observation and acceptance members are the
+/// comparison.
+///
+/// The schema-1 record remains immutable historical-v1 data and validates
+/// only its own archived bytes. The live fixture-digest algorithm is v2,
+/// so this fresh run projects only to schema 2; its forward observation
+/// and acceptance members remain pending until their own owner-authorized
+/// accepted run is recorded.
 #[test]
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
     use vectors::live_proof_bearing_observation::{
-        ProofBearingObservationPlanner, ProofBearingRunOfRecordV2, construction_run_of_record_v2,
+        ProofBearingObservationPlanner, forward_v2_proof_bearing_run_of_record,
         render_proof_bearing_observation,
     };
 
@@ -782,31 +790,45 @@ fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
 
     outcome.expect("the ceremony reached the target");
 
-    let ProofBearingRunOfRecordV2::Recorded(expected) = construction_run_of_record_v2() else {
-        panic!("the V2 run-of-record constants are not minted");
-    };
-    assert_construction_refusals_match_the_run_of_record(record, expected);
-    assert_proof_bearing_record_matches_run_of_record(record, expected);
-    assert!(rendered.contains("run_of_record_v2 recorded"));
-    assert!(rendered.contains("run_of_record_projection ready schema_version 1"));
+    assert_live_construction_refusal_shape(record);
+    assert_proof_bearing_record_matches_forward_run_of_record(
+        record,
+        forward_v2_proof_bearing_run_of_record(),
+    );
+    assert!(rendered.contains("forward_v2_run_of_record"));
+    assert!(rendered.contains("run_of_record_projection ready schema_version 2"));
+    assert!(!rendered.contains("run_of_record_v2 recorded"));
     check_proof_bearing_record(record, &rendered);
 }
 
-/// Bind every live construction refusal to the exact V2 run of record.
+#[test]
+fn a_fresh_v2_projection_refuses_schema_one_before_node_execution() {
+    use vectors::live_proof_bearing_observation::{
+        ProofBearingObservationPlanner, ProofBearingRunOfRecord, RunOfRecordProjectionRefusal,
+    };
+
+    let planner = ProofBearingObservationPlanner::new([0_u8; 32])
+        .expect("the node-free forward-v2 planner builds");
+
+    assert_eq!(
+        ProofBearingRunOfRecord::try_from(planner.record()),
+        Err(RunOfRecordProjectionRefusal::HistoricalV1DigestRequired),
+    );
+}
+
+/// Check every live construction refusal without consulting schema 1.
 ///
 /// Every refusal must project to the stable vocabulary, the controls
 /// must be exactly the closed control census in order, every full
-/// refusal must name the first consumed coin, and the projected vector
-/// must equal the recorded vector.
+/// refusal must name the first consumed coin, and no historical bytes
+/// participate in the comparison.
 ///
 /// # Panics
 ///
 /// If the completed live record omits a coin or control, carries an
-/// unrecognized refusal, names the wrong consumed coin, or differs from
-/// a recorded V2 refusal vector.
-fn assert_construction_refusals_match_the_run_of_record(
+/// unrecognized refusal, or names the wrong consumed coin.
+fn assert_live_construction_refusal_shape(
     record: &vectors::live_proof_bearing_observation::ProofBearingObservationRecord,
-    expected: &vectors::live_proof_bearing_observation::ProofBearingRunOfRecord,
 ) {
     use transaction::live_materialize::MaterializationRefusal;
     use vectors::live_proof_bearing_observation::{
@@ -844,66 +866,50 @@ fn assert_construction_refusals_match_the_run_of_record(
             "a construction refusal names a coin other than the first consumed coin",
         );
     }
-
-    let expected = expected
-        .construction_refusals()
-        .captured()
-        .expect("the V2 record captures construction refusals");
-    assert_eq!(
-        projected.as_slice(),
-        expected,
-        "the live construction refusals drifted from the complete V2 vector",
-    );
 }
 
-/// Bind the live coins, reverification, and candidate messages to the
-/// exact V2 archival record.
+/// Bind a fresh live projection only to the schema-2 forward record.
 ///
 /// # Panics
 ///
-/// If the live record is incomplete or any projected V2 field differs
-/// from the recorded value.
-fn assert_proof_bearing_record_matches_run_of_record(
+/// If the live record cannot project as forward v2, either forward member
+/// is pending, or a recorded forward member differs from the fresh value.
+fn assert_proof_bearing_record_matches_forward_run_of_record(
     actual: &vectors::live_proof_bearing_observation::ProofBearingObservationRecord,
-    expected: &vectors::live_proof_bearing_observation::ProofBearingRunOfRecord,
+    expected: &vectors::live_proof_bearing_observation::ForwardV2ProofBearingRunOfRecord,
 ) {
-    use vectors::live_proof_bearing_observation::ProofBearingRunOfRecord;
+    use vectors::live_proof_bearing_observation::ForwardV2ProofBearingRunOfRecord;
 
-    let projected = ProofBearingRunOfRecord::try_from(actual)
-        .expect("the completed live ceremony projects to the archival schema");
+    let projected = ForwardV2ProofBearingRunOfRecord::try_from(actual)
+        .expect("the completed live ceremony projects to forward schema 2");
     assert_eq!(projected.schema_version(), expected.schema_version());
-    assert_eq!(projected.issued_asset(), expected.issued_asset());
     assert_eq!(
-        projected.predecessor_digest(),
-        expected.predecessor_digest()
+        projected.fixture_digest_algorithm(),
+        expected.fixture_digest_algorithm(),
     );
+    let projected_observations = projected
+        .observations()
+        .recorded()
+        .expect("a completed forward projection records its observations");
+    let expected_observations = expected
+        .observations()
+        .recorded()
+        .expect("the forward observation expectation is still pending its accepted run");
     assert_eq!(
-        projected.coins(),
-        expected.coins(),
-        "a node-reported coin field drifted from V2",
+        projected_observations, expected_observations,
+        "the fresh observations drifted from the forward-v2 record",
     );
+    let projected_acceptance = projected
+        .acceptance()
+        .recorded()
+        .expect("a completed forward projection records its acceptance");
+    let expected_acceptance = expected
+        .acceptance()
+        .recorded()
+        .expect("the forward acceptance expectation is still pending its accepted run");
     assert_eq!(
-        projected.output_witness_vector_length(),
-        expected.output_witness_vector_length()
-    );
-    assert_eq!(
-        projected.output_witness_proof_bytes(),
-        expected.output_witness_proof_bytes()
-    );
-    assert_eq!(
-        projected.spent_value_prefixes(),
-        expected.spent_value_prefixes()
-    );
-    assert_eq!(projected.observations(), expected.observations());
-    assert_eq!(
-        projected.reverification(),
-        expected.reverification(),
-        "the exact reverification outcome drifted from V2",
-    );
-    assert_eq!(
-        projected.candidate_messages(),
-        expected.candidate_messages(),
-        "a candidate message drifted from V2",
+        projected_acceptance, expected_acceptance,
+        "the fresh acceptance drifted from the forward-v2 record",
     );
 }
 
@@ -1011,57 +1017,65 @@ fn check_proof_bearing_record(
     assert!(rendered.contains("discharges_no_matrix_row true"));
 }
 
-// Bind the freshly written private-restart transcript to every stable
-// field of its committed run of record. Wall time is intentionally absent:
-// it is machine telemetry rather than a reproducible result.
+// Bind the freshly written private-restart transcript to the forward-v2
+// fixture selector and its explicit acceptance state. Historical fixture
+// digests never enter this gate. While forward acceptance is pending, only
+// the matching receipt's recorded transaction identity remains an honest
+// bridge: the deterministic transaction bytes, unlike their fixture names,
+// are independent of the digest algorithm.
 fn assert_private_restart_matches_the_run_of_record(
     record: &vectors::live_private_restart::PrivateRestartRecord,
     consumed: vectors::live_private_restart::ConsumedReceipt,
 ) {
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
-    use vectors::live_private_restart::{ConsumedReceipt, run_of_record as run};
-
-    let (successor_digest, accepted_txid, commitment_prefix) = match consumed {
-        ConsumedReceipt::Primary => (
-            run::SUCCESSOR_DIGEST,
-            run::ACCEPTED_TXID,
-            run::CONSUMED_COMMITMENT_PREFIX,
-        ),
-        ConsumedReceipt::Balancing => (
-            run::PARITY_SUCCESSOR_DIGEST,
-            run::PARITY_ACCEPTED_TXID,
-            run::PARITY_CONSUMED_COMMITMENT_PREFIX,
-        ),
+    use vectors::live_private_restart::run_of_record::{
+        ForwardPrivateRestartExpectation, ForwardPrivateRestartExpectationRefusal,
+        HistoricalPrivateRestartRun, forward_private_restart_expectation,
+        historical_private_restart_run,
     };
 
-    assert_eq!(record.issued_asset(), Some(run::ISSUED_ASSET));
+    let ForwardPrivateRestartExpectation::V2(forward) = forward_private_restart_expectation();
     assert_eq!(
         record.predecessor_digest(),
-        Some(identifier(run::PREDECESSOR_DIGEST)),
+        Some(identifier(forward.fixtures().predecessor())),
     );
     assert_eq!(
         record.successor_digest(),
-        Some(identifier(successor_digest)),
+        Some(identifier(forward.fixtures().successor(consumed))),
     );
     assert_eq!(record.consumed_receipt(), Some(consumed.name()));
-    assert_eq!(record.consumed_commitment_prefix(), Some(commitment_prefix),);
-    assert_eq!(record.receipt_leaves(), run::RECEIPT_LEAVES);
-    assert_eq!(
-        record.output_witness_proof_bytes(),
-        &run::OUTPUT_WITNESS_PROOF_BYTES,
-    );
-    assert_eq!(record.submitted_bytes(), run::SUBMITTED_BYTES);
     assert_eq!(
         record.observed_layer(),
         Some(ObservedOutcomeLayer::Accepted),
     );
-    assert_eq!(record.accepted_txid(), Some(accepted_txid));
     assert!(record.produced_an_accepted_control());
+
+    let expected_identity = match forward.acceptance().recorded_link() {
+        Ok(link) => {
+            let member = link.for_receipt(consumed);
+            assert_eq!(
+                record.consumed_commitment_prefix(),
+                Some(member.commitment_prefix()),
+            );
+            member.identity()
+        }
+        Err(ForwardPrivateRestartExpectationRefusal::AcceptancePending) => {
+            let HistoricalPrivateRestartRun::V1(historical) = historical_private_restart_run()
+                .expect("the immutable historical acceptance identities parse");
+            historical
+                .acceptances()
+                .for_receipt(consumed)
+                .acceptance()
+                .accepted_identity()
+        }
+    };
+    let expected_identity = expected_identity.to_string();
+    assert_eq!(record.accepted_txid(), Some(expected_identity.as_str()));
 
     let reverification = record
         .reverification()
         .expect("the accepted run carries unconditional reverification");
-    assert_eq!(reverification.accepted_txid(), accepted_txid);
+    assert_eq!(reverification.accepted_txid(), expected_identity.as_str());
     assert!(reverification.readback_matches_submission());
     assert!(reverification.verified());
 }
@@ -1079,14 +1093,23 @@ fn assert_private_restart_matches_the_run_of_record(
 /// # What it asserts, after preserving the fresh record
 ///
 /// It writes the transcript, timing, and any executor refusal first, then
-/// asserts the exact committed asset, fixture digests, receipt and parity,
-/// proof and submission sizes, accepted layer and identity, and
-/// unconditional readback reverification. A changed honest answer remains
-/// preserved in the artifacts while this reproduction gate fails.
+/// asserts the forward fixture digests, selected receipt, accepted layer,
+/// receipt-indexed identity, and unconditional readback reverification.
+/// The surrounding shape checks require two matching predecessor coins,
+/// proof-bearing outputs, a submitted candidate, and an admitted parity.
+/// A changed honest answer remains preserved in the artifacts while this
+/// reproduction gate fails.
 ///
 /// Superseding a changed result requires an explicit decision recorded
 /// as a new forward run of record. This test never rewrites the
 /// historical constants to accommodate drift.
+///
+/// Historical v1 fixture digests remain immutable and renderable, but the
+/// sole live fixture-digest algorithm is v2. Fresh digest comparisons use
+/// only the forward expectation; its acceptance pair remains pending its
+/// own owner-authorized run, so the pending bridge checks only the matching
+/// Primary or Balancing transaction identity whose deterministic bytes do
+/// not depend on how the fixture is named.
 ///
 /// # It moves nothing by running
 ///
