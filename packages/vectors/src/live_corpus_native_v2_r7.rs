@@ -13,6 +13,7 @@ use target_elements::opcode::LeafVersion;
 use target_elements_conformance::constructor::tagged;
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use transaction::bytes::{SerializedFieldLocator, SerializedOutputField};
+use transaction::taproot::{CONTROL_BASE_BYTES, DIGEST_BYTES, TAPROOT_LEAF_MASK};
 use transaction::{AssetField, TargetTransaction, Txid, ValueField};
 
 use crate::live_report::{
@@ -1558,6 +1559,11 @@ fn parse_locator(text: &str) -> Option<LiveMutationLocator> {
                 "script-path" => Some(LiveWitnessPathRole::ScriptPath),
                 _ => None,
             };
+            let witnessless_serialization_equal = match *witnessless_equal {
+                "true" => true,
+                "false" => false,
+                _ => return None,
+            };
             Some(LiveMutationLocator::WitnessPathShape {
                 input_index: parse_usize(input)?,
                 control_stack_items: parse_usize(control_count)?,
@@ -1565,7 +1571,7 @@ fn parse_locator(text: &str) -> Option<LiveMutationLocator> {
                 changed_positions,
                 control_role: role(control_role)?,
                 mutant_role: role(mutant_role)?,
-                witnessless_serialization_equal: *witnessless_equal == "true",
+                witnessless_serialization_equal,
             })
         }
         [
@@ -2064,6 +2070,9 @@ fn parse_capture_digests(
         if parse_usize(offered) != Some(index) {
             return Err(cursor.refusal());
         }
+        if !matches!(*digest_name, "predecessor" | "successor") {
+            return Err(cursor.refusal());
+        }
         if *algorithm != digest_algorithm {
             return Err(cursor.refusal());
         }
@@ -2251,8 +2260,58 @@ fn witness_item_is_exact(
     differences == 1
 }
 
-const CONTROL_BLOCK_BASE_BYTES: usize = 33;
-const CONTROL_BLOCK_DIGEST_BYTES: usize = 32;
+fn sponsor_authorization_is_absent(
+    control: &TargetTransaction,
+    mutant: &TargetTransaction,
+    input_index: usize,
+    item_index: usize,
+) -> bool {
+    if control.version() != mutant.version()
+        || control.inputs() != mutant.inputs()
+        || control.outputs() != mutant.outputs()
+        || control.lock_time() != mutant.lock_time()
+        || control.output_witnesses() != mutant.output_witnesses()
+        || control.witnesses().len() != mutant.witnesses().len()
+        || control.encode_without_witness() != mutant.encode_without_witness()
+    {
+        return false;
+    }
+    let mut found = false;
+    for (offered_input, (control_witness, mutant_witness)) in control
+        .witnesses()
+        .iter()
+        .zip(mutant.witnesses())
+        .enumerate()
+    {
+        if offered_input != input_index {
+            if control_witness != mutant_witness {
+                return false;
+            }
+            continue;
+        }
+        let control_stack = control_witness.stack();
+        let mutant_stack = mutant_witness.stack();
+        if item_index >= control_stack.len() || control_stack.len() != mutant_stack.len() {
+            return false;
+        }
+        if control_stack[..item_index] != mutant_stack[..item_index] {
+            return false;
+        }
+        if control_stack[item_index..].iter().any(Vec::is_empty) {
+            return false;
+        }
+        if mutant_stack[item_index..]
+            .iter()
+            .any(|item| !item.is_empty())
+        {
+            return false;
+        }
+        found = true;
+    }
+    found
+}
+
+const MAXIMUM_CONTROL_PATH_DEPTH: usize = 128;
 const TAPSCRIPT_LEAF_VERSION: u8 = LeafVersion::TAPSCRIPT.get();
 
 fn decoded_witness_path_role(stack: &[Vec<u8>]) -> Option<LiveWitnessPathRole> {
@@ -2261,11 +2320,10 @@ fn decoded_witness_path_role(stack: &[Vec<u8>]) -> Option<LiveWitnessPathRole> {
     }
     let (control_block, preceding) = stack.split_last()?;
     let leaf_program = preceding.last()?;
-    let valid_control = control_block.len() >= CONTROL_BLOCK_BASE_BYTES
-        && (control_block.len() - CONTROL_BLOCK_BASE_BYTES)
-            .is_multiple_of(CONTROL_BLOCK_DIGEST_BYTES)
-        && (control_block.len() - CONTROL_BLOCK_BASE_BYTES) / CONTROL_BLOCK_DIGEST_BYTES <= 128
-        && control_block[0] & 0xfe == TAPSCRIPT_LEAF_VERSION;
+    let valid_control = control_block.len() >= CONTROL_BASE_BYTES
+        && (control_block.len() - CONTROL_BASE_BYTES).is_multiple_of(DIGEST_BYTES)
+        && (control_block.len() - CONTROL_BASE_BYTES) / DIGEST_BYTES <= MAXIMUM_CONTROL_PATH_DEPTH
+        && control_block[0] & TAPROOT_LEAF_MASK == TAPSCRIPT_LEAF_VERSION;
     (!leaf_program.is_empty() && valid_control).then_some(LiveWitnessPathRole::ScriptPath)
 }
 
@@ -2427,8 +2485,11 @@ fn locator_matches(
         LiveMutationLocator::WitnessItem {
             input_index,
             item_index,
-        } => mutant.is_some_and(|mutant| {
-            witness_item_is_exact(control, mutant, *input_index, *item_index)
+        } => mutant.is_some_and(|mutant| match mutant_kind {
+            LiveMutantKind::MissingSponsorAuthorization => {
+                sponsor_authorization_is_absent(control, mutant, *input_index, *item_index)
+            }
+            _ => witness_item_is_exact(control, mutant, *input_index, *item_index),
         }),
         LiveMutationLocator::WitnesslessRange { start, end } => mutant.is_some_and(|mutant| {
             exact_changed_range(
@@ -3679,6 +3740,97 @@ mod tests {
                 .as_ref()
                 .expect("the refused mutant declares its locator"),
         ));
+    }
+
+    #[test]
+    fn reviewed_sponsor_locator_matches_empty_authorization_items() {
+        let report = parse_report(RUN_REPORT_BYTES).expect("the reviewed report parses");
+        let capture = ARCHIVE_FILES
+            .iter()
+            .find(|file| file.name == "e8836e79b631b96420fb8006353df5b673ec7c69b830fb5f0555fb06add02517.sponsored-missing-authorization.capture")
+            .expect("the fixed roster carries the sponsor-negative capture");
+        let transcript = parse_transcript(capture.name, capture.bytes, &report)
+            .expect("the reviewed sponsor-negative capture parses");
+        let mutant = transcript
+            .operations
+            .iter()
+            .find(|operation| operation.role == OperationRole::Refusal)
+            .expect("the sponsor-negative capture carries its refused mutant");
+        let control_request_id = mutant
+            .control_request_id
+            .as_deref()
+            .expect("the refused mutant links its control");
+        let control = transcript
+            .operations
+            .iter()
+            .find(|operation| operation.request_id == control_request_id)
+            .expect("the sponsor-negative capture carries its linked control");
+        let mutant_transaction = TargetTransaction::decode(&mutant.request_bytes)
+            .expect("the sponsor-negative mutant decodes exactly");
+        let control_transaction = TargetTransaction::decode(&control.request_bytes)
+            .expect("the sponsor-signed control decodes exactly");
+        let Some(LiveMutationLocator::WitnessItem {
+            input_index,
+            item_index,
+        }) = mutant.locator.as_ref()
+        else {
+            panic!("the sponsor-negative mutant declares a witness-item locator");
+        };
+        let control_stack = control_transaction
+            .witnesses()
+            .get(*input_index)
+            .expect("the control carries the declared witness")
+            .stack();
+        let mutant_stack = mutant_transaction
+            .witnesses()
+            .get(*input_index)
+            .expect("the mutant carries the declared witness")
+            .stack();
+        assert!(control_stack.len() > 1);
+        assert_eq!(control_stack.len(), mutant_stack.len());
+        assert!(
+            control_stack[*item_index..]
+                .iter()
+                .all(|item| !item.is_empty())
+        );
+        assert!(mutant_stack[*item_index..].iter().all(Vec::is_empty));
+        assert_eq!(
+            mutant.mutant,
+            Some(LiveMutantKind::MissingSponsorAuthorization),
+        );
+        assert!(locator_matches(
+            &control_transaction,
+            &control.request_bytes,
+            Some(&mutant_transaction),
+            &mutant.request_bytes,
+            LiveMutantKind::MissingSponsorAuthorization,
+            mutant
+                .locator
+                .as_ref()
+                .expect("the sponsor-negative mutant carries its locator"),
+        ));
+    }
+
+    #[test]
+    fn reviewed_pair_recomputes_all_projection_terms() {
+        let report = parse_report(RUN_REPORT_BYTES).expect("the reviewed report parses");
+        let capture = ARCHIVE_FILES
+            .iter()
+            .find(|file| file.name == "e8836e79b631b96420fb8006353df5b673ec7c69b830fb5f0555fb06add02517.pairs-arc.capture")
+            .expect("the fixed roster carries the paired capture");
+        let transcript = parse_transcript(capture.name, capture.bytes, &report)
+            .expect("the reviewed paired capture parses");
+        let explicit = transcript
+            .operations
+            .iter()
+            .find(|operation| operation.role == OperationRole::Paired(LivePairMember::Explicit))
+            .expect("the paired capture carries its explicit member");
+        let private = transcript
+            .operations
+            .iter()
+            .find(|operation| operation.role == OperationRole::Paired(LivePairMember::Private))
+            .expect("the paired capture carries its private member");
+        assert!(pair_recomputes(explicit, private));
     }
 
     #[test]
