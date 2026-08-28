@@ -382,29 +382,13 @@ impl CeremonyCaptureFacts {
                 let is_submission =
                     matches!(operation.request().subject, OperationSubject::Submission(_));
                 let (mutant, locator) = mutation_fact(operation.request().case.step.as_str());
-                let role = if !is_submission {
-                    RequestRole::Auxiliary
-                } else if Some(index) == control_index {
-                    RequestRole::Control
-                } else if ceremony == CeremonyId::PairsArc {
-                    match operation.request().case.step.as_str() {
-                        "explicit-paired-one-to-one" => RequestRole::PairedExplicit,
-                        "private-paired-one-to-one" => RequestRole::PairedPrivate,
-                        _ => RequestRole::Auxiliary,
-                    }
-                } else if is_negative_ceremony(ceremony) && mutant.is_some() {
-                    RequestRole::Refusal
-                } else {
-                    RequestRole::Auxiliary
-                };
-                let role = if is_submission
-                    && !is_negative_ceremony(ceremony)
-                    && ceremony != CeremonyId::PairsArc
-                {
-                    RequestRole::Acceptance
-                } else {
-                    role
-                };
+                let role = request_role(
+                    ceremony,
+                    operation.request().case.step.as_str(),
+                    is_submission,
+                    Some(index) == control_index,
+                    mutant.is_some(),
+                );
                 let attributed = role == RequestRole::Refusal;
                 CeremonyOperationFacts {
                     operation_id: operation.operation_id().to_owned(),
@@ -443,10 +427,14 @@ impl CeremonyCaptureFacts {
     }
 
     fn with_locator(mut self, step: &str, locator: LiveMutationLocator) -> Self {
+        // Origin records also carry ceremony-only controls such as
+        // `missing-rangeproof`, which has no row in the closed report-mutant
+        // vocabulary. A locator completes an already typed mutation; it does
+        // not promote every origin negative into a report mutation.
         if let Some(operation) = self
             .operations
             .iter_mut()
-            .find(|operation| operation.case_step == step)
+            .find(|operation| operation.case_step == step && operation.mutant.is_some())
         {
             operation.locator = Some(locator);
         }
@@ -457,6 +445,59 @@ impl CeremonyCaptureFacts {
         self.operations
             .iter()
             .find(|operation| operation.operation_id == operation_id)
+    }
+}
+
+fn request_role(
+    ceremony: CeremonyId,
+    step: &str,
+    is_submission: bool,
+    is_control: bool,
+    is_mutant: bool,
+) -> RequestRole {
+    if !is_submission {
+        return RequestRole::Auxiliary;
+    }
+    if is_control {
+        return RequestRole::Control;
+    }
+    if ceremony == CeremonyId::PairsArc {
+        return match step {
+            "explicit-paired-one-to-one" => RequestRole::PairedExplicit,
+            "private-paired-one-to-one" => RequestRole::PairedPrivate,
+            _ => RequestRole::Auxiliary,
+        };
+    }
+    if is_negative_ceremony(ceremony) {
+        return if is_mutant {
+            RequestRole::Refusal
+        } else {
+            RequestRole::Auxiliary
+        };
+    }
+    // These observation ceremonies intentionally submit controls or probes
+    // whose verdict is data. Only their typed selected case is an acceptance
+    // carrier; the other submissions remain auxiliary even when refused.
+    match ceremony {
+        CeremonyId::OwnerObservation => {
+            if step == vectors::live_owner_observation::OwnerObservationCase::SelectedProfile.name()
+            {
+                RequestRole::Acceptance
+            } else {
+                RequestRole::Auxiliary
+            }
+        }
+        CeremonyId::ProofBearingObservation => {
+            if step
+                == vectors::live_proof_bearing_observation::ProofBearingCase::SelectedProfile.name()
+            {
+                RequestRole::Acceptance
+            } else {
+                RequestRole::Auxiliary
+            }
+        }
+        CeremonyId::Report | CeremonyId::SponsoredCommittedValue => RequestRole::Auxiliary,
+        _ => RequestRole::Acceptance,
     }
 }
 
@@ -649,6 +690,15 @@ fn pair_projection_input(programs: &[Vec<u8>]) -> Result<ProjectionInput, String
         amounts,
         destinations,
     })
+}
+
+fn sponsor_capture_facts(
+    ceremony: CeremonyId,
+    capture: &NativeOperationCapture,
+    predecessor_digest: Option<[u8; 32]>,
+) -> CeremonyCaptureFacts {
+    CeremonyCaptureFacts::from_capture(ceremony, capture)
+        .with_digest("predecessor", predecessor_digest)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2413,8 +2463,11 @@ fn report_fact_assembly_keeps_the_observational_submission_auxiliary() {
 #[test]
 fn committed_sponsor_fact_assembly_keeps_the_observation_and_fixture_digest() {
     let capture = scripted_ceremony_capture(CeremonyId::SponsoredCommittedValue);
-    let facts = CeremonyCaptureFacts::from_capture(CeremonyId::SponsoredCommittedValue, &capture)
-        .with_digest("predecessor", Some([0x44; 32]));
+    let facts = sponsor_capture_facts(
+        CeremonyId::SponsoredCommittedValue,
+        &capture,
+        Some([0x44; 32]),
+    );
 
     validate_capture_facts(&capture, &facts).expect("the committed-sponsor facts are complete");
     assert_eq!(facts.operations.len(), 6);
@@ -6091,7 +6144,7 @@ fn run_one_sponsor_shape(
         )
         .expect("the run's wall time is written");
     }
-    let facts = CeremonyCaptureFacts::from_capture(ceremony, &capture);
+    let facts = sponsor_capture_facts(ceremony, &capture, planner.capture_predecessor_digest());
     write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
     if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
         std::fs::write(

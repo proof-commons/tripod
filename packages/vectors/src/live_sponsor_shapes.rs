@@ -65,8 +65,8 @@ use target_elements_conformance::confidential_fixture::{
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::owner_key_oracle::verify_owner_signature;
 use target_elements_conformance::protocol::{
-    MinedFundingReadback, NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId,
-    OperationSubject, TargetFundingSubject, TargetSponsorFundingSubject,
+    ConfidentialFixtureDigest, MinedFundingReadback, NativeOperationResponse, ObservedOutcomeLayer,
+    OperationCaseId, OperationSubject, TargetFundingSubject, TargetSponsorFundingSubject,
     TargetSponsorSigningSubject, TargetSubmissionSubject, WireOutpoint, WireSighashProfile,
 };
 use transaction::bytes::{
@@ -1131,6 +1131,20 @@ impl SponsorShapePlanner {
     #[must_use]
     pub const fn record(&self) -> &SponsorShapeRecord {
         &self.record
+    }
+
+    /// The existing committed sponsor fixture digest, where this planner
+    /// registered one.
+    ///
+    /// Capture metadata only: the executor journal remains the sole source
+    /// of request bytes and target responses.
+    #[must_use]
+    pub fn capture_predecessor_digest(&self) -> Option<[u8; 32]> {
+        self.sponsor_registry
+            .as_ref()?
+            .registered_digest(&sponsor_reserve_handle())
+            .map(ConfidentialFixtureDigest::bytes)
+            .copied()
     }
 
     /// The step that funds the committed sponsor coin.
