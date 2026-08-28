@@ -126,6 +126,17 @@ mod tests {
         "observed_run_of_record",
     ];
 
+    fn recorded_digest(text: &str) -> [u8; 32] {
+        let mut bytes = [0_u8; 32];
+        let (pairs, remainder) = text.as_bytes().as_chunks::<2>();
+        assert!(remainder.is_empty(), "a historical digest has odd width");
+        for (slot, pair) in bytes.iter_mut().zip(pairs) {
+            let digits = std::str::from_utf8(pair).expect("a historical digest is ASCII hex");
+            *slot = u8::from_str_radix(digits, 16).expect("a historical digest is hexadecimal");
+        }
+        bytes
+    }
+
     #[test]
     fn active_consumers_do_not_read_v1_origin_paths() {
         let stale = ACTIVE_CONSUMERS
@@ -177,6 +188,27 @@ mod tests {
         assert_eq!(
             super::owner_observation::EXPECTED_CASE_OUTCOMES,
             crate::live_owner_observation::run_of_record::EXPECTED_CASE_OUTCOMES,
+        );
+    }
+
+    #[test]
+    fn conservation_q19_divergence_is_archival_only() {
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates");
+        let current = corpus
+            .mint_ceremony("conservation-negatives")
+            .expect("the conservation ceremony is present");
+        assert_ne!(
+            recorded_digest(super::conservation_negatives::PREDECESSOR_DIGEST),
+            *current
+                .fixture_digest("predecessor")
+                .expect("the current predecessor digest is present"),
+        );
+        assert_ne!(
+            recorded_digest(super::conservation_negatives::SUCCESSOR_DIGEST),
+            *current
+                .fixture_digest("successor")
+                .expect("the current successor digest is present"),
         );
     }
 }
