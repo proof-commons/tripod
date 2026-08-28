@@ -1339,7 +1339,7 @@ struct ProvenArchiveLink {
 /// alone.
 #[allow(
     dead_code,
-    reason = "the present archive intentionally supplies no proof; N1-B integration mints these variants"
+    reason = "present archive has no proof; N1-B integration mints these variants"
 )]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ValidatedCorpusObservation {
@@ -1532,7 +1532,7 @@ fn retype_validated_observation(
                 return Err(CorpusEvidenceRefusal::RecordedObservationMismatch);
             }
             Ok(LiveRowStanding::NativeRunObserved {
-                accepted_identity: *recorded_identity,
+                accepted_identity: recorded_identity,
             })
         }
         (
@@ -1563,8 +1563,8 @@ fn retype_validated_observation(
             Ok(LiveRowStanding::NativeRefusalObserved {
                 declared_boundary: proven_boundary,
                 observed_layer: proven_layer,
-                control_identity: *recorded_control,
-                refusal_detail: *recorded_detail,
+                control_identity: recorded_control,
+                refusal_detail: recorded_detail,
             })
         }
         (
@@ -1587,9 +1587,9 @@ fn retype_validated_observation(
                 return Err(CorpusEvidenceRefusal::RecordedObservationMismatch);
             }
             Ok(LiveRowStanding::PairedRelationObserved {
-                explicit_identity: *recorded_explicit,
-                private_identity: *recorded_private,
-                relation: *recorded_relation,
+                explicit_identity: recorded_explicit,
+                private_identity: recorded_private,
+                relation: recorded_relation,
             })
         }
         (LiveRowStanding::RecordedObservationUnbound(_), _) => {
@@ -2834,8 +2834,8 @@ mod tests {
                     accepted_control,
                     declared_boundary: *declared_boundary,
                     observed_layer: *observed_layer,
-                    control_identity: *control_identity,
-                    refusal_detail: *refusal_detail,
+                    control_identity,
+                    refusal_detail,
                 },
             },
         }
@@ -2863,7 +2863,7 @@ mod tests {
                 proven_row: row_name,
                 observation: ValidatedCorpusObservation::NativeAcceptance {
                     request,
-                    accepted_identity: *accepted_identity,
+                    accepted_identity,
                 },
             },
         }
@@ -2895,9 +2895,9 @@ mod tests {
                 observation: ValidatedCorpusObservation::PairedRelation {
                     explicit,
                     private,
-                    explicit_identity: *explicit_identity,
-                    private_identity: *private_identity,
-                    relation: *relation,
+                    explicit_identity,
+                    private_identity,
+                    relation,
                 },
             },
         }
