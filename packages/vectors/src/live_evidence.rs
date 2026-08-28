@@ -2097,7 +2097,7 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // matrix classified two, and a row that has moved in one artifact
         // and not the other is a row nobody is checking.
         "target-ct-conservation" => {
-            Some(crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID)
+            Some(crate::live_history_v1::conservation_negatives::CONTROL_ACCEPTED_TXID)
         }
         // A sponsored PRIVATE successor: a blinded sponsor coin in at an
         // explicit asset, blinded receipt destinations, a committed
@@ -2373,11 +2373,11 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         "malformed-rangeproof" | "wrong-private-blinding-balance" | "private-ct-imbalance" => {
             Some(RecordedNativeRefusal {
                 control_identity:
-                    crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+                    crate::live_history_v1::conservation_negatives::CONTROL_ACCEPTED_TXID,
                 observed_layer:
-                    crate::live_conservation_negatives::run_of_record::MUTANT_OBSERVED_LAYER,
+                    crate::live_history_v1::conservation_negatives::MUTANT_OBSERVED_LAYER,
                 refusal_detail:
-                    crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
+                    crate::live_history_v1::conservation_negatives::MUTANT_REJECT_DETAIL,
             })
         }
         // §15.4's script-path row, answered by the owner-signing negative
@@ -2581,7 +2581,7 @@ fn observed_row_first_party_fact(row: &LiveSafetyRow) -> Option<(&'static str, &
             "a raw assembly path bypassing the safe constructor exists and is used: \
              `with_output_witnesses` is public, checks census arity only, and three \
              lanes rebuild finalized bytes through it and submit them to a real node",
-            "crate::live_conservation_negatives::run_of_record",
+            "crate::live_history_v1::conservation_negatives",
         )),
         // §15.6's zero-valued sponsor row, on the ruling that the
         // realization's reading GOVERNS. THE MATRIX PREDICTS A REFUSAL

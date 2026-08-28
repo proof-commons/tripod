@@ -24,9 +24,7 @@ pub mod multi_shapes {
 }
 
 /// Historical conservation control and refusal observations.
-pub mod conservation_negatives {
-    pub use crate::live_conservation_negatives::run_of_record::*;
-}
+pub mod conservation_negatives;
 
 /// Historical explicit-shape acceptance observations.
 pub mod explicit_shapes {
@@ -155,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn archival_reexports_are_the_original_values() {
+    fn archival_values_remain_the_original_values() {
         assert_eq!(
             super::private_restart::ACCEPTED_TXID,
             crate::live_private_restart::run_of_record::ACCEPTED_TXID,
@@ -166,7 +164,7 @@ mod tests {
         );
         assert_eq!(
             super::conservation_negatives::WRONG_BLINDER_FIELD_RANGE,
-            crate::live_conservation_negatives::run_of_record::WRONG_BLINDER_FIELD_RANGE,
+            (81, 114),
         );
         assert_eq!(
             super::explicit_shapes::MAXIMUM_INPUTS_ACCEPTED_TXID,
