@@ -929,6 +929,13 @@ pub mod run_of_record {
 /// Wall time is intentionally absent: it is machine telemetry rather than
 /// a reproducible result.
 ///
+/// Under Q19, the recorded v1 fixture digests remain immutable historical
+/// run data. A fresh conservation ceremony builds the same `DualParity`,
+/// `Primary` predecessor and successor as private restart, so its fixture
+/// assertions import that shared fixture's sole-live forward-v2 identities
+/// from
+/// [`crate::live_private_restart::run_of_record::forward_fixture_digest_v2`].
+///
 /// # Panics
 ///
 /// Panics if a recorded fact is absent or differs, or if a mutant cannot be
@@ -1093,6 +1100,7 @@ fn assert_recorded_mutant(
 }
 
 fn assert_recorded_fixture(record: &ConservationNegativeRecord) {
+    use crate::live_private_restart::run_of_record::forward_fixture_digest_v2 as forward;
     use run_of_record as run;
 
     assert_eq!(
@@ -1103,14 +1111,14 @@ fn assert_recorded_fixture(record: &ConservationNegativeRecord) {
     let predecessor_digest = record.predecessor_digest.map(hex);
     assert_eq!(
         predecessor_digest.as_deref(),
-        Some(run::PREDECESSOR_DIGEST),
-        "the predecessor digest differs from the run of record",
+        Some(forward::PREDECESSOR_DIGEST),
+        "the predecessor digest differs from the shared forward-v2 fixture",
     );
     let successor_digest = record.successor_digest.map(hex);
     assert_eq!(
         successor_digest.as_deref(),
-        Some(run::SUCCESSOR_DIGEST),
-        "the successor digest differs from the run of record",
+        Some(forward::SUCCESSOR_DIGEST),
+        "the successor digest differs from the shared forward-v2 fixture",
     );
 }
 
@@ -1119,8 +1127,9 @@ mod tests {
     use super::{
         ConservationNegativeRecord, ControlReverification, MutantObservation, ProofNegativeCase,
         ProofNegativeMutation, assert_conservation_matches_the_run_of_record,
-        render_conservation_negatives, run_of_record as run,
+        assert_recorded_fixture, render_conservation_negatives, run_of_record as run,
     };
+    use crate::live_private_restart::run_of_record::forward_fixture_digest_v2 as forward;
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
     use transaction::bytes::{
         AssetField, AssetId, InputWitness, NonceField, Outpoint, OutputWitness, TargetInput,
@@ -1208,6 +1217,23 @@ mod tests {
             ],
             refusal: None,
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "predecessor digest differs from the shared forward-v2 fixture")]
+    fn recorded_v1_fixture_digests_refuse_the_forward_binding() {
+        let record = synthetic_record();
+
+        assert_recorded_fixture(&record);
+    }
+
+    #[test]
+    fn forward_v2_fixture_digests_pass_the_forward_binding() {
+        let mut record = synthetic_record();
+        record.predecessor_digest = Some(recorded_digest(forward::PREDECESSOR_DIGEST));
+        record.successor_digest = Some(recorded_digest(forward::SUCCESSOR_DIGEST));
+
+        assert_recorded_fixture(&record);
     }
 
     #[test]
