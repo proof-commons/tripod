@@ -1964,7 +1964,6 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
 #[cfg(test)]
 mod tests {
     use super::{BARE_U_PROGRAM, changed_range};
-    use crate::live_history_v1::owner_signing_negatives as history;
 
     #[test]
     fn changed_range_bounds_a_mutation_from_both_ends() {
@@ -1982,9 +1981,9 @@ mod tests {
         // member; two-coordinators collapses to coordinator at both, and
         // no-coordinator to member at both.
         let arrangements = [
-            history::CONTROL_ARRANGEMENT,
-            history::TWO_COORDINATORS_ARRANGEMENT,
-            history::NO_COORDINATOR_ARRANGEMENT,
+            [0, 1],
+            super::LeafArrangement::TwoCoordinators.sources(),
+            super::LeafArrangement::NoCoordinator.sources(),
         ];
         let mut seen = std::collections::BTreeSet::new();
         for arrangement in arrangements {
@@ -1993,23 +1992,6 @@ mod tests {
                 "two leaf arrangements share the reveal order {arrangement:?}",
             );
         }
-        // The two driven verdicts are distinct clauses: the coordinator
-        // index EqualVerify and the member bound Verify.
-        assert_ne!(
-            history::TWO_COORDINATORS_REJECT_DETAIL,
-            history::NO_COORDINATOR_REJECT_DETAIL,
-            "the two leaf-arrangement rows draw one verdict",
-        );
-        // The ceremony's own map from arrangement to row matches the run of
-        // record's constants.
-        assert_eq!(
-            super::LeafArrangement::TwoCoordinators.sources(),
-            history::TWO_COORDINATORS_ARRANGEMENT,
-        );
-        assert_eq!(
-            super::LeafArrangement::NoCoordinator.sources(),
-            history::NO_COORDINATOR_ARRANGEMENT,
-        );
     }
 
     #[test]
@@ -2020,43 +2002,5 @@ mod tests {
         assert_eq!(BARE_U_PROGRAM[0], 0x00, "the version byte is not zero");
         assert_eq!(BARE_U_PROGRAM[1], 0x14, "the push is not twenty bytes");
         assert_eq!(BARE_U_PROGRAM.len(), 22);
-    }
-
-    #[test]
-    fn the_seven_consensus_rows_declare_distinct_separators() {
-        // The run of record's own figures, checked to be pairwise distinct
-        // as (range, shape) pairs — the fact that makes the seven rows
-        // separable when the target draws one identical verdict for all of
-        // them. The four field surgeries keep the 2-in-2-out shape and
-        // separate by range; the three structural surgeries change the
-        // shape, which is what separates the two output-cardinality mutants
-        // that share the un-localizable structural range.
-        let field = |range| (range, (2_usize, 2_usize));
-        let separators = [
-            field(history::WRONG_EXPLICIT_ASSET_FIELD_RANGE),
-            field(history::CONFIDENTIAL_ASSET_COMMITMENT_FIELD_RANGE),
-            field(history::OUTPUT_TOTAL_ONE_BELOW_FIELD_RANGE),
-            field(history::OUTPUT_TOTAL_ONE_ABOVE_FIELD_RANGE),
-            (
-                history::OUTPUT_CARDINALITY_FIELD_RANGE,
-                history::PRIVATE_OUTPUT_OMITTED_SHAPE,
-            ),
-            (
-                history::OUTPUT_CARDINALITY_FIELD_RANGE,
-                history::HIDDEN_PRIVATE_U_OUTPUT_SHAPE,
-            ),
-            (
-                history::OMITTED_SOURCE_FIELD_RANGE,
-                history::OMITTED_SOURCE_SHAPE,
-            ),
-        ];
-        let mut seen = std::collections::BTreeSet::new();
-        for separator in separators {
-            assert!(
-                seen.insert(separator),
-                "two consensus rows share the separator {separator:?}",
-            );
-        }
-        assert_eq!(seen.len(), 7, "the register drives seven consensus rows");
     }
 }

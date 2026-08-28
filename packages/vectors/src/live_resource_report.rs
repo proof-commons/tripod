@@ -859,10 +859,25 @@ mod tests {
             }
         }
 
+        let proof_bytes = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates")
+            .ceremony_projection("private-restart-control")
+            .and_then(|projection| projection.semantic_value("output_witness_proof_bytes"))
+            .expect("the current private restart records its proof widths");
+        let widths = proof_bytes
+            .strip_prefix('[')
+            .and_then(|widths| widths.strip_suffix(']'))
+            .expect("the validated proof widths are bracketed")
+            .split(',')
+            .map(|width| {
+                width
+                    .trim()
+                    .parse::<usize>()
+                    .expect("a validated proof width parses")
+            })
+            .collect::<Vec<_>>();
         assert!(
-            crate::live_history_v1::private_restart::OUTPUT_WITNESS_PROOF_BYTES
-                .iter()
-                .all(|bytes| *bytes > 0),
+            !widths.is_empty() && widths.iter().all(|width| *width > 0),
             "the separate proof-bearing run must continue to carry real proofs",
         );
     }

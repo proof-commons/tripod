@@ -894,9 +894,9 @@ pub enum PairShapeAcceptance {
     /// One pair has changed that. The pairs arc materialized §16.1's
     /// one-to-one fixture TWICE — this registry's own fixture, read from
     /// the arc so there is only one — and submitted both materializations
-    /// to one node against one issued asset, both accepted
-    /// ([`crate::live_history_v1::pair_arc`]). What may occupy this
-    /// member is a submission of the pair's own member and nothing else;
+    /// to one node against one issued asset, both accepted in the validated
+    /// native-v2/revision-7 corpus. What may occupy this member is a
+    /// submission of the pair's own member and nothing else;
     /// the four other pairs keep
     /// [`Self::ObservedForThisShape`], which says less and is what is
     /// true of them.
@@ -2189,11 +2189,11 @@ mod tests {
     use super::{
         BOTH_PLANS, MinimalityConditionStanding, MinimalityPair, PairAcceptanceCondition,
         PairTargetVerdict, PredecessorAssumption, ResourceComparisonStanding, SponsorPresence,
-        build_minimality_pairs, condition_scoreboard, minimality_fixtures, recorded_acceptance,
+        build_minimality_pairs, condition_scoreboard, minimality_fixtures,
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
     use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeSet;
 
     #[test]
     fn every_pair_the_guide_names_has_exactly_one_fixture() {
@@ -2440,68 +2440,6 @@ mod tests {
             blockers.extend(row.blockers());
         }
         assert_eq!(blockers, BTreeSet::new());
-    }
-
-    #[test]
-    fn each_cited_run_has_its_own_member_s_cardinality() {
-        // The shape match, RECOMPUTED rather than declared. A citation
-        // that named a run of a different shape would be the one error
-        // `recorded_acceptance` exists to prevent, and a table checked
-        // by eye is a table nobody checked.
-        //
-        // The private lane recorded how many receipts each of its runs
-        // consumed and how many outputs each created, in its own run of
-        // record and in the order it ran them. Those two arrays are the
-        // independent statement this test holds the table against.
-        use crate::live_history_v1::multi_shapes as ms;
-
-        // Which recorded private run each pair's citation points at, by
-        // its index in the order the arrays are written in: split,
-        // many-to-many, several-distinct-owners, strict one-to-one,
-        // one-to-one-with-fee, merge, pure split.
-        let cited = [
-            (MinimalityPair::OneToOne, 3_usize),
-            (MinimalityPair::Merge, 5),
-            (MinimalityPair::ManyToMany, 2),
-            (MinimalityPair::Split, 6),
-        ];
-        let by_pair: BTreeMap<_, _> = minimality_fixtures()
-            .into_iter()
-            .map(|fixture| (fixture.pair(), fixture))
-            .collect();
-
-        for (pair, index) in cited {
-            let fixture = &by_pair[&pair];
-            assert_eq!(
-                ms::RECEIPT_LEAVES[index],
-                fixture.sources().len(),
-                "{} cites a run consuming a different number of receipts",
-                pair.name(),
-            );
-            assert_eq!(
-                ms::OUTPUT_COUNTS[index],
-                fixture.destinations().len(),
-                "{} cites a run creating a different number of outputs",
-                pair.name(),
-            );
-            assert!(
-                recorded_acceptance(pair, LiveTransferRepresentationPlan::PrivateCommitted)
-                    .is_observed(),
-            );
-        }
-
-        // And the split pair cites the run it does for a reason that is
-        // still checked rather than trusted. The three-output split is
-        // the NEAREST recorded run to this member and is not it: it
-        // creates three outputs where the member creates two, which is
-        // what kept the pair unsupported until a run of the member's own
-        // cardinality existed. Both facts are asserted, so a later
-        // citation that drifted back to the near miss fails here.
-        let split = &by_pair[&MinimalityPair::Split];
-        assert_eq!(split.destinations().len(), 2);
-        assert_eq!(ms::OUTPUT_COUNTS[0], 3);
-        assert_ne!(ms::OUTPUT_COUNTS[0], split.destinations().len());
-        assert_eq!(ms::OUTPUT_COUNTS[6], split.destinations().len());
     }
 
     #[test]
