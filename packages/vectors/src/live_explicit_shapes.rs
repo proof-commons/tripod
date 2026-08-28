@@ -1908,13 +1908,16 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
 /// So the identity is shared and the sharing is stated:
 ///
 /// - `one-input-to-one-output` and `sponsorless` share
-///   [`crate::live_history_v1::explicit_shapes::ONE_TO_ONE_ACCEPTED_TXID`]. The accepted bytes are both.
+///   [`crate::live_history_v1::explicit_shapes::ONE_TO_ONE_ACCEPTED_TXID`].
+///   The accepted bytes are both.
 /// - `one-input-split-into-two` and `several-destination-owners` share
-///   [`crate::live_history_v1::explicit_shapes::SPLIT_ACCEPTED_TXID`]. A split into two destinations belonging to
-///   two distinct owners is both.
+///   [`crate::live_history_v1::explicit_shapes::SPLIT_ACCEPTED_TXID`].
+///   A split into two destinations belonging to two distinct owners is
+///   both.
 /// - `several-inputs-merged-into-one` and
-///   `canonical-input-normalization` share [`crate::live_history_v1::explicit_shapes::MERGE_ACCEPTED_TXID`], and
-///   this pair is the strongest of the three rather than the weakest.
+///   `canonical-input-normalization` share
+///   [`crate::live_history_v1::explicit_shapes::MERGE_ACCEPTED_TXID`],
+///   and this pair is the strongest of the three rather than the weakest.
 ///   The normalization run offered its two receipts in the REVERSE of
 ///   their canonical order and the merge run offered them in it; the two
 ///   built byte-identical transactions and the node computed one
