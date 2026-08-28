@@ -4116,6 +4116,34 @@ mod tests {
     }
 
     #[test]
+    fn a_matching_pair_claim_still_refuses_an_unrecomputed_projection() {
+        let source = synthetic_pair_run();
+        let mut request_facts = source.request_facts.clone();
+        let LiveRequestFact::Paired { projection, .. } = request_facts
+            .get_mut("private")
+            .expect("the private request fact is present")
+        else {
+            panic!("the private request fact is paired");
+        };
+        projection.semantic_input_amounts = vec![51];
+        let forged = LiveRunBinding::from_archive(
+            source.archive_bytes.clone(),
+            source.requests.clone(),
+            request_facts,
+            source.responses.clone(),
+        )
+        .expect("the forged pair remains structurally complete");
+        let observation = pair_observation(&forged, VALIDATED_PAIR_RELATION);
+
+        assert_eq!(
+            validate_bound_observations(&[observation], std::slice::from_ref(&forged)),
+            Err(LiveSafetyReportRefusal::PairedRelationNotRecomputed(
+                "projection-equality-with-paired-explicit",
+            )),
+        );
+    }
+
+    #[test]
     fn two_matching_lies_no_longer_validate() {
         // Red before the validator repair: today `compare_run_bindings`
         // checks one caller-authored run against another caller-authored
