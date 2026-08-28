@@ -1263,22 +1263,26 @@ fn run_one_private_control(
 /// The two are one ceremony because they share a control: the control step
 /// three records the conservation of is the control step four mutates.
 ///
-/// # What it asserts, and what it merely records
+/// # What it asserts, and why the standing changed
 ///
-/// What the target DECIDED — whether it accepted the control or refused the
-/// mutants — is written into the artifact and asserted nowhere, so a lane
-/// that asserted an acceptance would fail rather than report on the day the
-/// honest answer changed. Two things ARE asserted, both first-party
-/// construction facts rather than target verdicts: where the control was
-/// accepted, the two-origin agreement holds; and where a balance-valid
-/// control exists, each proof-negative is confined to its declared field,
-/// which is what makes its refusal attributable to that field and to
-/// nothing else.
+/// This run's verdicts are RECORDED as run-of-record constants, and a
+/// record nothing checks can drift silently — the standing an adversarial
+/// review found this lane resting on. So every verdict this ceremony's
+/// constants carry is now ASSERTED against them: the control's ACCEPTANCE,
+/// typed identity, submitted size and consumed prefix; unconditional
+/// readback reverification; and every mutant's case, layer, verbatim detail
+/// and typed located range against the same balance-valid control.
+///
+/// The transcript and wall time are written to disk BEFORE the binding
+/// runs, so a changed honest answer is preserved in the artifacts while
+/// the lane fails instead of passing over drift. Wall time itself remains
+/// machine telemetry rather than a reproducible run-of-record result.
 #[test]
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
     use vectors::live_conservation_negatives::{
-        ConservationNegativePlanner, render_conservation_negatives,
+        ConservationNegativePlanner, assert_conservation_matches_the_run_of_record,
+        render_conservation_negatives,
     };
 
     let executor =
@@ -1346,51 +1350,7 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
     }
     outcome.expect("the ceremony reached the target");
 
-    // Every one of the four proof-negatives was submitted and answered:
-    // the three range/blinder cases plus the private-ct-imbalance mutant
-    // at the change output.
-    assert_eq!(record.mutants().len(), 4);
-    for mutant in record.mutants() {
-        assert!(
-            mutant.observed_layer().is_some(),
-            "the {} mutant was not answered",
-            mutant.case().name(),
-        );
-    }
-
-    // The control was submitted and answered.
-    assert!(
-        record.control_observed_layer().is_some(),
-        "the control was not answered",
-    );
-
-    // The two origins, where an acceptance was observed.
-    if let Some(check) = record.reverification() {
-        assert!(
-            check.readback_matches_submission(),
-            "the bytes the node reported are not the bytes it was handed",
-        );
-        assert!(
-            check.verified(),
-            "the accepted witness does not verify against the recomputed message",
-        );
-    }
-
-    // Where the control was accepted, its commitment balance was checked by
-    // the target, so a balance-valid control exists and every mutant must
-    // attribute to its own declared field. This is a first-party property
-    // of the construction — the mutant changed one field and nothing else —
-    // and not a claim about the target's verdict.
-    if let Some(control) = record.balance_valid_control() {
-        for mutant in record.mutants() {
-            mutant.attribute(&control).unwrap_or_else(|refusal| {
-                panic!(
-                    "the {} mutant is not confined to its declared field: {refusal:?}",
-                    mutant.case().name(),
-                )
-            });
-        }
-    }
+    assert_conservation_matches_the_run_of_record(record);
 
     // The run says in its own bytes what it did not establish.
     assert!(rendered.contains("moves_the_sponsor_row false"));

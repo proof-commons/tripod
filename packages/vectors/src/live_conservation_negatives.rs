@@ -54,12 +54,12 @@
 //! own "each attributed to its own layer" wording is undischargeable from
 //! this target and is filed as an erratum; it is not repaired here.
 //!
-//! # Nothing here decides what the node should have found
+//! # Recording and binding stay separate
 //!
-//! The observation is a layer and the node's own words. The control's
-//! acceptance is asserted nowhere; where the run did observe an acceptance,
-//! the one content check is the two-origin agreement, on the pattern the
-//! one-to-one ceremony set.
+//! The recorder captures a layer and the node's own words without grading
+//! them. [`assert_conservation_matches_the_run_of_record`] is the separate
+//! reproduction gate: after the transcript is preserved, it binds the fresh
+//! ceremony to every stable semantic fact the committed record carries.
 
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
@@ -67,7 +67,7 @@ use target_elements_conformance::protocol::{
     TargetSubmissionSubject,
 };
 use transaction::bytes::{
-    AssetId, COMMITMENT_BYTES, OutputWitness, TargetOutput, TargetTransaction, ValueField,
+    AssetId, COMMITMENT_BYTES, OutputWitness, TargetOutput, TargetTransaction, Txid, ValueField,
 };
 use transaction::live_materialize::IndependentCommitmentCheck as _;
 use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message};
@@ -923,10 +923,202 @@ pub mod run_of_record {
     pub const WALL_SECONDS: f64 = 12.7;
 }
 
+/// Bind one completed conservation-negatives ceremony to every stable
+/// semantic fact in its committed run of record.
+///
+/// Wall time is intentionally absent: it is machine telemetry rather than
+/// a reproducible result.
+///
+/// # Panics
+///
+/// Panics if a recorded fact is absent or differs, or if a mutant cannot be
+/// attributed solely to its case-derived serialized field.
+pub fn assert_conservation_matches_the_run_of_record(record: &ConservationNegativeRecord) {
+    use run_of_record as run;
+
+    let control = assert_recorded_control(record);
+    assert_eq!(
+        record.mutants().len(),
+        4,
+        "the ceremony did not record exactly four proof-negative mutants",
+    );
+    for (case, field_range) in [
+        (
+            ProofNegativeCase::WrongBlinder,
+            run::WRONG_BLINDER_FIELD_RANGE,
+        ),
+        (
+            ProofNegativeCase::MissingRangeproof,
+            run::RANGEPROOF_FIELD_RANGE,
+        ),
+        (
+            ProofNegativeCase::PrivateCtImbalance,
+            run::PRIVATE_CT_IMBALANCE_FIELD_RANGE,
+        ),
+        (
+            ProofNegativeCase::MalformedRangeproof,
+            run::RANGEPROOF_FIELD_RANGE,
+        ),
+    ] {
+        assert_recorded_mutant(record, &control, case, field_range);
+    }
+    assert_recorded_fixture(record);
+}
+
+fn assert_recorded_control(record: &ConservationNegativeRecord) -> BalanceValidControl {
+    use run_of_record as run;
+
+    assert_eq!(
+        record.control_observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the control was not ACCEPTED, so no mutant refusal is attributable",
+    );
+    let recorded_acceptance =
+        run::control_accepted().expect("the run-of-record control identity parses");
+    let observed_acceptance = record
+        .control_accepted_txid()
+        .map(Txid::from_target_display)
+        .transpose()
+        .expect("the observed control identity is valid hexadecimal");
+    assert_eq!(
+        observed_acceptance,
+        Some(recorded_acceptance.accepted_identity()),
+        "the control was accepted at an identity the run of record does not carry",
+    );
+    assert_eq!(
+        record.control_submitted_bytes,
+        run::CONTROL_SUBMITTED_BYTES,
+        "the control handed the node a different number of bytes",
+    );
+    assert_eq!(
+        record.consumed_commitment_prefix,
+        Some(run::CONSUMED_COMMITMENT_PREFIX),
+        "the consumed coin carried a different commitment prefix",
+    );
+
+    let reverification = record
+        .reverification()
+        .expect("the accepted control carries unconditional reverification");
+    assert!(
+        reverification.readback_matches_submission(),
+        "the bytes the node reported are not the bytes it was handed",
+    );
+    assert!(
+        reverification.verified(),
+        "the accepted witness does not verify against the recomputed message",
+    );
+
+    let control = record
+        .balance_valid_control()
+        .expect("the accepted run carries a balance-valid control");
+    assert_eq!(
+        control.accepted_identity(),
+        run::CONTROL_ACCEPTED_TXID,
+        "the balance-valid control does not carry the recorded identity",
+    );
+    control
+}
+
+fn assert_recorded_mutant(
+    record: &ConservationNegativeRecord,
+    control: &BalanceValidControl,
+    case: ProofNegativeCase,
+    field_range: (usize, usize),
+) {
+    use run_of_record as run;
+
+    let mut matching = record
+        .mutants()
+        .iter()
+        .filter(|mutant| mutant.case() == case);
+    let mutant = matching
+        .next()
+        .unwrap_or_else(|| panic!("the {} mutant is absent", case.name()));
+    assert!(
+        matching.next().is_none(),
+        "the {} mutant was recorded more than once",
+        case.name(),
+    );
+    assert_eq!(
+        mutant.observed_layer(),
+        Some(run::MUTANT_OBSERVED_LAYER),
+        "the {} mutant was not refused at the recorded layer",
+        case.name(),
+    );
+    assert_eq!(
+        mutant.observed_detail(),
+        Some(run::MUTANT_REJECT_DETAIL),
+        "the {} mutant drew words the run of record does not carry",
+        case.name(),
+    );
+
+    let attribution = mutant.attribute(control).unwrap_or_else(|refusal| {
+        panic!(
+            "the {} mutant is not confined to its declared field: {refusal:?}",
+            case.name(),
+        )
+    });
+    assert_eq!(
+        attribution.case(),
+        case,
+        "the attributed mutant changed case",
+    );
+    assert_eq!(
+        attribution.serialized_field(),
+        case.serialized_field(),
+        "the attributed mutant changed serialized field",
+    );
+    assert_eq!(
+        attribution.control_identity(),
+        run::CONTROL_ACCEPTED_TXID,
+        "the mutant attributed against a different control",
+    );
+    assert_eq!(
+        attribution.observed_layer(),
+        run::MUTANT_OBSERVED_LAYER,
+        "the attributed mutant changed observed layer",
+    );
+    assert_eq!(
+        attribution.detail(),
+        Some(run::MUTANT_REJECT_DETAIL),
+        "the attributed mutant changed target detail",
+    );
+    let expected_range = field_range.0..field_range.1;
+    assert_eq!(
+        attribution.located_field().control_range(),
+        &expected_range,
+        "the {} mutant's field moved outside the run-of-record range",
+        case.name(),
+    );
+}
+
+fn assert_recorded_fixture(record: &ConservationNegativeRecord) {
+    use run_of_record as run;
+
+    assert_eq!(
+        record.issued_asset(),
+        Some(run::ISSUED_ASSET),
+        "the ceremony issued a different asset",
+    );
+    let predecessor_digest = record.predecessor_digest.map(hex);
+    assert_eq!(
+        predecessor_digest.as_deref(),
+        Some(run::PREDECESSOR_DIGEST),
+        "the predecessor digest differs from the run of record",
+    );
+    let successor_digest = record.successor_digest.map(hex);
+    assert_eq!(
+        successor_digest.as_deref(),
+        Some(run::SUCCESSOR_DIGEST),
+        "the successor digest differs from the run of record",
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        ConservationNegativeRecord, MutantObservation, ProofNegativeCase, ProofNegativeMutation,
+        ConservationNegativeRecord, ControlReverification, MutantObservation, ProofNegativeCase,
+        ProofNegativeMutation, assert_conservation_matches_the_run_of_record,
         render_conservation_negatives, run_of_record as run,
     };
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
@@ -936,6 +1128,13 @@ mod tests {
     };
 
     fn renderer_transaction(commitment: [u8; 33]) -> TargetTransaction {
+        renderer_transaction_with_proof(commitment, vec![1_u8, 2, 3])
+    }
+
+    fn renderer_transaction_with_proof(
+        commitment: [u8; 33],
+        range_proof: Vec<u8>,
+    ) -> TargetTransaction {
         TargetTransaction::with_output_witnesses(
             2,
             vec![TargetInput::new(
@@ -951,9 +1150,103 @@ mod tests {
             )],
             0,
             vec![InputWitness::new(Vec::new())],
-            vec![OutputWitness::range_proof_only(vec![1_u8, 2, 3])],
+            vec![OutputWitness::range_proof_only(range_proof)],
         )
         .expect("the renderer fixture is structurally complete")
+    }
+
+    fn recorded_digest(text: &str) -> [u8; 32] {
+        let mut bytes = [0_u8; 32];
+        let (pairs, _) = text.as_bytes().as_chunks::<2>();
+        for (slot, pair) in bytes.iter_mut().zip(pairs) {
+            let digits = std::str::from_utf8(pair).expect("the recorded digest is ASCII hex");
+            *slot = u8::from_str_radix(digits, 16).expect("the recorded digest is hexadecimal");
+        }
+        bytes
+    }
+
+    fn answered_mutant(case: ProofNegativeCase) -> MutantObservation {
+        let mutant = match case {
+            ProofNegativeCase::WrongBlinder | ProofNegativeCase::PrivateCtImbalance => {
+                renderer_transaction([0x09; 33])
+            }
+            ProofNegativeCase::MissingRangeproof => {
+                renderer_transaction_with_proof([0x08; 33], vec![0xff_u8, 2, 3])
+            }
+            ProofNegativeCase::MalformedRangeproof => {
+                renderer_transaction_with_proof([0x08; 33], vec![1_u8, 0xff, 3])
+            }
+        };
+        MutantObservation {
+            submitted_bytes: mutant.encode().len(),
+            mutation: ProofNegativeMutation::at_output(case, 0, mutant),
+            observed_layer: Some(run::MUTANT_OBSERVED_LAYER),
+            observed_detail: Some(run::MUTANT_REJECT_DETAIL.to_owned()),
+        }
+    }
+
+    fn synthetic_record() -> ConservationNegativeRecord {
+        let control = renderer_transaction([0x08; 33]);
+        ConservationNegativeRecord {
+            issued_asset: Some(run::ISSUED_ASSET.to_owned()),
+            predecessor_digest: Some(recorded_digest(run::PREDECESSOR_DIGEST)),
+            successor_digest: Some(recorded_digest(run::SUCCESSOR_DIGEST)),
+            consumed_commitment_prefix: Some(run::CONSUMED_COMMITMENT_PREFIX),
+            control_bytes: Some(control.encode()),
+            control_submitted_bytes: run::CONTROL_SUBMITTED_BYTES,
+            control_observed_layer: Some(ObservedOutcomeLayer::Accepted),
+            control_accepted_txid: Some(run::CONTROL_ACCEPTED_TXID.to_owned()),
+            reverification: Some(ControlReverification {
+                readback_matches_submission: true,
+                verified: true,
+            }),
+            mutants: vec![
+                answered_mutant(ProofNegativeCase::WrongBlinder),
+                answered_mutant(ProofNegativeCase::MissingRangeproof),
+                answered_mutant(ProofNegativeCase::PrivateCtImbalance),
+                answered_mutant(ProofNegativeCase::MalformedRangeproof),
+            ],
+            refusal: None,
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "accepted at an identity the run of record does not carry")]
+    fn a_flipped_control_identity_refuses_the_record_binding() {
+        let mut record = synthetic_record();
+        record
+            .control_accepted_txid
+            .as_mut()
+            .expect("the synthetic control has an accepted identity")
+            .replace_range(..1, "0");
+
+        assert_conservation_matches_the_run_of_record(&record);
+    }
+
+    #[test]
+    #[should_panic(expected = "drew words the run of record does not carry")]
+    fn a_flipped_mutant_detail_refuses_the_record_binding() {
+        let mut record = synthetic_record();
+        record.mutants[0].observed_detail = Some("bad-txns-in-ne-ou0".to_owned());
+
+        assert_conservation_matches_the_run_of_record(&record);
+    }
+
+    #[test]
+    #[should_panic(expected = "accepted control carries unconditional reverification")]
+    fn missing_reverification_refuses_the_record_binding() {
+        let mut record = synthetic_record();
+        record.reverification = None;
+
+        assert_conservation_matches_the_run_of_record(&record);
+    }
+
+    #[test]
+    #[should_panic(expected = "field moved outside the run-of-record range")]
+    fn a_wrong_located_field_range_refuses_the_record_binding() {
+        let record = synthetic_record();
+
+        assert_conservation_matches_the_run_of_record(&record);
     }
 
     #[test]
