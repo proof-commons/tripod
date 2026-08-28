@@ -713,8 +713,10 @@ fn assert_owner_observation_matches_run_of_record(
 /// The shape of a completed ceremony: every case submitted and
 /// answered, the vector at its real proof-bearing length, both
 /// construction controls refused before any message was formed, and the
-/// two-origin agreement where an acceptance was observed. What each
-/// case's layer WAS is written into the artifact and asserted nowhere.
+/// two-origin agreement where an acceptance was observed. No schema-1
+/// layer or acceptance is compared with this fresh run; once schema 2 is
+/// recorded, its own exact observation and acceptance members are the
+/// comparison.
 ///
 /// The schema-1 record remains immutable historical-v1 data and validates
 /// only its own archived bytes. The live fixture-digest algorithm is v2,
@@ -1091,10 +1093,12 @@ fn assert_private_restart_matches_the_run_of_record(
 /// # What it asserts, after preserving the fresh record
 ///
 /// It writes the transcript, timing, and any executor refusal first, then
-/// asserts the exact committed asset, fixture digests, receipt and parity,
-/// proof and submission sizes, accepted layer and identity, and
-/// unconditional readback reverification. A changed honest answer remains
-/// preserved in the artifacts while this reproduction gate fails.
+/// asserts the forward fixture digests, selected receipt, accepted layer,
+/// receipt-indexed identity, and unconditional readback reverification.
+/// The surrounding shape checks require two matching predecessor coins,
+/// proof-bearing outputs, a submitted candidate, and an admitted parity.
+/// A changed honest answer remains preserved in the artifacts while this
+/// reproduction gate fails.
 ///
 /// Superseding a changed result requires an explicit decision recorded
 /// as a new forward run of record. This test never rewrites the
