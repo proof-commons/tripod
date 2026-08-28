@@ -92,43 +92,6 @@ use crate::live_plan::{
 /// The published randomness the private construction consumes.
 const PUBLISHED_RANDOMNESS: [u8; 32] = [0x7e; 32];
 
-/// Verbatim resource values recorded by the historical-v1 native run.
-pub mod historical_v1_record {
-    pub use super::historical_v1_transcript as transcript;
-
-    /// How many bytes the explicit transfer of record serialized to.
-    ///
-    /// From the run [`transcript`] describes: the exact length of the byte
-    /// string handed to the node, recorded so the weight beside it can be
-    /// read as a weight *of something* rather than as a bare figure.
-    pub const RECORDED_EXPLICIT_SERIALIZED_BYTES: u64 = 1_164;
-
-    /// The weight this workspace computed for those exact bytes.
-    ///
-    /// §18.4's prediction half, taken by decoding the submitted
-    /// serialization and weighing the result.
-    pub const RECORDED_EXPLICIT_PREDICTED_WEIGHT: u64 = 1_911;
-
-    /// The weight the node computed for those exact bytes.
-    ///
-    /// §18.4's observation half, and the figure this whole comparison
-    /// rests on. It exists because the executor reads a weight back from
-    /// the node's own `decoderawtransaction` even for a transaction the
-    /// node refused — which is the only reason a candidate that cannot be
-    /// accepted (§1.7) has any target resource figure at all.
-    ///
-    /// It is a *separate constant* from the prediction above, and equal to
-    /// it only because the run made it so. Spelling one constant and using
-    /// it twice would have made the agreement true by construction, which
-    /// is the one thing §18.4's comparison must never be.
-    pub const RECORDED_EXPLICIT_OBSERVED_WEIGHT: u64 = 1_911;
-}
-
-use historical_v1_record::{
-    RECORDED_EXPLICIT_OBSERVED_WEIGHT, RECORDED_EXPLICIT_PREDICTED_WEIGHT,
-    RECORDED_EXPLICIT_SERIALIZED_BYTES,
-};
-
 /// What the plan is doing next.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Stage {
@@ -199,8 +162,8 @@ impl LiveNativeStep {
 /// was handed.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PredictedTransferResources {
-    serialized_bytes: u64,
-    weight: Option<u64>,
+    pub(crate) serialized_bytes: u64,
+    pub(crate) weight: Option<u64>,
 }
 
 impl PredictedTransferResources {
@@ -296,16 +259,16 @@ impl LiveNativeObservation {
 /// and one record cannot be checked against itself.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LiveNativeTranscript {
-    issued_asset: Option<String>,
-    relinked: bool,
-    not_submitted: BTreeSet<(LiveTransferRepresentationPlan, LiveFormNotSubmitted)>,
-    explicit_program: Vec<u8>,
-    private_program: Vec<u8>,
-    explicit_coins: Vec<ObservedFundedCoin>,
-    private_coins: Vec<ObservedFundedCoin>,
-    observations: Vec<LiveNativeObservation>,
-    predicted: BTreeMap<LiveTransferRepresentationPlan, PredictedTransferResources>,
-    refusal: Option<LiveNativeRefusal>,
+    pub(crate) issued_asset: Option<String>,
+    pub(crate) relinked: bool,
+    pub(crate) not_submitted: BTreeSet<(LiveTransferRepresentationPlan, LiveFormNotSubmitted)>,
+    pub(crate) explicit_program: Vec<u8>,
+    pub(crate) private_program: Vec<u8>,
+    pub(crate) explicit_coins: Vec<ObservedFundedCoin>,
+    pub(crate) private_coins: Vec<ObservedFundedCoin>,
+    pub(crate) observations: Vec<LiveNativeObservation>,
+    pub(crate) predicted: BTreeMap<LiveTransferRepresentationPlan, PredictedTransferResources>,
+    pub(crate) refusal: Option<LiveNativeRefusal>,
 }
 
 impl LiveNativeTranscript {
@@ -948,100 +911,6 @@ impl TargetOperationPlanner for LiveTransferOperationPlanner {
     }
 }
 
-/// The run of record: what one real node did, on one host, once.
-///
-/// # This is a transcription, and it is not evidence
-///
-/// Nothing here discharges a §15 row, and nothing here is recomputed from
-/// anything. It is a *record*, committed so that a reader without a node
-/// can see what the target actually said — and so that the blocker
-/// [`crate::live_evidence::LiveInfrastructureBlocker::OwnerSighashNotComputable`]
-/// is readable as a thing that was observed rather than a thing that was
-/// argued for.
-///
-/// The observed verdict is the sharpest single fact this wave produced.
-/// The explicit transfer was refused at
-/// [`ObservedOutcomeLayer::ScriptPathRejection`] with the node's own
-/// words: `mandatory-script-verify-flag-failed (Invalid Schnorr
-/// signature)`. That means the covenant *ran*. Over a real transaction
-/// spending real coins at the linked constructors' own programs, the
-/// coordinator's asset check, constructor recognition, class closure,
-/// count and conservation arithmetic all passed, and evaluation reached
-/// the owner's signature check before anything failed. What stands
-/// between this candidate and an accepted transfer is one digest.
-///
-/// # What a reader may not do with it
-///
-/// Read it as a verdict about a *relation*. §19.2 requires a negative
-/// case to have been refused for its own intended relation, and this
-/// refusal is about the signature offered — which is opaque bytes by
-/// construction, because no first-party component computes the message
-/// they would have to be over.
-#[must_use]
-pub fn historical_v1_transcript() -> LiveNativeTranscript {
-    LiveNativeTranscript {
-        issued_asset: Some(
-            "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb".to_owned(),
-        ),
-        relinked: true,
-        // The outpoints the run funded are deliberately absent. They name
-        // a chain that was destroyed when the run ended, and a record
-        // carrying them would look like something a later run could
-        // resume from.
-        explicit_program: Vec::new(),
-        private_program: Vec::new(),
-        explicit_coins: Vec::new(),
-        private_coins: Vec::new(),
-        not_submitted: BTreeSet::from([(
-            LiveTransferRepresentationPlan::PrivateCommitted,
-            LiveFormNotSubmitted::NoConfidentialPredecessorCanBeFunded,
-        )]),
-        // §18.4's first-party half, from the run that produced the
-        // observation below. Both figures are the same run's: a
-        // prediction transcribed from some other run would be a
-        // prediction about other bytes, which is the substitution §18.4's
-        // "same exact bytes" is there to refuse.
-        predicted: BTreeMap::from([(
-            LiveTransferRepresentationPlan::Explicit,
-            PredictedTransferResources {
-                serialized_bytes: RECORDED_EXPLICIT_SERIALIZED_BYTES,
-                weight: Some(RECORDED_EXPLICIT_PREDICTED_WEIGHT),
-            },
-        )]),
-        observations: vec![
-            recorded(
-                LiveNativeStep::IssueProtocolAsset,
-                ObservedOutcomeLayer::Accepted,
-                None,
-                2,
-                None,
-            ),
-            recorded(
-                LiveNativeStep::FundExplicitConstructor,
-                ObservedOutcomeLayer::Accepted,
-                None,
-                2,
-                None,
-            ),
-            recorded(
-                LiveNativeStep::FundPrivateConstructor,
-                ObservedOutcomeLayer::Accepted,
-                None,
-                2,
-                None,
-            ),
-            recorded(
-                LiveNativeStep::SubmitExplicitTransfer,
-                ObservedOutcomeLayer::ScriptPathRejection,
-                Some("mandatory-script-verify-flag-failed (Invalid Schnorr signature)"),
-                0,
-                Some(RECORDED_EXPLICIT_OBSERVED_WEIGHT),
-            ),
-        ],
-        refusal: None,
-    }
-}
-
 fn current_projection_refusal(ceremony: &str, check: &'static str) -> NativeV2ImportRefusal {
     NativeV2ImportRefusal::RowAttribution {
         row: "current-resource-projection",
@@ -1176,7 +1045,7 @@ fn weight_of(bytes: &[u8]) -> Option<u64> {
 }
 
 /// One recorded observation, spelled once.
-fn recorded(
+pub(crate) fn recorded(
     step: LiveNativeStep,
     layer: ObservedOutcomeLayer,
     detail: Option<&str>,
@@ -1292,7 +1161,7 @@ mod tests {
         // that the blocker the evidence plan carries was *observed*.
         use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
-        let record = super::historical_v1_transcript();
+        let record = crate::live_history_v1::native::transcript();
         assert!(record.relinked());
         assert!(record.issued_asset().is_some());
         assert!(record.refusal().is_none());

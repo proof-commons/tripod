@@ -1,87 +1,48 @@
 //! Immutable values recorded by the historical fixture-digest-v1 campaign.
 //!
-//! This namespace changes ownership, not bytes. Each domain below is an
-//! unchanged re-export of the declaration that originally recorded the value.
-//! Current claims must use the validated native-v2/revision-7 corpus; callers
-//! enter this namespace only when reconstructing or checking historical-v1
-//! evidence.
+//! This namespace owns the declarations that originally recorded the values;
+//! the move changed ownership, not bytes. Current claims must use the validated
+//! native-v2/revision-7 corpus; callers enter this namespace only when
+//! reconstructing or checking historical-v1 evidence.
 
 /// Historical private-restart values and the complete typed V1 record.
-pub mod private_restart {
-    pub use crate::live_private_restart::run_of_record::{
-        ACCEPTED_TXID, CONSUMED_COMMITMENT_PREFIX, HistoricalPrivateRestartAcceptedMember,
-        HistoricalPrivateRestartRun, HistoricalPrivateRestartTwoAcceptanceLink,
-        HistoricalPrivateRestartV1, ISSUED_ASSET, OUTPUT_WITNESS_PROOF_BYTES, PARITY_ACCEPTED_TXID,
-        PARITY_CONSUMED_COMMITMENT_PREFIX, PARITY_SUCCESSOR_DIGEST, PREDECESSOR_DIGEST,
-        RECEIPT_LEAVES, SUBMITTED_BYTES, SUCCESSOR_DIGEST, WALL_SECONDS, accepted,
-        historical_private_restart_run, parity_accepted,
-    };
-}
+pub mod private_restart;
 
 /// Historical private multi-shape observations.
-pub mod multi_shapes {
-    pub use crate::live_multi_shapes::run_of_record::*;
-}
+pub mod multi_shapes;
 
 /// Historical conservation control and refusal observations.
-pub mod conservation_negatives {
-    pub use crate::live_conservation_negatives::run_of_record::*;
-}
+pub mod conservation_negatives;
 
 /// Historical explicit-shape acceptance observations.
-pub mod explicit_shapes {
-    pub use crate::live_explicit_shapes::run_of_record::*;
-}
+pub mod explicit_shapes;
 
 /// Historical explicit witness-negative observations.
-pub mod explicit_witness_negatives {
-    pub use crate::live_explicit_shapes::witness_negatives_run_of_record::*;
-}
+pub mod explicit_witness_negatives;
 
 /// Historical sponsored-shape observations.
-pub mod sponsor_shapes {
-    pub use crate::live_sponsor_shapes::sponsored_run_of_record::*;
-}
+pub mod sponsor_shapes;
 
 /// Historical owner-signing refusal observations.
-pub mod owner_signing_negatives {
-    pub use crate::live_owner_signing_negatives::run_of_record::*;
-}
+pub mod owner_signing_negatives;
 
 /// Historical phase-A key-path probe observations.
-pub mod keypath_probe {
-    pub use crate::live_keypath_probe::run_of_record::*;
-}
+pub mod keypath_probe;
 
 /// Historical phase-B key-path probe observations.
-pub mod keypath_probe_phase_b {
-    pub use crate::live_keypath_probe::run_of_record_phase_b::*;
-}
+pub mod keypath_probe_phase_b;
 
 /// Historical paired explicit/private observation.
-pub mod pair_arc {
-    pub use crate::live_pair_arc::run_of_record::*;
-}
+pub mod pair_arc;
 
 /// Historical selected-owner observation and its seven expected outcomes.
-pub mod owner_observation {
-    pub use crate::live_owner_observation::run_of_record::*;
-}
+pub mod owner_observation;
 
 /// Historical schema-1 proof-bearing records and observation identity.
-pub mod proof_bearing {
-    pub use crate::live_proof_bearing_observation::historical_v1_mirrors::*;
-    pub use crate::live_proof_bearing_observation::{
-        PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION, ProofBearingRunOfRecord,
-        ProofBearingRunOfRecordV2, T5_031_CONSTRUCTION_REFUSALS,
-        historical_v1_construction_run_of_record,
-    };
-}
+pub mod proof_bearing;
 
 /// Historical native transcript and resource observations.
-pub mod native {
-    pub use crate::live_native::historical_v1_record::*;
-}
+pub mod native;
 
 #[cfg(test)]
 mod tests {
@@ -155,43 +116,31 @@ mod tests {
     }
 
     #[test]
-    fn archival_reexports_are_the_original_values() {
+    fn archival_values_remain_the_original_values() {
         assert_eq!(
             super::private_restart::ACCEPTED_TXID,
-            crate::live_private_restart::run_of_record::ACCEPTED_TXID,
+            "1af38f8a5292afcdb4dd38f78a146ff84d36db20d9916e768b7fd9b368b89e8e",
         );
-        assert_eq!(
-            super::multi_shapes::OUTPUT_COUNTS,
-            crate::live_multi_shapes::run_of_record::OUTPUT_COUNTS,
-        );
+        assert_eq!(super::multi_shapes::OUTPUT_COUNTS, [3, 3, 2, 1, 2, 1, 2],);
         assert_eq!(
             super::conservation_negatives::WRONG_BLINDER_FIELD_RANGE,
-            crate::live_conservation_negatives::run_of_record::WRONG_BLINDER_FIELD_RANGE,
+            (81, 114),
         );
         assert_eq!(
             super::explicit_shapes::MAXIMUM_INPUTS_ACCEPTED_TXID,
-            crate::live_explicit_shapes::run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID,
+            "fce6e069897f841297803e36da5d51f3e7b4e15422ff0083a1cac4735147c112",
         );
         assert_eq!(
             super::sponsor_shapes::SPONSORED_ACCEPTED_TXID,
-            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            "8528d455cfd7e2cc92e88f2f0432bd0faed8c6f6417c675573a6b4963e1c01b2",
         );
-        assert_eq!(
-            super::owner_signing_negatives::CONTROL_ARRANGEMENT,
-            crate::live_owner_signing_negatives::run_of_record::CONTROL_ARRANGEMENT,
-        );
+        assert_eq!(super::owner_signing_negatives::CONTROL_ARRANGEMENT, [0, 1],);
         assert_eq!(
             super::keypath_probe_phase_b::REFUSAL_DETAIL,
-            crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_DETAIL,
+            "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
         );
-        assert_eq!(
-            super::pair_arc::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER,
-            crate::live_pair_arc::run_of_record::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER,
-        );
-        assert_eq!(
-            super::owner_observation::EXPECTED_CASE_OUTCOMES,
-            crate::live_owner_observation::run_of_record::EXPECTED_CASE_OUTCOMES,
-        );
+        assert_eq!(super::pair_arc::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER, 2,);
+        assert_eq!(super::owner_observation::EXPECTED_CASE_OUTCOMES.len(), 7,);
         assert_eq!(super::native::RECORDED_EXPLICIT_SERIALIZED_BYTES, 1_164);
         assert_eq!(super::native::RECORDED_EXPLICIT_PREDICTED_WEIGHT, 1_911);
         assert_eq!(super::native::RECORDED_EXPLICIT_OBSERVED_WEIGHT, 1_911);

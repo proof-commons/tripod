@@ -2079,14 +2079,14 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // output back to the sender as change, sponsorless, private,
         // and spending a mined confidential predecessor at this
         // deployment's own private receipt constructor.
-        "private-one-to-one" => Some(crate::live_private_restart::run_of_record::ACCEPTED_TXID),
+        "private-one-to-one" => Some(crate::live_history_v1::private_restart::ACCEPTED_TXID),
         // Both admitted commitment parities, each consumed in its own
         // complete accepted successor. The identity cited is the run
         // that COMPLETED the pair; the first parity's acceptance is the
         // row above's, and it takes both runs to say that both parities
         // were exercised. The run of record carries the pair.
         "both-commitment-parity-forms" => {
-            Some(crate::live_private_restart::run_of_record::PARITY_ACCEPTED_TXID)
+            Some(crate::live_history_v1::private_restart::PARITY_ACCEPTED_TXID)
         }
         // The target's own commitment-balance rule accepting a conserving
         // private transaction. The follow-up wave observed this and
@@ -2097,7 +2097,7 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // matrix classified two, and a row that has moved in one artifact
         // and not the other is a row nobody is checking.
         "target-ct-conservation" => {
-            Some(crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID)
+            Some(crate::live_history_v1::conservation_negatives::CONTROL_ACCEPTED_TXID)
         }
         // A sponsored PRIVATE successor: a blinded sponsor coin in at an
         // explicit asset, blinded receipt destinations, a committed
@@ -2114,22 +2114,22 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // asks for confidential sponsor values, and it is answered only
         // by a run of its own shape.
         "private-sponsor-values" => {
-            Some(crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_TXID)
+            Some(crate::live_history_v1::sponsor_shapes::SPONSORED_PRIVATE_TXID)
         }
         // One receipt consumed and THREE outputs created: two recipients
         // and the balancing change back to the sender.
-        "private-split" => Some(crate::live_multi_shapes::run_of_record::SPLIT_ACCEPTED_TXID),
+        "private-split" => Some(crate::live_history_v1::multi_shapes::SPLIT_ACCEPTED_TXID),
         // TWO receipts consumed and THREE outputs created. The
         // representative case is named as representative: its input and
         // output counts both exceed the one-to-one control's, and no
         // claim is made here about any other cardinality.
         "private-many-to-many-representative" => {
-            Some(crate::live_multi_shapes::run_of_record::MANY_TO_MANY_ACCEPTED_TXID)
+            Some(crate::live_history_v1::multi_shapes::MANY_TO_MANY_ACCEPTED_TXID)
         }
         // TWO receipts under two DISTINCT published owners, each input
         // carrying the leaf its own position executes.
         "private-several-distinct-owners" => {
-            Some(crate::live_multi_shapes::run_of_record::SEVERAL_OWNERS_ACCEPTED_TXID)
+            Some(crate::live_history_v1::multi_shapes::SEVERAL_OWNERS_ACCEPTED_TXID)
         }
         // TWO receipts consumed and ONE output created: the merge.
         //
@@ -2143,7 +2143,7 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // what answers it is an acceptance of a merge that HIDES, and the
         // ceremony writes the forced blinder's nonzero-ness into its own
         // transcript rather than leaving it to be assumed.
-        "private-merge" => Some(crate::live_multi_shapes::run_of_record::MERGE_ACCEPTED_TXID),
+        "private-merge" => Some(crate::live_history_v1::multi_shapes::MERGE_ACCEPTED_TXID),
 
         // §15.1, the positive explicit table. Thirteen of its sixteen
         // rows are answered by thirteen runs of the explicit shape
@@ -2166,14 +2166,14 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // that each row could cite its own hex string would be dressing
         // one fact up as two.
         "one-input-to-one-output" | "sponsorless" => {
-            Some(crate::live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::ONE_TO_ONE_ACCEPTED_TXID)
         }
         // The split acceptance, likewise both: one receipt split into
         // two destinations belonging to two DISTINCT published owners is
         // an instance of the split class and of the
         // several-destination-owners class.
         "one-input-split-into-two" | "several-destination-owners" => {
-            Some(crate::live_explicit_shapes::run_of_record::SPLIT_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::SPLIT_ACCEPTED_TXID)
         }
         // The merge acceptance, and this pair is the strongest of the
         // three rather than the weakest. The normalization run offered
@@ -2184,38 +2184,38 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // rather than asserted -- a second identity would have been
         // evidence that the request does not normalize.
         "several-inputs-merged-into-one" | "canonical-input-normalization" => {
-            Some(crate::live_explicit_shapes::run_of_record::MERGE_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::MERGE_ACCEPTED_TXID)
         }
         "several-inputs-to-several-outputs" => {
-            Some(crate::live_explicit_shapes::run_of_record::SEVERAL_TO_SEVERAL_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::SEVERAL_TO_SEVERAL_ACCEPTED_TXID)
         }
         // TWO inputs under ONE owner: the repetition is the subject, and
         // both signatures verify out of the node's own copy, each over
         // its own position's recomputed message.
         "repeated-owner" => {
-            Some(crate::live_explicit_shapes::run_of_record::REPEATED_OWNER_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::REPEATED_OWNER_ACCEPTED_TXID)
         }
         // TWO inputs under two DISTINCT owners. Its destinations are the
         // several-to-several run's exactly and the identities differ
         // anyway, because the SPENT programs differ -- which is what
         // makes this run about its input owners.
         "several-distinct-owners" => {
-            Some(crate::live_explicit_shapes::run_of_record::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID)
         }
         "one-destination-owner" => {
-            Some(crate::live_explicit_shapes::run_of_record::ONE_DESTINATION_OWNER_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::ONE_DESTINATION_OWNER_ACCEPTED_TXID)
         }
         // Destinations of one unit and the remainder. One is the
         // boundary the request type states rather than a small number
         // somebody picked, and the node took it.
         "semantic-boundary-values" => {
-            Some(crate::live_explicit_shapes::run_of_record::BOUNDARY_VALUES_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::BOUNDARY_VALUES_ACCEPTED_TXID)
         }
         "candidate-maximum-inputs" => {
-            Some(crate::live_explicit_shapes::run_of_record::MAXIMUM_INPUTS_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::MAXIMUM_INPUTS_ACCEPTED_TXID)
         }
         "candidate-maximum-outputs" => {
-            Some(crate::live_explicit_shapes::run_of_record::MAXIMUM_OUTPUTS_ACCEPTED_TXID)
+            Some(crate::live_history_v1::explicit_shapes::MAXIMUM_OUTPUTS_ACCEPTED_TXID)
         }
         // The sponsor-signed explicit control, cited by both rows it is
         // an instance of. It carries a sponsor region -- a sponsor
@@ -2230,7 +2230,7 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // and its own identity, below, on the rule this whole function
         // is held to: a row moves on an acceptance of its OWN shape.
         "sponsored" | "sponsor-change-absent" => {
-            Some(crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID)
+            Some(crate::live_history_v1::sponsor_shapes::SPONSORED_ACCEPTED_TXID)
         }
         // The sponsored control that TAKES CHANGE, and the only run that
         // could answer this row. The change output is read out of the
@@ -2243,9 +2243,9 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // nothing else -- same issuance, receipts, destinations, owners
         // and fee -- and the target computed two different identities
         // for them, which is what makes the difference attributable.
-        "sponsor-change-present" => Some(
-            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_CHANGE_ACCEPTED_TXID,
-        ),
+        "sponsor-change-present" => {
+            Some(crate::live_history_v1::sponsor_shapes::SPONSORED_CHANGE_ACCEPTED_TXID)
+        }
         _ => None,
     }
 }
@@ -2287,7 +2287,7 @@ struct RecordedNativeRefusal {
 }
 
 fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
-    use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
+    use crate::live_history_v1::explicit_witness_negatives as witness;
 
     match row.name() {
         // §10.2 types the signature position as an unconstrained item
@@ -2320,12 +2320,11 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // deployment, so the comparison that failed is the one the
         // sponsor witness reaches.
         "missing-sponsor-authorization" => Some(RecordedNativeRefusal {
-            control_identity:
-                crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            control_identity: crate::live_history_v1::sponsor_shapes::SPONSORED_ACCEPTED_TXID,
             observed_layer:
-                crate::live_sponsor_shapes::sponsored_run_of_record::MISSING_SPONSOR_AUTHORIZATION_OBSERVED_LAYER,
+                crate::live_history_v1::sponsor_shapes::MISSING_SPONSOR_AUTHORIZATION_OBSERVED_LAYER,
             refusal_detail:
-                crate::live_sponsor_shapes::sponsored_run_of_record::MISSING_SPONSOR_AUTHORIZATION_REFUSAL,
+                crate::live_history_v1::sponsor_shapes::MISSING_SPONSOR_AUTHORIZATION_REFUSAL,
         }),
         // §15.5's two proof-negative rows, answered by the conservation
         // ceremony's own run — which submitted THREE mutants before the
@@ -2373,11 +2372,11 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         "malformed-rangeproof" | "wrong-private-blinding-balance" | "private-ct-imbalance" => {
             Some(RecordedNativeRefusal {
                 control_identity:
-                    crate::live_conservation_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+                    crate::live_history_v1::conservation_negatives::CONTROL_ACCEPTED_TXID,
                 observed_layer:
-                    crate::live_conservation_negatives::run_of_record::MUTANT_OBSERVED_LAYER,
+                    crate::live_history_v1::conservation_negatives::MUTANT_OBSERVED_LAYER,
                 refusal_detail:
-                    crate::live_conservation_negatives::run_of_record::MUTANT_REJECT_DETAIL,
+                    crate::live_history_v1::conservation_negatives::MUTANT_REJECT_DETAIL,
             })
         }
         // §15.4's script-path row, answered by the owner-signing negative
@@ -2396,11 +2395,9 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // is taken over, where it does not reach.
         "vault-control-entitlement-or-bare-u-output" => Some(RecordedNativeRefusal {
             control_identity:
-                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
-            observed_layer:
-                crate::live_owner_signing_negatives::run_of_record::MUTANT_OBSERVED_LAYER,
-            refusal_detail:
-                crate::live_owner_signing_negatives::run_of_record::MUTANT_REJECT_DETAIL,
+                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
+            observed_layer: crate::live_history_v1::owner_signing_negatives::MUTANT_OBSERVED_LAYER,
+            refusal_detail: crate::live_history_v1::owner_signing_negatives::MUTANT_REJECT_DETAIL,
         }),
         // The seven conservation-breaking rows, answered by the SAME
         // owner-signing negative run — each on its OWN consensus mutant,
@@ -2433,11 +2430,11 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         | "hidden-private-u-output"
         | "omitted-source" => Some(RecordedNativeRefusal {
             control_identity:
-                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
             observed_layer:
-                crate::live_owner_signing_negatives::run_of_record::CONSENSUS_MUTANT_OBSERVED_LAYER,
+                crate::live_history_v1::owner_signing_negatives::CONSENSUS_MUTANT_OBSERVED_LAYER,
             refusal_detail:
-                crate::live_owner_signing_negatives::run_of_record::CONSENSUS_MUTANT_REJECT_DETAIL,
+                crate::live_history_v1::owner_signing_negatives::CONSENSUS_MUTANT_REJECT_DETAIL,
         }),
         // ONE driven row of each leaf-arrangement collision pair, answered
         // by the SAME owner-signing negative run. The four rows form two
@@ -2464,19 +2461,19 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // rearrangement reuses committed leaves.
         "two-coordinators" => Some(RecordedNativeRefusal {
             control_identity:
-                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
             observed_layer:
-                crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_OBSERVED_LAYER,
+                crate::live_history_v1::owner_signing_negatives::TWO_COORDINATORS_OBSERVED_LAYER,
             refusal_detail:
-                crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_REJECT_DETAIL,
+                crate::live_history_v1::owner_signing_negatives::TWO_COORDINATORS_REJECT_DETAIL,
         }),
         "no-coordinator" => Some(RecordedNativeRefusal {
             control_identity:
-                crate::live_owner_signing_negatives::run_of_record::CONTROL_ACCEPTED_TXID,
+                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
             observed_layer:
-                crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_OBSERVED_LAYER,
+                crate::live_history_v1::owner_signing_negatives::NO_COORDINATOR_OBSERVED_LAYER,
             refusal_detail:
-                crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_REJECT_DETAIL,
+                crate::live_history_v1::owner_signing_negatives::NO_COORDINATOR_REJECT_DETAIL,
         }),
         // §15.4's key-path row, answered by the internal-key
         // unspendability probe's phase-B run: the key-path attempt
@@ -2502,11 +2499,9 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // `(´[PLAN-rule:exclusions:nonclaims]´)`. The refusal establishes
         // that the attempt was observed and refused, under its own name.
         "key-path-escape" => Some(RecordedNativeRefusal {
-            control_identity:
-                crate::live_keypath_probe::run_of_record_phase_b::CONTROL_ACCEPTED_TXID,
-            observed_layer:
-                crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_OBSERVED_LAYER,
-            refusal_detail: crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_DETAIL,
+            control_identity: crate::live_history_v1::keypath_probe_phase_b::CONTROL_ACCEPTED_TXID,
+            observed_layer: crate::live_history_v1::keypath_probe_phase_b::REFUSAL_OBSERVED_LAYER,
+            refusal_detail: crate::live_history_v1::keypath_probe_phase_b::REFUSAL_DETAIL,
         }),
         _ => None,
     }
@@ -2581,7 +2576,7 @@ fn observed_row_first_party_fact(row: &LiveSafetyRow) -> Option<(&'static str, &
             "a raw assembly path bypassing the safe constructor exists and is used: \
              `with_output_witnesses` is public, checks census arity only, and three \
              lanes rebuild finalized bytes through it and submit them to a real node",
-            "crate::live_conservation_negatives::run_of_record",
+            "crate::live_history_v1::conservation_negatives",
         )),
         // §15.6's zero-valued sponsor row, on the ruling that the
         // realization's reading GOVERNS. THE MATRIX PREDICTS A REFUSAL
@@ -2997,8 +2992,8 @@ pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 /// The first was that the two acceptances a reader would reach for are
 /// NOT a pair. §16.1's load-bearing word is that a pair begins from ONE
 /// semantic fixture materialized twice, and
-/// `live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID` and
-/// `live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID`
+/// `live_history_v1::explicit_shapes::ONE_TO_ONE_ACCEPTED_TXID` and
+/// `live_history_v1::multi_shapes::STRICT_ONE_TO_ONE_ACCEPTED_TXID`
 /// are two INDEPENDENT ceremonies whose shapes match. Comparing them
 /// would be the substitution [`crate::live_pairs::PairTargetVerdict`]'s
 /// `NotSubmittedShapeAcceptedElsewhere` member exists to deny. The arc
@@ -3021,7 +3016,7 @@ pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 /// materializations. It is not a claim about §16.1's other four pairs,
 /// whose members remain unsubmitted and whose registry entries say so.
 pub const A_PAIRED_ACCEPTED_PROJECTION_COMPARISON_EXISTS: bool =
-    crate::live_pair_arc::run_of_record::A_PAIR_ARC_LEDGER_EXISTS;
+    crate::live_history_v1::pair_arc::A_PAIR_ARC_LEDGER_EXISTS;
 
 /// The relation one PAIRS ARC observed over its two accepted members.
 ///
@@ -3038,7 +3033,7 @@ pub const A_PAIRED_ACCEPTED_PROJECTION_COMPARISON_EXISTS: bool =
 fn observed_row_paired_relation(
     row: &LiveSafetyRow,
 ) -> Option<(&'static str, &'static str, &'static str)> {
-    use crate::live_pair_arc::run_of_record as arc;
+    use crate::live_history_v1::pair_arc as arc;
 
     match row.name() {
         "projection-equality-with-paired-explicit" => {
@@ -3583,7 +3578,7 @@ mod tests {
         // accepted control's identity -- the half a reader can check
         // against a chain, the refusal having left no transaction to
         // look up -- and the target's own words.
-        use crate::live_explicit_shapes::witness_negatives_run_of_record as witness;
+        use crate::live_history_v1::explicit_witness_negatives as witness;
 
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let mut recorded = BTreeSet::new();
@@ -3652,7 +3647,7 @@ mod tests {
         // candidate whose witnessless serializations were compared byte
         // for byte rather than argued to be equal.
         assert_ne!(
-            crate::live_keypath_probe::run_of_record_phase_b::CONTROL_ACCEPTED_TXID,
+            crate::live_history_v1::keypath_probe_phase_b::CONTROL_ACCEPTED_TXID,
             witness::CONTROL_ACCEPTED_TXID,
             "the key-path negative cites the witness lane's control",
         );
@@ -3670,7 +3665,7 @@ mod tests {
         // told apart from another comparison's would be a row answered
         // by a string rather than by a run.
         assert_ne!(
-            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            crate::live_history_v1::sponsor_shapes::SPONSORED_ACCEPTED_TXID,
             witness::CONTROL_ACCEPTED_TXID,
             "the sponsored negative cites the sponsorless lane's control",
         );
@@ -4100,8 +4095,8 @@ mod tests {
         // not settled by anything in this repository, and no verdict is
         // predicted for them here.
         assert_ne!(
-            crate::live_owner_signing_negatives::run_of_record::TWO_COORDINATORS_REJECT_DETAIL,
-            crate::live_owner_signing_negatives::run_of_record::NO_COORDINATOR_REJECT_DETAIL,
+            crate::live_history_v1::owner_signing_negatives::TWO_COORDINATORS_REJECT_DETAIL,
+            crate::live_history_v1::owner_signing_negatives::NO_COORDINATOR_REJECT_DETAIL,
             "the two driven leaf-arrangement rows draw one verdict",
         );
     }

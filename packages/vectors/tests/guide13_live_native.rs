@@ -3785,7 +3785,7 @@ fn assert_private_restart_matches_the_run_of_record(
     record: &vectors::live_private_restart::PrivateRestartRecord,
     consumed: vectors::live_private_restart::ConsumedReceipt,
 ) {
-    use vectors::live_private_restart::run_of_record::{
+    use vectors::live_private_restart::forward_v2::{
         ForwardPrivateRestartExpectation, forward_private_restart_expectation,
     };
 
