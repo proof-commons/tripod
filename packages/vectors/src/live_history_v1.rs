@@ -1,10 +1,9 @@
 //! Immutable values recorded by the historical fixture-digest-v1 campaign.
 //!
-//! This namespace changes ownership, not bytes. Each domain below is an
-//! unchanged re-export of the declaration that originally recorded the value.
-//! Current claims must use the validated native-v2/revision-7 corpus; callers
-//! enter this namespace only when reconstructing or checking historical-v1
-//! evidence.
+//! This namespace owns the declarations that originally recorded the values;
+//! the move changed ownership, not bytes. Current claims must use the validated
+//! native-v2/revision-7 corpus; callers enter this namespace only when
+//! reconstructing or checking historical-v1 evidence.
 
 /// Historical private-restart values and the complete typed V1 record.
 pub mod private_restart;
