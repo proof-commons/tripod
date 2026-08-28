@@ -1749,6 +1749,7 @@ fn parse_forward_mint_header(
     rendering.exact("forward_v2_run_of_record observations_pending acceptance_pending")?;
     rendering.exact("run_of_record_projection ready schema_version 2")?;
     let issued_asset = rendering.value("issued_asset ")?.to_owned();
+    asset_of(&issued_asset).ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
     let rendered_predecessor =
         forward_mint_digest(rendering.value("predecessor_fixture_digest ")?)?;
     if rendered_predecessor != predecessor_digest {
@@ -1770,7 +1771,6 @@ struct ForwardMintCoins {
 fn parse_forward_mint_coins(
     rendering: &ForwardMintRendering<'_>,
     accepted: &ForwardProofBearingMintOutcome,
-    issued_asset: &str,
 ) -> Result<ForwardMintCoins, RunOfRecordProjectionRefusal> {
     let accepted_transaction = TargetTransaction::decode(&accepted.submitted_bytes)
         .map_err(|_| RunOfRecordProjectionRefusal::CorpusOutcomeMismatch)?;
@@ -1789,15 +1789,6 @@ fn parse_forward_mint_coins(
         parse_forward_coin(rendering, 0, *first_outpoint)?,
         parse_forward_coin(rendering, 1, *second_outpoint)?,
     ];
-    let issued_asset_id =
-        asset_of(issued_asset).ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
-    if coins
-        .iter()
-        .any(|coin| coin.asset() != AssetField::Explicit(issued_asset_id))
-    {
-        return Err(RunOfRecordProjectionRefusal::CorpusOutcomeMismatch);
-    }
-
     Ok(ForwardMintCoins {
         coins,
         first_outpoint: *first_outpoint,
@@ -1901,7 +1892,7 @@ fn parse_forward_corpus_record(
     let [first, second, third, accepted] = input.outcomes.as_slice() else {
         return Err(RunOfRecordProjectionRefusal::IncompleteCorpusMember);
     };
-    let coin_section = parse_forward_mint_coins(&rendering, accepted, &issued_asset)?;
+    let coin_section = parse_forward_mint_coins(&rendering, accepted)?;
     let witness_facts = parse_forward_mint_witness_facts(&rendering, &coin_section.coins)?;
     let construction_refusals =
         parse_forward_construction_refusals(&rendering, coin_section.first_outpoint)?;
