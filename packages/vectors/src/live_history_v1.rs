@@ -60,9 +60,7 @@ pub mod keypath_probe_phase_b {
 pub mod pair_arc;
 
 /// Historical selected-owner observation and its seven expected outcomes.
-pub mod owner_observation {
-    pub use crate::live_owner_observation::run_of_record::*;
-}
+pub mod owner_observation;
 
 /// Historical schema-1 proof-bearing records and observation identity.
 pub mod proof_bearing {
@@ -181,10 +179,7 @@ mod tests {
             crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_DETAIL,
         );
         assert_eq!(super::pair_arc::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER, 2,);
-        assert_eq!(
-            super::owner_observation::EXPECTED_CASE_OUTCOMES,
-            crate::live_owner_observation::run_of_record::EXPECTED_CASE_OUTCOMES,
-        );
+        assert_eq!(super::owner_observation::EXPECTED_CASE_OUTCOMES.len(), 7,);
         assert_eq!(super::native::RECORDED_EXPLICIT_SERIALIZED_BYTES, 1_164);
         assert_eq!(super::native::RECORDED_EXPLICIT_PREDICTED_WEIGHT, 1_911);
         assert_eq!(super::native::RECORDED_EXPLICIT_OBSERVED_WEIGHT, 1_911);
