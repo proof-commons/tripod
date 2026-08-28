@@ -983,6 +983,7 @@ struct ParsedTranscript {
     summary: NativeV2Transcript,
     run_archive: Vec<u8>,
     operations: Vec<ParsedOperation>,
+    legacy_rendering: Vec<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -2107,8 +2108,8 @@ fn parse_capture_tail(
     cursor: &mut LineCursor<'_>,
     bytes: &[u8],
     ceremony: &str,
-) -> Result<[u8; 32], NativeV2ImportRefusal> {
-    let _legacy = cursor.len_hex("legacy-rendering")?;
+) -> Result<([u8; 32], Vec<u8>), NativeV2ImportRefusal> {
+    let legacy_rendering = cursor.len_hex("legacy-rendering")?;
     cursor.exact("terminal-state complete")?;
     cursor.exact("run-id-input end")?;
     let prefix_length = cursor.lines[..cursor.index]
@@ -2124,7 +2125,7 @@ fn parse_capture_tail(
     }
     cursor.exact(&format!("native-capture-end {ceremony}"))?;
     cursor.done()?;
-    Ok(content_sha256)
+    Ok((content_sha256, legacy_rendering))
 }
 
 fn render_run_archive(header: &CaptureHeader, digests: &[(String, String)]) -> Vec<u8> {
@@ -2187,7 +2188,8 @@ fn parse_transcript(
     for ordinal in 0..operation_count {
         operations.push(parse_operation(&mut cursor, ordinal, &header.ceremony)?);
     }
-    let content_sha256 = parse_capture_tail(&mut cursor, bytes, &header.ceremony)?;
+    let (content_sha256, legacy_rendering) =
+        parse_capture_tail(&mut cursor, bytes, &header.ceremony)?;
     Ok(ParsedTranscript {
         summary: NativeV2Transcript {
             ceremony: header.ceremony.clone(),
@@ -2196,6 +2198,7 @@ fn parse_transcript(
         },
         run_archive: render_run_archive(&header, &digests),
         operations,
+        legacy_rendering,
     })
 }
 
@@ -3064,33 +3067,96 @@ fn decode_attributed_transaction(
 }
 
 fn parity_output_index(
-    first: &ParsedOperation,
-    second: &ParsedOperation,
+    operation: &ParsedOperation,
+    declared_prefix: u8,
+    ceremony: &str,
 ) -> Result<usize, NativeV2ImportRefusal> {
-    let first = decode_attributed_transaction(first, ROW_ROSTER[0], "private-restart-control")?;
-    let second = decode_attributed_transaction(second, ROW_ROSTER[0], "private-restart-parity")?;
-    let matching = first
+    let transaction = decode_attributed_transaction(operation, ROW_ROSTER[0], ceremony)?;
+    let matching = transaction
         .outputs()
         .iter()
-        .zip(second.outputs())
         .enumerate()
-        .filter_map(|(index, pair)| match (pair.0.value(), pair.1.value()) {
-            (ValueField::Commitment(left), ValueField::Commitment(right))
-                if matches!((left[0], right[0]), (0x08, 0x09) | (0x09, 0x08)) =>
-            {
-                Some(index)
-            }
+        .filter_map(|(index, output)| match output.value() {
+            ValueField::Commitment(commitment) if commitment[0] == declared_prefix => Some(index),
             _ => None,
         })
         .collect::<Vec<_>>();
     let [index] = matching.as_slice() else {
         return Err(row_attribution_refusal(
             ROW_ROSTER[0],
-            "private-restart-control+private-restart-parity",
-            "commitment-parity-census",
+            ceremony,
+            "successor-parity-census",
         ));
     };
     Ok(*index)
+}
+
+fn declared_consumed_commitment_prefix(
+    transcript: &ParsedTranscript,
+    ceremony: &str,
+) -> Result<u8, NativeV2ImportRefusal> {
+    let bytes = &transcript.legacy_rendering;
+    if bytes.contains(&b'\r') || !bytes.ends_with(b"\n") {
+        return Err(row_attribution_refusal(
+            ROW_ROSTER[0],
+            ceremony,
+            "consumed-prefix-grammar",
+        ));
+    }
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| row_attribution_refusal(ROW_ROSTER[0], ceremony, "consumed-prefix-grammar"))?;
+    let mut declarations = text
+        .lines()
+        .filter_map(|line| line.strip_prefix("consumed_commitment_prefix "));
+    let prefix = declarations.next().ok_or_else(|| {
+        row_attribution_refusal(ROW_ROSTER[0], ceremony, "consumed-prefix-census")
+    })?;
+    if declarations.next().is_some() {
+        return Err(row_attribution_refusal(
+            ROW_ROSTER[0],
+            ceremony,
+            "consumed-prefix-census",
+        ));
+    }
+    match prefix {
+        "0x08" => Ok(0x08),
+        "0x09" => Ok(0x09),
+        _ => Err(row_attribution_refusal(
+            ROW_ROSTER[0],
+            ceremony,
+            "consumed-prefix-class",
+        )),
+    }
+}
+
+fn parity_output_indices(
+    transcripts: &TranscriptIndex<'_>,
+    first: &ParsedOperation,
+    second: &ParsedOperation,
+) -> Result<[usize; 2], NativeV2ImportRefusal> {
+    let first_ceremony = "private-restart-control";
+    let second_ceremony = "private-restart-parity";
+    let first_transcript = transcripts.get(first_ceremony).copied().ok_or_else(|| {
+        row_attribution_refusal(ROW_ROSTER[0], first_ceremony, "missing-transcript")
+    })?;
+    let second_transcript = transcripts.get(second_ceremony).copied().ok_or_else(|| {
+        row_attribution_refusal(ROW_ROSTER[0], second_ceremony, "missing-transcript")
+    })?;
+    let prefixes = [
+        declared_consumed_commitment_prefix(first_transcript, first_ceremony)?,
+        declared_consumed_commitment_prefix(second_transcript, second_ceremony)?,
+    ];
+    if !matches!(prefixes, [0x08, 0x09] | [0x09, 0x08]) {
+        return Err(row_attribution_refusal(
+            ROW_ROSTER[0],
+            "private-restart-control+private-restart-parity",
+            "consumed-parity-not-opposite",
+        ));
+    }
+    Ok([
+        parity_output_index(first, prefixes[0], first_ceremony)?,
+        parity_output_index(second, prefixes[1], second_ceremony)?,
+    ])
 }
 
 fn sponsor_shape_indices(
@@ -3228,9 +3294,11 @@ fn add_parity_material(
         "private-restart-parity",
         OperationRole::Acceptance,
     )?;
-    let parity_index = parity_output_index(first, second)?;
+    let [first_parity_index, second_parity_index] =
+        parity_output_indices(transcripts, first, second)?;
     let composite_member = |ceremony: &str,
-                            operation: &ParsedOperation|
+                            operation: &ParsedOperation,
+                            parity_index: usize|
      -> Result<LiveCompositeAcceptanceMember, NativeV2ImportRefusal> {
         Ok(LiveCompositeAcceptanceMember::new(
             ceremony.to_owned(),
@@ -3250,8 +3318,8 @@ fn add_parity_material(
         .push(LiveReportObservation::CompositeTwoAcceptance {
             row: ROW_ROSTER[0],
             acceptance: LiveCompositeTwoAcceptance::new(
-                composite_member("private-restart-control", first)?,
-                composite_member("private-restart-parity", second)?,
+                composite_member("private-restart-control", first, first_parity_index)?,
+                composite_member("private-restart-parity", second, second_parity_index)?,
             ),
         });
     for (ceremony, operation) in [
@@ -4178,6 +4246,49 @@ mod tests {
                 .as_ref()
                 .expect("the sponsor-negative mutant carries its locator"),
         ));
+    }
+
+    #[test]
+    fn reviewed_parity_declarations_bind_opposite_successor_outputs() {
+        let report = parse_report(RUN_REPORT_BYTES).expect("the reviewed report parses");
+        let control_capture = ARCHIVE_FILES
+            .iter()
+            .find(|file| file.name == "e8836e79b631b96420fb8006353df5b673ec7c69b830fb5f0555fb06add02517.private-restart-control.capture")
+            .expect("the fixed roster carries the primary restart capture");
+        let parity_capture = ARCHIVE_FILES
+            .iter()
+            .find(|file| file.name == "e8836e79b631b96420fb8006353df5b673ec7c69b830fb5f0555fb06add02517.private-restart-parity.capture")
+            .expect("the fixed roster carries the parity restart capture");
+        let control = parse_transcript(control_capture.name, control_capture.bytes, &report)
+            .expect("the primary restart capture parses");
+        let parity = parse_transcript(parity_capture.name, parity_capture.bytes, &report)
+            .expect("the parity restart capture parses");
+        let control_operation = control
+            .operations
+            .iter()
+            .find(|operation| operation.role == OperationRole::Acceptance)
+            .expect("the primary restart carries its acceptance");
+        let parity_operation = parity
+            .operations
+            .iter()
+            .find(|operation| operation.role == OperationRole::Acceptance)
+            .expect("the parity restart carries its acceptance");
+        assert_eq!(
+            declared_consumed_commitment_prefix(&control, "private-restart-control"),
+            Ok(0x08),
+        );
+        assert_eq!(
+            declared_consumed_commitment_prefix(&parity, "private-restart-parity"),
+            Ok(0x09),
+        );
+        assert_eq!(
+            parity_output_index(control_operation, 0x08, "private-restart-control"),
+            Ok(0),
+        );
+        assert_eq!(
+            parity_output_index(parity_operation, 0x09, "private-restart-parity"),
+            Ok(1),
+        );
     }
 
     #[test]
