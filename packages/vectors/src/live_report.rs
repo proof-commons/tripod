@@ -2108,6 +2108,8 @@ fn request_for<'run>(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct RecomputedPairProjection {
+    version: u32,
+    lock_time: u32,
     input_owners: BTreeSet<String>,
     semantic_input_amounts: Vec<u64>,
     destinations: Vec<(String, u64)>,
@@ -2117,7 +2119,6 @@ struct RecomputedPairProjection {
     sponsor_inputs: usize,
     fee_outputs: usize,
     publishes_every_destination_amount: bool,
-    withholds_a_destination_amount: bool,
     all_outputs_classified: bool,
 }
 
@@ -2141,7 +2142,6 @@ fn recompute_pair_projection(
     let mut destinations = Vec::new();
     let mut destination_owners = BTreeSet::new();
     let mut publishes_every_destination_amount = true;
-    let mut withholds_a_destination_amount = false;
 
     for output in decoded.outputs() {
         if let AssetField::Explicit(asset) = output.asset() {
@@ -2163,10 +2163,7 @@ fn recompute_pair_projection(
         match output.value() {
             ValueField::Explicit(published) if published == amount => {}
             ValueField::Explicit(_) => return None,
-            ValueField::Commitment(_) => {
-                publishes_every_destination_amount = false;
-                withholds_a_destination_amount = true;
-            }
+            ValueField::Commitment(_) => publishes_every_destination_amount = false,
             _ => return None,
         }
         destinations.push((owner.clone(), amount));
@@ -2186,6 +2183,8 @@ fn recompute_pair_projection(
     };
     let all_outputs_classified = destination_owners.len() + fee_outputs == decoded.outputs().len();
     Some(RecomputedPairProjection {
+        version: decoded.version(),
+        lock_time: decoded.lock_time(),
         input_owners,
         semantic_input_amounts,
         destinations,
@@ -2195,7 +2194,6 @@ fn recompute_pair_projection(
         sponsor_inputs: decoded.inputs().len() - input.input_owners.len(),
         fee_outputs,
         publishes_every_destination_amount,
-        withholds_a_destination_amount,
         all_outputs_classified,
     })
 }
@@ -2221,18 +2219,16 @@ fn pair_relation_recomputes(
         !explicit.destinations.is_empty() && !private.destinations.is_empty(),
         explicit.explicit_asset.is_some() && explicit.explicit_asset == private.explicit_asset,
         explicit.every_input_authorized && private.every_input_authorized,
-        explicit.destination_owners.len() == explicit.destinations.len()
-            && private.destination_owners.len() == private.destinations.len(),
-        explicit.all_outputs_classified && private.all_outputs_classified,
-        explicit.input_owners == private.input_owners
-            && explicit.destination_owners == private.destination_owners,
+        explicit.version == private.version,
+        explicit.lock_time == private.lock_time,
+        explicit.destination_owners == private.destination_owners,
         (explicit.sponsor_inputs, explicit.fee_outputs)
             == (private.sponsor_inputs, private.fee_outputs),
         explicit.all_outputs_classified && private.all_outputs_classified,
     ];
     let withheld_terms = [
         explicit.publishes_every_destination_amount,
-        private.withholds_a_destination_amount,
+        !private.publishes_every_destination_amount,
     ]
     .into_iter()
     .filter(|withheld| *withheld)
