@@ -1,0 +1,19 @@
+run private-split
+input_count 1
+output_count 3
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+coin 0 rangeproof_bytes 4174 commitment_prefix 0x08 matches_expectation true
+coin 1 rangeproof_bytes 4174 commitment_prefix 0x09 matches_expectation true
+receipt_leaves 1
+output_witness_proof_bytes [4174, 4174, 4174]
+submitted_bytes 13499
+target_reported_weight 14861
+observed_layer Accepted
+observed_detail none
+accepted_txid aa9f26931472872045c457e8f3e716add68c15287ee1c0d9734305a576cdb40d
+reverification readback_matches_submission true verified true
+construction_refusal none
+produced_an_accepted_control true
+evidences_no_negative_case true
+evidences_no_minimality_relation true
+moves_the_sponsor_row false

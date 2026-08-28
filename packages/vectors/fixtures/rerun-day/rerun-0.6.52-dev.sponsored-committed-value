@@ -1,0 +1,38 @@
+sponsor_shape sponsored-change-present
+row_name sponsor-change-present
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+sponsor_value_form committed-sponsor-value
+relinked true
+receipt_coins 2
+sponsor_funded none
+offered_fee 250
+offered_change 1000
+expected_output_count 4
+committed_sponsor_check chain-reported-a-commitment true
+committed_sponsor_check commitment-is-the-registrys-own true
+committed_sponsor_check two-equal-amounts-committed-to-two-points true
+committed_sponsor_check rangeproof-present true
+committed_sponsor_check surjection-proof-empty true
+committed_sponsor_check asset-stayed-explicit true
+committed_sponsor_every_check_held true
+committed_sponsor_funding_txid 4f253dd1e4f731c58401442232b689a70187241a555b6e55696951d0428d4a57
+committed_sponsor_funding_weight 9904
+sponsor_input_position 2
+finalized_bytes 412
+adapter_echo_matches true
+sponsor_witness_items 2
+sponsor_witness_item_bytes 72
+sponsor_witness_item_bytes 33
+replay_changed_the_control true
+witness_reached_the_control true
+mutated_binding_refusal SponsorSignatureBindingMismatch(Outpoint { txid: Txid([87, 74, 141, 66, 208, 81, 105, 105, 85, 110, 91, 85, 26, 36, 135, 1, 167, 137, 182, 50, 34, 68, 1, 132, 197, 49, 247, 228, 209, 61, 37, 79]), index: 0 })
+submitted_bytes 1636
+observed_layer ConsensusRejectionBeforeScript
+observed_detail bad-txns-in-ne-out
+accepted_txid none
+target_weight 2872
+construction_refusal none
+evidences_no_negative_case true
+does_not_establish production-multi-party-sponsor-signing
+does_not_establish confidential-receipt-values
+does_not_establish any-negative-row

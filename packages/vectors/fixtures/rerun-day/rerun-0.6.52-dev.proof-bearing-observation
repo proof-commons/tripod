@@ -1,0 +1,49 @@
+role owner-sighash-proof-bearing-observation-run
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+run_of_record_v2 pending
+run_of_record_projection ready schema_version 1
+coin 0 asset explicit fb93ca056d92e29c27986a508f4bd3566f64ea04543f65aa51825fd8d4c84fd7
+coin 0 value commitment 0828d616da18038066f8af4af94a5c6afa9195ece494b9520fc7c81916dc68f000
+coin 0 program 5120508f7d2b9339123105ec650f9e93ae232b9e21b1d8781295d7a34a80acf8a235
+coin 0 value_form commitment program_bytes 34 predecessor_rangeproof_bytes 4174 node_fields_match_expectation true
+coin 1 asset explicit fb93ca056d92e29c27986a508f4bd3566f64ea04543f65aa51825fd8d4c84fd7
+coin 1 value commitment 096543b29336752436d03b1bfc6e6cbc46b1667e203856c58ba0ec67f0d6a37071
+coin 1 program 512065078b646dd98a4bb31f69ae7264fe713a7b167605dfca99f451ce8639719136
+coin 1 value_form commitment program_bytes 34 predecessor_rangeproof_bytes 4174 node_fields_match_expectation true
+output_witness_vector_length 2
+output_witness 0 rangeproof_bytes 4174
+output_witness 1 rangeproof_bytes 4174
+spent_value_prefix 0 0x08
+spent_value_prefix 1 0x09
+construction_control control-spent-value-as-the-ceremonys-expectation moved_term the spent output's value field, from the node's commitment to the ceremony's amount refusal_code predecessor-opening-mismatch live_refusal PredecessorOpeningMismatch { outpoint: Outpoint { txid: Txid([213, 210, 27, 55, 227, 24, 92, 57, 222, 119, 186, 29, 24, 224, 62, 88, 113, 54, 186, 1, 131, 115, 165, 46, 214, 152, 125, 0, 58, 228, 153, 219]), index: 0 } }
+construction_control control-opening-of-the-other-output moved_term which registered opening the observed commitment is recomputed from refusal_code predecessor-opening-mismatch live_refusal PredecessorOpeningMismatch { outpoint: Outpoint { txid: Txid([213, 210, 27, 55, 227, 24, 92, 57, 222, 119, 186, 29, 24, 224, 62, 88, 113, 54, 186, 1, 131, 115, 165, 46, 214, 152, 125, 0, 58, 228, 153, 219]), index: 0 } }
+message control-proof-bearing-vector-emptied 581e05bef763a117bb6c904acaa6b2244b6c01137f5a80595904bd6f0e596e08
+message control-preimage-only-signer 5f2048390051d9c3d11ddccdde9ceeab1f69b7b17e17b2cf7e631387ad39a218
+message control-another-proof-bearing-candidate 694198f69417504ab5cff57dbe3b48dfb0691455da61c60b6333ec68aef560bb
+message selected-profile-proof-bearing-authorization 8f9c33563a24bab025514edd9c17d8e49902adff87f7b4688a194f976d10c322
+observed control-proof-bearing-vector-emptied negative_control true moved_term term 12, the output-witness hash, whose entries here are real range proofs layer ScriptPathRejection txid none submitted_bytes 8993 detail mandatory-script-verify-flag-failed (Invalid Schnorr signature)
+observed control-preimage-only-signer negative_control true moved_term terms 10 and 12 together, which is what a witnessless-serialization signer hashes layer ScriptPathRejection txid none submitted_bytes 8993 detail mandatory-script-verify-flag-failed (Invalid Schnorr signature)
+observed control-another-proof-bearing-candidate negative_control true moved_term the successor fixture: a confidential amount cannot move without its commitment and its proof layer ScriptPathRejection txid none submitted_bytes 8993 detail mandatory-script-verify-flag-failed (Invalid Schnorr signature)
+observed selected-profile-proof-bearing-authorization negative_control false moved_term nothing; this is the case under the selected profile layer Accepted txid 89dbf3dbaa733c073eef67aa459b9731fa7bd119062a6b1d13a1ec5357dcd7d2 submitted_bytes 8993 detail none
+reverification accepted_txid 89dbf3dbaa733c073eef67aa459b9731fa7bd119062a6b1d13a1ec5357dcd7d2
+reverification witness_txid 568a86a83a0ba787a77d13e2d4a694c82655b958bcc1a21bc1568d08ca31c368
+reverification block_height 6
+reverification readback_matches_submission true
+reverification recomputed_message 8f9c33563a24bab025514edd9c17d8e49902adff87f7b4688a194f976d10c322
+reverification signature_from_readback 582cc46a31e0111a7894a702d976741fb16711500bdcd719dcc16e211e89e39cebcdbb8675319b48b2e04fae3ca4fbcaa4030aa618f8d2b6084a6f45ba9b7408
+reverification verifies_against_recomputed_message true
+reverification outcome Ok(())
+reverification verifies_against_emptied_vector_message false
+observed_acceptance true
+non_claim evidences no confidential funding: the predecessor is funded by the confidential-funding guide's own ceremony and adapter, and nothing about that funding is reviewed here
+non_claim evidences no materialization: the candidate is frozen by that guide's transaction-wide materializer, which this ceremony calls and does not check
+non_claim evidences no blinding: the openings, the balancing solve, and the range proofs are that guide's, and their soundness is not a claim this run supports
+non_claim evidences no covenant: the leaf spent here is an owner signature check and not a receipt constructor, because the private branch of the live finalization does not yet build a covenant-bearing candidate
+non_claim establishes no dimension as reviewed: the profile's disposition was recomputed by the review verdict and no run re-opens it
+non_claim discharges no safety-matrix row: a refused control is not a row's own relation driven to its own refusal
+non_claim claims nothing about any deployment but the one this run created and destroyed
+evidences_the_other_guides_funding false
+evidences_the_other_guides_materialization false
+evidences_the_other_guides_blinding false
+evidences_the_receipt_covenant false
+discharges_no_matrix_row true

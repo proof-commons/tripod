@@ -1,0 +1,13 @@
+case sponsored-private-explicit-no-change
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+predecessor_coins 2
+sponsor_input_position 1
+sponsor_echo_matches_what_was_sent true
+sponsor_witness_items 2
+submitted_bytes 5122
+observed_layer Accepted
+target_weight 5935
+accepted_txid d1f22066ded41dc3ded004910ff89e3c9a7c432206dc8d3ed47072cc379b1ac0
+readback_matches_submission true
+owner_signature_verified true
+sponsor_change_located not-asked-no-change-role

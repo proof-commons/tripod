@@ -1,0 +1,38 @@
+sponsor_shape sponsored-change-absent
+row_name sponsor-change-absent
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+sponsor_value_form explicit-sponsor-value
+relinked true
+receipt_coins 2
+sponsor_funded 250
+offered_fee 250
+offered_change none
+expected_output_count 3
+sponsor_input_position 2
+finalized_bytes 334
+adapter_echo_matches true
+sponsor_witness_items 2
+sponsor_witness_item_bytes 72
+sponsor_witness_item_bytes 33
+replay_changed_the_control true
+witness_reached_the_control true
+mutated_binding_refusal SponsorSignatureBindingMismatch(Outpoint { txid: Txid([243, 37, 5, 30, 106, 15, 238, 94, 90, 140, 14, 177, 24, 181, 80, 139, 112, 129, 166, 170, 162, 99, 131, 47, 217, 233, 228, 82, 214, 59, 141, 171]), index: 0 })
+submitted_bytes 1480
+observed_layer Accepted
+observed_detail none
+accepted_txid 8528d455cfd7e2cc92e88f2f0432bd0faed8c6f6417c675573a6b4963e1c01b2
+target_weight 2482
+readback_txid 8528d455cfd7e2cc92e88f2f0432bd0faed8c6f6417c675573a6b4963e1c01b2
+readback_block_height 6
+readback_matches_submission true
+input 0 signature_bytes 64 verified true message 66ce904c8c3340e5239103784efff1b1dd8b98161b1d67b5300f3494b9690382
+input 1 signature_bytes 64 verified true message 734b837c7464ad026c9e0e8279e72955a4ce4d58f1c2a6cb4b12bc44a6d34fef
+every_owner_verified true
+sponsor_witness_in_readback true
+sponsor_change_output none
+construction_refusal none
+evidences_no_negative_case false
+negative missing-sponsor-authorization submitted_bytes 1375 layer ScriptPathRejection sponsor_witness_item_bytes [72, 33] differs_from_control_in_the_sponsor_witness true detail mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)
+does_not_establish production-multi-party-sponsor-signing
+does_not_establish confidential-sponsor-values
+does_not_establish any-negative-row

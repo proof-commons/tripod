@@ -1,0 +1,30 @@
+explicit_shape explicit-self-paid-fee
+row_name none
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+relinked true
+funded_coins 1
+coin owner first matches_expectation true
+input_count 1
+input_owner first
+output_count 2
+destination owner second value 4750
+destination owner second value 250
+offered_order_differs false
+submitted_bytes 782
+observed_weight 1304
+observed_layer Accepted
+observed_detail none
+accepted_txid 72fad04b346a8ea93c97cd415d24434529d8a5d9ae148a13da3694047e117328
+readback_txid 72fad04b346a8ea93c97cd415d24434529d8a5d9ae148a13da3694047e117328
+readback_witness_txid fafc82e7396f27e6379572cc958c710412b1ae0e0d69912a04212aa79c7d2822
+readback_block_height 5
+readback_matches_submission true
+input 0 owner first signature_bytes 64 verified true message d7f1e936bc9aa3cbd1644f04eb0cba042e12172f5019036744f4d38ad1516883
+every_input_verified true
+construction_refusal none
+evidences_no_negative_case true
+builds_no_sponsor_region true
+does_not_establish evidences no negative case: an accepted transfer is a positive control, and a refusal is attributable because of it rather than answered by it
+does_not_establish evidences nothing about the proof-bearing lane: an explicit candidate's output-witness entries are default-constructed and a proof-bearing one's are not
+does_not_establish evidences no sponsor row: this ceremony builds no sponsor region at all
+does_not_establish claims nothing about any deployment but the one this run created and destroyed

@@ -1,0 +1,34 @@
+explicit_shape explicit-repeated-owner
+row_name repeated-owner
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+relinked true
+funded_coins 2
+coin owner first matches_expectation true
+coin owner first matches_expectation true
+input_count 2
+input_owner first
+input_owner first
+output_count 3
+destination owner second value 3333
+destination owner first value 3333
+destination owner second value 3334
+offered_order_differs false
+submitted_bytes 1320
+observed_weight 2301
+observed_layer Accepted
+observed_detail none
+accepted_txid 3f833570061c28f1b6cae0cd2abda65ed2c573bf62f418e847836a7999382114
+readback_txid 3f833570061c28f1b6cae0cd2abda65ed2c573bf62f418e847836a7999382114
+readback_witness_txid 43d12cc252597f6b5aa7f989973b26d23871a051c4fecf911bacdfc71c4a2430
+readback_block_height 5
+readback_matches_submission true
+input 0 owner first signature_bytes 64 verified true message a9f5c3328c1127db77078e0b3cda25ef5347fd8cc939e59739a1e097f87be3d7
+input 1 owner first signature_bytes 64 verified true
+every_input_verified true
+construction_refusal none
+evidences_no_negative_case true
+builds_no_sponsor_region true
+does_not_establish evidences no negative case: an accepted transfer is a positive control, and a refusal is attributable because of it rather than answered by it
+does_not_establish evidences nothing about the proof-bearing lane: an explicit candidate's output-witness entries are default-constructed and a proof-bearing one's are not
+does_not_establish evidences no sponsor row: this ceremony builds no sponsor region at all
+does_not_establish claims nothing about any deployment but the one this run created and destroyed

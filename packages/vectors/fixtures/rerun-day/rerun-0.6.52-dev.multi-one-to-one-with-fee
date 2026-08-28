@@ -1,0 +1,19 @@
+run private-one-to-one-with-fee
+input_count 1
+output_count 2
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+coin 0 rangeproof_bytes 4174 commitment_prefix 0x08 matches_expectation true
+coin 1 rangeproof_bytes 4174 commitment_prefix 0x09 matches_expectation true
+receipt_leaves 1
+output_witness_proof_bytes [4174, 0]
+submitted_bytes 4927
+target_reported_weight 5617
+observed_layer Accepted
+observed_detail none
+accepted_txid 0df30bc5d4832115fe68aa1082f3bafd762d5d50e1aa08b72f4f0187386a8922
+reverification readback_matches_submission true verified true
+construction_refusal none
+produced_an_accepted_control true
+evidences_no_negative_case true
+evidences_no_minimality_relation true
+moves_the_sponsor_row false

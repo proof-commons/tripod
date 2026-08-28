@@ -1,0 +1,40 @@
+role owner-sighash-observation-run
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+relinked true
+coin 0 value 5000 program_bytes 34 node_fields_match_expectation true
+coin 1 value 5000 program_bytes 34 node_fields_match_expectation true
+message control-empty-output-witness-vector 9119e685aae3b91f13b1b7fadce1a27a5213d99776ce75dd34b2f8554bef28c6
+message control-another-deployment df7fe9d7cd62a56a2da9daf94c70b5370752a1c72fed84e3e5388cf05c904513
+message control-non-selected-type-byte 28ef5ad0dcfd8de331e3d68a593247f6d437b407d347d5638fb8f98ffb1f0e1a
+message control-another-owners-key 28ef5ad0dcfd8de331e3d68a593247f6d437b407d347d5638fb8f98ffb1f0e1a
+message control-another-candidate e3e07caab4637659141df233ab7d02ecc73fa2e24afe330c0e68721dc478da36
+message control-deployment-seed-in-printed-order 56c16df762013d7bd63b931450301500c8686825d45e918b3a48b47d39d9f51c
+message selected-profile-authorization 28ef5ad0dcfd8de331e3d68a593247f6d437b407d347d5638fb8f98ffb1f0e1a
+observed control-empty-output-witness-vector negative_control true layer ScriptPathRejection txid none submitted_bytes 1164 detail mandatory-script-verify-flag-failed (Invalid Schnorr signature)
+observed control-another-deployment negative_control true layer ScriptPathRejection txid none submitted_bytes 1164 detail mandatory-script-verify-flag-failed (Invalid Schnorr signature)
+construction_refusal control-another-deployment check_deployment DeploymentMismatch { expected: [130, 160, 172, 43, 73, 50, 233, 80, 28, 14, 25, 45, 250, 139, 78, 109, 221, 128, 21, 98, 248, 70, 189, 4, 88, 75, 191, 166, 189, 119, 149, 32], offered: [125, 160, 172, 43, 73, 50, 233, 80, 28, 14, 25, 45, 250, 139, 78, 109, 221, 128, 21, 98, 248, 70, 189, 4, 88, 75, 191, 166, 189, 119, 149, 32] }
+observed control-non-selected-type-byte negative_control true layer ScriptPathRejection txid none submitted_bytes 1166 detail mandatory-script-verify-flag-failed (Invalid Schnorr signature)
+construction_refusal control-non-selected-type-byte check_type_byte TypeByteOutsideProfile { offered: 1 }
+construction_refusal control-non-selected-type-byte check_signature_width SignatureWidthOutsideProfile { offered: 65 }
+observed control-another-owners-key negative_control true layer ScriptPathRejection txid none submitted_bytes 1164 detail mandatory-script-verify-flag-failed (Invalid Schnorr signature)
+observed control-another-candidate negative_control true layer ScriptPathRejection txid none submitted_bytes 1164 detail mandatory-script-verify-flag-failed (Invalid Schnorr signature)
+observed control-deployment-seed-in-printed-order negative_control true layer ScriptPathRejection txid none submitted_bytes 1164 detail mandatory-script-verify-flag-failed (Invalid Schnorr signature)
+observed selected-profile-authorization negative_control false layer Accepted txid 40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029 submitted_bytes 1164 detail none
+reverification accepted_txid 40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029
+reverification witness_txid 5945f1d5d3235f2356aba8c0578a40b280a5709bbbbf58e467ccb35bf5afeae0
+reverification block_height 5
+reverification readback_matches_submission true
+reverification recomputed_message 28ef5ad0dcfd8de331e3d68a593247f6d437b407d347d5638fb8f98ffb1f0e1a
+reverification signature_from_readback 914f7d40386f8ffda955e8a3f09f33ef9b99743ddc1708a419302a796dad509be7989ef37e5461e9f39d272f2cae4e16017aa0f81b9812774588918173188571
+reverification verifies_against_recomputed_message true
+reverification verifies_against_empty_vector_message false
+observed_acceptance true
+non_claim establishes nothing about the proof-bearing lane: the output-witness term's recoverability argument does not hold for a rangeproof
+non_claim establishes no dimension as reviewed: populating the sighash capability and recomputing the profile's disposition is a later wave's work
+non_claim clears no profile residual: SighashProfileUnreviewed is cleared by a review verdict and never by a run
+non_claim discharges no safety-matrix row: an accepted control is not a row's own relation driven to its own refusal
+non_claim evidences no funding, materialization, or blinding: those belong to the confidential-funding guide and are not reviewed here
+non_claim claims nothing about any deployment but the one this run created and destroyed
+clears_sighash_profile_unreviewed false
+establishes_the_proof_bearing_lane false
+discharges_no_matrix_row true

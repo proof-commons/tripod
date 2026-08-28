@@ -1,0 +1,21 @@
+run private-merge
+input_count 2
+output_count 1
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+coin 0 rangeproof_bytes 4174 commitment_prefix 0x09 matches_expectation true
+coin 1 rangeproof_bytes 4174 commitment_prefix 0x08 matches_expectation true
+coin 2 rangeproof_bytes 4174 commitment_prefix 0x09 matches_expectation true
+forced_blinder consumed_coins 2 consumed_sum_is_zero false forced_blinder_is_zero false forced_blinder_is_the_consumed_sum true
+receipt_leaves 2
+output_witness_proof_bytes [4174]
+submitted_bytes 5156
+target_reported_weight 5837
+observed_layer Accepted
+observed_detail none
+accepted_txid 146df7852c8ad0ded0c1fdb209ff2dc93d1680e7f446f3ce2d8e2f39e710c018
+reverification readback_matches_submission true verified true
+construction_refusal none
+produced_an_accepted_control true
+evidences_no_negative_case true
+evidences_no_minimality_relation true
+moves_the_sponsor_row false

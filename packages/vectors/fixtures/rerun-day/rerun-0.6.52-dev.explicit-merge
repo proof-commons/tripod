@@ -1,0 +1,32 @@
+explicit_shape explicit-merge
+row_name several-inputs-merged-into-one
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+relinked true
+funded_coins 2
+coin owner first matches_expectation true
+coin owner first matches_expectation true
+input_count 2
+input_owner first
+input_owner first
+output_count 1
+destination owner second value 10000
+offered_order_differs false
+submitted_bytes 1006
+observed_weight 1519
+observed_layer Accepted
+observed_detail none
+accepted_txid 7a0ac33f0268e48ebeb1316dbc262c8d40569ba5c96274d1b8262f394c6f7c39
+readback_txid 7a0ac33f0268e48ebeb1316dbc262c8d40569ba5c96274d1b8262f394c6f7c39
+readback_witness_txid 0644d44041c94fee257561529bbc6eaf01e4e9c2ba6344c6aa8810d00ea7be69
+readback_block_height 5
+readback_matches_submission true
+input 0 owner first signature_bytes 64 verified true message a3663af523928229f3772500f8f390c125a66d58a57d86534b8b015e5c005221
+input 1 owner first signature_bytes 64 verified true message 19d6f61f4479d3515089d1fcbeab54c5e91f9ee432c965ce1dda2fbf6ac5b44d
+every_input_verified true
+construction_refusal none
+evidences_no_negative_case true
+builds_no_sponsor_region true
+does_not_establish evidences no negative case: an accepted transfer is a positive control, and a refusal is attributable because of it rather than answered by it
+does_not_establish evidences nothing about the proof-bearing lane: an explicit candidate's output-witness entries are default-constructed and a proof-bearing one's are not
+does_not_establish evidences no sponsor row: this ceremony builds no sponsor region at all
+does_not_establish claims nothing about any deployment but the one this run created and destroyed
