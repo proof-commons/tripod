@@ -1325,9 +1325,9 @@ impl LiveTransferEvidencePlan {
 /// the response association.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct ProvenArchiveLink {
-    run_id: &'static str,
-    request_id: &'static str,
-    response_id: &'static str,
+    run: &'static str,
+    request: &'static str,
+    response: &'static str,
 }
 
 /// The row-level conclusion carried by validator-proven archive links.
@@ -1386,10 +1386,10 @@ impl ValidatedCorpusObservation {
                 mutant,
                 accepted_control,
                 ..
-            } => mutant.run_id == accepted_control.run_id,
+            } => mutant.run == accepted_control.run,
             Self::PairedRelation {
                 explicit, private, ..
-            } => explicit.run_id == private.run_id,
+            } => explicit.run == private.run,
         }
     }
 }
@@ -2775,14 +2775,11 @@ mod tests {
     use crate::live_safety::{LiveReportRequirement, LiveSafetyPolarity, LiveSafetySection};
     use std::collections::BTreeSet;
 
-    const fn synthetic_link(
-        request_id: &'static str,
-        response_id: &'static str,
-    ) -> ProvenArchiveLink {
+    const fn synthetic_link(request: &'static str, response: &'static str) -> ProvenArchiveLink {
         ProvenArchiveLink {
-            run_id: "synthetic-complete-keypath-run",
-            request_id,
-            response_id,
+            run: "synthetic-complete-keypath-run",
+            request,
+            response,
         }
     }
 
