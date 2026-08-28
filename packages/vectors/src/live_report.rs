@@ -1115,35 +1115,27 @@ fn recomputed_txid(bytes: &[u8]) -> Option<Txid> {
     Some(Txid::from_internal(tagged::sha256(&first)))
 }
 
-/// A typed historical observation whose run binding is absent.
+/// A typed observation whose run binding is absent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum LiveRecordedObservation {
-    /// A recorded acceptance.
-    NativeAcceptance {
-        /// The target-computed identity.
-        identity: Txid,
-    },
-    /// A recorded refusal and accepted control.
-    NativeRefusal {
+    /// A recorded acceptance, without its archived value payload.
+    NativeAcceptance,
+    /// A recorded refusal, without its archived value payload.
+    NativeRefusal,
+    /// A current refusal observed at a boundary other than the row declared.
+    NativeRefusalAtUnexpectedBoundary {
         /// The row's declared boundary.
         declared_boundary: EvidenceBoundary,
-        /// The recorded observed layer.
+        /// The current observed layer.
         observed_layer: ObservedOutcomeLayer,
         /// The accepted control identity.
         control_identity: Txid,
         /// The target's exact refusal detail.
         detail: &'static str,
     },
-    /// A recorded relation over two accepted identities.
-    PairedRelation {
-        /// The explicit identity.
-        explicit_identity: Txid,
-        /// The private identity.
-        private_identity: Txid,
-        /// The recorded relation.
-        relation: &'static str,
-    },
+    /// A recorded relation over two acceptances, without its archived values.
+    PairedRelation,
 }
 
 /// One row-level observation in the corpus ledger.
@@ -1853,13 +1845,14 @@ impl ObservationCensus {
                 LiveReportObservation::RecordedObservationUnbound { observation, .. } => {
                     census.recorded_unbound += 1;
                     match observation {
-                        LiveRecordedObservation::NativeAcceptance { .. } => {
+                        LiveRecordedObservation::NativeAcceptance => {
                             census.unbound_acceptance += 1;
                         }
-                        LiveRecordedObservation::NativeRefusal { .. } => {
+                        LiveRecordedObservation::NativeRefusal
+                        | LiveRecordedObservation::NativeRefusalAtUnexpectedBoundary { .. } => {
                             census.unbound_refusal += 1;
                         }
-                        LiveRecordedObservation::PairedRelation { .. } => {
+                        LiveRecordedObservation::PairedRelation => {
                             census.unbound_paired_relation += 1;
                         }
                     }
@@ -1901,36 +1894,13 @@ fn parse_recorded_identity(
         .map_err(|_| LiveSafetyReportRefusal::MalformedRecordedIdentity { row })
 }
 
-fn recorded_observation_from_standing(
-    row: &'static str,
+const fn recorded_observation_from_standing(
     recorded: &RecordedObservation,
-) -> Result<LiveRecordedObservation, LiveSafetyReportRefusal> {
+) -> LiveRecordedObservation {
     match recorded {
-        RecordedObservation::NativeAcceptance { accepted_identity } => {
-            Ok(LiveRecordedObservation::NativeAcceptance {
-                identity: parse_recorded_identity(row, accepted_identity)?,
-            })
-        }
-        RecordedObservation::NativeRefusal {
-            declared_boundary,
-            observed_layer,
-            control_identity,
-            refusal_detail,
-        } => Ok(LiveRecordedObservation::NativeRefusal {
-            declared_boundary: *declared_boundary,
-            observed_layer: *observed_layer,
-            control_identity: parse_recorded_identity(row, control_identity)?,
-            detail: refusal_detail,
-        }),
-        RecordedObservation::PairedRelation {
-            explicit_identity,
-            private_identity,
-            relation,
-        } => Ok(LiveRecordedObservation::PairedRelation {
-            explicit_identity: parse_recorded_identity(row, explicit_identity)?,
-            private_identity: parse_recorded_identity(row, private_identity)?,
-            relation,
-        }),
+        RecordedObservation::NativeAcceptance => LiveRecordedObservation::NativeAcceptance,
+        RecordedObservation::NativeRefusal => LiveRecordedObservation::NativeRefusal,
+        RecordedObservation::PairedRelation => LiveRecordedObservation::PairedRelation,
     }
 }
 
@@ -1951,7 +1921,7 @@ fn observations_from_overlay(
             LiveRowStanding::RecordedObservationUnbound(recorded) => {
                 Some(LiveReportObservation::RecordedObservationUnbound {
                     row,
-                    observation: recorded_observation_from_standing(row, recorded)?,
+                    observation: recorded_observation_from_standing(recorded),
                 })
             }
             LiveRowStanding::DeterminismObserved {
@@ -1981,7 +1951,7 @@ fn observations_from_overlay(
                 refusal_detail,
             } => Some(LiveReportObservation::RecordedObservationUnbound {
                 row,
-                observation: LiveRecordedObservation::NativeRefusal {
+                observation: LiveRecordedObservation::NativeRefusalAtUnexpectedBoundary {
                     declared_boundary: *declared_boundary,
                     observed_layer: *observed_layer,
                     control_identity: parse_recorded_identity(row, control_identity)?,
@@ -4100,14 +4070,19 @@ fn render_recorded_observation_unbound(
     observation: &LiveRecordedObservation,
 ) {
     match observation {
-        LiveRecordedObservation::NativeAcceptance { identity } => {
+        LiveRecordedObservation::NativeAcceptance => {
             let _ = writeln!(
                 text,
-                "observation {row} recorded-observation-unbound native-acceptance identity {}",
-                identity.to_target_display()
+                "observation {row} recorded-observation-unbound native-acceptance"
             );
         }
-        LiveRecordedObservation::NativeRefusal {
+        LiveRecordedObservation::NativeRefusal => {
+            let _ = writeln!(
+                text,
+                "observation {row} recorded-observation-unbound native-refusal"
+            );
+        }
+        LiveRecordedObservation::NativeRefusalAtUnexpectedBoundary {
             declared_boundary,
             observed_layer,
             control_identity,
@@ -4119,16 +4094,10 @@ fn render_recorded_observation_unbound(
                 control_identity.to_target_display()
             );
         }
-        LiveRecordedObservation::PairedRelation {
-            explicit_identity,
-            private_identity,
-            relation,
-        } => {
+        LiveRecordedObservation::PairedRelation => {
             let _ = writeln!(
                 text,
-                "observation {row} recorded-observation-unbound paired-relation explicit-identity {} private-identity {} relation {relation:?}",
-                explicit_identity.to_target_display(),
-                private_identity.to_target_display()
+                "observation {row} recorded-observation-unbound paired-relation"
             );
         }
     }
@@ -6352,11 +6321,7 @@ mod tests {
         );
         let one = [LiveReportObservation::RecordedObservationUnbound {
             row: "fixture-row",
-            observation: LiveRecordedObservation::NativeAcceptance {
-                identity: parsed_identity(
-                    "75e823f7c5c70ddfbd9584f90f67298f2570907947829828066c7047b21b53b1",
-                ),
-            },
+            observation: LiveRecordedObservation::NativeAcceptance,
         }];
         assert_eq!(
             target_evidence_name(super::ObservationCensus::from_observations(&one)),

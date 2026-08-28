@@ -24,8 +24,9 @@
 //! rows: 24 acceptances, 17 refusals, and one paired relation. The validated
 //! native-v2/revision-7 corpus now carries their exact requests, deployment,
 //! executor, responses, and row links together. [`ValidatedCorpusEvidence`]
-//! overlays all 42 atomically; the raw values remain historical data and are
-//! never equality oracles for their fresh successors.
+//! overlays all 42 atomically; the raw standings retain only each row's
+//! recorded-observation kind and are never value oracles for their fresh
+//! successors.
 //!
 //! One positive observation remains answered and no target was involved. The
 //! deterministic-public-fixture-openings row's own gate is the
@@ -553,40 +554,21 @@ pub enum DischargingValidator {
     Fault(LiveFaultValidator),
 }
 
-/// A historical target observation preserved without a validated run binding.
+/// The kind of target observation recorded for a row before corpus validation.
 ///
-/// These are the facts the existing run-of-record constants retain. They are
-/// deliberately separate from [`LiveRowStanding`]'s bound observation members:
-/// an identity, layer, or refusal sentence is not a transcript-grade binding to
-/// the exact deployment, executor, request, and response that produced it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// The raw classifier preserves the fact that a row was recorded as an
+/// acceptance, refusal, or paired relation, but deliberately carries no
+/// historical identity, detail, digest, or other value. The validated corpus
+/// is the sole source of values used to bind the fresh successor standing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum RecordedObservation {
-    /// A target recorded an accepted transaction identity.
-    NativeAcceptance {
-        /// The recorded target identity.
-        accepted_identity: &'static str,
-    },
-    /// A target recorded a refusal and its accepted control.
-    NativeRefusal {
-        /// The boundary the row declared before the run.
-        declared_boundary: EvidenceBoundary,
-        /// The layer recorded by the executor.
-        observed_layer: ObservedOutcomeLayer,
-        /// The recorded identity of the accepted control.
-        control_identity: &'static str,
-        /// The target's recorded refusal sentence.
-        refusal_detail: &'static str,
-    },
-    /// A recorded relation over two accepted transaction identities.
-    PairedRelation {
-        /// The recorded explicit identity.
-        explicit_identity: &'static str,
-        /// The recorded private identity.
-        private_identity: &'static str,
-        /// The recorded relation.
-        relation: &'static str,
-    },
+    /// The row was recorded as a target acceptance.
+    NativeAcceptance,
+    /// The row was recorded as a target refusal with an accepted control.
+    NativeRefusal,
+    /// The row was recorded as a relation over two target acceptances.
+    PairedRelation,
 }
 
 /// Fresh target identities carried by one accepted-row standing.
@@ -629,11 +611,11 @@ pub enum LiveRowStanding {
     /// guide determines one, so a run's observation can be filed against
     /// a relation rather than against a name.
     NativeRunRequired(Option<CoverageRequirementId>),
-    /// A historical observation survives, but no transcript-grade run binding
-    /// in the tree validates it.
+    /// A recorded-observation fact survives, but no transcript-grade run
+    /// binding has yet been applied to it.
     ///
-    /// It is preserved rather than rewritten as a run that never happened, and
-    /// it is not answered. A forward run can move the row to one of the bound
+    /// It preserves only the observation kind rather than recorded values, and
+    /// it is not answered. A validated run can move the row to one of the bound
     /// observation members below once exact deployment, executor, request, and
     /// response evidence travels together.
     RecordedObservationUnbound(RecordedObservation),
@@ -1538,7 +1520,7 @@ impl ValidatedCorpusEvidence {
                 .ok_or(CorpusEvidenceRefusal::UnknownRow)?;
             replacements.push((
                 attribution.row,
-                retype_validated_observation(raw.standing(), observation, attribution.row)?,
+                retype_validated_observation(raw, observation, attribution.row)?,
             ));
             validated_attributions.push(ValidatedCorpusAttribution {
                 row: attribution.row,
@@ -1861,23 +1843,19 @@ fn observation_is_backed(observation: &LiveReportObservation, runs: &[LiveRunBin
 }
 
 fn retype_validated_observation(
-    raw: &LiveRowStanding,
+    raw: &LiveEvidenceRow,
     observation: &LiveReportObservation,
     row: &'static str,
 ) -> Result<LiveRowStanding, CorpusEvidenceRefusal> {
-    match (raw, observation) {
+    match (raw.standing(), observation) {
         (
-            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeAcceptance {
-                ..
-            }),
+            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeAcceptance),
             LiveReportObservation::NativeAcceptance { identity, .. },
         ) => Ok(LiveRowStanding::NativeRunObserved {
             acceptance: NativeObservedAcceptance::Single(*identity),
         }),
         (
-            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeAcceptance {
-                ..
-            }),
+            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeAcceptance),
             LiveReportObservation::CompositeTwoAcceptance { acceptance, .. },
         ) => {
             let [first, second] = acceptance.members();
@@ -1889,18 +1867,13 @@ fn retype_validated_observation(
             })
         }
         (
-            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeAcceptance {
-                ..
-            }),
+            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeAcceptance),
             LiveReportObservation::MultiRowSemantic { witness },
         ) if witness.rows().contains(row) => Ok(LiveRowStanding::NativeRunObserved {
             acceptance: NativeObservedAcceptance::Single(witness.identity()),
         }),
         (
-            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeRefusal {
-                declared_boundary: recorded_boundary,
-                ..
-            }),
+            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeRefusal),
             LiveReportObservation::NativeRefusalWithSupport {
                 declared_boundary,
                 observed_layer,
@@ -1909,7 +1882,7 @@ fn retype_validated_observation(
                 ..
             },
         ) => {
-            if recorded_boundary != declared_boundary {
+            if raw.row().refusing_layer() != Some(*declared_boundary) {
                 return Err(CorpusEvidenceRefusal::RefusalBoundaryMismatch);
             }
             if observed_boundary(*observed_layer) != Some(*declared_boundary) {
@@ -1926,9 +1899,7 @@ fn retype_validated_observation(
             })
         }
         (
-            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::PairedRelation {
-                ..
-            }),
+            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::PairedRelation),
             LiveReportObservation::PairedRelation {
                 explicit_identity,
                 private_identity,
@@ -2037,7 +2008,7 @@ const fn a_positive_control_exists() -> bool {
 ///
 /// The row does NOT thereby become answered, and the fall-through is
 /// what keeps that honest. With no specific blocker it reaches
-/// [`observed_row_acceptance`], which has no acceptance of this row's
+/// [`recorded_native_acceptance`], which has no acceptance of this row's
 /// own shape to offer — the accepted sponsored control is a POSITIVE
 /// control, and this row is a negative asking that a control MISSING
 /// the sponsor's authorization be refused. So the row resolves to
@@ -2060,34 +2031,29 @@ const fn specific_blocker(_row: &LiveSafetyRow) -> Option<LiveInfrastructureBloc
     None
 }
 
-/// The identity that answered one row, where a run answered it.
+/// Whether a row retains the fact that an acceptance was recorded for it.
 ///
 /// Beside [`specific_blocker`] and shaped like it, because the two
 /// answer the same kind of question from opposite directions: what
 /// stands in a row's way, and what has already got out of it.
 ///
-/// Every entry cites a run of record, so a reader following the name
-/// arrives at the constants one execution against a real node produced
-/// rather than at a claim in this file.
-///
 /// A row is added here on an observed acceptance OF THAT ROW'S SHAPE
-/// and on nothing else. An acceptance of a different shape is evidence
-/// about the different shape.
-fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
-    match row.name() {
+/// and on nothing else. The row name and observation kind survive; the
+/// historical identity does not.
+fn recorded_native_acceptance(row: &LiveSafetyRow) -> bool {
+    matches!(
+        row.name(),
         // One receipt consumed, one recipient created, the balancing
         // output back to the sender as change, sponsorless, private,
         // and spending a mined confidential predecessor at this
         // deployment's own private receipt constructor.
-        "private-one-to-one" => Some(crate::live_history_v1::private_restart::ACCEPTED_TXID),
+        "private-one-to-one"
         // Both admitted commitment parities, each consumed in its own
         // complete accepted successor. The identity cited is the run
         // that COMPLETED the pair; the first parity's acceptance is the
         // row above's, and it takes both runs to say that both parities
         // were exercised. The run of record carries the pair.
-        "both-commitment-parity-forms" => {
-            Some(crate::live_history_v1::private_restart::PARITY_ACCEPTED_TXID)
-        }
+        | "both-commitment-parity-forms"
         // The target's own commitment-balance rule accepting a conserving
         // private transaction. The follow-up wave observed this and
         // recorded it in its closeout delta, and this arm is the matrix
@@ -2096,9 +2062,7 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // a defect — the closeout said three rows had moved while the
         // matrix classified two, and a row that has moved in one artifact
         // and not the other is a row nobody is checking.
-        "target-ct-conservation" => {
-            Some(crate::live_history_v1::conservation_negatives::CONTROL_ACCEPTED_TXID)
-        }
+        | "target-ct-conservation"
         // A sponsored PRIVATE successor: a blinded sponsor coin in at an
         // explicit asset, blinded receipt destinations, a committed
         // sponsor change, and an explicit reserve fee outside both
@@ -2113,24 +2077,18 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // EXPLICIT sponsored control would not have done — this class
         // asks for confidential sponsor values, and it is answered only
         // by a run of its own shape.
-        "private-sponsor-values" => {
-            Some(crate::live_history_v1::sponsor_shapes::SPONSORED_PRIVATE_TXID)
-        }
+        | "private-sponsor-values"
         // One receipt consumed and THREE outputs created: two recipients
         // and the balancing change back to the sender.
-        "private-split" => Some(crate::live_history_v1::multi_shapes::SPLIT_ACCEPTED_TXID),
+        | "private-split"
         // TWO receipts consumed and THREE outputs created. The
         // representative case is named as representative: its input and
         // output counts both exceed the one-to-one control's, and no
         // claim is made here about any other cardinality.
-        "private-many-to-many-representative" => {
-            Some(crate::live_history_v1::multi_shapes::MANY_TO_MANY_ACCEPTED_TXID)
-        }
+        | "private-many-to-many-representative"
         // TWO receipts under two DISTINCT published owners, each input
         // carrying the leaf its own position executes.
-        "private-several-distinct-owners" => {
-            Some(crate::live_history_v1::multi_shapes::SEVERAL_OWNERS_ACCEPTED_TXID)
-        }
+        | "private-several-distinct-owners"
         // TWO receipts consumed and ONE output created: the merge.
         //
         // The row moves on an acceptance of a merge whose forced blinder
@@ -2143,7 +2101,7 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // what answers it is an acceptance of a merge that HIDES, and the
         // ceremony writes the forced blinder's nonzero-ness into its own
         // transcript rather than leaving it to be assumed.
-        "private-merge" => Some(crate::live_history_v1::multi_shapes::MERGE_ACCEPTED_TXID),
+        | "private-merge"
 
         // §15.1, the positive explicit table. Thirteen of its sixteen
         // rows are answered by thirteen runs of the explicit shape
@@ -2165,16 +2123,14 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // once. Building a second, gratuitously different transfer so
         // that each row could cite its own hex string would be dressing
         // one fact up as two.
-        "one-input-to-one-output" | "sponsorless" => {
-            Some(crate::live_history_v1::explicit_shapes::ONE_TO_ONE_ACCEPTED_TXID)
-        }
+        | "one-input-to-one-output"
+        | "sponsorless"
         // The split acceptance, likewise both: one receipt split into
         // two destinations belonging to two DISTINCT published owners is
         // an instance of the split class and of the
         // several-destination-owners class.
-        "one-input-split-into-two" | "several-destination-owners" => {
-            Some(crate::live_history_v1::explicit_shapes::SPLIT_ACCEPTED_TXID)
-        }
+        | "one-input-split-into-two"
+        | "several-destination-owners"
         // The merge acceptance, and this pair is the strongest of the
         // three rather than the weakest. The normalization run offered
         // the same two receipts in the REVERSE of their canonical order
@@ -2183,40 +2139,25 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // for them. The shared identity IS the normalization, observed
         // rather than asserted -- a second identity would have been
         // evidence that the request does not normalize.
-        "several-inputs-merged-into-one" | "canonical-input-normalization" => {
-            Some(crate::live_history_v1::explicit_shapes::MERGE_ACCEPTED_TXID)
-        }
-        "several-inputs-to-several-outputs" => {
-            Some(crate::live_history_v1::explicit_shapes::SEVERAL_TO_SEVERAL_ACCEPTED_TXID)
-        }
+        | "several-inputs-merged-into-one"
+        | "canonical-input-normalization"
+        | "several-inputs-to-several-outputs"
         // TWO inputs under ONE owner: the repetition is the subject, and
         // both signatures verify out of the node's own copy, each over
         // its own position's recomputed message.
-        "repeated-owner" => {
-            Some(crate::live_history_v1::explicit_shapes::REPEATED_OWNER_ACCEPTED_TXID)
-        }
+        | "repeated-owner"
         // TWO inputs under two DISTINCT owners. Its destinations are the
         // several-to-several run's exactly and the identities differ
         // anyway, because the SPENT programs differ -- which is what
         // makes this run about its input owners.
-        "several-distinct-owners" => {
-            Some(crate::live_history_v1::explicit_shapes::SEVERAL_DISTINCT_OWNERS_ACCEPTED_TXID)
-        }
-        "one-destination-owner" => {
-            Some(crate::live_history_v1::explicit_shapes::ONE_DESTINATION_OWNER_ACCEPTED_TXID)
-        }
+        | "several-distinct-owners"
+        | "one-destination-owner"
         // Destinations of one unit and the remainder. One is the
         // boundary the request type states rather than a small number
         // somebody picked, and the node took it.
-        "semantic-boundary-values" => {
-            Some(crate::live_history_v1::explicit_shapes::BOUNDARY_VALUES_ACCEPTED_TXID)
-        }
-        "candidate-maximum-inputs" => {
-            Some(crate::live_history_v1::explicit_shapes::MAXIMUM_INPUTS_ACCEPTED_TXID)
-        }
-        "candidate-maximum-outputs" => {
-            Some(crate::live_history_v1::explicit_shapes::MAXIMUM_OUTPUTS_ACCEPTED_TXID)
-        }
+        | "semantic-boundary-values"
+        | "candidate-maximum-inputs"
+        | "candidate-maximum-outputs"
         // The sponsor-signed explicit control, cited by both rows it is
         // an instance of. It carries a sponsor region -- a sponsor
         // input, a two-item sponsor witness the adapter produced over
@@ -2229,9 +2170,8 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // It is NOT `sponsor-change-present`. That row has its own run
         // and its own identity, below, on the rule this whole function
         // is held to: a row moves on an acceptance of its OWN shape.
-        "sponsored" | "sponsor-change-absent" => {
-            Some(crate::live_history_v1::sponsor_shapes::SPONSORED_ACCEPTED_TXID)
-        }
+        | "sponsored"
+        | "sponsor-change-absent"
         // The sponsored control that TAKES CHANGE, and the only run that
         // could answer this row. The change output is read out of the
         // node's own copy of the mined transaction and located by the
@@ -2243,69 +2183,33 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // nothing else -- same issuance, receipts, destinations, owners
         // and fee -- and the target computed two different identities
         // for them, which is what makes the difference attributable.
-        "sponsor-change-present" => {
-            Some(crate::live_history_v1::sponsor_shapes::SPONSORED_CHANGE_ACCEPTED_TXID)
-        }
-        _ => None,
-    }
+        | "sponsor-change-present"
+    )
 }
 
-/// The refusal that answered one negative row, where a run answered it.
+/// Whether a row retains the fact that a refusal was recorded for it.
 ///
-/// The negative half's counterpart to [`observed_row_acceptance`], and
+/// The negative half's counterpart to [`recorded_native_acceptance`], and
 /// held to the matching rule: a row is added here when a target REFUSED
 /// a candidate staging that row's own class WHILE having accepted the
 /// unmutated form of the same candidate, on the same chain, in the same
 /// session. A refusal without its control is not evidence, and a
 /// control from another chain is not this one's.
 ///
-/// Each entry returns the accepted control's identity, the LAYER the
-/// target refused at, and the target's own words, all three from a run of
-/// record.
-///
-/// # Why the layer is carried
-///
-/// It used to be dropped. Each entry returned a pair — the control and
-/// the words — and the classifier that consumed the pair therefore had
-/// nothing to compare against the boundary the row DECLARED, so it minted
-/// an answered standing whenever a refusal was attributable at all. Seven
-/// rows declaring a script path stood as answered on consensus refusals
-/// that never ran a script, which is a claim about a covenant clause the
-/// target never reached. The layer is carried here so the comparison is
-/// possible at all, and it comes from the ceremonies' own run-of-record
-/// constants rather than from anything this function knows.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct RecordedNativeRefusal {
-    /// The identity the target computed for the accepted control the
-    /// refusal is attributable against.
-    control_identity: &'static str,
-    /// The layer the target actually refused the mutant at, as recorded
-    /// by the run.
-    observed_layer: ObservedOutcomeLayer,
-    /// What the target said, verbatim.
-    refusal_detail: &'static str,
-}
-
-fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
-    use crate::live_history_v1::explicit_witness_negatives as witness;
-
-    match row.name() {
+/// The row name and observation kind survive; the historical control
+/// identity, observed layer, and refusal detail do not. The fresh corpus
+/// supplies and validates all of those values atomically.
+fn recorded_native_refusal(row: &LiveSafetyRow) -> bool {
+    matches!(
+        row.name(),
         // §10.2 types the signature position as an unconstrained item
         // precisely so that the TARGET is what refuses an empty or a
         // malformed offering, and it did. The two rows are answered by
         // one run and are distinguishable in it: the empty offering
         // failed the check that consumed it, and the well-sized
         // non-signature was judged and found invalid.
-        "empty-signature" => Some(RecordedNativeRefusal {
-            control_identity: witness::CONTROL_ACCEPTED_TXID,
-            observed_layer: witness::WITNESS_REFUSAL_OBSERVED_LAYER,
-            refusal_detail: witness::EMPTY_SIGNATURE_REFUSAL,
-        }),
-        "malformed-signature" => Some(RecordedNativeRefusal {
-            control_identity: witness::CONTROL_ACCEPTED_TXID,
-            observed_layer: witness::WITNESS_REFUSAL_OBSERVED_LAYER,
-            refusal_detail: witness::MALFORMED_SIGNATURE_REFUSAL,
-        }),
+        "empty-signature"
+        | "malformed-signature"
         // §15.6's sponsor-authorization row, answered by the sponsored
         // lane's own run: the mutant offered FIRST and then the
         // unmutated control, to one node on one chain. The mutant is
@@ -2319,13 +2223,7 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // accepted in the SAME run: the fee-role check passes for this
         // deployment, so the comparison that failed is the one the
         // sponsor witness reaches.
-        "missing-sponsor-authorization" => Some(RecordedNativeRefusal {
-            control_identity: crate::live_history_v1::sponsor_shapes::SPONSORED_ACCEPTED_TXID,
-            observed_layer:
-                crate::live_history_v1::sponsor_shapes::MISSING_SPONSOR_AUTHORIZATION_OBSERVED_LAYER,
-            refusal_detail:
-                crate::live_history_v1::sponsor_shapes::MISSING_SPONSOR_AUTHORIZATION_REFUSAL,
-        }),
+        | "missing-sponsor-authorization"
         // §15.5's two proof-negative rows, answered by the conservation
         // ceremony's own run — which submitted THREE mutants before the
         // control for a reason it states, all four spending one coin: a
@@ -2369,16 +2267,9 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // same run because each drove its own mutant at its own field,
         // which is the rule, and the distinct output is what earns the
         // separating field range fact (e) of the ceremony's charter names.
-        "malformed-rangeproof" | "wrong-private-blinding-balance" | "private-ct-imbalance" => {
-            Some(RecordedNativeRefusal {
-                control_identity:
-                    crate::live_history_v1::conservation_negatives::CONTROL_ACCEPTED_TXID,
-                observed_layer:
-                    crate::live_history_v1::conservation_negatives::MUTANT_OBSERVED_LAYER,
-                refusal_detail:
-                    crate::live_history_v1::conservation_negatives::MUTANT_REJECT_DETAIL,
-            })
-        }
+        | "malformed-rangeproof"
+        | "wrong-private-blinding-balance"
+        | "private-ct-imbalance"
         // §15.4's script-path row, answered by the owner-signing negative
         // ceremony's own run: the bare-u mutant offered FIRST and the
         // unmutated control LAST, to one node on one chain. The mutant is
@@ -2393,12 +2284,7 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // The re-signing changes the witness too, by design; the declared
         // range is measured over the WITNESSLESS serialization the message
         // is taken over, where it does not reach.
-        "vault-control-entitlement-or-bare-u-output" => Some(RecordedNativeRefusal {
-            control_identity:
-                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
-            observed_layer: crate::live_history_v1::owner_signing_negatives::MUTANT_OBSERVED_LAYER,
-            refusal_detail: crate::live_history_v1::owner_signing_negatives::MUTANT_REJECT_DETAIL,
-        }),
+        | "vault-control-entitlement-or-bare-u-output"
         // The seven conservation-breaking rows, answered by the SAME
         // owner-signing negative run — each on its OWN consensus mutant,
         // cut from the signed explicit control and offered before it. Each
@@ -2422,20 +2308,13 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // un-localizable structural range and separate by shape (two-in
         // one-out against two-in three-out); `omitted-source` separates by
         // its one-input shape and its own range.
-        "wrong-explicit-asset"
+        | "wrong-explicit-asset"
         | "confidential-asset-commitment"
         | "output-total-one-below-input"
         | "output-total-one-above-input"
         | "private-output-omitted"
         | "hidden-private-u-output"
-        | "omitted-source" => Some(RecordedNativeRefusal {
-            control_identity:
-                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
-            observed_layer:
-                crate::live_history_v1::owner_signing_negatives::CONSENSUS_MUTANT_OBSERVED_LAYER,
-            refusal_detail:
-                crate::live_history_v1::owner_signing_negatives::CONSENSUS_MUTANT_REJECT_DETAIL,
-        }),
+        | "omitted-source"
         // ONE driven row of each leaf-arrangement collision pair, answered
         // by the SAME owner-signing negative run. The four rows form two
         // pairs drawing one verdict each — the coordinator index check and
@@ -2459,22 +2338,8 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // same OP_EQUALVERIFY and from every sibling. No taptree moved: both
         // funded coins commit to one tree holding both leaves, so the
         // rearrangement reuses committed leaves.
-        "two-coordinators" => Some(RecordedNativeRefusal {
-            control_identity:
-                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
-            observed_layer:
-                crate::live_history_v1::owner_signing_negatives::TWO_COORDINATORS_OBSERVED_LAYER,
-            refusal_detail:
-                crate::live_history_v1::owner_signing_negatives::TWO_COORDINATORS_REJECT_DETAIL,
-        }),
-        "no-coordinator" => Some(RecordedNativeRefusal {
-            control_identity:
-                crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
-            observed_layer:
-                crate::live_history_v1::owner_signing_negatives::NO_COORDINATOR_OBSERVED_LAYER,
-            refusal_detail:
-                crate::live_history_v1::owner_signing_negatives::NO_COORDINATOR_REJECT_DETAIL,
-        }),
+        | "two-coordinators"
+        | "no-coordinator"
         // §15.4's key-path row, answered by the internal-key
         // unspendability probe's phase-B run: the key-path attempt
         // offered FIRST and the unmutated control after it, to one node
@@ -2498,19 +2363,14 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // answers for any key anyone does not hold
         // `(´[PLAN-rule:exclusions:nonclaims]´)`. The refusal establishes
         // that the attempt was observed and refused, under its own name.
-        "key-path-escape" => Some(RecordedNativeRefusal {
-            control_identity: crate::live_history_v1::keypath_probe_phase_b::CONTROL_ACCEPTED_TXID,
-            observed_layer: crate::live_history_v1::keypath_probe_phase_b::REFUSAL_OBSERVED_LAYER,
-            refusal_detail: crate::live_history_v1::keypath_probe_phase_b::REFUSAL_DETAIL,
-        }),
-        _ => None,
-    }
+        | "key-path-escape"
+    )
 }
 
 /// The first-party determinism observation that answers one row, where
 /// there is one.
 ///
-/// Beside [`observed_row_acceptance`] and shaped like it, and separate
+/// Beside [`recorded_native_acceptance`] and shaped like it, and separate
 /// from it for the reason [`LiveRowStanding::DeterminismObserved`]
 /// states: what this returns is not a target verdict and must never be
 /// filed as one.
@@ -2576,7 +2436,7 @@ fn observed_row_first_party_fact(row: &LiveSafetyRow) -> Option<(&'static str, &
             "a raw assembly path bypassing the safe constructor exists and is used: \
              `with_output_witnesses` is public, checks census arity only, and three \
              lanes rebuild finalized bytes through it and submit them to a real node",
-            "crate::live_history_v1::conservation_negatives",
+            "transaction::TargetTransaction::with_output_witnesses",
         )),
         // §15.6's zero-valued sponsor row, on the ruling that the
         // realization's reading GOVERNS. THE MATRIX PREDICTS A REFUSAL
@@ -2659,9 +2519,9 @@ fn classify(
     {
         return Ok(LiveRowStanding::ReportLayerRequired(*requirement));
     }
-    let Some(boundary) = row.refusing_layer() else {
+    if row.refusing_layer().is_none() {
         return Ok(LiveRowStanding::OperationVocabularyClosed);
-    };
+    }
     if let Some((validator, class)) = discharged.get(row.name()) {
         return Ok(LiveRowStanding::FirstPartyDischarged {
             validator: *validator,
@@ -2682,38 +2542,19 @@ fn classify(
     if let Some(blocker) = specific_blocker(row) {
         return Ok(LiveRowStanding::InfrastructureBlocked(blocker));
     }
-    // A recorded observation before a blocker would paper over a component
-    // that is still missing, so this is asked after the blocker.
-    if let Some(accepted_identity) = observed_row_acceptance(row) {
+    // A recorded-observation kind before a blocker would paper over a
+    // component that is still missing, so this is asked after the blocker.
+    if recorded_native_acceptance(row) {
         return Ok(LiveRowStanding::RecordedObservationUnbound(
-            RecordedObservation::NativeAcceptance { accepted_identity },
+            RecordedObservation::NativeAcceptance,
         ));
     }
-    // Beside it and after it, for the same reason it sits after the
-    // specific blocker.
-    if let Some(refusal) = observed_row_refusal(row) {
-        // THE COMPARISON THIS BRANCH USED NOT TO MAKE. A refusal is
-        // evidence for the row that declared it only where the layer the
-        // target reached IS the boundary the row named — exact equality
-        // through the one shared mapping, never a family or a
-        // near-enough. A refusal earlier in the pipeline than the
-        // declared boundary answers nothing about the declared one,
-        // because the run stopped before reaching it.
-        if observed_boundary(refusal.observed_layer) != Some(boundary) {
-            return Ok(LiveRowStanding::NativeRefusalAtUnexpectedBoundary {
-                declared_boundary: boundary,
-                observed_layer: refusal.observed_layer,
-                control_identity: refusal.control_identity,
-                refusal_detail: refusal.refusal_detail,
-            });
-        }
+    // Beside it and after it, retaining only the pre-overlay kind. The fresh
+    // corpus supplies the boundary, layer, control identity, and detail; the
+    // overlay validates their exact boundary agreement before answering it.
+    if recorded_native_refusal(row) {
         return Ok(LiveRowStanding::RecordedObservationUnbound(
-            RecordedObservation::NativeRefusal {
-                declared_boundary: boundary,
-                observed_layer: refusal.observed_layer,
-                control_identity: refusal.control_identity,
-                refusal_detail: refusal.refusal_detail,
-            },
+            RecordedObservation::NativeRefusal,
         ));
     }
     // Beside the two above and after them, for the reason they sit
@@ -2721,14 +2562,9 @@ fn classify(
     // acceptance branch deliberately: a row answerable by an acceptance
     // of its OWN shape must take that answer, and only a row whose gate
     // is a RELATION over two acceptances reaches this at all.
-    if let Some((explicit_identity, private_identity, relation)) = observed_row_paired_relation(row)
-    {
+    if recorded_paired_relation(row) {
         return Ok(LiveRowStanding::RecordedObservationUnbound(
-            RecordedObservation::PairedRelation {
-                explicit_identity,
-                private_identity,
-                relation,
-            },
+            RecordedObservation::PairedRelation,
         ));
     }
     // Last of the observation branches, and after the specific
@@ -2777,7 +2613,7 @@ fn classify(
 
 /// Derive the canonical validated live-transfer evidence plan (§13.1).
 ///
-/// The raw historical classifier derives from the seven sources, in order:
+/// The raw pre-overlay classifier derives from the seven sources, in order:
 /// the compiler coverage through
 /// [`live_transfer_plan`]; the exact linked bundle and the exact
 /// candidate ABI through [`demonstration_live_bundle`] and
@@ -2788,7 +2624,7 @@ fn classify(
 /// exact target, deployment, and executor provenance expectation. The
 /// [`ValidatedCorpusEvidence`] overlay then combines that immutable raw plan
 /// with the independently validated native-v2/revision-7 corpus. Only its
-/// proven links can retype a historical observation, and all 42 must validate
+/// proven links can retype a recorded-observation kind, and all 42 must validate
 /// before any standing moves.
 ///
 /// # Errors
@@ -2805,7 +2641,7 @@ pub fn derive_live_evidence_plan() -> Result<ValidatedCorpusEvidence, VectorErro
         .map_err(|_| VectorError::LiveSubstrateUnavailable)
 }
 
-/// Derive the immutable historical classifier before corpus validation.
+/// Derive the immutable classifier before corpus validation.
 fn derive_raw_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorError> {
     let plan = live_transfer_plan()?;
     let bundle = demonstration_live_bundle()?;
@@ -2975,83 +2811,12 @@ pub fn blocker_census(
 /// measured weight is a weight of.
 pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 
-/// Whether any run has compared the public protocol projections of an
-/// ACCEPTED private transaction and its PAIRED ACCEPTED explicit one.
+/// Whether a row retains the fact that a paired relation was recorded.
 ///
-/// The filed path for the `projection-equality-with-paired-explicit`
-/// row, and DERIVED rather than written: it is the pairs arc's own
-/// ledger flag. A constant restating in this file what another module
-/// observes is a second opinion free to drift from the first, and this
-/// one is the same fact read from where the fact lives.
-///
-/// # What it took, because the two gaps were real
-///
-/// The minimality wave filed this FALSE and named two things standing in
-/// the way rather than one, and both had to be closed.
-///
-/// The first was that the two acceptances a reader would reach for are
-/// NOT a pair. §16.1's load-bearing word is that a pair begins from ONE
-/// semantic fixture materialized twice, and
-/// `live_history_v1::explicit_shapes::ONE_TO_ONE_ACCEPTED_TXID` and
-/// `live_history_v1::multi_shapes::STRICT_ONE_TO_ONE_ACCEPTED_TXID`
-/// are two INDEPENDENT ceremonies whose shapes match. Comparing them
-/// would be the substitution [`crate::live_pairs::PairTargetVerdict`]'s
-/// `NotSubmittedShapeAcceptedElsewhere` member exists to deny. The arc
-/// closes it by CONSTRUCTION rather than by argument: both its members
-/// read one fixture, and neither shape carries a literal of its own.
-///
-/// The second was that no standing could hold the observation.
-/// [`LiveRowStanding::NativeRunObserved`] carries exactly ONE
-/// `accepted_identity` and a projection equality is a relation over TWO,
-/// so filing it under that member would be the single error a run of
-/// record exists to prevent. The wave declined to mint a member for it
-/// unilaterally and reported the gap;
-/// [`LiveRowStanding::PairedRelationObserved`] is the repair the owner's
-/// pairs-arc ruling directed in answer, on the precedent
-/// [`LiveRowStanding::DeterminismObserved`] set.
-///
-/// # What it is still not
-///
-/// True here means one arc observed one relation over one fixture's two
-/// materializations. It is not a claim about §16.1's other four pairs,
-/// whose members remain unsubmitted and whose registry entries say so.
-pub const A_PAIRED_ACCEPTED_PROJECTION_COMPARISON_EXISTS: bool =
-    crate::live_history_v1::pair_arc::A_PAIR_ARC_LEDGER_EXISTS;
-
-/// The relation one PAIRS ARC observed over its two accepted members.
-///
-/// Beside [`observed_row_acceptance`] and shaped like it, and separate
-/// for the reason [`LiveRowStanding::PairedRelationObserved`] is a
-/// separate member: what answers this row is not an acceptance but a
-/// RELATION over two of them, and the two have to be the two
-/// materializations of one §16.1 fixture rather than two runs whose
-/// shapes match.
-///
-/// It answers only while the arc's own run of record carries BOTH
-/// identities. The flag and the identities move together at the arc's
-/// own site, so a row cannot move here on a ledger that does not exist.
-fn observed_row_paired_relation(
-    row: &LiveSafetyRow,
-) -> Option<(&'static str, &'static str, &'static str)> {
-    use crate::live_history_v1::pair_arc as arc;
-
-    match row.name() {
-        "projection-equality-with-paired-explicit" => {
-            let explicit = arc::EXPLICIT_MEMBER_ACCEPTED_IDENTITY?;
-            let private = arc::PRIVATE_MEMBER_ACCEPTED_IDENTITY?;
-            if !arc::A_PAIR_ARC_LEDGER_EXISTS {
-                return None;
-            }
-            Some((
-                explicit,
-                private,
-                "the public protocol projections of the two accepted materializations of one \
-                 §16.1 one-to-one fixture agree on every §6.6 term, the private member \
-                 withholding the exact amounts the explicit member publishes",
-            ))
-        }
-        _ => None,
-    }
+/// The row name and observation kind survive; both identities and the
+/// relation text come only from the validated fresh corpus.
+fn recorded_paired_relation(row: &LiveSafetyRow) -> bool {
+    row.name() == "projection-equality-with-paired-explicit"
 }
 
 /// The residuals this plan inherits and does not clear.
@@ -3108,12 +2873,11 @@ mod tests {
     use super::{
         CorpusEvidenceRefusal, EvidenceBoundary, LiveInfrastructureBlocker, LiveReportObservation,
         LiveRowStanding, MinimalityRegistryStanding, NativeObservedAcceptance, NativeV2LinkClass,
-        ObservedOutcomeLayer, OverlayInputs, RecordedObservation, Txid, ValidatedCorpusEvidence,
-        blocker_census, derive_live_evidence_plan, derive_raw_live_evidence_plan,
-        observed_boundary,
+        ObservedOutcomeLayer, OverlayInputs, Txid, ValidatedCorpusEvidence, blocker_census,
+        derive_live_evidence_plan, derive_raw_live_evidence_plan, observed_boundary,
     };
     use crate::live_safety::{LiveReportRequirement, LiveSafetyPolarity, LiveSafetySection};
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn real_overlay_inputs() -> OverlayInputs {
         let corpus = crate::live_corpus_native_v2_r7::run_of_record()
@@ -3578,10 +3342,9 @@ mod tests {
         // accepted control's identity -- the half a reader can check
         // against a chain, the refusal having left no transaction to
         // look up -- and the target's own words.
-        use crate::live_history_v1::explicit_witness_negatives as witness;
-
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let mut recorded = BTreeSet::new();
+        let mut fresh_refusals = BTreeMap::new();
         for row in plan.rows() {
             if let LiveRowStanding::NativeRefusalObserved {
                 declared_boundary,
@@ -3613,6 +3376,10 @@ mod tests {
                 );
                 assert!(row.standing().is_answered());
                 recorded.insert(row.row().name());
+                fresh_refusals.insert(
+                    row.row().name(),
+                    (*control_identity, refusal_detail.as_str()),
+                );
             }
         }
         assert_eq!(
@@ -3647,8 +3414,7 @@ mod tests {
         // candidate whose witnessless serializations were compared byte
         // for byte rather than argued to be equal.
         assert_ne!(
-            crate::live_history_v1::keypath_probe_phase_b::CONTROL_ACCEPTED_TXID,
-            witness::CONTROL_ACCEPTED_TXID,
+            fresh_refusals["key-path-escape"].0, fresh_refusals["empty-signature"].0,
             "the key-path negative cites the witness lane's control",
         );
 
@@ -3665,8 +3431,7 @@ mod tests {
         // told apart from another comparison's would be a row answered
         // by a string rather than by a run.
         assert_ne!(
-            crate::live_history_v1::sponsor_shapes::SPONSORED_ACCEPTED_TXID,
-            witness::CONTROL_ACCEPTED_TXID,
+            fresh_refusals["missing-sponsor-authorization"].0, fresh_refusals["empty-signature"].0,
             "the sponsored negative cites the sponsorless lane's control",
         );
 
@@ -3675,19 +3440,9 @@ mod tests {
         // offering failed the check that consumed it; the well-sized
         // non-signature was consumed and judged.
         assert_ne!(
-            witness::EMPTY_SIGNATURE_REFUSAL,
-            witness::MALFORMED_SIGNATURE_REFUSAL,
+            fresh_refusals["empty-signature"].1,
+            fresh_refusals["malformed-signature"].1,
         );
-
-        // And neither is the refusal the wrong submission order
-        // produced, which named an identity already on the chain and was
-        // about nothing either row is about.
-        for detail in [
-            witness::EMPTY_SIGNATURE_REFUSAL,
-            witness::MALFORMED_SIGNATURE_REFUSAL,
-        ] {
-            assert_ne!(detail, witness::REFUSAL_UNDER_CONTROL_FIRST_ORDER);
-        }
     }
 
     #[test]
@@ -3847,12 +3602,28 @@ mod tests {
             .iter()
             .filter(|row| row.standing().is_answered())
             .count();
+        let mut recorded_kinds = (0, 0, 0);
+        for row in plan.rows() {
+            match row.standing() {
+                LiveRowStanding::RecordedObservationUnbound(
+                    super::RecordedObservation::NativeAcceptance,
+                ) => recorded_kinds.0 += 1,
+                LiveRowStanding::RecordedObservationUnbound(
+                    super::RecordedObservation::NativeRefusal,
+                ) => recorded_kinds.1 += 1,
+                LiveRowStanding::RecordedObservationUnbound(
+                    super::RecordedObservation::PairedRelation,
+                ) => recorded_kinds.2 += 1,
+                _ => {}
+            }
+        }
 
         assert_eq!(answered, 38);
         assert_eq!(census.report_layer_required(), 2);
         assert_eq!(census.vocabulary_closed(), 1);
         assert_eq!(census.native_run_required(), 25);
         assert_eq!(census.recorded_observation_unbound(), 42);
+        assert_eq!(recorded_kinds, (24, 17, 1));
         assert_eq!(38 + 2 + 1 + 25 + 42, census.rows());
     }
 
@@ -3990,22 +3761,14 @@ mod tests {
     }
 
     #[test]
-    fn a_historical_v1_identity_cannot_replace_a_fresh_identity() {
+    fn a_foreign_identity_cannot_replace_a_fresh_identity() {
         let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
-        // The C1 capture reproduces the historical maximum-inputs bytes and
-        // therefore its txid. Use another admitted v1-era identity so the
-        // adversary actually substitutes an unbacked value.
-        let historical = raw_plan
-            .rows()
-            .iter()
-            .find(|row| row.row().name() == "candidate-maximum-outputs")
-            .and_then(|row| match row.standing() {
-                LiveRowStanding::RecordedObservationUnbound(
-                    RecordedObservation::NativeAcceptance { accepted_identity },
-                ) => Txid::from_target_display(accepted_identity).ok(),
-                _ => None,
-            })
-            .expect("the historical identity parses");
+        // This is a syntactically valid foreign identity local to the test. It
+        // is deliberately not backed by any request in the validated corpus.
+        let foreign = Txid::from_target_display(
+            "1111111111111111111111111111111111111111111111111111111111111111",
+        )
+        .expect("the foreign identity parses");
         let mut inputs = real_overlay_inputs();
         let fresh = inputs
             .observations
@@ -4015,18 +3778,18 @@ mod tests {
                     if *row == "candidate-maximum-inputs" =>
                 {
                     let fresh = *identity;
-                    *identity = historical;
+                    *identity = foreign;
                     Some(fresh)
                 }
                 _ => None,
             })
             .expect("the fresh corpus has the row");
         assert_ne!(
-            fresh, historical,
-            "the historical identity must differ from the fresh row"
+            fresh, foreign,
+            "the foreign identity must differ from the fresh row"
         );
         let refusal = ValidatedCorpusEvidence::try_from_overlay_inputs(&raw_plan, inputs)
-            .expect_err("the historical identity is not backed by the fresh run");
+            .expect_err("the foreign identity is not backed by the fresh run");
 
         assert_eq!(refusal, CorpusEvidenceRefusal::ObservationUnbacked);
         assert_eq!(raw_plan.census().recorded_observation_unbound(), 42);
@@ -4094,9 +3857,22 @@ mod tests {
         // of the two failures a target would report for such a candidate is
         // not settled by anything in this repository, and no verdict is
         // predicted for them here.
+        let LiveRowStanding::NativeRefusalObserved {
+            refusal_detail: two_coordinators_detail,
+            ..
+        } = standing("two-coordinators")
+        else {
+            panic!("two-coordinators does not carry its fresh refusal");
+        };
+        let LiveRowStanding::NativeRefusalObserved {
+            refusal_detail: no_coordinator_detail,
+            ..
+        } = standing("no-coordinator")
+        else {
+            panic!("no-coordinator does not carry its fresh refusal");
+        };
         assert_ne!(
-            crate::live_history_v1::owner_signing_negatives::TWO_COORDINATORS_REJECT_DETAIL,
-            crate::live_history_v1::owner_signing_negatives::NO_COORDINATOR_REJECT_DETAIL,
+            two_coordinators_detail, no_coordinator_detail,
             "the two driven leaf-arrangement rows draw one verdict",
         );
     }
