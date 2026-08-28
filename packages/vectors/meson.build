@@ -34,6 +34,7 @@ vectors_source_files = files(
   'src/live_history_v1/owner_observation.rs',
   'src/live_history_v1/owner_signing_negatives.rs',
   'src/live_history_v1/pair_arc.rs',
+  'src/live_history_v1/sponsor_shapes.rs',
   'src/live_keypath_probe.rs',
   'src/live_measurements.rs',
   'src/live_minimality_report.rs',

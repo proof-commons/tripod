@@ -2114,7 +2114,7 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // asks for confidential sponsor values, and it is answered only
         // by a run of its own shape.
         "private-sponsor-values" => {
-            Some(crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_PRIVATE_TXID)
+            Some(crate::live_history_v1::sponsor_shapes::SPONSORED_PRIVATE_TXID)
         }
         // One receipt consumed and THREE outputs created: two recipients
         // and the balancing change back to the sender.
@@ -2230,7 +2230,7 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // and its own identity, below, on the rule this whole function
         // is held to: a row moves on an acceptance of its OWN shape.
         "sponsored" | "sponsor-change-absent" => {
-            Some(crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID)
+            Some(crate::live_history_v1::sponsor_shapes::SPONSORED_ACCEPTED_TXID)
         }
         // The sponsored control that TAKES CHANGE, and the only run that
         // could answer this row. The change output is read out of the
@@ -2243,9 +2243,9 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // nothing else -- same issuance, receipts, destinations, owners
         // and fee -- and the target computed two different identities
         // for them, which is what makes the difference attributable.
-        "sponsor-change-present" => Some(
-            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_CHANGE_ACCEPTED_TXID,
-        ),
+        "sponsor-change-present" => {
+            Some(crate::live_history_v1::sponsor_shapes::SPONSORED_CHANGE_ACCEPTED_TXID)
+        }
         _ => None,
     }
 }
@@ -2320,12 +2320,11 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // deployment, so the comparison that failed is the one the
         // sponsor witness reaches.
         "missing-sponsor-authorization" => Some(RecordedNativeRefusal {
-            control_identity:
-                crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            control_identity: crate::live_history_v1::sponsor_shapes::SPONSORED_ACCEPTED_TXID,
             observed_layer:
-                crate::live_sponsor_shapes::sponsored_run_of_record::MISSING_SPONSOR_AUTHORIZATION_OBSERVED_LAYER,
+                crate::live_history_v1::sponsor_shapes::MISSING_SPONSOR_AUTHORIZATION_OBSERVED_LAYER,
             refusal_detail:
-                crate::live_sponsor_shapes::sponsored_run_of_record::MISSING_SPONSOR_AUTHORIZATION_REFUSAL,
+                crate::live_history_v1::sponsor_shapes::MISSING_SPONSOR_AUTHORIZATION_REFUSAL,
         }),
         // §15.5's two proof-negative rows, answered by the conservation
         // ceremony's own run — which submitted THREE mutants before the
@@ -2397,10 +2396,8 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         "vault-control-entitlement-or-bare-u-output" => Some(RecordedNativeRefusal {
             control_identity:
                 crate::live_history_v1::owner_signing_negatives::CONTROL_ACCEPTED_TXID,
-            observed_layer:
-                crate::live_history_v1::owner_signing_negatives::MUTANT_OBSERVED_LAYER,
-            refusal_detail:
-                crate::live_history_v1::owner_signing_negatives::MUTANT_REJECT_DETAIL,
+            observed_layer: crate::live_history_v1::owner_signing_negatives::MUTANT_OBSERVED_LAYER,
+            refusal_detail: crate::live_history_v1::owner_signing_negatives::MUTANT_REJECT_DETAIL,
         }),
         // The seven conservation-breaking rows, answered by the SAME
         // owner-signing negative run — each on its OWN consensus mutant,
@@ -2502,10 +2499,8 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // `(´[PLAN-rule:exclusions:nonclaims]´)`. The refusal establishes
         // that the attempt was observed and refused, under its own name.
         "key-path-escape" => Some(RecordedNativeRefusal {
-            control_identity:
-                crate::live_history_v1::keypath_probe_phase_b::CONTROL_ACCEPTED_TXID,
-            observed_layer:
-                crate::live_history_v1::keypath_probe_phase_b::REFUSAL_OBSERVED_LAYER,
+            control_identity: crate::live_history_v1::keypath_probe_phase_b::CONTROL_ACCEPTED_TXID,
+            observed_layer: crate::live_history_v1::keypath_probe_phase_b::REFUSAL_OBSERVED_LAYER,
             refusal_detail: crate::live_history_v1::keypath_probe_phase_b::REFUSAL_DETAIL,
         }),
         _ => None,
@@ -3670,7 +3665,7 @@ mod tests {
         // told apart from another comparison's would be a row answered
         // by a string rather than by a run.
         assert_ne!(
-            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            crate::live_history_v1::sponsor_shapes::SPONSORED_ACCEPTED_TXID,
             witness::CONTROL_ACCEPTED_TXID,
             "the sponsored negative cites the sponsorless lane's control",
         );

@@ -33,9 +33,7 @@ pub mod explicit_shapes;
 pub mod explicit_witness_negatives;
 
 /// Historical sponsored-shape observations.
-pub mod sponsor_shapes {
-    pub use crate::live_sponsor_shapes::sponsored_run_of_record::*;
-}
+pub mod sponsor_shapes;
 
 /// Historical owner-signing refusal observations.
 pub mod owner_signing_negatives;
@@ -158,7 +156,7 @@ mod tests {
         );
         assert_eq!(
             super::sponsor_shapes::SPONSORED_ACCEPTED_TXID,
-            crate::live_sponsor_shapes::sponsored_run_of_record::SPONSORED_ACCEPTED_TXID,
+            "8528d455cfd7e2cc92e88f2f0432bd0faed8c6f6417c675573a6b4963e1c01b2",
         );
         assert_eq!(super::owner_signing_negatives::CONTROL_ARRANGEMENT, [0, 1],);
         assert_eq!(
