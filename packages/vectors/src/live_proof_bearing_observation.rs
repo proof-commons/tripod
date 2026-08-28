@@ -3856,17 +3856,17 @@ mod tests {
     }
 
     #[test]
-    fn pending_forward_members_cannot_pass_as_recorded() {
-        let pending = forward_v2_proof_bearing_run_of_record();
+    fn the_authorized_corpus_records_both_forward_members_atomically() {
+        let forward = forward_v2_proof_bearing_run_of_record();
         let recorded =
             ForwardV2ProofBearingRunOfRecord::try_from(&synthetic_forward_v2_live_record())
                 .expect("complete forward-v2 facts project to schema 2");
 
-        assert_eq!(pending.schema_version(), 2);
-        assert_eq!(pending.observations().name(), "pending");
-        assert_eq!(pending.acceptance().name(), "pending");
-        assert!(pending.observations().recorded().is_none());
-        assert!(pending.acceptance().recorded().is_none());
-        assert_ne!(pending, &recorded);
+        assert_eq!(forward.schema_version(), 2);
+        assert_eq!(forward.observations().name(), "recorded");
+        assert_eq!(forward.acceptance().name(), "recorded");
+        assert!(forward.observations().recorded().is_some());
+        assert!(forward.acceptance().recorded().is_some());
+        assert_ne!(forward, &recorded);
     }
 }

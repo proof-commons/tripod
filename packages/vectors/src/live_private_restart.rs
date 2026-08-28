@@ -2279,11 +2279,10 @@ mod tests {
     }
 
     #[test]
-    fn the_forward_v2_expectation_is_pending_and_has_only_forward_pins() {
+    fn the_authorized_corpus_records_both_forward_members_and_v2_pins() {
         use super::ConsumedReceipt;
         use super::run_of_record::{
-            ForwardPrivateRestartAcceptance, ForwardPrivateRestartExpectation,
-            ForwardPrivateRestartExpectationRefusal, forward_fixture_digest_v2,
+            ForwardPrivateRestartExpectation, forward_fixture_digest_v2,
             forward_private_restart_expectation,
         };
 
@@ -2302,16 +2301,12 @@ mod tests {
             fixtures.successor(ConsumedReceipt::Balancing),
             forward_fixture_digest_v2::PARITY_SUCCESSOR_DIGEST,
         );
-        assert_eq!(
-            forward.acceptance(),
-            ForwardPrivateRestartAcceptance::Pending,
-        );
-        assert_eq!(forward.acceptance().name(), "pending");
-        assert_eq!(
-            forward.acceptance().recorded_link(),
-            Err(ForwardPrivateRestartExpectationRefusal::AcceptancePending),
-            "a Pending expectation must not pass a Recorded acceptance gate",
-        );
+        assert_eq!(forward.acceptance().name(), "recorded");
+        let link = forward
+            .acceptance()
+            .recorded_link()
+            .expect("the validated corpus mints both restart acceptances");
+        assert_ne!(link.primary().identity(), link.balancing().identity());
     }
 
     #[test]
