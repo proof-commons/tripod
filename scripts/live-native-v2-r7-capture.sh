@@ -134,6 +134,40 @@ is_lower_hex_length() {
   esac
 }
 
+# C1 attempt #2 established the evidence-shaped split between these two tip
+# carriers. The operator-declared intended tip carries all 40 hex characters
+# and is compared in full below. Elements Core's binary version string carries
+# only a short source revision (12 hex characters in the observed binary), so
+# the binary cannot emit bytes that its version carrier does not contain. Bind
+# every character it does emit: at least 12 lower-case hex characters, no more
+# than the full tip, and an exact prefix of that expected full tip.
+binary_revision_matches_expected_tip() {
+  binary_field=$1
+  case "$binary_field" in
+    *' '*) ;;
+    *) return 1 ;;
+  esac
+  binary_length=${binary_field%% *}
+  binary_hex=${binary_field#* }
+  case "$binary_hex" in
+    ''|*' '*) return 1 ;;
+  esac
+  case "$binary_length" in
+    ''|0|0*|*[!0-9]*) return 1 ;;
+  esac
+  [ "$binary_length" -ge 12 ] || return 1
+  [ "$binary_length" -le 40 ] || return 1
+  [ "${#binary_hex}" -eq "$((binary_length * 2))" ] || return 1
+  case "$binary_hex" in
+    *[!0-9a-f]*) return 1 ;;
+  esac
+
+  expected_binary_prefix=$(printf '%s\n' "$EXPECTED_ELEMENTSD_TIP" |
+    awk -v prefix_len="$binary_length" '{ print substr($0, 1, prefix_len) }')
+  expected_binary_hex=$(printf '%s' "$expected_binary_prefix" | od -An -tx1 | tr -d ' \n')
+  [ "$binary_hex" = "$expected_binary_hex" ]
+}
+
 require_absolute_executable() {
   variable_name=$1
   variable_value=$2
@@ -541,11 +575,18 @@ else
   record_error "the predecessor setup artifact is missing"
 fi
 
+diagnostics_present=no
 for entry in "$capture_directory"/* "$capture_directory"/.[!.]* "$capture_directory"/..?*; do
   [ -e "$entry" ] || continue
   entry_name=${entry##*/}
   entry_expected=no
-  if [ "$entry_name" = "$run_address.confidential-predecessor.setup" ]; then
+  if [ "$entry_name" = diagnostics ] && [ -d "$entry" ] && [ ! -L "$entry" ]; then
+    # The recorder owns diagnostics/<ceremony-id> below this one recognized
+    # audit-only root. Its contents are intentionally unparsed, do not enter
+    # the 81-file evidence census, and are not manifest or eligibility input.
+    diagnostics_present=yes
+    entry_expected=yes
+  elif [ "$entry_name" = "$run_address.confidential-predecessor.setup" ]; then
     entry_expected=yes
   else
     case "$entry_name" in
@@ -568,7 +609,10 @@ for entry in "$capture_directory"/* "$capture_directory"/.[!.]* "$capture_direct
   fi
 done
 
-[ "$observed_binary_revision" = "$expected_tip_field" ] || record_error "the binary-reported elementsd revision differs from the expected full tip"
+# The intended tip is the full operator declaration. The binary-reported
+# revision follows the short-prefix rule documented at its validator above.
+binary_revision_matches_expected_tip "$observed_binary_revision" ||
+  record_error "the binary-reported elementsd revision is not a lower-hex prefix of at least 12 characters"
 [ "$observed_intended_tip" = "$expected_tip_field" ] || record_error "the intended executed elementsd tip differs from the expected full tip"
 
 phase_finish
@@ -627,6 +671,7 @@ cargo_argv_hex=$(printf '%s' "$cargo_argv" | od -An -tx1 | tr -d ' \n')
   printf 'observed-ceremony-count %s\n' "$observed_ceremony_count"
   printf 'expected-setup-count %s\n' "$EXPECTED_SETUP_COUNT"
   printf 'observed-setup-count %s\n' "$observed_setup_count"
+  printf 'diagnostics-present %s\n' "$diagnostics_present"
   printf 'test-passed-count %s\n' "$observed_passed"
   printf 'test-failed-count %s\n' "$observed_failed"
   printf 'test-ignored-count %s\n' "$observed_ignored"

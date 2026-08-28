@@ -71,6 +71,7 @@ wrong_tip=0000000000000000000000000000000000000000
 binary_tip_prefix=b7fc5d080a7e
 non_prefix_revision=000000000000
 short_revision=b7fc5d080a7
+non_hex_revision=b7fc5d080a7g
 
 ceremony_ids='conservation-negatives
 explicit-boundary-values
@@ -143,6 +144,8 @@ for ceremony_id in $ceremony_ids; do
   capture_schema=1
   [ "$scenario" = non-prefix-revision ] && binary_tip=$non_prefix_revision
   [ "$scenario" = short-revision ] && binary_tip=$short_revision
+  [ "$scenario" = non-hex-revision ] && binary_tip=$non_hex_revision
+  [ "$scenario" = no-diagnostics ] && binary_tip=$expected_tip
   [ "$scenario" = intended-tip-mismatch ] && intended_tip=$wrong_tip
   [ "$scenario" = incomplete-transcript ] && [ "$ceremony_id" = report ] && terminal_state=incomplete
   [ "$scenario" = deployment-mismatch ] && [ "$ceremony_id" = report ] && deployment_environment=staging
@@ -198,8 +201,10 @@ fi
 
 [ "$scenario" = unexpected-file ] && printf 'unexpected\n' > "$TRIPOD_LIVE_REPORT_DIR/unexpected"
 
-mkdir -p "$TRIPOD_LIVE_REPORT_DIR/diagnostics/report"
-printf 'audit-only executor diagnostics\n' > "$TRIPOD_LIVE_REPORT_DIR/diagnostics/report/stderr"
+if [ "$scenario" != no-diagnostics ]; then
+  mkdir -p "$TRIPOD_LIVE_REPORT_DIR/diagnostics/report"
+  printf 'audit-only executor diagnostics\n' > "$TRIPOD_LIVE_REPORT_DIR/diagnostics/report/stderr"
+fi
 if [ "$scenario" = second-unexpected-directory ]; then
   mkdir -p "$TRIPOD_LIVE_REPORT_DIR/other-diagnostics/report"
   printf 'unexpected directory\n' > "$TRIPOD_LIVE_REPORT_DIR/other-diagnostics/report/stderr"
@@ -340,6 +345,14 @@ for phase in preflight cargo census manifest report readonly; do
   grep -q "phase $phase wall-ms" "$case_stderr" || fail "happy path omitted $phase timing"
 done
 
+run_case no-diagnostics no-diagnostics no
+[ "$case_status" -eq 0 ] || fail "no-diagnostics path exited $case_status"
+[ -f "$case_output/RUN-REPORT" ] || fail "no-diagnostics path did not emit RUN-REPORT"
+if [ -f "$case_output/RUN-REPORT" ]; then
+  grep -qx 'eligible yes' "$case_output/RUN-REPORT" || fail "no-diagnostics path is not eligible"
+  grep -qx 'diagnostics-present no' "$case_output/RUN-REPORT" || fail "no-diagnostics presence differs"
+fi
+
 assert_ineligible_case missing-ceremony missing-ceremony 'missing capture for report'
 assert_ineligible_case duplicate-ceremony duplicate-ceremony 'duplicate ceremony ID'
 assert_ineligible_case missing-timing missing-timing 'missing timing sidecar for report'
@@ -351,6 +364,7 @@ assert_ineligible_case incomplete-transcript incomplete-transcript 'terminal-sta
 assert_ineligible_case test-count test-count 'observed test census is not 40'
 assert_ineligible_case non-prefix-revision non-prefix-revision 'binary-reported elementsd revision'
 assert_ineligible_case short-revision short-revision 'binary-reported elementsd revision'
+assert_ineligible_case non-hex-revision non-hex-revision 'binary-reported elementsd revision'
 assert_ineligible_case intended-tip-mismatch intended-tip-mismatch 'intended executed elementsd tip differs'
 assert_ineligible_case deployment-mismatch deployment-mismatch 'deployment-environment differs'
 assert_ineligible_case capture-schema capture-schema 'native-capture-schema differs'
