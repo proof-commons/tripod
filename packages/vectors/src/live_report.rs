@@ -2851,6 +2851,22 @@ struct BoundObservationValidation {
     used_requests: BTreeSet<(String, String)>,
 }
 
+const CONSERVATION_CONTROL_ROW: &str = "target-ct-conservation";
+const CONSERVATION_CONTROL_REQUEST: &str = "conservation-negatives/request-6";
+
+fn ordinary_acceptance_role_matches(row: &str, request_id: &str, fact: &LiveRequestFact) -> bool {
+    // `live_corpus_native_v2_r7::add_conservation_material` deliberately
+    // cites the accepted control for the conservation-negative family as the
+    // positive conservation witness. Keep that typed reuse closed to its
+    // exact row and global request; every other ordinary acceptance remains
+    // an acceptance-role request.
+    if row == CONSERVATION_CONTROL_ROW {
+        request_id == CONSERVATION_CONTROL_REQUEST && fact == &LiveRequestFact::Control
+    } else {
+        fact == &LiveRequestFact::Acceptance
+    }
+}
+
 impl BoundObservationValidation {
     fn acceptance(
         &mut self,
@@ -2873,7 +2889,7 @@ impl BoundObservationValidation {
             ObservationLinkClass::OrdinaryAcceptance(row),
         )?;
         let (fact, response, _) = request_for(runs, run_id, request_id, row)?;
-        if fact != &LiveRequestFact::Acceptance {
+        if !ordinary_acceptance_role_matches(row, request_id, fact) {
             return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
                 run_id.clone(),
                 request_id.clone(),
@@ -4252,8 +4268,9 @@ mod tests {
         LiveSafetyReportRole, LiveSupportLink, LiveTargetResponse, LiveWitnessPathRole,
         NativeProtocolRevision, ObservationLinkClass, RecomputedItem, VALIDATED_PAIR_RELATION,
         VolatileField, assemble_live_safety_report, compare_run_bindings, insert_observation_link,
-        recomputed_txid, render_live_safety_report, section_scoreboard, target_evidence_name,
-        validate_bound_observations, validate_live_safety_report, validate_report_disclosures,
+        observations_from_overlay, recomputed_txid, render_live_safety_report, section_scoreboard,
+        target_evidence_name, validate_bound_observations, validate_live_safety_report,
+        validate_report_disclosures,
     };
     use crate::live_evidence::derive_live_evidence_plan;
     use crate::live_plan::reviewed_target;
@@ -4373,6 +4390,17 @@ mod tests {
             )]),
         )
         .expect("the synthetic acceptance run parses")
+    }
+
+    fn synthetic_control_acceptance_run(request_id: &str) -> LiveRunBinding {
+        let source = synthetic_acceptance_run("conservation-negatives", request_id, 0xb3, 0x08);
+        LiveRunBinding::from_archive(
+            source.archive_bytes,
+            source.requests,
+            std::collections::BTreeMap::from([(request_id.to_owned(), LiveRequestFact::Control)]),
+            source.responses,
+        )
+        .expect("the synthetic control acceptance run parses")
     }
 
     fn composite_observation(
@@ -5407,6 +5435,85 @@ mod tests {
                 )),
             );
         }
+    }
+
+    #[test]
+    fn the_real_corpus_roles_match_every_typed_observation_form() {
+        let evidence = derive_live_evidence_plan().expect("the evidence plan derives");
+        let observations =
+            observations_from_overlay(&evidence).expect("the overlay observations derive");
+
+        assert_eq!(
+            validate_bound_observations(&observations, evidence.runs()),
+            Ok(42),
+        );
+    }
+
+    #[test]
+    fn conservation_control_reuse_is_closed_to_its_exact_acceptance() {
+        let request_id = "conservation-negatives/request-6";
+        let control = synthetic_control_acceptance_run(request_id);
+        let observation = |run: &LiveRunBinding, row: &'static str, request: &str| {
+            let LiveTargetResponse::Accepted { identity } = &run.responses[request] else {
+                panic!("the conservation control response is accepted");
+            };
+            LiveReportObservation::NativeAcceptance {
+                row,
+                run_id: run.run_id.clone(),
+                request_id: request.to_owned(),
+                identity: *identity,
+            }
+        };
+        assert_eq!(
+            validate_bound_observations(
+                &[observation(&control, "target-ct-conservation", request_id)],
+                std::slice::from_ref(&control),
+            ),
+            Ok(1),
+        );
+        assert_eq!(
+            validate_bound_observations(
+                &[observation(&control, "another-row", request_id)],
+                std::slice::from_ref(&control),
+            ),
+            Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                control.run_id.clone(),
+                request_id.to_owned(),
+            )),
+        );
+
+        let wrong_request_id = "conservation-negatives/request-5";
+        let wrong_request = synthetic_control_acceptance_run(wrong_request_id);
+        assert_eq!(
+            validate_bound_observations(
+                &[observation(
+                    &wrong_request,
+                    "target-ct-conservation",
+                    wrong_request_id,
+                )],
+                std::slice::from_ref(&wrong_request),
+            ),
+            Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                wrong_request.run_id.clone(),
+                wrong_request_id.to_owned(),
+            )),
+        );
+
+        let wrong_role = synthetic_acceptance_run("conservation-negatives", request_id, 0xb4, 0x08);
+        assert_eq!(
+            validate_bound_observations(
+                &[observation(
+                    &wrong_role,
+                    "target-ct-conservation",
+                    request_id,
+                )],
+                std::slice::from_ref(&wrong_role),
+            ),
+            Err(LiveSafetyReportRefusal::RequestRoleDiffers(
+                wrong_role.run_id.clone(),
+                request_id.to_owned(),
+            )),
+        );
     }
 
     #[test]
