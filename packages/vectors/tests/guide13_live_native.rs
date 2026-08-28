@@ -4930,24 +4930,27 @@ fn assert_the_pair_is_one_candidate_answered_twice(
     );
 }
 
-/// The two verdicts and the two candidates, held against phase B's run of
-/// record.
-///
-/// # Why this was unbound, and why binding it costs no report
-///
-/// The probe's first form recorded both verdicts and asserted neither, so
-/// that an unexpected layer would reach a reader instead of a panic. The
-/// rendered transcript is what delivers that, and it is written to disk
-/// BEFORE any assertion in this test runs — so nothing here costs the
-/// report on the day an answer changes. What the unasserted form actually
-/// left green was every drift the run of record exists to make checkable:
-/// an ACCEPTED attempt against a REFUSED control differ in layer just as
-/// the run that happened does, so the pair's one assertion passed on the
-/// exact inversion that makes the seventeenth refusal row unattributable.
-/// Each figure below is phase B's own, and each now fails on drift.
-fn assert_the_verdicts_match_the_run_of_record(
+// The two verdicts and the two candidates, held against phase B's run of
+// record.
+//
+// Why this was unbound, and why binding it costs no report:
+//
+// The probe's first form recorded both verdicts and asserted neither, so
+// that an unexpected layer would reach a reader instead of a panic. The
+// rendered transcript is what delivers that, and it is written to disk
+// BEFORE any assertion in this test runs — so nothing here costs the
+// report on the day an answer changes. What the unasserted form actually
+// left green was every drift the run of record exists to make checkable:
+// an ACCEPTED attempt against a REFUSED control differ in layer just as
+// the run that happened does, so the pair's one assertion passed on the
+// exact inversion that makes the seventeenth refusal row unattributable.
+// Each figure below is phase B's own, and each now fails on drift.
+fn assert_keypath_phase_a_matches_current_corpus(
     record: &vectors::live_keypath_probe::KeyPathProbeRecord,
-) {
+    expected_attempt: &vectors::live_corpus_native_v2_r7::NativeV2OutcomeProjection,
+    input_index: usize,
+    mutant_stack_items: usize,
+) -> transaction::bytes::TargetTransaction {
     // One chain, one issuance: the asset the probe's own run recorded.
     let ceremony = current_ceremony_projection("keypath-probe");
     assert_eq!(
@@ -4956,27 +4959,13 @@ fn assert_the_verdicts_match_the_run_of_record(
         "the probe ran against an asset the run of record does not carry",
     );
 
-    let expected_attempt =
-        current_outcome_for_mutant("keypath-probe", LiveMutantKind::KeyPathEscape);
-    let LiveMutationLocator::WitnessPathShape {
-        input_index,
-        control_stack_items,
-        mutant_stack_items,
-        witnessless_serialization_equal,
-        ..
-    } = expected_attempt
-        .mutation_locator()
-        .expect("the current key-path outcome carries its validated locator")
-    else {
-        panic!("the current key-path outcome has another locator shape")
-    };
     let expected_attempt_transaction = current_transaction(expected_attempt.submitted_bytes());
     let expected_attempt_witness = expected_attempt_transaction
         .witnesses()
-        .get(*input_index)
+        .get(input_index)
         .expect("the validated key-path locator names an input")
         .stack();
-    assert_eq!(expected_attempt_witness.len(), *mutant_stack_items);
+    assert_eq!(expected_attempt_witness.len(), mutant_stack_items);
     let attempt = record
         .attempt()
         .expect("the ceremony built the key-path attempt");
@@ -5009,7 +4998,17 @@ fn assert_the_verdicts_match_the_run_of_record(
         attempt.submitted_bytes().len() > attempt.witness_stack()[0].len(),
         "the submitted bytes are no larger than the witness item",
     );
+    expected_attempt_transaction
+}
 
+fn assert_keypath_phase_b_matches_current_corpus(
+    record: &vectors::live_keypath_probe::KeyPathProbeRecord,
+    expected_attempt: &vectors::live_corpus_native_v2_r7::NativeV2OutcomeProjection,
+    expected_attempt_transaction: &transaction::bytes::TargetTransaction,
+    input_index: usize,
+    control_stack_items: usize,
+    witnessless_serialization_equal: bool,
+) {
     // The ATTEMPT's verdict, exactly. Phase B's whole content is the name
     // the refusal is filed under, so the layer is asserted as the enum AND
     // the recorded spelling is held against that enum: a constant that had
@@ -5069,10 +5068,10 @@ fn assert_the_verdicts_match_the_run_of_record(
     let expected_control_transaction = current_transaction(expected_control.submitted_bytes());
     let expected_control_witness = expected_control_transaction
         .witnesses()
-        .get(*input_index)
+        .get(input_index)
         .expect("the validated key-path control carries the linked input")
         .stack();
-    assert_eq!(expected_control_witness.len(), *control_stack_items);
+    assert_eq!(expected_control_witness.len(), control_stack_items);
     assert_eq!(
         control.submitted_bytes().len(),
         expected_control.submitted_bytes().len(),
@@ -5085,13 +5084,46 @@ fn assert_the_verdicts_match_the_run_of_record(
     );
     assert_eq!(
         control.shares_the_attempts_witnessless_bytes(),
-        *witnessless_serialization_equal,
+        witnessless_serialization_equal,
         "the pair no longer differs in the witness alone",
     );
     assert_eq!(
         expected_control_transaction.encode_without_witness(),
         expected_attempt_transaction.encode_without_witness(),
         "the current corpus's pair differs outside the witness",
+    );
+}
+
+fn assert_the_verdicts_match_the_run_of_record(
+    record: &vectors::live_keypath_probe::KeyPathProbeRecord,
+) {
+    let expected_attempt =
+        current_outcome_for_mutant("keypath-probe", LiveMutantKind::KeyPathEscape);
+    let LiveMutationLocator::WitnessPathShape {
+        input_index,
+        control_stack_items,
+        mutant_stack_items,
+        witnessless_serialization_equal,
+        ..
+    } = expected_attempt
+        .mutation_locator()
+        .expect("the current key-path outcome carries its validated locator")
+    else {
+        panic!("the current key-path outcome has another locator shape")
+    };
+    let expected_attempt_transaction = assert_keypath_phase_a_matches_current_corpus(
+        record,
+        expected_attempt,
+        *input_index,
+        *mutant_stack_items,
+    );
+    assert_keypath_phase_b_matches_current_corpus(
+        record,
+        expected_attempt,
+        &expected_attempt_transaction,
+        *input_index,
+        *control_stack_items,
+        *witnessless_serialization_equal,
     );
 }
 
