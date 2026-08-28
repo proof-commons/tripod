@@ -708,7 +708,7 @@ impl NativeOperationCapture {
         operation.response = Some(response.clone());
     }
 
-    fn finish(&mut self, state: CaptureTerminalState) {
+    const fn finish(&mut self, state: CaptureTerminalState) {
         self.terminal_state = Some(state);
     }
 }
@@ -1469,12 +1469,9 @@ fn execute_workload_with_capture(
         finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
         return Err(error);
     }
-    let child = match spawn_executor(&configuration.program, &configuration.diagnostics) {
-        Ok(child) => child,
-        Err(_) => {
-            finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
-            return Err(NativeConformanceError::ExecutorStartupFailed);
-        }
+    let Ok(child) = spawn_executor(&configuration.program, &configuration.diagnostics) else {
+        finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
+        return Err(NativeConformanceError::ExecutorStartupFailed);
     };
     let mut spawned = UnadoptedChild::new(child);
 
@@ -1613,34 +1610,18 @@ pub(crate) fn run_protocol(
     )
 }
 
-fn run_protocol_with_capture(
-    target: &ReviewedElementsTapscriptDefinition,
-    binding: &ReviewedDevelopmentBinding,
-    configuration: &ExecutorConfiguration,
-    workload: NativeWorkload<'_>,
-    mut stdin: impl Write,
+fn read_executor_handshake(
+    limits: ProtocolLimits,
+    stdin: &mut impl Write,
     reader: &mut impl BufRead,
-    mut capture: Option<&mut NativeOperationCapture>,
-) -> Result<ExecutionTranscript, NativeConformanceError> {
-    let limits = configuration.limits;
-    // The same rule the case loops below follow, and for the same
-    // reason: a failed write means the pipe is gone, and *what* that was
-    // is decided by the read below and by the child's status rather than
-    // guessed from which side of the pipe noticed first.
-    //
-    // Propagating it instead made the classification a race. A child
-    // that exits before the harness writes leaves the handshake write
-    // failing with `ExecutorExited`, and a child that exits after it
-    // leaves the write succeeding and the read reaching end of stream,
-    // which is `ExecutorHandshakeFailed`. The same child, told to die
-    // before it speaks, was reported as either one depending on how
-    // loaded the machine was. A child that never starts the protocol
-    // fails as a handshake failure, always: it is the phase that did not
-    // happen that names the failure, and the exit status is what the run
-    // reports about a child that *did* speak
-    // (´[PLAN-rule:guide10:protocol-handshake]´).
+    capture: &mut Option<&mut NativeOperationCapture>,
+) -> Result<ExecutorHandshake, NativeConformanceError> {
+    // A failed write means the pipe is gone, and what that was is
+    // decided by the read and child status. Propagating it made an early
+    // child exit alternate between an exit and a handshake failure based
+    // on scheduling; the phase that did not happen names the failure.
     let _handshake_write = write_message(
-        &mut stdin,
+        stdin,
         &HandshakeRequest::default(),
         ProtocolPhase::Handshake,
     );
@@ -1649,26 +1630,30 @@ fn run_protocol_with_capture(
         Ok(Some(handshake)) => handshake,
         Ok(None) => {
             return captured_refusal(
-                &mut capture,
+                capture,
                 CaptureTerminalState::HandshakeRefused,
                 NativeConformanceError::ExecutorHandshakeFailed,
             );
         }
         Err(error) => {
-            return captured_refusal(&mut capture, CaptureTerminalState::HandshakeRefused, error);
+            return captured_refusal(capture, CaptureTerminalState::HandshakeRefused, error);
         }
     };
     if let Some(capture) = capture.as_deref_mut() {
         capture.handshake = Some(handshake.clone());
     }
+    Ok(handshake)
+}
 
-    // Revision 7 keeps the exact-equality gate here, before capability
-    // selection, the environment record, and every execution request. A
-    // revision-6 executor therefore receives no revision-7 workload and
-    // no stored revision-6 response can enter a revision-7 transcript.
+fn validate_executor_handshake(
+    target: &ReviewedElementsTapscriptDefinition,
+    workload: &NativeWorkload<'_>,
+    handshake: &ExecutorHandshake,
+    capture: &mut Option<&mut NativeOperationCapture>,
+) -> Result<(), NativeConformanceError> {
     if handshake.protocol_schema != NATIVE_PROTOCOL_SCHEMA {
         return captured_refusal(
-            &mut capture,
+            capture,
             CaptureTerminalState::HandshakeRefused,
             NativeConformanceError::UnsupportedProtocolSchema {
                 offered: handshake.protocol_schema,
@@ -1679,7 +1664,7 @@ fn run_protocol_with_capture(
     let definition = target.definition();
     let Some(domain) = WireExecutionDomain::of(definition.execution_domain()) else {
         return captured_refusal(
-            &mut capture,
+            capture,
             CaptureTerminalState::HandshakeRefused,
             NativeConformanceError::TargetContractMismatch,
         );
@@ -1690,74 +1675,79 @@ fn run_protocol_with_capture(
             .contains(&definition.leaf_version().get())
     {
         return captured_refusal(
-            &mut capture,
+            capture,
             CaptureTerminalState::HandshakeRefused,
             NativeConformanceError::ExecutorProtocolMismatch,
         );
     }
-    // A census whose cases read a transaction cannot be answered by an
-    // executor that says it accepts no transaction context. Refusing here
-    // is the difference between a run that could not happen and a run of
-    // cases that quietly executed against no transaction at all.
+
     match workload {
-        NativeWorkload::Primitives(fixtures) => {
+        NativeWorkload::Primitives(fixtures)
             if fixtures.iter().any(|fixture| fixture.context().is_some())
                 && !handshake
                     .capabilities
-                    .contains(&ExecutorCapability::TransactionContext)
-            {
-                return captured_refusal(
-                    &mut capture,
-                    CaptureTerminalState::HandshakeRefused,
-                    NativeConformanceError::ExecutorProtocolMismatch,
-                );
-            }
+                    .contains(&ExecutorCapability::TransactionContext) =>
+        {
+            captured_refusal(
+                capture,
+                CaptureTerminalState::HandshakeRefused,
+                NativeConformanceError::ExecutorProtocolMismatch,
+            )
         }
-        // A prototype request is a record shape a schema-2 executor has
-        // never seen, so the gate is what keeps the revision at 2: it
-        // decides what may be *sent*, and never what is believed about
-        // the answer.
-        NativeWorkload::Prototypes(_) => {
-            if !handshake.runs_prototype_fixtures() {
-                return captured_refusal(
-                    &mut capture,
-                    CaptureTerminalState::HandshakeRefused,
-                    NativeConformanceError::PrototypeFixturesUnsupported,
-                );
-            }
-        }
-        // An operation plan states its steps one at a time, so what the
-        // executor can do is checked per step in the loop below rather
-        // than here: there is no set of steps to check against yet, and
-        // inventing one would mean asking the plan for work in order to
-        // decide whether to ask it for work.
-        NativeWorkload::Operations(_) => {}
+        NativeWorkload::Prototypes(_) if !handshake.runs_prototype_fixtures() => captured_refusal(
+            capture,
+            CaptureTerminalState::HandshakeRefused,
+            NativeConformanceError::PrototypeFixturesUnsupported,
+        ),
+        NativeWorkload::Primitives(_)
+        | NativeWorkload::Prototypes(_)
+        | NativeWorkload::Operations(_) => Ok(()),
     }
+}
 
+fn read_executor_environment(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    limits: ProtocolLimits,
+    reader: &mut impl BufRead,
+    capture: &mut Option<&mut NativeOperationCapture>,
+) -> Result<ExecutorEnvironmentObservation, NativeConformanceError> {
     let environment: ExecutorEnvironmentObservation =
         match read_message(reader, ProtocolPhase::Environment, limits) {
             Ok(Some(environment)) => environment,
             Ok(None) => {
                 return captured_refusal(
-                    &mut capture,
+                    capture,
                     CaptureTerminalState::HandshakeRefused,
                     NativeConformanceError::MissingEnvironmentObservation,
                 );
             }
             Err(error) => {
-                return captured_refusal(
-                    &mut capture,
-                    CaptureTerminalState::HandshakeRefused,
-                    error,
-                );
+                return captured_refusal(capture, CaptureTerminalState::HandshakeRefused, error);
             }
         };
     if let Some(capture) = capture.as_deref_mut() {
         capture.environment = Some(environment.clone());
     }
     if let Err(error) = compare_environment(target, binding, &environment) {
-        return captured_refusal(&mut capture, CaptureTerminalState::HandshakeRefused, error);
+        return captured_refusal(capture, CaptureTerminalState::HandshakeRefused, error);
     }
+    Ok(environment)
+}
+
+fn run_protocol_with_capture(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    workload: NativeWorkload<'_>,
+    mut stdin: impl Write,
+    reader: &mut impl BufRead,
+    mut capture: Option<&mut NativeOperationCapture>,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    let limits = configuration.limits;
+    let handshake = read_executor_handshake(limits, &mut stdin, reader, &mut capture)?;
+    validate_executor_handshake(target, &workload, &handshake, &mut capture)?;
+    let environment = read_executor_environment(target, binding, limits, reader, &mut capture)?;
 
     let mut requests: BTreeMap<NativeCaseId, PrimitiveExecutionSubject> = BTreeMap::new();
     let mut responses: BTreeMap<NativeCaseId, NativeExecutionResponse> = BTreeMap::new();
@@ -1789,13 +1779,15 @@ fn run_protocol_with_capture(
         )?,
         NativeWorkload::Operations(planner) => run_operation_steps(
             planner,
-            &handshake,
-            limits,
-            &mut stdin,
-            reader,
-            &mut operation_requests,
-            &mut operation_responses,
-            capture.as_deref_mut(),
+            OperationRunContext {
+                handshake: &handshake,
+                limits,
+                stdin: &mut stdin,
+                reader,
+                requests: &mut operation_requests,
+                responses: &mut operation_responses,
+                capture: capture.as_deref_mut(),
+            },
         )?,
     }
 
@@ -1968,26 +1960,96 @@ fn run_prototype_cases(
     Ok(())
 }
 
+/// The related mutable carriers for one operation exchange.
+struct OperationRunContext<'a, W, R> {
+    handshake: &'a ExecutorHandshake,
+    limits: ProtocolLimits,
+    stdin: &'a mut W,
+    reader: &'a mut R,
+    requests: &'a mut BTreeMap<OperationCaseId, OperationSubject>,
+    responses: &'a mut BTreeMap<OperationCaseId, NativeOperationResponse>,
+    capture: Option<&'a mut NativeOperationCapture>,
+}
+
+const fn operation_io_terminal(write_refused: bool) -> CaptureTerminalState {
+    if write_refused {
+        CaptureTerminalState::WriteRefused
+    } else {
+        CaptureTerminalState::ReadRefused
+    }
+}
+
+fn read_operation_response<W: Write, R: BufRead>(
+    context: &mut OperationRunContext<'_, W, R>,
+    case: OperationCaseId,
+    write_refused: bool,
+) -> Result<(OperationCaseId, NativeOperationResponse), NativeConformanceError> {
+    let response: NativeOperationResponse =
+        match read_message(context.reader, ProtocolPhase::Response, context.limits) {
+            Ok(Some(response)) => response,
+            Ok(None) => {
+                let error = NativeConformanceError::MissingOperationResponse(case);
+                return captured_refusal(
+                    &mut context.capture,
+                    operation_io_terminal(write_refused),
+                    error,
+                );
+            }
+            Err(error) => {
+                return captured_refusal(
+                    &mut context.capture,
+                    operation_io_terminal(write_refused),
+                    error,
+                );
+            }
+        };
+
+    if response.schema != NATIVE_PROTOCOL_SCHEMA {
+        let state = if write_refused {
+            CaptureTerminalState::WriteRefused
+        } else {
+            CaptureTerminalState::ResponseShapeRefused
+        };
+        return captured_refusal(
+            &mut context.capture,
+            state,
+            NativeConformanceError::UnsupportedProtocolSchema {
+                offered: response.schema,
+            },
+        );
+    }
+    if response.case != case {
+        let error = if context.responses.contains_key(&response.case) {
+            NativeConformanceError::DuplicateOperationResponse(response.case)
+        } else {
+            NativeConformanceError::UnexpectedOperationResponse(response.case)
+        };
+        return captured_refusal(
+            &mut context.capture,
+            CaptureTerminalState::ResponseShapeRefused,
+            error,
+        );
+    }
+    if let Err(defect) = response.validate_shape() {
+        let error = NativeConformanceError::MalformedOperationResponseShape { case, defect };
+        return captured_refusal(
+            &mut context.capture,
+            CaptureTerminalState::ResponseShapeRefused,
+            error,
+        );
+    }
+    Ok((case, response))
+}
+
 /// The operation half of the exchange.
 ///
-/// # Lock-step, one outstanding step at a time
-///
 /// The plan is consulted, one step is written, one response is read, and
-/// only then is the plan consulted again. That is what makes the
-/// interleaving possible at all — a plan cannot state a submission until
-/// it has been told where the funding landed — and it is also why there
-/// is no ordering fault to name: exactly one step is outstanding, so a
-/// response naming another step was either already settled or never
+/// only then is the plan consulted again. Exactly one step is outstanding,
+/// so a response naming another step was either already settled or never
 /// asked for.
-fn run_operation_steps(
+fn run_operation_steps<W: Write, R: BufRead>(
     planner: &mut dyn TargetOperationPlanner,
-    handshake: &ExecutorHandshake,
-    limits: ProtocolLimits,
-    stdin: &mut impl Write,
-    reader: &mut impl BufRead,
-    requests: &mut BTreeMap<OperationCaseId, OperationSubject>,
-    responses: &mut BTreeMap<OperationCaseId, NativeOperationResponse>,
-    mut capture: Option<&mut NativeOperationCapture>,
+    mut context: OperationRunContext<'_, W, R>,
 ) -> Result<(), NativeConformanceError> {
     let mut previous: Option<(OperationCaseId, NativeOperationResponse)> = None;
     loop {
@@ -1996,7 +2058,7 @@ fn run_operation_steps(
                 Ok(asked) => asked,
                 Err(PlanRefused) => {
                     return captured_refusal(
-                        &mut capture,
+                        &mut context.capture,
                         CaptureTerminalState::ResponseShapeRefused,
                         NativeConformanceError::OperationPlanRefused,
                     );
@@ -2011,9 +2073,9 @@ fn run_operation_steps(
 
         // A plan that reuses an identity would overwrite an answer
         // already recorded, or leave two runs sharing one transcript row.
-        if requests.contains_key(&case) {
+        if context.requests.contains_key(&case) {
             return captured_refusal(
-                &mut capture,
+                &mut context.capture,
                 CaptureTerminalState::ResponseShapeRefused,
                 NativeConformanceError::DuplicateOperationStep(case),
             );
@@ -2022,9 +2084,9 @@ fn run_operation_steps(
         // An executor that never advertised this kind of work is handed a
         // typed refusal instead of a record it cannot parse
         // `(´[PLAN-rule:guide10:schema-migration]´)`.
-        if !handshake.runs_operation_step(&subject) {
+        if !context.handshake.runs_operation_step(&subject) {
             return captured_refusal(
-                &mut capture,
+                &mut context.capture,
                 CaptureTerminalState::ResponseShapeRefused,
                 NativeConformanceError::OperationStepUnsupported(case.operation),
             );
@@ -2036,89 +2098,22 @@ fn run_operation_steps(
             subject: subject.clone(),
         };
         // Retained before the write, exactly as the other loops do it.
-        requests.insert(case.clone(), subject);
-        let capture_ordinal = capture
+        context.requests.insert(case.clone(), subject);
+        let capture_ordinal = context
+            .capture
             .as_deref_mut()
             .map(|capture| capture.capture_request(&request));
         // A failed write means the pipe is gone. What that was is decided
         // by the read below and by the child's status.
-        let write_refused = write_message(&mut *stdin, &request, ProtocolPhase::Request).is_err();
+        let write_refused = write_message(context.stdin, &request, ProtocolPhase::Request).is_err();
+        let (case, response) = read_operation_response(&mut context, case, write_refused)?;
 
-        let response: NativeOperationResponse =
-            match read_message(reader, ProtocolPhase::Response, limits) {
-                Ok(Some(response)) => response,
-                Ok(None) => {
-                    let state = if write_refused {
-                        CaptureTerminalState::WriteRefused
-                    } else {
-                        CaptureTerminalState::ReadRefused
-                    };
-                    return captured_refusal(
-                        &mut capture,
-                        state,
-                        NativeConformanceError::MissingOperationResponse(case.clone()),
-                    );
-                }
-                Err(error) => {
-                    let state = if write_refused {
-                        CaptureTerminalState::WriteRefused
-                    } else {
-                        CaptureTerminalState::ReadRefused
-                    };
-                    return captured_refusal(&mut capture, state, error);
-                }
-            };
-
-        if response.schema != NATIVE_PROTOCOL_SCHEMA {
-            let state = if write_refused {
-                CaptureTerminalState::WriteRefused
-            } else {
-                CaptureTerminalState::ResponseShapeRefused
-            };
-            return captured_refusal(
-                &mut capture,
-                state,
-                NativeConformanceError::UnsupportedProtocolSchema {
-                    offered: response.schema,
-                },
-            );
-        }
-        if response.case != case {
-            if responses.contains_key(&response.case) {
-                let error = NativeConformanceError::DuplicateOperationResponse(response.case);
-                return captured_refusal(
-                    &mut capture,
-                    CaptureTerminalState::ResponseShapeRefused,
-                    error,
-                );
-            }
-            let error = NativeConformanceError::UnexpectedOperationResponse(response.case);
-            return captured_refusal(
-                &mut capture,
-                CaptureTerminalState::ResponseShapeRefused,
-                error,
-            );
-        }
-        // Shape before anything else, exactly as for every other record.
-        // A response that contradicts its own step kind is a protocol
-        // failure, and letting a plan read a target fact out of it would
-        // mean believing whichever half happens to fit.
-        if let Err(defect) = response.validate_shape() {
-            let error = NativeConformanceError::MalformedOperationResponseShape {
-                case: case.clone(),
-                defect,
-            };
-            return captured_refusal(
-                &mut capture,
-                CaptureTerminalState::ResponseShapeRefused,
-                error,
-            );
-        }
-
-        if let Some((capture, ordinal)) = capture.as_deref_mut().zip(capture_ordinal) {
+        // Shape validation happens in `read_operation_response`, so the
+        // journal is the first consumer to retain the validated carrier.
+        if let Some((capture, ordinal)) = context.capture.as_deref_mut().zip(capture_ordinal) {
             capture.capture_response(ordinal, &response);
         }
-        responses.insert(case.clone(), response.clone());
+        context.responses.insert(case.clone(), response.clone());
         previous = Some((case, response));
     }
 }
