@@ -2079,14 +2079,14 @@ fn observed_row_acceptance(row: &LiveSafetyRow) -> Option<&'static str> {
         // output back to the sender as change, sponsorless, private,
         // and spending a mined confidential predecessor at this
         // deployment's own private receipt constructor.
-        "private-one-to-one" => Some(crate::live_private_restart::run_of_record::ACCEPTED_TXID),
+        "private-one-to-one" => Some(crate::live_history_v1::private_restart::ACCEPTED_TXID),
         // Both admitted commitment parities, each consumed in its own
         // complete accepted successor. The identity cited is the run
         // that COMPLETED the pair; the first parity's acceptance is the
         // row above's, and it takes both runs to say that both parities
         // were exercised. The run of record carries the pair.
         "both-commitment-parity-forms" => {
-            Some(crate::live_private_restart::run_of_record::PARITY_ACCEPTED_TXID)
+            Some(crate::live_history_v1::private_restart::PARITY_ACCEPTED_TXID)
         }
         // The target's own commitment-balance rule accepting a conserving
         // private transaction. The follow-up wave observed this and

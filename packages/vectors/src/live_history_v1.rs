@@ -7,16 +7,7 @@
 //! evidence.
 
 /// Historical private-restart values and the complete typed V1 record.
-pub mod private_restart {
-    pub use crate::live_private_restart::run_of_record::{
-        ACCEPTED_TXID, CONSUMED_COMMITMENT_PREFIX, HistoricalPrivateRestartAcceptedMember,
-        HistoricalPrivateRestartRun, HistoricalPrivateRestartTwoAcceptanceLink,
-        HistoricalPrivateRestartV1, ISSUED_ASSET, OUTPUT_WITNESS_PROOF_BYTES, PARITY_ACCEPTED_TXID,
-        PARITY_CONSUMED_COMMITMENT_PREFIX, PARITY_SUCCESSOR_DIGEST, PREDECESSOR_DIGEST,
-        RECEIPT_LEAVES, SUBMITTED_BYTES, SUCCESSOR_DIGEST, WALL_SECONDS, accepted,
-        historical_private_restart_run, parity_accepted,
-    };
-}
+pub mod private_restart;
 
 /// Historical private multi-shape observations.
 pub mod multi_shapes;
@@ -138,7 +129,7 @@ mod tests {
     fn archival_values_remain_the_original_values() {
         assert_eq!(
             super::private_restart::ACCEPTED_TXID,
-            crate::live_private_restart::run_of_record::ACCEPTED_TXID,
+            "1af38f8a5292afcdb4dd38f78a146ff84d36db20d9916e768b7fd9b368b89e8e",
         );
         assert_eq!(super::multi_shapes::OUTPUT_COUNTS, [3, 3, 2, 1, 2, 1, 2],);
         assert_eq!(
