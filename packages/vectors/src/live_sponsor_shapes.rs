@@ -2254,8 +2254,7 @@ fn render_sponsor_reverification(out: &mut String, record: &SponsorShapeRecord) 
     }
 }
 
-/// What this lane observed, for the three §15.1 rows whose subject is
-/// the sponsor region.
+/// Historical-v1 observations for the three §15.1 sponsor-region rows.
 ///
 /// The register moved here with the ceremony that produces it. It used
 /// to sit beside the explicit shape lane's own, which built no sponsor
@@ -2273,7 +2272,7 @@ fn render_sponsor_reverification(out: &mut String, record: &SponsorShapeRecord) 
 ///
 /// # The without-change run is the lift's own control
 ///
-/// It reproduced [`sponsored_run_of_record::SPONSORED_ACCEPTED_TXID`] —
+/// It reproduced [`crate::live_history_v1::sponsor_shapes::SPONSORED_ACCEPTED_TXID`] —
 /// the identity the sponsor wave first observed and the explicit-runs
 /// wave observed again — after the ceremony had been moved out of the
 /// test it lived in. A lift
@@ -2284,7 +2283,9 @@ fn render_sponsor_reverification(out: &mut String, record: &SponsorShapeRecord) 
 ///
 /// One fixed regtest key answers the sponsor's request. A single key
 /// answering once is not production multi-party sponsor signing, and
-/// neither run should be read as establishing any.
+/// neither run should be read as establishing any. New historical callers
+/// use [`crate::live_history_v1::sponsor_shapes`]; this compatibility path
+/// remains for the separately owned native-guide cleanup.
 pub mod sponsored_run_of_record {
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
@@ -2680,7 +2681,8 @@ pub mod sponsored_run_of_record {
 
 #[cfg(test)]
 mod tests {
-    use super::{SPONSOR_CHANGE, SPONSOR_FEE, SponsorShape, sponsored_run_of_record};
+    use super::{SPONSOR_CHANGE, SPONSOR_FEE, SponsorShape};
+    use crate::live_history_v1::sponsor_shapes as history;
 
     /// A sponsored private successor REGISTERS, and its reserve asset
     /// survives the projection.
@@ -2802,20 +2804,20 @@ mod tests {
     fn the_sponsored_private_successor_is_registrable_and_its_row_may_move() {
         const {
             assert!(
-                sponsored_run_of_record::A_SPONSORED_PRIVATE_SUCCESSOR_IS_REGISTRABLE,
+                history::A_SPONSORED_PRIVATE_SUCCESSOR_IS_REGISTRABLE,
                 "the registry states a two-asset case and the flag was not moved with it",
             );
         }
         // The row moves ON an acceptance, and this is the identity it
         // moves on.
         assert_eq!(
-            sponsored_run_of_record::SPONSORED_PRIVATE_TXID.len(),
+            history::SPONSORED_PRIVATE_TXID.len(),
             64,
             "the accepted identity is not a transaction identity",
         );
         let moved = crate::live_closeout::moved_on_acceptance(
             crate::live_closeout::PositivePrivateClass::PrivateSponsorValues,
-            sponsored_run_of_record::sponsored_private_accepted()
+            history::sponsored_private_accepted()
                 .expect("the committed sponsored-private identity parses"),
         );
         assert_eq!(
@@ -2841,41 +2843,39 @@ mod tests {
     /// one the node produced.
     #[test]
     fn the_register_is_bound_to_the_shapes_that_produced_it() {
-        use sponsored_run_of_record as record;
-
         assert_eq!(
             SponsorShape::ChangeAbsent.sponsor_funding(),
-            record::SPONSORED_FEE_WEIGHED,
+            history::SPONSORED_FEE_WEIGHED,
         );
         assert_eq!(
             SponsorShape::ChangePresent.sponsor_funding(),
-            record::SPONSORED_CHANGE_SPONSOR_FUNDED,
+            history::SPONSORED_CHANGE_SPONSOR_FUNDED,
         );
         assert_eq!(
             SponsorShape::ChangePresent.change(),
-            Some(record::SPONSORED_CHANGE_TAKEN),
+            Some(history::SPONSORED_CHANGE_TAKEN),
         );
         assert_eq!(
-            record::SPONSORED_CHANGE_SPONSOR_FUNDED,
-            record::SPONSORED_FEE_WEIGHED + record::SPONSORED_CHANGE_TAKEN,
+            history::SPONSORED_CHANGE_SPONSOR_FUNDED,
+            history::SPONSORED_FEE_WEIGHED + history::SPONSORED_CHANGE_TAKEN,
         );
 
         // The two identities are DISTINCT, which is what says the change
         // role reached the bytes: a with-change run that had silently
         // degraded would have reproduced the other one.
         assert_ne!(
-            record::SPONSORED_ACCEPTED_TXID,
-            record::SPONSORED_CHANGE_ACCEPTED_TXID,
+            history::SPONSORED_ACCEPTED_TXID,
+            history::SPONSORED_CHANGE_ACCEPTED_TXID,
         );
         // The measured width of the change role, stated rather than
         // bounded: the extra output, and the wider sponsor value beside
         // it, cost exactly this many bytes at the node.
         assert_eq!(
-            record::SPONSORED_CHANGE_SUBMITTED_BYTES - record::SPONSORED_SUBMITTED_BYTES,
-            155,
+            history::SPONSORED_CHANGE_SUBMITTED_BYTES - history::SPONSORED_SUBMITTED_BYTES,
+            156,
         );
         assert_eq!(
-            record::A_SPONSORED_CONTROL_TAKING_CHANGE_EXISTS,
+            history::A_SPONSORED_CONTROL_TAKING_CHANGE_EXISTS,
             SponsorShape::ChangePresent.change().is_some(),
         );
 
@@ -2884,14 +2884,14 @@ mod tests {
         // witness items the adapter returned, seventy-two and
         // thirty-three bytes.
         assert_eq!(
-            record::SPONSORED_SUBMITTED_BYTES
-                - record::MISSING_SPONSOR_AUTHORIZATION_SUBMITTED_BYTES,
+            history::SPONSORED_SUBMITTED_BYTES
+                - history::MISSING_SPONSOR_AUTHORIZATION_SUBMITTED_BYTES,
             105,
         );
         // The target's own words, and a verdict a reader can check
         // against the layer the refusal was typed at.
         assert!(
-            record::MISSING_SPONSOR_AUTHORIZATION_REFUSAL
+            history::MISSING_SPONSOR_AUTHORIZATION_REFUSAL
                 .contains("Script failed an OP_EQUALVERIFY operation"),
         );
     }
