@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::sync::OnceLock;
 
+use target_elements::opcode::LeafVersion;
 use target_elements_conformance::constructor::tagged;
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use transaction::bytes::{SerializedFieldLocator, SerializedOutputField};
@@ -2252,7 +2253,7 @@ fn witness_item_is_exact(
 
 const CONTROL_BLOCK_BASE_BYTES: usize = 33;
 const CONTROL_BLOCK_DIGEST_BYTES: usize = 32;
-const TAPSCRIPT_LEAF_VERSION: u8 = 0xc0;
+const TAPSCRIPT_LEAF_VERSION: u8 = LeafVersion::TAPSCRIPT.get();
 
 fn decoded_witness_path_role(stack: &[Vec<u8>]) -> Option<LiveWitnessPathRole> {
     if stack.len() == 1 && !stack[0].is_empty() {
@@ -3641,6 +3642,43 @@ mod tests {
         assert_eq!(corpus.observations().len(), 41);
         assert_eq!(corpus.content_address(), NATIVE_V2_R7_RUN_ADDRESS);
         assert!(crate::live_corpus_rerun_day::parse_rerun_day_archive().is_ok());
+    }
+
+    #[test]
+    fn reviewed_keypath_locator_matches_decoded_witness_shapes() {
+        let report = parse_report(RUN_REPORT_BYTES).expect("the reviewed report parses");
+        let capture = ARCHIVE_FILES
+            .iter()
+            .find(|file| file.name == "e8836e79b631b96420fb8006353df5b673ec7c69b830fb5f0555fb06add02517.keypath-probe.capture")
+            .expect("the fixed roster carries the key-path capture");
+        let transcript = parse_transcript(capture.name, capture.bytes, &report)
+            .expect("the reviewed key-path capture parses");
+        let mutant = transcript
+            .operations
+            .iter()
+            .find(|operation| operation.role == OperationRole::Refusal)
+            .expect("the key-path capture carries its refused mutant");
+        let control_request_id = mutant
+            .control_request_id
+            .as_deref()
+            .expect("the refused mutant links its control");
+        let control = transcript
+            .operations
+            .iter()
+            .find(|operation| operation.request_id == control_request_id)
+            .expect("the key-path capture carries its linked control");
+        let mutant_transaction = TargetTransaction::decode(&mutant.request_bytes)
+            .expect("the key-path mutant decodes exactly");
+        let control_transaction = TargetTransaction::decode(&control.request_bytes)
+            .expect("the script-path control decodes exactly");
+        assert!(witness_path_matches(
+            &control_transaction,
+            &mutant_transaction,
+            mutant
+                .locator
+                .as_ref()
+                .expect("the refused mutant declares its locator"),
+        ));
     }
 
     #[test]
