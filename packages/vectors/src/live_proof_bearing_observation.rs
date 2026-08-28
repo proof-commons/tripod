@@ -124,6 +124,7 @@ use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed, 
 use crate::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, published_owner, reviewed_target, signing_material,
 };
+use crate::live_report::FixtureDigestAlgorithm;
 
 /// The caller's own name for the step that issues the protocol asset.
 const ISSUE_STEP: &str = "issue-proof-bearing-protocol-asset";
@@ -660,8 +661,9 @@ impl ProofBearingReverification {
 }
 
 /// Everything the ceremony recorded.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProofBearingObservationRecord {
+    fixture_digest_algorithm: FixtureDigestAlgorithm,
     issued_asset: Option<String>,
     predecessor_digest: Option<[u8; 32]>,
     coins: Vec<ObservedConfidentialCoin>,
@@ -675,7 +677,37 @@ pub struct ProofBearingObservationRecord {
     refusal: Option<ProofBearingRefusal>,
 }
 
+impl Default for ProofBearingObservationRecord {
+    fn default() -> Self {
+        Self {
+            fixture_digest_algorithm: FixtureDigestAlgorithm::HistoricalV1,
+            issued_asset: None,
+            predecessor_digest: None,
+            coins: Vec::new(),
+            output_witness_vector_length: None,
+            output_witness_proof_bytes: Vec::new(),
+            spent_value_prefixes: Vec::new(),
+            observations: Vec::new(),
+            construction_refusals: Vec::new(),
+            reverification: None,
+            candidate_messages: BTreeMap::new(),
+            refusal: None,
+        }
+    }
+}
+
 impl ProofBearingObservationRecord {
+    /// Which fixture-digest algorithm produced this live record's digest
+    /// facts.
+    ///
+    /// The fresh planner sets `ForwardV2`; the default is historical so
+    /// an empty archival rendering remains exactly the schema-1 surface
+    /// it was before the forward record existed.
+    #[must_use]
+    pub const fn fixture_digest_algorithm(&self) -> FixtureDigestAlgorithm {
+        self.fixture_digest_algorithm
+    }
+
     /// The asset identity the target chose.
     #[must_use]
     pub fn issued_asset(&self) -> Option<&str> {
@@ -789,10 +821,16 @@ impl ProofBearingObservationRecord {
 
 /// The schema version of [`ProofBearingRunOfRecord`].
 ///
-/// A recorded V2 ceremony will use this first archival schema. The
-/// ceremony version and the schema version are separate: a later schema
-/// can describe the same ceremony without pretending a new run occurred.
+/// The recorded ceremony-generation V2 run uses this first archival
+/// schema, whose fixture digest is historical v1. Ceremony generation,
+/// archive schema and digest algorithm are three separate dimensions.
 pub const PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION: u32 = 1;
+
+/// The schema version of [`ForwardV2ProofBearingRunOfRecord`].
+///
+/// Unlike schema 1, this surface admits only freshly projected
+/// forward-v2 digest facts.
+pub const FORWARD_V2_PROOF_BEARING_SCHEMA_VERSION: u32 = 2;
 
 /// A stable archival reason for a construction refusal.
 ///
@@ -912,6 +950,10 @@ impl RecordedConfidentialCoin {
 /// record.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunOfRecordProjectionRefusal {
+    /// A forward-v2 live record was offered to the historical-v1 schema.
+    HistoricalV1DigestRequired,
+    /// A historical-v1 live record was offered to the forward-v2 schema.
+    ForwardV2DigestRequired,
     /// The ceremony stopped under a typed refusal.
     CeremonyRefused,
     /// The run recorded no issued asset.
@@ -936,6 +978,9 @@ pub enum RunOfRecordProjectionRefusal {
     MissingReverification,
     /// The candidate-message census is incomplete.
     IncompleteCandidateMessages,
+    /// The accepted case and second-origin acceptance name different
+    /// target-computed identities.
+    AcceptanceObservationMismatch,
 }
 
 impl TryFrom<&MaterializationRefusal> for RecordedMaterializationRefusal {
@@ -984,6 +1029,15 @@ impl ProofBearingRunOfRecord {
     #[must_use]
     pub const fn schema_version(&self) -> u32 {
         self.schema_version
+    }
+
+    /// The digest algorithm of every digest fact in schema 1.
+    ///
+    /// The marker is structural rather than a new stored field, so the
+    /// archived schema-1 value remains byte-identical.
+    #[must_use]
+    pub const fn fixture_digest_algorithm(&self) -> FixtureDigestAlgorithm {
+        FixtureDigestAlgorithm::HistoricalV1
     }
 
     /// The asset identity the target chose.
@@ -1051,6 +1105,9 @@ impl TryFrom<&ProofBearingObservationRecord> for ProofBearingRunOfRecord {
     type Error = RunOfRecordProjectionRefusal;
 
     fn try_from(record: &ProofBearingObservationRecord) -> Result<Self, Self::Error> {
+        if record.fixture_digest_algorithm() != FixtureDigestAlgorithm::HistoricalV1 {
+            return Err(RunOfRecordProjectionRefusal::HistoricalV1DigestRequired);
+        }
         if record.refusal().is_some() {
             return Err(RunOfRecordProjectionRefusal::CeremonyRefused);
         }
@@ -1118,6 +1175,271 @@ impl TryFrom<&ProofBearingObservationRecord> for ProofBearingRunOfRecord {
     }
 }
 
+/// Whether one member of the schema-2 forward record has been minted.
+///
+/// Absence is explicit: a pending member has no placeholder value and
+/// cannot be borrowed as recorded evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ForwardProofBearingRecordMember<T> {
+    /// No owner-authorized forward-v2 run has minted this member.
+    Pending,
+    /// The exact member projected from an owner-authorized forward-v2
+    /// run.
+    Recorded(T),
+}
+
+impl<T> ForwardProofBearingRecordMember<T> {
+    /// The stable report spelling of this member's state.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Recorded(_) => "recorded",
+        }
+    }
+
+    /// The recorded value, or `None` while this member is pending.
+    #[must_use]
+    pub const fn recorded(&self) -> Option<&T> {
+        match self {
+            Self::Pending => None,
+            Self::Recorded(value) => Some(value),
+        }
+    }
+}
+
+/// The observation member of a schema-2 forward-v2 proof-bearing
+/// record.
+///
+/// This is deliberately not a wrapper around [`ProofBearingRunOfRecord`]:
+/// the historical-v1 archive cannot be converted or relabeled into the
+/// forward-v2 expectation. Every field is projected directly from a live
+/// record whose digest algorithm is already typed forward v2.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForwardV2ProofBearingObservations {
+    issued_asset: String,
+    predecessor_digest: Digest32,
+    coins: Vec<RecordedConfidentialCoin>,
+    output_witness_vector_length: usize,
+    output_witness_proof_bytes: Vec<usize>,
+    spent_value_prefixes: Vec<u8>,
+    case_observations: Vec<ProofBearingObservation>,
+    construction_refusals: RecordedConstructionRefusals,
+    candidate_messages: BTreeMap<ProofBearingCase, Digest32>,
+}
+
+impl ForwardV2ProofBearingObservations {
+    /// The asset identity the target chose.
+    #[must_use]
+    pub fn issued_asset(&self) -> &str {
+        &self.issued_asset
+    }
+
+    /// The forward-v2 digest of the predecessor fixture.
+    #[must_use]
+    pub const fn predecessor_digest(&self) -> &Digest32 {
+        &self.predecessor_digest
+    }
+
+    /// The outpoint-free node-reported predecessor coins.
+    #[must_use]
+    pub fn coins(&self) -> &[RecordedConfidentialCoin] {
+        &self.coins
+    }
+
+    /// The output-witness vector length.
+    #[must_use]
+    pub const fn output_witness_vector_length(&self) -> usize {
+        self.output_witness_vector_length
+    }
+
+    /// The range-proof bytes in each output-witness entry.
+    #[must_use]
+    pub fn output_witness_proof_bytes(&self) -> &[usize] {
+        &self.output_witness_proof_bytes
+    }
+
+    /// The spent value prefixes in input order.
+    #[must_use]
+    pub fn spent_value_prefixes(&self) -> &[u8] {
+        &self.spent_value_prefixes
+    }
+
+    /// Every submitted-case observation in ceremony order.
+    #[must_use]
+    pub fn case_observations(&self) -> &[ProofBearingObservation] {
+        &self.case_observations
+    }
+
+    /// The explicit construction-refusal capture state.
+    #[must_use]
+    pub const fn construction_refusals(&self) -> &RecordedConstructionRefusals {
+        &self.construction_refusals
+    }
+
+    /// Every forward-v2 candidate message in case order.
+    #[must_use]
+    pub const fn candidate_messages(&self) -> &BTreeMap<ProofBearingCase, Digest32> {
+        &self.candidate_messages
+    }
+}
+
+/// The schema-2 forward proof-bearing record selected by fresh native
+/// runs.
+///
+/// Schema version and digest algorithm are intentionally named
+/// separately. `ForwardV2` describes the digest algorithm; it does not
+/// reinterpret the ceremony-generation V2 names retained by schema 1.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForwardV2ProofBearingRunOfRecord {
+    schema_version: u32,
+    fixture_digest_algorithm: FixtureDigestAlgorithm,
+    observations: ForwardProofBearingRecordMember<ForwardV2ProofBearingObservations>,
+    acceptance: ForwardProofBearingRecordMember<ProofBearingReverification>,
+}
+
+impl ForwardV2ProofBearingRunOfRecord {
+    /// The forward archive schema version.
+    #[must_use]
+    pub const fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    /// The sole digest algorithm schema 2 admits.
+    #[must_use]
+    pub const fn fixture_digest_algorithm(&self) -> FixtureDigestAlgorithm {
+        self.fixture_digest_algorithm
+    }
+
+    /// The forward observation member.
+    #[must_use]
+    pub const fn observations(
+        &self,
+    ) -> &ForwardProofBearingRecordMember<ForwardV2ProofBearingObservations> {
+        &self.observations
+    }
+
+    /// The target acceptance and independent reverification member.
+    #[must_use]
+    pub const fn acceptance(&self) -> &ForwardProofBearingRecordMember<ProofBearingReverification> {
+        &self.acceptance
+    }
+}
+
+impl TryFrom<&ProofBearingObservationRecord> for ForwardV2ProofBearingRunOfRecord {
+    type Error = RunOfRecordProjectionRefusal;
+
+    fn try_from(record: &ProofBearingObservationRecord) -> Result<Self, Self::Error> {
+        if record.fixture_digest_algorithm() != FixtureDigestAlgorithm::ForwardV2 {
+            return Err(RunOfRecordProjectionRefusal::ForwardV2DigestRequired);
+        }
+        if record.refusal().is_some() {
+            return Err(RunOfRecordProjectionRefusal::CeremonyRefused);
+        }
+        let issued_asset = record
+            .issued_asset()
+            .ok_or(RunOfRecordProjectionRefusal::MissingIssuedAsset)?;
+        let predecessor_digest = record
+            .predecessor_digest()
+            .copied()
+            .ok_or(RunOfRecordProjectionRefusal::MissingPredecessorDigest)?;
+        if record.coins().len() != PREDECESSOR_AMOUNTS.len() {
+            return Err(RunOfRecordProjectionRefusal::IncompleteCoins);
+        }
+        let output_witness_vector_length = record
+            .output_witness_vector_length()
+            .ok_or(RunOfRecordProjectionRefusal::MissingOutputWitnessVectorLength)?;
+        if record.output_witness_proof_bytes().len() != SUCCESSOR_AMOUNTS.len() {
+            return Err(RunOfRecordProjectionRefusal::IncompleteOutputWitnessProofBytes);
+        }
+        if record.spent_value_prefixes().len() != record.coins().len() {
+            return Err(RunOfRecordProjectionRefusal::IncompleteSpentValuePrefixes);
+        }
+        if record.observations().len() != ProofBearingCase::ALL.len()
+            || !record
+                .observations()
+                .iter()
+                .zip(ProofBearingCase::ALL)
+                .all(|(observation, case)| observation.case() == *case)
+        {
+            return Err(RunOfRecordProjectionRefusal::IncompleteObservations);
+        }
+        if record.construction_refusals().len() != ProofBearingConstructionControl::ALL.len() {
+            return Err(RunOfRecordProjectionRefusal::IncompleteConstructionRefusals);
+        }
+        let construction_refusals = record
+            .construction_refusals()
+            .iter()
+            .map(RecordedProofBearingConstructionRefusal::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let reverification = record
+            .reverification()
+            .cloned()
+            .ok_or(RunOfRecordProjectionRefusal::MissingReverification)?;
+        let accepted = record
+            .observations()
+            .iter()
+            .find(|observation| observation.case() == ProofBearingCase::SelectedProfile)
+            .filter(|observation| observation.layer() == ObservedOutcomeLayer::Accepted)
+            .and_then(ProofBearingObservation::accepted_txid);
+        if accepted != Some(reverification.accepted_txid()) {
+            return Err(RunOfRecordProjectionRefusal::AcceptanceObservationMismatch);
+        }
+        if record.candidate_messages().len() != ProofBearingCase::ALL.len() {
+            return Err(RunOfRecordProjectionRefusal::IncompleteCandidateMessages);
+        }
+
+        Ok(Self {
+            schema_version: FORWARD_V2_PROOF_BEARING_SCHEMA_VERSION,
+            fixture_digest_algorithm: FixtureDigestAlgorithm::ForwardV2,
+            observations: ForwardProofBearingRecordMember::Recorded(
+                ForwardV2ProofBearingObservations {
+                    issued_asset: issued_asset.to_owned(),
+                    predecessor_digest,
+                    coins: record
+                        .coins()
+                        .iter()
+                        .map(|coin| RecordedConfidentialCoin {
+                            asset: coin.asset(),
+                            value: coin.value(),
+                            program: coin.program().to_vec(),
+                            rangeproof_bytes: coin.rangeproof_bytes(),
+                            matches_expectation: coin.matches_expectation(),
+                        })
+                        .collect(),
+                    output_witness_vector_length,
+                    output_witness_proof_bytes: record.output_witness_proof_bytes().to_vec(),
+                    spent_value_prefixes: record.spent_value_prefixes().to_vec(),
+                    case_observations: record.observations().to_vec(),
+                    construction_refusals: RecordedConstructionRefusals::Captured(
+                        construction_refusals,
+                    ),
+                    candidate_messages: record.candidate_messages().clone(),
+                },
+            ),
+            acceptance: ForwardProofBearingRecordMember::Recorded(reverification),
+        })
+    }
+}
+
+static FORWARD_V2_PROOF_BEARING_RUN_OF_RECORD: ForwardV2ProofBearingRunOfRecord =
+    ForwardV2ProofBearingRunOfRecord {
+        schema_version: FORWARD_V2_PROOF_BEARING_SCHEMA_VERSION,
+        fixture_digest_algorithm: FixtureDigestAlgorithm::ForwardV2,
+        observations: ForwardProofBearingRecordMember::Pending,
+        acceptance: ForwardProofBearingRecordMember::Pending,
+    };
+
+/// The schema-2 forward-v2 expectation for a fresh proof-bearing run.
+///
+/// This is the selection point N1-F uses instead of the historical
+/// [`construction_run_of_record_v2`] surface. Both members remain
+/// pending until an owner-authorized forward-v2 ceremony mints them.
+#[must_use]
+pub const fn forward_v2_proof_bearing_run_of_record() -> &'static ForwardV2ProofBearingRunOfRecord {
+    &FORWARD_V2_PROOF_BEARING_RUN_OF_RECORD
+}
+
 /// T5-031 did not capture either construction refusal in its committed
 /// conversion.
 ///
@@ -1127,7 +1449,11 @@ impl TryFrom<&ProofBearingObservationRecord> for ProofBearingRunOfRecord {
 pub const T5_031_CONSTRUCTION_REFUSALS: RecordedConstructionRefusals =
     RecordedConstructionRefusals::NotCaptured;
 
-/// Whether the forward V2 ceremony has an exact run of record to bind.
+/// Whether the ceremony-generation V2 historical-v1 archive is present.
+///
+/// This archival name is retained because it was minted with the run.
+/// Its `V2` means ceremony generation, not forward-v2 digest semantics;
+/// fresh native selection uses [`forward_v2_proof_bearing_run_of_record`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProofBearingRunOfRecordV2 {
     /// The authorized native rerun has not minted constants yet.
@@ -1147,7 +1473,8 @@ impl ProofBearingRunOfRecordV2 {
     }
 }
 
-/// Exact constants from the serialized V2 native run of record.
+/// Exact constants from the serialized ceremony-generation V2 native
+/// run of record, carrying historical-v1 fixture digest semantics.
 ///
 /// Minted from the 2026-08-27 serialized native lane at tree `bf211dd9`
 /// against elements tip `b7fc5d080a`. The evidence source is
@@ -1301,7 +1628,8 @@ ebcdbb8675319b48b2e04fae3ca4fbcaa4030aa618f8d2b6084a6f45ba9b7408";
     }
 }
 
-/// The recorded V2 proof-bearing run-of-record state.
+/// The recorded ceremony-generation V2 historical-v1 run-of-record
+/// state.
 ///
 /// Minted only from the persisted transcript named above. Returning the
 /// recorded variant flips both live equality gates from conditional to
@@ -1843,7 +2171,10 @@ impl ProofBearingObservationPlanner {
             owners: [first, second],
             predecessor: None,
             pending: None,
-            record: ProofBearingObservationRecord::default(),
+            record: ProofBearingObservationRecord {
+                fixture_digest_algorithm: FixtureDigestAlgorithm::ForwardV2,
+                ..ProofBearingObservationRecord::default()
+            },
         })
     }
 
@@ -2625,16 +2956,39 @@ fn record_header_lines(record: &ProofBearingObservationRecord) -> Vec<String> {
             .predecessor_digest()
             .map_or_else(|| "none".to_owned(), |digest| printed(digest)),
     ));
-    lines.push(format!(
-        "run_of_record_v2 {}",
-        construction_run_of_record_v2().name()
-    ));
-    match ProofBearingRunOfRecord::try_from(record) {
-        Ok(projection) => lines.push(format!(
-            "run_of_record_projection ready schema_version {}",
-            projection.schema_version()
-        )),
-        Err(refusal) => lines.push(format!("run_of_record_projection refused {refusal:?}")),
+    match record.fixture_digest_algorithm() {
+        FixtureDigestAlgorithm::HistoricalV1 => {
+            lines.push(format!(
+                "run_of_record_v2 {}",
+                construction_run_of_record_v2().name()
+            ));
+            match ProofBearingRunOfRecord::try_from(record) {
+                Ok(projection) => lines.push(format!(
+                    "run_of_record_projection ready schema_version {}",
+                    projection.schema_version()
+                )),
+                Err(refusal) => {
+                    lines.push(format!("run_of_record_projection refused {refusal:?}"));
+                }
+            }
+        }
+        FixtureDigestAlgorithm::ForwardV2 => {
+            let expected = forward_v2_proof_bearing_run_of_record();
+            lines.push(format!(
+                "forward_v2_run_of_record observations_{} acceptance_{}",
+                expected.observations().name(),
+                expected.acceptance().name()
+            ));
+            match ForwardV2ProofBearingRunOfRecord::try_from(record) {
+                Ok(projection) => lines.push(format!(
+                    "run_of_record_projection ready schema_version {}",
+                    projection.schema_version()
+                )),
+                Err(refusal) => {
+                    lines.push(format!("run_of_record_projection refused {refusal:?}"));
+                }
+            }
+        }
     }
     lines
 }
@@ -3056,6 +3410,7 @@ mod tests {
             .collect();
 
         ProofBearingObservationRecord {
+            fixture_digest_algorithm: FixtureDigestAlgorithm::HistoricalV1,
             issued_asset: Some(RECORDED_ASSET.to_owned()),
             predecessor_digest: recorded_digest(RECORDED_PREDECESSOR_DIGEST),
             coins,
@@ -3231,6 +3586,7 @@ mod tests {
             .collect();
 
         ProofBearingObservationRecord {
+            fixture_digest_algorithm: FixtureDigestAlgorithm::HistoricalV1,
             issued_asset: Some(recorded.issued_asset().to_owned()),
             predecessor_digest: Some(*recorded.predecessor_digest()),
             coins,
@@ -3332,5 +3688,185 @@ mod tests {
         assert!(rendered.contains("observed_acceptance false"));
         assert!(rendered.contains("reverification none"));
         assert!(rendered.contains("output_witness_vector_length none"));
+    }
+
+    fn synthetic_forward_v2_live_record() -> ProofBearingObservationRecord {
+        const ISSUED_ASSET: &str =
+            "4242424242424242424242424242424242424242424242424242424242424242";
+        const ACCEPTED_TXID: &str =
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        const WITNESS_TXID: &str =
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+        let owners = [
+            OwnerLeaf::derive(&FIRST_SCALAR).expect("the first owner derives"),
+            OwnerLeaf::derive(&SECOND_SCALAR).expect("the second owner derives"),
+        ];
+        let txid = transaction::bytes::Txid::from_internal([0x66; 32]);
+        let coins: Vec<_> = owners
+            .iter()
+            .enumerate()
+            .map(|(index, owner)| {
+                let mut commitment = [0x22; COMMITMENT_BYTES];
+                commitment[0] = u8::try_from(index).expect("the coin index fits") + 0x0a;
+                ObservedConfidentialCoin {
+                    outpoint: Outpoint::new(
+                        txid,
+                        u32::try_from(index).expect("the coin index fits"),
+                    )
+                    .expect("the synthetic forward coin index is in range"),
+                    asset: AssetField::Explicit(AssetId::from_internal([0x42; 32])),
+                    value: ValueField::Commitment(commitment),
+                    program: owner.program.clone(),
+                    rangeproof_bytes: 4_200,
+                    matches_expectation: true,
+                }
+            })
+            .collect();
+        let first_outpoint = coins
+            .first()
+            .expect("the synthetic forward record carries a predecessor coin")
+            .outpoint();
+        let observations = ProofBearingCase::ALL
+            .iter()
+            .copied()
+            .map(|case| ProofBearingObservation {
+                case,
+                layer: if matches!(case, ProofBearingCase::SelectedProfile) {
+                    ObservedOutcomeLayer::Accepted
+                } else {
+                    ObservedOutcomeLayer::ScriptPathRejection
+                },
+                detail: case
+                    .is_negative_control()
+                    .then(|| "synthetic forward-v2 refusal".to_owned()),
+                accepted_txid: matches!(case, ProofBearingCase::SelectedProfile)
+                    .then(|| ACCEPTED_TXID.to_owned()),
+                submitted_bytes: 9_100,
+            })
+            .collect();
+        let construction_refusals = ProofBearingConstructionControl::ALL
+            .iter()
+            .copied()
+            .map(|control| ProofBearingConstructionRefusal {
+                control,
+                refusal: MaterializationRefusal::PredecessorOpeningMismatch {
+                    outpoint: first_outpoint,
+                },
+            })
+            .collect();
+        let candidate_messages = ProofBearingCase::ALL
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, case)| {
+                let byte = u8::try_from(index).expect("the four-case index fits") + 0x40;
+                (case, [byte; 32])
+            })
+            .collect();
+
+        ProofBearingObservationRecord {
+            fixture_digest_algorithm: FixtureDigestAlgorithm::ForwardV2,
+            issued_asset: Some(ISSUED_ASSET.to_owned()),
+            predecessor_digest: Some([0xa2; 32]),
+            coins,
+            output_witness_vector_length: Some(2),
+            output_witness_proof_bytes: vec![4_200, 4_200],
+            spent_value_prefixes: vec![0x0a, 0x0b],
+            observations,
+            construction_refusals,
+            reverification: Some(ProofBearingReverification {
+                accepted_txid: ACCEPTED_TXID.to_owned(),
+                witness_txid: WITNESS_TXID.to_owned(),
+                block_height: 9,
+                readback_matches_submission: true,
+                recomputed_message: [0x43; 32],
+                signature_from_readback: vec![0x5a; 64],
+                verified: Ok(()),
+                verifies_against_emptied_vector_message: false,
+            }),
+            candidate_messages,
+            refusal: None,
+        }
+    }
+
+    #[test]
+    fn schema_one_is_explicitly_historical_v1() {
+        let historical = minted_v2_run_of_record();
+
+        assert_eq!(historical.schema_version(), 1);
+        assert_eq!(
+            historical.fixture_digest_algorithm(),
+            FixtureDigestAlgorithm::HistoricalV1
+        );
+        assert_eq!(
+            historical.predecessor_digest(),
+            &recorded_digest(RECORDED_PREDECESSOR_DIGEST)
+                .expect("the historical predecessor digest is valid")
+        );
+    }
+
+    #[test]
+    fn a_fresh_forward_v2_projection_refuses_the_schema_one_historical_path() {
+        let fresh = synthetic_forward_v2_live_record();
+
+        assert_eq!(
+            ProofBearingRunOfRecord::try_from(&fresh),
+            Err(RunOfRecordProjectionRefusal::HistoricalV1DigestRequired)
+        );
+    }
+
+    #[test]
+    fn schema_one_historical_facts_refuse_the_forward_v2_projection() {
+        let historical = minted_completed_live_record();
+
+        assert_eq!(
+            ForwardV2ProofBearingRunOfRecord::try_from(&historical),
+            Err(RunOfRecordProjectionRefusal::ForwardV2DigestRequired)
+        );
+    }
+
+    #[test]
+    fn only_schema_two_records_forward_v2_facts() {
+        let fresh = synthetic_forward_v2_live_record();
+        let forward = ForwardV2ProofBearingRunOfRecord::try_from(&fresh)
+            .expect("complete forward-v2 facts project to schema 2");
+        let rendered = render_proof_bearing_observation(&fresh);
+
+        assert_eq!(forward.schema_version(), 2);
+        assert_eq!(
+            forward.fixture_digest_algorithm(),
+            FixtureDigestAlgorithm::ForwardV2
+        );
+        assert_eq!(forward.observations().name(), "recorded");
+        assert_eq!(forward.acceptance().name(), "recorded");
+        assert_ne!(
+            forward
+                .observations()
+                .recorded()
+                .expect("the projected observations are recorded")
+                .predecessor_digest(),
+            minted_v2_run_of_record().predecessor_digest()
+        );
+        assert!(
+            rendered.contains("forward_v2_run_of_record observations_pending acceptance_pending")
+        );
+        assert!(rendered.contains("run_of_record_projection ready schema_version 2"));
+        assert!(!rendered.contains("run_of_record_v2 recorded"));
+    }
+
+    #[test]
+    fn pending_forward_members_cannot_pass_as_recorded() {
+        let pending = forward_v2_proof_bearing_run_of_record();
+        let recorded =
+            ForwardV2ProofBearingRunOfRecord::try_from(&synthetic_forward_v2_live_record())
+                .expect("complete forward-v2 facts project to schema 2");
+
+        assert_eq!(pending.schema_version(), 2);
+        assert_eq!(pending.observations().name(), "pending");
+        assert_eq!(pending.acceptance().name(), "pending");
+        assert!(pending.observations().recorded().is_none());
+        assert!(pending.acceptance().recorded().is_none());
+        assert_ne!(pending, &recorded);
     }
 }
