@@ -70,10 +70,11 @@ pub mod owner_observation {
 
 /// Historical schema-1 proof-bearing records and observation identity.
 pub mod proof_bearing {
+    pub use crate::live_proof_bearing_observation::historical_v1_mirrors::*;
     pub use crate::live_proof_bearing_observation::{
-        PROOF_BEARING_OBSERVATION, PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION,
-        ProofBearingRunOfRecord, ProofBearingRunOfRecordV2, T5_031_CONSTRUCTION_REFUSALS,
-        construction_run_of_record_v2,
+        PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION, ProofBearingRunOfRecord,
+        ProofBearingRunOfRecordV2, T5_031_CONSTRUCTION_REFUSALS,
+        historical_v1_construction_run_of_record,
     };
 }
 
