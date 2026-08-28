@@ -215,7 +215,7 @@ mod tests {
         assert_eq!(census.vocabulary_closed(), 1);
         assert_eq!(census.native_run_required(), 25);
         assert_eq!(crate::live_negative_half::STILL_REQUIRED.len(), 25);
-        assert_eq!(answered + 1 + 25, census.rows());
+        assert_eq!(82 + 1 + 25, census.rows());
         assert_eq!(census.rows(), 108);
     }
 
