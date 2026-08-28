@@ -4327,18 +4327,16 @@ fn build_acceptance_projections(
                             )
                         },
                     )?
-                {
-                    if operation
+                    && operation
                         .accepted_identity
                         .map(|value| value.to_target_display())
                         != Some(identity.to_owned())
-                    {
-                        return Err(row_attribution_refusal(
-                            "current-acceptance-projection",
-                            ceremony,
-                            "accepted-identity-differs",
-                        ));
-                    }
+                {
+                    return Err(row_attribution_refusal(
+                        "current-acceptance-projection",
+                        ceremony,
+                        "accepted-identity-differs",
+                    ));
                 }
             }
             let projections = accepted
