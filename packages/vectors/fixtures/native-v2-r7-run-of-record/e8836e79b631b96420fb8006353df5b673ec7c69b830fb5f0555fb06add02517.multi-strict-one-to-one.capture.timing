@@ -1,0 +1,3 @@
+timing-schema 1
+ceremony-id multi-strict-one-to-one
+status passed

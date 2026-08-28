@@ -1,0 +1,51 @@
+run 0
+run 0 handle ctf-v1/predecessor-dual-parity
+run 0 contract byte_identity
+run 0 parities [8, 9]
+run 0 protocol_outputs 2 non_protocol_members 2
+run 0 output 0 field asset agree materialized vs read back
+run 0 output 0 field commitment agree recomputed vs read back
+run 0 output 0 field parity agree recomputed vs read back
+run 0 output 0 field nonce agree recomputed vs read back
+run 0 output 0 field program agree recomputed vs read back
+run 0 output 0 field proof shape agree reference vs read back
+run 0 output 0 field outpoint agree materialized vs read back
+run 0 output 0 field witness transaction identity agree materialized vs read back
+run 0 output 1 field asset agree materialized vs read back
+run 0 output 1 field commitment agree recomputed vs read back
+run 0 output 1 field parity agree recomputed vs read back
+run 0 output 1 field nonce agree recomputed vs read back
+run 0 output 1 field program agree recomputed vs read back
+run 0 output 1 field proof shape agree reference vs read back
+run 0 output 1 field outpoint agree materialized vs read back
+run 0 output 1 field witness transaction identity agree materialized vs read back
+run 0 output 0 independent_commitment agree checker the first-party bignum commitment oracle
+run 0 output 1 independent_commitment agree checker the first-party bignum commitment oracle
+run 0 witness_transaction_id ca8bf5692faf8746d43018602aba1590209604ba652e43c95f65c9622412a12c
+run 1
+run 1 handle ctf-v1/predecessor-dual-parity
+run 1 contract byte_identity
+run 1 parities [8, 9]
+run 1 protocol_outputs 2 non_protocol_members 2
+run 1 output 0 field asset agree materialized vs read back
+run 1 output 0 field commitment agree recomputed vs read back
+run 1 output 0 field parity agree recomputed vs read back
+run 1 output 0 field nonce agree recomputed vs read back
+run 1 output 0 field program agree recomputed vs read back
+run 1 output 0 field proof shape agree reference vs read back
+run 1 output 0 field outpoint agree materialized vs read back
+run 1 output 0 field witness transaction identity agree materialized vs read back
+run 1 output 1 field asset agree materialized vs read back
+run 1 output 1 field commitment agree recomputed vs read back
+run 1 output 1 field parity agree recomputed vs read back
+run 1 output 1 field nonce agree recomputed vs read back
+run 1 output 1 field program agree recomputed vs read back
+run 1 output 1 field proof shape agree reference vs read back
+run 1 output 1 field outpoint agree materialized vs read back
+run 1 output 1 field witness transaction identity agree materialized vs read back
+run 1 output 0 independent_commitment agree checker the first-party bignum commitment oracle
+run 1 output 1 independent_commitment agree checker the first-party bignum commitment oracle
+run 1 witness_transaction_id ca8bf5692faf8746d43018602aba1590209604ba652e43c95f65c9622412a12c
+byte_identity_satisfied true
+discharges_no_matrix_row true
+clears_owner_sighash_blockers false
