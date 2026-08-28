@@ -45,14 +45,10 @@ pub mod sponsor_shapes {
 pub mod owner_signing_negatives;
 
 /// Historical phase-A key-path probe observations.
-pub mod keypath_probe {
-    pub use crate::live_keypath_probe::run_of_record::*;
-}
+pub mod keypath_probe;
 
 /// Historical phase-B key-path probe observations.
-pub mod keypath_probe_phase_b {
-    pub use crate::live_keypath_probe::run_of_record_phase_b::*;
-}
+pub mod keypath_probe_phase_b;
 
 /// Historical paired explicit/private observation.
 pub mod pair_arc;
@@ -171,7 +167,7 @@ mod tests {
         assert_eq!(super::owner_signing_negatives::CONTROL_ARRANGEMENT, [0, 1],);
         assert_eq!(
             super::keypath_probe_phase_b::REFUSAL_DETAIL,
-            crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_DETAIL,
+            "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
         );
         assert_eq!(super::pair_arc::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER, 2,);
         assert_eq!(super::owner_observation::EXPECTED_CASE_OUTCOMES.len(), 7,);

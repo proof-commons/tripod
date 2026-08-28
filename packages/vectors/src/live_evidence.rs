@@ -2503,10 +2503,10 @@ fn observed_row_refusal(row: &LiveSafetyRow) -> Option<RecordedNativeRefusal> {
         // that the attempt was observed and refused, under its own name.
         "key-path-escape" => Some(RecordedNativeRefusal {
             control_identity:
-                crate::live_keypath_probe::run_of_record_phase_b::CONTROL_ACCEPTED_TXID,
+                crate::live_history_v1::keypath_probe_phase_b::CONTROL_ACCEPTED_TXID,
             observed_layer:
-                crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_OBSERVED_LAYER,
-            refusal_detail: crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_DETAIL,
+                crate::live_history_v1::keypath_probe_phase_b::REFUSAL_OBSERVED_LAYER,
+            refusal_detail: crate::live_history_v1::keypath_probe_phase_b::REFUSAL_DETAIL,
         }),
         _ => None,
     }
@@ -3652,7 +3652,7 @@ mod tests {
         // candidate whose witnessless serializations were compared byte
         // for byte rather than argued to be equal.
         assert_ne!(
-            crate::live_keypath_probe::run_of_record_phase_b::CONTROL_ACCEPTED_TXID,
+            crate::live_history_v1::keypath_probe_phase_b::CONTROL_ACCEPTED_TXID,
             witness::CONTROL_ACCEPTED_TXID,
             "the key-path negative cites the witness lane's control",
         );
