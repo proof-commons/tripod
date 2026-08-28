@@ -908,7 +908,6 @@ pub enum NativeV2ImportRefusal {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ReportFacts {
-    suite_tree: String,
     binary_revision: String,
     intended_tip: String,
     adapter_name: String,
@@ -1120,8 +1119,12 @@ fn decode_hex(text: &str) -> Option<Vec<u8>> {
     {
         return None;
     }
-    text.as_bytes()
-        .chunks_exact(2)
+    let (pairs, remainder) = text.as_bytes().as_chunks::<2>();
+    if !remainder.is_empty() {
+        return None;
+    }
+    pairs
+        .iter()
         .map(|pair| {
             let high = if pair[0].is_ascii_digit() {
                 pair[0] - b'0'
@@ -1161,115 +1164,156 @@ fn txid_for(bytes: &[u8]) -> Result<Txid, ()> {
     Ok(Txid::from_internal(tagged::sha256(&first)))
 }
 
-fn parse_report(bytes: &[u8]) -> Result<ReportFacts, NativeV2ImportRefusal> {
-    let parsed = (|| {
-        let mut cursor = LineCursor::new("RUN-REPORT", bytes)?;
-        cursor.exact("run-report-schema native-v2-r7-run-report 1")?;
-        cursor.exact("capture-format-schema native-v2-r7-capture 1")?;
-        cursor.exact(&format!("suite-commit {NATIVE_V2_R7_INPUT_SET_ADDRESS}"))?;
-        let suite_tree = cursor.value("suite-tree")?.to_owned();
-        if decode_digest(&suite_tree).is_none() {
-            return Err(cursor.refusal());
-        }
-        cursor.exact("suite-clean yes")?;
-        cursor.exact("rust-test-target guide13_live_native")?;
-        if cursor.len_hex("cargo-argv")?.is_empty() {
-            return Err(cursor.refusal());
-        }
-        for line in [
-            "expected-test-count 40",
-            "observed-test-count 40",
-            "expected-ceremony-count 39",
-            "observed-ceremony-count 39",
-            "expected-setup-count 1",
-            "observed-setup-count 1",
-            "diagnostics-present yes",
-            "test-passed-count 40",
-            "test-failed-count 0",
-            "test-ignored-count 0",
-            "cargo-exit-code 0",
-        ] {
-            cursor.exact(line)?;
-        }
-        let expected_tip = cursor.value("elementsd-expected-tip")?.to_owned();
-        if expected_tip.len() != 40 || decode_hex(&expected_tip).is_none() {
-            return Err(cursor.refusal());
-        }
-        let binary_revision = parse_text(cursor.value("elementsd-binary-reported-revision")?)
-            .ok_or_else(|| cursor.refusal())?;
-        let intended_tip = parse_text(cursor.value("elementsd-intended-executed-tip")?)
-            .ok_or_else(|| cursor.refusal())?;
-        if binary_revision.len() < 12
-            || binary_revision.len() > expected_tip.len()
-            || !expected_tip.starts_with(&binary_revision)
-            || intended_tip != expected_tip
+struct ReportSuiteFacts {
+    binary_revision: String,
+    intended_tip: String,
+}
+
+struct ReportExecutorFacts {
+    adapter_name: String,
+    adapter_version: String,
+    node_name: String,
+    node_version: String,
+    environment: String,
+    network_id: String,
+    genesis_id: String,
+    target_contract: String,
+}
+
+fn parse_report_suite(
+    cursor: &mut LineCursor<'_>,
+) -> Result<ReportSuiteFacts, NativeV2ImportRefusal> {
+    cursor.exact("run-report-schema native-v2-r7-run-report 1")?;
+    cursor.exact("capture-format-schema native-v2-r7-capture 1")?;
+    cursor.exact(&format!("suite-commit {NATIVE_V2_R7_INPUT_SET_ADDRESS}"))?;
+    let suite_tree = cursor.value("suite-tree")?.to_owned();
+    if decode_digest(&suite_tree).is_none() {
+        return Err(cursor.refusal());
+    }
+    cursor.exact("suite-clean yes")?;
+    cursor.exact("rust-test-target guide13_live_native")?;
+    if cursor.len_hex("cargo-argv")?.is_empty() {
+        return Err(cursor.refusal());
+    }
+    for line in [
+        "expected-test-count 40",
+        "observed-test-count 40",
+        "expected-ceremony-count 39",
+        "observed-ceremony-count 39",
+        "expected-setup-count 1",
+        "observed-setup-count 1",
+        "diagnostics-present yes",
+        "test-passed-count 40",
+        "test-failed-count 0",
+        "test-ignored-count 0",
+        "cargo-exit-code 0",
+    ] {
+        cursor.exact(line)?;
+    }
+    let expected_tip = cursor.value("elementsd-expected-tip")?.to_owned();
+    if expected_tip.len() != 40 || decode_hex(&expected_tip).is_none() {
+        return Err(cursor.refusal());
+    }
+    let binary_revision = parse_text(cursor.value("elementsd-binary-reported-revision")?)
+        .ok_or_else(|| cursor.refusal())?;
+    let intended_tip = parse_text(cursor.value("elementsd-intended-executed-tip")?)
+        .ok_or_else(|| cursor.refusal())?;
+    if binary_revision.len() < 12
+        || binary_revision.len() > expected_tip.len()
+        || !expected_tip.starts_with(&binary_revision)
+        || intended_tip != expected_tip
+    {
+        return Err(cursor.refusal());
+    }
+    Ok(ReportSuiteFacts {
+        binary_revision,
+        intended_tip,
+    })
+}
+
+fn parse_report_executor(
+    cursor: &mut LineCursor<'_>,
+) -> Result<ReportExecutorFacts, NativeV2ImportRefusal> {
+    let adapter_name = text_field(cursor, "executor-adapter-name")?;
+    let adapter_version = text_field(cursor, "executor-adapter-version")?;
+    let node_name = text_field(cursor, "node-name")?;
+    let node_version = text_field(cursor, "node-version")?;
+    cursor.exact("protocol-revision 7")?;
+    cursor.exact("fixture-digest-algorithm forward-v2")?;
+    let environment = cursor.value("deployment-environment")?.to_owned();
+    let network_id = text_field(cursor, "deployment-network-id")?;
+    let genesis_id = text_field(cursor, "deployment-genesis-id")?;
+    let target_contract = text_field(cursor, "deployment-target-contract")?;
+    for field in ["utc-start", "utc-end"] {
+        let timestamp = cursor.value(field)?;
+        if timestamp.len() != 20
+            || timestamp.as_bytes().get(4) != Some(&b'-')
+            || timestamp.as_bytes().get(7) != Some(&b'-')
+            || timestamp.as_bytes().get(10) != Some(&b'T')
+            || timestamp.as_bytes().get(13) != Some(&b':')
+            || timestamp.as_bytes().get(16) != Some(&b':')
+            || !timestamp.ends_with('Z')
         {
             return Err(cursor.refusal());
         }
-        let adapter_name = String::from_utf8(cursor.len_hex("executor-adapter-name")?)
-            .map_err(|_| cursor.refusal())?;
-        let adapter_version = String::from_utf8(cursor.len_hex("executor-adapter-version")?)
-            .map_err(|_| cursor.refusal())?;
-        let node_name =
-            String::from_utf8(cursor.len_hex("node-name")?).map_err(|_| cursor.refusal())?;
-        let node_version =
-            String::from_utf8(cursor.len_hex("node-version")?).map_err(|_| cursor.refusal())?;
-        cursor.exact("protocol-revision 7")?;
-        cursor.exact("fixture-digest-algorithm forward-v2")?;
-        let environment = cursor.value("deployment-environment")?.to_owned();
-        let network_id = String::from_utf8(cursor.len_hex("deployment-network-id")?)
-            .map_err(|_| cursor.refusal())?;
-        let genesis_id = String::from_utf8(cursor.len_hex("deployment-genesis-id")?)
-            .map_err(|_| cursor.refusal())?;
-        let target_contract = String::from_utf8(cursor.len_hex("deployment-target-contract")?)
-            .map_err(|_| cursor.refusal())?;
-        for field in ["utc-start", "utc-end"] {
-            let timestamp = cursor.value(field)?;
-            if timestamp.len() != 20
-                || timestamp.as_bytes().get(4) != Some(&b'-')
-                || timestamp.as_bytes().get(7) != Some(&b'-')
-                || timestamp.as_bytes().get(10) != Some(&b'T')
-                || timestamp.as_bytes().get(13) != Some(&b':')
-                || timestamp.as_bytes().get(16) != Some(&b':')
-                || !timestamp.ends_with('Z')
-            {
-                return Err(cursor.refusal());
-            }
-        }
-        if cursor.number("outer-wall-ms")? == 0 {
+    }
+    if cursor.number("outer-wall-ms")? == 0 {
+        return Err(cursor.refusal());
+    }
+    Ok(ReportExecutorFacts {
+        adapter_name,
+        adapter_version,
+        node_name,
+        node_version,
+        environment,
+        network_id,
+        genesis_id,
+        target_contract,
+    })
+}
+
+fn parse_report_roster(
+    cursor: &mut LineCursor<'_>,
+) -> Result<BTreeMap<String, [u8; 32]>, NativeV2ImportRefusal> {
+    cursor.exact("ceremony-roster begin")?;
+    let mut ceremony_digests = BTreeMap::new();
+    for ceremony in NATIVE_V2_R7_CEREMONY_ROSTER {
+        let value = cursor.value("ceremony")?;
+        let (offered, digest) = value.split_once(' ').ok_or_else(|| cursor.refusal())?;
+        let digest = decode_digest(digest).ok_or_else(|| cursor.refusal())?;
+        if offered != ceremony
+            || ceremony_digests
+                .insert(offered.to_owned(), digest)
+                .is_some()
+        {
             return Err(cursor.refusal());
         }
-        cursor.exact("ceremony-roster begin")?;
-        let mut ceremony_digests = BTreeMap::new();
-        for ceremony in NATIVE_V2_R7_CEREMONY_ROSTER {
-            let value = cursor.value("ceremony")?;
-            let (offered, digest) = value.split_once(' ').ok_or_else(|| cursor.refusal())?;
-            let digest = decode_digest(digest).ok_or_else(|| cursor.refusal())?;
-            if offered != ceremony
-                || ceremony_digests
-                    .insert(offered.to_owned(), digest)
-                    .is_some()
-            {
-                return Err(cursor.refusal());
-            }
-        }
-        cursor.exact("ceremony-roster end")?;
+    }
+    cursor.exact("ceremony-roster end")?;
+    Ok(ceremony_digests)
+}
+
+fn parse_report(bytes: &[u8]) -> Result<ReportFacts, NativeV2ImportRefusal> {
+    let parsed: Result<ReportFacts, NativeV2ImportRefusal> = (|| {
+        let mut cursor = LineCursor::new("RUN-REPORT", bytes)?;
+        let suite = parse_report_suite(&mut cursor)?;
+        let executor = parse_report_executor(&mut cursor)?;
+        let ceremony_digests = parse_report_roster(&mut cursor)?;
         let manifest_hash =
             decode_digest(cursor.value("manifest-sha256")?).ok_or_else(|| cursor.refusal())?;
         cursor.exact("eligible yes")?;
         cursor.done()?;
         Ok(ReportFacts {
-            suite_tree,
-            binary_revision,
-            intended_tip,
-            adapter_name,
-            adapter_version,
-            node_name,
-            node_version,
-            environment,
-            network_id,
-            genesis_id,
-            target_contract,
+            binary_revision: suite.binary_revision,
+            intended_tip: suite.intended_tip,
+            adapter_name: executor.adapter_name,
+            adapter_version: executor.adapter_version,
+            node_name: executor.node_name,
+            node_version: executor.node_version,
+            environment: executor.environment,
+            network_id: executor.network_id,
+            genesis_id: executor.genesis_id,
+            target_contract: executor.target_contract,
             manifest_hash,
             ceremony_digests,
         })
@@ -1604,42 +1648,51 @@ fn parse_projection(
     }))
 }
 
-fn parse_optional_text(value: &str) -> Option<Option<String>> {
+fn parse_optional_text(value: &str) -> Result<Option<String>, ()> {
     if value == "none" {
-        Some(None)
+        Ok(None)
     } else {
-        Some(Some(String::from_utf8(parse_len_hex(value)?).ok()?))
+        let bytes = parse_len_hex(value).ok_or(())?;
+        Ok(Some(String::from_utf8(bytes).map_err(|_| ())?))
     }
 }
 
-fn parse_operation(
+struct ParsedResponse {
+    response_id: String,
+    verdict: &'static str,
+    layer: ObservedOutcomeLayer,
+    accepted_identity: Option<Txid>,
+    detail: String,
+}
+
+struct ParsedAttribution {
+    control_request_id: Option<String>,
+    control_identity: Option<Txid>,
+    mutant: Option<LiveMutantKind>,
+    locator: Option<LiveMutationLocator>,
+    projection: Option<ParsedProjection>,
+}
+
+fn parse_operation_response(
     cursor: &mut LineCursor<'_>,
-    ordinal: usize,
     ceremony: &str,
-) -> Result<ParsedOperation, NativeV2ImportRefusal> {
-    cursor.exact(&format!("operation {ordinal} begin"))?;
-    let operation_id =
-        String::from_utf8(cursor.len_hex("operation-id")?).map_err(|_| cursor.refusal())?;
-    let request_id =
-        String::from_utf8(cursor.len_hex("request-id")?).map_err(|_| cursor.refusal())?;
-    let role = parse_role(cursor.value("request-role")?).ok_or_else(|| cursor.refusal())?;
-    let request_bytes = cursor.len_hex("request-bytes")?;
-    let response_id =
-        String::from_utf8(cursor.len_hex("response-id")?).map_err(|_| cursor.refusal())?;
-    let response_request_id =
-        String::from_utf8(cursor.len_hex("response-request-id")?).map_err(|_| cursor.refusal())?;
-    let response_operation_id = String::from_utf8(cursor.len_hex("response-operation-id")?)
-        .map_err(|_| cursor.refusal())?;
+    operation_id: &str,
+    request_id: &str,
+) -> Result<ParsedResponse, NativeV2ImportRefusal> {
+    let response_id = text_field(cursor, "response-id")?;
+    let response_request_id = text_field(cursor, "response-request-id")?;
+    let response_operation_id = text_field(cursor, "response-operation-id")?;
     if response_request_id != request_id || response_operation_id != operation_id {
         return Err(NativeV2ImportRefusal::IdentifierLink {
             ceremony: ceremony.to_owned(),
-            request: request_id,
+            request: request_id.to_owned(),
         });
     }
-    let verdict = cursor.value("response-verdict")?;
-    if !matches!(verdict, "accepted" | "refused") {
-        return Err(cursor.refusal());
-    }
+    let verdict = match cursor.value("response-verdict")? {
+        "accepted" => "accepted",
+        "refused" => "refused",
+        _ => return Err(cursor.refusal()),
+    };
     let layer = parse_layer(cursor.value("response-layer")?).ok_or_else(|| cursor.refusal())?;
     if (verdict == "accepted") != (layer == ObservedOutcomeLayer::Accepted) {
         return Err(cursor.refusal());
@@ -1650,10 +1703,21 @@ fn parse_operation(
     } else {
         Some(parse_txid(identity_text).ok_or_else(|| cursor.refusal())?)
     };
-    let detail =
-        String::from_utf8(cursor.len_hex("response-detail")?).map_err(|_| cursor.refusal())?;
+    let detail = text_field(cursor, "response-detail")?;
+    Ok(ParsedResponse {
+        response_id,
+        verdict,
+        layer,
+        accepted_identity,
+        detail,
+    })
+}
+
+fn parse_operation_attribution(
+    cursor: &mut LineCursor<'_>,
+) -> Result<ParsedAttribution, NativeV2ImportRefusal> {
     let control_request_id = parse_optional_text(cursor.value("attribution-control-request-id")?)
-        .ok_or_else(|| cursor.refusal())?;
+        .map_err(|()| cursor.refusal())?;
     let control_identity_text = cursor.value("attribution-control-identity")?;
     let control_identity = if control_identity_text == "none" {
         None
@@ -1672,72 +1736,93 @@ fn parse_operation(
     } else {
         Some(parse_locator(locator_text).ok_or_else(|| cursor.refusal())?)
     };
-    let projection = parse_projection(cursor)?;
-    cursor.exact(&format!("operation {ordinal} end"))?;
+    Ok(ParsedAttribution {
+        control_request_id,
+        control_identity,
+        mutant,
+        locator,
+        projection: parse_projection(cursor)?,
+    })
+}
 
-    let semantic_none = accepted_identity.is_none()
-        && control_request_id.is_none()
-        && control_identity.is_none()
-        && mutant.is_none()
-        && locator.is_none()
-        && projection.is_none();
-    let valid_role = match role {
+fn operation_role_is_valid(
+    role: OperationRole,
+    response: &ParsedResponse,
+    attribution: &ParsedAttribution,
+) -> bool {
+    let attribution_none = attribution.control_request_id.is_none()
+        && attribution.control_identity.is_none()
+        && attribution.mutant.is_none()
+        && attribution.locator.is_none()
+        && attribution.projection.is_none();
+    let semantic_none = response.accepted_identity.is_none() && attribution_none;
+    let role_matches = match role {
         OperationRole::Auxiliary => {
-            control_request_id.is_none()
-                && control_identity.is_none()
-                && mutant.is_none()
-                && locator.is_none()
-                && projection.is_none()
-                && (verdict == "accepted" || accepted_identity.is_none())
+            attribution_none
+                && (response.verdict == "accepted" || response.accepted_identity.is_none())
         }
         OperationRole::Acceptance | OperationRole::Control => {
-            verdict == "accepted"
-                && accepted_identity.is_some()
-                && detail.is_empty()
-                && control_request_id.is_none()
-                && control_identity.is_none()
-                && mutant.is_none()
-                && locator.is_none()
-                && projection.is_none()
+            response.verdict == "accepted"
+                && response.accepted_identity.is_some()
+                && response.detail.is_empty()
+                && attribution_none
         }
         OperationRole::Refusal => {
-            verdict == "refused"
-                && accepted_identity.is_none()
-                && !detail.is_empty()
-                && control_request_id.is_some()
-                && control_identity.is_some()
-                && mutant.is_some()
-                && locator.is_some()
-                && projection.is_none()
+            response.verdict == "refused"
+                && response.accepted_identity.is_none()
+                && !response.detail.is_empty()
+                && attribution.control_request_id.is_some()
+                && attribution.control_identity.is_some()
+                && attribution.mutant.is_some()
+                && attribution.locator.is_some()
+                && attribution.projection.is_none()
         }
         OperationRole::Paired(_) => {
-            verdict == "accepted"
-                && accepted_identity.is_some()
-                && detail.is_empty()
-                && control_request_id.is_none()
-                && control_identity.is_none()
-                && mutant.is_none()
-                && locator.is_none()
-                && projection.is_some()
+            response.verdict == "accepted"
+                && response.accepted_identity.is_some()
+                && response.detail.is_empty()
+                && attribution.control_request_id.is_none()
+                && attribution.control_identity.is_none()
+                && attribution.mutant.is_none()
+                && attribution.locator.is_none()
+                && attribution.projection.is_some()
         }
     };
-    if !valid_role || semantic_none && role != OperationRole::Auxiliary {
+    role_matches && (role == OperationRole::Auxiliary || !semantic_none)
+}
+
+fn parse_operation(
+    cursor: &mut LineCursor<'_>,
+    ordinal: usize,
+    ceremony: &str,
+) -> Result<ParsedOperation, NativeV2ImportRefusal> {
+    cursor.exact(&format!("operation {ordinal} begin"))?;
+    let operation_id =
+        String::from_utf8(cursor.len_hex("operation-id")?).map_err(|_| cursor.refusal())?;
+    let request_id =
+        String::from_utf8(cursor.len_hex("request-id")?).map_err(|_| cursor.refusal())?;
+    let role = parse_role(cursor.value("request-role")?).ok_or_else(|| cursor.refusal())?;
+    let request_bytes = cursor.len_hex("request-bytes")?;
+    let response = parse_operation_response(cursor, ceremony, &operation_id, &request_id)?;
+    let attribution = parse_operation_attribution(cursor)?;
+    cursor.exact(&format!("operation {ordinal} end"))?;
+    if !operation_role_is_valid(role, &response, &attribution) {
         return Err(cursor.refusal());
     }
     Ok(ParsedOperation {
         operation_id,
         request_id,
-        response_id,
+        response_id: response.response_id,
         role,
         request_bytes,
-        layer,
-        accepted_identity,
-        detail,
-        control_request_id,
-        control_identity,
-        mutant,
-        locator,
-        projection,
+        layer: response.layer,
+        accepted_identity: response.accepted_identity,
+        detail: response.detail,
+        control_request_id: attribution.control_request_id,
+        control_identity: attribution.control_identity,
+        mutant: attribution.mutant,
+        locator: attribution.locator,
+        projection: attribution.projection,
     })
 }
 
@@ -1760,65 +1845,22 @@ fn require_binding(
     }
 }
 
-fn parse_transcript(
-    name: &str,
-    bytes: &[u8],
-    report: &ReportFacts,
-) -> Result<ParsedTranscript, NativeV2ImportRefusal> {
-    let mut cursor = LineCursor::new(name, bytes)?;
-    cursor.exact("native-capture-schema 1")?;
-    let ceremony = cursor.value("ceremony-id")?.to_owned();
-    if !NATIVE_V2_R7_CEREMONY_ROSTER.contains(&ceremony.as_str())
-        || name
-            != format!(
-                "e8836e79b631b96420fb8006353df5b673ec7c69b830fb5f0555fb06add02517.{ceremony}.capture"
-            )
-    {
-        return Err(cursor.refusal());
-    }
-    if text_field(&mut cursor, "rust-test-name")?.is_empty() {
-        return Err(cursor.refusal());
-    }
-    let run_address = cursor.value("run-address")?.to_owned();
-    let semantic_identity = cursor.value("architecture-semantic-identity")?.to_owned();
-    let behavioural_identity = cursor
-        .value("architecture-behavioural-identity")?
-        .to_owned();
-    let digest_algorithm = cursor.value("fixture-digest-algorithm")?.to_owned();
-    require_binding(
-        &ceremony,
-        "run-address",
-        run_address == NATIVE_V2_R7_INPUT_SET_ADDRESS,
-    )?;
-    require_binding(
-        &ceremony,
-        "architecture-semantic-identity",
-        decode_digest(&semantic_identity).is_some(),
-    )?;
-    require_binding(
-        &ceremony,
-        "architecture-behavioural-identity",
-        decode_digest(&behavioural_identity).is_some(),
-    )?;
-    require_binding(
-        &ceremony,
-        "fixture-digest-algorithm",
-        digest_algorithm == "forward-v2",
-    )?;
-    cursor.exact("run-id-input begin")?;
-    let environment = cursor.value("deployment-environment")?.to_owned();
-    let network_id = text_field(&mut cursor, "deployment-network-id")?;
-    let genesis_id = text_field(&mut cursor, "deployment-genesis-id")?;
-    let target_contract = text_field(&mut cursor, "deployment-target-contract")?;
-    let protocol_revision = cursor.number("handshake-protocol-schema")?;
-    let adapter_name = text_field(&mut cursor, "handshake-adapter-name")?;
-    let adapter_version = text_field(&mut cursor, "handshake-adapter-version")?;
-    let framework_revision = text_field(&mut cursor, "handshake-framework-revision")?;
-    let node_name = text_field(&mut cursor, "handshake-node-name")?;
-    let node_version = text_field(&mut cursor, "handshake-node-version")?;
-    let binary_revision = text_field(&mut cursor, "handshake-binary-reported-revision")?;
-    let intended_tip = text_field(&mut cursor, "handshake-intended-executed-tip")?;
-    let _upstream_base = cursor.len_hex("handshake-upstream-base")?;
+struct CaptureHeader {
+    ceremony: String,
+    digest_algorithm: String,
+    environment: String,
+    network_id: String,
+    genesis_id: String,
+    target_contract: String,
+    protocol_revision: usize,
+    adapter_name: String,
+    adapter_version: String,
+    node_name: String,
+    node_version: String,
+    intended_tip: String,
+}
+
+fn parse_capture_topics(cursor: &mut LineCursor<'_>) -> Result<(), NativeV2ImportRefusal> {
     let topic_count = cursor.number("handshake-topic-count")?;
     for index in 0..topic_count {
         let value = cursor.value("handshake-topic")?;
@@ -1831,41 +1873,22 @@ fn parse_transcript(
             return Err(cursor.refusal());
         }
     }
-    require_binding(&ceremony, "protocol-revision", protocol_revision == 7)?;
-    for (field, agrees) in [
-        ("deployment-environment", environment == report.environment),
-        ("deployment-network-id", network_id == report.network_id),
-        ("deployment-genesis-id", genesis_id == report.genesis_id),
-        (
-            "deployment-target-contract",
-            target_contract == report.target_contract,
-        ),
-        ("executor-adapter-name", adapter_name == report.adapter_name),
-        (
-            "executor-adapter-version",
-            adapter_version == report.adapter_version,
-        ),
-        ("node-name", node_name == report.node_name),
-        ("node-version", node_version == report.node_version),
-        (
-            "binary-reported-revision",
-            binary_revision == report.binary_revision,
-        ),
-        ("intended-executed-tip", intended_tip == report.intended_tip),
-        (
-            "framework-revision",
-            framework_revision == report.intended_tip,
-        ),
-    ] {
-        require_binding(&ceremony, field, agrees)?;
-    }
+    Ok(())
+}
+
+fn parse_capture_environment(
+    cursor: &mut LineCursor<'_>,
+    ceremony: &str,
+    network_id: &str,
+    genesis_id: &str,
+) -> Result<(), NativeV2ImportRefusal> {
     cursor.exact("environment-schema 7")?;
     cursor.exact("environment-chain 15 656c656d656e747372656774657374")?;
-    if text_field(&mut cursor, "environment-network-id")? != network_id
-        || text_field(&mut cursor, "environment-genesis-id")? != genesis_id
+    if text_field(cursor, "environment-network-id")? != network_id
+        || text_field(cursor, "environment-genesis-id")? != genesis_id
     {
         return Err(NativeV2ImportRefusal::CrossFileBinding {
-            ceremony,
+            ceremony: ceremony.to_owned(),
             field: "observed-environment",
         });
     }
@@ -1896,6 +1919,117 @@ fn parse_transcript(
     ] {
         cursor.exact(line)?;
     }
+    Ok(())
+}
+
+fn parse_capture_header(
+    cursor: &mut LineCursor<'_>,
+    name: &str,
+    report: &ReportFacts,
+) -> Result<CaptureHeader, NativeV2ImportRefusal> {
+    cursor.exact("native-capture-schema 1")?;
+    let ceremony = cursor.value("ceremony-id")?.to_owned();
+    if !NATIVE_V2_R7_CEREMONY_ROSTER.contains(&ceremony.as_str())
+        || name
+            != format!(
+                "e8836e79b631b96420fb8006353df5b673ec7c69b830fb5f0555fb06add02517.{ceremony}.capture"
+            )
+    {
+        return Err(cursor.refusal());
+    }
+    if text_field(cursor, "rust-test-name")?.is_empty() {
+        return Err(cursor.refusal());
+    }
+    let run_address = cursor.value("run-address")?.to_owned();
+    let semantic_identity = cursor.value("architecture-semantic-identity")?.to_owned();
+    let behavioural_identity = cursor
+        .value("architecture-behavioural-identity")?
+        .to_owned();
+    let digest_algorithm = cursor.value("fixture-digest-algorithm")?.to_owned();
+    require_binding(
+        &ceremony,
+        "run-address",
+        run_address == NATIVE_V2_R7_INPUT_SET_ADDRESS,
+    )?;
+    require_binding(
+        &ceremony,
+        "architecture-semantic-identity",
+        decode_digest(&semantic_identity).is_some(),
+    )?;
+    require_binding(
+        &ceremony,
+        "architecture-behavioural-identity",
+        decode_digest(&behavioural_identity).is_some(),
+    )?;
+    require_binding(
+        &ceremony,
+        "fixture-digest-algorithm",
+        digest_algorithm == "forward-v2",
+    )?;
+    cursor.exact("run-id-input begin")?;
+    let environment = cursor.value("deployment-environment")?.to_owned();
+    let network_id = text_field(cursor, "deployment-network-id")?;
+    let genesis_id = text_field(cursor, "deployment-genesis-id")?;
+    let target_contract = text_field(cursor, "deployment-target-contract")?;
+    let protocol_revision = cursor.number("handshake-protocol-schema")?;
+    let adapter_name = text_field(cursor, "handshake-adapter-name")?;
+    let adapter_version = text_field(cursor, "handshake-adapter-version")?;
+    let framework_revision = text_field(cursor, "handshake-framework-revision")?;
+    let node_name = text_field(cursor, "handshake-node-name")?;
+    let node_version = text_field(cursor, "handshake-node-version")?;
+    let binary_revision = text_field(cursor, "handshake-binary-reported-revision")?;
+    let intended_tip = text_field(cursor, "handshake-intended-executed-tip")?;
+    let _upstream_base = cursor.len_hex("handshake-upstream-base")?;
+    parse_capture_topics(cursor)?;
+    require_binding(&ceremony, "protocol-revision", protocol_revision == 7)?;
+    for (field, agrees) in [
+        ("deployment-environment", environment == report.environment),
+        ("deployment-network-id", network_id == report.network_id),
+        ("deployment-genesis-id", genesis_id == report.genesis_id),
+        (
+            "deployment-target-contract",
+            target_contract == report.target_contract,
+        ),
+        ("executor-adapter-name", adapter_name == report.adapter_name),
+        (
+            "executor-adapter-version",
+            adapter_version == report.adapter_version,
+        ),
+        ("node-name", node_name == report.node_name),
+        ("node-version", node_version == report.node_version),
+        (
+            "binary-reported-revision",
+            binary_revision == report.binary_revision,
+        ),
+        ("intended-executed-tip", intended_tip == report.intended_tip),
+        (
+            "framework-revision",
+            framework_revision == report.intended_tip,
+        ),
+    ] {
+        require_binding(&ceremony, field, agrees)?;
+    }
+    parse_capture_environment(cursor, &ceremony, &network_id, &genesis_id)?;
+    Ok(CaptureHeader {
+        ceremony,
+        digest_algorithm,
+        environment,
+        network_id,
+        genesis_id,
+        target_contract,
+        protocol_revision,
+        adapter_name,
+        adapter_version,
+        node_name,
+        node_version,
+        intended_tip,
+    })
+}
+
+fn parse_capture_digests(
+    cursor: &mut LineCursor<'_>,
+    digest_algorithm: &str,
+) -> Result<Vec<(String, String)>, NativeV2ImportRefusal> {
     let digest_count = cursor.number("digest-count")?;
     let mut digests = Vec::with_capacity(digest_count);
     let mut digest_names = BTreeSet::new();
@@ -1905,20 +2039,25 @@ fn parse_transcript(
         let [offered, digest_name, algorithm, digest] = fields.as_slice() else {
             return Err(cursor.refusal());
         };
-        if parse_usize(offered) != Some(index)
-            || *algorithm != digest_algorithm
-            || !digest_names.insert(*digest_name)
-            || decode_digest(digest).is_none()
-        {
+        if parse_usize(offered) != Some(index) || *algorithm != digest_algorithm {
+            return Err(cursor.refusal());
+        }
+        if !digest_names.insert(*digest_name) {
+            return Err(cursor.refusal());
+        }
+        if decode_digest(digest).is_none() {
             return Err(cursor.refusal());
         }
         digests.push(((*digest_name).to_owned(), (*digest).to_owned()));
     }
-    let operation_count = cursor.number("operation-count")?;
-    let mut operations = Vec::with_capacity(operation_count);
-    for ordinal in 0..operation_count {
-        operations.push(parse_operation(&mut cursor, ordinal, &ceremony)?);
-    }
+    Ok(digests)
+}
+
+fn parse_capture_tail(
+    cursor: &mut LineCursor<'_>,
+    bytes: &[u8],
+    ceremony: &str,
+) -> Result<[u8; 32], NativeV2ImportRefusal> {
     let _legacy = cursor.len_hex("legacy-rendering")?;
     cursor.exact("terminal-state complete")?;
     cursor.exact("run-id-input end")?;
@@ -1930,12 +2069,30 @@ fn parse_transcript(
         decode_digest(cursor.value("capture-content-sha256")?).ok_or_else(|| cursor.refusal())?;
     if tagged::sha256(&bytes[..prefix_length]) != content_sha256 {
         return Err(NativeV2ImportRefusal::CaptureContentHash {
-            ceremony: ceremony.clone(),
+            ceremony: ceremony.to_owned(),
         });
     }
     cursor.exact(&format!("native-capture-end {ceremony}"))?;
     cursor.done()?;
+    Ok(content_sha256)
+}
 
+fn render_run_archive(header: &CaptureHeader, digests: &[(String, String)]) -> Vec<u8> {
+    let CaptureHeader {
+        ceremony,
+        digest_algorithm,
+        environment,
+        network_id,
+        genesis_id,
+        target_contract,
+        protocol_revision,
+        adapter_name,
+        adapter_version,
+        node_name,
+        node_version,
+        intended_tip,
+    } = header;
+    let digest_count = digests.len();
     let mut run_archive = String::new();
     let _ = writeln!(&mut run_archive, "ceremony_id {ceremony}");
     let _ = writeln!(&mut run_archive, "protocol_revision {protocol_revision}");
@@ -1958,13 +2115,30 @@ fn parse_transcript(
             "digest {digest_name} {digest_algorithm} {digest}"
         );
     }
+    run_archive.into_bytes()
+}
+
+fn parse_transcript(
+    name: &str,
+    bytes: &[u8],
+    report: &ReportFacts,
+) -> Result<ParsedTranscript, NativeV2ImportRefusal> {
+    let mut cursor = LineCursor::new(name, bytes)?;
+    let header = parse_capture_header(&mut cursor, name, report)?;
+    let digests = parse_capture_digests(&mut cursor, &header.digest_algorithm)?;
+    let operation_count = cursor.number("operation-count")?;
+    let mut operations = Vec::with_capacity(operation_count);
+    for ordinal in 0..operation_count {
+        operations.push(parse_operation(&mut cursor, ordinal, &header.ceremony)?);
+    }
+    let content_sha256 = parse_capture_tail(&mut cursor, bytes, &header.ceremony)?;
     Ok(ParsedTranscript {
         summary: NativeV2Transcript {
-            ceremony,
+            ceremony: header.ceremony.clone(),
             operation_count,
             content_sha256,
         },
-        run_archive: run_archive.into_bytes(),
+        run_archive: render_run_archive(&header, &digests),
         operations,
     })
 }
@@ -2343,14 +2517,19 @@ fn pair_recomputes(explicit: &ParsedOperation, private: &ParsedOperation) -> boo
     terms.into_iter().all(|term| term) && withheld == 2
 }
 
-fn validate_transcript_semantics(
+struct DecodedTranscript<'a> {
+    roles: [usize; 6],
+    transactions: BTreeMap<&'a str, TargetTransaction>,
+}
+
+fn decode_transcript_operations(
     transcript: &ParsedTranscript,
-) -> Result<[usize; 6], NativeV2ImportRefusal> {
+) -> Result<DecodedTranscript<'_>, NativeV2ImportRefusal> {
     let ceremony = transcript.summary.ceremony();
     let mut operation_ids = BTreeSet::new();
     let mut request_ids = BTreeSet::new();
     let mut response_ids = BTreeSet::new();
-    let mut decoded = BTreeMap::new();
+    let mut transactions = BTreeMap::new();
     let mut roles = [0; 6];
     for operation in &transcript.operations {
         let role_index = match operation.role {
@@ -2406,8 +2585,19 @@ fn validate_transcript_semantics(
                 });
             }
         }
-        decoded.insert(operation.request_id.as_str(), transaction);
+        transactions.insert(operation.request_id.as_str(), transaction);
     }
+    Ok(DecodedTranscript {
+        roles,
+        transactions,
+    })
+}
+
+fn validate_refusal_locators(
+    transcript: &ParsedTranscript,
+    decoded: &DecodedTranscript<'_>,
+) -> Result<(), NativeV2ImportRefusal> {
+    let ceremony = transcript.summary.ceremony();
     for operation in &transcript.operations {
         if operation.role != OperationRole::Refusal {
             continue;
@@ -2434,18 +2624,20 @@ fn validate_transcript_semantics(
                 request: operation.request_id.clone(),
             });
         }
-        let control_transaction = decoded.get(control.request_id.as_str()).ok_or_else(|| {
-            NativeV2ImportRefusal::TransactionDecode {
+        let control_transaction = decoded
+            .transactions
+            .get(control.request_id.as_str())
+            .ok_or_else(|| NativeV2ImportRefusal::TransactionDecode {
                 ceremony: ceremony.to_owned(),
                 request: control.request_id.clone(),
-            }
-        })?;
-        let mutant_transaction = decoded.get(operation.request_id.as_str()).ok_or_else(|| {
-            NativeV2ImportRefusal::TransactionDecode {
+            })?;
+        let mutant_transaction = decoded
+            .transactions
+            .get(operation.request_id.as_str())
+            .ok_or_else(|| NativeV2ImportRefusal::TransactionDecode {
                 ceremony: ceremony.to_owned(),
                 request: operation.request_id.clone(),
-            }
-        })?;
+            })?;
         if !locator_matches(
             control_transaction,
             mutant_transaction,
@@ -2469,7 +2661,15 @@ fn validate_transcript_semantics(
             });
         }
     }
-    Ok(roles)
+    Ok(())
+}
+
+fn validate_transcript_semantics(
+    transcript: &ParsedTranscript,
+) -> Result<[usize; 6], NativeV2ImportRefusal> {
+    let decoded = decode_transcript_operations(transcript)?;
+    validate_refusal_locators(transcript, &decoded)?;
+    Ok(decoded.roles)
 }
 
 fn row_ceremonies(row: &str) -> Option<&'static [&'static str]> {
@@ -2707,7 +2907,7 @@ fn sponsor_predicates(
         .outputs()
         .iter()
         .filter(|output| !output.is_fee())
-        .map(|output| output.program())
+        .map(transaction::TargetOutput::program)
         .collect::<Vec<_>>();
     let change_programs = present
         .outputs()
@@ -2749,31 +2949,31 @@ fn sponsor_predicates(
     ]))
 }
 
-fn build_material(
-    parsed: &[ParsedTranscript],
-    run_ids: &BTreeMap<String, String>,
-) -> Result<
-    (
-        Vec<LiveReportObservation>,
-        Vec<ProvenNativeV2Link>,
-        Vec<NativeV2RowAttribution>,
-    ),
-    NativeV2ImportRefusal,
-> {
-    let transcripts = parsed
-        .iter()
-        .map(|transcript| (transcript.summary.ceremony(), transcript))
-        .collect::<BTreeMap<_, _>>();
-    let mut observations = Vec::new();
-    let mut links = Vec::new();
+type TranscriptIndex<'a> = BTreeMap<&'a str, &'a ParsedTranscript>;
+type MaterialParts = (
+    Vec<LiveReportObservation>,
+    Vec<ProvenNativeV2Link>,
+    Vec<NativeV2RowAttribution>,
+);
 
+#[derive(Default)]
+struct MaterialBuilder {
+    observations: Vec<LiveReportObservation>,
+    links: Vec<ProvenNativeV2Link>,
+}
+
+fn add_parity_material(
+    material: &mut MaterialBuilder,
+    transcripts: &TranscriptIndex<'_>,
+    run_ids: &BTreeMap<String, String>,
+) -> Result<(), NativeV2ImportRefusal> {
     let first = semantic_operation(
-        &transcripts,
+        transcripts,
         "private-restart-control",
         OperationRole::Acceptance,
     )?;
     let second = semantic_operation(
-        &transcripts,
+        transcripts,
         "private-restart-parity",
         OperationRole::Acceptance,
     )?;
@@ -2794,18 +2994,20 @@ fn build_material(
             parity_index,
         ))
     };
-    observations.push(LiveReportObservation::CompositeTwoAcceptance {
-        row: ROW_ROSTER[0],
-        acceptance: LiveCompositeTwoAcceptance::new(
-            composite_member("private-restart-control", first)?,
-            composite_member("private-restart-parity", second)?,
-        ),
-    });
+    material
+        .observations
+        .push(LiveReportObservation::CompositeTwoAcceptance {
+            row: ROW_ROSTER[0],
+            acceptance: LiveCompositeTwoAcceptance::new(
+                composite_member("private-restart-control", first)?,
+                composite_member("private-restart-parity", second)?,
+            ),
+        });
     for (ceremony, operation) in [
         ("private-restart-control", first),
         ("private-restart-parity", second),
     ] {
-        links.push(ProvenNativeV2Link {
+        material.links.push(ProvenNativeV2Link {
             row: ROW_ROSTER[0],
             class: NativeV2LinkClass::Primary,
             ceremony: ceremony.to_owned(),
@@ -2816,7 +3018,14 @@ fn build_material(
             request_id: global_request_id(ceremony, &operation.request_id),
         });
     }
+    Ok(())
+}
 
+fn add_positive_material(
+    material: &mut MaterialBuilder,
+    transcripts: &TranscriptIndex<'_>,
+    run_ids: &BTreeMap<String, String>,
+) -> Result<(), NativeV2ImportRefusal> {
     let positive_rows = [
         (ROW_ROSTER[1], "explicit-maximum-inputs"),
         (ROW_ROSTER[2], "explicit-maximum-outputs"),
@@ -2840,21 +3049,23 @@ fn build_material(
         (ROW_ROSTER[22], "explicit-sponsorless"),
     ];
     for (row, ceremony) in positive_rows {
-        let operation = semantic_operation(&transcripts, ceremony, OperationRole::Acceptance)?;
+        let operation = semantic_operation(transcripts, ceremony, OperationRole::Acceptance)?;
         let run_id = run_ids
             .get(ceremony)
             .cloned()
             .ok_or(NativeV2ImportRefusal::RowAttribution)?;
         let request_id = global_request_id(ceremony, &operation.request_id);
-        observations.push(LiveReportObservation::NativeAcceptance {
-            row,
-            run_id: run_id.clone(),
-            request_id: request_id.clone(),
-            identity: operation
-                .accepted_identity
-                .ok_or(NativeV2ImportRefusal::RowAttribution)?,
-        });
-        links.push(ProvenNativeV2Link {
+        material
+            .observations
+            .push(LiveReportObservation::NativeAcceptance {
+                row,
+                run_id: run_id.clone(),
+                request_id: request_id.clone(),
+                identity: operation
+                    .accepted_identity
+                    .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+            });
+        material.links.push(ProvenNativeV2Link {
             row,
             class: NativeV2LinkClass::Primary,
             ceremony: ceremony.to_owned(),
@@ -2862,14 +3073,21 @@ fn build_material(
             request_id,
         });
     }
+    Ok(())
+}
 
+fn add_sponsor_material(
+    material: &mut MaterialBuilder,
+    transcripts: &TranscriptIndex<'_>,
+    run_ids: &BTreeMap<String, String>,
+) -> Result<(), NativeV2ImportRefusal> {
     let absent = semantic_operation(
-        &transcripts,
+        transcripts,
         "sponsored-change-absent",
         OperationRole::Acceptance,
     )?;
     let present = semantic_operation(
-        &transcripts,
+        transcripts,
         "sponsored-change-present",
         OperationRole::Acceptance,
     )?;
@@ -2878,19 +3096,21 @@ fn build_material(
         .cloned()
         .ok_or(NativeV2ImportRefusal::RowAttribution)?;
     let absent_request_id = global_request_id("sponsored-change-absent", &absent.request_id);
-    observations.push(LiveReportObservation::MultiRowSemantic {
-        witness: LiveMultiRowSemanticWitness::new(
-            absent_run_id.clone(),
-            absent_request_id.clone(),
-            absent
-                .accepted_identity
-                .ok_or(NativeV2ImportRefusal::RowAttribution)?,
-            BTreeSet::from([ROW_ROSTER[19], ROW_ROSTER[21]]),
-            sponsor_predicates(absent, present)?,
-        ),
-    });
+    material
+        .observations
+        .push(LiveReportObservation::MultiRowSemantic {
+            witness: LiveMultiRowSemanticWitness::new(
+                absent_run_id.clone(),
+                absent_request_id.clone(),
+                absent
+                    .accepted_identity
+                    .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+                BTreeSet::from([ROW_ROSTER[19], ROW_ROSTER[21]]),
+                sponsor_predicates(absent, present)?,
+            ),
+        });
     for row in [ROW_ROSTER[19], ROW_ROSTER[21]] {
-        links.push(ProvenNativeV2Link {
+        material.links.push(ProvenNativeV2Link {
             row,
             class: NativeV2LinkClass::Primary,
             ceremony: "sponsored-change-absent".to_owned(),
@@ -2898,9 +3118,16 @@ fn build_material(
             request_id: absent_request_id.clone(),
         });
     }
+    Ok(())
+}
 
+fn add_conservation_material(
+    material: &mut MaterialBuilder,
+    transcripts: &TranscriptIndex<'_>,
+    run_ids: &BTreeMap<String, String>,
+) -> Result<(), NativeV2ImportRefusal> {
     let conservation = semantic_operation(
-        &transcripts,
+        transcripts,
         "conservation-negatives",
         OperationRole::Control,
     )?;
@@ -2910,22 +3137,32 @@ fn build_material(
         .ok_or(NativeV2ImportRefusal::RowAttribution)?;
     let conservation_request_id =
         global_request_id("conservation-negatives", &conservation.request_id);
-    observations.push(LiveReportObservation::NativeAcceptance {
-        row: ROW_ROSTER[23],
-        run_id: conservation_run_id.clone(),
-        request_id: conservation_request_id.clone(),
-        identity: conservation
-            .accepted_identity
-            .ok_or(NativeV2ImportRefusal::RowAttribution)?,
-    });
-    links.push(ProvenNativeV2Link {
+    material
+        .observations
+        .push(LiveReportObservation::NativeAcceptance {
+            row: ROW_ROSTER[23],
+            run_id: conservation_run_id.clone(),
+            request_id: conservation_request_id.clone(),
+            identity: conservation
+                .accepted_identity
+                .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+        });
+    material.links.push(ProvenNativeV2Link {
         row: ROW_ROSTER[23],
         class: NativeV2LinkClass::Primary,
         ceremony: "conservation-negatives".to_owned(),
         run_id: conservation_run_id,
         request_id: conservation_request_id,
     });
+    Ok(())
+}
 
+fn add_refusal_material(
+    material: &mut MaterialBuilder,
+    parsed: &[ParsedTranscript],
+    transcripts: &TranscriptIndex<'_>,
+    run_ids: &BTreeMap<String, String>,
+) -> Result<(), NativeV2ImportRefusal> {
     for transcript in parsed {
         let ceremony = transcript.summary.ceremony();
         for operation in transcript
@@ -2946,7 +3183,7 @@ fn build_material(
                 .control_request_id
                 .as_deref()
                 .ok_or(NativeV2ImportRefusal::RowAttribution)?;
-            let control = semantic_operation(&transcripts, ceremony, OperationRole::Control)?;
+            let control = semantic_operation(transcripts, ceremony, OperationRole::Control)?;
             if control.request_id != control_id {
                 return Err(NativeV2ImportRefusal::RowAttribution);
             }
@@ -2957,17 +3194,19 @@ fn build_material(
                 control.request_bytes.clone(),
                 operation_response(control).map_err(|()| NativeV2ImportRefusal::RowAttribution)?,
             );
-            observations.push(LiveReportObservation::NativeRefusalWithSupport {
-                row,
-                run_id: run_id.clone(),
-                request_id: request_id.clone(),
-                declared_boundary: boundary_for(mutant)
-                    .ok_or(NativeV2ImportRefusal::RowAttribution)?,
-                observed_layer: operation.layer,
-                detail: operation.detail.clone(),
-                support,
-            });
-            links.extend([
+            material
+                .observations
+                .push(LiveReportObservation::NativeRefusalWithSupport {
+                    row,
+                    run_id: run_id.clone(),
+                    request_id: request_id.clone(),
+                    declared_boundary: boundary_for(mutant)
+                        .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+                    observed_layer: operation.layer,
+                    detail: operation.detail.clone(),
+                    support,
+                });
+            material.links.extend([
                 ProvenNativeV2Link {
                     row,
                     class: NativeV2LinkClass::Primary,
@@ -2985,14 +3224,21 @@ fn build_material(
             ]);
         }
     }
+    Ok(())
+}
 
+fn add_pair_material(
+    material: &mut MaterialBuilder,
+    transcripts: &TranscriptIndex<'_>,
+    run_ids: &BTreeMap<String, String>,
+) -> Result<(), NativeV2ImportRefusal> {
     let explicit = semantic_operation(
-        &transcripts,
+        transcripts,
         "pairs-arc",
         OperationRole::Paired(LivePairMember::Explicit),
     )?;
     let private = semantic_operation(
-        &transcripts,
+        transcripts,
         "pairs-arc",
         OperationRole::Paired(LivePairMember::Private),
     )?;
@@ -3005,22 +3251,24 @@ fn build_material(
         .ok_or(NativeV2ImportRefusal::RowAttribution)?;
     let explicit_request_id = global_request_id("pairs-arc", &explicit.request_id);
     let private_request_id = global_request_id("pairs-arc", &private.request_id);
-    observations.push(LiveReportObservation::PairedRelation {
-        row: ROW_ROSTER[41],
-        explicit_run_id: pair_run_id.clone(),
-        explicit_request_id: explicit_request_id.clone(),
-        explicit_identity: explicit
-            .accepted_identity
-            .ok_or(NativeV2ImportRefusal::RowAttribution)?,
-        private_run_id: pair_run_id.clone(),
-        private_request_id: private_request_id.clone(),
-        private_identity: private
-            .accepted_identity
-            .ok_or(NativeV2ImportRefusal::RowAttribution)?,
-        relation: VALIDATED_PAIR_RELATION.to_owned(),
-    });
+    material
+        .observations
+        .push(LiveReportObservation::PairedRelation {
+            row: ROW_ROSTER[41],
+            explicit_run_id: pair_run_id.clone(),
+            explicit_request_id: explicit_request_id.clone(),
+            explicit_identity: explicit
+                .accepted_identity
+                .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+            private_run_id: pair_run_id.clone(),
+            private_request_id: private_request_id.clone(),
+            private_identity: private
+                .accepted_identity
+                .ok_or(NativeV2ImportRefusal::RowAttribution)?,
+            relation: VALIDATED_PAIR_RELATION.to_owned(),
+        });
     for request_id in [explicit_request_id, private_request_id] {
-        links.push(ProvenNativeV2Link {
+        material.links.push(ProvenNativeV2Link {
             row: ROW_ROSTER[41],
             class: NativeV2LinkClass::Primary,
             ceremony: "pairs-arc".to_owned(),
@@ -3028,8 +3276,11 @@ fn build_material(
             request_id,
         });
     }
+    Ok(())
+}
 
-    links.sort_by(|left, right| {
+fn finish_material(mut material: MaterialBuilder) -> Result<MaterialParts, NativeV2ImportRefusal> {
+    material.links.sort_by(|left, right| {
         ROW_ROSTER
             .iter()
             .position(|row| *row == left.row)
@@ -3042,7 +3293,7 @@ fn build_material(
         .iter()
         .map(|row| {
             Ok(NativeV2RowAttribution {
-                row: *row,
+                row,
                 ceremonies: row_ceremonies(row)
                     .ok_or(NativeV2ImportRefusal::RowAttribution)?
                     .iter()
@@ -3051,10 +3302,28 @@ fn build_material(
             })
         })
         .collect::<Result<Vec<_>, NativeV2ImportRefusal>>()?;
-    if observations.len() != 41 || attributions.len() != ROW_ROSTER.len() {
+    if material.observations.len() != 41 || attributions.len() != ROW_ROSTER.len() {
         return Err(NativeV2ImportRefusal::RowAttribution);
     }
-    Ok((observations, links, attributions))
+    Ok((material.observations, material.links, attributions))
+}
+
+fn build_material(
+    parsed: &[ParsedTranscript],
+    run_ids: &BTreeMap<String, String>,
+) -> Result<MaterialParts, NativeV2ImportRefusal> {
+    let transcripts = parsed
+        .iter()
+        .map(|transcript| (transcript.summary.ceremony(), transcript))
+        .collect::<TranscriptIndex<'_>>();
+    let mut material = MaterialBuilder::default();
+    add_parity_material(&mut material, &transcripts, run_ids)?;
+    add_positive_material(&mut material, &transcripts, run_ids)?;
+    add_sponsor_material(&mut material, &transcripts, run_ids)?;
+    add_conservation_material(&mut material, &transcripts, run_ids)?;
+    add_refusal_material(&mut material, parsed, &transcripts, run_ids)?;
+    add_pair_material(&mut material, &transcripts, run_ids)?;
+    finish_material(material)
 }
 
 fn validate_inputs(
