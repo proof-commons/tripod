@@ -196,7 +196,7 @@ mod tests {
         let corpus = crate::live_corpus_native_v2_r7::run_of_record()
             .expect("the reviewed corpus validates");
         let current = corpus
-            .mint_ceremony("conservation-negatives")
+            .ceremony_projection("conservation-negatives")
             .expect("the conservation ceremony is present");
         assert_ne!(
             recorded_digest(super::conservation_negatives::PREDECESSOR_DIGEST),

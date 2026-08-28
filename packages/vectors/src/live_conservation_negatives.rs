@@ -967,7 +967,7 @@ pub fn assert_conservation_matches_current_corpus(record: &ConservationNegativeR
     let corpus = crate::live_corpus_native_v2_r7::run_of_record()
         .expect("the reviewed native-v2/revision-7 corpus validates");
     let current = corpus
-        .mint_ceremony("conservation-negatives")
+        .ceremony_projection("conservation-negatives")
         .expect("the current corpus carries conservation-negatives");
     assert_eq!(
         render_conservation_negatives(record).as_bytes(),
@@ -1006,7 +1006,7 @@ fn assert_current_fixture(record: &ConservationNegativeRecord) {
     let corpus = crate::live_corpus_native_v2_r7::run_of_record()
         .expect("the reviewed native-v2/revision-7 corpus validates");
     let current = corpus
-        .mint_ceremony("conservation-negatives")
+        .ceremony_projection("conservation-negatives")
         .expect("the current corpus carries conservation-negatives");
     assert_eq!(
         record.predecessor_digest.as_ref(),
@@ -1122,7 +1122,7 @@ mod tests {
         let corpus = crate::live_corpus_native_v2_r7::run_of_record()
             .expect("the reviewed corpus validates");
         let current = corpus
-            .mint_ceremony("conservation-negatives")
+            .ceremony_projection("conservation-negatives")
             .expect("the conservation ceremony is present");
         record.predecessor_digest = current.fixture_digest("predecessor").copied();
         record.successor_digest = current.fixture_digest("successor").copied();

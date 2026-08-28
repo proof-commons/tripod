@@ -843,6 +843,45 @@ pub struct NativeV2OutcomeProjection {
     detail: String,
 }
 
+/// Read-only current facts shared by every validated ceremony.
+///
+/// Unlike [`NativeV2MintCeremony`], this view grants no record-minting
+/// authority. It exposes only manifest-bound data already admitted as part of
+/// the indivisible corpus.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeV2CeremonyProjection {
+    ceremony: String,
+    fixture_digests: BTreeMap<String, [u8; 32]>,
+    issued_asset_display: Option<String>,
+    semantic_rendering: Vec<u8>,
+}
+
+impl NativeV2CeremonyProjection {
+    /// The fixed-roster ceremony identity.
+    #[must_use]
+    pub fn ceremony(&self) -> &str {
+        &self.ceremony
+    }
+
+    /// One named forward-v2 fixture digest.
+    #[must_use]
+    pub fn fixture_digest(&self, name: &str) -> Option<&[u8; 32]> {
+        self.fixture_digests.get(name)
+    }
+
+    /// The canonical issued-asset spelling carried by the semantic transcript.
+    #[must_use]
+    pub fn issued_asset_display(&self) -> Option<&str> {
+        self.issued_asset_display.as_deref()
+    }
+
+    /// The exact semantic transcript bytes bound into the corpus.
+    #[must_use]
+    pub fn semantic_rendering(&self) -> &[u8] {
+        &self.semantic_rendering
+    }
+}
+
 impl NativeV2OutcomeProjection {
     /// The ceremony that submitted this request.
     #[must_use]
@@ -995,6 +1034,7 @@ pub struct ValidatedNativeV2R7Corpus {
     links: Vec<ProvenNativeV2Link>,
     attributions: Vec<NativeV2RowAttribution>,
     mint_ceremonies: Vec<NativeV2MintCeremony>,
+    ceremony_projections: BTreeMap<String, NativeV2CeremonyProjection>,
     acceptance_projections: BTreeMap<String, Vec<NativeV2AcceptanceProjection>>,
     outcome_projections: BTreeMap<String, Vec<NativeV2OutcomeProjection>>,
     outcome_count: usize,
@@ -1038,6 +1078,12 @@ impl ValidatedNativeV2R7Corpus {
         self.mint_ceremonies
             .iter()
             .find(|projection| projection.ceremony == ceremony)
+    }
+
+    /// Read-only current facts for one ceremony in the fixed corpus roster.
+    #[must_use]
+    pub fn ceremony_projection(&self, ceremony: &str) -> Option<&NativeV2CeremonyProjection> {
+        self.ceremony_projections.get(ceremony)
     }
 
     /// Accepted requests from one validated current ceremony, in operation order.
@@ -4153,6 +4199,62 @@ fn build_outcome_projections(
         .collect()
 }
 
+fn build_ceremony_projections(
+    parsed: &[ParsedTranscript],
+) -> Result<BTreeMap<String, NativeV2CeremonyProjection>, NativeV2ImportRefusal> {
+    parsed
+        .iter()
+        .map(|transcript| {
+            let ceremony = transcript.summary.ceremony();
+            let fixture_digests = transcript
+                .digests
+                .iter()
+                .map(|(name, digest)| {
+                    decode_digest(digest)
+                        .map(|decoded| (name.clone(), decoded))
+                        .ok_or_else(|| {
+                            row_attribution_refusal(
+                                "current-ceremony-projection",
+                                ceremony,
+                                "digest-grammar",
+                            )
+                        })
+                })
+                .collect::<Result<BTreeMap<_, _>, _>>()?;
+            let issued_asset_display =
+                unique_semantic_value(&transcript.legacy_rendering, "issued_asset")
+                    .map_err(|()| {
+                        row_attribution_refusal(
+                            "current-ceremony-projection",
+                            ceremony,
+                            "issued-asset-census",
+                        )
+                    })?
+                    .filter(|value| !matches!(*value, "none" | "absent"))
+                    .map(str::to_owned);
+            if issued_asset_display
+                .as_deref()
+                .is_some_and(|value| decode_digest(value).is_none())
+            {
+                return Err(row_attribution_refusal(
+                    "current-ceremony-projection",
+                    ceremony,
+                    "issued-asset-grammar",
+                ));
+            }
+            Ok((
+                ceremony.to_owned(),
+                NativeV2CeremonyProjection {
+                    ceremony: ceremony.to_owned(),
+                    fixture_digests,
+                    issued_asset_display,
+                    semantic_rendering: transcript.legacy_rendering.clone(),
+                },
+            ))
+        })
+        .collect()
+}
+
 fn build_acceptance_projections(
     parsed: &[ParsedTranscript],
 ) -> Result<BTreeMap<String, Vec<NativeV2AcceptanceProjection>>, NativeV2ImportRefusal> {
@@ -4373,6 +4475,7 @@ fn validate_inputs(
     let (observations, links, attributions) = build_material(&parsed, &run_ids)?;
     let content_address = hex_bytes(&report_hash);
     let mint_ceremonies = build_mint_ceremonies(&parsed, &content_address)?;
+    let ceremony_projections = build_ceremony_projections(&parsed)?;
     let acceptance_projections = build_acceptance_projections(&parsed)?;
     let outcome_projections = build_outcome_projections(&parsed);
     Ok(ValidatedNativeV2R7Corpus {
@@ -4385,6 +4488,7 @@ fn validate_inputs(
         links,
         attributions,
         mint_ceremonies,
+        ceremony_projections,
         acceptance_projections,
         outcome_projections,
         outcome_count: 40,
@@ -4572,6 +4676,11 @@ mod tests {
     fn current_acceptance_projections_equal_the_bound_corpus_values() {
         let corpus = run_of_record().expect("the reviewed archive admits");
         for ceremony in NATIVE_V2_R7_CEREMONY_ROSTER {
+            let ceremony_projection = corpus
+                .ceremony_projection(ceremony)
+                .expect("every roster ceremony has a read-only current projection");
+            assert_eq!(ceremony_projection.ceremony(), ceremony);
+            assert!(!ceremony_projection.semantic_rendering().is_empty());
             let acceptances = corpus
                 .acceptance_projections(ceremony)
                 .expect("every roster ceremony has an acceptance projection bucket");
