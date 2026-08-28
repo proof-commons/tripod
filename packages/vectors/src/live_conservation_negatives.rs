@@ -867,7 +867,7 @@ pub fn render_conservation_negatives(record: &ConservationNegativeRecord) -> Str
 ///
 /// Under Q19, the fresh ceremony's fixture digests are compared only with the
 /// corpus's `forward-v2` digest records. Historical-v1 divergence belongs to
-/// [`crate::live_history_v1`] and is not an active execution oracle.
+/// git history and is not an active execution oracle.
 ///
 /// # Panics
 ///
@@ -934,10 +934,9 @@ fn assert_current_fixture(record: &ConservationNegativeRecord) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConservationNegativeRecord, ControlReverification, MutantObservation, ProofNegativeCase,
-        ProofNegativeMutation, assert_current_fixture, render_conservation_negatives,
+        ConservationNegativeRecord, MutantObservation, ProofNegativeCase, ProofNegativeMutation,
+        assert_current_fixture, render_conservation_negatives,
     };
-    use crate::live_history_v1::conservation_negatives as history;
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
     use transaction::bytes::{
         AssetField, AssetId, InputWitness, NonceField, Outpoint, OutputWitness, TargetInput,
@@ -972,64 +971,9 @@ mod tests {
         .expect("the renderer fixture is structurally complete")
     }
 
-    fn recorded_digest(text: &str) -> [u8; 32] {
-        let mut bytes = [0_u8; 32];
-        let (pairs, _) = text.as_bytes().as_chunks::<2>();
-        for (slot, pair) in bytes.iter_mut().zip(pairs) {
-            let digits = std::str::from_utf8(pair).expect("the recorded digest is ASCII hex");
-            *slot = u8::from_str_radix(digits, 16).expect("the recorded digest is hexadecimal");
-        }
-        bytes
-    }
-
-    fn answered_mutant(case: ProofNegativeCase) -> MutantObservation {
-        let mutant = match case {
-            ProofNegativeCase::WrongBlinder | ProofNegativeCase::PrivateCtImbalance => {
-                renderer_transaction([0x09; 33])
-            }
-            ProofNegativeCase::MissingRangeproof => {
-                renderer_transaction_with_proof([0x08; 33], vec![0xff_u8, 2, 3])
-            }
-            ProofNegativeCase::MalformedRangeproof => {
-                renderer_transaction_with_proof([0x08; 33], vec![1_u8, 0xff, 3])
-            }
-        };
-        MutantObservation {
-            submitted_bytes: mutant.encode().len(),
-            mutation: ProofNegativeMutation::at_output(case, 0, mutant),
-            observed_layer: Some(history::MUTANT_OBSERVED_LAYER),
-            observed_detail: Some(history::MUTANT_REJECT_DETAIL.to_owned()),
-        }
-    }
-
-    fn synthetic_record() -> ConservationNegativeRecord {
-        let control = renderer_transaction([0x08; 33]);
-        ConservationNegativeRecord {
-            issued_asset: Some(history::ISSUED_ASSET.to_owned()),
-            predecessor_digest: Some(recorded_digest(history::PREDECESSOR_DIGEST)),
-            successor_digest: Some(recorded_digest(history::SUCCESSOR_DIGEST)),
-            consumed_commitment_prefix: Some(history::CONSUMED_COMMITMENT_PREFIX),
-            control_bytes: Some(control.encode()),
-            control_submitted_bytes: history::CONTROL_SUBMITTED_BYTES,
-            control_observed_layer: Some(ObservedOutcomeLayer::Accepted),
-            control_accepted_txid: Some(history::CONTROL_ACCEPTED_TXID.to_owned()),
-            reverification: Some(ControlReverification {
-                readback_matches_submission: true,
-                verified: true,
-            }),
-            mutants: vec![
-                answered_mutant(ProofNegativeCase::WrongBlinder),
-                answered_mutant(ProofNegativeCase::MissingRangeproof),
-                answered_mutant(ProofNegativeCase::PrivateCtImbalance),
-                answered_mutant(ProofNegativeCase::MalformedRangeproof),
-            ],
-            refusal: None,
-        }
-    }
-
     #[test]
     fn current_forward_v2_fixture_digests_pass_the_corpus_binding() {
-        let mut record = synthetic_record();
+        let mut record = ConservationNegativeRecord::default();
         let corpus = crate::live_corpus_native_v2_r7::run_of_record()
             .expect("the reviewed corpus validates");
         let current = corpus
@@ -1039,53 +983,6 @@ mod tests {
         record.successor_digest = current.fixture_digest("successor").copied();
 
         assert_current_fixture(&record);
-    }
-
-    #[test]
-    fn historical_v1_names_one_control_and_four_field_ranges() {
-        // The figures are the run's, and this checks their SHAPE rather
-        // than re-deriving them: a 64-hex control identity, two
-        // value-commitment fields exactly 33 bytes wide at DIFFERENT
-        // offsets, and a range-proof field wide enough to hold a real
-        // proof.
-        assert_eq!(history::CONTROL_ACCEPTED_TXID.len(), 64);
-        assert_eq!(history::PREDECESSOR_DIGEST.len(), 64);
-        assert_ne!(history::PREDECESSOR_DIGEST, history::SUCCESSOR_DIGEST);
-        assert_eq!(history::CONSUMED_COMMITMENT_PREFIX, 0x08);
-        assert_eq!(history::WRONG_BLINDER_FIELD_RANGE, (81, 114));
-        assert_eq!(history::PRIVATE_CT_IMBALANCE_FIELD_RANGE, (215, 248));
-        assert_eq!(history::RANGEPROOF_FIELD_RANGE, (781, 4_958));
-
-        let (wb_start, wb_end) = history::WRONG_BLINDER_FIELD_RANGE;
-        assert_eq!(
-            wb_end - wb_start,
-            33,
-            "the value-commitment field is 33 bytes"
-        );
-
-        // The imbalance mutant's field is also 33 bytes and sits at a
-        // DIFFERENT offset: the two do not overlap, which is what separates
-        // the two rows that share the target's words.
-        let (im_start, im_end) = history::PRIVATE_CT_IMBALANCE_FIELD_RANGE;
-        assert_eq!(
-            im_end - im_start,
-            33,
-            "the second value-commitment field is 33 bytes"
-        );
-        assert!(
-            im_start >= wb_end,
-            "the two value-commitment fields do not overlap"
-        );
-
-        let (rp_start, rp_end) = history::RANGEPROOF_FIELD_RANGE;
-        assert!(
-            rp_end - rp_start > 1000,
-            "the range-proof field holds a real proof"
-        );
-        assert!(
-            rp_start > im_end,
-            "the range proof follows both value commitments"
-        );
     }
 
     #[test]

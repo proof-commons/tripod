@@ -41,10 +41,9 @@
 //! copy verified against a message this workspace recomputed. Those
 //! three are separate observations and the record keeps them separate.
 //!
-//! The recorded identities live in [`crate::live_history_v1::explicit_shapes`], and
-//! [`crate::live_evidence`] cites them from there, so a reader
-//! following a row's answer arrives at a value one execution against a
-//! real node produced rather than at a claim in a source file.
+//! The current identities come from the validated native-v2/revision-7
+//! corpus, so a reader following a row's answer arrives at the bytes and
+//! target response that produced it rather than a copied source literal.
 //!
 //! # What an explicit acceptance does not establish
 //!
@@ -1960,7 +1959,6 @@ mod tests {
     use transaction::live_construct::ExplicitDestinationRole::Fee;
 
     use super::{ExplicitShape, LiveShapeVocabulary};
-    use crate::live_history_v1::explicit_shapes as history;
 
     #[test]
     fn every_shape_names_a_distinct_row_of_the_explicit_table() {
@@ -1989,7 +1987,7 @@ mod tests {
     }
 
     #[test]
-    fn every_recorded_identity_is_a_target_identity() {
+    fn every_current_identity_is_a_target_identity() {
         for shape in ExplicitShape::ALL {
             let Some(identity) = shape.observed_identity() else {
                 continue;
@@ -2001,7 +1999,6 @@ mod tests {
             );
             assert!(identity.chars().all(|digit| digit.is_ascii_hexdigit()));
         }
-        assert_eq!(history::ISSUED_ASSET.len(), 64);
     }
 
     #[test]
@@ -2049,25 +2046,6 @@ mod tests {
                     "several-inputs-merged-into-one"
                 ]),
             ]),
-        );
-    }
-
-    #[test]
-    fn the_self_paying_run_conserves_what_it_consumed() {
-        // The fee is a TERM of this equality rather than a residue: the
-        // consumed receipt funds the destination AND the fee, which is
-        // exactly the relation the explicit conservation leaf checks in
-        // the covenant that ran. Recomputed here from the recorded
-        // figures so a register edited on one side fails.
-        assert_eq!(
-            history::SELF_PAID_FEE_DESTINATION + history::SELF_PAID_FEE_AMOUNT,
-            history::SELF_PAID_FEE_CONSUMED,
-        );
-        assert_eq!(
-            history::SELF_PAID_FEE_AMOUNT,
-            ExplicitShape::SelfPaidFee
-                .self_paid_fee()
-                .expect("the self-paying shape states a fee"),
         );
     }
 
