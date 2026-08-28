@@ -1693,6 +1693,13 @@ pub fn render_private_restart(record: &PrivateRestartRecord) -> String {
 /// the lane binds itself to, on a disposable development chain the run
 /// created and destroyed.
 pub mod run_of_record {
+    use std::sync::OnceLock;
+
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
+    use crate::live_corpus_native_v2_r7::{
+        NativeV2MintCeremony, run_of_record as validated_corpus,
+    };
     use crate::recorded_acceptance::RecordedAcceptance;
     use transaction::{TransactionIdentityParseError, Txid};
 
@@ -1952,44 +1959,44 @@ pub mod run_of_record {
     }
 
     /// The forward fixture-digest V2 pins for both parity members.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct ForwardPrivateRestartFixtureDigestsV2 {
-        predecessor: &'static str,
-        primary_successor: &'static str,
-        balancing_successor: &'static str,
+        predecessor: String,
+        primary_successor: String,
+        balancing_successor: String,
     }
 
     impl ForwardPrivateRestartFixtureDigestsV2 {
         /// The predecessor shared by both forward runs.
         #[must_use]
-        pub const fn predecessor(self) -> &'static str {
-            self.predecessor
+        pub fn predecessor(&self) -> &str {
+            &self.predecessor
         }
 
         /// The successor selected by the consumed predecessor receipt.
         #[must_use]
-        pub const fn successor(self, consumed: super::ConsumedReceipt) -> &'static str {
+        pub fn successor(&self, consumed: super::ConsumedReceipt) -> &str {
             match consumed {
-                super::ConsumedReceipt::Primary => self.primary_successor,
-                super::ConsumedReceipt::Balancing => self.balancing_successor,
+                super::ConsumedReceipt::Primary => &self.primary_successor,
+                super::ConsumedReceipt::Balancing => &self.balancing_successor,
             }
         }
 
         /// The primary-receipt successor's forward V2 digest.
         #[must_use]
-        pub const fn primary_successor(self) -> &'static str {
-            self.primary_successor
+        pub fn primary_successor(&self) -> &str {
+            &self.primary_successor
         }
 
         /// The balancing-receipt successor's forward V2 digest.
         #[must_use]
-        pub const fn balancing_successor(self) -> &'static str {
-            self.balancing_successor
+        pub fn balancing_successor(&self) -> &str {
+            &self.balancing_successor
         }
     }
 
     /// The complete forward V2 expectation.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct ForwardPrivateRestartV2 {
         fixtures: ForwardPrivateRestartFixtureDigestsV2,
         acceptance: ForwardPrivateRestartAcceptance,
@@ -1998,19 +2005,19 @@ pub mod run_of_record {
     impl ForwardPrivateRestartV2 {
         /// The V2 digest pins selected by a fresh native run.
         #[must_use]
-        pub const fn fixtures(self) -> ForwardPrivateRestartFixtureDigestsV2 {
-            self.fixtures
+        pub const fn fixtures(&self) -> &ForwardPrivateRestartFixtureDigestsV2 {
+            &self.fixtures
         }
 
         /// The fail-closed acceptance state for the forward ceremony.
         #[must_use]
-        pub const fn acceptance(self) -> ForwardPrivateRestartAcceptance {
+        pub const fn acceptance(&self) -> ForwardPrivateRestartAcceptance {
             self.acceptance
         }
     }
 
     /// The expectation a fresh private-restart native gate must select.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     pub enum ForwardPrivateRestartExpectation {
         /// Fixture-digest V2 pins and their independently pending acceptance pair.
         V2(ForwardPrivateRestartV2),
@@ -2143,17 +2150,262 @@ pub mod run_of_record {
         ))
     }
 
-    /// Select the forward V2 pins without claiming a target acceptance.
-    #[must_use]
-    pub const fn forward_private_restart_expectation() -> ForwardPrivateRestartExpectation {
+    #[derive(Clone, Debug)]
+    struct ForwardPrivateRestartMintMember {
+        corpus_content_address: String,
+        ceremony: String,
+        predecessor_digest: [u8; 32],
+        successor_digest: [u8; 32],
+        identity: Txid,
+        commitment_prefix: u8,
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct ForwardPrivateRestartMintInput {
+        primary: Option<ForwardPrivateRestartMintMember>,
+        balancing: Option<ForwardPrivateRestartMintMember>,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ForwardPrivateRestartMintRefusal {
+        MissingCeremony,
+        WrongCeremony,
+        MixedCorpus,
+        MissingDigest,
+        DigestMismatch,
+        MissingAcceptance,
+        WrongCommitmentPrefix,
+    }
+
+    fn mint_member(
+        capture: &NativeV2MintCeremony,
+        expected_ceremony: &str,
+        expected_prefix: u8,
+    ) -> Result<ForwardPrivateRestartMintMember, ForwardPrivateRestartMintRefusal> {
+        if capture.ceremony() != expected_ceremony {
+            return Err(ForwardPrivateRestartMintRefusal::WrongCeremony);
+        }
+        let predecessor_digest = capture
+            .fixture_digest("predecessor")
+            .copied()
+            .ok_or(ForwardPrivateRestartMintRefusal::MissingDigest)?;
+        let successor_digest = capture
+            .fixture_digest("successor")
+            .copied()
+            .ok_or(ForwardPrivateRestartMintRefusal::MissingDigest)?;
+        let [outcome] = capture.outcomes() else {
+            return Err(ForwardPrivateRestartMintRefusal::MissingAcceptance);
+        };
+        let identity = outcome
+            .target_identity()
+            .filter(|_| {
+                outcome.layer() == ObservedOutcomeLayer::Accepted && outcome.detail().is_empty()
+            })
+            .ok_or(ForwardPrivateRestartMintRefusal::MissingAcceptance)?;
+        let commitment_prefix = capture
+            .consumed_commitment_prefix()
+            .filter(|prefix| *prefix == expected_prefix)
+            .ok_or(ForwardPrivateRestartMintRefusal::WrongCommitmentPrefix)?;
+        Ok(ForwardPrivateRestartMintMember {
+            corpus_content_address: capture.corpus_content_address().to_owned(),
+            ceremony: capture.ceremony().to_owned(),
+            predecessor_digest,
+            successor_digest,
+            identity,
+            commitment_prefix,
+        })
+    }
+
+    fn mint_input_from_validated_corpus() -> ForwardPrivateRestartMintInput {
+        let Ok(corpus) = validated_corpus() else {
+            return ForwardPrivateRestartMintInput::default();
+        };
+        ForwardPrivateRestartMintInput {
+            primary: corpus
+                .mint_ceremony("private-restart-control")
+                .and_then(|capture| mint_member(capture, "private-restart-control", 0x08).ok()),
+            balancing: corpus
+                .mint_ceremony("private-restart-parity")
+                .and_then(|capture| mint_member(capture, "private-restart-parity", 0x09).ok()),
+        }
+    }
+
+    fn pending_forward_expectation() -> ForwardPrivateRestartExpectation {
         ForwardPrivateRestartExpectation::V2(ForwardPrivateRestartV2 {
             fixtures: ForwardPrivateRestartFixtureDigestsV2 {
-                predecessor: forward_fixture_digest_v2::PREDECESSOR_DIGEST,
-                primary_successor: forward_fixture_digest_v2::SUCCESSOR_DIGEST,
-                balancing_successor: forward_fixture_digest_v2::PARITY_SUCCESSOR_DIGEST,
+                predecessor: forward_fixture_digest_v2::PREDECESSOR_DIGEST.to_owned(),
+                primary_successor: forward_fixture_digest_v2::SUCCESSOR_DIGEST.to_owned(),
+                balancing_successor: forward_fixture_digest_v2::PARITY_SUCCESSOR_DIGEST.to_owned(),
             },
             acceptance: ForwardPrivateRestartAcceptance::Pending,
         })
+    }
+
+    fn project_forward_expectation(
+        input: &ForwardPrivateRestartMintInput,
+    ) -> Result<ForwardPrivateRestartExpectation, ForwardPrivateRestartMintRefusal> {
+        let primary = input
+            .primary
+            .as_ref()
+            .ok_or(ForwardPrivateRestartMintRefusal::MissingCeremony)?;
+        let balancing = input
+            .balancing
+            .as_ref()
+            .ok_or(ForwardPrivateRestartMintRefusal::MissingCeremony)?;
+        if primary.corpus_content_address != balancing.corpus_content_address {
+            return Err(ForwardPrivateRestartMintRefusal::MixedCorpus);
+        }
+        if primary.ceremony != "private-restart-control"
+            || balancing.ceremony != "private-restart-parity"
+        {
+            return Err(ForwardPrivateRestartMintRefusal::WrongCeremony);
+        }
+        if primary.predecessor_digest != balancing.predecessor_digest
+            || primary.successor_digest == balancing.successor_digest
+        {
+            return Err(ForwardPrivateRestartMintRefusal::DigestMismatch);
+        }
+        if primary.identity == balancing.identity {
+            return Err(ForwardPrivateRestartMintRefusal::MissingAcceptance);
+        }
+        if primary.commitment_prefix != 0x08 || balancing.commitment_prefix != 0x09 {
+            return Err(ForwardPrivateRestartMintRefusal::WrongCommitmentPrefix);
+        }
+        Ok(ForwardPrivateRestartExpectation::V2(
+            ForwardPrivateRestartV2 {
+                fixtures: ForwardPrivateRestartFixtureDigestsV2 {
+                    predecessor: super::hex(primary.predecessor_digest),
+                    primary_successor: super::hex(primary.successor_digest),
+                    balancing_successor: super::hex(balancing.successor_digest),
+                },
+                acceptance: ForwardPrivateRestartAcceptance::Recorded(
+                    ForwardPrivateRestartTwoAcceptanceLink {
+                        primary: ForwardPrivateRestartAcceptedMember {
+                            identity: primary.identity,
+                            commitment_prefix: primary.commitment_prefix,
+                        },
+                        balancing: ForwardPrivateRestartAcceptedMember {
+                            identity: balancing.identity,
+                            commitment_prefix: balancing.commitment_prefix,
+                        },
+                    },
+                ),
+            },
+        ))
+    }
+
+    fn mint_forward_expectation(
+        input: &ForwardPrivateRestartMintInput,
+    ) -> ForwardPrivateRestartExpectation {
+        project_forward_expectation(input).unwrap_or_else(|_| pending_forward_expectation())
+    }
+
+    /// Mint the forward V2 acceptance pair from the validated corpus.
+    ///
+    /// The complete pair is cached only after both restart ceremonies agree
+    /// on corpus identity, predecessor digest, distinct successor digests,
+    /// accepted target identities, and the decoded `0x08`/`0x09` prefixes.
+    /// Any refusal returns the unchanged Pending expectation.
+    #[must_use]
+    pub fn forward_private_restart_expectation() -> ForwardPrivateRestartExpectation {
+        static EXPECTATION: OnceLock<ForwardPrivateRestartExpectation> = OnceLock::new();
+        EXPECTATION
+            .get_or_init(|| mint_forward_expectation(&mint_input_from_validated_corpus()))
+            .clone()
+    }
+
+    #[cfg(test)]
+    mod mint_tests {
+        use super::*;
+
+        fn acceptance(input: &ForwardPrivateRestartMintInput) -> ForwardPrivateRestartAcceptance {
+            let ForwardPrivateRestartExpectation::V2(forward) = mint_forward_expectation(input);
+            forward.acceptance()
+        }
+
+        #[test]
+        fn corpus_fields_map_directly_into_the_recorded_pair() {
+            let input = mint_input_from_validated_corpus();
+            let primary = input.primary.as_ref().expect("the corpus carries control");
+            let balancing = input.balancing.as_ref().expect("the corpus carries parity");
+            let ForwardPrivateRestartExpectation::V2(forward) =
+                project_forward_expectation(&input).expect("the complete corpus mints");
+            let link = forward
+                .acceptance()
+                .recorded_link()
+                .expect("both members are recorded");
+            let predecessor_digest = super::super::hex(primary.predecessor_digest);
+            let primary_successor = super::super::hex(primary.successor_digest);
+            let balancing_successor = super::super::hex(balancing.successor_digest);
+
+            assert_eq!(
+                forward.fixtures().predecessor(),
+                predecessor_digest.as_str(),
+            );
+            assert_eq!(
+                forward.fixtures().primary_successor(),
+                primary_successor.as_str(),
+            );
+            assert_eq!(
+                forward.fixtures().balancing_successor(),
+                balancing_successor.as_str(),
+            );
+            assert_eq!(link.primary().identity(), primary.identity);
+            assert_eq!(
+                link.primary().commitment_prefix(),
+                primary.commitment_prefix
+            );
+            assert_eq!(link.balancing().identity(), balancing.identity);
+            assert_eq!(
+                link.balancing().commitment_prefix(),
+                balancing.commitment_prefix,
+            );
+        }
+
+        #[test]
+        fn one_restart_member_leaves_the_pair_pending() {
+            let mut input = mint_input_from_validated_corpus();
+            input.balancing = None;
+
+            assert_eq!(
+                project_forward_expectation(&input),
+                Err(ForwardPrivateRestartMintRefusal::MissingCeremony),
+            );
+            assert_eq!(acceptance(&input), ForwardPrivateRestartAcceptance::Pending);
+        }
+
+        #[test]
+        fn mixed_corpus_members_leave_the_pair_pending() {
+            let mut input = mint_input_from_validated_corpus();
+            input
+                .balancing
+                .as_mut()
+                .expect("the corpus carries parity")
+                .corpus_content_address
+                .push('0');
+
+            assert_eq!(
+                project_forward_expectation(&input),
+                Err(ForwardPrivateRestartMintRefusal::MixedCorpus),
+            );
+            assert_eq!(acceptance(&input), ForwardPrivateRestartAcceptance::Pending);
+        }
+
+        #[test]
+        fn a_tampered_shared_digest_leaves_the_pair_pending() {
+            let mut input = mint_input_from_validated_corpus();
+            input
+                .balancing
+                .as_mut()
+                .expect("the corpus carries parity")
+                .predecessor_digest[0] ^= 1;
+
+            assert_eq!(
+                project_forward_expectation(&input),
+                Err(ForwardPrivateRestartMintRefusal::DigestMismatch),
+            );
+            assert_eq!(acceptance(&input), ForwardPrivateRestartAcceptance::Pending);
+        }
     }
 }
 
