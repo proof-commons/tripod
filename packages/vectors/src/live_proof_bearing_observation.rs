@@ -73,6 +73,7 @@
 //! destroyed by the run.
 
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 use target_elements::{LeafVersion, ObservationIdentity};
 use target_elements_conformance::confidential_fixture::{
@@ -92,7 +93,8 @@ use target_elements_conformance::protocol::{
     TargetConfidentialFundingSubject, TargetFundingSubject, TargetSubmissionSubject,
 };
 use transaction::bytes::{
-    AssetField, AssetId, COMMITMENT_BYTES, InputWitness, Outpoint, TargetTransaction, ValueField,
+    AssetField, AssetId, COMMITMENT_BYTES, InputWitness, Outpoint, TargetTransaction, Txid,
+    ValueField,
 };
 use transaction::live_census::{
     LiveDeployment, OwnerCensusRefusal, OwnerSigningCensus, ProofFinalizedReceiptInput,
@@ -120,6 +122,7 @@ use crate::confidential_materializer::{
 use crate::confidential_predecessor::{PREDECESSOR_AMOUNTS, selected_profiles};
 use crate::error::VectorError;
 use crate::live_capability::OracleLiveCurve;
+use crate::live_corpus_native_v2_r7::{NativeV2MintCeremony, run_of_record as validated_corpus};
 use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed, printed_order};
 use crate::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, published_owner, reviewed_target, signing_material,
@@ -671,6 +674,7 @@ pub struct ProofBearingObservationRecord {
     output_witness_proof_bytes: Vec<usize>,
     spent_value_prefixes: Vec<u8>,
     observations: Vec<ProofBearingObservation>,
+    submitted_transactions: BTreeMap<ProofBearingCase, Vec<u8>>,
     construction_refusals: Vec<ProofBearingConstructionRefusal>,
     reverification: Option<ProofBearingReverification>,
     candidate_messages: BTreeMap<ProofBearingCase, Digest32>,
@@ -688,6 +692,7 @@ impl Default for ProofBearingObservationRecord {
             output_witness_proof_bytes: Vec::new(),
             spent_value_prefixes: Vec::new(),
             observations: Vec::new(),
+            submitted_transactions: BTreeMap::new(),
             construction_refusals: Vec::new(),
             reverification: None,
             candidate_messages: BTreeMap::new(),
@@ -766,6 +771,12 @@ impl ProofBearingObservationRecord {
     #[must_use]
     pub fn observations(&self) -> &[ProofBearingObservation] {
         &self.observations
+    }
+
+    /// The exact submitted transaction for every case.
+    #[must_use]
+    pub const fn submitted_transactions(&self) -> &BTreeMap<ProofBearingCase, Vec<u8>> {
+        &self.submitted_transactions
     }
 
     /// Every construction control and the refusal it drew.
@@ -978,9 +989,23 @@ pub enum RunOfRecordProjectionRefusal {
     MissingReverification,
     /// The candidate-message census is incomplete.
     IncompleteCandidateMessages,
+    /// The exact submitted-transaction census is incomplete.
+    IncompleteSubmittedTransactions,
     /// The accepted case and second-origin acceptance name different
     /// target-computed identities.
     AcceptanceObservationMismatch,
+    /// The authorized corpus does not expose the required ceremony.
+    MissingCorpusCeremony,
+    /// The corpus projection names a different ceremony.
+    WrongCorpusCeremony,
+    /// The corpus projection omits a required typed member.
+    IncompleteCorpusMember,
+    /// The manifest-bound semantic rendering is malformed or incomplete.
+    MalformedCorpusRendering,
+    /// A semantic-rendering value disagrees with its typed corpus outcome.
+    CorpusOutcomeMismatch,
+    /// The semantic-rendering digest disagrees with the corpus digest record.
+    CorpusDigestMismatch,
 }
 
 impl TryFrom<&MaterializationRefusal> for RecordedMaterializationRefusal {
@@ -1148,7 +1173,6 @@ impl TryFrom<&ProofBearingObservationRecord> for ProofBearingRunOfRecord {
         if record.candidate_messages().len() != ProofBearingCase::ALL.len() {
             return Err(RunOfRecordProjectionRefusal::IncompleteCandidateMessages);
         }
-
         Ok(Self {
             schema_version: PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION,
             issued_asset: issued_asset.to_owned(),
@@ -1228,6 +1252,31 @@ pub struct ForwardV2ProofBearingObservations {
     candidate_messages: BTreeMap<ProofBearingCase, Digest32>,
 }
 
+/// The acceptance half of a schema-2 proof-bearing record.
+///
+/// Exact submitted bytes are carried beside the independently recomputed
+/// readback facts. Schema 1 has no value of this type, so it cannot be
+/// substituted into the forward record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForwardV2ProofBearingAcceptance {
+    submitted_bytes: Vec<u8>,
+    reverification: ProofBearingReverification,
+}
+
+impl ForwardV2ProofBearingAcceptance {
+    /// The exact accepted bytes submitted to the target.
+    #[must_use]
+    pub fn submitted_bytes(&self) -> &[u8] {
+        &self.submitted_bytes
+    }
+
+    /// The target/readback identity and independent verification facts.
+    #[must_use]
+    pub const fn reverification(&self) -> &ProofBearingReverification {
+        &self.reverification
+    }
+}
+
 impl ForwardV2ProofBearingObservations {
     /// The asset identity the target chose.
     #[must_use]
@@ -1295,7 +1344,7 @@ pub struct ForwardV2ProofBearingRunOfRecord {
     schema_version: u32,
     fixture_digest_algorithm: FixtureDigestAlgorithm,
     observations: ForwardProofBearingRecordMember<ForwardV2ProofBearingObservations>,
-    acceptance: ForwardProofBearingRecordMember<ProofBearingReverification>,
+    acceptance: ForwardProofBearingRecordMember<ForwardV2ProofBearingAcceptance>,
 }
 
 impl ForwardV2ProofBearingRunOfRecord {
@@ -1321,7 +1370,9 @@ impl ForwardV2ProofBearingRunOfRecord {
 
     /// The target acceptance and independent reverification member.
     #[must_use]
-    pub const fn acceptance(&self) -> &ForwardProofBearingRecordMember<ProofBearingReverification> {
+    pub const fn acceptance(
+        &self,
+    ) -> &ForwardProofBearingRecordMember<ForwardV2ProofBearingAcceptance> {
         &self.acceptance
     }
 }
@@ -1388,6 +1439,9 @@ impl TryFrom<&ProofBearingObservationRecord> for ForwardV2ProofBearingRunOfRecor
         if record.candidate_messages().len() != ProofBearingCase::ALL.len() {
             return Err(RunOfRecordProjectionRefusal::IncompleteCandidateMessages);
         }
+        if record.submitted_transactions().len() != ProofBearingCase::ALL.len() {
+            return Err(RunOfRecordProjectionRefusal::IncompleteSubmittedTransactions);
+        }
 
         Ok(Self {
             schema_version: FORWARD_V2_PROOF_BEARING_SCHEMA_VERSION,
@@ -1417,27 +1471,493 @@ impl TryFrom<&ProofBearingObservationRecord> for ForwardV2ProofBearingRunOfRecor
                     candidate_messages: record.candidate_messages().clone(),
                 },
             ),
-            acceptance: ForwardProofBearingRecordMember::Recorded(reverification),
+            acceptance: ForwardProofBearingRecordMember::Recorded(
+                ForwardV2ProofBearingAcceptance {
+                    submitted_bytes: record
+                        .submitted_transactions()
+                        .get(&ProofBearingCase::SelectedProfile)
+                        .cloned()
+                        .ok_or(RunOfRecordProjectionRefusal::IncompleteSubmittedTransactions)?,
+                    reverification,
+                },
+            ),
         })
     }
 }
 
-static FORWARD_V2_PROOF_BEARING_RUN_OF_RECORD: ForwardV2ProofBearingRunOfRecord =
+const fn pending_forward_v2_proof_bearing_run_of_record() -> ForwardV2ProofBearingRunOfRecord {
     ForwardV2ProofBearingRunOfRecord {
         schema_version: FORWARD_V2_PROOF_BEARING_SCHEMA_VERSION,
         fixture_digest_algorithm: FixtureDigestAlgorithm::ForwardV2,
         observations: ForwardProofBearingRecordMember::Pending,
         acceptance: ForwardProofBearingRecordMember::Pending,
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ForwardProofBearingMintOutcome {
+    layer: ObservedOutcomeLayer,
+    target_identity: Option<Txid>,
+    submitted_bytes: Vec<u8>,
+    detail: String,
+}
+
+#[derive(Clone, Debug)]
+struct ForwardProofBearingMintInput {
+    fixture_digest_algorithm: FixtureDigestAlgorithm,
+    corpus_content_address: String,
+    ceremony: String,
+    predecessor_digest: Option<Digest32>,
+    semantic_rendering: Option<Vec<u8>>,
+    outcomes: Vec<ForwardProofBearingMintOutcome>,
+}
+
+impl ForwardProofBearingMintInput {
+    fn from_corpus(capture: &NativeV2MintCeremony) -> Self {
+        Self {
+            fixture_digest_algorithm: FixtureDigestAlgorithm::ForwardV2,
+            corpus_content_address: capture.corpus_content_address().to_owned(),
+            ceremony: capture.ceremony().to_owned(),
+            predecessor_digest: capture.fixture_digest("predecessor").copied(),
+            semantic_rendering: Some(capture.semantic_rendering().to_vec()),
+            outcomes: capture
+                .outcomes()
+                .iter()
+                .map(|outcome| ForwardProofBearingMintOutcome {
+                    layer: outcome.layer(),
+                    target_identity: outcome.target_identity(),
+                    submitted_bytes: outcome.submitted_bytes().to_vec(),
+                    detail: outcome.detail().to_owned(),
+                })
+                .collect(),
+        }
+    }
+}
+
+struct ForwardMintRendering<'a> {
+    lines: Vec<&'a str>,
+}
+
+impl<'a> ForwardMintRendering<'a> {
+    fn new(bytes: &'a [u8]) -> Result<Self, RunOfRecordProjectionRefusal> {
+        if bytes.contains(&b'\r') || !bytes.ends_with(b"\n") {
+            return Err(RunOfRecordProjectionRefusal::MalformedCorpusRendering);
+        }
+        let text = std::str::from_utf8(bytes)
+            .map_err(|_| RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+        Ok(Self {
+            lines: text.lines().collect(),
+        })
+    }
+
+    fn exact(&self, expected: &str) -> Result<(), RunOfRecordProjectionRefusal> {
+        let mut matching = self.lines.iter().filter(|line| **line == expected);
+        if matching.next().is_some() && matching.next().is_none() {
+            Ok(())
+        } else {
+            Err(RunOfRecordProjectionRefusal::MalformedCorpusRendering)
+        }
+    }
+
+    fn value(&self, prefix: &str) -> Result<&'a str, RunOfRecordProjectionRefusal> {
+        let mut matching = self
+            .lines
+            .iter()
+            .filter_map(|line| line.strip_prefix(prefix));
+        let value = matching
+            .next()
+            .ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+        if matching.next().is_some() || value.is_empty() {
+            return Err(RunOfRecordProjectionRefusal::MalformedCorpusRendering);
+        }
+        Ok(value)
+    }
+}
+
+fn forward_mint_digest(text: &str) -> Result<Digest32, RunOfRecordProjectionRefusal> {
+    let bytes = decode_hex(text).ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+    bytes
+        .try_into()
+        .map_err(|_| RunOfRecordProjectionRefusal::MalformedCorpusRendering)
+}
+
+fn forward_mint_number<T: std::str::FromStr>(
+    text: &str,
+) -> Result<T, RunOfRecordProjectionRefusal> {
+    text.parse()
+        .map_err(|_| RunOfRecordProjectionRefusal::MalformedCorpusRendering)
+}
+
+fn parse_forward_coin(
+    rendering: &ForwardMintRendering<'_>,
+    index: usize,
+    outpoint: Outpoint,
+) -> Result<ObservedConfidentialCoin, RunOfRecordProjectionRefusal> {
+    let asset_text = rendering.value(&format!("coin {index} asset explicit "))?;
+    let asset = asset_of(asset_text)
+        .map(AssetField::Explicit)
+        .ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+    let value_text = rendering.value(&format!("coin {index} value commitment "))?;
+    let commitment = decode_hex(value_text)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+    let program = decode_hex(rendering.value(&format!("coin {index} program "))?)
+        .ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+    let facts = rendering
+        .value(&format!("coin {index} value_form "))?
+        .split_ascii_whitespace()
+        .collect::<Vec<_>>();
+    let [
+        "commitment",
+        "program_bytes",
+        program_bytes,
+        "predecessor_rangeproof_bytes",
+        rangeproof_bytes,
+        "node_fields_match_expectation",
+        "true",
+    ] = facts.as_slice()
+    else {
+        return Err(RunOfRecordProjectionRefusal::MalformedCorpusRendering);
     };
+    if forward_mint_number::<usize>(program_bytes)? != program.len() {
+        return Err(RunOfRecordProjectionRefusal::MalformedCorpusRendering);
+    }
+    Ok(ObservedConfidentialCoin {
+        outpoint,
+        asset,
+        value: ValueField::Commitment(commitment),
+        program,
+        rangeproof_bytes: forward_mint_number(rangeproof_bytes)?,
+        matches_expectation: true,
+    })
+}
+
+fn parse_forward_observation(
+    rendering: &ForwardMintRendering<'_>,
+    case: ProofBearingCase,
+    outcome: &ForwardProofBearingMintOutcome,
+) -> Result<ProofBearingObservation, RunOfRecordProjectionRefusal> {
+    let prefix = format!(
+        "observed {} negative_control {} moved_term {} layer {:?} txid ",
+        case.name(),
+        case.is_negative_control(),
+        case.moved_term(),
+        outcome.layer,
+    );
+    let rendered = rendering.value(&prefix)?;
+    let (target_identity, rendered) = rendered
+        .split_once(" submitted_bytes ")
+        .ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+    let (submitted_bytes, detail) = rendered
+        .split_once(" detail ")
+        .ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+    let expected_identity = outcome
+        .target_identity
+        .map_or_else(|| "none".to_owned(), |identity| identity.to_string());
+    let expected_detail = if outcome.detail.is_empty() {
+        "none"
+    } else {
+        &outcome.detail
+    };
+    if target_identity != expected_identity.as_str()
+        || forward_mint_number::<usize>(submitted_bytes)? != outcome.submitted_bytes.len()
+        || detail != expected_detail
+    {
+        return Err(RunOfRecordProjectionRefusal::CorpusOutcomeMismatch);
+    }
+    Ok(ProofBearingObservation {
+        case,
+        layer: outcome.layer,
+        detail: (!outcome.detail.is_empty()).then(|| outcome.detail.clone()),
+        accepted_txid: outcome.target_identity.map(|identity| identity.to_string()),
+        submitted_bytes: outcome.submitted_bytes.len(),
+    })
+}
+
+fn parse_forward_reverification(
+    rendering: &ForwardMintRendering<'_>,
+    accepted: &ForwardProofBearingMintOutcome,
+    candidate_messages: &BTreeMap<ProofBearingCase, Digest32>,
+) -> Result<ProofBearingReverification, RunOfRecordProjectionRefusal> {
+    let accepted_identity = accepted
+        .target_identity
+        .ok_or(RunOfRecordProjectionRefusal::CorpusOutcomeMismatch)?;
+    let rendered_accepted = rendering.value("reverification accepted_txid ")?;
+    let rendered_accepted = Txid::from_target_display(rendered_accepted)
+        .map_err(|_| RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+    if rendered_accepted != accepted_identity {
+        return Err(RunOfRecordProjectionRefusal::CorpusOutcomeMismatch);
+    }
+    let rendered_witness = rendering.value("reverification witness_txid ")?;
+    let witness_identity = Txid::from_target_display(rendered_witness)
+        .map_err(|_| RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+    let block_height = forward_mint_number(rendering.value("reverification block_height ")?)?;
+    rendering.exact("reverification readback_matches_submission true")?;
+    let recomputed_message =
+        forward_mint_digest(rendering.value("reverification recomputed_message ")?)?;
+    if candidate_messages.get(&ProofBearingCase::SelectedProfile) != Some(&recomputed_message) {
+        return Err(RunOfRecordProjectionRefusal::CorpusOutcomeMismatch);
+    }
+    let signature_from_readback =
+        decode_hex(rendering.value("reverification signature_from_readback ")?)
+            .filter(|signature| signature.len() == FIELD_ELEMENT_BYTES * 2)
+            .ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+    rendering.exact("reverification verifies_against_recomputed_message true")?;
+    rendering.exact("reverification outcome Ok(())")?;
+    rendering.exact("reverification verifies_against_emptied_vector_message false")?;
+    rendering.exact("observed_acceptance true")?;
+    Ok(ProofBearingReverification {
+        accepted_txid: rendered_accepted.to_string(),
+        witness_txid: witness_identity.to_string(),
+        block_height,
+        readback_matches_submission: true,
+        recomputed_message,
+        signature_from_readback,
+        verified: Ok(()),
+        verifies_against_emptied_vector_message: false,
+    })
+}
+
+struct ForwardMintHeader<'a> {
+    rendering: ForwardMintRendering<'a>,
+    issued_asset: String,
+    predecessor_digest: Digest32,
+}
+
+fn parse_forward_mint_header(
+    input: &ForwardProofBearingMintInput,
+) -> Result<ForwardMintHeader<'_>, RunOfRecordProjectionRefusal> {
+    if input.fixture_digest_algorithm != FixtureDigestAlgorithm::ForwardV2 {
+        return Err(RunOfRecordProjectionRefusal::ForwardV2DigestRequired);
+    }
+    if input.corpus_content_address.is_empty() {
+        return Err(RunOfRecordProjectionRefusal::IncompleteCorpusMember);
+    }
+    if input.ceremony != "proof-bearing-observation" {
+        return Err(RunOfRecordProjectionRefusal::WrongCorpusCeremony);
+    }
+    let predecessor_digest = input
+        .predecessor_digest
+        .ok_or(RunOfRecordProjectionRefusal::IncompleteCorpusMember)?;
+    let rendering = ForwardMintRendering::new(
+        input
+            .semantic_rendering
+            .as_deref()
+            .ok_or(RunOfRecordProjectionRefusal::IncompleteCorpusMember)?,
+    )?;
+    rendering.exact("role owner-sighash-proof-bearing-observation-run")?;
+    rendering.exact("forward_v2_run_of_record observations_pending acceptance_pending")?;
+    rendering.exact("run_of_record_projection ready schema_version 2")?;
+    let issued_asset = rendering.value("issued_asset ")?.to_owned();
+    asset_of(&issued_asset).ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+    let rendered_predecessor =
+        forward_mint_digest(rendering.value("predecessor_fixture_digest ")?)?;
+    if rendered_predecessor != predecessor_digest {
+        return Err(RunOfRecordProjectionRefusal::CorpusDigestMismatch);
+    }
+
+    Ok(ForwardMintHeader {
+        rendering,
+        issued_asset,
+        predecessor_digest,
+    })
+}
+
+struct ForwardMintCoins {
+    coins: Vec<ObservedConfidentialCoin>,
+    first_outpoint: Outpoint,
+}
+
+fn parse_forward_mint_coins(
+    rendering: &ForwardMintRendering<'_>,
+    accepted: &ForwardProofBearingMintOutcome,
+) -> Result<ForwardMintCoins, RunOfRecordProjectionRefusal> {
+    let accepted_transaction = TargetTransaction::decode(&accepted.submitted_bytes)
+        .map_err(|_| RunOfRecordProjectionRefusal::CorpusOutcomeMismatch)?;
+    if accepted_transaction.encode() != accepted.submitted_bytes {
+        return Err(RunOfRecordProjectionRefusal::CorpusOutcomeMismatch);
+    }
+    let outpoints = accepted_transaction
+        .inputs()
+        .iter()
+        .map(transaction::TargetInput::outpoint)
+        .collect::<Vec<_>>();
+    let [first_outpoint, second_outpoint] = outpoints.as_slice() else {
+        return Err(RunOfRecordProjectionRefusal::IncompleteCoins);
+    };
+    let coins = vec![
+        parse_forward_coin(rendering, 0, *first_outpoint)?,
+        parse_forward_coin(rendering, 1, *second_outpoint)?,
+    ];
+    Ok(ForwardMintCoins {
+        coins,
+        first_outpoint: *first_outpoint,
+    })
+}
+
+struct ForwardMintWitnessFacts {
+    vector_length: usize,
+    proof_bytes: Vec<usize>,
+    spent_value_prefixes: Vec<u8>,
+}
+
+fn parse_forward_mint_witness_facts(
+    rendering: &ForwardMintRendering<'_>,
+    coins: &[ObservedConfidentialCoin],
+) -> Result<ForwardMintWitnessFacts, RunOfRecordProjectionRefusal> {
+    let output_witness_vector_length =
+        forward_mint_number(rendering.value("output_witness_vector_length ")?)?;
+    let output_witness_proof_bytes = (0..SUCCESSOR_AMOUNTS.len())
+        .map(|index| {
+            forward_mint_number(
+                rendering.value(&format!("output_witness {index} rangeproof_bytes "))?,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if output_witness_vector_length != output_witness_proof_bytes.len() {
+        return Err(RunOfRecordProjectionRefusal::IncompleteOutputWitnessProofBytes);
+    }
+    let spent_value_prefixes = (0..coins.len())
+        .map(|index| {
+            let rendered = rendering.value(&format!("spent_value_prefix {index} 0x"))?;
+            u8::from_str_radix(rendered, 16)
+                .map_err(|_| RunOfRecordProjectionRefusal::MalformedCorpusRendering)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if coins
+        .iter()
+        .zip(&spent_value_prefixes)
+        .any(|(coin, prefix)| {
+            !matches!(coin.value(), ValueField::Commitment(value) if value[0] == *prefix)
+        })
+    {
+        return Err(RunOfRecordProjectionRefusal::CorpusOutcomeMismatch);
+    }
+
+    Ok(ForwardMintWitnessFacts {
+        vector_length: output_witness_vector_length,
+        proof_bytes: output_witness_proof_bytes,
+        spent_value_prefixes,
+    })
+}
+
+fn parse_forward_construction_refusals(
+    rendering: &ForwardMintRendering<'_>,
+    first_outpoint: Outpoint,
+) -> Result<Vec<ProofBearingConstructionRefusal>, RunOfRecordProjectionRefusal> {
+    ProofBearingConstructionControl::ALL
+        .iter()
+        .copied()
+        .map(|control| {
+            let prefix = format!(
+                "construction_control {} moved_term {} refusal_code \
+                 predecessor-opening-mismatch live_refusal ",
+                control.name(),
+                control.moved_term(),
+            );
+            rendering.value(&prefix)?;
+            Ok(ProofBearingConstructionRefusal {
+                control,
+                refusal: MaterializationRefusal::PredecessorOpeningMismatch {
+                    outpoint: first_outpoint,
+                },
+            })
+        })
+        .collect()
+}
+
+fn parse_forward_candidate_messages(
+    rendering: &ForwardMintRendering<'_>,
+) -> Result<BTreeMap<ProofBearingCase, Digest32>, RunOfRecordProjectionRefusal> {
+    ProofBearingCase::ALL
+        .iter()
+        .copied()
+        .map(|case| {
+            Ok((
+                case,
+                forward_mint_digest(rendering.value(&format!("message {} ", case.name()))?)?,
+            ))
+        })
+        .collect()
+}
+
+fn parse_forward_corpus_record(
+    input: &ForwardProofBearingMintInput,
+) -> Result<ProofBearingObservationRecord, RunOfRecordProjectionRefusal> {
+    let ForwardMintHeader {
+        rendering,
+        issued_asset,
+        predecessor_digest,
+    } = parse_forward_mint_header(input)?;
+    let [first, second, third, accepted] = input.outcomes.as_slice() else {
+        return Err(RunOfRecordProjectionRefusal::IncompleteCorpusMember);
+    };
+    let coin_section = parse_forward_mint_coins(&rendering, accepted)?;
+    let witness_facts = parse_forward_mint_witness_facts(&rendering, &coin_section.coins)?;
+    let construction_refusals =
+        parse_forward_construction_refusals(&rendering, coin_section.first_outpoint)?;
+    let candidate_messages = parse_forward_candidate_messages(&rendering)?;
+    let observations = ProofBearingCase::ALL
+        .iter()
+        .copied()
+        .zip([first, second, third, accepted])
+        .map(|(case, outcome)| parse_forward_observation(&rendering, case, outcome))
+        .collect::<Result<Vec<_>, _>>()?;
+    let reverification = parse_forward_reverification(&rendering, accepted, &candidate_messages)?;
+    let submitted_transactions = ProofBearingCase::ALL
+        .iter()
+        .copied()
+        .zip(&input.outcomes)
+        .map(|(case, outcome)| (case, outcome.submitted_bytes.clone()))
+        .collect();
+    Ok(ProofBearingObservationRecord {
+        fixture_digest_algorithm: FixtureDigestAlgorithm::ForwardV2,
+        issued_asset: Some(issued_asset),
+        predecessor_digest: Some(predecessor_digest),
+        coins: coin_section.coins,
+        output_witness_vector_length: Some(witness_facts.vector_length),
+        output_witness_proof_bytes: witness_facts.proof_bytes,
+        spent_value_prefixes: witness_facts.spent_value_prefixes,
+        observations,
+        submitted_transactions,
+        construction_refusals,
+        reverification: Some(reverification),
+        candidate_messages,
+        refusal: None,
+    })
+}
+
+fn project_forward_corpus_record(
+    input: &ForwardProofBearingMintInput,
+) -> Result<ForwardV2ProofBearingRunOfRecord, RunOfRecordProjectionRefusal> {
+    ForwardV2ProofBearingRunOfRecord::try_from(&parse_forward_corpus_record(input)?)
+}
+
+fn mint_forward_corpus_record(
+    input: Option<&ForwardProofBearingMintInput>,
+) -> ForwardV2ProofBearingRunOfRecord {
+    input
+        .ok_or(RunOfRecordProjectionRefusal::MissingCorpusCeremony)
+        .and_then(project_forward_corpus_record)
+        .unwrap_or_else(|_| pending_forward_v2_proof_bearing_run_of_record())
+}
 
 /// The schema-2 forward-v2 expectation for a fresh proof-bearing run.
 ///
 /// This is the selection point N1-F uses instead of the historical
-/// [`construction_run_of_record_v2`] surface. Both members remain
-/// pending until an owner-authorized forward-v2 ceremony mints them.
+/// [`construction_run_of_record_v2`] surface. Both members mint together
+/// from the validated corpus or both remain Pending.
 #[must_use]
-pub const fn forward_v2_proof_bearing_run_of_record() -> &'static ForwardV2ProofBearingRunOfRecord {
-    &FORWARD_V2_PROOF_BEARING_RUN_OF_RECORD
+pub fn forward_v2_proof_bearing_run_of_record() -> &'static ForwardV2ProofBearingRunOfRecord {
+    static RECORD: OnceLock<ForwardV2ProofBearingRunOfRecord> = OnceLock::new();
+    RECORD.get_or_init(|| {
+        let input = validated_corpus().ok().and_then(|corpus| {
+            corpus
+                .mint_ceremony("proof-bearing-observation")
+                .map(ForwardProofBearingMintInput::from_corpus)
+        });
+        mint_forward_corpus_record(input.as_ref())
+    })
 }
 
 /// T5-031 did not capture either construction refusal in its committed
@@ -2737,6 +3257,9 @@ impl ProofBearingObservationPlanner {
             accepted_txid: response.accepted_txid.clone(),
             submitted_bytes: pending.bytes.len(),
         });
+        self.record
+            .submitted_transactions
+            .insert(case, pending.bytes.clone());
 
         // The second origin runs for an acceptance and for nothing else.
         if matches!(response.observed_layer, ObservedOutcomeLayer::Accepted) {
@@ -3418,6 +3941,7 @@ mod tests {
             output_witness_proof_bytes: vec![RECORDED_RANGEPROOF_BYTES, RECORDED_RANGEPROOF_BYTES],
             spent_value_prefixes: RECORDED_SPENT_VALUE_PREFIXES.to_vec(),
             observations,
+            submitted_transactions: BTreeMap::new(),
             construction_refusals,
             reverification: Some(ProofBearingReverification {
                 accepted_txid: RECORDED_ACCEPTED_TXID.to_owned(),
@@ -3594,6 +4118,7 @@ mod tests {
             output_witness_proof_bytes: recorded.output_witness_proof_bytes().to_vec(),
             spent_value_prefixes: recorded.spent_value_prefixes().to_vec(),
             observations: recorded.observations().to_vec(),
+            submitted_transactions: BTreeMap::new(),
             construction_refusals,
             reverification: Some(recorded.reverification().clone()),
             candidate_messages: recorded.candidate_messages().clone(),
@@ -3690,20 +4215,20 @@ mod tests {
         assert!(rendered.contains("output_witness_vector_length none"));
     }
 
-    fn synthetic_forward_v2_live_record() -> ProofBearingObservationRecord {
-        const ISSUED_ASSET: &str =
-            "4242424242424242424242424242424242424242424242424242424242424242";
-        const ACCEPTED_TXID: &str =
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        const WITNESS_TXID: &str =
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const SYNTHETIC_FORWARD_V2_ISSUED_ASSET: &str =
+        "4242424242424242424242424242424242424242424242424242424242424242";
+    const SYNTHETIC_FORWARD_V2_ACCEPTED_TXID: &str =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const SYNTHETIC_FORWARD_V2_WITNESS_TXID: &str =
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
+    fn synthetic_forward_v2_coins() -> Vec<ObservedConfidentialCoin> {
         let owners = [
             OwnerLeaf::derive(&FIRST_SCALAR).expect("the first owner derives"),
             OwnerLeaf::derive(&SECOND_SCALAR).expect("the second owner derives"),
         ];
         let txid = transaction::bytes::Txid::from_internal([0x66; 32]);
-        let coins: Vec<_> = owners
+        owners
             .iter()
             .enumerate()
             .map(|(index, owner)| {
@@ -3722,12 +4247,11 @@ mod tests {
                     matches_expectation: true,
                 }
             })
-            .collect();
-        let first_outpoint = coins
-            .first()
-            .expect("the synthetic forward record carries a predecessor coin")
-            .outpoint();
-        let observations = ProofBearingCase::ALL
+            .collect()
+    }
+
+    fn synthetic_forward_v2_observations() -> Vec<ProofBearingObservation> {
+        ProofBearingCase::ALL
             .iter()
             .copied()
             .map(|case| ProofBearingObservation {
@@ -3741,11 +4265,16 @@ mod tests {
                     .is_negative_control()
                     .then(|| "synthetic forward-v2 refusal".to_owned()),
                 accepted_txid: matches!(case, ProofBearingCase::SelectedProfile)
-                    .then(|| ACCEPTED_TXID.to_owned()),
+                    .then(|| SYNTHETIC_FORWARD_V2_ACCEPTED_TXID.to_owned()),
                 submitted_bytes: 9_100,
             })
-            .collect();
-        let construction_refusals = ProofBearingConstructionControl::ALL
+            .collect()
+    }
+
+    fn synthetic_forward_v2_construction_refusals(
+        first_outpoint: Outpoint,
+    ) -> Vec<ProofBearingConstructionRefusal> {
+        ProofBearingConstructionControl::ALL
             .iter()
             .copied()
             .map(|control| ProofBearingConstructionRefusal {
@@ -3754,8 +4283,11 @@ mod tests {
                     outpoint: first_outpoint,
                 },
             })
-            .collect();
-        let candidate_messages = ProofBearingCase::ALL
+            .collect()
+    }
+
+    fn synthetic_forward_v2_candidate_messages() -> BTreeMap<ProofBearingCase, Digest32> {
+        ProofBearingCase::ALL
             .iter()
             .copied()
             .enumerate()
@@ -3763,29 +4295,54 @@ mod tests {
                 let byte = u8::try_from(index).expect("the four-case index fits") + 0x40;
                 (case, [byte; 32])
             })
-            .collect();
+            .collect()
+    }
+
+    fn synthetic_forward_v2_submitted_transactions() -> BTreeMap<ProofBearingCase, Vec<u8>> {
+        ProofBearingCase::ALL
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, case)| {
+                let byte = u8::try_from(index).expect("the four-case index fits");
+                (case, vec![byte; 9_100])
+            })
+            .collect()
+    }
+
+    fn synthetic_forward_v2_reverification() -> ProofBearingReverification {
+        ProofBearingReverification {
+            accepted_txid: SYNTHETIC_FORWARD_V2_ACCEPTED_TXID.to_owned(),
+            witness_txid: SYNTHETIC_FORWARD_V2_WITNESS_TXID.to_owned(),
+            block_height: 9,
+            readback_matches_submission: true,
+            recomputed_message: [0x43; 32],
+            signature_from_readback: vec![0x5a; 64],
+            verified: Ok(()),
+            verifies_against_emptied_vector_message: false,
+        }
+    }
+
+    fn synthetic_forward_v2_live_record() -> ProofBearingObservationRecord {
+        let coins = synthetic_forward_v2_coins();
+        let first_outpoint = coins
+            .first()
+            .expect("the synthetic forward record carries a predecessor coin")
+            .outpoint();
 
         ProofBearingObservationRecord {
             fixture_digest_algorithm: FixtureDigestAlgorithm::ForwardV2,
-            issued_asset: Some(ISSUED_ASSET.to_owned()),
+            issued_asset: Some(SYNTHETIC_FORWARD_V2_ISSUED_ASSET.to_owned()),
             predecessor_digest: Some([0xa2; 32]),
             coins,
             output_witness_vector_length: Some(2),
             output_witness_proof_bytes: vec![4_200, 4_200],
             spent_value_prefixes: vec![0x0a, 0x0b],
-            observations,
-            construction_refusals,
-            reverification: Some(ProofBearingReverification {
-                accepted_txid: ACCEPTED_TXID.to_owned(),
-                witness_txid: WITNESS_TXID.to_owned(),
-                block_height: 9,
-                readback_matches_submission: true,
-                recomputed_message: [0x43; 32],
-                signature_from_readback: vec![0x5a; 64],
-                verified: Ok(()),
-                verifies_against_emptied_vector_message: false,
-            }),
-            candidate_messages,
+            observations: synthetic_forward_v2_observations(),
+            submitted_transactions: synthetic_forward_v2_submitted_transactions(),
+            construction_refusals: synthetic_forward_v2_construction_refusals(first_outpoint),
+            reverification: Some(synthetic_forward_v2_reverification()),
+            candidate_messages: synthetic_forward_v2_candidate_messages(),
             refusal: None,
         }
     }
@@ -3849,24 +4406,283 @@ mod tests {
             minted_v2_run_of_record().predecessor_digest()
         );
         assert!(
-            rendered.contains("forward_v2_run_of_record observations_pending acceptance_pending")
+            rendered.contains("forward_v2_run_of_record observations_recorded acceptance_recorded")
         );
         assert!(rendered.contains("run_of_record_projection ready schema_version 2"));
         assert!(!rendered.contains("run_of_record_v2 recorded"));
     }
 
     #[test]
-    fn pending_forward_members_cannot_pass_as_recorded() {
-        let pending = forward_v2_proof_bearing_run_of_record();
+    fn the_authorized_corpus_records_both_forward_members_atomically() {
+        let forward = forward_v2_proof_bearing_run_of_record();
         let recorded =
             ForwardV2ProofBearingRunOfRecord::try_from(&synthetic_forward_v2_live_record())
                 .expect("complete forward-v2 facts project to schema 2");
 
-        assert_eq!(pending.schema_version(), 2);
+        assert_eq!(forward.schema_version(), 2);
+        assert_eq!(forward.observations().name(), "recorded");
+        assert_eq!(forward.acceptance().name(), "recorded");
+        assert!(forward.observations().recorded().is_some());
+        assert!(forward.acceptance().recorded().is_some());
+        assert_ne!(forward, &recorded);
+    }
+
+    fn corpus_mint_input() -> ForwardProofBearingMintInput {
+        let corpus = validated_corpus().expect("the reviewed corpus validates");
+        let capture = corpus
+            .mint_ceremony("proof-bearing-observation")
+            .expect("the corpus carries the proof-bearing ceremony");
+        ForwardProofBearingMintInput::from_corpus(capture)
+    }
+
+    fn assert_forward_members_pending(input: &ForwardProofBearingMintInput) {
+        let pending = mint_forward_corpus_record(Some(input));
         assert_eq!(pending.observations().name(), "pending");
         assert_eq!(pending.acceptance().name(), "pending");
         assert!(pending.observations().recorded().is_none());
         assert!(pending.acceptance().recorded().is_none());
-        assert_ne!(pending, &recorded);
+    }
+
+    #[test]
+    fn every_forward_member_is_sourced_from_the_corpus_projection() {
+        let input = corpus_mint_input();
+        let projected =
+            project_forward_corpus_record(&input).expect("the complete corpus projection mints");
+        let observations = projected
+            .observations()
+            .recorded()
+            .expect("the observation half is recorded");
+        let acceptance = projected
+            .acceptance()
+            .recorded()
+            .expect("the acceptance half is recorded");
+        let accepted = input
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.layer == ObservedOutcomeLayer::Accepted)
+            .expect("the corpus carries one acceptance");
+
+        assert_eq!(
+            observations.predecessor_digest(),
+            input
+                .predecessor_digest
+                .as_ref()
+                .expect("the digest exists"),
+        );
+        assert_eq!(observations.case_observations().len(), input.outcomes.len());
+        for ((observation, outcome), case) in observations
+            .case_observations()
+            .iter()
+            .zip(&input.outcomes)
+            .zip(ProofBearingCase::ALL)
+        {
+            assert_eq!(observation.case(), *case);
+            assert_eq!(observation.layer(), outcome.layer);
+            assert_eq!(
+                observation.detail(),
+                (!outcome.detail.is_empty()).then_some(outcome.detail.as_str()),
+            );
+            assert_eq!(observation.submitted_bytes(), outcome.submitted_bytes.len());
+            assert_eq!(
+                observation.accepted_txid(),
+                outcome
+                    .target_identity
+                    .map(|identity| identity.to_string())
+                    .as_deref(),
+            );
+        }
+        assert_eq!(
+            acceptance.submitted_bytes(),
+            accepted.submitted_bytes.as_slice(),
+        );
+        let accepted_identity = accepted
+            .target_identity
+            .expect("the accepted outcome has an identity")
+            .to_string();
+        assert_eq!(
+            acceptance.reverification().accepted_txid(),
+            accepted_identity.as_str(),
+        );
+    }
+
+    #[test]
+    fn real_corpus_keeps_issued_and_predecessor_assets_distinct() {
+        let input = corpus_mint_input();
+        let projected =
+            project_forward_corpus_record(&input).expect("the complete corpus projection mints");
+        let observations = projected
+            .observations()
+            .recorded()
+            .expect("the observation half is recorded");
+        let issued_asset = asset_of(observations.issued_asset())
+            .expect("the corpus-issued asset has target grammar");
+
+        for coin in observations.coins() {
+            assert_ne!(coin.asset(), AssetField::Explicit(issued_asset));
+        }
+    }
+
+    #[test]
+    fn every_forward_acceptance_fact_is_sourced_from_the_corpus_projection() {
+        let input = corpus_mint_input();
+        let rendering = ForwardMintRendering::new(
+            input
+                .semantic_rendering
+                .as_deref()
+                .expect("the corpus carries its semantic rendering"),
+        )
+        .expect("the corpus rendering has canonical grammar");
+        let projected =
+            project_forward_corpus_record(&input).expect("the complete corpus projection mints");
+        let observations = projected
+            .observations()
+            .recorded()
+            .expect("the observation half is recorded");
+        let acceptance = projected
+            .acceptance()
+            .recorded()
+            .expect("the acceptance half is recorded");
+        let accepted = input
+            .outcomes
+            .last()
+            .expect("the corpus carries the accepted outcome last");
+        let reverification = acceptance.reverification();
+
+        assert_eq!(
+            acceptance.submitted_bytes(),
+            accepted.submitted_bytes.as_slice(),
+        );
+        assert_eq!(
+            reverification.accepted_txid(),
+            rendering
+                .value("reverification accepted_txid ")
+                .expect("the rendering carries the accepted identity"),
+        );
+        assert_eq!(
+            reverification.witness_txid(),
+            rendering
+                .value("reverification witness_txid ")
+                .expect("the rendering carries the witness identity"),
+        );
+        assert_eq!(
+            reverification.block_height(),
+            forward_mint_number::<u32>(
+                rendering
+                    .value("reverification block_height ")
+                    .expect("the rendering carries the block height"),
+            )
+            .expect("the block height has target grammar"),
+        );
+        assert!(reverification.readback_matches_submission());
+        let recomputed_message = forward_mint_digest(
+            rendering
+                .value("reverification recomputed_message ")
+                .expect("the rendering carries the recomputed message"),
+        )
+        .expect("the recomputed message has digest grammar");
+        assert_eq!(reverification.recomputed_message(), &recomputed_message);
+        assert_eq!(
+            observations
+                .candidate_messages()
+                .get(&ProofBearingCase::SelectedProfile),
+            Some(&recomputed_message),
+        );
+        let signature = decode_hex(
+            rendering
+                .value("reverification signature_from_readback ")
+                .expect("the rendering carries the readback signature"),
+        )
+        .expect("the readback signature has hex grammar");
+        assert_eq!(
+            reverification.signature_from_readback(),
+            signature.as_slice(),
+        );
+        assert_eq!(
+            reverification.verified(),
+            &Result::<(), SignatureRejection>::Ok(()),
+        );
+        assert!(!reverification.verifies_against_emptied_vector_message());
+    }
+
+    #[test]
+    fn an_absent_observation_member_leaves_both_members_pending() {
+        let mut input = corpus_mint_input();
+        input.semantic_rendering = None;
+
+        assert_eq!(
+            project_forward_corpus_record(&input),
+            Err(RunOfRecordProjectionRefusal::IncompleteCorpusMember),
+        );
+        assert_forward_members_pending(&input);
+    }
+
+    #[test]
+    fn an_absent_acceptance_member_leaves_both_members_pending() {
+        let mut input = corpus_mint_input();
+        input.outcomes.pop();
+
+        assert_eq!(
+            project_forward_corpus_record(&input),
+            Err(RunOfRecordProjectionRefusal::IncompleteCorpusMember),
+        );
+        assert_forward_members_pending(&input);
+    }
+
+    #[test]
+    fn a_malformed_observation_member_leaves_both_members_pending() {
+        let mut input = corpus_mint_input();
+        input
+            .semantic_rendering
+            .as_mut()
+            .expect("the corpus carries semantic observations")[0] = b'x';
+
+        assert_eq!(
+            project_forward_corpus_record(&input),
+            Err(RunOfRecordProjectionRefusal::MalformedCorpusRendering),
+        );
+        assert_forward_members_pending(&input);
+    }
+
+    #[test]
+    fn a_schema_one_substitution_leaves_both_members_pending() {
+        let mut input = corpus_mint_input();
+        input.fixture_digest_algorithm = FixtureDigestAlgorithm::HistoricalV1;
+
+        assert_eq!(
+            project_forward_corpus_record(&input),
+            Err(RunOfRecordProjectionRefusal::ForwardV2DigestRequired),
+        );
+        assert_forward_members_pending(&input);
+    }
+
+    #[test]
+    fn a_tampered_predecessor_digest_leaves_both_members_pending() {
+        let mut input = corpus_mint_input();
+        input
+            .predecessor_digest
+            .as_mut()
+            .expect("the corpus carries the predecessor digest")[0] ^= 1;
+
+        assert_eq!(
+            project_forward_corpus_record(&input),
+            Err(RunOfRecordProjectionRefusal::CorpusDigestMismatch),
+        );
+        assert_forward_members_pending(&input);
+    }
+
+    #[test]
+    fn a_tampered_accepted_txid_leaves_both_members_pending() {
+        let mut input = corpus_mint_input();
+        input
+            .outcomes
+            .last_mut()
+            .expect("the corpus carries the accepted outcome")
+            .target_identity = Some(Txid::from_internal([0x77; 32]));
+
+        assert_eq!(
+            project_forward_corpus_record(&input),
+            Err(RunOfRecordProjectionRefusal::CorpusOutcomeMismatch),
+        );
+        assert_forward_members_pending(&input);
     }
 }
