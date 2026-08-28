@@ -14,6 +14,7 @@ plans_guides_files = files(
   'guide_fifteen_concept.md',
   'guide_fourteen.md',
   'guide_fourteen_concept.md',
+  'guide_fourteen_conceptual_register.md',
   'guide_nine.md',
   'guide_nine_concept.md',
   'guide_owner_sighash_concept.md',

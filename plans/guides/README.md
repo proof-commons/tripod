@@ -70,6 +70,8 @@ run against it: its Wave-0 disposition of the tenth static review's findings
 has not been chartered. It joins that table when its batch is chartered
 against it.
 
+[guide_fourteen_conceptual_register.md](guide_fourteen_conceptual_register.md) is the owner-issued conceptual preflight supplement that binds the three Guide-14 conceptual reviews to Waves 1–13 without editing the archived guide.
+
 ## Guide rule · `rule:guides:authority`
 
 A guide never overrides the backlog, a package contract, a phase card, an
