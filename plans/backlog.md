@@ -1208,9 +1208,12 @@ correctness check, not malicious-code containment.
 
 The Phase-2 gate is **passed** (§2.11), the Phase-3 gate is
 **passed** (§2.6 with the Phase-3 card), and the Phase-4 gate is
-**passed** (§2.8). The Guide-13 batch gate is §2.9: Phase 5 is not
-exited, the batch having stopped honestly on the two typed blockers the
-intermediate confidential-funding guide owns.
+**passed** (§2.8). The Guide-13 batch gate is §2.9: at that historical
+gate Phase 5 had not exited, because the batch stopped honestly on the two
+typed blockers the intermediate confidential-funding guide owned; the
+live-transfer campaign subsequently closed and Phase 5 exited in §2.20 and
+§2.21 with the amended gate met on a countersigned assessment, and Phase 6
+is current.
 
 The Guide-8 target foundation is complete; the gate record is §2.12. The
 Phase-3 task state is:
