@@ -20,14 +20,12 @@
 //!
 //! # The honest finding this plan carries
 //!
-//! Forty-two rows preserve target-derived observations: twenty-four
-//! acceptances, seventeen refusals, and one paired relation. None is
-//! counted as answered here. The tree retains their identities, observed
-//! layers, and refusal details, but not the exact request bytes, disposable
-//! deployment bindings, and executor self-descriptions needed to validate
-//! the producing runs. Each therefore stands at
-//! [`LiveRowStanding::RecordedObservationUnbound`] until a forward run
-//! carries all of those facts together.
+//! The immutable raw classifier preserves target-derived observations for 42
+//! rows: 24 acceptances, 17 refusals, and one paired relation. The validated
+//! native-v2/revision-7 corpus now carries their exact requests, deployment,
+//! executor, responses, and row links together. [`ValidatedCorpusEvidence`]
+//! overlays all 42 atomically; the raw values remain historical data and are
+//! never equality oracles for their fresh successors.
 //!
 //! One positive observation remains answered and no target was involved. The
 //! deterministic-public-fixture-openings row's own gate is the
@@ -62,6 +60,7 @@
 //! (task:guide-ctf-exec:restart-order).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Deref;
 
 use compiler::live_transfer_plan::{
     LiveTransferRepresentationPlan, ValidatedLiveTransferOperationPlan,
@@ -71,6 +70,9 @@ use linker::CandidateLinkedLiveTransferBundle;
 use transaction::live_abi::CandidateLiveTransferAbi;
 
 use crate::error::VectorError;
+use crate::live_corpus_native_v2_r7::{
+    NativeV2LinkClass, NativeV2RowAttribution, ProvenNativeV2Link, ValidatedNativeV2R7Corpus,
+};
 use crate::live_fault_discharge::{
     LiveFaultValidator, ValidatedLiveFaultEvidence, discharge_live_faults, live_fault_cases,
 };
@@ -79,6 +81,7 @@ use crate::live_first_party::{
     live_first_party_cases,
 };
 use crate::live_plan::{demonstration_live_abi, demonstration_live_bundle, live_transfer_plan};
+use crate::live_report::{LiveReportObservation, LiveRunBinding, LiveTargetResponse};
 use crate::live_safety::{
     LiveRelationStanding, LiveReportRequirement, LiveRowLink, LiveSafetyRow, LiveSafetySection,
     LiveUnlinkedReason, required_safety_matrix, resolve_row,
@@ -86,6 +89,7 @@ use crate::live_safety::{
 use crate::matrix::EvidenceBoundary;
 use crate::observed_boundary::observed_boundary;
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
+use transaction::Txid;
 
 /// Where the §13.1 minimality pair registry stands.
 ///
@@ -585,6 +589,19 @@ pub enum RecordedObservation {
     },
 }
 
+/// Fresh target identities carried by one accepted-row standing.
+///
+/// Most rows need one accepted request. The commitment-parity row needs the
+/// schema-6 composite of two independently accepted ceremonies, so retaining
+/// only either member would discard half of its proof.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NativeObservedAcceptance {
+    /// One accepted request answers the row.
+    Single(Txid),
+    /// Two accepted requests together answer the row.
+    CompositeTwo([Txid; 2]),
+}
+
 /// What answers one §15 row, or what stands in the way.
 ///
 /// Exactly one state per row, and none of them is "passed". §13.5 reads
@@ -642,9 +659,9 @@ pub enum LiveRowStanding {
     /// boolean so that the claim can be checked against a chain by
     /// somebody who does not trust this crate.
     NativeRunObserved {
-        /// The identity the target computed for the accepted
-        /// transaction.
-        accepted_identity: &'static str,
+        /// The exact fresh acceptance witness supplied by the validated
+        /// revision-7 corpus.
+        acceptance: NativeObservedAcceptance,
     },
     /// A target REFUSED a candidate staging this row's own class,
     /// while accepting the unmutated form of the same candidate.
@@ -693,9 +710,9 @@ pub enum LiveRowStanding {
         observed_layer: ObservedOutcomeLayer,
         /// The identity the target computed for the accepted control the
         /// refusal is attributable against.
-        control_identity: &'static str,
+        control_identity: Txid,
         /// What the target said when it refused the mutated candidate.
-        refusal_detail: &'static str,
+        refusal_detail: String,
     },
     /// A target refused this row's mutant at a boundary that is NOT the
     /// one the row declared.
@@ -807,12 +824,12 @@ pub enum LiveRowStanding {
     PairedRelationObserved {
         /// The identity the target computed for the accepted EXPLICIT
         /// materialization.
-        explicit_identity: &'static str,
+        explicit_identity: Txid,
         /// The identity the target computed for the accepted PRIVATE
         /// materialization.
-        private_identity: &'static str,
+        private_identity: Txid,
         /// The relation observed over the two, in the row's own terms.
-        relation: &'static str,
+        relation: String,
     },
     /// A row whose own gate is a FACT about this workspace, established.
     ///
@@ -1315,285 +1332,610 @@ impl LiveTransferEvidencePlan {
     }
 }
 
-/// One request and its one response inside a validator-proven archive run.
-///
-/// This is a nominal witness, not an archive parser result. Its fields stay
-/// private so transcript prose, reconstructed bytes, or a caller-authored
-/// expectation cannot be passed to the overlay. The later report integration
-/// composes here by letting its validator mint these links only after it has
-/// proved deployment and executor provenance, exact request round trips, and
-/// the response association.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct ProvenArchiveLink {
-    run: &'static str,
-    request: &'static str,
-    response: &'static str,
-}
-
-/// The row-level conclusion carried by validator-proven archive links.
-///
-/// Each variant has the complete link shape its standing requires. A refusal
-/// cannot omit its accepted control, and a paired relation cannot omit either
-/// accepted member. Because this type and all of its fields are private, no
-/// production caller can mint a conclusion from the historical observation
-/// alone.
-#[allow(
-    dead_code,
-    reason = "present archive has no proof; N1-B integration mints these variants"
-)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ValidatedCorpusObservation {
-    NativeAcceptance {
-        request: ProvenArchiveLink,
-        accepted_identity: &'static str,
-    },
-    NativeRefusal {
-        mutant: ProvenArchiveLink,
-        accepted_control: ProvenArchiveLink,
-        declared_boundary: EvidenceBoundary,
-        observed_layer: ObservedOutcomeLayer,
-        control_identity: &'static str,
-        refusal_detail: &'static str,
-    },
-    PairedRelation {
-        explicit: ProvenArchiveLink,
-        private: ProvenArchiveLink,
-        explicit_identity: &'static str,
-        private_identity: &'static str,
-        relation: &'static str,
-    },
-}
-
-impl ValidatedCorpusObservation {
-    const fn links(self) -> [Option<ProvenArchiveLink>; 2] {
-        match self {
-            Self::NativeAcceptance { request, .. } => [Some(request), None],
-            Self::NativeRefusal {
-                mutant,
-                accepted_control,
-                ..
-            } => [Some(mutant), Some(accepted_control)],
-            Self::PairedRelation {
-                explicit, private, ..
-            } => [Some(explicit), Some(private)],
-        }
-    }
-
-    fn links_share_one_run(self) -> bool {
-        match self {
-            Self::NativeAcceptance { .. } => true,
-            Self::NativeRefusal {
-                mutant,
-                accepted_control,
-                ..
-            } => mutant.run == accepted_control.run,
-            Self::PairedRelation {
-                explicit, private, ..
-            } => explicit.run == private.run,
-        }
-    }
-}
-
-/// A validator's proof that one archive observation belongs to one matrix row.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ValidatedCorpusWitness {
-    proven_row: &'static str,
-    observation: ValidatedCorpusObservation,
-}
-
-/// One archive-to-plan attribution offered to the private overlay.
-///
-/// `row` is the archive view's attribution while `proven_row` is the row the
-/// validator proved. Keeping both is what makes a wrong-row association
-/// independently rejectable instead of trusting the archive's filing key.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ArchiveRowAttribution {
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct OverlayLink {
     row: &'static str,
-    witness: ValidatedCorpusWitness,
+    class: NativeV2LinkClass,
+    ceremony: String,
+    run_id: String,
+    request_id: String,
 }
 
-/// The archive-facts input to the overlay.
-///
-/// Incomplete carriers do not appear here as weak witnesses. The present
-/// archive therefore supplies an empty slice: its historical facts remain in
-/// the raw plan, while zero rows acquire validator-proven links.
-#[derive(Clone, Copy, Debug)]
-struct ArchiveFactsView<'a> {
-    attributions: &'a [ArchiveRowAttribution],
-}
-
-impl ArchiveFactsView<'static> {
-    const fn present_incomplete_archive() -> Self {
-        Self { attributions: &[] }
+impl From<&ProvenNativeV2Link> for OverlayLink {
+    fn from(link: &ProvenNativeV2Link) -> Self {
+        Self {
+            row: link.row(),
+            class: link.class(),
+            ceremony: link.ceremony().to_owned(),
+            run_id: link.run_id().to_owned(),
+            request_id: link.request_id().to_owned(),
+        }
     }
 }
 
-/// Why independent archive facts cannot be overlaid onto the raw plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OverlayRowAttribution {
+    row: &'static str,
+    proven_row: &'static str,
+    ceremonies: Vec<String>,
+}
+
+impl From<&NativeV2RowAttribution> for OverlayRowAttribution {
+    fn from(attribution: &NativeV2RowAttribution) -> Self {
+        Self {
+            row: attribution.row(),
+            proven_row: attribution.row(),
+            ceremonies: attribution.ceremonies().to_vec(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct OverlayInputs {
+    runs: Vec<LiveRunBinding>,
+    observations: Vec<LiveReportObservation>,
+    links: Vec<OverlayLink>,
+    attributions: Vec<OverlayRowAttribution>,
+}
+
+impl OverlayInputs {
+    fn from_corpus(corpus: &ValidatedNativeV2R7Corpus) -> Self {
+        Self {
+            runs: corpus.runs().to_vec(),
+            observations: corpus.observations().to_vec(),
+            links: corpus.links().iter().map(OverlayLink::from).collect(),
+            attributions: corpus
+                .attributions()
+                .iter()
+                .map(OverlayRowAttribution::from)
+                .collect(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.runs.is_empty()
+            && self.observations.is_empty()
+            && self.links.is_empty()
+            && self.attributions.is_empty()
+    }
+}
+
+/// Why validated corpus material cannot be overlaid onto the raw plan.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CorpusEvidenceRefusal {
+    AttributionCensus,
+    ObservationCensus,
     DuplicateRowAttribution,
+    DuplicatePrimaryLink,
     ReusedArchiveLink,
     LinksCrossRuns,
-    MultipleAcceptancesRequired,
     WrongRowAttribution,
     UnknownRow,
     StandingNotRetypeable,
-    RecordedObservationMismatch,
     RefusalBoundaryMismatch,
+    CeremonyAttributionMismatch,
+    ObservationUnbacked,
 }
 
-/// The private validated corpus-evidence overlay.
-///
-/// The raw plan is cloned as immutable historical input. Only this constructor
-/// can replace a standing, after an independently supplied archive view has
-/// furnished the nominal proof shape above. All public plan consumers receive
-/// the resulting view through [`derive_live_evidence_plan`]; none accepts a
-/// caller-supplied expected standing or census.
+/// One of the exact 42 row-to-corpus attributions admitted by the overlay.
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct ValidatedCorpusEvidence {
+pub struct ValidatedCorpusAttribution {
+    row: &'static str,
+    ceremonies: Vec<String>,
+    observation_index: usize,
+    observation: LiveReportObservation,
+}
+
+impl ValidatedCorpusAttribution {
+    /// The matrix row retyped by this attribution.
+    #[must_use]
+    pub const fn row(&self) -> &'static str {
+        self.row
+    }
+
+    /// The exact fresh-corpus ceremonies contributing to the row.
+    #[must_use]
+    pub fn ceremonies(&self) -> &[String] {
+        &self.ceremonies
+    }
+
+    /// The schema-6 observation carrying the row's fresh witness.
+    #[must_use]
+    pub const fn observation(&self) -> &LiveReportObservation {
+        &self.observation
+    }
+
+    #[must_use]
+    pub(crate) const fn observation_index(&self) -> usize {
+        self.observation_index
+    }
+}
+
+/// The validated corpus-evidence overlay.
+///
+/// Its fields are private and its only production constructor consumes the
+/// already validated native-v2/revision-7 corpus. A caller can neither supply
+/// expected runs nor substitute historical identities. The 42 standings are
+/// applied only after the complete attribution set validates.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedCorpusEvidence {
     plan: LiveTransferEvidencePlan,
+    runs: Vec<LiveRunBinding>,
+    attributions: Vec<ValidatedCorpusAttribution>,
 }
 
 impl ValidatedCorpusEvidence {
     fn try_from_inputs(
         raw_plan: &LiveTransferEvidencePlan,
-        archive: ArchiveFactsView<'_>,
+        corpus: &ValidatedNativeV2R7Corpus,
     ) -> Result<Self, CorpusEvidenceRefusal> {
-        let mut plan = raw_plan.clone();
-        let mut attributed_rows = BTreeSet::new();
-        let mut used_links = BTreeSet::new();
+        Self::try_from_overlay_inputs(raw_plan, OverlayInputs::from_corpus(corpus))
+    }
 
-        for attribution in archive.attributions {
+    fn try_from_overlay_inputs(
+        raw_plan: &LiveTransferEvidencePlan,
+        inputs: OverlayInputs,
+    ) -> Result<Self, CorpusEvidenceRefusal> {
+        if inputs.is_empty() {
+            return Ok(Self {
+                plan: raw_plan.clone(),
+                runs: Vec::new(),
+                attributions: Vec::new(),
+            });
+        }
+        if inputs.attributions.len() != 42 || raw_plan.census().recorded_observation_unbound() != 42
+        {
+            return Err(CorpusEvidenceRefusal::AttributionCensus);
+        }
+        validate_unique_links(&inputs.links)?;
+        let observation_rows = index_observation_rows(&inputs.observations)?;
+        if observation_rows.len() != 42 {
+            return Err(CorpusEvidenceRefusal::ObservationCensus);
+        }
+
+        let raw_rows = raw_plan
+            .rows()
+            .iter()
+            .filter(|row| {
+                matches!(
+                    row.standing(),
+                    LiveRowStanding::RecordedObservationUnbound(_)
+                )
+            })
+            .map(|row| row.row().name())
+            .collect::<BTreeSet<_>>();
+        if observation_rows.keys().copied().collect::<BTreeSet<_>>() != raw_rows {
+            return Err(CorpusEvidenceRefusal::ObservationCensus);
+        }
+
+        let mut attributed_rows = BTreeSet::new();
+        let mut replacements = Vec::with_capacity(42);
+        let mut validated_attributions = Vec::with_capacity(42);
+        for attribution in &inputs.attributions {
+            if attribution.row != attribution.proven_row {
+                return Err(CorpusEvidenceRefusal::WrongRowAttribution);
+            }
             if !attributed_rows.insert(attribution.row) {
                 return Err(CorpusEvidenceRefusal::DuplicateRowAttribution);
             }
-            if attribution.row != attribution.witness.proven_row {
-                return Err(CorpusEvidenceRefusal::WrongRowAttribution);
+            let observation_index = *observation_rows
+                .get(attribution.row)
+                .ok_or(CorpusEvidenceRefusal::UnknownRow)?;
+            let observation = &inputs.observations[observation_index];
+            validate_attribution_links(attribution, observation, &inputs.links)?;
+            if !observation_is_backed(observation, &inputs.runs) {
+                return Err(CorpusEvidenceRefusal::ObservationUnbacked);
             }
-            // This row's fact is two opposite-parity acceptances. The current
-            // single-identity standing cannot carry that proof without losing
-            // half of it, so the later private-restart type seam must widen
-            // before this overlay will move the row.
-            if attribution.row == "both-commitment-parity-forms"
-                && matches!(
-                    attribution.witness.observation,
-                    ValidatedCorpusObservation::NativeAcceptance { .. }
-                )
-            {
-                return Err(CorpusEvidenceRefusal::MultipleAcceptancesRequired);
-            }
-            if !attribution.witness.observation.links_share_one_run() {
-                return Err(CorpusEvidenceRefusal::LinksCrossRuns);
-            }
-            for link in attribution
-                .witness
-                .observation
-                .links()
-                .into_iter()
-                .flatten()
-            {
-                if !used_links.insert(link) {
-                    return Err(CorpusEvidenceRefusal::ReusedArchiveLink);
-                }
-            }
+            let raw = raw_plan
+                .rows()
+                .iter()
+                .find(|row| row.row().name() == attribution.row)
+                .ok_or(CorpusEvidenceRefusal::UnknownRow)?;
+            replacements.push((
+                attribution.row,
+                retype_validated_observation(raw.standing(), observation, attribution.row)?,
+            ));
+            validated_attributions.push(ValidatedCorpusAttribution {
+                row: attribution.row,
+                ceremonies: attribution.ceremonies.clone(),
+                observation_index,
+                observation: observation.clone(),
+            });
+        }
+        if attributed_rows != raw_rows {
+            return Err(CorpusEvidenceRefusal::AttributionCensus);
+        }
 
+        let mut plan = raw_plan.clone();
+        for (row_name, standing) in replacements {
             let row = plan
                 .rows
                 .iter_mut()
-                .find(|row| row.row.name() == attribution.row)
+                .find(|row| row.row.name() == row_name)
                 .ok_or(CorpusEvidenceRefusal::UnknownRow)?;
-            row.standing = retype_validated_observation(&row.standing, attribution.witness)?;
+            row.standing = standing;
         }
-
         plan.census = census_from_rows(&plan.rows);
-        Ok(Self { plan })
+        Ok(Self {
+            plan,
+            runs: inputs.runs,
+            attributions: validated_attributions,
+        })
     }
 
-    fn into_plan(self) -> LiveTransferEvidencePlan {
-        self.plan
+    /// The overlaid evidence plan.
+    #[must_use]
+    pub const fn plan(&self) -> &LiveTransferEvidencePlan {
+        &self.plan
+    }
+
+    /// The validated runs from the same corpus that retyped the plan.
+    #[must_use]
+    pub fn runs(&self) -> &[LiveRunBinding] {
+        &self.runs
+    }
+
+    /// The exact 42 row attributions, in charter-row order.
+    #[must_use]
+    pub fn attributions(&self) -> &[ValidatedCorpusAttribution] {
+        &self.attributions
+    }
+
+    #[must_use]
+    pub(crate) fn attribution_for(&self, row: &str) -> Option<&ValidatedCorpusAttribution> {
+        self.attributions
+            .iter()
+            .find(|attribution| attribution.row == row)
+    }
+}
+
+impl Deref for ValidatedCorpusEvidence {
+    type Target = LiveTransferEvidencePlan;
+
+    fn deref(&self) -> &Self::Target {
+        &self.plan
+    }
+}
+
+fn validate_unique_links(links: &[OverlayLink]) -> Result<(), CorpusEvidenceRefusal> {
+    let mut unique = BTreeSet::new();
+    for link in links {
+        if !unique.insert(link) {
+            return Err(if link.class == NativeV2LinkClass::Primary {
+                CorpusEvidenceRefusal::DuplicatePrimaryLink
+            } else {
+                CorpusEvidenceRefusal::ReusedArchiveLink
+            });
+        }
+    }
+    Ok(())
+}
+
+fn observation_row_names(
+    observation: &LiveReportObservation,
+) -> Result<Vec<&'static str>, CorpusEvidenceRefusal> {
+    match observation {
+        LiveReportObservation::NativeAcceptance { row, .. }
+        | LiveReportObservation::CompositeTwoAcceptance { row, .. }
+        | LiveReportObservation::NativeRefusalWithSupport { row, .. }
+        | LiveReportObservation::PairedRelation { row, .. } => Ok(vec![*row]),
+        LiveReportObservation::MultiRowSemantic { witness } => {
+            Ok(witness.rows().iter().copied().collect())
+        }
+        LiveReportObservation::RecordedObservationUnbound { .. }
+        | LiveReportObservation::Determinism { .. }
+        | LiveReportObservation::FirstPartyFact { .. } => {
+            Err(CorpusEvidenceRefusal::ObservationCensus)
+        }
+    }
+}
+
+fn index_observation_rows(
+    observations: &[LiveReportObservation],
+) -> Result<BTreeMap<&'static str, usize>, CorpusEvidenceRefusal> {
+    let mut rows = BTreeMap::new();
+    for (index, observation) in observations.iter().enumerate() {
+        for row in observation_row_names(observation)? {
+            if rows.insert(row, index).is_some() {
+                return Err(CorpusEvidenceRefusal::ObservationCensus);
+            }
+        }
+    }
+    Ok(rows)
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct ExpectedLink {
+    class: NativeV2LinkClass,
+    run_id: String,
+    request_id: String,
+}
+
+fn expected_links(
+    observation: &LiveReportObservation,
+    row: &'static str,
+) -> Result<Vec<ExpectedLink>, CorpusEvidenceRefusal> {
+    let primary = |run_id: &str, request_id: &str| ExpectedLink {
+        class: NativeV2LinkClass::Primary,
+        run_id: run_id.to_owned(),
+        request_id: request_id.to_owned(),
+    };
+    let support = |run_id: &str, request_id: &str| ExpectedLink {
+        class: NativeV2LinkClass::Support,
+        run_id: run_id.to_owned(),
+        request_id: request_id.to_owned(),
+    };
+    match observation {
+        LiveReportObservation::NativeAcceptance {
+            row: observed_row,
+            run_id,
+            request_id,
+            ..
+        } if *observed_row == row => Ok(vec![primary(run_id, request_id)]),
+        LiveReportObservation::CompositeTwoAcceptance {
+            row: observed_row,
+            acceptance,
+        } if *observed_row == row => Ok(acceptance
+            .members()
+            .iter()
+            .map(|member| primary(member.run_id(), member.request_id()))
+            .collect()),
+        LiveReportObservation::NativeRefusalWithSupport {
+            row: observed_row,
+            run_id,
+            request_id,
+            support: accepted_control,
+            ..
+        } if *observed_row == row => {
+            if run_id != accepted_control.run_id() {
+                return Err(CorpusEvidenceRefusal::LinksCrossRuns);
+            }
+            Ok(vec![
+                primary(run_id, request_id),
+                support(accepted_control.run_id(), accepted_control.request_id()),
+            ])
+        }
+        LiveReportObservation::PairedRelation {
+            row: observed_row,
+            explicit_run_id,
+            explicit_request_id,
+            private_run_id,
+            private_request_id,
+            ..
+        } if *observed_row == row => {
+            if explicit_run_id != private_run_id {
+                return Err(CorpusEvidenceRefusal::LinksCrossRuns);
+            }
+            Ok(vec![
+                primary(explicit_run_id, explicit_request_id),
+                primary(private_run_id, private_request_id),
+            ])
+        }
+        LiveReportObservation::MultiRowSemantic { witness } if witness.rows().contains(row) => {
+            Ok(vec![primary(witness.run_id(), witness.request_id())])
+        }
+        _ => Err(CorpusEvidenceRefusal::WrongRowAttribution),
+    }
+}
+
+fn validate_attribution_links(
+    attribution: &OverlayRowAttribution,
+    observation: &LiveReportObservation,
+    links: &[OverlayLink],
+) -> Result<(), CorpusEvidenceRefusal> {
+    let mut expected = expected_links(observation, attribution.row)?;
+    expected.sort();
+    let row_links = links
+        .iter()
+        .filter(|link| link.row == attribution.row)
+        .collect::<Vec<_>>();
+    let primary_runs = row_links
+        .iter()
+        .filter(|link| link.class == NativeV2LinkClass::Primary)
+        .map(|link| link.run_id.as_str())
+        .collect::<BTreeSet<_>>();
+    if row_links
+        .iter()
+        .filter(|link| link.class == NativeV2LinkClass::Support)
+        .any(|link| !primary_runs.contains(link.run_id.as_str()))
+    {
+        return Err(CorpusEvidenceRefusal::LinksCrossRuns);
+    }
+    let mut offered = row_links
+        .iter()
+        .map(|link| ExpectedLink {
+            class: link.class,
+            run_id: link.run_id.clone(),
+            request_id: link.request_id.clone(),
+        })
+        .collect::<Vec<_>>();
+    offered.sort();
+    if offered != expected {
+        return Err(CorpusEvidenceRefusal::ObservationUnbacked);
+    }
+    let offered_ceremonies = row_links
+        .iter()
+        .filter(|link| link.class == NativeV2LinkClass::Primary)
+        .map(|link| link.ceremony.as_str())
+        .collect::<BTreeSet<_>>();
+    let attributed_ceremonies = attribution
+        .ceremonies
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if offered_ceremonies != attributed_ceremonies {
+        return Err(CorpusEvidenceRefusal::CeremonyAttributionMismatch);
+    }
+    Ok(())
+}
+
+fn backed_response<'a>(
+    runs: &'a [LiveRunBinding],
+    run_id: &str,
+    request_id: &str,
+) -> Option<&'a LiveTargetResponse> {
+    let run = runs.iter().find(|run| run.run_id() == run_id)?;
+    run.requests().get(request_id)?;
+    run.request_facts().get(request_id)?;
+    run.responses().get(request_id)
+}
+
+fn accepted_response_is(
+    runs: &[LiveRunBinding],
+    run_id: &str,
+    request_id: &str,
+    identity: Txid,
+) -> bool {
+    backed_response(runs, run_id, request_id) == Some(&LiveTargetResponse::Accepted { identity })
+}
+
+fn observation_is_backed(observation: &LiveReportObservation, runs: &[LiveRunBinding]) -> bool {
+    match observation {
+        LiveReportObservation::NativeAcceptance {
+            run_id,
+            request_id,
+            identity,
+            ..
+        } => accepted_response_is(runs, run_id, request_id, *identity),
+        LiveReportObservation::CompositeTwoAcceptance { acceptance, .. } => {
+            acceptance.members().iter().all(|member| {
+                accepted_response_is(
+                    runs,
+                    member.run_id(),
+                    member.request_id(),
+                    member.identity(),
+                )
+            })
+        }
+        LiveReportObservation::NativeRefusalWithSupport {
+            run_id,
+            request_id,
+            observed_layer,
+            detail,
+            support,
+            ..
+        } => {
+            let Some(LiveTargetResponse::Accepted { identity }) =
+                backed_response(runs, support.run_id(), support.request_id())
+            else {
+                return false;
+            };
+            backed_response(runs, run_id, request_id)
+                == Some(&LiveTargetResponse::Refused {
+                    observed_layer: *observed_layer,
+                    detail: detail.clone(),
+                    control_identity: *identity,
+                })
+        }
+        LiveReportObservation::PairedRelation {
+            explicit_run_id,
+            explicit_request_id,
+            explicit_identity,
+            private_run_id,
+            private_request_id,
+            private_identity,
+            ..
+        } => {
+            accepted_response_is(
+                runs,
+                explicit_run_id,
+                explicit_request_id,
+                *explicit_identity,
+            ) && accepted_response_is(runs, private_run_id, private_request_id, *private_identity)
+        }
+        LiveReportObservation::MultiRowSemantic { witness } => accepted_response_is(
+            runs,
+            witness.run_id(),
+            witness.request_id(),
+            witness.identity(),
+        ),
+        LiveReportObservation::RecordedObservationUnbound { .. }
+        | LiveReportObservation::Determinism { .. }
+        | LiveReportObservation::FirstPartyFact { .. } => false,
     }
 }
 
 fn retype_validated_observation(
     raw: &LiveRowStanding,
-    witness: ValidatedCorpusWitness,
+    observation: &LiveReportObservation,
+    row: &'static str,
 ) -> Result<LiveRowStanding, CorpusEvidenceRefusal> {
-    match (raw, witness.observation) {
+    match (raw, observation) {
         (
             LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeAcceptance {
-                accepted_identity: recorded_identity,
-            }),
-            ValidatedCorpusObservation::NativeAcceptance {
-                accepted_identity: proven_identity,
                 ..
-            },
+            }),
+            LiveReportObservation::NativeAcceptance { identity, .. },
+        ) => Ok(LiveRowStanding::NativeRunObserved {
+            acceptance: NativeObservedAcceptance::Single(*identity),
+        }),
+        (
+            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeAcceptance {
+                ..
+            }),
+            LiveReportObservation::CompositeTwoAcceptance { acceptance, .. },
         ) => {
-            if recorded_identity != &proven_identity {
-                return Err(CorpusEvidenceRefusal::RecordedObservationMismatch);
-            }
+            let [first, second] = acceptance.members();
             Ok(LiveRowStanding::NativeRunObserved {
-                accepted_identity: recorded_identity,
+                acceptance: NativeObservedAcceptance::CompositeTwo([
+                    first.identity(),
+                    second.identity(),
+                ]),
             })
         }
         (
+            LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeAcceptance {
+                ..
+            }),
+            LiveReportObservation::MultiRowSemantic { witness },
+        ) if witness.rows().contains(row) => Ok(LiveRowStanding::NativeRunObserved {
+            acceptance: NativeObservedAcceptance::Single(witness.identity()),
+        }),
+        (
             LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeRefusal {
                 declared_boundary: recorded_boundary,
-                observed_layer: recorded_layer,
-                control_identity: recorded_control,
-                refusal_detail: recorded_detail,
+                ..
             }),
-            ValidatedCorpusObservation::NativeRefusal {
-                declared_boundary: proven_boundary,
-                observed_layer: proven_layer,
-                control_identity: proven_control,
-                refusal_detail: proven_detail,
+            LiveReportObservation::NativeRefusalWithSupport {
+                declared_boundary,
+                observed_layer,
+                detail,
+                support,
                 ..
             },
         ) => {
-            if recorded_boundary != &proven_boundary
-                || recorded_layer != &proven_layer
-                || recorded_control != &proven_control
-                || recorded_detail != &proven_detail
+            if recorded_boundary != declared_boundary
+                || observed_boundary(*observed_layer) != Some(*declared_boundary)
             {
-                return Err(CorpusEvidenceRefusal::RecordedObservationMismatch);
-            }
-            if observed_boundary(proven_layer) != Some(proven_boundary) {
                 return Err(CorpusEvidenceRefusal::RefusalBoundaryMismatch);
             }
+            let LiveTargetResponse::Accepted { identity } = support.response() else {
+                return Err(CorpusEvidenceRefusal::ObservationUnbacked);
+            };
             Ok(LiveRowStanding::NativeRefusalObserved {
-                declared_boundary: proven_boundary,
-                observed_layer: proven_layer,
-                control_identity: recorded_control,
-                refusal_detail: recorded_detail,
+                declared_boundary: *declared_boundary,
+                observed_layer: *observed_layer,
+                control_identity: *identity,
+                refusal_detail: detail.clone(),
             })
         }
         (
             LiveRowStanding::RecordedObservationUnbound(RecordedObservation::PairedRelation {
-                explicit_identity: recorded_explicit,
-                private_identity: recorded_private,
-                relation: recorded_relation,
+                ..
             }),
-            ValidatedCorpusObservation::PairedRelation {
-                explicit_identity: proven_explicit,
-                private_identity: proven_private,
-                relation: proven_relation,
+            LiveReportObservation::PairedRelation {
+                explicit_identity,
+                private_identity,
+                relation,
                 ..
             },
-        ) => {
-            if recorded_explicit != &proven_explicit
-                || recorded_private != &proven_private
-                || recorded_relation != &proven_relation
-            {
-                return Err(CorpusEvidenceRefusal::RecordedObservationMismatch);
-            }
-            Ok(LiveRowStanding::PairedRelationObserved {
-                explicit_identity: recorded_explicit,
-                private_identity: recorded_private,
-                relation: recorded_relation,
-            })
-        }
+        ) => Ok(LiveRowStanding::PairedRelationObserved {
+            explicit_identity: *explicit_identity,
+            private_identity: *private_identity,
+            relation: relation.clone(),
+        }),
         (LiveRowStanding::RecordedObservationUnbound(_), _) => {
-            Err(CorpusEvidenceRefusal::RecordedObservationMismatch)
+            Err(CorpusEvidenceRefusal::WrongRowAttribution)
         }
         _ => Err(CorpusEvidenceRefusal::StandingNotRetypeable),
     }
@@ -2442,11 +2784,11 @@ fn classify(
 /// through [`required_safety_matrix`]; the minimality pair registry,
 /// built through [`crate::live_pairs::build_minimality_pairs`] and
 /// recorded here as a standing rather than as a verdict (§13.6); and the
-/// exact target, deployment, and executor provenance expectation. The private
-/// `ValidatedCorpusEvidence` overlay then combines that immutable raw plan
-/// with an independent `ArchiveFactsView`. Only validator-proven archive
-/// links can retype a historical observation; the present incomplete archive
-/// supplies none, so today's public view is unchanged.
+/// exact target, deployment, and executor provenance expectation. The
+/// [`ValidatedCorpusEvidence`] overlay then combines that immutable raw plan
+/// with the independently validated native-v2/revision-7 corpus. Only its
+/// proven links can retype a historical observation, and all 42 must validate
+/// before any standing moves.
 ///
 /// # Errors
 ///
@@ -2454,14 +2796,12 @@ fn classify(
 /// not build or independently validated archive facts cannot be applied, and
 /// [`VectorError::NegativeLinkUnresolved`] when a row's declared link no
 /// longer resolves against the published plan.
-pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorError> {
+pub fn derive_live_evidence_plan() -> Result<ValidatedCorpusEvidence, VectorError> {
     let raw_plan = derive_raw_live_evidence_plan()?;
-    ValidatedCorpusEvidence::try_from_inputs(
-        &raw_plan,
-        ArchiveFactsView::present_incomplete_archive(),
-    )
-    .map(ValidatedCorpusEvidence::into_plan)
-    .map_err(|_| VectorError::LiveSubstrateUnavailable)
+    let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+        .map_err(|_| VectorError::LiveSubstrateUnavailable)?;
+    ValidatedCorpusEvidence::try_from_inputs(&raw_plan, corpus)
+        .map_err(|_| VectorError::LiveSubstrateUnavailable)
 }
 
 /// Derive the immutable historical classifier before corpus validation.
@@ -2765,139 +3105,19 @@ pub const fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ArchiveFactsView, ArchiveRowAttribution, CorpusEvidenceRefusal, EvidenceBoundary,
-        LiveEvidenceRow, LiveInfrastructureBlocker, LiveRowStanding, LiveTransferEvidencePlan,
-        MinimalityRegistryStanding, ObservedOutcomeLayer, ProvenArchiveLink, RecordedObservation,
-        ValidatedCorpusEvidence, ValidatedCorpusObservation, ValidatedCorpusWitness,
+        CorpusEvidenceRefusal, EvidenceBoundary, LiveInfrastructureBlocker, LiveReportObservation,
+        LiveRowStanding, MinimalityRegistryStanding, NativeObservedAcceptance, NativeV2LinkClass,
+        ObservedOutcomeLayer, OverlayInputs, RecordedObservation, Txid, ValidatedCorpusEvidence,
         blocker_census, derive_live_evidence_plan, derive_raw_live_evidence_plan,
         observed_boundary,
     };
     use crate::live_safety::{LiveReportRequirement, LiveSafetyPolarity, LiveSafetySection};
     use std::collections::BTreeSet;
 
-    const fn synthetic_link(request: &'static str, response: &'static str) -> ProvenArchiveLink {
-        ProvenArchiveLink {
-            run: "synthetic-complete-keypath-run",
-            request,
-            response,
-        }
-    }
-
-    fn complete_keypath_attribution() -> ArchiveRowAttribution {
-        ArchiveRowAttribution {
-            row: "key-path-escape",
-            witness: ValidatedCorpusWitness {
-                proven_row: "key-path-escape",
-                observation: ValidatedCorpusObservation::NativeRefusal {
-                    mutant: synthetic_link("keypath-attempt", "keypath-refusal"),
-                    accepted_control: synthetic_link("script-control", "script-acceptance"),
-                    declared_boundary: EvidenceBoundary::KeyPathRejection,
-                    observed_layer: ObservedOutcomeLayer::KeyPathRejection,
-                    control_identity:
-                        crate::live_keypath_probe::run_of_record_phase_b::CONTROL_ACCEPTED_TXID,
-                    refusal_detail:
-                        crate::live_keypath_probe::run_of_record_phase_b::REFUSAL_DETAIL,
-                },
-            },
-        }
-    }
-
-    fn refusal_attribution_from_raw(
-        raw_plan: &LiveTransferEvidencePlan,
-        row_name: &'static str,
-        mutant: ProvenArchiveLink,
-        accepted_control: ProvenArchiveLink,
-    ) -> ArchiveRowAttribution {
-        let row = raw_plan
-            .rows()
-            .iter()
-            .find(|row| row.row().name() == row_name)
-            .expect("the synthetic attribution names a raw row");
-        let LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeRefusal {
-            declared_boundary,
-            observed_layer,
-            control_identity,
-            refusal_detail,
-        }) = row.standing()
-        else {
-            panic!("the synthetic attribution names an unbound refusal");
-        };
-        ArchiveRowAttribution {
-            row: row_name,
-            witness: ValidatedCorpusWitness {
-                proven_row: row_name,
-                observation: ValidatedCorpusObservation::NativeRefusal {
-                    mutant,
-                    accepted_control,
-                    declared_boundary: *declared_boundary,
-                    observed_layer: *observed_layer,
-                    control_identity,
-                    refusal_detail,
-                },
-            },
-        }
-    }
-
-    fn acceptance_attribution_from_raw(
-        raw_plan: &LiveTransferEvidencePlan,
-        row_name: &'static str,
-        request: ProvenArchiveLink,
-    ) -> ArchiveRowAttribution {
-        let row = raw_plan
-            .rows()
-            .iter()
-            .find(|row| row.row().name() == row_name)
-            .expect("the synthetic attribution names a raw row");
-        let LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeAcceptance {
-            accepted_identity,
-        }) = row.standing()
-        else {
-            panic!("the synthetic attribution names an unbound acceptance");
-        };
-        ArchiveRowAttribution {
-            row: row_name,
-            witness: ValidatedCorpusWitness {
-                proven_row: row_name,
-                observation: ValidatedCorpusObservation::NativeAcceptance {
-                    request,
-                    accepted_identity,
-                },
-            },
-        }
-    }
-
-    fn pair_attribution_from_raw(
-        raw_plan: &LiveTransferEvidencePlan,
-        row_name: &'static str,
-        explicit: ProvenArchiveLink,
-        private: ProvenArchiveLink,
-    ) -> ArchiveRowAttribution {
-        let row = raw_plan
-            .rows()
-            .iter()
-            .find(|row| row.row().name() == row_name)
-            .expect("the synthetic attribution names a raw row");
-        let LiveRowStanding::RecordedObservationUnbound(RecordedObservation::PairedRelation {
-            explicit_identity,
-            private_identity,
-            relation,
-        }) = row.standing()
-        else {
-            panic!("the synthetic attribution names an unbound paired relation");
-        };
-        ArchiveRowAttribution {
-            row: row_name,
-            witness: ValidatedCorpusWitness {
-                proven_row: row_name,
-                observation: ValidatedCorpusObservation::PairedRelation {
-                    explicit,
-                    private,
-                    explicit_identity,
-                    private_identity,
-                    relation,
-                },
-            },
-        }
+    fn real_overlay_inputs() -> OverlayInputs {
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates");
+        OverlayInputs::from_corpus(corpus)
     }
 
     #[test]
@@ -3154,11 +3374,10 @@ mod tests {
     }
 
     #[test]
-    fn exactly_the_positive_target_observations_are_preserved_unbound() {
-        // Twenty-six positive rows; twenty-four preserve a target acceptance
-        // without counting it as validated evidence. One more preserves the
-        // paired target relation, and the independently recomputed determinism
-        // row remains answered.
+    fn exactly_the_positive_target_observations_are_bound_to_the_fresh_corpus() {
+        // Twenty-six positive rows; twenty-four carry fresh target
+        // acceptances, one carries the paired relation, and the independently
+        // recomputed determinism row remains answered.
         //
         // The openings row is answered independently by determinism and is
         // collected separately. The paired relation is preserved separately
@@ -3186,16 +3405,20 @@ mod tests {
             }
             positives += 1;
             match row.standing() {
-                LiveRowStanding::RecordedObservationUnbound(
-                    RecordedObservation::NativeAcceptance { accepted_identity },
-                ) => {
-                    assert_eq!(
-                        accepted_identity.len(),
-                        64,
-                        "{} records something that is not a target identity",
-                        row.row(),
-                    );
-                    assert!(!row.standing().is_answered());
+                LiveRowStanding::NativeRunObserved { acceptance } => {
+                    match acceptance {
+                        NativeObservedAcceptance::Single(identity) => {
+                            assert_eq!(identity.to_target_display().len(), 64);
+                        }
+                        NativeObservedAcceptance::CompositeTwo(identities) => {
+                            assert!(
+                                identities
+                                    .iter()
+                                    .all(|identity| { identity.to_target_display().len() == 64 })
+                            );
+                        }
+                    }
+                    assert!(row.standing().is_answered());
                     recorded_acceptances.insert(row.row().name());
                 }
                 LiveRowStanding::NativeRunRequired(_) => {
@@ -3227,15 +3450,17 @@ mod tests {
                 // The paired relation stays separate from one-identity
                 // acceptance records and, without its full run binding,
                 // answers nothing in this partition.
-                LiveRowStanding::RecordedObservationUnbound(
-                    RecordedObservation::PairedRelation {
-                        explicit_identity,
-                        private_identity,
+                LiveRowStanding::PairedRelationObserved {
+                    explicit_identity,
+                    private_identity,
+                    relation,
+                } => {
+                    assert_paired_relation(
+                        &explicit_identity.to_target_display(),
+                        &private_identity.to_target_display(),
                         relation,
-                    },
-                ) => {
-                    assert_paired_relation(explicit_identity, private_identity, relation);
-                    assert!(!row.standing().is_answered());
+                    );
+                    assert!(row.standing().is_answered());
                     by_paired_relation.insert(row.row().name());
                 }
                 other => panic!("{} stands at {other:?}", row.row()),
@@ -3246,7 +3471,7 @@ mod tests {
             recorded_acceptances,
             rows_with_a_recorded_acceptance_of_their_own_shape(),
         );
-        assert_eq!(plan.census().native_run_observed(), 0);
+        assert_eq!(plan.census().native_run_observed(), 24);
 
         // The history below explains how the records were acquired. It does
         // not make them validated evidence in the current partition.
@@ -3328,7 +3553,7 @@ mod tests {
             "{paired} claims a determinism answer nothing recomputed",
         );
         assert_eq!(by_paired_relation, BTreeSet::from([paired]));
-        assert_eq!(plan.census().paired_relation_observed(), 0);
+        assert_eq!(plan.census().paired_relation_observed(), 1);
         assert_eq!(
             by_determinism,
             BTreeSet::from(["deterministic-public-fixture-openings"]),
@@ -3338,13 +3563,13 @@ mod tests {
         // The acceptance buckets did NOT move on the determinism row's
         // account, which is the whole claim of a separate bucket made
         // checkable.
-        assert_eq!(plan.census().native_run_observed(), 0);
+        assert_eq!(plan.census().native_run_observed(), 24);
     }
 
     #[test]
-    fn exactly_the_negative_refusals_are_preserved_unbound() {
-        // The historical negative delta, spelled so a row cannot lose its
-        // recorded refusal while none is mistaken for validated evidence.
+    fn exactly_the_negative_refusals_are_bound_to_the_fresh_corpus() {
+        // The fresh negative delta, spelled so a row cannot lose its
+        // validated refusal or acquire one from another row.
         //
         // Both are §15.3 witness-content rows and both were answered by
         // ONE run, which submitted two mutants and then the unmutated
@@ -3357,17 +3582,15 @@ mod tests {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let mut recorded = BTreeSet::new();
         for row in plan.rows() {
-            if let LiveRowStanding::RecordedObservationUnbound(
-                RecordedObservation::NativeRefusal {
-                    declared_boundary,
-                    observed_layer,
-                    control_identity,
-                    refusal_detail,
-                },
-            ) = row.standing()
+            if let LiveRowStanding::NativeRefusalObserved {
+                declared_boundary,
+                observed_layer,
+                control_identity,
+                refusal_detail,
+            } = row.standing()
             {
                 assert_eq!(
-                    control_identity.len(),
+                    control_identity.to_target_display().len(),
                     64,
                     "{} names something that is not a target identity",
                     row.row(),
@@ -3387,7 +3610,7 @@ mod tests {
                     "{} stands as answered at a boundary it did not declare",
                     row.row(),
                 );
-                assert!(!row.standing().is_answered());
+                assert!(row.standing().is_answered());
                 recorded.insert(row.row().name());
             }
         }
@@ -3413,7 +3636,7 @@ mod tests {
                 "wrong-private-blinding-balance",
             ]),
         );
-        assert_eq!(plan.census().native_refusal_observed(), 0);
+        assert_eq!(plan.census().native_refusal_observed(), 17);
 
         // THE KEY-PATH ROW COMES FROM A THIRD LANE and is held to the
         // same rule as the rest. Its control is the probe's own, accepted
@@ -3501,14 +3724,17 @@ mod tests {
         let matched = LiveRowStanding::NativeRefusalObserved {
             declared_boundary: EvidenceBoundary::ConsensusRejectionBeforeScript,
             observed_layer: ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
-            control_identity: "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029",
-            refusal_detail: "bad-txns-in-ne-out",
+            control_identity: Txid::from_target_display(
+                "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029",
+            )
+            .expect("the synthetic identity parses"),
+            refusal_detail: "bad-txns-in-ne-out".to_owned(),
         };
         assert!(matched.is_answered());
     }
 
     #[test]
-    fn every_recorded_native_refusal_matches_its_rows_declared_boundary() {
+    fn every_fresh_native_refusal_matches_its_rows_declared_boundary() {
         // The property over the DERIVED PLAN rather than over a synthetic
         // pair: walk every row the classifier answered by a refusal and
         // compare, exactly, the layer the run reached against the
@@ -3520,13 +3746,11 @@ mod tests {
         // somewhere else.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         for row in plan.rows() {
-            if let LiveRowStanding::RecordedObservationUnbound(
-                RecordedObservation::NativeRefusal {
-                    declared_boundary,
-                    observed_layer,
-                    ..
-                },
-            ) = row.standing()
+            if let LiveRowStanding::NativeRefusalObserved {
+                declared_boundary,
+                observed_layer,
+                ..
+            } = row.standing()
             {
                 assert_eq!(
                     observed_boundary(*observed_layer),
@@ -3601,12 +3825,9 @@ mod tests {
                 Some(EvidenceBoundary::ConsensusRejectionBeforeScript),
                 "{name} does not declare the boundary its run reached",
             );
-            let LiveRowStanding::RecordedObservationUnbound(RecordedObservation::NativeRefusal {
-                observed_layer,
-                ..
-            }) = row.standing()
+            let LiveRowStanding::NativeRefusalObserved { observed_layer, .. } = row.standing()
             else {
-                panic!("{name} does not preserve its recorded refusal");
+                panic!("{name} does not carry its fresh refusal");
             };
             assert_eq!(
                 *observed_layer,
@@ -3617,13 +3838,8 @@ mod tests {
     }
 
     #[test]
-    fn the_partition_is_thirty_eight_answered_two_report_required_and_sixty_nine_outstanding() {
-        // FORWARD BINDING ONLY, under the owner ruling recorded by T6-002.
-        // The 42 target-derived rows preserve their observations, but the
-        // tree does not retain the exact request bytes, disposable deployment
-        // binding, and executor self-description needed to validate a run.
-        // They therefore leave the answered side without changing history.
-        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+    fn the_raw_partition_remains_thirty_eight_plus_two_plus_one_plus_twenty_five_plus_forty_two() {
+        let plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
         let census = plan.census();
         let answered = plan
             .rows()
@@ -3631,227 +3847,182 @@ mod tests {
             .filter(|row| row.standing().is_answered())
             .count();
 
-        assert_eq!(answered, 38, "the answered count moved");
-        assert_eq!(census.first_party_discharged(), 34);
-        assert_eq!(census.determinism_observed(), 1);
-        assert_eq!(census.first_party_fact_observed(), 3);
+        assert_eq!(answered, 38);
         assert_eq!(census.report_layer_required(), 2);
-        assert_eq!(census.report_layer_observed(), 0);
         assert_eq!(census.vocabulary_closed(), 1);
-        assert_eq!(census.native_run_required(), 25, "the required count moved");
+        assert_eq!(census.native_run_required(), 25);
         assert_eq!(census.recorded_observation_unbound(), 42);
-        assert_eq!(
-            answered
-                + census.report_layer_required()
-                + census.vocabulary_closed()
-                + census.native_run_required()
-                + census.recorded_observation_unbound(),
-            108
-        );
-        assert_eq!(census.rows(), 108);
-
-        // The 17 refusal records remain exact about their observed layer,
-        // but none is counted as a validated refusal without its run.
-        assert_eq!(census.native_refusal_observed(), 0);
-        assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
+        assert_eq!(38 + 2 + 1 + 25 + 42, census.rows());
     }
 
     #[test]
-    fn the_incomplete_archive_moves_no_row_in_the_validated_census() {
+    fn an_absent_overlay_moves_zero_rows_and_preserves_the_old_census() {
         let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
-        let validated = ValidatedCorpusEvidence::try_from_inputs(
-            &raw_plan,
-            ArchiveFactsView::present_incomplete_archive(),
-        )
-        .expect("the incomplete archive has no attribution to refuse");
-        let plan = validated.into_plan();
+        let validated =
+            ValidatedCorpusEvidence::try_from_overlay_inputs(&raw_plan, OverlayInputs::default())
+                .expect("the absent overlay is the unchanged rerun-day path");
 
-        assert_eq!(plan, raw_plan, "an incomplete archive moved a raw standing");
-        let answered_before_report = plan
+        assert_eq!(validated.plan(), &raw_plan);
+        assert!(validated.runs().is_empty());
+        assert!(validated.attributions().is_empty());
+        assert_eq!(validated.census().recorded_observation_unbound(), 42);
+        assert_eq!(38 + 2 + 1 + 25 + 42, validated.census().rows());
+    }
+
+    #[test]
+    fn the_real_corpus_retypes_exactly_forty_two_rows_atomically() {
+        let validated = derive_live_evidence_plan().expect("the real corpus overlays");
+        let census = validated.census();
+        let answered = validated
             .rows()
             .iter()
             .filter(|row| row.standing().is_answered())
             .count();
-        assert_eq!(answered_before_report, 38);
 
-        let census = plan
-            .census()
-            .with_validated_report_layer_observations(2)
-            .expect("the two report-layer requirements validate");
-        let answered = answered_before_report + census.report_layer_observed();
-        let outstanding = census.native_run_required() + census.recorded_observation_unbound();
-
-        assert_eq!(answered, 40);
-        assert_eq!(census.vocabulary_closed(), 1);
+        assert_eq!(validated.attributions().len(), 42);
+        assert_eq!(validated.runs().len(), 28);
+        assert_eq!(answered, 80);
+        assert_eq!(census.native_run_observed(), 24);
+        assert_eq!(census.native_refusal_observed(), 17);
+        assert_eq!(census.paired_relation_observed(), 1);
+        assert_eq!(census.recorded_observation_unbound(), 0);
         assert_eq!(census.native_run_required(), 25);
-        assert_eq!(census.recorded_observation_unbound(), 42);
-        assert_eq!(outstanding, 67);
-        assert_eq!(answered + 1 + 25 + 42, 108);
-    }
+        assert_eq!(80 + 2 + 1 + 25, census.rows());
 
-    #[test]
-    fn one_complete_keypath_witness_moves_exactly_one_row() {
-        let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
-        let attributions = [complete_keypath_attribution()];
-        let plan = ValidatedCorpusEvidence::try_from_inputs(
-            &raw_plan,
-            ArchiveFactsView {
-                attributions: &attributions,
-            },
-        )
-        .expect("the complete keypath witness overlays")
-        .into_plan();
-
-        let keypath = plan
-            .rows()
-            .iter()
-            .find(|row| row.row().name() == "key-path-escape")
-            .expect("the keypath row remains in the matrix");
-        assert!(matches!(
-            keypath.standing(),
-            LiveRowStanding::NativeRefusalObserved {
-                declared_boundary: EvidenceBoundary::KeyPathRejection,
-                observed_layer: ObservedOutcomeLayer::KeyPathRejection,
-                ..
-            }
-        ));
-
-        let answered_before_report = plan
-            .rows()
-            .iter()
-            .filter(|row| row.standing().is_answered())
-            .count();
-        let census = plan.census();
-        assert_eq!(answered_before_report, 39);
-        assert_eq!(census.report_layer_required(), 2);
-        assert_eq!(census.vocabulary_closed(), 1);
-        assert_eq!(census.native_run_required(), 25);
-        assert_eq!(census.recorded_observation_unbound(), 41);
-        assert_eq!(census.native_refusal_observed(), 1);
-        assert_eq!(39 + 2 + 1 + 25 + 41, census.rows());
-
-        let validated_census = census
+        let after_report = census
             .with_validated_report_layer_observations(2)
-            .expect("the two report-layer requirements validate");
-        let answered = answered_before_report + validated_census.report_layer_observed();
-        let outstanding = validated_census.native_run_required()
-            + validated_census.recorded_observation_unbound();
-        assert_eq!(answered, 41);
-        assert_eq!(outstanding, 66);
-        assert_eq!(41 + 1 + 25 + 41, validated_census.rows());
+            .expect("the two report requirements validate");
+        assert_eq!(after_report.report_layer_observed(), 2);
+        assert_eq!(82 + 1 + 25, after_report.rows());
+        assert_eq!(after_report.native_run_required(), 25);
     }
 
     #[test]
-    fn each_complete_witness_shape_retypes_only_its_matching_observation() {
+    fn a_wrong_row_attribution_refuses_the_whole_overlay() {
         let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
-        let attributions = [
-            acceptance_attribution_from_raw(
-                &raw_plan,
-                "candidate-maximum-inputs",
-                synthetic_link("accepted-request", "accepted-response"),
-            ),
-            pair_attribution_from_raw(
-                &raw_plan,
-                "projection-equality-with-paired-explicit",
-                synthetic_link("explicit-request", "explicit-response"),
-                synthetic_link("private-request", "private-response"),
-            ),
-        ];
-        let plan = ValidatedCorpusEvidence::try_from_inputs(
-            &raw_plan,
-            ArchiveFactsView {
-                attributions: &attributions,
-            },
-        )
-        .expect("both complete witness shapes overlay")
-        .into_plan();
-        let standing = |row_name: &str| {
-            plan.rows()
-                .iter()
-                .find(|row| row.row().name() == row_name)
-                .map(LiveEvidenceRow::standing)
-                .expect("the witness names a matrix row")
-        };
+        let mut inputs = real_overlay_inputs();
+        inputs.attributions[0].row = "candidate-maximum-inputs";
+        let refusal = ValidatedCorpusEvidence::try_from_overlay_inputs(&raw_plan, inputs)
+            .expect_err("the offered and proven rows differ");
 
-        assert!(matches!(
-            standing("candidate-maximum-inputs"),
-            LiveRowStanding::NativeRunObserved { .. }
-        ));
-        assert!(matches!(
-            standing("projection-equality-with-paired-explicit"),
-            LiveRowStanding::PairedRelationObserved { .. }
-        ));
-        assert_eq!(plan.census().native_run_observed(), 1);
-        assert_eq!(plan.census().paired_relation_observed(), 1);
-        assert_eq!(plan.census().recorded_observation_unbound(), 40);
-    }
-
-    #[test]
-    fn duplicate_row_attribution_refuses() {
-        let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
-        let attribution = complete_keypath_attribution();
-        let attributions = [attribution, attribution];
-        let refusal = ValidatedCorpusEvidence::try_from_inputs(
-            &raw_plan,
-            ArchiveFactsView {
-                attributions: &attributions,
-            },
-        )
-        .expect_err("one row was attributed twice");
-        assert_eq!(refusal, CorpusEvidenceRefusal::DuplicateRowAttribution);
-    }
-
-    #[test]
-    fn wrong_row_attribution_refuses() {
-        let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
-        let mut attribution = complete_keypath_attribution();
-        attribution.row = "empty-signature";
-        let attributions = [attribution];
-        let refusal = ValidatedCorpusEvidence::try_from_inputs(
-            &raw_plan,
-            ArchiveFactsView {
-                attributions: &attributions,
-            },
-        )
-        .expect_err("the archive filing key names another row");
         assert_eq!(refusal, CorpusEvidenceRefusal::WrongRowAttribution);
+        assert_eq!(raw_plan.census().recorded_observation_unbound(), 42);
     }
 
     #[test]
-    fn parity_forms_cannot_move_on_one_acceptance_link() {
+    fn a_duplicated_primary_link_refuses_the_whole_overlay() {
         let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
-        let attributions = [acceptance_attribution_from_raw(
-            &raw_plan,
-            "both-commitment-parity-forms",
-            synthetic_link("one-parity-request", "one-parity-response"),
-        )];
-        let refusal = ValidatedCorpusEvidence::try_from_inputs(
-            &raw_plan,
-            ArchiveFactsView {
-                attributions: &attributions,
-            },
-        )
-        .expect_err("the row requires its two opposite-parity acceptances");
-        assert_eq!(refusal, CorpusEvidenceRefusal::MultipleAcceptancesRequired);
+        let mut inputs = real_overlay_inputs();
+        let duplicate = inputs
+            .links
+            .iter()
+            .find(|link| link.class == NativeV2LinkClass::Primary)
+            .expect("the corpus has a primary link")
+            .clone();
+        inputs.links.push(duplicate);
+        let refusal = ValidatedCorpusEvidence::try_from_overlay_inputs(&raw_plan, inputs)
+            .expect_err("one primary link was duplicated");
+
+        assert_eq!(refusal, CorpusEvidenceRefusal::DuplicatePrimaryLink);
+        assert_eq!(raw_plan.census().recorded_observation_unbound(), 42);
     }
 
     #[test]
-    fn one_archive_link_cannot_be_reused_for_unrelated_rows() {
+    fn a_cross_run_support_link_refuses_the_whole_overlay() {
         let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
-        let mutant = synthetic_link("shared-mutant", "shared-refusal");
-        let control = synthetic_link("shared-control", "shared-acceptance");
-        let attributions = [
-            refusal_attribution_from_raw(&raw_plan, "key-path-escape", mutant, control),
-            refusal_attribution_from_raw(&raw_plan, "empty-signature", mutant, control),
-        ];
-        let refusal = ValidatedCorpusEvidence::try_from_inputs(
-            &raw_plan,
-            ArchiveFactsView {
-                attributions: &attributions,
-            },
-        )
-        .expect_err("one archive request-response proof was aliased to two rows");
-        assert_eq!(refusal, CorpusEvidenceRefusal::ReusedArchiveLink);
+        let mut inputs = real_overlay_inputs();
+        let support_run_id = inputs
+            .links
+            .iter()
+            .find(|link| link.class == NativeV2LinkClass::Support)
+            .expect("the corpus has support links")
+            .run_id
+            .clone();
+        let other_run_id = inputs
+            .runs
+            .iter()
+            .find(|run| run.run_id() != support_run_id)
+            .expect("the corpus has another run")
+            .run_id()
+            .to_owned();
+        let support = inputs
+            .links
+            .iter_mut()
+            .find(|link| link.class == NativeV2LinkClass::Support)
+            .expect("the corpus has support links");
+        support.run_id = other_run_id;
+        let refusal = ValidatedCorpusEvidence::try_from_overlay_inputs(&raw_plan, inputs)
+            .expect_err("the support link crossed runs");
+
+        assert_eq!(refusal, CorpusEvidenceRefusal::LinksCrossRuns);
+        assert_eq!(raw_plan.census().recorded_observation_unbound(), 42);
+    }
+
+    #[test]
+    fn a_missing_ceremony_refuses_the_whole_overlay() {
+        let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
+        let mut inputs = real_overlay_inputs();
+        inputs.attributions[0].ceremonies.pop();
+        let refusal = ValidatedCorpusEvidence::try_from_overlay_inputs(&raw_plan, inputs)
+            .expect_err("one attributed ceremony is missing");
+
+        assert_eq!(refusal, CorpusEvidenceRefusal::CeremonyAttributionMismatch);
+        assert_eq!(raw_plan.census().recorded_observation_unbound(), 42);
+    }
+
+    #[test]
+    fn a_non_exact_attribution_census_refuses_atomically() {
+        let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
+        for extra in [false, true] {
+            let mut inputs = real_overlay_inputs();
+            if extra {
+                inputs.attributions.push(inputs.attributions[0].clone());
+            } else {
+                inputs.attributions.pop();
+            }
+            let refusal = ValidatedCorpusEvidence::try_from_overlay_inputs(&raw_plan, inputs)
+                .expect_err("only exactly 42 attributions can move the plan");
+            assert_eq!(refusal, CorpusEvidenceRefusal::AttributionCensus);
+            assert_eq!(raw_plan.census().recorded_observation_unbound(), 42);
+            assert_eq!(raw_plan.census().rows(), 108);
+        }
+    }
+
+    #[test]
+    fn a_historical_v1_identity_cannot_replace_a_fresh_identity() {
+        let raw_plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
+        let historical = raw_plan
+            .rows()
+            .iter()
+            .find(|row| row.row().name() == "candidate-maximum-inputs")
+            .and_then(|row| match row.standing() {
+                LiveRowStanding::RecordedObservationUnbound(
+                    RecordedObservation::NativeAcceptance { accepted_identity },
+                ) => Txid::from_target_display(accepted_identity).ok(),
+                _ => None,
+            })
+            .expect("the historical identity parses");
+        let mut inputs = real_overlay_inputs();
+        let fresh = inputs
+            .observations
+            .iter_mut()
+            .find_map(|observation| match observation {
+                LiveReportObservation::NativeAcceptance { row, identity, .. }
+                    if *row == "candidate-maximum-inputs" =>
+                {
+                    let fresh = *identity;
+                    *identity = historical;
+                    Some(fresh)
+                }
+                _ => None,
+            })
+            .expect("the fresh corpus has the row");
+        assert_ne!(fresh, historical, "the adversary did not change identity");
+        let refusal = ValidatedCorpusEvidence::try_from_overlay_inputs(&raw_plan, inputs)
+            .expect_err("the historical identity is not backed by the fresh run");
+
+        assert_eq!(refusal, CorpusEvidenceRefusal::ObservationUnbacked);
+        assert_eq!(raw_plan.census().recorded_observation_unbound(), 42);
     }
 
     #[test]
@@ -3878,11 +4049,9 @@ mod tests {
         assert!(
             matches!(
                 standing("two-coordinators"),
-                LiveRowStanding::RecordedObservationUnbound(
-                    RecordedObservation::NativeRefusal { .. }
-                )
+                LiveRowStanding::NativeRefusalObserved { .. }
             ),
-            "two-coordinators did not preserve its recorded refusal",
+            "two-coordinators did not bind its fresh refusal",
         );
         assert!(
             matches!(
@@ -3897,11 +4066,9 @@ mod tests {
         assert!(
             matches!(
                 standing("no-coordinator"),
-                LiveRowStanding::RecordedObservationUnbound(
-                    RecordedObservation::NativeRefusal { .. }
-                )
+                LiveRowStanding::NativeRefusalObserved { .. }
             ),
-            "no-coordinator did not preserve its recorded refusal",
+            "no-coordinator did not bind its fresh refusal",
         );
         assert!(
             matches!(
@@ -4031,11 +4198,11 @@ mod tests {
             zero.standing(),
             LiveRowStanding::FirstPartyFactObserved { .. }
         ));
-        // And it did NOT land in either target bucket. The separate
-        // bucket's whole claim, made checkable.
-        assert_eq!(plan.census().native_run_observed(), 0);
-        assert_eq!(plan.census().native_refusal_observed(), 0);
-        assert_eq!(plan.census().recorded_observation_unbound(), 42);
+        // The corpus overlay moves only the 42 historical target rows; this
+        // first-party row stays in its own bucket beside their fresh counts.
+        assert_eq!(plan.census().native_run_observed(), 24);
+        assert_eq!(plan.census().native_refusal_observed(), 17);
+        assert_eq!(plan.census().recorded_observation_unbound(), 0);
     }
 
     #[test]
