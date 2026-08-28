@@ -347,8 +347,9 @@ fn row_of(name: &str) -> Result<LifecycleRow, String> {
 /// became the empty string and one whose agreement was absent became
 /// `false`, so a malformed record produced a report of well-formed
 /// checks that nobody had made. A check is evidence, and a defaulted one
-/// is evidence of nothing — under revision 4 the record either states
-/// the check or the report is not built
+/// is evidence of nothing — under the sole current revision named by
+/// `NATIVE_PROTOCOL_SCHEMA`, the record either states the check or the
+/// report is not built
 /// `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
 fn checks_of(value: &serde_json::Value, row: &str) -> Result<Vec<CheckOutcome>, String> {
     let checks: Vec<LifecycleCheck> = serde_json::from_value(value.clone()).map_err(|error| {
