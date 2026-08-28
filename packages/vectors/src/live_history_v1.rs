@@ -50,9 +50,7 @@ pub mod proof_bearing {
 }
 
 /// Historical native transcript and resource observations.
-pub mod native {
-    pub use crate::live_native::historical_v1_record::*;
-}
+pub mod native;
 
 #[cfg(test)]
 mod tests {
