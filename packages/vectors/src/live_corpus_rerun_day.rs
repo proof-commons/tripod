@@ -565,10 +565,10 @@ fn validate_numeric_fields(parsed: &ParsedLines<'_>) -> Result<(), RerunDayCorpu
         }
     }
     for (field, value) in &parsed.lines {
-        if matches!(*field, "consensus_mutant" | "leaf_arrangement" | "mutant") {
-            if let Some(range) = token_after(value, "declared_range") {
-                validate_range(parsed.name, field, range)?;
-            }
+        if matches!(*field, "consensus_mutant" | "leaf_arrangement" | "mutant")
+            && let Some(range) = token_after(value, "declared_range")
+        {
+            validate_range(parsed.name, field, range)?;
         }
     }
     Ok(())
@@ -644,10 +644,9 @@ fn validate_hex_fields(parsed: &ParsedLines<'_>) -> Result<(), RerunDayCorpusRef
                 if let Some(txid) = value
                     .split_whitespace()
                     .find_map(|token| token.strip_prefix("txid="))
+                    && txid != "none"
                 {
-                    if txid != "none" {
-                        validate_fixed_hex(parsed.name, field, txid, 32)?;
-                    }
+                    validate_fixed_hex(parsed.name, field, txid, 32)?;
                 }
             }
             "control" => {
@@ -896,10 +895,10 @@ fn validate_optional_token_hex(
     key: &str,
     bytes: usize,
 ) -> Result<(), RerunDayCorpusRefusal> {
-    if let Some(hex) = token_after(value, key) {
-        if hex != "none" {
-            validate_fixed_hex(name, field, hex, bytes)?;
-        }
+    if let Some(hex) = token_after(value, key)
+        && hex != "none"
+    {
+        validate_fixed_hex(name, field, hex, bytes)?;
     }
     Ok(())
 }
@@ -953,7 +952,9 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, ()> {
     }
     value
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let high = hex_nibble(pair[0]).ok_or(())?;
             let low = hex_nibble(pair[1]).ok_or(())?;
