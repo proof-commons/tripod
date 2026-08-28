@@ -4452,7 +4452,7 @@ mod tests {
                     .count(),
                 1,
             );
-            assert!(!projection.semantic_rendering().is_empty());
+            assert_ne!(projection.semantic_rendering(), b"".as_slice());
         }
     }
 

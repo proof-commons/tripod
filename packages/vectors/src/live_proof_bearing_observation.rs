@@ -1485,7 +1485,7 @@ impl TryFrom<&ProofBearingObservationRecord> for ForwardV2ProofBearingRunOfRecor
     }
 }
 
-fn pending_forward_v2_proof_bearing_run_of_record() -> ForwardV2ProofBearingRunOfRecord {
+const fn pending_forward_v2_proof_bearing_run_of_record() -> ForwardV2ProofBearingRunOfRecord {
     ForwardV2ProofBearingRunOfRecord {
         schema_version: FORWARD_V2_PROOF_BEARING_SCHEMA_VERSION,
         fixture_digest_algorithm: FixtureDigestAlgorithm::ForwardV2,
@@ -1759,7 +1759,7 @@ fn parse_forward_corpus_record(
     let outpoints = accepted_transaction
         .inputs()
         .iter()
-        .map(|input| input.outpoint())
+        .map(transaction::TargetInput::outpoint)
         .collect::<Vec<_>>();
     let [first_outpoint, second_outpoint] = outpoints.as_slice() else {
         return Err(RunOfRecordProjectionRefusal::IncompleteCoins);
