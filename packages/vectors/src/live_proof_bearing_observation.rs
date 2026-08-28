@@ -1718,9 +1718,15 @@ fn parse_forward_reverification(
     })
 }
 
-fn parse_forward_corpus_record(
+struct ForwardMintHeader<'a> {
+    rendering: ForwardMintRendering<'a>,
+    issued_asset: String,
+    predecessor_digest: Digest32,
+}
+
+fn parse_forward_mint_header(
     input: &ForwardProofBearingMintInput,
-) -> Result<ProofBearingObservationRecord, RunOfRecordProjectionRefusal> {
+) -> Result<ForwardMintHeader<'_>, RunOfRecordProjectionRefusal> {
     if input.fixture_digest_algorithm != FixtureDigestAlgorithm::ForwardV2 {
         return Err(RunOfRecordProjectionRefusal::ForwardV2DigestRequired);
     }
@@ -1748,9 +1754,24 @@ fn parse_forward_corpus_record(
     if rendered_predecessor != predecessor_digest {
         return Err(RunOfRecordProjectionRefusal::CorpusDigestMismatch);
     }
-    let [first, second, third, accepted] = input.outcomes.as_slice() else {
-        return Err(RunOfRecordProjectionRefusal::IncompleteCorpusMember);
-    };
+
+    Ok(ForwardMintHeader {
+        rendering,
+        issued_asset,
+        predecessor_digest,
+    })
+}
+
+struct ForwardMintCoins {
+    coins: Vec<ObservedConfidentialCoin>,
+    first_outpoint: Outpoint,
+}
+
+fn parse_forward_mint_coins(
+    rendering: &ForwardMintRendering<'_>,
+    accepted: &ForwardProofBearingMintOutcome,
+    issued_asset: &str,
+) -> Result<ForwardMintCoins, RunOfRecordProjectionRefusal> {
     let accepted_transaction = TargetTransaction::decode(&accepted.submitted_bytes)
         .map_err(|_| RunOfRecordProjectionRefusal::CorpusOutcomeMismatch)?;
     if accepted_transaction.encode() != accepted.submitted_bytes {
@@ -1765,17 +1786,34 @@ fn parse_forward_corpus_record(
         return Err(RunOfRecordProjectionRefusal::IncompleteCoins);
     };
     let coins = vec![
-        parse_forward_coin(&rendering, 0, *first_outpoint)?,
-        parse_forward_coin(&rendering, 1, *second_outpoint)?,
+        parse_forward_coin(rendering, 0, *first_outpoint)?,
+        parse_forward_coin(rendering, 1, *second_outpoint)?,
     ];
     let issued_asset_id =
-        asset_of(&issued_asset).ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
+        asset_of(issued_asset).ok_or(RunOfRecordProjectionRefusal::MalformedCorpusRendering)?;
     if coins
         .iter()
         .any(|coin| coin.asset() != AssetField::Explicit(issued_asset_id))
     {
         return Err(RunOfRecordProjectionRefusal::CorpusOutcomeMismatch);
     }
+
+    Ok(ForwardMintCoins {
+        coins,
+        first_outpoint: *first_outpoint,
+    })
+}
+
+struct ForwardMintWitnessFacts {
+    vector_length: usize,
+    proof_bytes: Vec<usize>,
+    spent_value_prefixes: Vec<u8>,
+}
+
+fn parse_forward_mint_witness_facts(
+    rendering: &ForwardMintRendering<'_>,
+    coins: &[ObservedConfidentialCoin],
+) -> Result<ForwardMintWitnessFacts, RunOfRecordProjectionRefusal> {
     let output_witness_vector_length =
         forward_mint_number(rendering.value("output_witness_vector_length ")?)?;
     let output_witness_proof_bytes = (0..SUCCESSOR_AMOUNTS.len())
@@ -1804,7 +1842,19 @@ fn parse_forward_corpus_record(
     {
         return Err(RunOfRecordProjectionRefusal::CorpusOutcomeMismatch);
     }
-    let construction_refusals = ProofBearingConstructionControl::ALL
+
+    Ok(ForwardMintWitnessFacts {
+        vector_length: output_witness_vector_length,
+        proof_bytes: output_witness_proof_bytes,
+        spent_value_prefixes,
+    })
+}
+
+fn parse_forward_construction_refusals(
+    rendering: &ForwardMintRendering<'_>,
+    first_outpoint: Outpoint,
+) -> Result<Vec<ProofBearingConstructionRefusal>, RunOfRecordProjectionRefusal> {
+    ProofBearingConstructionControl::ALL
         .iter()
         .copied()
         .map(|control| {
@@ -1818,12 +1868,17 @@ fn parse_forward_corpus_record(
             Ok(ProofBearingConstructionRefusal {
                 control,
                 refusal: MaterializationRefusal::PredecessorOpeningMismatch {
-                    outpoint: *first_outpoint,
+                    outpoint: first_outpoint,
                 },
             })
         })
-        .collect::<Result<Vec<_>, RunOfRecordProjectionRefusal>>()?;
-    let candidate_messages = ProofBearingCase::ALL
+        .collect()
+}
+
+fn parse_forward_candidate_messages(
+    rendering: &ForwardMintRendering<'_>,
+) -> Result<BTreeMap<ProofBearingCase, Digest32>, RunOfRecordProjectionRefusal> {
+    ProofBearingCase::ALL
         .iter()
         .copied()
         .map(|case| {
@@ -1832,7 +1887,25 @@ fn parse_forward_corpus_record(
                 forward_mint_digest(rendering.value(&format!("message {} ", case.name()))?)?,
             ))
         })
-        .collect::<Result<BTreeMap<_, _>, RunOfRecordProjectionRefusal>>()?;
+        .collect()
+}
+
+fn parse_forward_corpus_record(
+    input: &ForwardProofBearingMintInput,
+) -> Result<ProofBearingObservationRecord, RunOfRecordProjectionRefusal> {
+    let ForwardMintHeader {
+        rendering,
+        issued_asset,
+        predecessor_digest,
+    } = parse_forward_mint_header(input)?;
+    let [first, second, third, accepted] = input.outcomes.as_slice() else {
+        return Err(RunOfRecordProjectionRefusal::IncompleteCorpusMember);
+    };
+    let coin_section = parse_forward_mint_coins(&rendering, accepted, &issued_asset)?;
+    let witness_facts = parse_forward_mint_witness_facts(&rendering, &coin_section.coins)?;
+    let construction_refusals =
+        parse_forward_construction_refusals(&rendering, coin_section.first_outpoint)?;
+    let candidate_messages = parse_forward_candidate_messages(&rendering)?;
     let observations = ProofBearingCase::ALL
         .iter()
         .copied()
@@ -1850,10 +1923,10 @@ fn parse_forward_corpus_record(
         fixture_digest_algorithm: FixtureDigestAlgorithm::ForwardV2,
         issued_asset: Some(issued_asset),
         predecessor_digest: Some(predecessor_digest),
-        coins,
-        output_witness_vector_length: Some(output_witness_vector_length),
-        output_witness_proof_bytes,
-        spent_value_prefixes,
+        coins: coin_section.coins,
+        output_witness_vector_length: Some(witness_facts.vector_length),
+        output_witness_proof_bytes: witness_facts.proof_bytes,
+        spent_value_prefixes: witness_facts.spent_value_prefixes,
         observations,
         submitted_transactions,
         construction_refusals,
