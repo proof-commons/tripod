@@ -68,6 +68,9 @@ expected_tip=b7fc5d080a7e9ccc0ef48c3ba11db243e794bdb0
 mock_semantic_identity=$(printf 'mock-semantic' | sha256sum | cut -d' ' -f1)
 mock_behavioural_identity=$(printf 'mock-behavioural' | sha256sum | cut -d' ' -f1)
 wrong_tip=0000000000000000000000000000000000000000
+binary_tip_prefix=b7fc5d080a7e
+non_prefix_revision=000000000000
+short_revision=b7fc5d080a7
 
 ceremony_ids='conservation-negatives
 explicit-boundary-values
@@ -133,12 +136,13 @@ for ceremony_id in $ceremony_ids; do
     capture_name=$TRIPOD_LIVE_RUN_ADDRESS.Report.capture
   capture_file=$TRIPOD_LIVE_REPORT_DIR/$capture_name
 
-  binary_tip=$expected_tip
+  binary_tip=$binary_tip_prefix
   intended_tip=$expected_tip
   terminal_state=complete
   deployment_environment=development
   capture_schema=1
-  [ "$scenario" = tip-mismatch ] && binary_tip=$wrong_tip
+  [ "$scenario" = non-prefix-revision ] && binary_tip=$non_prefix_revision
+  [ "$scenario" = short-revision ] && binary_tip=$short_revision
   [ "$scenario" = intended-tip-mismatch ] && intended_tip=$wrong_tip
   [ "$scenario" = incomplete-transcript ] && [ "$ceremony_id" = report ] && terminal_state=incomplete
   [ "$scenario" = deployment-mismatch ] && [ "$ceremony_id" = report ] && deployment_environment=staging
@@ -193,6 +197,13 @@ if [ "$scenario" != missing-setup ]; then
 fi
 
 [ "$scenario" = unexpected-file ] && printf 'unexpected\n' > "$TRIPOD_LIVE_REPORT_DIR/unexpected"
+
+mkdir -p "$TRIPOD_LIVE_REPORT_DIR/diagnostics/report"
+printf 'audit-only executor diagnostics\n' > "$TRIPOD_LIVE_REPORT_DIR/diagnostics/report/stderr"
+if [ "$scenario" = second-unexpected-directory ]; then
+  mkdir -p "$TRIPOD_LIVE_REPORT_DIR/other-diagnostics/report"
+  printf 'unexpected directory\n' > "$TRIPOD_LIVE_REPORT_DIR/other-diagnostics/report/stderr"
+fi
 
 case "$scenario" in
   test-count)
@@ -289,7 +300,10 @@ assert_ineligible_case() {
 }
 
 run_case happy happy no
-[ "$case_status" -eq 0 ] || fail "happy path exited $case_status"
+if [ "$case_status" -ne 0 ]; then
+  sed 's/^/happy driver: /' "$case_stderr" >&2
+  fail "happy path exited $case_status"
+fi
 [ -f "$case_output/RUN-REPORT" ] || fail "happy path did not emit RUN-REPORT"
 if [ -f "$case_output/RUN-REPORT" ]; then
   grep -qx 'eligible yes' "$case_output/RUN-REPORT" || fail "happy path is not eligible"
@@ -302,10 +316,13 @@ if [ -f "$case_output/RUN-REPORT" ]; then
   grep -qx 'protocol-revision 7' "$case_output/RUN-REPORT" || fail "happy path protocol differs"
   grep -qx 'fixture-digest-algorithm forward-v2' "$case_output/RUN-REPORT" || fail "happy path digest algorithm differs"
   grep -qx "elementsd-expected-tip $expected_tip" "$case_output/RUN-REPORT" || fail "happy path expected tip differs"
+  grep -qx 'diagnostics-present yes' "$case_output/RUN-REPORT" || fail "happy path diagnostics presence differs"
 fi
 
 happy_files=$(find "$case_output" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')
 [ "$happy_files" -eq 81 ] || fail "happy path has $happy_files files, expected 81"
+happy_directories=$(find "$case_output" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+[ "$happy_directories" -eq 1 ] || fail "happy path has $happy_directories top-level directories, expected diagnostics only"
 manifest_lines=$(wc -l < "$case_output/MANIFEST.sha256" | tr -d ' ')
 [ "$manifest_lines" -eq 79 ] || fail "manifest has $manifest_lines entries, expected 79 harness artifacts"
 if ! (cd "$case_output" && "$real_sha256sum" -c MANIFEST.sha256 >/dev/null); then
@@ -313,6 +330,9 @@ if ! (cd "$case_output" && "$real_sha256sum" -c MANIFEST.sha256 >/dev/null); the
 fi
 if grep -q 'RUN-REPORT' "$case_output/MANIFEST.sha256"; then
   fail "manifest creates a cycle by naming RUN-REPORT"
+fi
+if grep -q 'diagnostics' "$case_output/MANIFEST.sha256"; then
+  fail "manifest includes audit-only diagnostics"
 fi
 [ ! -w "$case_output/RUN-REPORT" ] || fail "happy path files remain writable"
 [ ! -w "$case_output" ] || fail "happy path directory remains writable"
@@ -329,10 +349,12 @@ assert_ineligible_case cr-byte cr-byte 'contains a CR byte'
 assert_ineligible_case noncanonical-name noncanonical-name 'unexpected or noncanonical entry'
 assert_ineligible_case incomplete-transcript incomplete-transcript 'terminal-state differs'
 assert_ineligible_case test-count test-count 'observed test census is not 40'
-assert_ineligible_case tip-mismatch tip-mismatch 'binary-reported elementsd revision differs'
+assert_ineligible_case non-prefix-revision non-prefix-revision 'binary-reported elementsd revision'
+assert_ineligible_case short-revision short-revision 'binary-reported elementsd revision'
 assert_ineligible_case intended-tip-mismatch intended-tip-mismatch 'intended executed elementsd tip differs'
 assert_ineligible_case deployment-mismatch deployment-mismatch 'deployment-environment differs'
 assert_ineligible_case capture-schema capture-schema 'native-capture-schema differs'
+assert_ineligible_case second-unexpected-directory second-unexpected-directory 'unexpected or noncanonical entry other-diagnostics'
 
 run_case cargo-failure cargo-failure no
 [ "$case_status" -ne 0 ] || fail "Cargo failure unexpectedly exited zero"
