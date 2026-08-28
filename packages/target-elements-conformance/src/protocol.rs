@@ -103,57 +103,59 @@ use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutio
 /// immutable artifacts of their own exchange; revision 7 neither
 /// translates nor relabels them.
 ///
-/// # Revision 6 widens the observed-layer vocabulary
+/// # Revision 6 widened the observed-layer vocabulary
 ///
-/// [`ObservedOutcomeLayer::KeyPathRejection`] is a value a revision-5
-/// harness cannot read. The record SHAPES are untouched — same members,
-/// same types, same defaulting — and the change is still breaking, for
-/// the reason a widened vocabulary always is: the adapter now answers
-/// with a name the older reader refuses, and the older reader's refusal
-/// would surface as a transport failure rather than as the verdict the
-/// target actually reached.
+/// [`ObservedOutcomeLayer::KeyPathRejection`] was a value a revision-5
+/// harness could not read. The record SHAPES remained untouched — same
+/// members, same types, same defaulting — and the change was still
+/// breaking, for the reason a widened vocabulary always is: the adapter
+/// could answer with a name the older reader refused, and the older
+/// reader's refusal would surface as a transport failure rather than as
+/// the verdict the target actually reached.
 ///
-/// Numbering it is what keeps that from being discovered at a
-/// mis-parsed answer. The two implementations bump together, as every
-/// earlier revision here did; a revision only one side moved to
-/// reproduces the two-sided disagreement the mechanism exists to end
+/// Numbering it kept that from being discovered at a mis-parsed answer.
+/// The two implementations bumped together, as every
+/// earlier revision here did; moving only one side would have reproduced
+/// the two-sided disagreement the mechanism existed to end
 /// `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
 ///
-/// # Revision 5 states the confidential funding arm
+/// # Revision 5 stated the confidential funding arm
 ///
-/// The confidential funding step adds an untagged [`OperationSubject`]
+/// The confidential funding step added an untagged [`OperationSubject`]
 /// variant and two response members that are NOT defaulted, so a
-/// revision-4 executor can neither parse a revision-5 request nor
-/// produce a revision-5 answer. That is a breaking change and it is
+/// revision-4 executor could neither parse a revision-5 request nor
+/// produce a revision-5 answer. That was a breaking change and was
 /// numbered as one.
 ///
-/// The two members are undefaulted deliberately, and the contrast with
-/// the sponsor members immediately below them is the whole argument. The
+/// The two members were undefaulted deliberately, and the contrast with
+/// the sponsor members immediately below them was the whole argument. The
 /// sponsor witness and its binding were defaulted precisely so that
 /// adding them was not a revision: nothing an executor already wrote
 /// changed shape. [`NativeOperationResponse::confidential_funded_outputs`]
-/// and [`NativeOperationResponse::mined_readback`] are not defaulted
-/// precisely so that adding them IS one, because the alternative is a
+/// and [`NativeOperationResponse::mined_readback`] were not defaulted
+/// precisely so that adding them was one, because the alternative was a
 /// revision-4 executor answering a confidential request with silence in
-/// exactly the members the answer lives in.
+/// exactly the members the answer lived in.
 ///
-/// A revision-4 executor is therefore refused at the handshake rather
-/// than translated for, on the same ground revision 3 was refused for
-/// revision 4. There is ONE binary and one schema constant: no
+/// An executor speaking any revision earlier than
+/// `NATIVE_PROTOCOL_SCHEMA` is refused at the handshake rather than
+/// translated for. The constant below is the sole current revision.
+/// There is ONE binary and one schema constant: no
 /// compatibility entry point, no dual-vocabulary serializer, and no
 /// per-record revision negotiation. "Old executors receive only their
-/// old explicit schema" is honoured by handing a revision-4 executor
-/// nothing at all, which is a stronger guarantee than translating for it
-/// would be, and "never translate a confidential request backward" is
-/// honoured vacuously, because no translation exists to be misused.
+/// old explicit schema" is honoured by handing an earlier-revision
+/// executor nothing at all, which is a stronger guarantee than
+/// translating for it would be, and "never translate a confidential
+/// request backward" is honoured vacuously, because no translation
+/// exists to be misused.
 ///
-/// The two implementations bump together in one change — this harness
+/// The two implementations bumped together in one change — this harness
 /// and the reviewed native adapter — for the recorded reason that a
-/// revision only one side moved to reproduces the two-sided
-/// disagreement the revision mechanism exists to end
+/// revision only one side moved to would have reproduced the two-sided
+/// disagreement the revision mechanism existed to end
 /// `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
 ///
-/// # Revision 4 makes both sides describe the same exchange
+/// # Revision 4 made both sides describe the same exchange
 ///
 /// Revision 3 was declared by two implementations that did not agree on
 /// what it was. The adapter wrote an `observed_openings` member on every
@@ -166,50 +168,49 @@ use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutio
 /// one schema, and revision 3 named two
 /// `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
 ///
-/// So revision 4 states the union both sides were already implementing:
-/// the openings are a declared member of
-/// [`NativeConservationResponse`], and the lifecycle step has a request
-/// and a response type here like every other workload. Nothing is
-/// tolerated that was not declared, and the two implementations bump
-/// together — a revision that only one side moved to would reproduce
-/// the fault it exists to close.
+/// So revision 4 stated the union both sides were already implementing:
+/// the openings became a declared member of
+/// [`NativeConservationResponse`], and the lifecycle step gained a request
+/// and a response type here like every other workload. Nothing was
+/// tolerated that had not been declared, and the two implementations
+/// bumped together — a revision that only one side moved to would have
+/// reproduced the fault it existed to close.
 ///
-/// This is a breaking change and is numbered as one. A revision-3
-/// executor is refused at the handshake rather than reconciled, on the
+/// This was a breaking change and was numbered as one. A revision-3
+/// executor was refused at the handshake rather than reconciled, on the
 /// same ground revision 2 was.
 ///
-/// # The operation records complete revision 4 rather than opening a
+/// # The operation records completed revision 4 rather than opening a
 /// fifth
 ///
-/// §16.3 names four workloads that must have typed records under one
+/// §16.3 named four workloads that had to have typed records under one
 /// revision: conservation, normalization, lifecycle, and the compact-ASH
 /// operation. Revision 4 was minted for exactly that union and carried
 /// the first three; [`NativeOperationRequest`] and
-/// [`NativeOperationResponse`] are the fourth, and adding them here is
-/// finishing the revision rather than superseding it. Nothing that a
-/// revision-4 executor already implements changes shape, so no executor
-/// is refused for a record it used to be able to write.
+/// [`NativeOperationResponse`] were the fourth, and adding them here
+/// finished the revision rather than superseding it. Nothing that a
+/// revision-4 executor already implemented changed shape, so no executor
+/// was refused for a record it used to be able to write.
 ///
-/// Whether the new records may be *sent* is decided the way every other
-/// added record shape has been decided in this protocol: by a capability
-/// the executor advertises, not by a revision it declares
-/// `(´[PLAN-rule:guide10:schema-migration]´)`. An executor that never
-/// heard of an operation step is simply never handed one.
+/// Whether the new records could be *sent* was decided the way every other
+/// added record shape had been decided in this protocol: by a capability
+/// the executor advertised, not by a revision it declared
+/// `(´[PLAN-rule:guide10:schema-migration]´)`. An executor that had never
+/// heard of an operation step was simply never handed one.
 ///
 /// # Revision 3 removed the answer from the question
 ///
 /// A revision-2 request carried the complete fixture, expectation
 /// included, and asked the executor to discard it before executing. A
-/// revision-3 request carries the execution subject and nothing else, so
-/// there is no expectation for an executor to discard, misread, or echo
+/// revision-3 request carried the execution subject and nothing else, so
+/// there was no expectation for an executor to discard, misread, or echo
 /// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 ///
-/// This is a breaking change and is numbered as one. A revision-2
-/// executor is handed a record whose shape it has never seen and would
-/// answer from a field that is no longer there, so the two revisions are
-/// refused for each other at the handshake rather than reconciled: a
-/// revision-2 record is historical, and nothing here parses one as a
-/// revision-3 record.
+/// This was a breaking change and was numbered as one. A revision-2
+/// executor would have answered from a field revision 3 removed, so the
+/// two revisions were refused for each other at the handshake rather than
+/// reconciled: a revision-2 record became historical, and the revision-3
+/// parser did not treat one as a revision-3 record.
 ///
 /// Revision 2 itself added the environment observation, the separated
 /// executor provenance roles, the bounded-record contract, and strict
@@ -2113,8 +2114,9 @@ pub struct TargetFundingSubject {
 /// What a submission step is asked to judge.
 ///
 /// The bytes and nothing else. No expected layer, no expected identity,
-/// and no class: under revision 4 the answer stays with the caller
-/// exactly as it does for every other workload
+/// and no class: under the sole current revision named by
+/// `NATIVE_PROTOCOL_SCHEMA`, the answer stays with the caller exactly as
+/// it does for every other workload
 /// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2800,9 +2802,9 @@ pub struct NativeOperationResponse {
     /// NOT defaulted, and the contrast with the sponsor members below is
     /// the argument: those were defaulted so that adding them was not a
     /// revision, and this one is not defaulted so that adding it IS one.
-    /// A revision-4 executor answering a confidential request with
-    /// silence in this member is exactly what the revision exists to
-    /// prevent.
+    /// A revision-4 executor could have answered a confidential request
+    /// with silence in this member; preventing that ambiguity was exactly
+    /// why revision 5 was minted.
     pub confidential_funded_outputs: Vec<ConfidentialFundedOutput>,
     /// What the target held after the confidential funding transaction
     /// was mined.
