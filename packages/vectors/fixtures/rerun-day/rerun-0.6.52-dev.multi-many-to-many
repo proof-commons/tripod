@@ -1,0 +1,19 @@
+run private-many-to-many
+input_count 2
+output_count 3
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+coin 0 rangeproof_bytes 4174 commitment_prefix 0x08 matches_expectation true
+coin 1 rangeproof_bytes 4174 commitment_prefix 0x09 matches_expectation true
+receipt_leaves 2
+output_witness_proof_bytes [4174, 4174, 4174]
+submitted_bytes 13882
+target_reported_weight 15367
+observed_layer Accepted
+observed_detail none
+accepted_txid 3b61056ac96cf47a73f35370f9fea1faad69fc3f025359339765230da2f57e12
+reverification readback_matches_submission true verified true
+construction_refusal none
+produced_an_accepted_control true
+evidences_no_negative_case true
+evidences_no_minimality_relation true
+moves_the_sponsor_row false

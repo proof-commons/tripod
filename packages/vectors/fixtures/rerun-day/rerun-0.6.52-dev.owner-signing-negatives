@@ -1,0 +1,24 @@
+role owner-signing-negative-run
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+relinked true
+coin 0 program_bytes 34 node_fields_match_expectation true
+coin 1 program_bytes 34 node_fields_match_expectation true
+mutant row vault-control-entitlement-or-bare-u-output declared_range 132..167 submitted_bytes 1152 message 6b7901ded8624e389cee676d54204f4bc4793250e5c79428498f2526a28d284e layer ScriptPathRejection detail mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)
+consensus_mutant row wrong-explicit-asset declared_range 90..122 shape 2in-2out submitted_bytes 1164 layer ConsensusRejectionBeforeScript detail bad-txns-in-ne-out
+consensus_mutant row confidential-asset-commitment declared_range 167..168 shape 2in-2out submitted_bytes 1164 layer ConsensusRejectionBeforeScript detail bad-txns-in-ne-out
+consensus_mutant row output-total-one-below-input declared_range 130..131 shape 2in-2out submitted_bytes 1164 layer ConsensusRejectionBeforeScript detail bad-txns-in-ne-out
+consensus_mutant row output-total-one-above-input declared_range 208..209 shape 2in-2out submitted_bytes 1164 layer ConsensusRejectionBeforeScript detail bad-txns-in-ne-out
+consensus_mutant row private-output-omitted declared_range 88..245 shape 2in-1out submitted_bytes 1084 layer ConsensusRejectionBeforeScript detail bad-txns-in-ne-out
+consensus_mutant row hidden-private-u-output declared_range 88..245 shape 2in-3out submitted_bytes 1244 layer ConsensusRejectionBeforeScript detail bad-txns-in-ne-out
+consensus_mutant row omitted-source declared_range 5..80 shape 1in-2out submitted_bytes 788 layer ConsensusRejectionBeforeScript detail bad-txns-in-ne-out
+leaf_arrangement row two-coordinators arrangement [0, 0] typed_partner wrong-coordinator submitted_bytes 1405 layer ScriptPathRejection detail mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)
+leaf_arrangement row no-coordinator arrangement [1, 1] typed_partner member-coordinator-leaf-exchange submitted_bytes 923 message 2d8f78d731fc1a5d6051fa68da1a83e0f7fa69bcd97356c055bffc7c8980f937 layer ScriptPathRejection detail mandatory-script-verify-flag-failed (Script failed an OP_VERIFY operation)
+control submitted_bytes 1164 message 28ef5ad0dcfd8de331e3d68a593247f6d437b407d347d5638fb8f98ffb1f0e1a layer Accepted txid 40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029 detail none
+control_reverification readback_matches_submission true
+messages_differ true
+non_claim establishes nothing about the proof-bearing lane: every candidate here is an explicit one and the covenant it reaches is the explicit destination's
+non_claim attributes no consensus mutant to a script clause: a mutant refused bad-txns-in-ne-out reached no leaf and is recorded as a consensus verdict, not a script-path one — the script-path verdicts here are the bare-u program surgery and the two leaf-arrangement mutants
+non_claim discharges each row by its OWN mutant: the bare-u program surgery is the script-path row's, and each consensus surgery breaks conservation in its own field so its refusal separates by a distinct declared range and transaction shape rather than sharing one observation
+non_claim drives ONE leaf-arrangement row per collision pair and moves no taptree: two-coordinators and no-coordinator each reveal a committed leaf at a forbidden position and are refused at the covenant's own index or bound clause, while wrong-coordinator and member-coordinator-leaf-exchange stay typed because their own arrangements have a SECOND failing input, so nothing separates their observation from the pair-partner's already driven
+non_claim claims nothing about any deployment but the one this run created and destroyed
+each_row_by_its_own_mutant true

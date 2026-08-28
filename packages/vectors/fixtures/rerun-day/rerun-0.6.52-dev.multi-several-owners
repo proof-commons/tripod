@@ -1,0 +1,19 @@
+run private-several-distinct-owners
+input_count 2
+output_count 2
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+coin 0 rangeproof_bytes 4174 commitment_prefix 0x08 matches_expectation true
+coin 1 rangeproof_bytes 4174 commitment_prefix 0x09 matches_expectation true
+receipt_leaves 2
+output_witness_proof_bytes [4174, 4174]
+submitted_bytes 9519
+target_reported_weight 10602
+observed_layer Accepted
+observed_detail none
+accepted_txid cfabc99a9560de40d235ea891d1c234844bc516ca9b371ce7e888fd863544f95
+reverification readback_matches_submission true verified true
+construction_refusal none
+produced_an_accepted_control true
+evidences_no_negative_case true
+evidences_no_minimality_relation true
+moves_the_sponsor_row false

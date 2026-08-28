@@ -1,0 +1,28 @@
+run pairs-arc
+fixture_conserves true
+fixture_amount 700000000
+entry_condition_cites 8528d455cfd7e2cc92e88f2f0432bd0faed8c6f6417c675573a6b4963e1c01b2
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+observed explicit layer Accepted detail none
+observed private layer Accepted detail none
+member explicit accepted_txid 5b5dd09fc4e9e525c78f21965cff2039dd2e08b6afd59d8408c014ce3165c718 height 5 submitted_bytes 593 weight 983 readback_equal true inputs_verified true
+projection explicit consumed 1 receipts 1 fee 0 unrecognized 0 owners [1] publishes_amounts true
+member private accepted_txid 4c7a48e8430a79d3b6198705f4a4874aeddd00a3e65ed09b439e64f1d5caa66b height 8 submitted_bytes 4773 weight 5331 readback_equal true inputs_verified true
+projection private consumed 1 receipts 1 fee 0 unrecognized 0 owners [1] publishes_amounts false
+term input-semantic-amount-multiset equal-and-withheld-by-the-private-member
+term destination-owner-value-multiset equal-and-withheld-by-the-private-member
+term distinct-input-owner-set equal-by-public-constructor-metadata
+term live-class equal-in-the-nodes-own-copy
+term exact-explicit-u equal-in-the-nodes-own-copy
+term authorization-result equal-in-the-nodes-own-copy
+term absence-of-roots absent-from-both-members
+term absence-of-issuance-and-destruction absent-from-both-members
+term lateral-flow equal-in-the-nodes-own-copy
+term sponsor-relation-and-shape absent-from-both-members
+term transition-certificate-projection absent-from-both-members
+projections_are_equal true
+terms_withheld_by_the_private_member 2
+supports_the_projection_equality_row true
+refusal none
+evidences_no_negative_case true
+builds_no_sponsor_region true

@@ -1,0 +1,12 @@
+role live-transfer-native-run
+discharges_no_matrix_row true
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+relinked true
+materialized Explicit 2
+materialized PrivateCommitted 2
+not_submitted PrivateCommitted NoConfidentialPredecessorCanBeFunded
+predicted Explicit serialized_bytes=1164 weight=1911
+observed issue-protocol-asset Accepted txid=none weight=none detail=none
+observed fund-explicit-constructor Accepted txid=none weight=none detail=none
+observed fund-private-constructor Accepted txid=none weight=none detail=none
+observed submit-explicit-transfer ScriptPathRejection txid=none weight=1911 detail=mandatory-script-verify-flag-failed (Invalid Schnorr signature)

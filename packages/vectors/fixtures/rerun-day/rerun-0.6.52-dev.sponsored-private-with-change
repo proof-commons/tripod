@@ -1,0 +1,18 @@
+case sponsored-private-with-change
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+predecessor_coins 2
+sponsor_check chain-reported-a-commitment true
+sponsor_check commitment-is-the-registrys-own true
+sponsor_check asset-stayed-explicit true
+sponsor_check rangeproof-present true
+sponsor_funding_txid 4e6149ab7b371ef5d20774d6f27936e729f3349eb190cc7f7b156e2f2f32c7f1
+sponsor_input_position 1
+sponsor_echo_matches_what_was_sent true
+sponsor_witness_items 2
+submitted_bytes 13873
+observed_layer Accepted
+target_weight 15490
+accepted_txid ebd8a02a47e6c97c2e75fb5db9deaf9d5566cc55688a752e365299de39023ed9
+readback_matches_submission true
+owner_signature_verified true
+sponsor_change_located true

@@ -1,0 +1,17 @@
+run conservation-and-proof-negatives
+issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb
+consumed_commitment_prefix 0x08
+control_submitted_bytes 9136
+control_observed_layer Accepted
+control_accepted_txid 1af38f8a5292afcdb4dd38f78a146ff84d36db20d9916e768b7fd9b368b89e8e
+control_reverification readback_matches_submission true verified true
+mutant wrong-blinder field value-blinder declared_range 81..114 submitted_bytes 9136 observed_layer ConsensusRejectionBeforeScript detail bad-txns-in-ne-out
+mutant wrong-blinder attribution attributed
+mutant missing-rangeproof field rangeproof-bytes declared_range 781..4958 submitted_bytes 4960 observed_layer ConsensusRejectionBeforeScript detail bad-txns-in-ne-out
+mutant missing-rangeproof attribution attributed
+mutant private-ct-imbalance field value-commitment declared_range 215..248 submitted_bytes 9136 observed_layer ConsensusRejectionBeforeScript detail bad-txns-in-ne-out
+mutant private-ct-imbalance attribution attributed
+mutant malformed-rangeproof field rangeproof-bytes declared_range 781..4958 submitted_bytes 9136 observed_layer ConsensusRejectionBeforeScript detail bad-txns-in-ne-out
+mutant malformed-rangeproof attribution attributed
+construction_refusal none
+moves_the_sponsor_row false
