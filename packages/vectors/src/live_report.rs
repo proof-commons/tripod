@@ -39,9 +39,11 @@ use std::fmt::Write as _;
 
 use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
 use target_elements::TargetProjection;
+use target_elements::opcode::LeafVersion;
 use target_elements_conformance::constructor::tagged;
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use transaction::bytes::SerializedFieldLocator;
+use transaction::taproot::{CONTROL_BASE_BYTES, DIGEST_BYTES, TAPROOT_LEAF_MASK};
 use transaction::{AssetField, TargetTransaction, Txid, ValueField};
 
 use crate::live_evidence::{
@@ -2037,17 +2039,37 @@ impl RecomputationProgress {
     }
 }
 
-fn changed_range(left: &[u8], right: &[u8]) -> (usize, usize) {
-    let prefix = left.iter().zip(right).take_while(|(a, b)| a == b).count();
+// Keep these byte-derived locator rules aligned with the independently proven
+// counterparts in `live_corpus_native_v2_r7`.
+fn exact_changed_range(left: &[u8], right: &[u8]) -> Option<(usize, usize)> {
+    if left == right {
+        return None;
+    }
+    let start = left.iter().zip(right).take_while(|(a, b)| a == b).count();
     let suffix = left
         .iter()
         .rev()
         .zip(right.iter().rev())
         .take_while(|(a, b)| a == b)
         .count()
-        .min(left.len().saturating_sub(prefix))
-        .min(right.len().saturating_sub(prefix));
-    (prefix, left.len().saturating_sub(suffix))
+        .min(left.len().saturating_sub(start))
+        .min(right.len().saturating_sub(start));
+    Some((start, left.len().saturating_sub(suffix)))
+}
+
+fn changed_bytes_are_within(control: &[u8], mutant: &[u8], start: usize, end: usize) -> bool {
+    if start >= end {
+        return false;
+    }
+    if end > control.len() {
+        return false;
+    }
+    exact_changed_range(control, mutant).is_some_and(|(changed_start, changed_end)| {
+        if changed_start < start {
+            return false;
+        }
+        changed_end <= end
+    })
 }
 
 fn witness_item_is_exact(
@@ -2094,17 +2116,65 @@ fn witness_item_is_exact(
     differences == 1
 }
 
-const CONTROL_BLOCK_BASE_BYTES: usize = 33;
-const CONTROL_BLOCK_DIGEST_BYTES: usize = 32;
-const TAPSCRIPT_LEAF_VERSION: u8 = 0xc0;
+fn sponsor_authorization_is_absent(
+    control: &TargetTransaction,
+    mutant: &TargetTransaction,
+    input_index: usize,
+    item_index: usize,
+) -> bool {
+    if control.version() != mutant.version()
+        || control.inputs() != mutant.inputs()
+        || control.outputs() != mutant.outputs()
+        || control.lock_time() != mutant.lock_time()
+        || control.output_witnesses() != mutant.output_witnesses()
+        || control.witnesses().len() != mutant.witnesses().len()
+        || control.encode_without_witness() != mutant.encode_without_witness()
+    {
+        return false;
+    }
+    let mut found = false;
+    for (offered_input, (control_witness, mutant_witness)) in control
+        .witnesses()
+        .iter()
+        .zip(mutant.witnesses())
+        .enumerate()
+    {
+        if offered_input != input_index {
+            if control_witness != mutant_witness {
+                return false;
+            }
+            continue;
+        }
+        let control_stack = control_witness.stack();
+        let mutant_stack = mutant_witness.stack();
+        if item_index >= control_stack.len() || control_stack.len() != mutant_stack.len() {
+            return false;
+        }
+        if control_stack[..item_index] != mutant_stack[..item_index] {
+            return false;
+        }
+        if control_stack[item_index..].iter().any(Vec::is_empty) {
+            return false;
+        }
+        if mutant_stack[item_index..]
+            .iter()
+            .any(|item| !item.is_empty())
+        {
+            return false;
+        }
+        found = true;
+    }
+    found
+}
+
+const TAPSCRIPT_LEAF_VERSION: u8 = LeafVersion::TAPSCRIPT.get();
 const MAXIMUM_CONTROL_BLOCK_DEPTH: usize = 128;
 
 const fn control_block_is_structurally_valid(block: &[u8]) -> bool {
-    block.len() >= CONTROL_BLOCK_BASE_BYTES
-        && (block.len() - CONTROL_BLOCK_BASE_BYTES).is_multiple_of(CONTROL_BLOCK_DIGEST_BYTES)
-        && (block.len() - CONTROL_BLOCK_BASE_BYTES) / CONTROL_BLOCK_DIGEST_BYTES
-            <= MAXIMUM_CONTROL_BLOCK_DEPTH
-        && block[0] & 0xfe == TAPSCRIPT_LEAF_VERSION
+    block.len() >= CONTROL_BASE_BYTES
+        && (block.len() - CONTROL_BASE_BYTES).is_multiple_of(DIGEST_BYTES)
+        && (block.len() - CONTROL_BASE_BYTES) / DIGEST_BYTES <= MAXIMUM_CONTROL_BLOCK_DEPTH
+        && block[0] & TAPROOT_LEAF_MASK == TAPSCRIPT_LEAF_VERSION
 }
 
 fn decoded_witness_path_role(stack: &[Vec<u8>]) -> Option<LiveWitnessPathRole> {
@@ -2259,7 +2329,9 @@ fn committed_leaf_arrangement_matches(
 
 fn mutation_locator_matches(
     control: &TargetTransaction,
+    control_bytes: &[u8],
     mutant: &TargetTransaction,
+    mutant_bytes: &[u8],
     mutant_kind: LiveMutantKind,
     locator: &LiveMutationLocator,
 ) -> bool {
@@ -2268,26 +2340,27 @@ fn mutation_locator_matches(
             let Ok(control_field) = control.locate_serialized_field(*locator) else {
                 return false;
             };
-            let Ok(mutant_field) = mutant.locate_serialized_field(*locator) else {
-                return false;
-            };
-            let (start, end) = changed_range(&control.encode(), &mutant.encode());
-            start < end
-                && start >= control_field.range().start
-                && end <= control_field.range().end
-                && start >= mutant_field.range().start
-                && end <= mutant_field.range().end
+            changed_bytes_are_within(
+                control_bytes,
+                mutant_bytes,
+                control_field.range().start,
+                control_field.range().end,
+            )
         }
         LiveMutationLocator::WitnessItem {
             input_index,
             item_index,
-        } => witness_item_is_exact(control, mutant, *input_index, *item_index),
+        } => match mutant_kind {
+            LiveMutantKind::MissingSponsorAuthorization => {
+                sponsor_authorization_is_absent(control, mutant, *input_index, *item_index)
+            }
+            _ => witness_item_is_exact(control, mutant, *input_index, *item_index),
+        },
         LiveMutationLocator::WitnesslessRange { start, end } => {
-            *start < *end
-                && changed_range(
-                    &control.encode_without_witness(),
-                    &mutant.encode_without_witness(),
-                ) == (*start, *end)
+            exact_changed_range(
+                &control.encode_without_witness(),
+                &mutant.encode_without_witness(),
+            ) == Some((*start, *end))
         }
         LiveMutationLocator::TransactionShape {
             control_inputs,
@@ -2466,7 +2539,9 @@ fn validate_refusal_links(
         }
         if !mutation_locator_matches(
             &decoded[control_request_id],
+            &run.requests[control_request_id],
             &decoded[request_id],
+            &run.requests[request_id],
             *mutant,
             locator,
         ) {
@@ -4311,10 +4386,14 @@ mod tests {
         .encode()
     }
 
-    fn synthetic_control_block() -> Vec<u8> {
-        let mut block = vec![0xc0];
+    fn synthetic_control_block_with_version(version: u8) -> Vec<u8> {
+        let mut block = vec![version];
         block.extend_from_slice(&[0x22; 32]);
         block
+    }
+
+    fn synthetic_control_block() -> Vec<u8> {
+        synthetic_control_block_with_version(target_elements::opcode::LeafVersion::TAPSCRIPT.get())
     }
 
     fn synthetic_refusal_run(
@@ -4388,11 +4467,26 @@ mod tests {
         )
     }
 
-    fn committed_leaf_arrangement_run() -> LiveRunBinding {
+    fn missing_sponsor_authorization_run() -> LiveRunBinding {
+        let control =
+            synthetic_witness_transaction(0x62, vec![vec![vec![0x31; 64], vec![0x32; 64]]]);
+        let mutant = synthetic_witness_transaction(0x62, vec![vec![Vec::new(), Vec::new()]]);
+        synthetic_refusal_run(
+            "missing-sponsor-authorization-tip",
+            control,
+            mutant,
+            LiveMutantKind::MissingSponsorAuthorization,
+            LiveMutationLocator::WitnessItem {
+                input_index: 0,
+                item_index: 0,
+            },
+        )
+    }
+
+    fn committed_leaf_arrangement_run_with_block(block: Vec<u8>) -> LiveRunBinding {
         let coordinator = vec![0x51, 0x00];
         let member = vec![0x51, 0x01];
         let signature = vec![0x31; 64];
-        let block = synthetic_control_block();
         let control = synthetic_witness_transaction(
             0x71,
             vec![
@@ -4420,6 +4514,10 @@ mod tests {
                 mutant_committed_leaf_programs: vec![coordinator.clone(), coordinator],
             },
         )
+    }
+
+    fn committed_leaf_arrangement_run() -> LiveRunBinding {
+        committed_leaf_arrangement_run_with_block(synthetic_control_block())
     }
 
     fn repeated_support_run() -> LiveRunBinding {
@@ -4973,6 +5071,147 @@ mod tests {
     }
 
     #[test]
+    fn witness_path_shape_refuses_the_bitcoin_leaf_version() {
+        let signature = vec![0x31; 64];
+        let control = synthetic_witness_transaction(0x63, vec![vec![signature.clone()]]);
+        let mutant = synthetic_witness_transaction(
+            0x63,
+            vec![vec![
+                signature,
+                vec![0x51],
+                synthetic_control_block_with_version(0xc0),
+            ]],
+        );
+        let run = synthetic_refusal_run(
+            "obsolete-leaf-version-tip",
+            control,
+            mutant,
+            LiveMutantKind::KeyPathEscape,
+            LiveMutationLocator::WitnessPathShape {
+                input_index: 0,
+                control_stack_items: 1,
+                mutant_stack_items: 3,
+                changed_positions: vec![1, 2],
+                control_role: LiveWitnessPathRole::KeyPath,
+                mutant_role: LiveWitnessPathRole::ScriptPath,
+                witnessless_serialization_equal: true,
+            },
+        );
+        let run_id = run.run_id.clone();
+
+        assert_eq!(
+            compare_run_bindings(std::slice::from_ref(&run), std::slice::from_ref(&run)),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                run_id,
+                "mutant".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
+    fn witness_path_shape_requires_one_key_path_item_and_equal_witnessless_bytes() {
+        let signature = vec![0x31; 64];
+        let not_key_path =
+            synthetic_witness_transaction(0x64, vec![vec![signature.clone(), vec![0x01]]]);
+        let script_path = synthetic_witness_transaction(
+            0x64,
+            vec![vec![
+                signature.clone(),
+                vec![0x51],
+                synthetic_control_block(),
+            ]],
+        );
+        let locator = LiveMutationLocator::WitnessPathShape {
+            input_index: 0,
+            control_stack_items: 2,
+            mutant_stack_items: 3,
+            changed_positions: vec![1, 2],
+            control_role: LiveWitnessPathRole::KeyPath,
+            mutant_role: LiveWitnessPathRole::ScriptPath,
+            witnessless_serialization_equal: true,
+        };
+        let wrong_key_path = synthetic_refusal_run(
+            "wrong-key-path-shape-tip",
+            not_key_path,
+            script_path,
+            LiveMutantKind::KeyPathEscape,
+            locator,
+        );
+        let wrong_key_path_id = wrong_key_path.run_id.clone();
+        assert_eq!(
+            compare_run_bindings(
+                std::slice::from_ref(&wrong_key_path),
+                std::slice::from_ref(&wrong_key_path),
+            ),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                wrong_key_path_id,
+                "mutant".to_owned(),
+            )),
+        );
+
+        let key_path = synthetic_witness_transaction(0x65, vec![vec![signature.clone()]]);
+        let different_witnessless = synthetic_witness_transaction(
+            0x66,
+            vec![vec![signature, vec![0x51], synthetic_control_block()]],
+        );
+        let wrong_witnessless = synthetic_refusal_run(
+            "wrong-witnessless-shape-tip",
+            key_path,
+            different_witnessless,
+            LiveMutantKind::KeyPathEscape,
+            LiveMutationLocator::WitnessPathShape {
+                input_index: 0,
+                control_stack_items: 1,
+                mutant_stack_items: 3,
+                changed_positions: vec![1, 2],
+                control_role: LiveWitnessPathRole::KeyPath,
+                mutant_role: LiveWitnessPathRole::ScriptPath,
+                witnessless_serialization_equal: true,
+            },
+        );
+        let wrong_witnessless_id = wrong_witnessless.run_id.clone();
+        assert_eq!(
+            compare_run_bindings(
+                std::slice::from_ref(&wrong_witnessless),
+                std::slice::from_ref(&wrong_witnessless),
+            ),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                wrong_witnessless_id,
+                "mutant".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
+    fn missing_sponsor_authorization_requires_the_exact_empty_suffix() {
+        let run = missing_sponsor_authorization_run();
+        assert_eq!(
+            compare_run_bindings(std::slice::from_ref(&run), std::slice::from_ref(&run)),
+            Ok(()),
+        );
+        let mut forged = run;
+        let run_id = forged.run_id.clone();
+        let LiveRequestFact::Refusal { locator, .. } = forged
+            .request_facts
+            .get_mut("mutant")
+            .expect("the sponsor mutant fact is present")
+        else {
+            panic!("the sponsor mutant is a refusal");
+        };
+        let LiveMutationLocator::WitnessItem { item_index, .. } = locator else {
+            panic!("the sponsor mutant carries a witness-item locator");
+        };
+        *item_index = 1;
+        assert_eq!(
+            compare_run_bindings(std::slice::from_ref(&forged), std::slice::from_ref(&forged),),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                run_id,
+                "mutant".to_owned(),
+            )),
+        );
+    }
+
+    #[test]
     fn committed_leaf_arrangement_is_schema_six_only_and_recomputed() {
         let run = committed_leaf_arrangement_run();
         assert_eq!(
@@ -5000,6 +5239,20 @@ mod tests {
             compare_run_bindings(std::slice::from_ref(&forged), std::slice::from_ref(&forged),),
             Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
                 run_id,
+                "mutant".to_owned(),
+            )),
+        );
+
+        let obsolete =
+            committed_leaf_arrangement_run_with_block(synthetic_control_block_with_version(0xc0));
+        let obsolete_run_id = obsolete.run_id.clone();
+        assert_eq!(
+            compare_run_bindings(
+                std::slice::from_ref(&obsolete),
+                std::slice::from_ref(&obsolete),
+            ),
+            Err(LiveSafetyReportRefusal::MutationLocatorDiffers(
+                obsolete_run_id,
                 "mutant".to_owned(),
             )),
         );
