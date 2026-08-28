@@ -483,8 +483,8 @@ pub struct LimitationRemoval {
     pub row: &'static str,
     /// What structurally changed, in the registry's own terms.
     pub change: &'static str,
-    /// The historical-v1 identity of the first shape it unlocked, where
-    /// one ran during that recorded campaign.
+    /// The current-corpus acceptance of the first shape it unlocked, where
+    /// one ran in the validated native-v2/revision-7 campaign.
     ///
     /// `None` is a removal that is REAL at the registry and that nothing
     /// has yet carried to a node. The register keeps the two apart on
@@ -492,7 +492,43 @@ pub struct LimitationRemoval {
     /// accepted one are different facts, and this is the register whose
     /// whole reason for existing is not collapsing facts of different
     /// kinds into one word.
-    pub proven_by: Option<&'static str>,
+    pub proven_by: Option<CurrentCorpusAcceptance>,
+}
+
+impl LimitationRemoval {
+    /// Resolve the target identity proving this removal, when one exists.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the embedded validated corpus no longer carries exactly
+    /// one acceptance for the selected fixed-roster ceremony.
+    #[must_use]
+    pub fn proven_identity(self) -> Option<&'static str> {
+        self.proven_by.map(CurrentCorpusAcceptance::identity)
+    }
+}
+
+/// A value-free selector for one acceptance in the validated current corpus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CurrentCorpusAcceptance {
+    ceremony: &'static str,
+}
+
+impl CurrentCorpusAcceptance {
+    const fn new(ceremony: &'static str) -> Self {
+        Self { ceremony }
+    }
+
+    /// Resolve this selector to the target-computed current identity.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the embedded validated corpus no longer carries exactly
+    /// one acceptance for this fixed-roster ceremony.
+    #[must_use]
+    pub fn identity(self) -> &'static str {
+        current_acceptance_identity(self.ceremony)
+    }
 }
 
 /// The two-output floor's removal, recorded once.
@@ -510,7 +546,7 @@ const TWO_OUTPUT_FLOOR_REMOVAL: LimitationRemoval = LimitationRemoval {
              declare it, so nothing was relaxed; the zero-blinder degeneracy is answered by the \
              registry's existing `DegenerateBalancingScalar` refusal, left standing and now \
              load-bearing.",
-    proven_by: Some(crate::live_history_v1::multi_shapes::STRICT_ONE_TO_ONE_ACCEPTED_TXID),
+    proven_by: Some(CurrentCorpusAcceptance::new("multi-strict-one-to-one")),
 };
 
 /// The absent fee role's removal, recorded once.
@@ -547,7 +583,7 @@ const CANCELING_PREDECESSOR_REMOVAL: LimitationRemoval = LimitationRemoval {
              nonzero for a reason that can be stated. The consumed sum is now SUMMED over the \
              coins the shape names rather than stated from one predecessor's structure, and the \
              ceremony writes the forced blinder's nonzero-ness into its own transcript.",
-    proven_by: Some(crate::live_history_v1::multi_shapes::MERGE_ACCEPTED_TXID),
+    proven_by: Some(CurrentCorpusAcceptance::new("multi-private-merge")),
 };
 
 /// The absent fee projection's removal, recorded once.
@@ -592,7 +628,7 @@ const SPONSORLESS_FEE_REMOVAL: LimitationRemoval = LimitationRemoval {
              relation gained the fee as a term rather than an allowance. The fee-bearing \
              deployment is welded to the digest an empty program actually hashes to, the \
              demonstration keeping its fixture constant and its identities untouched.",
-    proven_by: Some(crate::live_history_v1::multi_shapes::FEE_BEARING_SUCCESSOR_IDENTITY),
+    proven_by: Some(CurrentCorpusAcceptance::new("multi-one-to-one-with-fee")),
 };
 
 /// The homogeneous-representation limitation's removal, recorded once.
@@ -610,7 +646,7 @@ const SPONSORLESS_FEE_REMOVAL: LimitationRemoval = LimitationRemoval {
 const PER_SIDE_REPRESENTATION_REMOVAL: LimitationRemoval = LimitationRemoval {
     row: "T5-054",
     change: "A composition pairs one admitted representation plan to each SIDE of a transfer,              taking §6.5's own \"unless separately admitted\" clause rather than widening the              guide, and leaving the plan census at the two members §6.1 states exhaustively. The              constructor carries the composition and derives its representation from the CONSUMED              side, so a crossing deployment seats its crossing constructor at exactly the key a              coin is recognized under and no destination table widens. The coordinator's value              obligation dispatches on the composition rather than on one plan, which is what the              obligation was always about -- the side a transfer CREATES -- and the exit direction              gains a POSITIONAL value-form fragment requiring the explicit form at every              destination but the declared absorber and the confidential form at that one. The              absorber is a declared destination position inside the destination range, so it adds              no output family and the §10.4 closure argument is untouched. The registry gained an              explicit receipt destination role at a new transcript code, the opposite corner of              the three predicates from the fee, and the materializer builds one through its own              stage that asks the target for the OPPOSITE answer the fee stage asks for. Every              recorded digest re-derives bit-for-bit through all of it.",
-    proven_by: Some(crate::live_history_v1::multi_shapes::EXIT_CROSSING_ACCEPTED_TXID),
+    proven_by: Some(CurrentCorpusAcceptance::new("multi-exit-crossing")),
 };
 
 /// A first-party convention that refuses a shape consensus admits.
@@ -2711,9 +2747,9 @@ mod tests {
 
     use super::{
         BlindedShape, ConsensusVerdict, ConsumedArity, CreatedArity, FeeAxis, FirstPartyStatus,
-        FormLimitation, FormVerdict, Limitation, RemovalPath, RepresentationAxis, SponsorAxis,
-        TransferForm, census_entry, current_acceptance_identity, current_refusal_detail,
-        form_verdict,
+        FormLimitation, FormVerdict, Limitation, LimitationRemoval, RemovalPath,
+        RepresentationAxis, SponsorAxis, TransferForm, census_entry, current_acceptance_identity,
+        current_refusal_detail, form_verdict,
     };
     use crate::live_proof_bearing_observation::registry_refusal_for;
     use std::collections::{BTreeMap, BTreeSet};
@@ -3124,46 +3160,68 @@ mod tests {
         );
     }
 
-    /// The observed rows' cardinalities match the ceremonies' own
-    /// recorded counts.
+    /// The observed rows' cardinalities match the current ceremonies' own
+    /// validated counts.
     ///
     /// The multi-shape ceremony writes down how many receipts each
     /// shape consumed and how many outputs it created. If the register
     /// described a different shape than the run it cites, these would
     /// disagree.
     #[test]
-    fn the_observed_cardinalities_match_the_recorded_run_counts() {
-        use crate::live_history_v1::multi_shapes::{OUTPUT_COUNTS, RECEIPT_LEAVES};
+    fn the_observed_cardinalities_match_the_current_corpus() {
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates");
+        let count = |ceremony: &str, field: &str| {
+            corpus
+                .ceremony_projection(ceremony)
+                .and_then(|projection| projection.semantic_value(field))
+                .unwrap_or_else(|| panic!("{ceremony} omits {field}"))
+                .parse::<usize>()
+                .unwrap_or_else(|_| panic!("{ceremony} carries a non-numeric {field}"))
+        };
 
-        // The fee-bearing shape is in this list even though it was never
-        // accepted, because what the list checks is that the register
-        // describes the same CARDINALITIES the ceremony ran — a question
-        // a refusal answers exactly as well as an acceptance does.
-        let ordered = [
-            BlindedShape::OneToThree,
-            BlindedShape::TwoToThree,
-            BlindedShape::TwoToTwo,
-            BlindedShape::OneToOne,
-            BlindedShape::OneToOneWithFee,
-        ];
-        for (index, shape) in ordered.into_iter().enumerate() {
+        for (shape, ceremony) in [
+            (BlindedShape::OneToThree, "multi-split"),
+            (BlindedShape::TwoToThree, "multi-many-to-many"),
+            (BlindedShape::TwoToTwo, "multi-several-owners"),
+            (BlindedShape::OneToOne, "multi-strict-one-to-one"),
+            (BlindedShape::OneToOneWithFee, "multi-one-to-one-with-fee"),
+        ] {
             assert_eq!(
                 shape.blinded_inputs(),
-                RECEIPT_LEAVES[index],
-                "{} consumed the recorded number of receipts",
+                count(ceremony, "input_count"),
+                "{} consumed the current number of receipts",
                 shape.handle(),
             );
             assert_eq!(
                 shape.outputs(),
-                OUTPUT_COUNTS[index],
-                "{} created the recorded number of outputs",
+                count(ceremony, "output_count"),
+                "{} created the current number of outputs",
                 shape.handle(),
             );
         }
+
+        let restart = corpus
+            .ceremony_projection("private-restart-control")
+            .expect("the current private restart is present");
         assert_eq!(
-            crate::live_history_v1::private_restart::RECEIPT_LEAVES,
             BlindedShape::OneToTwo.blinded_inputs(),
-            "the one-to-two control consumed the recorded number of receipts",
+            restart
+                .semantic_value("receipt_leaves")
+                .expect("the current restart records its receipt count")
+                .parse::<usize>()
+                .expect("the validated receipt count parses"),
+            "the one-to-two control consumed the current number of receipts",
+        );
+        let proof_widths = restart
+            .semantic_value("output_witness_proof_bytes")
+            .and_then(|widths| widths.strip_prefix('['))
+            .and_then(|widths| widths.strip_suffix(']'))
+            .expect("the current restart records bracketed proof widths");
+        assert_eq!(
+            BlindedShape::OneToTwo.outputs(),
+            proof_widths.split(',').count(),
+            "the one-to-two control created the current number of outputs",
         );
     }
 
@@ -3284,7 +3342,7 @@ mod tests {
             );
             assert_ne!(removal.change, "", "the structural change is stated");
             assert_eq!(
-                removal.proven_by.map(str::len),
+                removal.proven_identity().map(str::len),
                 Some(64),
                 "a removal recorded on an observed row is proven by a target-computed identity",
             );
@@ -3335,7 +3393,7 @@ mod tests {
         let identities: BTreeSet<&str> = distinct
             .iter()
             .filter_map(|limitation| limitation.removal())
-            .filter_map(|removal| removal.proven_by)
+            .filter_map(LimitationRemoval::proven_identity)
             .collect();
         assert_eq!(
             identities.len(),
@@ -3350,8 +3408,8 @@ mod tests {
         assert_eq!(
             Limitation::HomogeneousRepresentationOnly
                 .removal()
-                .and_then(|removal| removal.proven_by),
-            Some(crate::live_history_v1::multi_shapes::EXIT_CROSSING_ACCEPTED_TXID),
+                .and_then(LimitationRemoval::proven_identity),
+            Some(current_acceptance_identity("multi-exit-crossing")),
             "the crossing removal names the first shape that carried it to a chain",
         );
     }
