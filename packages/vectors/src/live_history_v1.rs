@@ -124,6 +124,8 @@ mod tests {
         "live_keypath_probe::run_of_record",
         "live_pair_arc::run_of_record",
         "live_owner_observation::run_of_record",
+        "live_proof_bearing_observation::PROOF_BEARING_OBSERVATION",
+        "construction_run_of_record_v2",
         "observed_run_of_record",
     ];
 
@@ -193,6 +195,28 @@ mod tests {
         assert_eq!(super::native::RECORDED_EXPLICIT_SERIALIZED_BYTES, 1_164);
         assert_eq!(super::native::RECORDED_EXPLICIT_PREDICTED_WEIGHT, 1_911);
         assert_eq!(super::native::RECORDED_EXPLICIT_OBSERVED_WEIGHT, 1_911);
+    }
+
+    #[test]
+    fn validated_census_remains_eighty_two_plus_one_plus_twenty_five() {
+        let validated = crate::live_evidence::derive_live_evidence_plan()
+            .expect("the validated corpus overlays the historical classifier");
+        let census = validated
+            .census()
+            .with_validated_report_layer_observations(2)
+            .expect("the two report-layer observations validate");
+        let answered = census
+            .rows()
+            .checked_sub(census.vocabulary_closed())
+            .and_then(|rows| rows.checked_sub(census.native_run_required()))
+            .expect("the census partition is internally ordered");
+
+        assert_eq!(answered, 82);
+        assert_eq!(census.vocabulary_closed(), 1);
+        assert_eq!(census.native_run_required(), 25);
+        assert_eq!(crate::live_negative_half::STILL_REQUIRED.len(), 25);
+        assert_eq!(answered + 1 + 25, census.rows());
+        assert_eq!(census.rows(), 108);
     }
 
     #[test]
