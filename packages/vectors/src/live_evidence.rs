@@ -2992,8 +2992,8 @@ pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 /// The first was that the two acceptances a reader would reach for are
 /// NOT a pair. §16.1's load-bearing word is that a pair begins from ONE
 /// semantic fixture materialized twice, and
-/// `live_explicit_shapes::run_of_record::ONE_TO_ONE_ACCEPTED_TXID` and
-/// `live_multi_shapes::run_of_record::STRICT_ONE_TO_ONE_ACCEPTED_TXID`
+/// `live_history_v1::explicit_shapes::ONE_TO_ONE_ACCEPTED_TXID` and
+/// `live_history_v1::multi_shapes::STRICT_ONE_TO_ONE_ACCEPTED_TXID`
 /// are two INDEPENDENT ceremonies whose shapes match. Comparing them
 /// would be the substitution [`crate::live_pairs::PairTargetVerdict`]'s
 /// `NotSubmittedShapeAcceptedElsewhere` member exists to deny. The arc
