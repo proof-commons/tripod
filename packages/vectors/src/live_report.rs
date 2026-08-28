@@ -2324,10 +2324,10 @@ impl BoundObservationValidation {
                 request_id.clone(),
             ));
         };
-        let boundary = crate::matrix::all_classes()
+        let boundary = crate::live_safety::required_safety_matrix()
             .into_iter()
-            .find(|class| class.name() == mutant.row())
-            .map(|class| class.boundary());
+            .find(|candidate| candidate.name() == mutant.row())
+            .and_then(crate::live_safety::LiveSafetyRow::refusing_layer);
         if mutant.row() != *row || boundary != Some(*declared_boundary) {
             return Err(LiveSafetyReportRefusal::RequestRoleDiffers(
                 run_id.clone(),
