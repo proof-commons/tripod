@@ -1785,8 +1785,7 @@ mod forward_fixture_digest_v2 {
     /// The private-split successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
-    /// halves of one historical observation in
-    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
     /// unconditionally; the active derivation and validated corpus bind here.
     pub const SPLIT_SUCCESSOR_DIGEST: &str =
         "52f9d832e9ff93070ea9849cd8d5f817746fdb8bc544e6d94207810e594014ca";
@@ -1794,8 +1793,7 @@ mod forward_fixture_digest_v2 {
     /// The many-to-many successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
-    /// halves of one historical observation in
-    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
     /// unconditionally; the active derivation and validated corpus bind here.
     pub const MANY_TO_MANY_SUCCESSOR_DIGEST: &str =
         "67ec9e516460e453fcc0bf6cfacfdc58141afefa0b4e4c2d3ff3c2d7a2495b98";
@@ -1803,8 +1801,7 @@ mod forward_fixture_digest_v2 {
     /// The several-distinct-owners successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
-    /// halves of one historical observation in
-    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
     /// unconditionally; the active derivation and validated corpus bind here.
     pub const SEVERAL_OWNERS_SUCCESSOR_DIGEST: &str =
         "6d86b884565d6d4bc1f81fb6915dc91987d97a62e5a3ca896403ef6d4963e30c";
@@ -1812,8 +1809,7 @@ mod forward_fixture_digest_v2 {
     /// The strict one-to-one successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
-    /// halves of one historical observation in
-    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
     /// unconditionally; the active derivation and validated corpus bind here.
     pub const STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST: &str =
         "7ec97a6e6cf6bf7e6c4308c007e55cf6ac799113abb3b93e3fb3d559c510ec14";
@@ -1821,8 +1817,7 @@ mod forward_fixture_digest_v2 {
     /// The fee-bearing successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
-    /// halves of one historical observation in
-    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
     /// unconditionally; the active derivation and validated corpus bind here.
     pub const FEE_BEARING_SUCCESSOR_DIGEST: &str =
         "bba4ea6e919b8619d75d035b5f6ee9e8aac3a87c00336c8a86c5973a84936bad";
@@ -1830,8 +1825,7 @@ mod forward_fixture_digest_v2 {
     /// The private-merge successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
-    /// halves of one historical observation in
-    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
     /// unconditionally; the active derivation and validated corpus bind here.
     pub const MERGE_SUCCESSOR_DIGEST: &str =
         "d4a4a2e4371a81d4d74ad2fbceef64303091496c374e11e2208c6d3bde1ea0d9";
@@ -1839,8 +1833,7 @@ mod forward_fixture_digest_v2 {
     /// The exit-crossing successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
-    /// halves of one historical observation in
-    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
     /// unconditionally; the active derivation and validated corpus bind here.
     pub const EXIT_CROSSING_SUCCESSOR_DIGEST: &str =
         "013df551e2862b4018f2e9b2c2cc83174571234f1ad200605de66232514ea001";
@@ -1848,8 +1841,7 @@ mod forward_fixture_digest_v2 {
     /// The entry-crossing successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
-    /// halves of one historical observation in
-    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
     /// unconditionally; the active derivation and validated corpus bind here.
     pub const ENTRY_CROSSING_SUCCESSOR_DIGEST: &str =
         "7c3bda6049cb80635b0580148002c185eeee8ea48e67bfd1fd698e28a65b17c0";
@@ -1857,8 +1849,7 @@ mod forward_fixture_digest_v2 {
     /// The pure-split successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
-    /// halves of one historical observation in
-    /// [`crate::live_history_v1::multi_shapes`]. Algorithm v2 binds amounts
+    /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
     /// unconditionally; the active derivation and validated corpus bind here.
     pub const PURE_SPLIT_SUCCESSOR_DIGEST: &str =
         "2c8318413c8a726c6c65587d4c48d60af1ba82f1622152d216266c5858658671";
@@ -2113,21 +2104,6 @@ mod tests {
         bytes[31] = 0x2a;
         bytes
     };
-
-    #[test]
-    fn historical_fee_bearing_digest_and_acceptance_remain_distinct_fields() {
-        use crate::live_history_v1::multi_shapes as history;
-
-        assert_eq!(
-            history::FEE_BEARING_ACCEPTED_IDENTITY,
-            Some(history::FEE_BEARING_SUCCESSOR_IDENTITY),
-        );
-        assert_eq!(history::FEE_BEARING_SUCCESSOR_IDENTITY.len(), 64);
-        assert_ne!(
-            history::FEE_BEARING_SUCCESSOR_IDENTITY,
-            history::FEE_BEARING_SUCCESSOR_DIGEST,
-        );
-    }
 
     /// The multi-output constructor the step-five stop said was absent
     /// now builds a three-output successor: the split shape's fixture,

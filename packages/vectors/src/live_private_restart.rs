@@ -1761,16 +1761,6 @@ pub mod forward_v2 {
 
     /// Whether an owner-authorized V2 ceremony has minted both acceptances.
     ///
-    /// ```compile_fail
-    /// use vectors::live_history_v1::private_restart::{
-    ///     HistoricalPrivateRestartRun, historical_private_restart_run,
-    /// };
-    /// use vectors::live_private_restart::forward_v2::ForwardPrivateRestartAcceptance;
-    ///
-    /// let HistoricalPrivateRestartRun::V1(historical) =
-    ///     historical_private_restart_run().unwrap();
-    /// let _ = ForwardPrivateRestartAcceptance::Recorded(historical.acceptances());
-    /// ```
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum ForwardPrivateRestartAcceptance {
         /// The V2 digests are pinned, but no fresh target identities are recorded.
@@ -2174,7 +2164,6 @@ fn hex(bytes: [u8; 32]) -> String {
 mod tests {
     use super::{PrivateRestartPlanner, PrivateRestartRecord, render_private_restart};
     use crate::confidential_predecessor::PREDECESSOR_AMOUNTS;
-    use crate::live_history_v1::private_restart as history;
     use transaction::taproot::Digest32;
 
     #[test]
@@ -2203,90 +2192,6 @@ mod tests {
         assert!(rendered.contains("produced_an_accepted_control false"));
         assert!(rendered.contains("observed_layer none"));
         assert!(rendered.contains("moves_the_sponsor_row false"));
-    }
-
-    #[test]
-    fn historical_v1_names_one_acceptance_and_one_receipt() {
-        // The figures are the run's, and this checks their SHAPE rather
-        // than re-deriving them: an identity of the right width, one
-        // receipt consumed, and two outputs each carrying a real proof.
-        // A run of record whose numbers disagreed with its own claim
-        // would be the one thing it exists to prevent.
-        assert_eq!(history::ACCEPTED_TXID.len(), 64);
-        assert_eq!(history::PREDECESSOR_DIGEST.len(), 64);
-        assert_ne!(history::PREDECESSOR_DIGEST, history::SUCCESSOR_DIGEST);
-        assert_eq!(history::RECEIPT_LEAVES, 1);
-        assert_eq!(history::OUTPUT_WITNESS_PROOF_BYTES.len(), 2);
-        assert!(
-            history::OUTPUT_WITNESS_PROOF_BYTES
-                .iter()
-                .all(|bytes| *bytes > 2)
-        );
-        assert!(
-            history::SUBMITTED_BYTES > history::OUTPUT_WITNESS_PROOF_BYTES.iter().sum::<usize>(),
-        );
-
-        // The two runs are two runs. Different successors, different
-        // identities, and the two admitted parities between them — a
-        // pair whose members agreed anywhere here would be one run
-        // reported twice.
-        assert_ne!(history::ACCEPTED_TXID, history::PARITY_ACCEPTED_TXID);
-        assert_ne!(history::SUCCESSOR_DIGEST, history::PARITY_SUCCESSOR_DIGEST);
-        assert_eq!(history::PARITY_ACCEPTED_TXID.len(), 64);
-        assert_eq!(
-            [
-                history::CONSUMED_COMMITMENT_PREFIX,
-                history::PARITY_CONSUMED_COMMITMENT_PREFIX,
-            ],
-            [0x08, 0x09],
-            "the two runs did not exercise the two admitted parities",
-        );
-    }
-
-    #[test]
-    fn the_historical_v1_type_preserves_every_recorded_value() {
-        use crate::live_history_v1::private_restart::{
-            HistoricalPrivateRestartRun, historical_private_restart_run,
-        };
-
-        let HistoricalPrivateRestartRun::V1(historical) =
-            historical_private_restart_run().expect("the historical identities parse");
-        let primary = historical.acceptances().primary();
-        let balancing = historical.acceptances().balancing();
-
-        assert_eq!(historical.issued_asset(), history::ISSUED_ASSET);
-        assert_eq!(historical.predecessor_digest(), history::PREDECESSOR_DIGEST);
-        assert_eq!(primary.successor_digest(), history::SUCCESSOR_DIGEST);
-        assert_eq!(
-            primary.acceptance().accepted_identity().to_string(),
-            history::ACCEPTED_TXID,
-        );
-        assert_eq!(
-            primary.commitment_prefix(),
-            history::CONSUMED_COMMITMENT_PREFIX,
-        );
-        assert_eq!(
-            balancing.successor_digest(),
-            history::PARITY_SUCCESSOR_DIGEST,
-        );
-        assert_eq!(
-            balancing.acceptance().accepted_identity().to_string(),
-            history::PARITY_ACCEPTED_TXID,
-        );
-        assert_eq!(
-            balancing.commitment_prefix(),
-            history::PARITY_CONSUMED_COMMITMENT_PREFIX,
-        );
-        assert_eq!(historical.submitted_bytes(), history::SUBMITTED_BYTES);
-        assert_eq!(
-            historical.output_witness_proof_bytes(),
-            history::OUTPUT_WITNESS_PROOF_BYTES,
-        );
-        assert_eq!(historical.receipt_leaves(), history::RECEIPT_LEAVES);
-        assert_eq!(
-            historical.wall_seconds().to_bits(),
-            history::WALL_SECONDS.to_bits(),
-        );
     }
 
     #[test]

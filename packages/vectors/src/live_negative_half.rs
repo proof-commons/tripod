@@ -203,7 +203,7 @@ pub enum NegativeHalfGap {
     /// the witness and the spent programs rather than the refusal text
     /// alone, and the probe's phase-B run observed the refusal under its
     /// own name behind an accepted control
-    /// ([`crate::live_history_v1::keypath_probe_phase_b`]). The row
+    /// (archived in git history). The row
     /// left this register by being answered, and the member is kept only
     /// as provenance — the vocabulary the repair was read off.
     ObservedLayerVocabularyAbsent,

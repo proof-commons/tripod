@@ -1222,7 +1222,6 @@ fn observation_lines(prefix: &str, observation: &KeyPathObservation) -> Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::live_history_v1::{keypath_probe as phase_a, keypath_probe_phase_b as phase_b};
 
     #[test]
     fn the_probe_funds_exactly_one_receipt() {
@@ -1266,82 +1265,6 @@ mod tests {
         assert!(rendered.contains("discharges_no_residual true"));
         assert!(rendered.contains("answers_matrix_row key-path-escape"));
         assert!(rendered.ends_with('\n'));
-    }
-
-    #[test]
-    fn the_run_of_record_names_one_refused_attempt_at_one_witness_item() {
-        // The figures are the run's, and this checks their SHAPE rather
-        // than re-deriving them. The two that carry the claim are the
-        // witness census and the key disagreement: a run of record whose
-        // witness had grown a second item would not be a key-path
-        // attempt, and one whose signing key equalled the output key
-        // would be a different experiment reported under this name.
-        assert_eq!(phase_a::WITNESS_ITEMS, 1);
-        assert_eq!(phase_a::WITNESS_ITEM_BYTES, 64);
-        assert_ne!(phase_a::SIGNING_PUBLIC_KEY, phase_a::OUTPUT_KEY);
-
-        // The program is the witness-version-one script for the output
-        // key: two prefix bytes and the key. Checked by construction so
-        // that a transcription slip in either constant is a failure
-        // rather than a pair of numbers nobody compared.
-        assert_eq!(
-            phase_a::FUNDED_PROGRAM,
-            format!("5120{}", phase_a::OUTPUT_KEY),
-        );
-
-        assert_eq!(phase_a::OUTPUT_KEY.len(), 64);
-        assert_eq!(phase_a::MERKLE_ROOT.len(), 64);
-        assert_eq!(phase_a::ISSUED_ASSET.len(), 64);
-        assert_eq!(phase_a::CANDIDATE_KEY_PATH_MESSAGE.len(), 64);
-
-        // The submitted bytes carry a transaction and not only the
-        // witness item.
-        const {
-            assert!(phase_a::SUBMITTED_BYTES > phase_a::WITNESS_ITEM_BYTES);
-        };
-
-        // The verdict was a refusal, and the artifact says so in the
-        // target's own words rather than in a mapped name.
-        assert!(phase_a::OBSERVED_DETAIL.contains("Invalid Schnorr signature"),);
-    }
-
-    #[test]
-    fn the_two_runs_are_one_ceremony_under_two_names() {
-        // What phase B changed and what it did not, asserted rather than
-        // described. The TARGET said the same thing both times — the
-        // verbatim words are the same string — and the WIRE stopped
-        // filing them under a script-path name. A phase-B run whose
-        // words had moved would be a different observation reported
-        // under this name.
-        assert_eq!(phase_b::REFUSAL_DETAIL, phase_a::OBSERVED_DETAIL);
-        assert_ne!(phase_b::OBSERVED_LAYER, phase_a::OBSERVED_LAYER);
-        assert_eq!(phase_a::OBSERVED_LAYER, "ScriptPathRejection");
-        assert_eq!(phase_b::OBSERVED_LAYER, "KeyPathRejection");
-
-        // The typed constant is BOUND to the recorded string rather than
-        // stated beside it. A typed layer that drifted from the run's own
-        // bytes would let the classifier compare against a fact the run
-        // never produced, which is the whole failure the layer plumbing
-        // exists to close.
-        assert_eq!(
-            format!("{:?}", phase_b::REFUSAL_OBSERVED_LAYER),
-            phase_b::OBSERVED_LAYER
-        );
-
-        // The pair. The control carries an identity a reader can look
-        // up, it is the script-path shape against the attempt's key-path
-        // one, and the two differ in the witness alone — which is the
-        // property that makes the refusal the row's rather than the
-        // candidate's.
-        assert_eq!(phase_b::CONTROL_ACCEPTED_TXID.len(), 64);
-        assert_eq!(phase_b::CONTROL_WITNESS_ITEMS, 3);
-        assert_eq!(phase_a::WITNESS_ITEMS, 1);
-        const {
-            assert!(phase_b::CONTROL_SHARES_THE_ATTEMPTS_WITNESSLESS_BYTES);
-        };
-        const {
-            assert!(phase_b::CONTROL_SUBMITTED_BYTES > phase_a::SUBMITTED_BYTES);
-        };
     }
 
     #[test]

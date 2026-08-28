@@ -9,9 +9,9 @@
 //! record of its own run. What was unreachable was unreachable IN THAT
 //! ORDER, so the pairs step is chartered here as a new arc with its own
 //! entry condition and its own ledger, and nothing in
-//! [`crate::live_restart`] or [`crate::live_closeout`] moves. Editing a
-//! recorded ledger to make a later run fit it would be backdating, and it
-//! is the one thing this module may not do.
+//! [`crate::live_restart`] moves. Editing a recorded ledger to make a later
+//! run fit it would be backdating, and it is the one thing this module may
+//! not do.
 //!
 //! # The entry condition, cited rather than asserted
 //!
@@ -1439,7 +1439,8 @@ pub fn render_pair_arc(record: &PairArcRecord) -> String {
 mod tests {
     use super::{
         PAIR_ARC_AMOUNT, PAIR_ARC_DESTINATION_OWNER, PAIR_ARC_SOURCE_OWNER, PairArcEntryCondition,
-        PairArcMember, REPRESENTATION_EQUIVALENCE_TERMS, pair_arc_fixture, published_scalar,
+        PairArcMember, REPRESENTATION_EQUIVALENCE_TERMS, TargetTransaction, pair_arc_fixture,
+        published_scalar,
     };
     use crate::confidential_predecessor::PREDECESSOR_AMOUNTS;
     use crate::live_explicit_shapes::ExplicitShape;
@@ -1535,65 +1536,69 @@ mod tests {
     }
 
     #[test]
-    fn the_run_of_record_is_honest_about_what_has_not_run() {
-        // The two constants and the flag move together, and this is what
-        // keeps them from drifting: a flag saying a ledger exists while
-        // no identity is recorded would be the claim the whole run of
-        // record discipline exists to prevent.
-        let both = crate::live_history_v1::pair_arc::EXPLICIT_MEMBER_ACCEPTED_IDENTITY.is_some()
-            && crate::live_history_v1::pair_arc::PRIVATE_MEMBER_ACCEPTED_IDENTITY.is_some();
-        assert_eq!(
-            crate::live_history_v1::pair_arc::A_PAIR_ARC_LEDGER_EXISTS,
-            both
-        );
-    }
-
-    #[test]
-    fn the_recorded_identities_are_two_distinct_target_identities() {
+    fn the_current_identities_are_two_distinct_target_identities() {
         // What the arc's whole claim rests on, checked rather than read.
         // One identity recorded twice would be one transaction, and a
         // relation over one transaction is not a relation.
-        let explicit = crate::live_history_v1::pair_arc::EXPLICIT_MEMBER_ACCEPTED_IDENTITY
-            .expect("the historical arc ran");
-        let private = crate::live_history_v1::pair_arc::PRIVATE_MEMBER_ACCEPTED_IDENTITY
-            .expect("the historical arc ran");
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates");
+        let [explicit, private] = corpus
+            .acceptance_projections("pairs-arc")
+            .expect("the pairs arc has current acceptances")
+        else {
+            panic!("the pairs arc does not have exactly two current acceptances");
+        };
+        let issued_asset = corpus
+            .ceremony_projection("pairs-arc")
+            .and_then(
+                crate::live_corpus_native_v2_r7::NativeV2CeremonyProjection::issued_asset_display,
+            )
+            .expect("the current pairs arc names its issued asset");
         for identity in [
-            explicit,
-            private,
-            crate::live_history_v1::pair_arc::PAIR_ISSUED_ASSET,
+            explicit.identity_display(),
+            private.identity_display(),
+            issued_asset,
         ] {
             assert_eq!(identity.len(), 64);
             assert!(identity.chars().all(|digit| digit.is_ascii_hexdigit()));
         }
-        assert_ne!(explicit, private);
+        assert_ne!(explicit.identity(), private.identity());
     }
 
     #[test]
     fn the_private_member_is_wider_and_withholds_what_the_explicit_one_publishes() {
-        // The disclosure measurement, as two recorded figures and a
-        // count. The private member is the heavier of the two because a
-        // blinded output carries a range proof and an explicit one
-        // carries nothing, and it withholds terms the explicit member
-        // publishes — which is the whole of what the pair is evidence
-        // about. A recorded pair where the private half were the lighter
-        // one, or withheld nothing, would mean the run did not build
-        // what this module says it built.
-        let weights = (
-            crate::live_history_v1::pair_arc::EXPLICIT_MEMBER_TARGET_WEIGHT,
-            crate::live_history_v1::pair_arc::PRIVATE_MEMBER_TARGET_WEIGHT,
-        );
-        assert!(weights.1 > weights.0);
-        let bytes = (
-            crate::live_history_v1::pair_arc::EXPLICIT_MEMBER_SUBMITTED_BYTES,
-            crate::live_history_v1::pair_arc::PRIVATE_MEMBER_SUBMITTED_BYTES,
-        );
-        assert!(bytes.1 > bytes.0);
-        let withheld = crate::live_history_v1::pair_arc::TERMS_WITHHELD_BY_THE_PRIVATE_MEMBER;
-        assert!(withheld > 0);
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the reviewed corpus validates");
+        let [explicit, private] = corpus
+            .acceptance_projections("pairs-arc")
+            .expect("the pairs arc has current acceptances")
+        else {
+            panic!("the pairs arc does not have exactly two current acceptances");
+        };
+        assert!(private.submitted_bytes().len() > explicit.submitted_bytes().len());
+        let explicit_transaction = TargetTransaction::decode(explicit.submitted_bytes())
+            .expect("the validated explicit acceptance decodes");
+        let private_transaction = TargetTransaction::decode(private.submitted_bytes())
+            .expect("the validated private acceptance decodes");
         assert!(
-            withheld < REPRESENTATION_EQUIVALENCE_TERMS.len(),
-            "a pair that agreed on nothing publicly would be no equality at all",
+            private_transaction.weight() > explicit_transaction.weight(),
+            "the private member has the wider decoded current transaction",
         );
+
+        let evidence = crate::live_evidence::derive_live_evidence_plan()
+            .expect("the current corpus overlays the evidence plan");
+        let relation = evidence
+            .rows()
+            .iter()
+            .find(|row| row.row().name() == "projection-equality-with-paired-explicit")
+            .and_then(|row| match row.standing() {
+                crate::live_evidence::LiveRowStanding::PairedRelationObserved {
+                    relation, ..
+                } => Some(relation.as_str()),
+                _ => None,
+            })
+            .expect("the current paired relation is observed");
+        assert!(relation.contains("withheld-by-private=2"));
     }
 
     #[test]

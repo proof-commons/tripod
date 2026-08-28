@@ -1,21 +1,17 @@
-//! Provenance-bearing identities from committed native run records.
+//! Provenance-bearing identities from the validated current corpus.
 //!
 //! [`RecordedAcceptance`] says exactly one thing: the carried identity
-//! is the identity a committed run-of-record source records for an
-//! accepted transaction. It does not say the native ceremony has been
-//! reproduced. Reproduction is a separate executable binding, such as
-//! the private-restart gate in `guide13_live_native`.
+//! is the target-computed identity the native-v2/revision-7 corpus records
+//! for an accepted transaction.
 
 use std::fmt;
 
-use transaction::{TransactionIdentityParseError, Txid};
+use transaction::Txid;
 
-/// A transaction identity minted by the run-of-record module that owns it.
+/// A transaction identity minted from the validated current corpus.
 ///
-/// There is no public constructor. Public minting functions live beside
-/// the committed constants they cite and take no caller-provided identity,
-/// so syntactically valid text invented at a closeout or role boundary
-/// cannot become this token.
+/// There is no public constructor, so syntactically valid text invented at a
+/// role boundary cannot become this token.
 ///
 /// ```compile_fail
 /// use transaction::Txid;
@@ -34,20 +30,13 @@ pub struct RecordedAcceptance {
 }
 
 impl RecordedAcceptance {
-    /// Parse one committed display identity and bind it to its source.
-    ///
-    /// # Errors
-    ///
-    /// [`TransactionIdentityParseError`] if the committed identity is
-    /// not exactly 64 ASCII hexadecimal digits.
-    pub(crate) fn from_run_of_record(
-        accepted_identity: &'static str,
-        citation: &'static str,
-    ) -> Result<Self, TransactionIdentityParseError> {
-        Txid::from_target_display(accepted_identity).map(|accepted_identity| Self {
+    /// Bind an identity supplied by the validated native-v2/revision-7 corpus.
+    #[cfg(test)]
+    pub(crate) const fn from_validated_corpus(accepted_identity: Txid) -> Self {
+        Self {
             accepted_identity,
-            citation,
-        })
+            citation: "vectors::live_corpus_native_v2_r7",
+        }
     }
 
     /// The target-computed transaction identity the record carries.
@@ -56,71 +45,19 @@ impl RecordedAcceptance {
         self.accepted_identity
     }
 
-    /// The committed run-of-record source that owns the identity.
+    /// The validated corpus source that owns the identity.
     #[must_use]
     pub const fn citation(self) -> &'static str {
         self.citation
     }
 }
 
-// Role renderings historically debug-printed the identity string. Keep
-// those bytes stable while the typed token retains its citation through
-// the public accessor above.
+// Role renderings debug-print the identity string. Keep those bytes stable
+// while the typed token retains its citation through the public accessor.
 impl fmt::Debug for RecordedAcceptance {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("\"")?;
         fmt::Display::fmt(&self.accepted_identity, formatter)?;
         formatter.write_str("\"")
-    }
-}
-
-macro_rules! mint_recorded_acceptance {
-    ($function:ident, $identity:ident) => {
-        /// Mint the acceptance recorded by this function's run-of-record
-        /// constant.
-        ///
-        /// # Errors
-        ///
-        /// [`transaction::TransactionIdentityParseError`] if the committed
-        /// identity is not exactly 64 ASCII hexadecimal digits.
-        pub fn $function() -> Result<
-            $crate::recorded_acceptance::RecordedAcceptance,
-            transaction::TransactionIdentityParseError,
-        > {
-            $crate::recorded_acceptance::RecordedAcceptance::from_run_of_record(
-                $identity,
-                concat!(module_path!(), "::", stringify!($identity)),
-            )
-        }
-    };
-}
-
-pub(crate) use mint_recorded_acceptance;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn a_mint_binds_the_typed_identity_to_its_committed_source() {
-        let recorded = crate::live_history_v1::private_restart::accepted()
-            .expect("the committed identity parses");
-
-        assert_eq!(
-            recorded.accepted_identity().to_string(),
-            crate::live_history_v1::private_restart::ACCEPTED_TXID,
-        );
-        assert_eq!(
-            recorded.citation(),
-            concat!(
-                "vectors::live_history_v1::",
-                "private_restart::ACCEPTED_TXID",
-            ),
-        );
-        assert_eq!(
-            format!("{recorded:?}"),
-            format!(
-                "\"{}\"",
-                crate::live_history_v1::private_restart::ACCEPTED_TXID
-            ),
-        );
     }
 }
