@@ -1011,24 +1011,6 @@ fn weight_of(bytes: &[u8]) -> Option<u64> {
         .map(|transaction| transaction.weight())
 }
 
-/// One recorded observation, spelled once.
-pub(crate) fn recorded(
-    step: LiveNativeStep,
-    layer: ObservedOutcomeLayer,
-    detail: Option<&str>,
-    funded: usize,
-    observed_weight: Option<u64>,
-) -> LiveNativeObservation {
-    LiveNativeObservation {
-        step,
-        layer,
-        detail: detail.map(ToOwned::to_owned),
-        accepted_txid: None,
-        funded,
-        observed_weight,
-    }
-}
-
 /// Render one run's record, canonically.
 ///
 /// The layers and the node's own words. No expectation appears, because
