@@ -2240,6 +2240,97 @@ mod tests {
     }
 
     #[test]
+    fn the_historical_v1_type_preserves_every_recorded_value() {
+        use super::run_of_record as run;
+        use super::run_of_record::{HistoricalPrivateRestartRun, historical_private_restart_run};
+
+        let HistoricalPrivateRestartRun::V1(historical) =
+            historical_private_restart_run().expect("the historical identities parse");
+        let primary = historical.acceptances().primary();
+        let balancing = historical.acceptances().balancing();
+
+        assert_eq!(historical.issued_asset(), run::ISSUED_ASSET);
+        assert_eq!(historical.predecessor_digest(), run::PREDECESSOR_DIGEST);
+        assert_eq!(primary.successor_digest(), run::SUCCESSOR_DIGEST);
+        assert_eq!(
+            primary.acceptance().accepted_identity().to_string(),
+            run::ACCEPTED_TXID,
+        );
+        assert_eq!(primary.commitment_prefix(), run::CONSUMED_COMMITMENT_PREFIX,);
+        assert_eq!(balancing.successor_digest(), run::PARITY_SUCCESSOR_DIGEST,);
+        assert_eq!(
+            balancing.acceptance().accepted_identity().to_string(),
+            run::PARITY_ACCEPTED_TXID,
+        );
+        assert_eq!(
+            balancing.commitment_prefix(),
+            run::PARITY_CONSUMED_COMMITMENT_PREFIX,
+        );
+        assert_eq!(historical.submitted_bytes(), run::SUBMITTED_BYTES);
+        assert_eq!(
+            historical.output_witness_proof_bytes(),
+            run::OUTPUT_WITNESS_PROOF_BYTES,
+        );
+        assert_eq!(historical.receipt_leaves(), run::RECEIPT_LEAVES);
+        assert_eq!(
+            historical.wall_seconds().to_bits(),
+            run::WALL_SECONDS.to_bits(),
+        );
+    }
+
+    #[test]
+    fn the_forward_v2_expectation_is_pending_and_has_only_forward_pins() {
+        use super::ConsumedReceipt;
+        use super::run_of_record::{
+            ForwardPrivateRestartAcceptance, ForwardPrivateRestartExpectation,
+            ForwardPrivateRestartExpectationRefusal, forward_fixture_digest_v2,
+            forward_private_restart_expectation,
+        };
+
+        let ForwardPrivateRestartExpectation::V2(forward) = forward_private_restart_expectation();
+        let fixtures = forward.fixtures();
+
+        assert_eq!(
+            fixtures.predecessor(),
+            forward_fixture_digest_v2::PREDECESSOR_DIGEST,
+        );
+        assert_eq!(
+            fixtures.successor(ConsumedReceipt::Primary),
+            forward_fixture_digest_v2::SUCCESSOR_DIGEST,
+        );
+        assert_eq!(
+            fixtures.successor(ConsumedReceipt::Balancing),
+            forward_fixture_digest_v2::PARITY_SUCCESSOR_DIGEST,
+        );
+        assert_eq!(
+            forward.acceptance(),
+            ForwardPrivateRestartAcceptance::Pending,
+        );
+        assert_eq!(forward.acceptance().name(), "pending");
+        assert_eq!(
+            forward.acceptance().recorded_link(),
+            Err(ForwardPrivateRestartExpectationRefusal::AcceptancePending),
+            "a Pending expectation must not pass a Recorded acceptance gate",
+        );
+    }
+
+    #[test]
+    fn both_commitment_parity_forms_requires_a_two_acceptance_link() {
+        use super::run_of_record::{
+            ForwardPrivateRestartAcceptance, ForwardPrivateRestartExpectation,
+            forward_private_restart_expectation,
+        };
+
+        let ForwardPrivateRestartExpectation::V2(forward) = forward_private_restart_expectation();
+        match forward.acceptance() {
+            ForwardPrivateRestartAcceptance::Pending => {}
+            ForwardPrivateRestartAcceptance::Recorded(link) => {
+                let _ = (link.primary(), link.balancing());
+            }
+        }
+    }
+
+    #[test]
     fn the_planner_builds_and_starts_at_the_issuing_step() {
         let planner =
             PrivateRestartPlanner::new(Digest32::from([0x11; 32])).expect("the ceremony builds");
