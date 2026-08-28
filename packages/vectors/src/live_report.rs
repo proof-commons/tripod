@@ -4993,34 +4993,16 @@ mod tests {
     }
 
     #[test]
-    fn schema_five_history_and_schema_six_live_validation_are_two_sided() {
+    fn schema_five_is_hard_rejected() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
-        let live =
+        let mut report =
             assemble_live_safety_report(&plan, target.clone()).expect("the live report assembles");
-        let mut historical = live.clone();
-        historical.schema = HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA;
+        report.schema = HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA;
 
         assert_eq!(
-            validate_live_safety_report(historical.clone(), &plan, &target),
-            Err(LiveSafetyReportRefusal::UnsupportedSchema(
-                HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA,
-            )),
-        );
-        assert_eq!(
-            validate_schema_five_live_safety_report(live, &plan, &target),
-            Err(LiveSafetyReportRefusal::UnsupportedSchema(
-                LIVE_SAFETY_REPORT_SCHEMA,
-            )),
-        );
-        let validated = validate_schema_five_live_safety_report(historical, &plan, &target)
-            .expect("the retained schema-five report validates");
-        assert!(render_live_safety_report(&validated).starts_with("schema 5\n"));
-        assert!(
-            validated
-                .report_layer_observations()
-                .iter()
-                .all(|observation| observation.schema() == HISTORICAL_LIVE_SAFETY_REPORT_SCHEMA),
+            validate_schema_five_live_safety_report(report, &plan, &target),
+            Err(LiveSafetyReportRefusal::UnsupportedSchema(5)),
         );
     }
 
