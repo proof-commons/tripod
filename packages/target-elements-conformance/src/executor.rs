@@ -98,8 +98,9 @@ use crate::protocol::{
     ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, HandshakeRequest,
     NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest, NativeExecutionResponse,
     NativeOperationRequest, NativeOperationResponse, NativePrototypeRequest,
-    NativePrototypeResponse, OperationCaseId, OperationSubject, ProtocolLimits, ProtocolPhase,
-    WireEnvironment, WireExecutionDomain, maximum_request_bytes, validate_response_shape,
+    NativePrototypeResponse, NativeVerdict, ObservedOutcomeLayer, OperationCaseId,
+    OperationSubject, ProtocolLimits, ProtocolPhase, WireEnvironment, WireExecutionDomain,
+    maximum_request_bytes, validate_response_shape,
 };
 use crate::prototype::{
     CanonicalPrototypeMatrix, CompoundPrototypeFixture, PrototypeCaseId, PrototypeExecutionSubject,
@@ -451,6 +452,264 @@ impl ExecutorConfiguration {
     #[must_use]
     pub const fn limits(&self) -> ProtocolLimits {
         self.limits
+    }
+}
+
+/// How a progressive native-operation capture ended.
+///
+/// A complete capture contains every request and every validated target
+/// response. Every other state is deliberately incomplete: it names the
+/// infrastructure boundary that stopped the exchange while leaving the
+/// facts already observed available to the caller.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum CaptureTerminalState {
+    /// The adapter exchange completed successfully.
+    Complete,
+    /// The adapter could not be prepared, spawned, or supervised.
+    AdapterSpawnRefused,
+    /// The handshake or environment binding was refused.
+    HandshakeRefused,
+    /// An operation request could not be written.
+    WriteRefused,
+    /// An operation response could not be read completely.
+    ReadRefused,
+    /// An operation response did not have the required identity or shape.
+    ResponseShapeRefused,
+    /// The supervised adapter exceeded the configured timeout.
+    Timeout,
+}
+
+impl CaptureTerminalState {
+    /// The canonical capture spelling of this terminal state.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::AdapterSpawnRefused => "adapter-spawn-refused",
+            Self::HandshakeRefused => "handshake-refused",
+            Self::WriteRefused => "write-refused",
+            Self::ReadRefused => "read-refused",
+            Self::ResponseShapeRefused => "response-shape-refused",
+            Self::Timeout => "timeout",
+        }
+    }
+}
+
+impl std::fmt::Display for CaptureTerminalState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// One operation request and the validated response linked to it.
+///
+/// The identifiers are journal-local and allocated before the request is
+/// written. The request retains the complete typed protocol carrier, and
+/// a submission additionally retains a dedicated clone of its exact
+/// transaction bytes so later capture rendering never has to serialize a
+/// transaction again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CapturedOperation {
+    operation_id: String,
+    request_id: String,
+    request: NativeOperationRequest,
+    transaction_bytes: Option<Vec<u8>>,
+    response_id: Option<String>,
+    response_request_id: Option<String>,
+    response_operation_id: Option<String>,
+    verdict: Option<NativeVerdict>,
+    response: Option<NativeOperationResponse>,
+}
+
+impl CapturedOperation {
+    /// The journal-local identity of this operation.
+    #[must_use]
+    pub fn operation_id(&self) -> &str {
+        &self.operation_id
+    }
+
+    /// The journal-local identity of the request.
+    #[must_use]
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    /// The complete typed request sent to the adapter.
+    #[must_use]
+    pub const fn request(&self) -> &NativeOperationRequest {
+        &self.request
+    }
+
+    /// The exact submitted transaction bytes retained before the write.
+    ///
+    /// `None` for operation kinds that do not submit a transaction.
+    #[must_use]
+    pub fn transaction_bytes(&self) -> Option<&[u8]> {
+        self.transaction_bytes.as_deref()
+    }
+
+    /// The journal-local identity allocated for the validated response.
+    #[must_use]
+    pub fn response_id(&self) -> Option<&str> {
+        self.response_id.as_deref()
+    }
+
+    /// The request identity named by the validated response link.
+    #[must_use]
+    pub fn response_request_id(&self) -> Option<&str> {
+        self.response_request_id.as_deref()
+    }
+
+    /// The operation identity named by the validated response link.
+    #[must_use]
+    pub fn response_operation_id(&self) -> Option<&str> {
+        self.response_operation_id.as_deref()
+    }
+
+    /// The validated response's target verdict classification.
+    #[must_use]
+    pub const fn verdict(&self) -> Option<NativeVerdict> {
+        self.verdict
+    }
+
+    /// The complete typed response, after response-shape validation.
+    #[must_use]
+    pub const fn response(&self) -> Option<&NativeOperationResponse> {
+        self.response.as_ref()
+    }
+
+    /// The layer the adapter observed, after response-shape validation.
+    #[must_use]
+    pub fn observed_layer(&self) -> Option<ObservedOutcomeLayer> {
+        self.response
+            .as_ref()
+            .map(|response| response.observed_layer)
+    }
+
+    /// The target identity returned for an accepted submission, if any.
+    #[must_use]
+    pub fn target_identity(&self) -> Option<&str> {
+        self.response
+            .as_ref()
+            .and_then(|response| response.accepted_txid.as_deref())
+    }
+
+    /// The exact adapter detail carried by the validated response.
+    #[must_use]
+    pub fn detail(&self) -> Option<&str> {
+        self.response
+            .as_ref()
+            .and_then(|response| response.observed_detail.as_deref())
+    }
+}
+
+/// A caller-owned progressive journal for one native operation run.
+///
+/// The executor borrows this value and fills it in protocol order. It is
+/// therefore still available after every error return, unlike an
+/// [`ExecutionTranscript`], which exists only when the whole run
+/// succeeds.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NativeOperationCapture {
+    target: Option<TargetProjection>,
+    deployment: Option<DeploymentProjection>,
+    handshake: Option<ExecutorHandshake>,
+    environment: Option<ExecutorEnvironmentObservation>,
+    operations: Vec<CapturedOperation>,
+    terminal_state: Option<CaptureTerminalState>,
+}
+
+impl NativeOperationCapture {
+    /// The reviewed target projection saved before adapter spawn.
+    #[must_use]
+    pub const fn target(&self) -> Option<&TargetProjection> {
+        self.target.as_ref()
+    }
+
+    /// The deployment projection saved before adapter spawn.
+    #[must_use]
+    pub const fn deployment(&self) -> Option<&DeploymentProjection> {
+        self.deployment.as_ref()
+    }
+
+    /// The entire parsed executor handshake, where one was received.
+    #[must_use]
+    pub const fn handshake(&self) -> Option<&ExecutorHandshake> {
+        self.handshake.as_ref()
+    }
+
+    /// The entire parsed native environment observation, where received.
+    #[must_use]
+    pub const fn environment(&self) -> Option<&ExecutorEnvironmentObservation> {
+        self.environment.as_ref()
+    }
+
+    /// Operations in the order their identifiers were allocated.
+    #[must_use]
+    pub fn operations(&self) -> &[CapturedOperation] {
+        &self.operations
+    }
+
+    /// How the run ended, or `None` while no run has finished.
+    #[must_use]
+    pub const fn terminal_state(&self) -> Option<CaptureTerminalState> {
+        self.terminal_state
+    }
+
+    fn bind(
+        &mut self,
+        target: &ReviewedElementsTapscriptDefinition,
+        binding: &ReviewedDevelopmentBinding,
+    ) {
+        *self = Self {
+            target: Some(target.projection()),
+            deployment: Some(binding.projection()),
+            ..Self::default()
+        };
+    }
+
+    fn capture_request(&mut self, request: &NativeOperationRequest) -> usize {
+        let ordinal = self.operations.len();
+        let operation_id = format!("operation-{ordinal}");
+        let request_id = format!("request-{ordinal}");
+        let transaction_bytes = match &request.subject {
+            OperationSubject::Submission(subject) => Some(subject.transaction_bytes.clone()),
+            _ => None,
+        };
+        self.operations.push(CapturedOperation {
+            operation_id,
+            request_id,
+            request: request.clone(),
+            transaction_bytes,
+            response_id: None,
+            response_request_id: None,
+            response_operation_id: None,
+            verdict: None,
+            response: None,
+        });
+        ordinal
+    }
+
+    fn capture_response(&mut self, ordinal: usize, response: &NativeOperationResponse) {
+        let operation = &mut self.operations[ordinal];
+        operation.response_id = Some(format!("response-{ordinal}"));
+        operation.response_request_id = Some(operation.request_id.clone());
+        operation.response_operation_id = Some(operation.operation_id.clone());
+        operation.verdict = Some(
+            if response.observed_layer == ObservedOutcomeLayer::Accepted {
+                NativeVerdict::Accepted
+            } else if response.observed_layer.is_target_verdict() {
+                NativeVerdict::Rejected
+            } else {
+                NativeVerdict::InfrastructureError
+            },
+        );
+        operation.response = Some(response.clone());
+    }
+
+    fn finish(&mut self, state: CaptureTerminalState) {
+        self.terminal_state = Some(state);
     }
 }
 
@@ -1151,11 +1410,36 @@ pub fn execute_operations(
     configuration: &ExecutorConfiguration,
     planner: &mut dyn TargetOperationPlanner,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
-    execute_workload(
+    let mut capture = NativeOperationCapture::default();
+    execute_operations_captured(target, binding, configuration, planner, &mut capture)
+}
+
+/// Runs one caller-driven target operation while progressively journaling it.
+///
+/// The journal is caller-owned and borrowed for the run, so target and
+/// deployment binding, parsed protocol carriers, requests retained before
+/// their writes, and validated responses remain inspectable even when the
+/// function returns an infrastructure error.
+///
+/// # Errors
+///
+/// Every error [`execute_operations`] states. Before each error return,
+/// `capture` carries the facts observed so far and a non-complete
+/// [`CaptureTerminalState`].
+pub fn execute_operations_captured(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    planner: &mut dyn TargetOperationPlanner,
+    capture: &mut NativeOperationCapture,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    capture.bind(target, binding);
+    execute_workload_with_capture(
         target,
         binding,
         configuration,
         NativeWorkload::Operations(planner),
+        Some(capture),
     )
 }
 
@@ -1166,37 +1450,62 @@ fn execute_workload(
     configuration: &ExecutorConfiguration,
     workload: NativeWorkload<'_>,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
+    execute_workload_with_capture(target, binding, configuration, workload, None)
+}
+
+/// The supervised run, optionally retaining a progressive operation capture.
+fn execute_workload_with_capture(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    workload: NativeWorkload<'_>,
+    mut capture: Option<&mut NativeOperationCapture>,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
     // Under guard from the spawn onward. Every refusal between here and
     // the supervisor kills and reaps the process this harness started,
     // rather than dropping a `Child` whose destructor does neither
     // (`G11-R13`).
-    configuration.diagnostics.prepare()?;
-    let mut spawned = UnadoptedChild::new(
-        spawn_executor(&configuration.program, &configuration.diagnostics)
-            .map_err(|_| NativeConformanceError::ExecutorStartupFailed)?,
-    );
+    if let Err(error) = configuration.diagnostics.prepare() {
+        finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
+        return Err(error);
+    }
+    let child = match spawn_executor(&configuration.program, &configuration.diagnostics) {
+        Ok(child) => child,
+        Err(_) => {
+            finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
+            return Err(NativeConformanceError::ExecutorStartupFailed);
+        }
+    };
+    let mut spawned = UnadoptedChild::new(child);
 
-    let stdin = spawned
-        .child_mut()
-        .and_then(|child| child.stdin.take())
-        .ok_or(NativeConformanceError::ExecutorStartupFailed)?;
-    let stdout = spawned
-        .child_mut()
-        .and_then(|child| child.stdout.take())
-        .ok_or(NativeConformanceError::ExecutorStartupFailed)?;
+    let Some(stdin) = spawned.child_mut().and_then(|child| child.stdin.take()) else {
+        finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
+        return Err(NativeConformanceError::ExecutorStartupFailed);
+    };
+    let Some(stdout) = spawned.child_mut().and_then(|child| child.stdout.take()) else {
+        finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
+        return Err(NativeConformanceError::ExecutorStartupFailed);
+    };
     let mut reader = BufReader::new(stdout);
 
     // The last thing that can fail before anything is supervised. A run
     // that cannot establish its group is refused, and the guard is what
     // makes the refusal leave nothing behind.
-    let group = SupervisedGroup::establish(
-        spawned
-            .child()
-            .ok_or(NativeConformanceError::ExecutorStartupFailed)?,
-    )?;
-    let child = spawned
-        .adopt()
-        .ok_or(NativeConformanceError::ExecutorStartupFailed)?;
+    let Some(spawned_child) = spawned.child() else {
+        finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
+        return Err(NativeConformanceError::ExecutorStartupFailed);
+    };
+    let group = match SupervisedGroup::establish(spawned_child) {
+        Ok(group) => group,
+        Err(error) => {
+            finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
+            return Err(error);
+        }
+    };
+    let Some(child) = spawned.adopt() else {
+        finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
+        return Err(NativeConformanceError::ExecutorStartupFailed);
+    };
     let supervisor = Arc::new(ExecutorSupervisor::adopt(child, group));
     let watchdog = Watchdog::start(
         Arc::clone(&supervisor),
@@ -1204,7 +1513,19 @@ fn execute_workload(
         configuration.cleanup_grace,
     );
 
-    let outcome = run_protocol(target, binding, configuration, workload, stdin, &mut reader);
+    let outcome = if let Some(capture) = capture.as_deref_mut() {
+        run_protocol_with_capture(
+            target,
+            binding,
+            configuration,
+            workload,
+            stdin,
+            &mut reader,
+            Some(capture),
+        )
+    } else {
+        run_protocol(target, binding, configuration, workload, stdin, &mut reader)
+    };
 
     // A refused exchange ends the run here. The tree is stopped rather
     // than waited for, because it may be mid-way through writing the very
@@ -1224,6 +1545,14 @@ fn execute_workload(
     let transcript = match outcome {
         Ok(transcript) => transcript,
         Err(error) => {
+            if expired {
+                finish_capture(&mut capture, CaptureTerminalState::Timeout);
+            } else if capture
+                .as_deref()
+                .is_some_and(|capture| capture.terminal_state().is_none())
+            {
+                finish_capture(&mut capture, CaptureTerminalState::ReadRefused);
+            }
             return Err(if expired {
                 NativeConformanceError::ExecutorTimeout
             } else {
@@ -1233,12 +1562,30 @@ fn execute_workload(
     };
 
     if expired {
+        finish_capture(&mut capture, CaptureTerminalState::Timeout);
         return Err(NativeConformanceError::ExecutorTimeout);
     }
     if status != Some(0) {
+        finish_capture(&mut capture, CaptureTerminalState::ReadRefused);
         return Err(NativeConformanceError::ExecutorExited { status });
     }
+    finish_capture(&mut capture, CaptureTerminalState::Complete);
     Ok(transcript)
+}
+
+fn finish_capture(capture: &mut Option<&mut NativeOperationCapture>, state: CaptureTerminalState) {
+    if let Some(capture) = capture.as_deref_mut() {
+        capture.finish(state);
+    }
+}
+
+fn captured_refusal<T>(
+    capture: &mut Option<&mut NativeOperationCapture>,
+    state: CaptureTerminalState,
+    error: NativeConformanceError,
+) -> Result<T, NativeConformanceError> {
+    finish_capture(capture, state);
+    Err(error)
 }
 
 /// The protocol exchange itself.
@@ -1252,8 +1599,28 @@ pub(crate) fn run_protocol(
     binding: &ReviewedDevelopmentBinding,
     configuration: &ExecutorConfiguration,
     workload: NativeWorkload<'_>,
+    stdin: impl Write,
+    reader: &mut impl BufRead,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    run_protocol_with_capture(
+        target,
+        binding,
+        configuration,
+        workload,
+        stdin,
+        reader,
+        None,
+    )
+}
+
+fn run_protocol_with_capture(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    workload: NativeWorkload<'_>,
     mut stdin: impl Write,
     reader: &mut impl BufRead,
+    mut capture: Option<&mut NativeOperationCapture>,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
     let limits = configuration.limits;
     // The same rule the case loops below follow, and for the same
@@ -1277,28 +1644,56 @@ pub(crate) fn run_protocol(
         &HandshakeRequest::default(),
         ProtocolPhase::Handshake,
     );
-    let handshake: ExecutorHandshake = read_message(reader, ProtocolPhase::Handshake, limits)?
-        .ok_or(NativeConformanceError::ExecutorHandshakeFailed)?;
+    let handshake: ExecutorHandshake = match read_message(reader, ProtocolPhase::Handshake, limits)
+    {
+        Ok(Some(handshake)) => handshake,
+        Ok(None) => {
+            return captured_refusal(
+                &mut capture,
+                CaptureTerminalState::HandshakeRefused,
+                NativeConformanceError::ExecutorHandshakeFailed,
+            );
+        }
+        Err(error) => {
+            return captured_refusal(&mut capture, CaptureTerminalState::HandshakeRefused, error);
+        }
+    };
+    if let Some(capture) = capture.as_deref_mut() {
+        capture.handshake = Some(handshake.clone());
+    }
 
     // Revision 7 keeps the exact-equality gate here, before capability
     // selection, the environment record, and every execution request. A
     // revision-6 executor therefore receives no revision-7 workload and
     // no stored revision-6 response can enter a revision-7 transcript.
     if handshake.protocol_schema != NATIVE_PROTOCOL_SCHEMA {
-        return Err(NativeConformanceError::UnsupportedProtocolSchema {
-            offered: handshake.protocol_schema,
-        });
+        return captured_refusal(
+            &mut capture,
+            CaptureTerminalState::HandshakeRefused,
+            NativeConformanceError::UnsupportedProtocolSchema {
+                offered: handshake.protocol_schema,
+            },
+        );
     }
 
     let definition = target.definition();
-    let domain = WireExecutionDomain::of(definition.execution_domain())
-        .ok_or(NativeConformanceError::TargetContractMismatch)?;
+    let Some(domain) = WireExecutionDomain::of(definition.execution_domain()) else {
+        return captured_refusal(
+            &mut capture,
+            CaptureTerminalState::HandshakeRefused,
+            NativeConformanceError::TargetContractMismatch,
+        );
+    };
     if !handshake.supported_domains.contains(&domain)
         || !handshake
             .supported_leaf_versions
             .contains(&definition.leaf_version().get())
     {
-        return Err(NativeConformanceError::ExecutorProtocolMismatch);
+        return captured_refusal(
+            &mut capture,
+            CaptureTerminalState::HandshakeRefused,
+            NativeConformanceError::ExecutorProtocolMismatch,
+        );
     }
     // A census whose cases read a transaction cannot be answered by an
     // executor that says it accepts no transaction context. Refusing here
@@ -1311,7 +1706,11 @@ pub(crate) fn run_protocol(
                     .capabilities
                     .contains(&ExecutorCapability::TransactionContext)
             {
-                return Err(NativeConformanceError::ExecutorProtocolMismatch);
+                return captured_refusal(
+                    &mut capture,
+                    CaptureTerminalState::HandshakeRefused,
+                    NativeConformanceError::ExecutorProtocolMismatch,
+                );
             }
         }
         // A prototype request is a record shape a schema-2 executor has
@@ -1320,7 +1719,11 @@ pub(crate) fn run_protocol(
         // the answer.
         NativeWorkload::Prototypes(_) => {
             if !handshake.runs_prototype_fixtures() {
-                return Err(NativeConformanceError::PrototypeFixturesUnsupported);
+                return captured_refusal(
+                    &mut capture,
+                    CaptureTerminalState::HandshakeRefused,
+                    NativeConformanceError::PrototypeFixturesUnsupported,
+                );
             }
         }
         // An operation plan states its steps one at a time, so what the
@@ -1332,9 +1735,29 @@ pub(crate) fn run_protocol(
     }
 
     let environment: ExecutorEnvironmentObservation =
-        read_message(reader, ProtocolPhase::Environment, limits)?
-            .ok_or(NativeConformanceError::MissingEnvironmentObservation)?;
-    compare_environment(target, binding, &environment)?;
+        match read_message(reader, ProtocolPhase::Environment, limits) {
+            Ok(Some(environment)) => environment,
+            Ok(None) => {
+                return captured_refusal(
+                    &mut capture,
+                    CaptureTerminalState::HandshakeRefused,
+                    NativeConformanceError::MissingEnvironmentObservation,
+                );
+            }
+            Err(error) => {
+                return captured_refusal(
+                    &mut capture,
+                    CaptureTerminalState::HandshakeRefused,
+                    error,
+                );
+            }
+        };
+    if let Some(capture) = capture.as_deref_mut() {
+        capture.environment = Some(environment.clone());
+    }
+    if let Err(error) = compare_environment(target, binding, &environment) {
+        return captured_refusal(&mut capture, CaptureTerminalState::HandshakeRefused, error);
+    }
 
     let mut requests: BTreeMap<NativeCaseId, PrimitiveExecutionSubject> = BTreeMap::new();
     let mut responses: BTreeMap<NativeCaseId, NativeExecutionResponse> = BTreeMap::new();
@@ -1372,6 +1795,7 @@ pub(crate) fn run_protocol(
             reader,
             &mut operation_requests,
             &mut operation_responses,
+            capture.as_deref_mut(),
         )?,
     }
 
@@ -1385,7 +1809,11 @@ pub(crate) fn run_protocol(
     // outside the exchange, which fails the run rather than being
     // ignored as harmless noise — a blank trailing record included,
     // since the framing has no empty records to be tolerant of.
-    expect_end_of_stream(reader, limits)?;
+    if let Err(error) = expect_end_of_stream(reader, limits) {
+        return captured_refusal(&mut capture, CaptureTerminalState::ReadRefused, error);
+    }
+
+    finish_capture(&mut capture, CaptureTerminalState::Complete);
 
     Ok(ExecutionTranscript {
         target: target.projection(),
@@ -1559,12 +1987,21 @@ fn run_operation_steps(
     reader: &mut impl BufRead,
     requests: &mut BTreeMap<OperationCaseId, OperationSubject>,
     responses: &mut BTreeMap<OperationCaseId, NativeOperationResponse>,
+    mut capture: Option<&mut NativeOperationCapture>,
 ) -> Result<(), NativeConformanceError> {
     let mut previous: Option<(OperationCaseId, NativeOperationResponse)> = None;
     loop {
-        let asked = planner
-            .next_step(previous.as_ref().map(|(case, response)| (case, response)))
-            .map_err(|PlanRefused| NativeConformanceError::OperationPlanRefused)?;
+        let asked =
+            match planner.next_step(previous.as_ref().map(|(case, response)| (case, response))) {
+                Ok(asked) => asked,
+                Err(PlanRefused) => {
+                    return captured_refusal(
+                        &mut capture,
+                        CaptureTerminalState::ResponseShapeRefused,
+                        NativeConformanceError::OperationPlanRefused,
+                    );
+                }
+            };
         let Some(step) = asked else {
             return Ok(());
         };
@@ -1575,16 +2012,22 @@ fn run_operation_steps(
         // A plan that reuses an identity would overwrite an answer
         // already recorded, or leave two runs sharing one transcript row.
         if requests.contains_key(&case) {
-            return Err(NativeConformanceError::DuplicateOperationStep(case));
+            return captured_refusal(
+                &mut capture,
+                CaptureTerminalState::ResponseShapeRefused,
+                NativeConformanceError::DuplicateOperationStep(case),
+            );
         }
         // The capability gate, asked of the step rather than of the run.
         // An executor that never advertised this kind of work is handed a
         // typed refusal instead of a record it cannot parse
         // `(´[PLAN-rule:guide10:schema-migration]´)`.
         if !handshake.runs_operation_step(&subject) {
-            return Err(NativeConformanceError::OperationStepUnsupported(
-                case.operation,
-            ));
+            return captured_refusal(
+                &mut capture,
+                CaptureTerminalState::ResponseShapeRefused,
+                NativeConformanceError::OperationStepUnsupported(case.operation),
+            );
         }
 
         let request = NativeOperationRequest {
@@ -1594,40 +2037,87 @@ fn run_operation_steps(
         };
         // Retained before the write, exactly as the other loops do it.
         requests.insert(case.clone(), subject);
+        let capture_ordinal = capture
+            .as_deref_mut()
+            .map(|capture| capture.capture_request(&request));
         // A failed write means the pipe is gone. What that was is decided
         // by the read below and by the child's status.
-        let _write = write_message(&mut *stdin, &request, ProtocolPhase::Request);
+        let write_refused = write_message(&mut *stdin, &request, ProtocolPhase::Request).is_err();
 
         let response: NativeOperationResponse =
-            read_message(reader, ProtocolPhase::Response, limits)?
-                .ok_or_else(|| NativeConformanceError::MissingOperationResponse(case.clone()))?;
+            match read_message(reader, ProtocolPhase::Response, limits) {
+                Ok(Some(response)) => response,
+                Ok(None) => {
+                    let state = if write_refused {
+                        CaptureTerminalState::WriteRefused
+                    } else {
+                        CaptureTerminalState::ReadRefused
+                    };
+                    return captured_refusal(
+                        &mut capture,
+                        state,
+                        NativeConformanceError::MissingOperationResponse(case.clone()),
+                    );
+                }
+                Err(error) => {
+                    let state = if write_refused {
+                        CaptureTerminalState::WriteRefused
+                    } else {
+                        CaptureTerminalState::ReadRefused
+                    };
+                    return captured_refusal(&mut capture, state, error);
+                }
+            };
 
         if response.schema != NATIVE_PROTOCOL_SCHEMA {
-            return Err(NativeConformanceError::UnsupportedProtocolSchema {
-                offered: response.schema,
-            });
+            let state = if write_refused {
+                CaptureTerminalState::WriteRefused
+            } else {
+                CaptureTerminalState::ResponseShapeRefused
+            };
+            return captured_refusal(
+                &mut capture,
+                state,
+                NativeConformanceError::UnsupportedProtocolSchema {
+                    offered: response.schema,
+                },
+            );
         }
         if response.case != case {
             if responses.contains_key(&response.case) {
-                return Err(NativeConformanceError::DuplicateOperationResponse(
-                    response.case,
-                ));
+                let error = NativeConformanceError::DuplicateOperationResponse(response.case);
+                return captured_refusal(
+                    &mut capture,
+                    CaptureTerminalState::ResponseShapeRefused,
+                    error,
+                );
             }
-            return Err(NativeConformanceError::UnexpectedOperationResponse(
-                response.case,
-            ));
+            let error = NativeConformanceError::UnexpectedOperationResponse(response.case);
+            return captured_refusal(
+                &mut capture,
+                CaptureTerminalState::ResponseShapeRefused,
+                error,
+            );
         }
         // Shape before anything else, exactly as for every other record.
         // A response that contradicts its own step kind is a protocol
         // failure, and letting a plan read a target fact out of it would
         // mean believing whichever half happens to fit.
-        response.validate_shape().map_err(|defect| {
-            NativeConformanceError::MalformedOperationResponseShape {
+        if let Err(defect) = response.validate_shape() {
+            let error = NativeConformanceError::MalformedOperationResponseShape {
                 case: case.clone(),
                 defect,
-            }
-        })?;
+            };
+            return captured_refusal(
+                &mut capture,
+                CaptureTerminalState::ResponseShapeRefused,
+                error,
+            );
+        }
 
+        if let Some((capture, ordinal)) = capture.as_deref_mut().zip(capture_ordinal) {
+            capture.capture_response(ordinal, &response);
+        }
         responses.insert(case.clone(), response.clone());
         previous = Some((case, response));
     }
@@ -1898,11 +2388,22 @@ mod tests {
     };
 
     use super::{
-        ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust, NativeWorkload,
-        PrimitiveFixtureSet, UnadoptedChild, run_protocol,
+        CaptureTerminalState, ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust,
+        NativeOperationCapture, NativeWorkload, OperationStep, PlanRefused, PrimitiveFixtureSet,
+        TargetOperationPlanner, UnadoptedChild, execute_operations_captured, run_protocol,
+        run_protocol_with_capture,
     };
     use crate::error::NativeConformanceError;
-    use crate::protocol::{MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID};
+    use crate::protocol::{
+        ExecutorCapability, MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID,
+        MinedFundingReadback, NATIVE_PROTOCOL_SCHEMA, NativeOperationRequest,
+        NativeOperationResponse, NativeResourceObservation, NativeVerdict, ObservedOutcomeLayer,
+        OperationCaseId, OperationStepKind, OperationSubject, ProtocolPhase,
+        TargetSubmissionSubject,
+    };
+    use crate::tests::support::{
+        confidential_handshake, development_binding, observed_environment, reviewed_target,
+    };
 
     /// `G11-R13`: a spawned child dropped before adoption is killed and
     /// reaped, not leaked.
@@ -1990,6 +2491,396 @@ mod tests {
         fn flush(&mut self) -> io::Result<()> {
             Err(io::Error::from(io::ErrorKind::BrokenPipe))
         }
+    }
+
+    struct OneStepPlan {
+        step: OperationStep,
+        answered: bool,
+    }
+
+    impl OneStepPlan {
+        fn submission(name: &str, transaction_bytes: Vec<u8>) -> Self {
+            Self {
+                step: OperationStep::new(
+                    name,
+                    OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                        transaction_bytes,
+                    })),
+                ),
+                answered: false,
+            }
+        }
+    }
+
+    impl TargetOperationPlanner for OneStepPlan {
+        fn next_step(
+            &mut self,
+            previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+        ) -> Result<Option<OperationStep>, PlanRefused> {
+            if previous.is_some() {
+                self.answered = true;
+            }
+            Ok((!self.answered).then(|| self.step.clone()))
+        }
+    }
+
+    fn complete_handshake() -> crate::protocol::ExecutorHandshake {
+        let mut handshake = confidential_handshake();
+        handshake
+            .capabilities
+            .insert(ExecutorCapability::TargetTransactionSubmission);
+        handshake
+    }
+
+    fn submission_response(
+        step: &str,
+        layer: ObservedOutcomeLayer,
+        detail: Option<&str>,
+    ) -> NativeOperationResponse {
+        let accepted = layer == ObservedOutcomeLayer::Accepted;
+        let transaction_id = "aa".repeat(32);
+        NativeOperationResponse {
+            schema: NATIVE_PROTOCOL_SCHEMA,
+            case: OperationCaseId {
+                operation: OperationStepKind::Submit,
+                step: step.to_owned(),
+            },
+            observed_layer: layer,
+            observed_detail: detail.map(str::to_owned),
+            issued_asset: None,
+            funded_outputs: Vec::new(),
+            confidential_funded_outputs: Vec::new(),
+            mined_readback: accepted.then(|| MinedFundingReadback {
+                transaction_id: transaction_id.clone(),
+                witness_transaction_id: "bb".repeat(32),
+                block_hash: "cc".repeat(32),
+                block_height: 17,
+                raw_transaction: vec![0x02, 0x00, 0x00, 0x00],
+            }),
+            accepted_txid: accepted.then_some(transaction_id),
+            sponsor_witness: Vec::new(),
+            signature_bound_to: None,
+            resources: NativeResourceObservation::default(),
+        }
+    }
+
+    fn operation_script(handshake: &crate::protocol::ExecutorHandshake, tail: &str) -> Vec<u8> {
+        format!(
+            "{}\n{}\n{tail}",
+            serde_json::to_string(handshake).expect("the handshake serializes"),
+            serde_json::to_string(&observed_environment()).expect("the environment serializes"),
+        )
+        .into_bytes()
+    }
+
+    fn drive_captured(
+        planner: &mut dyn TargetOperationPlanner,
+        script: Vec<u8>,
+        writer: &mut impl Write,
+    ) -> (
+        Result<super::ExecutionTranscript, NativeConformanceError>,
+        NativeOperationCapture,
+    ) {
+        let target = reviewed_target();
+        let binding = development_binding(&target);
+        let configuration = ExecutorConfiguration::new(
+            Path::new("/nonexistent-executor"),
+            ExecutorTrust::Mock,
+            Duration::from_secs(1),
+            ExecutorDiagnostics::in_directory(Path::new("/nonexistent-diagnostics")),
+        );
+        let mut reader = io::BufReader::new(io::Cursor::new(script));
+        let mut capture = NativeOperationCapture::default();
+        capture.bind(&target, &binding);
+        let outcome = run_protocol_with_capture(
+            &target,
+            &binding,
+            &configuration,
+            NativeWorkload::Operations(planner),
+            writer,
+            &mut reader,
+            Some(&mut capture),
+        );
+        (outcome, capture)
+    }
+
+    #[test]
+    fn a_complete_capture_keeps_full_carriers_and_exact_submitted_bytes() {
+        let transaction_bytes = vec![0x00, 0x01, 0x80, 0xff];
+        let handshake = complete_handshake();
+        let response = submission_response(
+            "candidate",
+            ObservedOutcomeLayer::Accepted,
+            Some("accepted exactly"),
+        );
+        let tail = format!(
+            "{}\n",
+            serde_json::to_string(&response).expect("the response serializes"),
+        );
+        let mut planner = OneStepPlan::submission("candidate", transaction_bytes.clone());
+        let mut sent = Vec::new();
+
+        let (outcome, capture) =
+            drive_captured(&mut planner, operation_script(&handshake, &tail), &mut sent);
+        let transcript = outcome.expect("the scripted exchange completes");
+
+        assert_eq!(capture.handshake(), Some(&handshake));
+        assert_eq!(capture.environment(), Some(&observed_environment()));
+        assert_eq!(
+            capture.terminal_state(),
+            Some(CaptureTerminalState::Complete)
+        );
+        assert_eq!(capture.operations().len(), 1);
+        let operation = &capture.operations()[0];
+        assert_eq!(
+            operation.transaction_bytes(),
+            Some(transaction_bytes.as_slice())
+        );
+        assert_eq!(operation.verdict(), Some(NativeVerdict::Accepted));
+        assert_eq!(
+            operation.target_identity(),
+            response.accepted_txid.as_deref()
+        );
+        assert_eq!(
+            operation.observed_layer(),
+            Some(ObservedOutcomeLayer::Accepted)
+        );
+        assert_eq!(operation.detail(), Some("accepted exactly"));
+        assert_eq!(operation.response(), Some(&response));
+        assert_eq!(
+            operation.response_request_id(),
+            Some(operation.request_id())
+        );
+        assert_eq!(
+            operation.response_operation_id(),
+            Some(operation.operation_id()),
+        );
+
+        let sent_request = String::from_utf8(sent)
+            .expect("the harness writes UTF-8 protocol records")
+            .lines()
+            .find_map(|line| serde_json::from_str::<NativeOperationRequest>(line).ok())
+            .expect("one operation request was sent");
+        let OperationSubject::Submission(sent_subject) = sent_request.subject else {
+            panic!("the sent request was not a submission");
+        };
+        assert_eq!(sent_subject.transaction_bytes, transaction_bytes);
+        assert_eq!(
+            transcript.operation_requests().get(&response.case),
+            Some(&operation.request().subject),
+        );
+        assert_eq!(
+            transcript.operation_responses().get(&response.case),
+            Some(&response),
+        );
+    }
+
+    #[test]
+    fn a_target_refusal_is_a_complete_captured_transcript() {
+        let handshake = complete_handshake();
+        let response = submission_response(
+            "mutant",
+            ObservedOutcomeLayer::ScriptPathRejection,
+            Some("mandatory-script-verify-flag-failed (public fixture)"),
+        );
+        let tail = format!(
+            "{}\n",
+            serde_json::to_string(&response).expect("the response serializes"),
+        );
+        let mut planner = OneStepPlan::submission("mutant", vec![0xde, 0xad]);
+        let mut sent = Vec::new();
+
+        let (outcome, capture) =
+            drive_captured(&mut planner, operation_script(&handshake, &tail), &mut sent);
+
+        outcome.expect("a target refusal completes the exchange");
+        let operation = &capture.operations()[0];
+        assert_eq!(
+            capture.terminal_state(),
+            Some(CaptureTerminalState::Complete)
+        );
+        assert_eq!(operation.verdict(), Some(NativeVerdict::Rejected));
+        assert_eq!(operation.target_identity(), None);
+        assert_eq!(
+            operation.observed_layer(),
+            Some(ObservedOutcomeLayer::ScriptPathRejection),
+        );
+        assert_eq!(
+            operation.detail(),
+            Some("mandatory-script-verify-flag-failed (public fixture)"),
+        );
+    }
+
+    #[test]
+    fn write_and_read_failures_leave_an_inspectable_progressive_journal() {
+        let transaction_bytes = vec![0x07, 0x00, 0x08];
+        let handshake = complete_handshake();
+        let mut write_plan = OneStepPlan::submission("candidate", transaction_bytes.clone());
+        let mut broken = BrokenPipe;
+
+        let (write_outcome, write_capture) = drive_captured(
+            &mut write_plan,
+            operation_script(&handshake, ""),
+            &mut broken,
+        );
+
+        assert!(matches!(
+            write_outcome,
+            Err(NativeConformanceError::MissingOperationResponse(_)),
+        ));
+        assert_eq!(write_capture.handshake(), Some(&handshake));
+        assert_eq!(write_capture.environment(), Some(&observed_environment()));
+        assert_eq!(
+            write_capture.terminal_state(),
+            Some(CaptureTerminalState::WriteRefused),
+        );
+        assert_eq!(write_capture.operations().len(), 1);
+        assert_eq!(
+            write_capture.operations()[0].transaction_bytes(),
+            Some(transaction_bytes.as_slice()),
+        );
+        assert_eq!(write_capture.operations()[0].response(), None);
+
+        let mut read_plan = OneStepPlan::submission("candidate", transaction_bytes.clone());
+        let mut sent = Vec::new();
+        let (read_outcome, read_capture) = drive_captured(
+            &mut read_plan,
+            operation_script(&handshake, "{malformed-response}\n"),
+            &mut sent,
+        );
+
+        assert!(matches!(
+            read_outcome,
+            Err(NativeConformanceError::MalformedResponse {
+                phase: ProtocolPhase::Response,
+            }),
+        ));
+        assert_eq!(
+            read_capture.terminal_state(),
+            Some(CaptureTerminalState::ReadRefused),
+        );
+        assert_eq!(
+            read_capture.operations()[0].transaction_bytes(),
+            Some(transaction_bytes.as_slice()),
+        );
+        assert_eq!(read_capture.operations()[0].response(), None);
+    }
+
+    #[test]
+    fn handshake_and_response_shape_refusals_are_typed_in_the_journal() {
+        let mut handshake_plan = OneStepPlan::submission("candidate", vec![0x01]);
+        let mut sent = Vec::new();
+        let (handshake_outcome, handshake_capture) =
+            drive_captured(&mut handshake_plan, Vec::new(), &mut sent);
+        assert!(matches!(
+            handshake_outcome,
+            Err(NativeConformanceError::ExecutorHandshakeFailed),
+        ));
+        assert_eq!(
+            handshake_capture.terminal_state(),
+            Some(CaptureTerminalState::HandshakeRefused),
+        );
+        assert!(handshake_capture.target().is_some());
+        assert!(handshake_capture.deployment().is_some());
+        assert!(handshake_capture.handshake().is_none());
+
+        let handshake = complete_handshake();
+        let mut malformed = submission_response("candidate", ObservedOutcomeLayer::Accepted, None);
+        malformed.accepted_txid = None;
+        let tail = format!(
+            "{}\n",
+            serde_json::to_string(&malformed).expect("the response serializes"),
+        );
+        let mut shape_plan = OneStepPlan::submission("candidate", vec![0x02]);
+        let mut sent = Vec::new();
+        let (shape_outcome, shape_capture) = drive_captured(
+            &mut shape_plan,
+            operation_script(&handshake, &tail),
+            &mut sent,
+        );
+        assert!(matches!(
+            shape_outcome,
+            Err(NativeConformanceError::MalformedOperationResponseShape { .. }),
+        ));
+        assert_eq!(
+            shape_capture.terminal_state(),
+            Some(CaptureTerminalState::ResponseShapeRefused),
+        );
+        assert_eq!(shape_capture.operations().len(), 1);
+        assert!(shape_capture.operations()[0].response().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spawn_and_timeout_refusals_are_typed_in_the_journal() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let target = reviewed_target();
+        let binding = development_binding(&target);
+        let directory = tempfile::tempdir().expect("a temporary directory is available");
+        let diagnostics = ExecutorDiagnostics::in_directory(directory.path());
+        let mut spawn_plan = OneStepPlan::submission("candidate", vec![0x01]);
+        let mut spawn_capture = NativeOperationCapture::default();
+        let spawn_configuration = ExecutorConfiguration::new(
+            directory.path().join("missing-adapter").as_path(),
+            ExecutorTrust::Mock,
+            Duration::from_secs(1),
+            diagnostics.clone(),
+        );
+
+        let spawn_outcome = execute_operations_captured(
+            &target,
+            &binding,
+            &spawn_configuration,
+            &mut spawn_plan,
+            &mut spawn_capture,
+        );
+        assert!(matches!(
+            spawn_outcome,
+            Err(NativeConformanceError::ExecutorStartupFailed),
+        ));
+        assert_eq!(
+            spawn_capture.terminal_state(),
+            Some(CaptureTerminalState::AdapterSpawnRefused),
+        );
+        assert!(spawn_capture.target().is_some());
+        assert!(spawn_capture.deployment().is_some());
+
+        let adapter = directory.path().join("hanging-adapter.sh");
+        let mut file = std::fs::File::create(&adapter).expect("create the scripted adapter");
+        writeln!(file, "#!/bin/sh").expect("write the interpreter line");
+        writeln!(file, "sleep 120").expect("write the hanging behavior");
+        drop(file);
+        let mut permissions = std::fs::metadata(&adapter)
+            .expect("read adapter metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&adapter, permissions).expect("make the adapter executable");
+
+        let timeout_configuration = ExecutorConfiguration::new(
+            &adapter,
+            ExecutorTrust::Mock,
+            Duration::from_millis(20),
+            diagnostics,
+        )
+        .with_cleanup_grace(Duration::from_millis(20));
+        let mut timeout_plan = OneStepPlan::submission("candidate", vec![0x02]);
+        let mut timeout_capture = NativeOperationCapture::default();
+        let timeout_outcome = execute_operations_captured(
+            &target,
+            &binding,
+            &timeout_configuration,
+            &mut timeout_plan,
+            &mut timeout_capture,
+        );
+        assert!(matches!(
+            timeout_outcome,
+            Err(NativeConformanceError::ExecutorTimeout),
+        ));
+        assert_eq!(
+            timeout_capture.terminal_state(),
+            Some(CaptureTerminalState::Timeout),
+        );
     }
 
     /// A child that never starts the protocol is a handshake failure.
