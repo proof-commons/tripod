@@ -123,8 +123,6 @@ use crate::confidential_predecessor::{PREDECESSOR_AMOUNTS, selected_profiles};
 use crate::error::VectorError;
 use crate::live_capability::OracleLiveCurve;
 use crate::live_corpus_native_v2_r7::{NativeV2MintCeremony, run_of_record as validated_corpus};
-pub use crate::live_history_v1::proof_bearing::ProofBearingRunOfRecord;
-use crate::live_history_v1::proof_bearing::historical_v1_construction_run_of_record;
 use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed, printed_order};
 use crate::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, published_owner, reviewed_target, signing_material,
@@ -1005,6 +1003,113 @@ pub enum RunOfRecordProjectionRefusal {
     CorpusDigestMismatch,
 }
 
+/// The retired schema version of [`ProofBearingRunOfRecord`].
+pub const PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION: u32 = 1;
+
+/// The value-free schema-1 projection surface retained for API compatibility.
+///
+/// No value of this type can be projected from live data. The recorded schema-1
+/// instance is archived in git history.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProofBearingRunOfRecord {
+    schema_version: u32,
+    issued_asset: String,
+    predecessor_digest: Digest32,
+    coins: Vec<RecordedConfidentialCoin>,
+    output_witness_vector_length: usize,
+    output_witness_proof_bytes: Vec<usize>,
+    spent_value_prefixes: Vec<u8>,
+    observations: Vec<ProofBearingObservation>,
+    construction_refusals: RecordedConstructionRefusals,
+    reverification: ProofBearingReverification,
+    candidate_messages: BTreeMap<ProofBearingCase, Digest32>,
+}
+
+impl ProofBearingRunOfRecord {
+    /// The archival schema version.
+    #[must_use]
+    pub const fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    /// The digest algorithm of every digest fact in schema 1.
+    #[must_use]
+    pub const fn fixture_digest_algorithm(&self) -> FixtureDigestAlgorithm {
+        FixtureDigestAlgorithm::HistoricalV1
+    }
+
+    /// The asset identity the target chose.
+    #[must_use]
+    pub fn issued_asset(&self) -> &str {
+        &self.issued_asset
+    }
+
+    /// The predecessor fixture digest.
+    #[must_use]
+    pub const fn predecessor_digest(&self) -> &Digest32 {
+        &self.predecessor_digest
+    }
+
+    /// The outpoint-free node-reported predecessor coins.
+    #[must_use]
+    pub fn coins(&self) -> &[RecordedConfidentialCoin] {
+        &self.coins
+    }
+
+    /// The output-witness vector length.
+    #[must_use]
+    pub const fn output_witness_vector_length(&self) -> usize {
+        self.output_witness_vector_length
+    }
+
+    /// The range-proof bytes in each output-witness entry.
+    #[must_use]
+    pub fn output_witness_proof_bytes(&self) -> &[usize] {
+        &self.output_witness_proof_bytes
+    }
+
+    /// The spent value prefixes in input order.
+    #[must_use]
+    pub fn spent_value_prefixes(&self) -> &[u8] {
+        &self.spent_value_prefixes
+    }
+
+    /// Every submitted-case observation in ceremony order.
+    #[must_use]
+    pub fn observations(&self) -> &[ProofBearingObservation] {
+        &self.observations
+    }
+
+    /// The explicit construction-refusal capture state.
+    #[must_use]
+    pub const fn construction_refusals(&self) -> &RecordedConstructionRefusals {
+        &self.construction_refusals
+    }
+
+    /// The exact second-origin reverification outcome.
+    #[must_use]
+    pub const fn reverification(&self) -> &ProofBearingReverification {
+        &self.reverification
+    }
+
+    /// Every candidate message in case order.
+    #[must_use]
+    pub const fn candidate_messages(&self) -> &BTreeMap<ProofBearingCase, Digest32> {
+        &self.candidate_messages
+    }
+}
+
+impl TryFrom<&ProofBearingObservationRecord> for ProofBearingRunOfRecord {
+    type Error = RunOfRecordProjectionRefusal;
+
+    fn try_from(record: &ProofBearingObservationRecord) -> Result<Self, Self::Error> {
+        if record.fixture_digest_algorithm() != FixtureDigestAlgorithm::HistoricalV1 {
+            return Err(RunOfRecordProjectionRefusal::HistoricalV1DigestRequired);
+        }
+        Err(RunOfRecordProjectionRefusal::HistoricalV1ProjectionRetired)
+    }
+}
+
 impl TryFrom<&MaterializationRefusal> for RecordedMaterializationRefusal {
     type Error = RunOfRecordProjectionRefusal;
 
@@ -1774,9 +1879,9 @@ fn mint_forward_corpus_record(
 
 /// The schema-2 forward-v2 expectation for a fresh proof-bearing run.
 ///
-/// This is the selection point N1-F uses instead of the historical
-/// [`historical_v1_construction_run_of_record`] surface. Both members
-/// mint together from the validated corpus or both remain Pending.
+/// This is the selection point N1-F uses instead of the schema-1 surface,
+/// whose recorded instance now lives only in git history. Both members mint
+/// together from the validated corpus or both remain Pending.
 #[must_use]
 pub fn forward_v2_proof_bearing_run_of_record() -> &'static ForwardV2ProofBearingRunOfRecord {
     static RECORD: OnceLock<ForwardV2ProofBearingRunOfRecord> = OnceLock::new();
@@ -3107,10 +3212,7 @@ fn record_header_lines(record: &ProofBearingObservationRecord) -> Vec<String> {
     ));
     match record.fixture_digest_algorithm() {
         FixtureDigestAlgorithm::HistoricalV1 => {
-            lines.push(format!(
-                "run_of_record_v2 {}",
-                historical_v1_construction_run_of_record().name()
-            ));
+            lines.push("run_of_record_v2 archived-in-git".to_owned());
             match ProofBearingRunOfRecord::try_from(record) {
                 Ok(projection) => lines.push(format!(
                     "run_of_record_projection ready schema_version {}",
@@ -3275,201 +3377,9 @@ pub fn render_proof_bearing_observation(record: &ProofBearingObservationRecord) 
     lines.join("\n") + "\n"
 }
 
-/// One recorded digest, from the order this workspace prints them in.
-#[cfg(test)]
-fn recorded_digest(text: &str) -> Option<Digest32> {
-    <[u8; 32]>::try_from(recorded_bytes(text).as_slice()).ok()
-}
-
-/// One recorded byte string.
-#[cfg(test)]
-fn recorded_bytes(text: &str) -> Vec<u8> {
-    decode_hex(text).unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::live_history_v1::proof_bearing::*;
-
-    const HISTORICAL_V1_RENDERED_LINES: &[&str] = &[
-        "issued_asset d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb",
-        "predecessor_fixture_digest 00da5ef7aaef159237ef5479b419abeee6307e913cc4e244f3226c64c5489262",
-        "run_of_record_v2 recorded",
-        "run_of_record_projection refused HistoricalV1ProjectionRetired",
-        "coin 0 asset explicit fb93ca056d92e29c27986a508f4bd3566f64ea04543f65aa51825fd8d4c84fd7",
-        "coin 0 value commitment 0828d616da18038066f8af4af94a5c6afa9195ece494b9520fc7c81916dc68f000",
-        "coin 0 program 5120508f7d2b9339123105ec650f9e93ae232b9e21b1d8781295d7a34a80acf8a235",
-        concat!(
-            "coin 0 value_form commitment program_bytes 34 ",
-            "predecessor_rangeproof_bytes 4174 node_fields_match_expectation true",
-        ),
-        "coin 1 asset explicit fb93ca056d92e29c27986a508f4bd3566f64ea04543f65aa51825fd8d4c84fd7",
-        "coin 1 value commitment 096543b29336752436d03b1bfc6e6cbc46b1667e203856c58ba0ec67f0d6a37071",
-        "coin 1 program 512065078b646dd98a4bb31f69ae7264fe713a7b167605dfca99f451ce8639719136",
-        concat!(
-            "coin 1 value_form commitment program_bytes 34 ",
-            "predecessor_rangeproof_bytes 4174 node_fields_match_expectation true",
-        ),
-        "output_witness_vector_length 2",
-        "output_witness 0 rangeproof_bytes 4174",
-        "output_witness 1 rangeproof_bytes 4174",
-        "spent_value_prefix 0 0x08",
-        "spent_value_prefix 1 0x09",
-        concat!(
-            "construction_control control-spent-value-as-the-ceremonys-expectation ",
-            "moved_term the spent output's value field, from the node's commitment to the ",
-            "ceremony's amount refusal_code predecessor-opening-mismatch live_refusal ",
-            "PredecessorOpeningMismatch { outpoint: Outpoint { txid: Txid([213, 210, 27, 55, ",
-            "227, 24, 92, 57, 222, 119, 186, 29, 24, 224, 62, 88, 113, 54, 186, 1, 131, 115, ",
-            "165, 46, 214, 152, 125, 0, 58, 228, 153, 219]), index: 0 } }",
-        ),
-        concat!(
-            "construction_control control-opening-of-the-other-output moved_term which ",
-            "registered opening the observed commitment is recomputed from refusal_code ",
-            "predecessor-opening-mismatch live_refusal PredecessorOpeningMismatch { outpoint: ",
-            "Outpoint { txid: Txid([213, 210, 27, 55, 227, 24, 92, 57, 222, 119, 186, 29, 24, ",
-            "224, 62, 88, 113, 54, 186, 1, 131, 115, 165, 46, 214, 152, 125, 0, 58, 228, 153, ",
-            "219]), index: 0 } }",
-        ),
-        "message control-proof-bearing-vector-emptied 16a454854658413c97c281b1f20c84cead7ee08cdf06ed0e0a8b19bb0de47c4d",
-        "message control-preimage-only-signer 94c5ed3bc5734102a6fa6949d54355dcced4763af838892ccf38868cbe8ed042",
-        "message control-another-proof-bearing-candidate 7f56f606a9678dab6158e913778cbe8c6612d9aaab8b4fe5052f46ecd075f7a4",
-        "message selected-profile-proof-bearing-authorization c7931addeeefa3e4ac4b67c9ee5cb5ab65f6de9409007e2415e8c749c61bd27f",
-        concat!(
-            "observed control-proof-bearing-vector-emptied negative_control true moved_term ",
-            "term 12, the output-witness hash, whose entries here are real range proofs layer ",
-            "ScriptPathRejection txid none submitted_bytes 8993 detail ",
-            "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
-        ),
-        concat!(
-            "observed control-preimage-only-signer negative_control true moved_term terms 10 and ",
-            "12 together, which is what a witnessless-serialization signer hashes layer ",
-            "ScriptPathRejection txid none submitted_bytes 8993 detail ",
-            "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
-        ),
-        concat!(
-            "observed control-another-proof-bearing-candidate negative_control true moved_term ",
-            "the successor fixture: a confidential amount cannot move without its commitment ",
-            "and its proof layer ScriptPathRejection txid none submitted_bytes 8993 detail ",
-            "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
-        ),
-        concat!(
-            "observed selected-profile-proof-bearing-authorization negative_control false ",
-            "moved_term nothing; this is the case under the selected profile layer Accepted txid ",
-            "a176394a67fa839058b4efbba53f59af47899dab718a85251a1106f496671d86 ",
-            "submitted_bytes 8993 detail none",
-        ),
-        "reverification accepted_txid a176394a67fa839058b4efbba53f59af47899dab718a85251a1106f496671d86",
-        "reverification witness_txid 2ddc8694242459a9e65d60616f9c4133f8eacf10332ef008319004bf85241c5e",
-        "reverification block_height 6",
-        "reverification readback_matches_submission true",
-        "reverification recomputed_message c7931addeeefa3e4ac4b67c9ee5cb5ab65f6de9409007e2415e8c749c61bd27f",
-        concat!(
-            "reverification signature_from_readback ",
-            "582cc46a31e0111a7894a702d976741fb16711500bdcd719dcc16e211e89e39c",
-            "ebcdbb8675319b48b2e04fae3ca4fbcaa4030aa618f8d2b6084a6f45ba9b7408",
-        ),
-        "reverification verifies_against_recomputed_message true",
-        "reverification outcome Ok(())",
-        "reverification verifies_against_emptied_vector_message false",
-        "observed_acceptance true",
-    ];
-
-    fn synthetic_completed_live_record() -> ProofBearingObservationRecord {
-        let asset = asset_of(RECORDED_ASSET).expect("the historical asset literal is valid");
-        let owners = [
-            OwnerLeaf::derive(&FIRST_SCALAR).expect("the first owner derives"),
-            OwnerLeaf::derive(&SECOND_SCALAR).expect("the second owner derives"),
-        ];
-        let coins: Vec<_> = RECORDED_SPENT_VALUE_PREFIXES
-            .iter()
-            .zip(&owners)
-            .enumerate()
-            .map(|(index, (prefix, owner))| {
-                let mut commitment = [0_u8; COMMITMENT_BYTES];
-                commitment[0] = *prefix;
-                ObservedConfidentialCoin {
-                    outpoint: Outpoint::new(
-                        transaction::bytes::Txid::from_internal([0x55_u8; 32]),
-                        u32::try_from(index).expect("the synthetic coin index fits"),
-                    )
-                    .expect("the synthetic coin index is in range"),
-                    asset: AssetField::Explicit(asset),
-                    value: ValueField::Commitment(commitment),
-                    program: owner.program.clone(),
-                    rangeproof_bytes: RECORDED_RANGEPROOF_BYTES,
-                    matches_expectation: true,
-                }
-            })
-            .collect();
-        let first_outpoint = coins
-            .first()
-            .expect("the synthetic record carries a predecessor coin")
-            .outpoint();
-        let observations = ProofBearingCase::ALL
-            .iter()
-            .copied()
-            .map(|case| ProofBearingObservation {
-                case,
-                layer: if matches!(case, ProofBearingCase::SelectedProfile) {
-                    ObservedOutcomeLayer::Accepted
-                } else {
-                    ObservedOutcomeLayer::ScriptPathRejection
-                },
-                detail: case
-                    .is_negative_control()
-                    .then(|| RECORDED_REFUSAL_DETAIL.to_owned()),
-                accepted_txid: matches!(case, ProofBearingCase::SelectedProfile)
-                    .then(|| RECORDED_ACCEPTED_TXID.to_owned()),
-                submitted_bytes: RECORDED_SUBMITTED_BYTES,
-            })
-            .collect();
-        let construction_refusals = ProofBearingConstructionControl::ALL
-            .iter()
-            .copied()
-            .map(|control| ProofBearingConstructionRefusal {
-                control,
-                refusal: MaterializationRefusal::PredecessorOpeningMismatch {
-                    outpoint: first_outpoint,
-                },
-            })
-            .collect();
-
-        ProofBearingObservationRecord {
-            fixture_digest_algorithm: FixtureDigestAlgorithm::HistoricalV1,
-            issued_asset: Some(RECORDED_ASSET.to_owned()),
-            predecessor_digest: recorded_digest(RECORDED_PREDECESSOR_DIGEST),
-            coins,
-            output_witness_vector_length: Some(2),
-            output_witness_proof_bytes: vec![RECORDED_RANGEPROOF_BYTES, RECORDED_RANGEPROOF_BYTES],
-            spent_value_prefixes: RECORDED_SPENT_VALUE_PREFIXES.to_vec(),
-            observations,
-            submitted_transactions: BTreeMap::new(),
-            construction_refusals,
-            reverification: Some(ProofBearingReverification {
-                accepted_txid: RECORDED_ACCEPTED_TXID.to_owned(),
-                witness_txid: RECORDED_WITNESS_TXID.to_owned(),
-                block_height: RECORDED_BLOCK_HEIGHT,
-                readback_matches_submission: true,
-                recomputed_message: recorded_digest(RECORDED_ACCEPTED_MESSAGE)
-                    .expect("the historical message literal is valid"),
-                signature_from_readback: recorded_bytes(RECORDED_SIGNATURE),
-                verified: Ok(()),
-                verifies_against_emptied_vector_message: false,
-            }),
-            candidate_messages: RECORDED_MESSAGES
-                .iter()
-                .map(|(case, digest)| {
-                    (
-                        *case,
-                        recorded_digest(digest).expect("the historical message literal is valid"),
-                    )
-                })
-                .collect(),
-            refusal: None,
-        }
-    }
 
     #[test]
     fn the_owner_leaves_are_two_distinct_single_leaf_trees() {
@@ -3550,164 +3460,9 @@ mod tests {
     }
 
     #[test]
-    fn t5_031_construction_refusals_are_explicitly_not_captured() {
-        assert!(matches!(
-            T5_031_CONSTRUCTION_REFUSALS,
-            RecordedConstructionRefusals::NotCaptured
-        ));
-        assert_eq!(T5_031_CONSTRUCTION_REFUSALS.captured(), None);
-    }
-
-    #[test]
     fn schema_one_emission_from_live_data_is_retired() {
         assert_eq!(
-            ProofBearingRunOfRecord::try_from(&synthetic_completed_live_record()),
-            Err(RunOfRecordProjectionRefusal::HistoricalV1ProjectionRetired),
-        );
-    }
-
-    fn historical_v1_run_of_record_fixture() -> &'static ProofBearingRunOfRecord {
-        let ProofBearingRunOfRecordV2::Recorded(recorded) =
-            historical_v1_construction_run_of_record()
-        else {
-            panic!("the historical-v1 run of record is still pending");
-        };
-        recorded
-    }
-
-    fn historical_v1_live_fixture() -> ProofBearingObservationRecord {
-        let recorded = historical_v1_run_of_record_fixture();
-        let txid = transaction::bytes::Txid::from_internal([
-            213, 210, 27, 55, 227, 24, 92, 57, 222, 119, 186, 29, 24, 224, 62, 88, 113, 54, 186, 1,
-            131, 115, 165, 46, 214, 152, 125, 0, 58, 228, 153, 219,
-        ]);
-        let coins: Vec<_> = recorded
-            .coins()
-            .iter()
-            .enumerate()
-            .map(|(index, coin)| ObservedConfidentialCoin {
-                outpoint: Outpoint::new(txid, u32::try_from(index).expect("the index fits"))
-                    .expect("the minted coin index is in range"),
-                asset: coin.asset(),
-                value: coin.value(),
-                program: coin.program().to_vec(),
-                rangeproof_bytes: coin.rangeproof_bytes(),
-                matches_expectation: coin.matches_expectation(),
-            })
-            .collect();
-        let first_outpoint = coins
-            .first()
-            .expect("the minted record has two coins")
-            .outpoint();
-        let construction_refusals = recorded
-            .construction_refusals()
-            .captured()
-            .expect("the minted record captures construction refusals")
-            .iter()
-            .map(|refusal| {
-                assert_eq!(
-                    refusal.refusal(),
-                    RecordedMaterializationRefusal::PredecessorOpeningMismatch
-                );
-                ProofBearingConstructionRefusal {
-                    control: refusal.control(),
-                    refusal: MaterializationRefusal::PredecessorOpeningMismatch {
-                        outpoint: first_outpoint,
-                    },
-                }
-            })
-            .collect();
-
-        ProofBearingObservationRecord {
-            fixture_digest_algorithm: FixtureDigestAlgorithm::HistoricalV1,
-            issued_asset: Some(recorded.issued_asset().to_owned()),
-            predecessor_digest: Some(*recorded.predecessor_digest()),
-            coins,
-            output_witness_vector_length: Some(recorded.output_witness_vector_length()),
-            output_witness_proof_bytes: recorded.output_witness_proof_bytes().to_vec(),
-            spent_value_prefixes: recorded.spent_value_prefixes().to_vec(),
-            observations: recorded.observations().to_vec(),
-            submitted_transactions: BTreeMap::new(),
-            construction_refusals,
-            reverification: Some(recorded.reverification().clone()),
-            candidate_messages: recorded.candidate_messages().clone(),
-            refusal: None,
-        }
-    }
-
-    #[test]
-    fn the_historical_v1_run_is_recorded() {
-        assert!(matches!(
-            historical_v1_construction_run_of_record(),
-            ProofBearingRunOfRecordV2::Recorded(_)
-        ));
-    }
-
-    #[test]
-    fn the_historical_v1_construction_refusals_are_captured_in_ceremony_order() {
-        let recorded = historical_v1_run_of_record_fixture();
-        let refusals = recorded
-            .construction_refusals()
-            .captured()
-            .expect("the minted record captures its construction refusals");
-
-        assert_eq!(refusals.len(), ProofBearingConstructionControl::ALL.len());
-        for (refusal, control) in refusals.iter().zip(ProofBearingConstructionControl::ALL) {
-            assert_eq!(refusal.control(), *control);
-            assert_eq!(
-                refusal.refusal(),
-                RecordedMaterializationRefusal::PredecessorOpeningMismatch
-            );
-        }
-    }
-
-    #[test]
-    fn the_historical_v1_recorded_coins_are_internally_consistent() {
-        let recorded = historical_v1_run_of_record_fixture();
-        let issued_asset = asset_of(recorded.issued_asset()).expect("the recorded asset is valid");
-        let owners = [
-            OwnerLeaf::derive(&FIRST_SCALAR).expect("the first owner derives"),
-            OwnerLeaf::derive(&SECOND_SCALAR).expect("the second owner derives"),
-        ];
-
-        assert_eq!(
-            recorded.schema_version(),
-            PROOF_BEARING_RUN_OF_RECORD_SCHEMA_VERSION
-        );
-        assert_eq!(recorded.spent_value_prefixes(), [0x08, 0x09]);
-        for ((coin, prefix), owner) in recorded
-            .coins()
-            .iter()
-            .zip(recorded.spent_value_prefixes())
-            .zip(&owners)
-        {
-            assert_eq!(coin.asset(), AssetField::Explicit(issued_asset));
-            let ValueField::Commitment(commitment) = coin.value() else {
-                panic!("the projected confidential value is not a commitment");
-            };
-            assert_eq!(commitment.first(), Some(prefix));
-            assert_eq!(coin.program(), owner.program.as_slice());
-            assert_eq!(coin.program().len(), 34);
-        }
-    }
-
-    #[test]
-    fn the_historical_rendering_stays_byte_for_byte_except_for_the_retired_emitter() {
-        let live = historical_v1_live_fixture();
-        let rendered = render_proof_bearing_observation(&live);
-
-        for expected in HISTORICAL_V1_RENDERED_LINES {
-            assert!(
-                rendered.lines().any(|line| line == *expected),
-                "the renderer omitted or changed `{expected}`",
-            );
-        }
-    }
-
-    #[test]
-    fn a_historical_live_record_refuses_archival_emission() {
-        assert_eq!(
-            ProofBearingRunOfRecord::try_from(&synthetic_completed_live_record()),
+            ProofBearingRunOfRecord::try_from(&ProofBearingObservationRecord::default()),
             Err(RunOfRecordProjectionRefusal::HistoricalV1ProjectionRetired),
         );
     }
@@ -3854,38 +3609,12 @@ mod tests {
     }
 
     #[test]
-    fn schema_one_is_explicitly_historical_v1() {
-        let historical = historical_v1_run_of_record_fixture();
-
-        assert_eq!(historical.schema_version(), 1);
-        assert_eq!(
-            historical.fixture_digest_algorithm(),
-            FixtureDigestAlgorithm::HistoricalV1
-        );
-        assert_eq!(
-            historical.predecessor_digest(),
-            &recorded_digest(RECORDED_PREDECESSOR_DIGEST)
-                .expect("the historical predecessor digest is valid")
-        );
-    }
-
-    #[test]
     fn a_fresh_forward_v2_projection_refuses_the_schema_one_historical_path() {
         let fresh = synthetic_forward_v2_live_record();
 
         assert_eq!(
             ProofBearingRunOfRecord::try_from(&fresh),
             Err(RunOfRecordProjectionRefusal::HistoricalV1DigestRequired)
-        );
-    }
-
-    #[test]
-    fn schema_one_historical_facts_refuse_the_forward_v2_projection() {
-        let historical = historical_v1_live_fixture();
-
-        assert_eq!(
-            ForwardV2ProofBearingRunOfRecord::try_from(&historical),
-            Err(RunOfRecordProjectionRefusal::ForwardV2DigestRequired)
         );
     }
 
