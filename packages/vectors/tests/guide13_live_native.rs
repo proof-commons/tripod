@@ -578,6 +578,17 @@ fn mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveMutationLoca
         "submit-unauthorized-sponsor-control" => {
             (LiveMutantKind::MissingSponsorAuthorization, witness_item())
         }
+        // Item TWO rather than item zero: the witness stack is signature,
+        // leaf script, control block, and this surgery resizes the control
+        // block. The other witness mutants move item zero, which is what
+        // keeps this row's locator its own.
+        "malformed-control-path" => (
+            LiveMutantKind::MalformedControlPath,
+            LiveMutationLocator::WitnessItem {
+                input_index: 0,
+                item_index: 2,
+            },
+        ),
         "bare-u-output-mutant" => (
             LiveMutantKind::VaultControlEntitlementOrBareUOutput,
             LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
@@ -630,6 +641,24 @@ fn structural_mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveM
                 mutant_inputs: 1,
                 control_outputs: 2,
                 mutant_outputs: 2,
+            },
+        ),
+        "consensus-amount-outside-semantic-domain" => (
+            LiveMutantKind::AmountOutsideSemanticDomain,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        // Exactly ONE coordinator, at input one rather than input zero.
+        // The two collapsing arrangements give two coordinators or none;
+        // this one keeps the control's count and moves the position, so
+        // the mutant indices are what separate it from the control.
+        "leaf-arrangement-member-coordinator-leaf-exchange" => (
+            LiveMutantKind::MemberCoordinatorLeafExchange,
+            LiveMutationLocator::CommittedLeafArrangement {
+                input_indices: vec![0, 1],
+                control_coordinator_leaf_indices: vec![0],
+                mutant_coordinator_leaf_indices: vec![1],
+                control_committed_leaf_programs: Vec::new(),
+                mutant_committed_leaf_programs: Vec::new(),
             },
         ),
         "leaf-arrangement-two-coordinators" => (
@@ -4312,16 +4341,19 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
     // The run says in its own bytes what it did not establish.
     assert!(rendered.contains("each_row_by_its_own_mutant true"));
 
-    // The seven consensus-conservation mutants were each built, submitted
-    // and refused at consensus in the recorded words, and each declared the
-    // (range, shape) separator the run of record carries for its row, so no
-    // two rows rest on one observation.
+    // Every consensus-conservation mutant was built and submitted; each row
+    // the run of record carries was refused in its recorded words on the
+    // recorded (range, shape) separator, and the revision-8 row is checked
+    // on what the ceremony establishes until a capture observes it. The
+    // separators are distinct across all of them, so no two rows rest on
+    // one observation.
     assert_consensus_mutants_separate(record);
 
-    // The two leaf-arrangement mutants — one per collision pair — were each
-    // built, submitted and refused at the script path in their recorded
-    // words, and each declared the revealed-leaf arrangement the run of
-    // record carries, so no two rows rest on one observation.
+    // Every leaf-arrangement mutant was built and submitted; the recorded
+    // rows were refused at the script path in their recorded words on the
+    // recorded arrangement, and the revision-8 exchange is checked on the
+    // arrangement it declares. The arrangements are distinct across all of
+    // them, so no two rows rest on one observation.
     assert_leaf_arrangements_drive(record);
 }
 
@@ -4448,29 +4480,28 @@ fn recorded_leaf_arrangements() -> [(LiveMutantKind, Vec<usize>, Vec<usize>); 2]
     })
 }
 
-/// The two leaf-arrangement mutants were each refused at the script path in
-/// the recorded words, each declared the recorded revealed-leaf arrangement,
-/// and the two arrangements are distinct from each other and from the
-/// control's.
+/// Every leaf-arrangement mutant declared a distinct revealed-leaf
+/// arrangement, distinct also from the control's, and each row the run of
+/// record carries was refused at the script path in its recorded words.
 ///
 /// Split out for the same reason the consensus assertion is: the fact the
-/// drive rests on — that one mutant per pair is a distinct candidate — is
-/// stated once and the test body stays under the line bound.
+/// drive rests on — that each mutant is a distinct candidate — is stated
+/// once and the test body stays under the line bound.
 fn assert_leaf_arrangements_drive(
     record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
 ) {
     use std::collections::BTreeSet;
     use vectors::live_owner_signing_negatives::LeafArrangementObservation;
     let arrangements = record.leaf_arrangements();
+    let recorded = recorded_leaf_arrangements();
     assert_eq!(
         arrangements.len(),
-        2,
-        "the two leaf-arrangement mutants — one per collision pair — were built",
+        recorded.len() + PENDING_LEAF_ARRANGEMENTS.len(),
+        "the leaf-arrangement mutants — the recorded rows and the revision-8 exchange — were built",
     );
-    let recorded = recorded_leaf_arrangements();
-    // Set equality: the two built are exactly the two the run of record
-    // names, so a renamed or substituted row fails rather than passing as
-    // "two of something".
+    // Set equality: the built rows are exactly the recorded ones plus the
+    // rows declared pending, so a renamed or substituted row fails rather
+    // than passing as "three of something".
     let built: BTreeSet<&str> = arrangements
         .iter()
         .map(LeafArrangementObservation::row)
@@ -4480,14 +4511,18 @@ fn assert_leaf_arrangements_drive(
         recorded
             .iter()
             .map(|(kind, ..)| kind.row())
+            .chain(PENDING_LEAF_ARRANGEMENTS.iter().map(|(kind, _)| kind.row()))
             .collect::<BTreeSet<_>>(),
-        "the leaf-arrangement mutants are not the two recorded rows",
+        "the leaf-arrangement mutants are not the recorded rows and the pending row",
     );
     for mutant in arrangements {
-        let (kind, arrangement, control_arrangement) = recorded
+        let Some((kind, arrangement, control_arrangement)) = recorded
             .iter()
             .find(|(kind, ..)| kind.row() == mutant.row())
-            .expect("every built mutant is a recorded row");
+        else {
+            assert_pending_leaf_arrangement(mutant);
+            continue;
+        };
         let expected = current_outcome_for_mutant("owner-signing-negatives", *kind);
         assert_eq!(
             mutant.observed_layer(),
@@ -4541,6 +4576,11 @@ fn assert_leaf_arrangements_drive(
         record.leaf_arrangements().len(),
         "two leaf-arrangement mutants share a revealed-leaf arrangement and do not separate",
     );
+    // The pending row is included in that distinctness check deliberately.
+    // Its outcome is not yet recorded anywhere, but the fact its row rests
+    // on — that its arrangement is its own — is established by construction
+    // and is checkable now, so the check that matters does not wait for the
+    // capture.
 }
 
 /// One consensus row's separating fact: the half-open witnessless byte
@@ -4548,7 +4588,86 @@ fn assert_leaf_arrangements_drive(
 /// mutant handed the node.
 type ConsensusSeparator = ((usize, usize), (usize, usize));
 
-const OWNER_SIGNING_CONSENSUS_MUTANTS: [LiveMutantKind; 7] = [
+/// The consensus rows this ceremony drives that the CURRENT corpus cannot
+/// yet answer for.
+///
+/// The revision-8 rows are built and submitted by the same ceremony as the
+/// recorded ones, but the frozen run of record predates them and carries no
+/// outcome to bind them to. Asserting them against it would not be a
+/// stricter test — it would be a lookup that panics. They are checked here
+/// on what the ceremony itself establishes and bound to a recorded outcome
+/// when the capture that observes them is imported.
+const OWNER_SIGNING_PENDING_CONSENSUS_MUTANTS: [LiveMutantKind; 1] =
+    [LiveMutantKind::AmountOutsideSemanticDomain];
+
+/// The leaf-arrangement rows the current corpus cannot yet answer for, with
+/// the arrangement each declares.
+const PENDING_LEAF_ARRANGEMENTS: [(LiveMutantKind, [u16; 2]); 1] =
+    [(LiveMutantKind::MemberCoordinatorLeafExchange, [1, 0])];
+
+/// The arrangement the control reveals: the coordinator leaf at input zero
+/// and the member leaf at input one.
+const CONTROL_LEAF_ARRANGEMENT: [u16; 2] = [0, 1];
+
+/// One leaf-arrangement mutant the current corpus cannot answer for, checked
+/// on what the ceremony itself establishes.
+///
+/// Three facts, none of which needs a recorded outcome: it declared the
+/// arrangement its row is defined by, that arrangement is not the control's,
+/// and the target did not ACCEPT it. The third is the weakest statement that
+/// still fails a broken drive — a negative row whose candidate is accepted
+/// has driven nothing — and it deliberately stops short of naming a clause,
+/// because which of two failing inputs this row's target reports is the
+/// target's own abort selection.
+fn assert_pending_leaf_arrangement(
+    mutant: &vectors::live_owner_signing_negatives::LeafArrangementObservation,
+) {
+    let (_, declared) = PENDING_LEAF_ARRANGEMENTS
+        .iter()
+        .find(|(kind, _)| kind.row() == mutant.row())
+        .expect("every built leaf arrangement is a recorded or a pending row");
+    assert_eq!(
+        mutant.revealed_arrangement(),
+        declared.as_slice(),
+        "{} revealed an arrangement its row does not declare",
+        mutant.row(),
+    );
+    assert_ne!(
+        mutant.revealed_arrangement(),
+        CONTROL_LEAF_ARRANGEMENT.as_slice(),
+        "{} reveals the control's own arrangement and rearranges nothing",
+        mutant.row(),
+    );
+    assert_ne!(
+        mutant.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "{} was accepted, so the arrangement drove nothing",
+        mutant.row(),
+    );
+}
+
+/// One consensus mutant the current corpus cannot answer for, checked on
+/// what the ceremony itself establishes: it is a row this ceremony declares
+/// as pending, and the target did not accept it.
+fn assert_pending_consensus_mutant(
+    mutant: &vectors::live_owner_signing_negatives::ConsensusMutantObservation,
+) {
+    assert!(
+        OWNER_SIGNING_PENDING_CONSENSUS_MUTANTS
+            .iter()
+            .any(|kind| kind.row() == mutant.row()),
+        "{} is neither a recorded nor a pending consensus row",
+        mutant.row(),
+    );
+    assert_ne!(
+        mutant.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "{} was accepted, so the surgery drove nothing",
+        mutant.row(),
+    );
+}
+
+const OWNER_SIGNING_RECORDED_CONSENSUS_MUTANTS: [LiveMutantKind; 7] = [
     LiveMutantKind::WrongExplicitAsset,
     LiveMutantKind::ConfidentialAssetCommitment,
     LiveMutantKind::OutputTotalOneBelowInput,
@@ -4604,21 +4723,23 @@ fn current_consensus_separator(kind: LiveMutantKind) -> ConsensusSeparator {
     (range, shape)
 }
 
-/// Each consensus row and the `(range, shape)` separator the run of record
-/// declares for it.
+/// Each RECORDED consensus row and the `(range, shape)` separator the run of
+/// record declares for it.
 ///
 /// The four field surgeries keep the control's 2-in-2-out shape and separate
 /// by four distinct ranges; the two output-cardinality surgeries share the
 /// structural range `changed_range` cannot localize past the output-count
 /// varint and separate by shape; `omitted-source` separates by both.
 fn recorded_consensus_separators() -> [(&'static str, ConsensusSeparator); 7] {
-    OWNER_SIGNING_CONSENSUS_MUTANTS.map(|kind| (kind.row(), current_consensus_separator(kind)))
+    OWNER_SIGNING_RECORDED_CONSENSUS_MUTANTS
+        .map(|kind| (kind.row(), current_consensus_separator(kind)))
 }
 
-/// The seven consensus-conservation mutants are the seven recorded rows,
-/// each refused at consensus before script in the recorded words, each on
-/// the separator the run of record declares for it, and the seven
-/// separators are pairwise distinct.
+/// The consensus-conservation mutants are the recorded rows together with
+/// the rows declared pending; each recorded one was refused at consensus
+/// before script in the recorded words on the separator the run of record
+/// declares for it, and the separators are pairwise distinct across all of
+/// them.
 ///
 /// Split from the test body so the assertion the run rests on — that no
 /// two rows share one observation — is stated once and the test stays
@@ -4629,11 +4750,15 @@ fn assert_consensus_mutants_separate(
     use std::collections::BTreeSet;
     use vectors::live_owner_signing_negatives::ConsensusMutantObservation;
     let consensus = record.consensus_mutants();
-    assert_eq!(consensus.len(), 7, "the seven consensus mutants were built");
     let recorded = recorded_consensus_separators();
-    // Set equality: the seven built are exactly the seven the run of record
-    // names, so a renamed or substituted row fails rather than passing as
-    // "seven of something".
+    assert_eq!(
+        consensus.len(),
+        recorded.len() + OWNER_SIGNING_PENDING_CONSENSUS_MUTANTS.len(),
+        "the consensus mutants — the recorded rows and the revision-8 out-of-domain write — were built",
+    );
+    // Set equality: the built rows are exactly the recorded ones plus the
+    // rows declared pending, so a renamed or substituted row fails rather
+    // than passing as "eight of something".
     let built: BTreeSet<&str> = consensus
         .iter()
         .map(ConsensusMutantObservation::row)
@@ -4643,20 +4768,28 @@ fn assert_consensus_mutants_separate(
         recorded
             .iter()
             .map(|(row, _)| *row)
+            .chain(
+                OWNER_SIGNING_PENDING_CONSENSUS_MUTANTS
+                    .iter()
+                    .map(|kind| kind.row())
+            )
             .collect::<BTreeSet<_>>(),
-        "the consensus mutants are not the seven recorded rows",
+        "the consensus mutants are not the recorded rows and the pending row",
     );
     for mutant in consensus {
-        let kind = OWNER_SIGNING_CONSENSUS_MUTANTS
+        let Some(kind) = OWNER_SIGNING_RECORDED_CONSENSUS_MUTANTS
             .iter()
             .copied()
             .find(|kind| kind.row() == mutant.row())
-            .expect("every built mutant has a typed current-corpus row");
+        else {
+            assert_pending_consensus_mutant(mutant);
+            continue;
+        };
         let expected = current_outcome_for_mutant("owner-signing-negatives", kind);
         let (_, separator) = recorded
             .iter()
             .find(|(row, _)| *row == mutant.row())
-            .expect("every built mutant is a recorded row");
+            .expect("every recorded mutant carries its separator");
         assert_eq!(
             mutant.observed_layer(),
             Some(expected.layer()),
@@ -4683,10 +4816,13 @@ fn assert_consensus_mutants_separate(
         );
     }
     // The separating fact is the byte range together with the shape: the
-    // four field surgeries keep the control's shape and separate by range,
-    // the three structural surgeries separate by shape where the
-    // output-count varint defeats a localized range. The tuple is distinct
-    // across all seven, so no two rows rest on one observation.
+    // field surgeries keep the control's shape and separate by range, the
+    // structural surgeries separate by shape where the output-count varint
+    // defeats a localized range, and the out-of-domain write separates from
+    // the one-below surgery at the SAME field because an absolute write of
+    // a high value moves different bytes than a delta of one. The tuple is
+    // distinct across all of them, recorded and pending alike, so no two
+    // rows rest on one observation.
     let mut separators: Vec<((usize, usize), (usize, usize))> = consensus
         .iter()
         .map(ConsensusMutantObservation::separator)
