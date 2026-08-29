@@ -4544,6 +4544,108 @@ pub fn run_of_record() -> Result<&'static ValidatedNativeV2R7Corpus, NativeV2Imp
 mod tests {
     use super::*;
 
+    /// The encoded second copy of every archive rendering, read by decoding it.
+    ///
+    /// Each capture carries the archive's rendering of the same ceremony
+    /// hex-encoded behind its byte length, on a line far longer than the
+    /// sixty-four characters any token pattern here admits. No scanner has ever
+    /// looked inside it, so a value removed from the archive and left in this
+    /// region would stay published and nothing in the repository would say so.
+    ///
+    /// The check is on the values, and only on the values. It is not on the
+    /// field names, because the field names are not what the pin criterion
+    /// removed. It is not the archive's schema either: this region is the
+    /// native run's rendering, ninety-four minor versions later than the
+    /// archive's, and it carries fields the older schema never knew. Holding it
+    /// to that schema would refuse a capture for being newer than the record it
+    /// reproduces. A rendering may state a
+    /// forward-v2 fixture digest, and thirteen of them do: those are the native
+    /// run's own digests, which this tree regenerates from the fixture it
+    /// builds. What went was the archive's copies of an older run, under an
+    /// algorithm this tree deleted. So every fixture digest inside the hidden
+    /// region must be one the capture also states in the open, where the suite
+    /// derives it — a value the visible part of the capture does not carry has
+    /// no business being reachable only by decoding.
+    #[test]
+    fn every_legacy_rendering_decodes_and_carries_no_unregenerated_value() {
+        // Subkeys the criterion removed outright, named rather than valued: a
+        // check listing the values would republish exactly what the wave cut.
+        const REMOVED: &[&str] = &[
+            "witness_transaction_id",
+            "merkle_root",
+            "candidate_key_path_message",
+        ];
+        const FIXTURE_DIGESTS: &[&str] = &[
+            "predecessor_digest",
+            "successor_digest",
+            "predecessor_fixture_digest",
+        ];
+
+        let mut checked = 0_usize;
+        let mut digest_lines = 0_usize;
+        for file in &ARCHIVE_FILES {
+            let text = core::str::from_utf8(file.bytes).expect("a capture is text");
+            let Some(field) = text
+                .lines()
+                .find_map(|line| line.strip_prefix("legacy-rendering "))
+            else {
+                continue;
+            };
+            let (declared, encoded) = field
+                .split_once(' ')
+                .expect("the field states its byte length before its bytes");
+            let bytes = decode_hex(encoded).expect("the region decodes");
+            assert_eq!(
+                bytes.len(),
+                declared
+                    .parse::<usize>()
+                    .expect("the declared length is a number"),
+                "{}: the encoded rendering is not the length it declares",
+                file.name,
+            );
+
+            // The digests this capture states in the open, which a suite run
+            // regenerates from the fixture the tree constructs.
+            let derived = text
+                .lines()
+                .filter(|line| line.starts_with("digest ") && line.contains("forward-v2"))
+                .filter_map(|line| line.split_whitespace().last())
+                .collect::<Vec<_>>();
+
+            let decoded = core::str::from_utf8(&bytes).expect("a rendering is text");
+            for line in decoded.lines() {
+                let mut words = line.split_whitespace();
+                let Some(key) = words.next() else { continue };
+                assert!(
+                    !REMOVED.contains(&key),
+                    "{}: the encoded rendering still carries a {key}",
+                    file.name,
+                );
+                if FIXTURE_DIGESTS.contains(&key) {
+                    let value = words.next().expect("a digest line states its digest");
+                    assert!(
+                        derived.contains(&value),
+                        "{}: the encoded rendering states a {key} the capture does not derive \
+                         in the open",
+                        file.name,
+                    );
+                    digest_lines += 1;
+                }
+            }
+            checked += 1;
+        }
+
+        assert_eq!(
+            checked, 39,
+            "every capture's encoded rendering is decoded and checked",
+        );
+        assert_eq!(
+            digest_lines, 16,
+            "the hidden region's fixture digests are counted, so a silent loss of them \
+             is a failure rather than a vacuous pass",
+        );
+    }
+
     struct OwnedCorpus {
         files: Vec<(String, Vec<u8>, usize)>,
         manifest: Vec<u8>,

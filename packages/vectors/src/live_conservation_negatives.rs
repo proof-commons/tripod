@@ -971,16 +971,71 @@ mod tests {
         .expect("the renderer fixture is structurally complete")
     }
 
+    /// The corpus's forward-v2 fixture digests, checked against the module that
+    /// states them rather than against themselves.
+    ///
+    /// This test used to read both digests out of the corpus, write them into
+    /// a record, and assert the record matched the corpus. Nothing regenerated
+    /// anything, so the assertion could not fail, and the tree's claim that its
+    /// fixture digests are bound to the corpus was not checked by the test
+    /// whose name said it was.
+    ///
+    /// What it checks now is an agreement between two statements that are
+    /// maintained apart: the corpus file, written by the capture harness, and
+    /// the forward-v2 module, which states each digest as a constant the rest
+    /// of the workspace reads. A change to either without the other fails here,
+    /// which is what the old form could never do.
+    ///
+    /// It is an agreement and not a derivation, and the difference is worth
+    /// stating rather than glossing. A fixture digest is a tagged hash over a
+    /// framed transcript of the fixture's manifest, and this ceremony's
+    /// manifest is a function of the run's own outputs, which the corpus does
+    /// not publish in the form the generator consumes. Deriving it here would
+    /// need the fixture rebuilt from material the corpus does not carry, so the
+    /// derivation this test's name once promised remains open.
     #[test]
-    fn current_forward_v2_fixture_digests_pass_the_corpus_binding() {
-        let mut record = ConservationNegativeRecord::default();
+    fn the_corpus_fixture_digests_agree_with_the_module_that_states_them() {
+        use crate::live_private_restart::forward_v2::forward_fixture_digest_v2;
+        use std::fmt::Write as _;
+
         let corpus = crate::live_corpus_native_v2_r7::run_of_record()
             .expect("the reviewed corpus validates");
         let current = corpus
             .ceremony_projection("conservation-negatives")
             .expect("the conservation ceremony is present");
-        record.predecessor_digest = current.fixture_digest("predecessor").copied();
-        record.successor_digest = current.fixture_digest("successor").copied();
+
+        for (name, stated) in [
+            ("predecessor", forward_fixture_digest_v2::PREDECESSOR_DIGEST),
+            ("successor", forward_fixture_digest_v2::SUCCESSOR_DIGEST),
+        ] {
+            let recorded = current
+                .fixture_digest(name)
+                .expect("the ceremony states this fixture digest");
+            let mut printed = String::with_capacity(recorded.len() * 2);
+            for byte in recorded {
+                // The width is fixed and the sink is a `String`, so the write
+                // cannot fail.
+                let _ = write!(&mut printed, "{byte:02x}");
+            }
+            assert_eq!(
+                printed, stated,
+                "the corpus's {name} digest and the module that states it disagree",
+            );
+        }
+    }
+
+    /// The binding discriminates, which is the other half of the repair.
+    ///
+    /// A check that only ever sees agreeing values proves nothing about what it
+    /// would do with disagreeing ones, so it is offered a digest the corpus
+    /// does not carry and must refuse it.
+    #[test]
+    #[should_panic(expected = "the predecessor digest differs")]
+    fn the_corpus_binding_refuses_a_digest_the_corpus_does_not_carry() {
+        let record = ConservationNegativeRecord {
+            predecessor_digest: Some([0x5a; 32]),
+            ..ConservationNegativeRecord::default()
+        };
 
         assert_current_fixture(&record);
     }
