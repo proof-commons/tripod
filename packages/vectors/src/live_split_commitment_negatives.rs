@@ -1,7 +1,8 @@
-//! The split-commitment negative ceremony: a confidential one-in
-//! three-out successor whose mutant copies one output's value commitment
-//! onto another, so the duplicated value breaks the per-asset sum at a
-//! locator no other row occupies.
+//! The split-commitment negative ceremony.
+//!
+//! A confidential one-in three-out successor whose mutant copies one
+//! output's value commitment onto another, so the duplicated value
+//! breaks the per-asset sum at a locator no other row occupies.
 //!
 //! # The row this ceremony drives
 //!

@@ -2042,7 +2042,7 @@ const fn control_block_size_is_valid(bytes: usize) -> bool {
         && bytes
             <= CONTROL_BLOCK_BASE_BYTES
                 + CONTROL_BLOCK_MAX_PATH_ENTRIES * CONTROL_BLOCK_PATH_ENTRY_BYTES
-        && (bytes - CONTROL_BLOCK_BASE_BYTES) % CONTROL_BLOCK_PATH_ENTRY_BYTES == 0
+        && (bytes - CONTROL_BLOCK_BASE_BYTES).is_multiple_of(CONTROL_BLOCK_PATH_ENTRY_BYTES)
 }
 
 /// Build the malformed control-path mutant from the signed control's own
@@ -2221,6 +2221,60 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
         ));
     }
 
+    push_mutant_lines(&mut lines, record);
+
+    if let Some(control) = record.control() {
+        lines.push(format!(
+            "control submitted_bytes {} message {} layer {} txid {} detail {}",
+            control.submitted_bytes(),
+            printed(control.message().as_slice()),
+            control
+                .observed_layer()
+                .map_or_else(|| "none".to_owned(), |layer| format!("{layer:?}")),
+            control.accepted_txid().unwrap_or("none"),
+            control.observed_detail().unwrap_or("none"),
+        ));
+        if let Some(check) = control.reverification() {
+            lines.push(format!(
+                "control_reverification readback_matches_submission {}",
+                check.readback_matches_submission(),
+            ));
+        }
+    } else {
+        lines.push("control none".to_owned());
+    }
+
+    // Whether the two candidates' messages differ, stated as its own line:
+    // a mutant whose message coincided with the control's would be signed
+    // over the same bytes and the whole comparison would be vacuous.
+    let distinct_messages = matches!(
+        (record.mutant(), record.control()),
+        (Some(mutant), Some(control)) if mutant.message() != control.message()
+    );
+    lines.push(format!("messages_differ {distinct_messages}"));
+
+    if let Some(refusal) = record.refusal() {
+        lines.push(format!("ceremony_refused {refusal:?}"));
+    }
+
+    for claim in OwnerSigningNegativeRecord::non_claims() {
+        lines.push(format!("non_claim {claim}"));
+    }
+    lines.push("each_row_by_its_own_mutant true".to_owned());
+
+    let mut out = lines.join("\n");
+    out.push('\n');
+    out
+}
+
+/// The four mutant families this ceremony stages, one fact per line.
+///
+/// Split from [`render_owner_signing_negatives`] rather than allowed past
+/// the line bound: the four families are one subject — every mutant the
+/// run built and what the target did with it — while what remains in the
+/// caller is the run's frame, its coins, its control and its non-claims.
+/// Splitting on that seam keeps each half about one thing.
+fn push_mutant_lines(lines: &mut Vec<String>, record: &OwnerSigningNegativeRecord) {
     if let Some(mutant) = record.mutant() {
         lines.push(format!(
             "mutant row vault-control-entitlement-or-bare-u-output declared_range {}..{} submitted_bytes {} message {} layer {} detail {}",
@@ -2284,49 +2338,6 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
     } else {
         lines.push("witness_surgery none".to_owned());
     }
-
-    if let Some(control) = record.control() {
-        lines.push(format!(
-            "control submitted_bytes {} message {} layer {} txid {} detail {}",
-            control.submitted_bytes(),
-            printed(control.message().as_slice()),
-            control
-                .observed_layer()
-                .map_or_else(|| "none".to_owned(), |layer| format!("{layer:?}")),
-            control.accepted_txid().unwrap_or("none"),
-            control.observed_detail().unwrap_or("none"),
-        ));
-        if let Some(check) = control.reverification() {
-            lines.push(format!(
-                "control_reverification readback_matches_submission {}",
-                check.readback_matches_submission(),
-            ));
-        }
-    } else {
-        lines.push("control none".to_owned());
-    }
-
-    // Whether the two candidates' messages differ, stated as its own line:
-    // a mutant whose message coincided with the control's would be signed
-    // over the same bytes and the whole comparison would be vacuous.
-    let distinct_messages = matches!(
-        (record.mutant(), record.control()),
-        (Some(mutant), Some(control)) if mutant.message() != control.message()
-    );
-    lines.push(format!("messages_differ {distinct_messages}"));
-
-    if let Some(refusal) = record.refusal() {
-        lines.push(format!("ceremony_refused {refusal:?}"));
-    }
-
-    for claim in OwnerSigningNegativeRecord::non_claims() {
-        lines.push(format!("non_claim {claim}"));
-    }
-    lines.push("each_row_by_its_own_mutant true".to_owned());
-
-    let mut out = lines.join("\n");
-    out.push('\n');
-    out
 }
 
 #[cfg(test)]
