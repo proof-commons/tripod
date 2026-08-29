@@ -5749,15 +5749,16 @@ mod tests {
         assert!(!rendered.contains("NoRunRequested"));
 
         for exact in [
+            "native_run_required 19\n",
             "recorded_observation_unbound 0\n",
             "native_run_observed 24\n",
             "native_refusal_observed 17\n",
             "determinism_observed 1\n",
             "paired_relation_observed 1\n",
             "first_party_fact_observed 3\n",
-            "architecture_closed 0\n",
-            "typing_correction_closed 0\n",
-            "adjudicated_duplicate_closed 0\n",
+            "architecture_closed 4\n",
+            "typing_correction_closed 1\n",
+            "adjudicated_duplicate_closed 1\n",
             "observations 48\n",
             "accepted 24\n",
             "refused 17\n",
@@ -5809,7 +5810,7 @@ mod tests {
             + validated.census().first_party_fact_observed()
             + validated.census().report_layer_observed();
         assert_eq!(answered, 82);
-        assert_eq!(validated.outstanding().len(), 25);
+        assert_eq!(validated.outstanding().len(), 19);
         assert_eq!(
             super::completeness_of(validated.census()),
             LiveSafetyCompleteness::PartialRequiredRowsOutstanding,
