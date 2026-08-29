@@ -4219,6 +4219,81 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
 ///
 /// # What this run is for
 ///
+/// The offsetting flow drove its own row: the shapes the ceremony built,
+/// the wider candidate refused, the narrower control accepted, and the
+/// shape locator recorded against the mutant alone.
+///
+/// Split from the test body for the reason the other ceremony assertions
+/// are: the facts the drive rests on are stated once, and the test stays
+/// under the line bound.
+fn assert_offsetting_flow_drove_its_shape(
+    record: &vectors::live_offsetting_flow_negatives::OffsettingFlowNegativeRecord,
+) {
+    use vectors::live_offsetting_flow_negatives::{CONTROL_STEP, MUTANT_STEP};
+
+    assert!(record.relinked(), "the ceremony funded before it linked");
+    assert_eq!(
+        record.coins().len(),
+        3,
+        "the ceremony did not fund the coin the added flow spends",
+    );
+    assert!(
+        record
+            .coins()
+            .iter()
+            .all(vectors::live_owner_observation::ObservedFundedCoin::matches_expectation),
+        "the node reported a coin the ceremony did not ask for",
+    );
+
+    let mutant = record.mutant().expect("the offsetting flow was built");
+    assert_eq!(
+        mutant.control_shape(),
+        (2, 2),
+        "the control is not the two-in two-out successor",
+    );
+    assert_eq!(
+        mutant.mutant_shape(),
+        (3, 3),
+        "the mutant is not one balanced flow wider than the control",
+    );
+
+    // The weakest claim that still fails a broken drive: a negative row
+    // whose candidate is ACCEPTED has driven nothing. Which clause refuses
+    // it is deliberately not named — the equality failure is the covenant
+    // fragment's own and reads the same for any count fault.
+    assert_ne!(
+        mutant.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the offsetting flow was accepted, so it drove nothing",
+    );
+
+    let control = record.control().expect("the control was submitted");
+    assert_eq!(
+        control.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the control was not accepted, so the mutant's refusal separates nothing",
+    );
+
+    // The separating fact is the shape, recorded as the locator the import
+    // will read. The control step carries none, because it is not a
+    // mutation and a locator on an acceptance would claim a fault.
+    assert_eq!(
+        record.capture_locator(MUTANT_STEP),
+        Some(LiveMutationLocator::TransactionShape {
+            control_inputs: 2,
+            mutant_inputs: 3,
+            control_outputs: 2,
+            mutant_outputs: 3,
+        }),
+        "the offsetting flow did not declare its shape locator",
+    );
+    assert_eq!(
+        record.capture_locator(CONTROL_STEP),
+        None,
+        "the control declared a mutation locator",
+    );
+}
+
 /// The `second-offsetting-u-flow` row drives a candidate that consensus
 /// has no reason to refuse: its added input-and-output pair offsets
 /// exactly, so the per-asset sum still closes and the covenant's own
@@ -4238,7 +4313,7 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_offsetting_flow_is_refused_before_the_narrower_control_is_accepted() {
     use vectors::live_offsetting_flow_negatives::{
-        CONTROL_STEP, MUTANT_STEP, OffsettingFlowNegativePlanner, render_offsetting_flow_negatives,
+        OffsettingFlowNegativePlanner, render_offsetting_flow_negatives,
     };
 
     let mut capture_guard = CaptureGuard::new(CeremonyId::OffsettingFlowNegatives);
@@ -4318,67 +4393,7 @@ fn one_offsetting_flow_is_refused_before_the_narrower_control_is_accepted() {
     }
     outcome.expect("the ceremony reached the target");
 
-    assert!(record.relinked(), "the ceremony funded before it linked");
-    assert_eq!(
-        record.coins().len(),
-        3,
-        "the ceremony did not fund the coin the added flow spends",
-    );
-    assert!(
-        record
-            .coins()
-            .iter()
-            .all(vectors::live_owner_observation::ObservedFundedCoin::matches_expectation),
-        "the node reported a coin the ceremony did not ask for",
-    );
-
-    let mutant = record.mutant().expect("the offsetting flow was built");
-    assert_eq!(
-        mutant.control_shape(),
-        (2, 2),
-        "the control is not the two-in two-out successor",
-    );
-    assert_eq!(
-        mutant.mutant_shape(),
-        (3, 3),
-        "the mutant is not one balanced flow wider than the control",
-    );
-
-    // The weakest claim that still fails a broken drive: a negative row
-    // whose candidate is ACCEPTED has driven nothing. Which clause refuses
-    // it is deliberately not named — the equality failure is the covenant
-    // fragment's own and reads the same for any count fault.
-    assert_ne!(
-        mutant.observed_layer(),
-        Some(ObservedOutcomeLayer::Accepted),
-        "the offsetting flow was accepted, so it drove nothing",
-    );
-
-    let control = record.control().expect("the control was submitted");
-    assert_eq!(
-        control.observed_layer(),
-        Some(ObservedOutcomeLayer::Accepted),
-        "the control was not accepted, so the mutant's refusal separates nothing",
-    );
-
-    // The separating fact is the shape, recorded as the locator the import
-    // will read. The control step carries none, because it is not a
-    // mutation and a locator on an acceptance would claim a fault.
-    assert_eq!(
-        record.capture_locator(MUTANT_STEP),
-        Some(LiveMutationLocator::TransactionShape {
-            control_inputs: 2,
-            mutant_inputs: 3,
-            control_outputs: 2,
-            mutant_outputs: 3,
-        }),
-        "the offsetting flow did not declare its shape locator",
-    );
-    assert_eq!(
-        record.capture_locator(CONTROL_STEP),
-        None,
-        "the control declared a mutation locator",
-    );
+    assert_offsetting_flow_drove_its_shape(record);
 }
 
 /// The `vault-control-entitlement-or-bare-u-output` row declares a
