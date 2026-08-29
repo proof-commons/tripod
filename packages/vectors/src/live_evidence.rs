@@ -2545,6 +2545,30 @@ fn observed_row_first_party_fact(row: &LiveSafetyRow) -> Option<(&'static str, &
             "the semantic relation admits a zero-valued ordinary sponsor member under exact              role structure: sponsor-value opacity leaves no amount for any relation to              compare with zero, so no layer of this workspace refuses the shape",
             "realization::tests::live_transfer_tests::zero_sponsor_sidecar_is_accepted",
         )),
+        // §15.6's unclassified sponsor member is not ruled out by the
+        // type system. `ObservedFlowRole::Unclaimed` names the state,
+        // `flow_role` returns it for a reference claimed by no flow, and
+        // sponsor isolation refuses an ordinary L-BTC object left there.
+        // The deciding test adds one such zero-valued input to an
+        // otherwise valid observation and observes that exact relation
+        // failure, so the row's published gate is the fact already
+        // driven rather than a target verdict.
+        "sponsor-member-unclassified" => Some((
+            "an ordinary sponsor-family member can be unclassified: flow-role resolution returns              `ObservedFlowRole::Unclaimed` when no open flow claims it, and sponsor              isolation refuses the resulting observation",
+            "realization::tests::live_transfer_tests::unclaimed_zero_sponsor_member_fails_isolation",
+        )),
+        // §15.6 also lists confidential sponsor values as a fault, but
+        // §15.2 lists the same shape positively and the standing corpus
+        // decides that side of the contradiction. Its positive
+        // `private-sponsor-values` row is bound to the accepted
+        // `sponsored-private-with-change` ceremony; the negative name
+        // supplies no distinct mutation that could reverse that fact.
+        // The existing corpus-binding test pins the positive row among
+        // exactly the acceptances of their own shapes.
+        "confidential-sponsor-values" => Some((
+            "confidential sponsor values with committed change are an accepted positive shape:              the standing corpus binds `private-sponsor-values` to the accepted              `sponsored-private-with-change` ceremony, leaving no distinct fault behind              the duplicate negative listing",
+            "crate::live_evidence::tests::exactly_the_positive_target_observations_are_bound_to_the_fresh_corpus",
+        )),
         // §15.5's duplicated-destination row, and the second row whose
         // predicted refusal the sources refuse to make. Its own sibling
         // `duplicated-source` IS a fault and is refused at the earliest
@@ -2561,6 +2585,17 @@ fn observed_row_first_party_fact(row: &LiveSafetyRow) -> Option<(&'static str, &
         "duplicated-destination" => Some((
             "two destinations of one owner and one value are two receipts and an ordinary              split: the destination census is a multiset by §12.2 so that a repeat counts              twice rather than collapsing, and no layer of this workspace refuses one",
             "transaction::tests::live_request_tests::two_destinations_of_one_owner_and_one_value_are_two_receipts",
+        )),
+        // The adjacent two-flow row is a real malformed observation,
+        // unlike the valid duplicated destination above. Open-flow
+        // normalization maintains separate claimed-reference sets for
+        // inputs and outputs and returns `ObservedOpenFlowOverlap` when
+        // insertion says a second flow already claimed one. The
+        // destination-specific test makes exactly that second claim and
+        // observes the typed refusal, which is the row's own gate.
+        "output-claimed-through-two-flows" => Some((
+            "an output cannot be claimed through two open flows: observation normalization              returns `ObservedOpenFlowOverlap` on the second claim of the same destination              reference",
+            "realization::tests::open_flow_tests::a_destination_may_not_be_claimed_by_two_open_flows",
         )),
         _ => None,
     }
@@ -2969,7 +3004,7 @@ mod tests {
 
     #[test]
     fn the_first_party_half_of_the_matrix_is_answered_in_full() {
-        // The matrix's pre-target half, after both censuses. Twenty-six
+        // The matrix's pre-target half, after both censuses. Thirty-seven
         // rows of §15 are refused before any target sees the bytes, and
         // every one of them has been driven to its own refusal against
         // its own control. Nothing here is outstanding, and nothing here
@@ -2985,8 +3020,8 @@ mod tests {
         // discharge is a refusal driven against a control like every
         // other row's in this half.
         //
-        // It reads TWENTY-NINE now, and the three that arrived came the
-        // same way `time-locked-input` did: their declared boundary was
+        // It reached TWENTY-NINE when three more arrived the same way
+        // `time-locked-input` did: their declared boundary was
         // wrong. `ash-input-or-output`, `malformed-live-metadata` and
         // `foreign-asset-under-receipt-shaped-program` each asked a
         // target to refuse something on a chain, and for the first and
@@ -2997,12 +3032,12 @@ mod tests {
         // against its own control, with its own changed field.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let census = plan.census();
-        // THIRTY-FOUR now: `wrong-owner-metadata` joined the three
-        // siblings sharing `ReceiptInputIsNotALiveReceipt`, its honest
-        // third-owner program buildable once a third owner was threaded
-        // through the bundle link, so it is discharged first-party where
-        // its declared boundary — the input recognition — actually is.
-        assert_eq!(census.first_party_discharged(), 34);
+        // THIRTY-SEVEN now. `foreign-sponsor-asset` and
+        // `two-sponsor-envelopes` joined at live finalization, while
+        // `unclassified-u` joined at the family-range validator the
+        // bundle emitter runs. Each has its own focused control and
+        // malformed input; none moved on a label alone.
+        assert_eq!(census.first_party_discharged(), 37);
         assert_eq!(census.first_party_undischarged(), 0);
 
         let outstanding: BTreeSet<_> = plan
@@ -3438,14 +3473,12 @@ mod tests {
         // A row is removed from this list by a run of its own shape and
         // by nothing else, and that run happened.
         //
-        // Private-sponsor-values is where this wave STOPPED, and the
-        // stop is typed rather than narrated. It asks for confidential
-        // sponsor VALUES, and no ceremony here funds a sponsor coin
-        // whose value is blinded --
-        // `sponsored_run_of_record::A_BLINDED_SPONSOR_VALUE_IS_FUNDED_ANYWHERE`
-        // is the filed path and carries the site inventory. What it is
-        // NO LONGER blocked on is the with-change shape, which was its
-        // arithmetic precondition and which now runs.
+        // Private-sponsor-values is bound to the sponsored private
+        // with-change ceremony. Its sponsor coin and balancing change
+        // are committed, and the target accepted the candidate. That
+        // positive fact is also why the identically shaped §15.6 fault
+        // listing cannot remain an unresolved negative row: it names no
+        // distinct mutation of the accepted shape.
         //
         // Sponsor-change-present USED to be in this list too, as the one
         // explicit row that had not moved, and it left by the same rule:
@@ -3785,16 +3818,16 @@ mod tests {
             }
         }
 
-        assert_eq!(answered, 38);
+        assert_eq!(answered, 44);
         assert_eq!(census.report_layer_required(), 2);
         assert_eq!(census.vocabulary_closed(), 1);
         assert_eq!(census.architecture_closed(), 4);
         assert_eq!(census.typing_correction_closed(), 1);
         assert_eq!(census.adjudicated_duplicate_closed(), 1);
-        assert_eq!(census.native_run_required(), 19);
+        assert_eq!(census.native_run_required(), 13);
         assert_eq!(census.recorded_observation_unbound(), 42);
         assert_eq!(recorded_kinds, (24, 17, 1));
-        assert_eq!(38 + 2 + 1 + 19 + 4 + 1 + 1 + 42, census.rows());
+        assert_eq!(44 + 2 + 1 + 13 + 4 + 1 + 1 + 42, census.rows());
     }
 
     #[test]
@@ -3808,7 +3841,7 @@ mod tests {
         assert_eq!(validated.runs(), []);
         assert_eq!(validated.attributions(), []);
         assert_eq!(validated.census().recorded_observation_unbound(), 42);
-        assert_eq!(38 + 2 + 1 + 19 + 4 + 1 + 1 + 42, validated.census().rows(),);
+        assert_eq!(44 + 2 + 1 + 13 + 4 + 1 + 1 + 42, validated.census().rows(),);
     }
 
     #[test]
@@ -3823,7 +3856,7 @@ mod tests {
 
         assert_eq!(validated.attributions().len(), 42);
         assert_eq!(validated.runs().len(), 28);
-        assert_eq!(answered, 80);
+        assert_eq!(answered, 86);
         assert_eq!(census.native_run_observed(), 24);
         assert_eq!(census.native_refusal_observed(), 17);
         assert_eq!(census.paired_relation_observed(), 1);
@@ -3831,15 +3864,15 @@ mod tests {
         assert_eq!(census.architecture_closed(), 4);
         assert_eq!(census.typing_correction_closed(), 1);
         assert_eq!(census.adjudicated_duplicate_closed(), 1);
-        assert_eq!(census.native_run_required(), 19);
-        assert_eq!(80 + 2 + 1 + 19 + 4 + 1 + 1, census.rows());
+        assert_eq!(census.native_run_required(), 13);
+        assert_eq!(86 + 2 + 1 + 13 + 4 + 1 + 1, census.rows());
 
         let after_report = census
             .with_validated_report_layer_observations(2)
             .expect("the two report requirements validate");
         assert_eq!(after_report.report_layer_observed(), 2);
-        assert_eq!(82 + 1 + 19 + 4 + 1 + 1, after_report.rows());
-        assert_eq!(after_report.native_run_required(), 19);
+        assert_eq!(88 + 1 + 13 + 4 + 1 + 1, after_report.rows());
+        assert_eq!(after_report.native_run_required(), 13);
     }
 
     #[test]
@@ -4122,37 +4155,39 @@ mod tests {
         // the count is ZERO, and no row of this matrix is waiting on a
         // component that does not exist.
         assert_eq!(plan.census().infrastructure_blocked(), 0);
-        // The row it carried is answered, and answered by a fact rather
-        // than by anything a target said. Asserted here, beside the
-        // count it changed, so a reader finding the blocker gone can see
-        // in one place where the row went.
-        let raw = plan
+        // SIX rows stand here, each because its own published gate is the
+        // cited fact. The raw-bypass row asks whether a path exists; the
+        // zero-valued and confidential sponsor rows resolve contradictory
+        // fault listings; duplicated destination asks whether a valid
+        // multiset split is admitted; and the unclaimed-member and
+        // two-flow rows ask facts their focused realization tests drive.
+        // None is re-spelled as a target verdict for the negative row.
+        let fact_rows: BTreeSet<_> = plan
             .rows()
             .iter()
-            .find(|row| row.row().name() == "raw-transaction-bypassing-safe-construction")
-            .expect("the raw-bypass row is in the matrix");
-        assert!(matches!(
-            raw.standing(),
-            LiveRowStanding::FirstPartyFactObserved { .. }
-        ));
-        // TWO rows stand here, and they are different kinds of fact
-        // answering the same kind of gate. The raw-bypass row asks
-        // whether a path EXISTS; the zero-valued sponsor row asks
-        // whether a shape is ADMITTED, and the sources say it is. Both
-        // are statements this workspace makes about itself, and neither
-        // is anything a target said.
-        assert_eq!(plan.census().first_party_fact_observed(), 3);
-        let zero = plan
-            .rows()
-            .iter()
-            .find(|row| row.row().name() == "zero-valued-ordinary-sponsor-member")
-            .expect("the zero-valued sponsor row is in the matrix");
-        assert!(matches!(
-            zero.standing(),
-            LiveRowStanding::FirstPartyFactObserved { .. }
-        ));
-        // The corpus overlay moves only the 42 historical target rows; this
-        // first-party row stays in its own bucket beside their fresh counts.
+            .filter(|row| {
+                matches!(
+                    row.standing(),
+                    LiveRowStanding::FirstPartyFactObserved { .. }
+                )
+            })
+            .map(|row| row.row().name())
+            .collect();
+        assert_eq!(
+            fact_rows,
+            BTreeSet::from([
+                "confidential-sponsor-values",
+                "duplicated-destination",
+                "output-claimed-through-two-flows",
+                "raw-transaction-bypassing-safe-construction",
+                "sponsor-member-unclassified",
+                "zero-valued-ordinary-sponsor-member",
+            ]),
+        );
+        assert_eq!(plan.census().first_party_fact_observed(), 6);
+        // The corpus overlay moves only the 42 historical target rows;
+        // these first-party rows stay in their own bucket beside the fresh
+        // target counts.
         assert_eq!(plan.census().native_run_observed(), 24);
         assert_eq!(plan.census().native_refusal_observed(), 17);
         assert_eq!(plan.census().recorded_observation_unbound(), 0);

@@ -5735,7 +5735,7 @@ mod tests {
         let report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
         assert_eq!(report.runs().len(), 28);
         assert_eq!(report.runs(), plan.runs());
-        assert_eq!(report.observations().len(), 45);
+        assert_eq!(report.observations().len(), 48);
         assert_eq!(report.report_layer_requirements().len(), 2);
         assert_eq!(report.census().report_layer_required(), 2);
         assert_eq!(report.census().report_layer_observed(), 0);
@@ -5749,22 +5749,22 @@ mod tests {
         assert!(!rendered.contains("NoRunRequested"));
 
         for exact in [
-            "native_run_required 19\n",
+            "native_run_required 13\n",
             "recorded_observation_unbound 0\n",
             "native_run_observed 24\n",
             "native_refusal_observed 17\n",
             "determinism_observed 1\n",
             "paired_relation_observed 1\n",
-            "first_party_fact_observed 3\n",
+            "first_party_fact_observed 6\n",
             "architecture_closed 4\n",
             "typing_correction_closed 1\n",
             "adjudicated_duplicate_closed 1\n",
-            "observations 48\n",
+            "observations 51\n",
             "accepted 24\n",
             "refused 17\n",
             "determinism 1\n",
             "paired_relation 1\n",
-            "first_party_fact 3\n",
+            "first_party_fact 6\n",
             "report_layer_required 0\n",
             "report_layer_observed 2\n",
             "report_layer_observations 2\n",
@@ -5809,8 +5809,8 @@ mod tests {
             + validated.census().paired_relation_observed()
             + validated.census().first_party_fact_observed()
             + validated.census().report_layer_observed();
-        assert_eq!(answered, 82);
-        assert_eq!(validated.outstanding().len(), 19);
+        assert_eq!(answered, 88);
+        assert_eq!(validated.outstanding().len(), 13);
         assert_eq!(
             super::completeness_of(validated.census()),
             LiveSafetyCompleteness::PartialRequiredRowsOutstanding,

@@ -4,9 +4,9 @@
 //! faults, whose boundary is one entry point. The rest of the matrix's
 //! current pre-target rows are spread across the entry points their cases
 //! name and count in [`LIVE_FAULT_VALIDATOR_COUNT`].
-//! [`LiveFaultValidator`] also carries an unwired entry point for later
-//! rows; merely naming one is not a §4.2 discharge. This module meets
-//! §4.2 for the current cases.
+//! Merely naming an entry point is not a §4.2 discharge: every validator
+//! below is reached through a mutation arm that genuinely calls it. This
+//! module meets §4.2 for the current cases.
 //!
 //! # The same argument as §15.3's, at every owning entry point
 //!
@@ -26,9 +26,10 @@
 //! the linker, and the leaf schema is the constructor derivation's: it
 //! is discharged below, at the boundary it actually has. §15.5's
 //! `amount-outside-semantic-domain` was recorded as a missing
-//! request-path validator and is not one — the owner ruled the ceiling
-//! blockchain-enforced, the same class as conservation — so its verdict
-//! is the target's and no first-party discharge is owed of it. §15.4's
+//! request-path validator and is not one: the reviewed target enforces a
+//! lower explicit-output ceiling in `CheckTransaction`, so an amount
+//! outside the semantic domain is target-refused before script and no
+//! first-party discharge is owed of it. §15.4's
 //! `mixed-operation-program` asked for an input the operation vocabulary
 //! admits no value of, which
 //! [`crate::live_evidence::LiveRowStanding::OperationVocabularyClosed`]
@@ -65,9 +66,10 @@ use linker::{
     OwnerParameter, collect_live_definitions,
 };
 use tapscript::{
-    CompleteFamilyRanges, FamilyRangeDefect, LiveConstructorRefusal, LiveTransferLeafRole,
-    OwnerKey, OwnerKeyRejection, demonstration_live_shape_set, derive_live_receipt_constructor,
-    family_range_defects, owner_key_encoding_closure, static_transfer_leaf_set,
+    CompleteFamilyRanges, FamilyRangeDefect, FieldSide, LiveConstructorRefusal,
+    LiveTransferLeafRole, OwnerKey, OwnerKeyRejection, demonstration_live_shape_set,
+    derive_live_receipt_constructor, family_range_defects, live_family_ranges,
+    owner_key_encoding_closure, static_transfer_leaf_set,
 };
 use target_elements::{EncodingClass, LeafVersion};
 use transaction::bytes::{
@@ -103,10 +105,10 @@ use crate::live_plan::{
 use crate::live_safety::{LiveSafetyRow, required_safety_matrix};
 
 /// The asserted number of cases in [`live_fault_cases`].
-pub const LIVE_FAULT_CASE_COUNT: usize = 23;
+pub const LIVE_FAULT_CASE_COUNT: usize = 26;
 
 /// The asserted number of distinct validators in [`live_fault_cases`].
-pub const LIVE_FAULT_VALIDATOR_COUNT: usize = 8;
+pub const LIVE_FAULT_VALIDATOR_COUNT: usize = 9;
 
 /// Which exact first-party validator can own a §15.4–§15.7 row.
 ///
@@ -164,8 +166,8 @@ pub enum LiveFaultValidator {
     OfferedTransactionCheck,
     /// `tapscript::family_range_defects`, which returns every way a
     /// shape's family ranges fail to cover its transaction exactly once.
-    /// No current [`LiveFaultCase`] names it; the member is vocabulary for
-    /// a later case, not evidence that such a case has run.
+    /// The `unclassified-u` case calls it on one accepted complete census
+    /// and on the same one-output shape with its output range removed.
     FamilyRangeDefects,
 }
 
@@ -246,6 +248,13 @@ pub enum FaultMutation {
     /// ONLY the asset field moves, which is what puts the refusal at the
     /// asset check rather than at the program lookup after it.
     OfferTheReserveAssetUnderAReceiptShapedProgram,
+    /// Leave one output position outside every family range.
+    ///
+    /// The shape, its complete input census, and its only output position
+    /// remain unchanged; only the output's classification run is removed.
+    /// `CompleteFamilyRanges::new` admits that statement deliberately so
+    /// the validator, rather than the constructor, decides completeness.
+    LeaveOneOutputPositionUnaccounted,
     /// Offer a receipt input under a SUPERSEDED constructor's program.
     ///
     /// The same owner and the same representation, derived under the
@@ -302,6 +311,18 @@ pub enum FaultMutation {
     OfferAHeterogeneousReceiptCensus,
     /// Offer an empty sponsor capability for a sponsored request.
     OfferAnEmptySponsorOfferForASponsoredRequest,
+    /// Offer a second valid reserve-asset sponsor input.
+    ///
+    /// Both coins have complete public views and differ from the control
+    /// only in sponsor-region cardinality, so construction reaches shape
+    /// selection and refuses the checked one-sponsor bound.
+    OfferASecondSponsorInput,
+    /// Change the sponsor input's public asset to the protocol asset.
+    ///
+    /// The outpoint, value, program, request, and offer remain the
+    /// control's, so sponsor recognition reaches and attributes its asset
+    /// check before shape selection.
+    OfferAForeignAssetSponsorInput,
     /// Offer the fee role's own program as the sponsor-change
     /// destination.
     OfferTheFeeRoleProgramAsTheSponsorChangeDestination,
@@ -356,8 +377,8 @@ impl ObservedFaultRefusal {
     ///
     /// An empty `Vec` is the accepted control and therefore maps to
     /// `None`; a non-empty `Vec` is the typed refusal. This is the adapter
-    /// future cases use instead of pretending the entry point returns a
-    /// `Result` or discarding all but one defect.
+    /// cases use instead of pretending the entry point returns a `Result`
+    /// or discarding all but one defect.
     #[must_use]
     pub fn observe_family_range_defects(ranges: &CompleteFamilyRanges) -> Option<Self> {
         let defects = family_range_defects(ranges);
@@ -683,6 +704,30 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
             transaction_is!(TransactionRefusal::ReceiptInputCarriesForeignAsset(_)),
             "ReceiptInputCarriesForeignAsset",
         ),
+        // §15.4's unclassified output row, retyped to the validator the
+        // bundle emitter itself runs. The malformed census keeps an
+        // admitted one-output shape and its complete input ranges, but
+        // removes the only output classification. The validator returns
+        // exactly one `PositionUnaccounted`, proving both that the value
+        // is producible and that emission refuses it before a bundle
+        // reaches linking or a target.
+        case(
+            "unclassified-u",
+            V::FamilyRangeDefects,
+            M::LeaveOneOutputPositionUnaccounted,
+            |observed| {
+                matches!(
+                    observed,
+                    ObservedFaultRefusal::FamilyRangeDefects(defects)
+                        if defects.as_slice()
+                            == [FamilyRangeDefect::PositionUnaccounted {
+                                side: FieldSide::Output,
+                                position: 0,
+                            }]
+                )
+            },
+            "PositionUnaccounted",
+        ),
         // The third of the recognition's shared-class rows, and its
         // field is the constructor VOCABULARY: same owner, same
         // representation, a program the other shape set derives.
@@ -770,7 +815,28 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
             transaction_is!(TransactionRefusal::ReceiptInputValueFormRefused(_)),
             "ReceiptInputValueFormRefused",
         ),
-        // §15.6's two construction-time sponsor rows.
+        // §15.6's construction-time sponsor rows. The multiplicity case
+        // offers two valid reserve-asset coins, so recognition passes and
+        // the ABI shape selection owns the refusal. The foreign-asset
+        // case changes only the existing sponsor coin's asset and is
+        // refused one stage earlier by sponsor recognition.
+        case(
+            "two-sponsor-envelopes",
+            V::LiveTransferFinalization,
+            M::OfferASecondSponsorInput,
+            transaction_is!(TransactionRefusal::UnsupportedLiveShape {
+                sponsor_inputs: 2,
+                ..
+            }),
+            "UnsupportedLiveShape",
+        ),
+        case(
+            "foreign-sponsor-asset",
+            V::LiveTransferFinalization,
+            M::OfferAForeignAssetSponsorInput,
+            transaction_is!(TransactionRefusal::LiveSponsorInputCarriesForeignAsset(_)),
+            "LiveSponsorInputCarriesForeignAsset",
+        ),
         case(
             "empty-sponsor-offer-for-a-sponsored-request",
             V::LiveTransferFinalization,
@@ -1193,6 +1259,26 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
             Ok(Staged {
                 control: derive(honest)?,
                 malformed: derive(malformed)?,
+            })
+        }
+        M::LeaveOneOutputPositionUnaccounted => {
+            // The smallest complete shape gives the fault one coordinate:
+            // its only output is position zero. The control is the exact
+            // census bundle emission derives; the mutation removes only
+            // that output's family run while preserving the shape and all
+            // input ranges.
+            let shape = demonstration_live_shape_set()
+                .shapes()
+                .find(|shape| shape.outputs() == 1)
+                .ok_or(LiveFaultRefusal::ControlNotConstructible)?;
+            let control = live_family_ranges(shape);
+            if control.outputs().len() != 1 {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            }
+            let malformed = CompleteFamilyRanges::new(shape, control.inputs().to_vec(), Vec::new());
+            Ok(Staged {
+                control: ObservedFaultRefusal::observe_family_range_defects(&control),
+                malformed: ObservedFaultRefusal::observe_family_range_defects(&malformed),
             })
         }
         M::DefineTheAssetSymbolWithANonAssetValue | M::DefineOneSymbolTwice => {
@@ -1679,6 +1765,75 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
             Ok(Staged {
                 control: finalize_outcome(&abi, &request, &control_view, None)?,
                 malformed: finalize_outcome(&abi, &request, &view, None)?,
+            })
+        }
+        M::OfferASecondSponsorInput => {
+            let (request, control_view, sponsor) = sponsored_control(&abi, false)?;
+            let first = sponsor
+                .offer
+                .inputs()
+                .iter()
+                .next()
+                .copied()
+                .ok_or(LiveFaultRefusal::ControlNotConstructible)?;
+            let second = outpoint(0xe4, 0)?;
+            let mut views: Vec<PublicOutputView> =
+                control_view.outputs().values().cloned().collect();
+            views.push(PublicOutputView::new(
+                second,
+                AssetField::Explicit(abi.symbols().reserve_asset()),
+                ValueField::Explicit(250),
+                abi.symbols().sponsor_change_program().to_vec(),
+            ));
+            let two_views = PublicConstructionView::new(views)
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            // One change to the sponsor region: a second valid member.
+            // Supplying its honest public view lets recognition pass, so
+            // the malformed half reaches the shape-count refusal this row
+            // is about.
+            let two = StagedSponsor {
+                offer: SponsorOffer::new(
+                    [first, second],
+                    sponsor.offer.fee(),
+                    sponsor.offer.change(),
+                )
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?,
+                change: sponsor.change.clone(),
+            };
+            Ok(Staged {
+                control: finalize_outcome(&abi, &request, &control_view, Some(&sponsor))?,
+                malformed: finalize_outcome(&abi, &request, &two_views, Some(&two))?,
+            })
+        }
+        M::OfferAForeignAssetSponsorInput => {
+            let (request, control_view, sponsor) = sponsored_control(&abi, false)?;
+            let sponsor_point = sponsor
+                .offer
+                .inputs()
+                .iter()
+                .next()
+                .copied()
+                .ok_or(LiveFaultRefusal::ControlNotConstructible)?;
+            if abi.symbols().protocol_asset() == abi.symbols().reserve_asset() {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            }
+            let foreign_view =
+                PublicConstructionView::new(control_view.outputs().values().map(|stated| {
+                    if stated.outpoint() == sponsor_point {
+                        PublicOutputView::new(
+                            stated.outpoint(),
+                            AssetField::Explicit(abi.symbols().protocol_asset()),
+                            stated.value(),
+                            stated.program().to_vec(),
+                        )
+                    } else {
+                        stated.clone()
+                    }
+                }))
+                .map_err(|_| LiveFaultRefusal::ControlNotConstructible)?;
+            Ok(Staged {
+                control: finalize_outcome(&abi, &request, &control_view, Some(&sponsor))?,
+                malformed: finalize_outcome(&abi, &request, &foreign_view, Some(&sponsor))?,
             })
         }
         M::OfferAnEmptySponsorOfferForASponsoredRequest => {

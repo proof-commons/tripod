@@ -165,17 +165,15 @@ pub enum NegativeHalfGap {
     /// the FIELD is the thing that is not there. "Malformed" presupposes
     /// a well-formed original, and there is none to malform.
     NoAdmittedRepresentationCarriesTheField,
-    /// The mutated field is derived from the shape, with no covenant clause
-    /// constraining it independent of the owner signature.
+    /// A mutated field was thought to be derived from the shape, with no
+    /// independent validator. HISTORICAL, and now VACATED.
     ///
-    /// Distinct from the two structural-absence members above: the field is
-    /// present and the shape is admitted, but the covenant carries no
-    /// clause that reads THIS field and refuses it on its own — a
-    /// position's role (a fee-or-sponsor u, an unclassified u) is fixed by
-    /// where it sits in the shape, not by a value a clause inspects. A
-    /// re-signed mutant authorizes its own outputs, so with no independent
-    /// clause to refuse the field the row's own observation is not
-    /// producible on this deployment at all.
+    /// The `unclassified-u` row exposed the missing distinction: an
+    /// unchecked family-range census can leave a position unaccounted,
+    /// and `family_range_defects` refuses that value directly. The field
+    /// need not be a covenant-readable transaction field for a
+    /// first-party validator to own it. No row retains this ground; the
+    /// member remains as provenance for the corrected classification.
     NoIndependentCovenantClause,
     /// The row's own typing is in question and a ruling is owed.
     ///
@@ -314,11 +312,11 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // refusal on the owner-signing negative run — each on its own mutant at
     // its own asset field, refused `bad-txns-in-ne-out` before any covenant
     // clause — and are recorded in `live_evidence` rather than here.
-    entry(
-        "unclassified-u",
-        G::NoIndependentCovenantClause,
-        "a position's role is fixed by where it sits in the shape, and no covenant clause reads a classification field to refuse an unclassified one",
-    ),
+    // `unclassified-u` has LEFT. The public family-range constructor is
+    // unchecked, so a census leaving its only output position outside
+    // every range is producible. `tapscript::family_range_defects`
+    // returns `PositionUnaccounted` for that focused mutation against an
+    // accepted complete control, and the row is discharged first-party.
     // `key-path-escape` has LEFT. Its gap named a missing NAME rather
     // than a missing run, and the name is minted: the observed-layer
     // vocabulary carries `KeyPathRejection`, the adapter classifies from
@@ -342,8 +340,8 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // its own driven mutant, recorded in `live_evidence` rather than here.
     entry(
         "amount-outside-semantic-domain",
-        G::NoAdmittedShapeCarriesTheFault,
-        "conservation forces the total to equal the consumed one and no chain mints such a coin",
+        G::MutantBuilderOwed,
+        "the existing signed output-value surgery can raise one explicit output into the out-of-domain range, and a native submission stating 1 << 51 is still owed to observe CheckTransaction's bad-txns-vout-toolarge-class refusal",
     ),
     entry(
         "copied-commitment",
@@ -360,11 +358,11 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
     // inputs and one output against two and three — the "distinct
     // transaction structure" the attributability rule admits; they are
     // recorded in `live_evidence` rather than here.
-    entry(
-        "output-claimed-through-two-flows",
-        G::NoAdmittedRepresentationCarriesTheField,
-        "a per-flow assignment is a request concept with no wire field, so no built candidate carries an output claimed through two flows",
-    ),
+    // `output-claimed-through-two-flows` has LEFT. Its published gate is
+    // the observation fact itself: normalization refuses a destination
+    // reference inserted into a second open flow as
+    // `ObservedOpenFlowOverlap`, and the destination-specific test
+    // drives that exact second claim.
     entry(
         "issuance",
         G::FacetNeedsADifferentTransaction,
@@ -380,39 +378,24 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         G::FacetNeedsADifferentTransaction,
         "an offsetting flow is an added balanced input-and-output pair the fixed two-in two-out successor does not carry",
     ),
-    // §15.6 — the sponsor faults still waiting. The sponsor table's
-    // other five are answered: two are report-layer, two are pre-target
-    // first-party, and `missing-sponsor-authorization` is one of the
-    // observed refusals this register's successors are modelled on.
+    // §15.6 — the sponsor faults still waiting. `two-sponsor-envelopes`
+    // and `foreign-sponsor-asset` have LEFT through construction-layer
+    // refusals against focused controls. `sponsor-member-unclassified`
+    // has LEFT on the realization's driven `Unclaimed` fact.
+    // `confidential-sponsor-values` has LEFT because §15.2's positive
+    // twin is bound to the accepted `sponsored-private-with-change`
+    // corpus ceremony and the fault listing names no distinct mutation.
+    // The two report-layer rows and the previously answered sponsor
+    // refusals remain outside this register for their existing reasons.
     entry(
         "sponsor-protocol-overlap",
         G::FacetNeedsADifferentTransaction,
         "the sponsor region belongs to a sponsored successor this sponsorless ceremony does not build",
     ),
     entry(
-        "two-sponsor-envelopes",
-        G::NoAdmittedShapeCarriesTheFault,
-        "the shape bounds admit at most one sponsor input, refused before any program is emitted",
-    ),
-    entry(
-        "foreign-sponsor-asset",
-        G::NoAdmittedShapeCarriesTheFault,
-        "sponsor recognition refuses a foreign-asset sponsor coin first-party, so no such candidate is admitted to mutate",
-    ),
-    entry(
         "sponsor-change-in-protocol-range",
         G::FacetNeedsADifferentTransaction,
         "the sponsor-change position belongs to a sponsored successor this ceremony does not build",
-    ),
-    entry(
-        "sponsor-member-unclassified",
-        G::NoAdmittedShapeCarriesTheFault,
-        "every emitted position is classified by construction, so no unclassified member exists",
-    ),
-    entry(
-        "confidential-sponsor-values",
-        G::RowClassUnderdetermined,
-        "committed sponsor values are an accepted positive shape and the negative is unstated",
     ),
     // §15.7 — the root, event, ABI and linker faults still waiting. One
     // row of this section is deliberately NOT here and never was:
@@ -573,12 +556,13 @@ mod tests {
         }
     }
 
-    /// T9-002 removes the six typed closures. The count and byte fingerprint
+    /// T9-003 removes six first-party closures and corrects one retained
+    /// ground. The count and byte fingerprint
     /// pin both the membership and exact ground text without duplicating a
-    /// second editable copy of all 19 sentences in this test.
+    /// second editable copy of all 13 sentences in this test.
     #[test]
-    fn all_nineteen_native_required_grounds_are_unchanged() {
-        assert_eq!(STILL_REQUIRED.len(), 19);
+    fn all_thirteen_native_required_grounds_are_unchanged() {
+        assert_eq!(STILL_REQUIRED.len(), 13);
         assert_eq!(grounds_fingerprint(STILL_REQUIRED), 0xa3ac_1c0f_3473_7742);
     }
 
