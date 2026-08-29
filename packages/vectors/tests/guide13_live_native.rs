@@ -101,6 +101,7 @@ enum CeremonyId {
     PrivateRestartParity,
     ProofBearingObservation,
     Report,
+    SplitCommitmentNegatives,
     SponsoredChangeAbsent,
     SponsoredChangePresent,
     SponsoredCommittedValue,
@@ -111,7 +112,7 @@ enum CeremonyId {
 }
 
 impl CeremonyId {
-    const ALL: [Self; 41] = [
+    const ALL: [Self; 42] = [
         Self::ConservationNegatives,
         Self::ExplicitBoundaryValues,
         Self::ExplicitMaximumInputs,
@@ -146,6 +147,7 @@ impl CeremonyId {
         Self::PrivateRestartParity,
         Self::ProofBearingObservation,
         Self::Report,
+        Self::SplitCommitmentNegatives,
         Self::SponsoredChangeAbsent,
         Self::SponsoredChangePresent,
         Self::SponsoredCommittedValue,
@@ -191,6 +193,7 @@ impl CeremonyId {
             Self::PrivateRestartParity => "private-restart-parity",
             Self::ProofBearingObservation => "proof-bearing-observation",
             Self::Report => "report",
+            Self::SplitCommitmentNegatives => "split-commitment-negatives",
             Self::SponsoredChangeAbsent => "sponsored-change-absent",
             Self::SponsoredChangePresent => "sponsored-change-present",
             Self::SponsoredCommittedValue => "sponsored-committed-value",
@@ -277,6 +280,9 @@ impl CeremonyId {
             }
             Self::ProofBearingObservation => {
                 "one_owner_authorization_is_observed_on_the_proof_bearing_lane"
+            }
+            Self::SplitCommitmentNegatives => {
+                "one_copied_value_commitment_is_refused_before_the_split_control_is_accepted"
             }
             Self::Report => "the_live_transfer_candidate_runs_against_a_real_target",
             Self::SponsoredChangeAbsent => {
@@ -515,6 +521,7 @@ const fn is_negative_ceremony(ceremony: CeremonyId) -> bool {
             | CeremonyId::KeypathProbe
             | CeremonyId::OffsettingFlowNegatives
             | CeremonyId::OwnerSigningNegatives
+            | CeremonyId::SplitCommitmentNegatives
             | CeremonyId::SponsoredMissingAuthorization
     )
 }
@@ -529,6 +536,7 @@ fn control_submission(
         CeremonyId::KeypathProbe => Some("script-path-control"),
         CeremonyId::OffsettingFlowNegatives => Some("submit-two-in-two-out-control"),
         CeremonyId::OwnerSigningNegatives => Some("vault-control-entitlement-control"),
+        CeremonyId::SplitCommitmentNegatives => Some("submit-split-control"),
         CeremonyId::SponsoredMissingAuthorization => Some("submit-sponsor-signed-control"),
         _ => None,
     };
@@ -564,6 +572,13 @@ fn mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveMutationLoca
         "private-ct-imbalance" => (
             LiveMutantKind::PrivateCtImbalance,
             field(1, SerializedOutputField::ValueCommitment),
+        ),
+        // The same FIELD KIND as the row above and deliberately so: the
+        // two share a class and an arithmetic, and what separates them is
+        // the output index together with the shape it sits on.
+        "copied-commitment" => (
+            LiveMutantKind::CopiedCommitment,
+            field(2, SerializedOutputField::ValueCommitment),
         ),
         "malformed-rangeproof" => (
             LiveMutantKind::MalformedRangeproof,
@@ -2322,7 +2337,7 @@ fn scripted_ceremony_capture(ceremony: CeremonyId) -> NativeOperationCapture {
 
 #[test]
 fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
-    const SEMANTIC_IDS: [&str; 40] = [
+    const SEMANTIC_IDS: [&str; 41] = [
         "conservation-negatives",
         "explicit-boundary-values",
         "explicit-maximum-inputs",
@@ -2357,6 +2372,7 @@ fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
         "private-restart-parity",
         "proof-bearing-observation",
         "report",
+        "split-commitment-negatives",
         "sponsored-change-absent",
         "sponsored-change-present",
         "sponsored-committed-value",
@@ -2371,7 +2387,7 @@ fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
         .map(CeremonyId::as_str)
         .collect();
     assert_eq!(observed, SEMANTIC_IDS);
-    assert_eq!(CeremonyId::ALL.len(), 41);
+    assert_eq!(CeremonyId::ALL.len(), 42);
     let names: BTreeSet<_> = CeremonyId::ALL
         .iter()
         .copied()
@@ -4292,6 +4308,174 @@ fn assert_offsetting_flow_drove_its_shape(
         None,
         "the control declared a mutation locator",
     );
+}
+
+/// The copied commitment drove its own row: the outputs it ran between,
+/// the shape it ran on, the mutant refused, the control accepted, and the
+/// field locator recorded against the mutant alone.
+///
+/// Split from the test body for the reason the other ceremony assertions
+/// are: the facts the drive rests on are stated once, and the test stays
+/// under the line bound.
+fn assert_copied_commitment_drove_its_locator(
+    record: &vectors::live_split_commitment_negatives::SplitCommitmentNegativeRecord,
+) {
+    use transaction::bytes::{SerializedFieldLocator, SerializedOutputField};
+    use vectors::live_split_commitment_negatives::{CONTROL_STEP, MUTANT_STEP};
+
+    let mutant = record.mutant().expect("the copied commitment was built");
+    assert_eq!(
+        mutant.outputs(),
+        (0, 2),
+        "the copy did not run from the first output onto the third",
+    );
+    assert_eq!(
+        mutant.shape(),
+        (1, 3),
+        "the successor is not the one-in three-out split the row declares",
+    );
+
+    // The weakest claim that still fails a broken drive: a negative row
+    // whose candidate is ACCEPTED has driven nothing. No words are
+    // predicted, because the ones this row draws are the ones
+    // private-ct-imbalance already drew and the target phrases them.
+    assert_ne!(
+        mutant.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the copied commitment was accepted, so it drove nothing",
+    );
+
+    let control = record.control().expect("the control was submitted");
+    assert_eq!(
+        control.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the control was not accepted, so the mutant's refusal separates nothing",
+    );
+
+    // The separating fact is the field locator, which differs from
+    // private-ct-imbalance's in BOTH members — output two rather than
+    // output one, on a three-output successor rather than a two-output
+    // one. Sharing a class is what the matrix expects of two faults with
+    // one arithmetic; sharing an observation is what it forbids.
+    assert_eq!(
+        record.capture_locator(MUTANT_STEP),
+        Some(LiveMutationLocator::SerializedOutputField(
+            SerializedFieldLocator::new(2, SerializedOutputField::ValueCommitment)
+        )),
+        "the copied commitment did not declare its field locator",
+    );
+    assert_eq!(
+        record.capture_locator(CONTROL_STEP),
+        None,
+        "the control declared a mutation locator",
+    );
+}
+
+/// The `copied-commitment` row duplicates one output's value commitment
+/// onto another, so the output side commits one amount twice against one
+/// input-side occurrence and the per-asset sum breaks by exactly the
+/// copied value.
+///
+/// # Why a three-output successor
+///
+/// Because the verdict cannot separate this row from `private-ct-imbalance`
+/// — the arithmetic is the same and so are the words — the locator has to,
+/// and a locator separates only if both of its members differ. A third
+/// confidential output gives this row an output-index-two field on a
+/// one-in three-out shape against that row's output-index-one field on a
+/// one-in two-out shape.
+///
+/// # Why the assertions are first-party only
+///
+/// The frozen run of record predates this ceremony and carries no outcome
+/// to bind it to. The gate checks what the ceremony establishes and the
+/// binding to recorded words arrives with the capture; the capture is
+/// written before any of it runs.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn one_copied_value_commitment_is_refused_before_the_split_control_is_accepted() {
+    use vectors::live_split_commitment_negatives::{
+        SplitCommitmentNegativePlanner, render_split_commitment_negatives,
+    };
+
+    let mut capture_guard = CaptureGuard::new(CeremonyId::SplitCommitmentNegatives);
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let report = legacy_report(Some("split-commitment-negatives"));
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::SplitCommitmentNegatives,
+            report.as_deref(),
+        )),
+    );
+
+    let mut planner =
+        SplitCommitmentNegativePlanner::new(identifier(&genesis)).expect("the ceremony builds");
+    let started = Instant::now();
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_split_commitment_negatives(record);
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let mut facts =
+        CeremonyCaptureFacts::from_capture(CeremonyId::SplitCommitmentNegatives, &capture);
+    for operation in capture.operations() {
+        let step = operation.request().case.step.as_str();
+        if let Some(locator) = record.capture_locator(step) {
+            facts = facts.with_locator(step, locator);
+        }
+    }
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as one.
+    // It is never a target verdict, so it is reported and the test stops
+    // here rather than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the split-commitment ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    assert_copied_commitment_drove_its_locator(record);
 }
 
 /// The `second-offsetting-u-flow` row drives a candidate that consensus
