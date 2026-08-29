@@ -1,8 +1,8 @@
 # ADR-019: Adoption of the Label Calculus
 
-**Status:** Decided and adopted; implemented for the authorship warrant species, while the derivation species remains unbuilt pending the first registered profile and both Π and K remain empty.
-**Document:** This ADR is the normative third-edition text of _A Calculus of Documentation and Source Labels_, formerly the archived adopted-source draft.
-**Provenance:** Externally authored in its third edition; normative here by adoption rather than by authorship.
+**Status:** Decided and adopted; implemented for the authorship warrant species, while the derivation species remains unbuilt pending the first registered profile and both Π and K remain empty, and the generated registers are held to exactness, currency, and the no-feeding exclusion but not yet to occurrence compliance.
+**Document:** This ADR is the normative fourth-edition text, supplied 2026-08-29, of _A Calculus of Documentation and Source Labels_, formerly the archived adopted-source draft.
+**Provenance:** Externally authored in its fourth edition; normative here by adoption rather than by authorship.
 **Scope:** Every authored prose and code source of this repository, and the labels checker that enforces the graph over them.
 **Retires:** ADR-012 and ADR-013, whose text remains in Git history.
 **Does not establish:** Any semantic, build, or release meaning for a label; the graph remains documentation.
@@ -19,7 +19,7 @@ The normative text leaves seven adoption data parametric; this repository fixes 
 
 ### Owner partition Ω · `rule:labels:owner-partition`
 
-Fixed by tree location, total on the carrier: `papers/attestation/main.tex` with its sections to `A`; `docs/attestation/realization.md` to `RZ`; each `adr/NNN-*.md` to its own `ADRNNN`; the rest of `plans/` to `PLAN` and the rest of `docs/` to `DOC`; `packages/model/src/` to `MODEL`; each remaining `packages/*/src/` to that package's owner. Version-control internals, build and dependency directories, and generated artifacts are outside the carrier.
+Fixed by tree location, total on the carrier: `papers/attestation/main.tex` with its sections to `A`; `docs/attestation/realization.md` to `RZ`; each `adr/NNN-*.md` to its own `ADRNNN`; the rest of `plans/` to `PLAN` and the rest of `docs/` to `DOC`; `packages/model/src/` to `MODEL`; each remaining `packages/*/src/` to that package's owner. Version-control internals, build and dependency directories, and uncommitted generated artifacts are outside the carrier. Being generated excludes nothing on its own: the committed registers under `plans/labels/` are carrier sources and fall to `PLAN` by the same tree rule that governs the rest of that directory, so the partition covers generated and authored text alike.
 
 ### Profile signature Π · `rule:labels:profile-signature`
 
@@ -35,7 +35,7 @@ Architecture witness semantic tags, and the exported clause identifiers of the a
 
 ### Citation-index designations · `rule:labels:citation-indexes`
 
-`plans/labels/specification.md` over the `A` owner, and `plans/labels/realization.md` over the `RZ` owner. Both are generated registers and participate in nothing they index.
+`plans/labels/specification.md` over the `A` owner, and `plans/labels/realization.md` over the `RZ` owner. Both are generated registers, and each participates in full: every row is a citation that resolves like any other, and the exactness of the presented bytes is checked besides. What each register presents it never feeds — no row of either enters the harvest that produced it (`inf:labels:anchor-harvest`) — and that exclusion is what the designation costs, not a withdrawal from the graph.
 
 ### Scanned-region recognition · `rule:labels:scanned-regions`
 
@@ -66,6 +66,8 @@ Nothing else in the text changed. Below the head that opens it the body is byte-
 The checker implements the authorship warrant species alone. Warrant totality is live, but standard-place detection, the derivation rule, and inventory discipline are unimplemented and vacuously satisfied while Π and K are empty; they activate with the decision registering the first profile.
 
 The synthetic-citation and anchor-harvest mechanisms are each one correct hardwired instance of their rule rather than the general rule. The designated classes resolve and the designated indexes remain exact.
+
+Generated compliance is met in its exclusion half and open in its occurrence half. No generated region feeds what it presents: the citation index is cut out of the body it is harvested from, the three generated registers are cut out of the census the graph is built from, and register-scoped derivation admits only the citations of the owner being rendered. Their committed bytes are compared against a fresh render on every check, a render deriving no rows is refused rather than published, and generation is deterministic. What is unbuilt is the other half: the registers' own occurrences are never harvested, so no register mint is held to uniqueness and no register citation is resolved. The exclusion is doing double duty — dropping the registers from discovery secures the no-feeding property, and forfeits the participation the text requires in the same stroke. Closing that costs a narrower exclusion, one scoped to the harvest rather than to discovery, and is a checker change and not an amendment; until it lands, an unresolvable span inside a generated register is invisible to the check rather than the generator defect the text names.
 
 ---
 
