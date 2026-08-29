@@ -601,6 +601,57 @@ const fn vocabulary_closure(
     }
 }
 
+/// One negative row closed by an exact architecture or deployment fact.
+const fn architecture_closure(
+    section: LiveSafetySection,
+    name: &'static str,
+    argument: LiveArchitectureClosure,
+) -> LiveSafetyRow {
+    LiveSafetyRow {
+        section,
+        name,
+        polarity: P::Negative,
+        mutation: None,
+        boundary: LiveRowBoundary::ArchitectureClosure(argument),
+        relation: LiveRelationStanding::Unlinked(LiveUnlinkedReason::NoSemanticMutationClass),
+        collateral: None,
+    }
+}
+
+/// One negative row whose premise names no state of the live type.
+const fn typing_correction(
+    section: LiveSafetySection,
+    name: &'static str,
+    argument: LiveTypingCorrection,
+) -> LiveSafetyRow {
+    LiveSafetyRow {
+        section,
+        name,
+        polarity: P::Negative,
+        mutation: None,
+        boundary: LiveRowBoundary::TypingCorrection(argument),
+        relation: LiveRelationStanding::Unlinked(LiveUnlinkedReason::NoSemanticMutationClass),
+        collateral: None,
+    }
+}
+
+/// One negative row whose arrangements are exhausted by existing faults.
+const fn adjudicated_duplicate(
+    section: LiveSafetySection,
+    name: &'static str,
+    argument: LiveAdjudicatedDuplicate,
+) -> LiveSafetyRow {
+    LiveSafetyRow {
+        section,
+        name,
+        polarity: P::Negative,
+        mutation: None,
+        boundary: LiveRowBoundary::AdjudicatedDuplicate(argument),
+        relation: LiveRelationStanding::Unlinked(LiveUnlinkedReason::NoSemanticMutationClass),
+        collateral: None,
+    }
+}
+
 /// A row refused before the target sees the bytes.
 const fn pre_target(
     section: LiveSafetySection,
@@ -1113,14 +1164,15 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         undeclared_family,
         "UndeclaredObjectFamily",
     ),
-    linked(
+    // RETYPED ARCHITECTURE CLOSURE. `tapscript` defines a fee-role FORM
+    // clause, so this is not an impossibility claim about every
+    // deployment. This deployment's `demonstration_live_shape_set`
+    // never emits that form, and therefore has no fee-role position
+    // carrying `u` to stage as this row's fault.
+    architecture_closure(
         S::ObjectFault,
         "sponsor-or-fee-role-carrying-u",
-        L::SemanticFact,
-        B::ScriptPathRejection,
-        allowed_families(TransactionSide::Output),
-        undeclared_family,
-        "UndeclaredObjectFamily",
+        LiveArchitectureClosure::DemonstrationLiveShapeSetOmitsFeeRole,
     ),
     // RETYPED FIRST-PARTY, and the cleanest of the seven: the asset is
     // checked BEFORE the program lookup, so the refusal is attributable
@@ -1262,11 +1314,15 @@ pub const VALUE_FAULTS: &[LiveSafetyRow] = &[
         L::WitnessProof,
         B::ConsensusRejectionBeforeScript,
     ),
-    no_class(
+    // RETYPED ARCHITECTURE CLOSURE. Every admitted protocol output is
+    // hybrid: its asset is explicit and `EmptySurjectionProof` is
+    // mandatory. A nonempty proof belongs to the confidential-asset
+    // encoding this representation excludes, so no admitted output
+    // carries a surjection-proof field to malform.
+    architecture_closure(
         S::ValueFault,
         "malformed-surjection-proof",
-        L::WitnessProof,
-        B::ConsensusRejectionBeforeScript,
+        LiveArchitectureClosure::HybridOutputRequiresEmptySurjectionProof,
     ),
     ambiguous(
         S::ValueFault,
@@ -1392,14 +1448,15 @@ pub const VALUE_FAULTS: &[LiveSafetyRow] = &[
         missing_family,
         "MissingCanonicalDeltaFamily",
     ),
-    linked(
+    // RETYPED ARCHITECTURE CLOSURE. `DestinationConstructorTable` is
+    // keyed only by owner and representation. With no object-family
+    // dimension, a request cannot name an ASH or time-locked receipt
+    // destination, so no admitted destination carries this routing
+    // fault.
+    architecture_closure(
         S::ValueFault,
         "value-routed-into-ash-or-time-locked-receipt",
-        L::SemanticFact,
-        B::ScriptPathRejection,
-        delta_policy(),
-        unexpected_family,
-        "UnexpectedCanonicalDeltaFamily",
+        LiveArchitectureClosure::DestinationConstructorTableKeyHasNoObjectFamily,
     ),
     linked(
         S::ValueFault,
@@ -1619,16 +1676,20 @@ pub const STRUCTURAL_FAULTS: &[LiveSafetyRow] = &[
         missing_projection,
         "MissingRequiredProjection",
     ),
-    // §10.3 fixes input 0 as the coordinator and admits member leaves
-    // only at nonzero receipt positions. All four leaf-arrangement rows
-    // are expressible only in bytes: the ABI places the coordinator and
-    // offers no way to ask for another arrangement.
-    no_class(
+    // RETYPED ADJUDICATED DUPLICATE. Every arrangement with only the
+    // coordinator-index failure is `two-coordinators`. Adding the member
+    // failure produces the two-failure arrangement already distinguished
+    // by `member-coordinator-leaf-exchange`, so no independent fault
+    // arrangement remains for this row.
+    adjudicated_duplicate(
         S::StructuralFault,
         "wrong-coordinator",
-        L::WitnessProof,
-        B::ScriptPathRejection,
+        LiveAdjudicatedDuplicate::WrongCoordinatorHasNoIndependentFaultArrangement,
     ),
+    // §10.3 fixes input 0 as the coordinator and admits member leaves
+    // only at nonzero receipt positions. These leaf-arrangement rows are
+    // expressible only in bytes: the ABI places the coordinator and
+    // offers no way to ask for another arrangement.
     no_class(
         S::StructuralFault,
         "two-coordinators",
@@ -1662,11 +1723,14 @@ pub const STRUCTURAL_FAULTS: &[LiveSafetyRow] = &[
         L::TargetTransaction,
         B::AbiConstructionRejection,
     ),
-    no_class(
+    // RETYPED ARCHITECTURE CLOSURE. Signing writes the witness stack
+    // directly from the ABI constant `LiveWitnessItem::ORDER`; no input
+    // field selects another order. A reordered witness is therefore not
+    // a candidate a validator can be asked to refuse.
+    architecture_closure(
         S::StructuralFault,
         "witness-reorder",
-        L::WitnessProof,
-        B::ScriptPathRejection,
+        LiveArchitectureClosure::LiveWitnessItemOrderIsAbiConstant,
     ),
     // RETYPED FIRST-PARTY. On a chain a foreign control block draws the
     // verdict every foreign taptree draws — a failed
@@ -1714,11 +1778,14 @@ pub const STRUCTURAL_FAULTS: &[LiveSafetyRow] = &[
         L::AbiLayout,
         B::AbiConstructionRejection,
     ),
-    no_class(
+    // RETYPED TYPING CORRECTION. `LiveAbiStatus` has only `Candidate`;
+    // there is no validated live-lane state after which target bytes
+    // could change. The row's temporal premise therefore has no referent
+    // in the type it names.
+    typing_correction(
         S::StructuralFault,
         "target-bytes-changed-after-abi-validation",
-        L::TargetTransaction,
-        B::ScriptPathRejection,
+        LiveTypingCorrection::LiveAbiStatusHasOnlyCandidate,
     ),
     // §4.3's third distinction, and the reason it is a row rather than a
     // footnote: the safe constructor cannot express this, so its refusal
@@ -1883,8 +1950,8 @@ pub const fn answered_by_a_target(role: &EvidenceRole) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveRelationStanding, LiveRowLink, LiveSafetyPolarity, LiveSafetyRow, LiveSafetySection,
-        required_safety_matrix, resolve_row, row_count, section_census,
+        LiveRelationStanding, LiveRowBoundary, LiveRowLink, LiveSafetyPolarity, LiveSafetyRow,
+        LiveSafetySection, required_safety_matrix, resolve_row, row_count, section_census,
     };
     use crate::matrix::EvidenceBoundary;
     use std::collections::BTreeSet;
@@ -2010,18 +2077,63 @@ mod tests {
     }
 
     #[test]
-    fn exactly_one_row_names_no_layer_at_all() {
-        // §15's one class no layer answers, held as a count so that a
-        // second row acquiring the standing has to be argued for rather
-        // than added. A row here is outside §4.2's refusal denominator
-        // and is not evidence either: `crate::live_evidence` gives it a
-        // standing of its own and leaves it out of the discharged count.
-        let closed: BTreeSet<_> = required_safety_matrix()
+    fn the_seven_layerless_rows_are_exactly_the_typed_closures() {
+        // Every layerless row is held by name so that an eighth has to be
+        // argued for rather than added. These rows are outside §4.2's
+        // refusal denominator and are not evidence: `crate::live_evidence`
+        // gives each closure family a standing of its own and leaves it
+        // out of the discharged count.
+        let layerless: Vec<_> = required_safety_matrix()
             .into_iter()
             .filter(|row| row.refusing_layer().is_none())
-            .map(LiveSafetyRow::name)
             .collect();
-        assert_eq!(closed, BTreeSet::from(["mixed-operation-program"]));
+        let names: BTreeSet<_> = layerless.iter().map(|row| row.name()).collect();
+        assert_eq!(
+            names,
+            BTreeSet::from([
+                "malformed-surjection-proof",
+                "mixed-operation-program",
+                "sponsor-or-fee-role-carrying-u",
+                "target-bytes-changed-after-abi-validation",
+                "value-routed-into-ash-or-time-locked-receipt",
+                "witness-reorder",
+                "wrong-coordinator",
+            ]),
+        );
+
+        let operation_closed: BTreeSet<_> = layerless
+            .iter()
+            .filter(|row| matches!(row.boundary(), LiveRowBoundary::OperationVocabularyClosure))
+            .map(|row| row.name())
+            .collect();
+        assert_eq!(
+            operation_closed,
+            BTreeSet::from(["mixed-operation-program"]),
+        );
+
+        let typed_closed: BTreeSet<_> = layerless
+            .iter()
+            .filter(|row| {
+                matches!(
+                    row.boundary(),
+                    LiveRowBoundary::ArchitectureClosure(_)
+                        | LiveRowBoundary::TypingCorrection(_)
+                        | LiveRowBoundary::AdjudicatedDuplicate(_)
+                )
+            })
+            .map(|row| row.name())
+            .collect();
+        assert_eq!(
+            typed_closed,
+            BTreeSet::from([
+                "malformed-surjection-proof",
+                "sponsor-or-fee-role-carrying-u",
+                "target-bytes-changed-after-abi-validation",
+                "value-routed-into-ash-or-time-locked-receipt",
+                "witness-reorder",
+                "wrong-coordinator",
+            ]),
+        );
     }
 
     #[test]

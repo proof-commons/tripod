@@ -319,11 +319,6 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         G::NoIndependentCovenantClause,
         "a position's role is fixed by where it sits in the shape, and no covenant clause reads a classification field to refuse an unclassified one",
     ),
-    entry(
-        "sponsor-or-fee-role-carrying-u",
-        G::NoIndependentCovenantClause,
-        "the fee position is fixed by the shape and no covenant clause constrains a u's fee-or-sponsor role independent of the signature",
-    ),
     // `key-path-escape` has LEFT. Its gap named a missing NAME rather
     // than a missing run, and the name is minted: the observed-layer
     // vocabulary carries `KeyPathRejection`, the adapter classifies from
@@ -349,11 +344,6 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         "amount-outside-semantic-domain",
         G::NoAdmittedShapeCarriesTheFault,
         "conservation forces the total to equal the consumed one and no chain mints such a coin",
-    ),
-    entry(
-        "malformed-surjection-proof",
-        G::NoAdmittedRepresentationCarriesTheField,
-        "the surjection field is empty in every form built, an explicit asset requiring it so",
     ),
     entry(
         "copied-commitment",
@@ -384,11 +374,6 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         "destruction",
         G::FacetNeedsADifferentTransaction,
         "a destruction facet the safe constructor never emits, so there is no successor output to mutate into one",
-    ),
-    entry(
-        "value-routed-into-ash-or-time-locked-receipt",
-        G::NoAdmittedShapeCarriesTheFault,
-        "no ash or time-locked destination is admitted, and the destination closure drops a payload, so a same-version substitute is accepted rather than refused",
     ),
     entry(
         "second-offsetting-u-flow",
@@ -454,33 +439,13 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         G::FacetNeedsADifferentTransaction,
         "the successor emits no transition certificate, so there is none to omit without building a certificate-bearing transaction first",
     ),
-    // The two typed halves of the leaf-arrangement collision pairs. The
-    // covenant DOES introspect its own input index, so these are not
-    // commitment-generic: the coordinator fragment aborts at an index
-    // EqualVerify and the member fragment at a bound Verify, two verdicts
-    // for four rows. ONE row of each pair is DRIVEN through the
-    // owner-signing route — `two-coordinators` (coordinator leaf at both
-    // inputs, the one at input one failing the index EqualVerify) and
-    // `no-coordinator` (member leaf at both inputs, the one at input zero
-    // failing the bound Verify), each the pair's single-failing-input
-    // arrangement, recorded in `live_evidence` rather than here. The other
-    // half of each pair stays here on what the in-repo covenant reading
-    // ESTABLISHES and no more: its arrangement carries a SECOND failing
-    // input, so its candidate would fail the clause its pair-partner
-    // already drove AND another clause besides, and the separating fact
-    // this register admits — a distinct field, a distinct shape, a
-    // distinct arrangement drawing its own verdict — is not available to
-    // it. What is NOT claimed is which of the two failures the target
-    // would report: abort selection across a multi-input candidate is the
-    // target's, and no in-repo source settles it, so the earlier wording
-    // predicting the pair-partner's exact verdict words is withdrawn. The
-    // typing rests on the non-separation, which the covenant does
-    // establish: the copied-commitment precedent.
-    entry(
-        "wrong-coordinator",
-        G::TargetVerdictDoesNotSeparateTheRows,
-        "its arrangement carries a second failing input beside the coordinator index check two-coordinators already drove, so it has no separating fact of its own against that pair-partner",
-    ),
+    // One typed half of the leaf-arrangement collision pairs remains.
+    // `no-coordinator` drove the member fragment's bound Verify through
+    // the owner-signing route on the pair's single-failing-input
+    // arrangement. `member-coordinator-leaf-exchange` carries a second
+    // failing input and has no distinct field, shape or arrangement that
+    // would give it a separating fact. Abort selection across that
+    // multi-input candidate remains the target's and is not predicted.
     entry(
         "member-coordinator-leaf-exchange",
         G::TargetVerdictDoesNotSeparateTheRows,
@@ -490,37 +455,6 @@ pub const STILL_REQUIRED: &[NegativeHalfEntry] = &[
         "receipt-sponsor-range-exchange",
         G::FacetNeedsADifferentTransaction,
         "the receipt and sponsor ranges belong to a sponsored successor this ceremony does not build",
-    ),
-    // A TYPED STOP, and the one row of the seven the retyping ruling
-    // does not reach. Its target-side wall stands as written. What the
-    // retyping would need beside it is a first-party validator that
-    // refuses a reordered stack, and there is none: `check_offered`
-    // compares inputs, outputs, version and locktime and states in its
-    // own doc that the witness is excluded because the selected profile
-    // excludes it from the message, and `live_signing` writes the stack
-    // unconditionally from `LiveWitnessItem::ORDER` with no field a
-    // caller could use to reorder it. So the order is not a degree of
-    // freedom, which is a structural protection rather than a refusal —
-    // nothing REFUSES a reorder because nothing can express one.
-    //
-    // The nearest available observation is refused deliberately. A
-    // signing census can be handed a declared leaf hash taken over the
-    // item a reorder would move into the leaf position, which draws
-    // `LeafHashDoesNotCommit` — but that is a MODEL of the row rather
-    // than the row's own mutation, and it is the same class
-    // `control-block-from-another-program` draws on its own mutant. Two
-    // rows sharing one class where only one drove its own change is the
-    // reading-one-observation-onto-two-rows the register exists to
-    // prevent. Escalated rather than answered.
-    entry(
-        "witness-reorder",
-        G::RefusalIsProgramGeneric,
-        "no validator refuses a reorder because the stack order is written from a fixed constant",
-    ),
-    entry(
-        "target-bytes-changed-after-abi-validation",
-        G::RowTypingInQuestion,
-        "the live lane has no ABI-validation entry point, so the row's after has no referent yet",
     ),
 ];
 
@@ -639,14 +573,13 @@ mod tests {
         }
     }
 
-    /// N1-C changes the view over evidence, never the 25 native-required
-    /// grounds. The count and byte fingerprint pin both the membership and
-    /// exact ground text without duplicating a second editable copy of all 25
-    /// sentences in this test.
+    /// T9-002 removes the six typed closures. The count and byte fingerprint
+    /// pin both the membership and exact ground text without duplicating a
+    /// second editable copy of all 19 sentences in this test.
     #[test]
-    fn all_twenty_five_native_required_grounds_are_unchanged() {
-        assert_eq!(STILL_REQUIRED.len(), 25);
-        assert_eq!(grounds_fingerprint(STILL_REQUIRED), 0x47c6_ccd1_9ffb_0bc7);
+    fn all_nineteen_native_required_grounds_are_unchanged() {
+        assert_eq!(STILL_REQUIRED.len(), 19);
+        assert_eq!(grounds_fingerprint(STILL_REQUIRED), 0xa3ac_1c0f_3473_7742);
     }
 
     /// The gap census covers the register and nothing else.

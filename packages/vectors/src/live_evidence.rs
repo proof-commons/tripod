@@ -3089,32 +3089,39 @@ mod tests {
         use LiveRowBoundary as Boundary;
         use LiveTypingCorrection as Typing;
 
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let cases = [
             (
+                "value-routed-into-ash-or-time-locked-receipt",
                 Boundary::ArchitectureClosure(
                     Architecture::DestinationConstructorTableKeyHasNoObjectFamily,
                 ),
                 LiveRowStanding::ArchitectureClosed,
             ),
             (
+                "malformed-surjection-proof",
                 Boundary::ArchitectureClosure(
                     Architecture::HybridOutputRequiresEmptySurjectionProof,
                 ),
                 LiveRowStanding::ArchitectureClosed,
             ),
             (
+                "sponsor-or-fee-role-carrying-u",
                 Boundary::ArchitectureClosure(Architecture::DemonstrationLiveShapeSetOmitsFeeRole),
                 LiveRowStanding::ArchitectureClosed,
             ),
             (
+                "witness-reorder",
                 Boundary::ArchitectureClosure(Architecture::LiveWitnessItemOrderIsAbiConstant),
                 LiveRowStanding::ArchitectureClosed,
             ),
             (
+                "target-bytes-changed-after-abi-validation",
                 Boundary::TypingCorrection(Typing::LiveAbiStatusHasOnlyCandidate),
                 LiveRowStanding::TypingCorrectionClosed,
             ),
             (
+                "wrong-coordinator",
                 Boundary::AdjudicatedDuplicate(
                     Duplicate::WrongCoordinatorHasNoIndependentFaultArrangement,
                 ),
@@ -3122,7 +3129,18 @@ mod tests {
             ),
         ];
 
-        for (boundary, expected) in cases {
+        for (name, boundary, expected) in cases {
+            let row = plan
+                .rows()
+                .iter()
+                .find(|row| row.row().name() == name)
+                .expect("the typed closure row is in the matrix");
+            assert_eq!(row.row().boundary(), boundary, "{name} has another closure");
+            assert_eq!(
+                row.standing(),
+                &expected,
+                "{name} routes to another standing"
+            );
             let standing = closure_standing(boundary).expect("a closure has a standing");
             assert_eq!(standing, expected);
             assert_ne!(standing, LiveRowStanding::OperationVocabularyClosed);
@@ -3743,7 +3761,7 @@ mod tests {
     }
 
     #[test]
-    fn the_raw_partition_remains_thirty_eight_plus_two_plus_one_plus_twenty_five_plus_forty_two() {
+    fn the_raw_partition_moves_six_native_rows_to_typed_closures() {
         let plan = derive_raw_live_evidence_plan().expect("the raw evidence plan derives");
         let census = plan.census();
         let answered = plan
@@ -3770,13 +3788,13 @@ mod tests {
         assert_eq!(answered, 38);
         assert_eq!(census.report_layer_required(), 2);
         assert_eq!(census.vocabulary_closed(), 1);
-        assert_eq!(census.architecture_closed(), 0);
-        assert_eq!(census.typing_correction_closed(), 0);
-        assert_eq!(census.adjudicated_duplicate_closed(), 0);
-        assert_eq!(census.native_run_required(), 25);
+        assert_eq!(census.architecture_closed(), 4);
+        assert_eq!(census.typing_correction_closed(), 1);
+        assert_eq!(census.adjudicated_duplicate_closed(), 1);
+        assert_eq!(census.native_run_required(), 19);
         assert_eq!(census.recorded_observation_unbound(), 42);
         assert_eq!(recorded_kinds, (24, 17, 1));
-        assert_eq!(38 + 2 + 1 + 25 + 42, census.rows());
+        assert_eq!(38 + 2 + 1 + 19 + 4 + 1 + 1 + 42, census.rows());
     }
 
     #[test]
@@ -3790,7 +3808,7 @@ mod tests {
         assert_eq!(validated.runs(), []);
         assert_eq!(validated.attributions(), []);
         assert_eq!(validated.census().recorded_observation_unbound(), 42);
-        assert_eq!(38 + 2 + 1 + 25 + 42, validated.census().rows());
+        assert_eq!(38 + 2 + 1 + 19 + 4 + 1 + 1 + 42, validated.census().rows(),);
     }
 
     #[test]
@@ -3810,18 +3828,18 @@ mod tests {
         assert_eq!(census.native_refusal_observed(), 17);
         assert_eq!(census.paired_relation_observed(), 1);
         assert_eq!(census.recorded_observation_unbound(), 0);
-        assert_eq!(census.architecture_closed(), 0);
-        assert_eq!(census.typing_correction_closed(), 0);
-        assert_eq!(census.adjudicated_duplicate_closed(), 0);
-        assert_eq!(census.native_run_required(), 25);
-        assert_eq!(80 + 2 + 1 + 25, census.rows());
+        assert_eq!(census.architecture_closed(), 4);
+        assert_eq!(census.typing_correction_closed(), 1);
+        assert_eq!(census.adjudicated_duplicate_closed(), 1);
+        assert_eq!(census.native_run_required(), 19);
+        assert_eq!(80 + 2 + 1 + 19 + 4 + 1 + 1, census.rows());
 
         let after_report = census
             .with_validated_report_layer_observations(2)
             .expect("the two report requirements validate");
         assert_eq!(after_report.report_layer_observed(), 2);
-        assert_eq!(82 + 1 + 25, after_report.rows());
-        assert_eq!(after_report.native_run_required(), 25);
+        assert_eq!(82 + 1 + 19 + 4 + 1 + 1, after_report.rows());
+        assert_eq!(after_report.native_run_required(), 19);
     }
 
     #[test]
@@ -3951,13 +3969,12 @@ mod tests {
     }
 
     #[test]
-    fn the_four_leaf_arrangement_rows_collapse_to_two_observations() {
-        // The R-5 collapse, pinned: the four leaf-arrangement rows form two
-        // collision pairs, and each pair draws ONE verdict, so exactly two
-        // rows are DRIVEN to an observed refusal and exactly two stay typed
-        // as not-separated. Driving all four would read one observation onto
-        // two rows twice; typing all four would leave a drivable refusal
-        // unrecorded. This holds the split against the classifier.
+    fn the_four_leaf_arrangement_rows_have_two_observations_one_closure_and_one_requirement() {
+        // The four rows remain distinct: two are DRIVEN to observed
+        // refusals, `wrong-coordinator` is closed because no independent
+        // arrangement remains, and `member-coordinator-leaf-exchange`
+        // still lacks a separating fact. This holds the split against the
+        // classifier without reading either observation onto another row.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let standing = |name: &str| {
             plan.rows()
@@ -3969,8 +3986,8 @@ mod tests {
                 )
         };
 
-        // PAIR 1, the coordinator index check: two-coordinators is driven,
-        // wrong-coordinator stays typed.
+        // PAIR 1, the coordinator index check: two-coordinators is driven;
+        // wrong-coordinator is the adjudicated duplicate.
         assert!(
             matches!(
                 standing("two-coordinators"),
@@ -3981,9 +3998,9 @@ mod tests {
         assert!(
             matches!(
                 standing("wrong-coordinator"),
-                LiveRowStanding::NativeRunRequired(_)
+                LiveRowStanding::AdjudicatedDuplicateClosed
             ),
-            "wrong-coordinator did not stay typed as still required",
+            "wrong-coordinator did not take its adjudicated closure",
         );
 
         // PAIR 2, the member bound check: no-coordinator is driven,
@@ -4005,13 +4022,11 @@ mod tests {
 
         // The two DRIVEN rows draw two DISTINCT verdicts — the coordinator
         // index EqualVerify and the member bound Verify — which is what
-        // makes them one observation each rather than one shared. The typed
-        // partners are the two rows whose arrangements carry a SECOND
-        // failing input beside the clause their pair-partner already drove,
-        // and which therefore have no separating fact of their own. WHICH
-        // of the two failures a target would report for such a candidate is
-        // not settled by anything in this repository, and no verdict is
-        // predicted for them here.
+        // makes them one observation each rather than one shared. The
+        // remaining required partner carries a SECOND failing input beside
+        // the member clause its pair-partner drove and has no separating
+        // fact of its own. Which failure a target would report for that
+        // candidate remains unsettled, and no verdict is predicted here.
         let LiveRowStanding::NativeRefusalObserved {
             refusal_detail: two_coordinators_detail,
             ..
