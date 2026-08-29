@@ -213,6 +213,53 @@ const SECOND_RECEIPT: usize = 1;
 /// The input the omitted-source surgery drops.
 const DROPPED_INPUT: usize = 1;
 
+/// The explicit value the out-of-domain surgery writes.
+///
+/// Two to the fifty-first, the exclusive upper limit of the protocol's
+/// own amount domain and above the reviewed target's money ceiling, so
+/// `CheckTransaction` refuses the output as too large before the balance
+/// rule is reached and before any script runs. It is written ABSOLUTELY
+/// rather than as a delta: a value one below or above the input total is
+/// a different fault at the same field, and only an absolute write puts
+/// the field outside the domain regardless of what the control held.
+const OUT_OF_DOMAIN_VALUE: u64 = 1 << 51;
+
+/// The input whose control block the witness surgery malforms.
+const MALFORMED_CONTROL_INPUT: usize = 0;
+
+/// The witness-stack position the control block occupies.
+///
+/// The ceremony assembles every script-path witness as `[signature,
+/// leaf_script, control_block]`, so the control block is the third item.
+const CONTROL_BLOCK_ITEM: usize = 2;
+
+/// The ceremony's own name for the malformed control-path submission,
+/// which is also the §15 row it drives.
+///
+/// The two coincide here where they do not for the other two families:
+/// the consensus and leaf-arrangement steps each stage several rows and
+/// take a prefix to keep their siblings apart, while this surgery stages
+/// exactly one row and has no sibling to be separated from.
+pub const MALFORMED_CONTROL_PATH_STEP: &str = "malformed-control-path";
+
+/// The fixed head of a control block: the leaf version and parity byte
+/// followed by the thirty-two-byte internal key.
+const CONTROL_BLOCK_BASE_BYTES: usize = 33;
+
+/// One merkle path entry in a control block.
+const CONTROL_BLOCK_PATH_ENTRY_BYTES: usize = 32;
+
+/// The deepest merkle path a control block may carry.
+const CONTROL_BLOCK_MAX_PATH_ENTRIES: usize = 128;
+
+/// The byte the witness surgery appends to the control block.
+///
+/// Its VALUE is immaterial and deliberately so: the size test fires
+/// before any byte of the path is read, so a zero states that the
+/// surgery is about the LENGTH and nothing else. A byte chosen to mean
+/// something would invite the mutant to be read as a path claim.
+const CONTROL_BLOCK_PAD_BYTE: u8 = 0x00;
+
 /// One consensus-conservation surgery this ceremony stages on the signed
 /// explicit control, each breaking the explicit per-asset sum in its own
 /// way so the target answers `bad-txns-in-ne-out` (or a surjection
@@ -247,10 +294,14 @@ enum ConsensusSurgery {
     HiddenPrivateUOutput,
     /// Delete the second receipt input: the input sum drops.
     OmittedSource,
+    /// Write the first receipt's explicit value outside the protocol's
+    /// amount domain: the field itself is refused before the sum is
+    /// taken.
+    AmountOutsideSemanticDomain,
 }
 
 /// Every consensus surgery, in the order the ceremony submits them.
-const CONSENSUS_SURGERIES: [ConsensusSurgery; 7] = [
+const CONSENSUS_SURGERIES: [ConsensusSurgery; 8] = [
     ConsensusSurgery::WrongExplicitAsset,
     ConsensusSurgery::ConfidentialAssetCommitment,
     ConsensusSurgery::OutputTotalOneBelowInput,
@@ -258,6 +309,7 @@ const CONSENSUS_SURGERIES: [ConsensusSurgery; 7] = [
     ConsensusSurgery::PrivateOutputOmitted,
     ConsensusSurgery::HiddenPrivateUOutput,
     ConsensusSurgery::OmittedSource,
+    ConsensusSurgery::AmountOutsideSemanticDomain,
 ];
 
 impl ConsensusSurgery {
@@ -272,6 +324,7 @@ impl ConsensusSurgery {
             Self::PrivateOutputOmitted => "private-output-omitted",
             Self::HiddenPrivateUOutput => "hidden-private-u-output",
             Self::OmittedSource => "omitted-source",
+            Self::AmountOutsideSemanticDomain => "amount-outside-semantic-domain",
         }
     }
 
@@ -304,6 +357,16 @@ impl ConsensusSurgery {
             Self::PrivateOutputOmitted => remove_output(control, SECOND_RECEIPT),
             Self::HiddenPrivateUOutput => append_hidden_output(control),
             Self::OmittedSource => remove_input(control, DROPPED_INPUT),
+            // The SAME field the one-below surgery lowers, written
+            // absolutely instead of shifted. The two separate by the
+            // measured range rather than by the field: a delta of one
+            // moves the low-order bytes of the amount, while a write of
+            // two to the fifty-first moves the high-order bytes and
+            // leaves the low ones as they were, so the bounded diff
+            // reports two different `(start, end)` pairs on one field.
+            Self::AmountOutsideSemanticDomain => {
+                set_output_value(control, FIRST_RECEIPT, OUT_OF_DOMAIN_VALUE)
+            }
         }
     }
 }
@@ -340,12 +403,26 @@ enum LeafArrangement {
     /// and fails the member bound's lower check (`... 1;
     /// GreaterThanOrEqual64; Verify`), the one input that fails.
     NoCoordinator,
+    /// EXCHANGE the two roles rather than collapsing them: input zero
+    /// reveals receipt one's MEMBER leaf and input one reveals receipt
+    /// zero's COORDINATOR leaf. Both inputs then run a leaf its own
+    /// covenant clause forbids at that position — the member fails the
+    /// bound's lower check at index zero and the coordinator fails the
+    /// index `EqualVerify` at index one — so this arrangement carries
+    /// TWO failing inputs where the other two carry one. That is why no
+    /// verdict is predicted for it: which of two failures a target
+    /// reports across a multi-input candidate is the target's own abort
+    /// selection, and no source in this workspace settles it. What the
+    /// row rests on instead is the ARRANGEMENT, which is `[1, 0]` and
+    /// distinct from the control's and from both siblings'.
+    MemberCoordinatorExchange,
 }
 
 /// Every leaf-arrangement surgery, in the order the ceremony submits them.
-const LEAF_ARRANGEMENTS: [LeafArrangement; 2] = [
+const LEAF_ARRANGEMENTS: [LeafArrangement; 3] = [
     LeafArrangement::TwoCoordinators,
     LeafArrangement::NoCoordinator,
+    LeafArrangement::MemberCoordinatorExchange,
 ];
 
 impl LeafArrangement {
@@ -355,31 +432,40 @@ impl LeafArrangement {
         match self {
             Self::TwoCoordinators => "two-coordinators",
             Self::NoCoordinator => "no-coordinator",
+            Self::MemberCoordinatorExchange => "member-coordinator-leaf-exchange",
         }
     }
 
-    /// The pair-partner this drive leaves typed: its arrangement carries a
-    /// SECOND failing input beside the clause this row already drove, so it
-    /// has no separating fact of its own against this row and stays
-    /// `TargetVerdictDoesNotSeparateTheRows`. WHICH of its two failures a
-    /// target would report is NOT settled here — abort selection across a
-    /// multi-input candidate is the target's, and no in-repo source says —
-    /// so no exact verdict is predicted for it.
+    /// The pair-partner this drive leaves without a separating fact, or
+    /// `"none"` where the pair carries no such partner any more.
+    ///
+    /// Both collision pairs are now closed and neither closes by being
+    /// left typed. `wrong-coordinator` stands adjudicated: its own
+    /// arrangements are exhausted by faults already registered, so it is
+    /// not an undriven partner waiting on a run. And
+    /// `member-coordinator-leaf-exchange` is driven HERE, by the
+    /// exchanged arrangement below, which is a distinct candidate from
+    /// either collapse and rests on that arrangement rather than on a
+    /// verdict. So every arrangement reports `"none"`, and the line is
+    /// kept rather than dropped because that is the fact the drive
+    /// establishes: this ceremony leaves no leaf-arrangement row behind
+    /// it.
     const fn typed_partner(self) -> &'static str {
         match self {
-            Self::TwoCoordinators => "wrong-coordinator",
-            Self::NoCoordinator => "member-coordinator-leaf-exchange",
+            Self::TwoCoordinators | Self::NoCoordinator | Self::MemberCoordinatorExchange => "none",
         }
     }
 
     /// The receipt POSITION whose leaf each input reveals. The control's
-    /// arrangement is `[0, 1]`; each mutant collapses it to one role. The
-    /// ceremony funds exactly two receipts, so the arrangement is two
-    /// positions wide.
+    /// arrangement is `[0, 1]`; the two collapsing mutants reduce it to
+    /// one role and the exchanging mutant swaps the two. The ceremony
+    /// funds exactly two receipts, so the arrangement is two positions
+    /// wide.
     const fn sources(self) -> [u16; RECEIPT_COUNT as usize] {
         match self {
             Self::TwoCoordinators => [0, 0],
             Self::NoCoordinator => [1, 1],
+            Self::MemberCoordinatorExchange => [1, 0],
         }
     }
 
@@ -435,6 +521,78 @@ impl LeafArrangementObservation {
     #[must_use]
     pub const fn message(&self) -> &Digest32 {
         &self.message
+    }
+
+    /// The layer the target refused this mutant at, where it was observed.
+    #[must_use]
+    pub const fn observed_layer(&self) -> Option<ObservedOutcomeLayer> {
+        self.observed_layer
+    }
+
+    /// The node's own words, where it gave any.
+    #[must_use]
+    pub fn observed_detail(&self) -> Option<&str> {
+        self.observed_detail.as_deref()
+    }
+}
+
+/// The malformed control-path mutant, as this ceremony built, submitted
+/// and observed it.
+///
+/// The mutation is a WITNESS mutation and nothing else: one item of one
+/// input's stack changes length and every other byte of the candidate,
+/// witnessless serialization included, is the control's. That is why the
+/// signature is not re-taken. The tapscript message commits to the
+/// tapleaf hash — the leaf version and the leaf script — and not to the
+/// control block's path bytes, so a control block of a different size
+/// leaves the signature valid and the target reaches the size check
+/// rather than the signature gate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WitnessSurgeryObservation {
+    row: &'static str,
+    input_index: usize,
+    item_index: usize,
+    control_item_bytes: usize,
+    mutant_item_bytes: usize,
+    mutant_bytes: Vec<u8>,
+    submitted_bytes: usize,
+    observed_layer: Option<ObservedOutcomeLayer>,
+    observed_detail: Option<String>,
+}
+
+impl WitnessSurgeryObservation {
+    /// The §15 row this mutant drives.
+    #[must_use]
+    pub const fn row(&self) -> &'static str {
+        self.row
+    }
+
+    /// The input whose witness carries the malformed item.
+    #[must_use]
+    pub const fn input_index(&self) -> usize {
+        self.input_index
+    }
+
+    /// The witness-stack position the malformed item occupies.
+    #[must_use]
+    pub const fn item_index(&self) -> usize {
+        self.item_index
+    }
+
+    /// How long the control's item at that position was, and how long
+    /// the mutant's is. A valid control block is thirty-three bytes plus
+    /// a whole number of thirty-two-byte path entries, so the two
+    /// lengths differing by one is exactly what makes the mutant's size
+    /// invalid while its path bytes stay the control's.
+    #[must_use]
+    pub const fn item_lengths(&self) -> (usize, usize) {
+        (self.control_item_bytes, self.mutant_item_bytes)
+    }
+
+    /// How many bytes this mutant handed the node.
+    #[must_use]
+    pub const fn submitted_bytes(&self) -> usize {
+        self.submitted_bytes
     }
 
     /// The layer the target refused this mutant at, where it was observed.
@@ -662,6 +820,7 @@ pub struct OwnerSigningNegativeRecord {
     mutant: Option<MutantObservation>,
     consensus_mutants: Vec<ConsensusMutantObservation>,
     leaf_arrangements: Vec<LeafArrangementObservation>,
+    witness_surgery: Option<WitnessSurgeryObservation>,
     control: Option<ControlObservation>,
     refusal: Option<OwnerSigningNegativeRefusal>,
 }
@@ -671,6 +830,12 @@ impl OwnerSigningNegativeRecord {
     #[must_use]
     pub fn consensus_mutants(&self) -> &[ConsensusMutantObservation] {
         &self.consensus_mutants
+    }
+
+    /// The malformed control-path mutant, where it was built.
+    #[must_use]
+    pub const fn witness_surgery(&self) -> Option<&WitnessSurgeryObservation> {
+        self.witness_surgery.as_ref()
     }
 
     /// The leaf-arrangement mutants, in the order they ran.
@@ -689,6 +854,13 @@ impl OwnerSigningNegativeRecord {
         if step == "bare-u-output-mutant" {
             let (start, end) = self.mutant.as_ref()?.declared_field_range();
             return Some(LiveMutationLocator::WitnesslessRange { start, end });
+        }
+        if step == MALFORMED_CONTROL_PATH_STEP {
+            let surgery = self.witness_surgery.as_ref()?;
+            return Some(LiveMutationLocator::WitnessItem {
+                input_index: surgery.input_index(),
+                item_index: surgery.item_index(),
+            });
         }
         if let Some(row) = step.strip_prefix("consensus-") {
             let mutant = self
@@ -794,12 +966,15 @@ impl OwnerSigningNegativeRecord {
              row's, and each consensus surgery breaks conservation in its own field so its refusal \
              separates by a distinct declared range and transaction shape rather than sharing one \
              observation",
-            "drives ONE leaf-arrangement row per collision pair and moves no taptree: \
-             two-coordinators and no-coordinator each reveal a committed leaf at a forbidden \
-             position and are refused at the covenant's own index or bound clause, while \
-             wrong-coordinator and member-coordinator-leaf-exchange stay typed because their own \
-             arrangements have a SECOND failing input, so nothing separates their observation from \
-             the pair-partner's already driven",
+            "drives every leaf-arrangement row it stages and moves no taptree: two-coordinators \
+             and no-coordinator each reveal a committed leaf at a forbidden position and are \
+             refused at the covenant's own index or bound clause, while \
+             member-coordinator-leaf-exchange exchanges the two roles and rests on its ARRANGEMENT \
+             rather than on a verdict, because both of its inputs fail and which failure a target \
+             reports across a multi-input candidate is the target's own abort selection",
+            "predicts no verdict for the malformed control path beyond the layer: the control \
+             block is refused for its SIZE during taproot script verification, and the exact words \
+             a target gives for a wrong-sized control block are the target's",
             "claims nothing about any deployment but the one this run created and destroyed",
         ]
     }
@@ -837,6 +1012,9 @@ enum Stage {
     /// Submit the leaf-arrangement mutant at this index, before the control
     /// so its coins stay unspent for the acceptance.
     LeafArrangement(usize),
+    /// Submit the malformed control-path mutant, before the control so
+    /// its coins stay unspent for the acceptance.
+    WitnessSurgery,
     /// Submit the unmutated control, last, which is what consumes them.
     Control,
     /// Nothing further.
@@ -1261,6 +1439,14 @@ impl OwnerSigningNegativePlanner {
         // and moves no digest.
         self.record.leaf_arrangements = self.build_leaf_arrangements(&finalized, &spent_outputs)?;
 
+        // The malformed control-path mutant is cut from the same signed
+        // control and is NOT re-signed either, for a different reason
+        // than the consensus mutants: the tapscript message commits to
+        // the tapleaf hash rather than to the control block's path
+        // bytes, so resizing the control block leaves the signature
+        // valid and the size check is what the candidate reaches.
+        self.record.witness_surgery = Some(build_witness_surgery(&control_bytes)?);
+
         // The control's bytes are stashed on the control record's message
         // check; the bytes themselves are rebuilt for the control step so
         // the ceremony holds one pending submission at a time.
@@ -1433,6 +1619,27 @@ impl OwnerSigningNegativePlanner {
         ))
     }
 
+    /// Record what the target did with the malformed control-path mutant.
+    fn settle_witness_surgery(&mut self, response: &NativeOperationResponse) {
+        if let Some(surgery) = self.record.witness_surgery.as_mut() {
+            surgery.observed_layer = Some(response.observed_layer);
+            surgery
+                .observed_detail
+                .clone_from(&response.observed_detail);
+        }
+    }
+
+    /// The submission step for the malformed control-path mutant.
+    fn witness_surgery_step(&self) -> Option<OperationStep> {
+        let surgery = self.record.witness_surgery.as_ref()?;
+        Some(OperationStep::new(
+            MALFORMED_CONTROL_PATH_STEP,
+            OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                transaction_bytes: surgery.mutant_bytes.clone(),
+            })),
+        ))
+    }
+
     /// Rebuild and stage the control for submission.
     fn stage_control(&self) -> Result<Vec<u8>, OwnerSigningNegativeRefusal> {
         let finalized = self.finalize()?;
@@ -1493,8 +1700,12 @@ impl TargetOperationPlanner for OwnerSigningNegativePlanner {
                     self.stage = if index + 1 < self.record.leaf_arrangements.len() {
                         Stage::LeafArrangement(index + 1)
                     } else {
-                        Stage::Control
+                        Stage::WitnessSurgery
                     };
+                }
+                Stage::WitnessSurgery => {
+                    self.settle_witness_surgery(response);
+                    self.stage = Stage::Control;
                 }
                 Stage::Control => {
                     let submitted = self
@@ -1531,6 +1742,10 @@ impl TargetOperationPlanner for OwnerSigningNegativePlanner {
                 |step| Ok(Some(step)),
             ),
             Stage::LeafArrangement(index) => self.leaf_arrangement_step(index).map_or_else(
+                || Err(self.refuse(OwnerSigningNegativeRefusal::CandidateNotConstructible)),
+                |step| Ok(Some(step)),
+            ),
+            Stage::WitnessSurgery => self.witness_surgery_step().map_or_else(
                 || Err(self.refuse(OwnerSigningNegativeRefusal::CandidateNotConstructible)),
                 |step| Ok(Some(step)),
             ),
@@ -1672,6 +1887,41 @@ fn adjust_output_value(
     )
 }
 
+/// One candidate with a single explicit output's value REPLACED, asset,
+/// nonce and program held fixed.
+///
+/// The absolute sibling of [`adjust_output_value`]. A delta cannot reach
+/// the out-of-domain range from an arbitrary control amount without
+/// arithmetic that depends on what the control held; an absolute write
+/// states the field the candidate is to carry and leaves the dependence
+/// out of the mutation.
+fn set_output_value(
+    candidate: &TargetTransaction,
+    output: usize,
+    amount: u64,
+) -> Result<TargetTransaction, OwnerSigningNegativeRefusal> {
+    let mut outputs = candidate.outputs().to_vec();
+    let target = outputs
+        .get_mut(output)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let ValueField::Explicit(_) = target.value() else {
+        return Err(OwnerSigningNegativeRefusal::CandidateNotConstructible);
+    };
+    *target = TargetOutput::new(
+        target.asset(),
+        ValueField::Explicit(amount),
+        target.nonce(),
+        target.program().to_vec(),
+    );
+    rebuild(
+        candidate,
+        candidate.inputs().to_vec(),
+        outputs,
+        candidate.witnesses().to_vec(),
+        candidate.output_witnesses().to_vec(),
+    )
+}
+
 /// One candidate with a single output, and its parallel output witness,
 /// deleted.
 fn remove_output(
@@ -1778,6 +2028,107 @@ fn rebuild(
         output_witnesses,
     )
     .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)
+}
+
+/// Whether a control block of this many bytes is one the reviewed target
+/// will parse.
+///
+/// It reads a leaf version and parity byte, a thirty-two-byte internal
+/// key, and then a whole number of thirty-two-byte merkle path entries up
+/// to a bounded depth, and refuses any other length outright — before it
+/// looks at what the path spells.
+const fn control_block_size_is_valid(bytes: usize) -> bool {
+    bytes >= CONTROL_BLOCK_BASE_BYTES
+        && bytes
+            <= CONTROL_BLOCK_BASE_BYTES
+                + CONTROL_BLOCK_MAX_PATH_ENTRIES * CONTROL_BLOCK_PATH_ENTRY_BYTES
+        && (bytes - CONTROL_BLOCK_BASE_BYTES) % CONTROL_BLOCK_PATH_ENTRY_BYTES == 0
+}
+
+/// Build the malformed control-path mutant from the signed control's own
+/// bytes.
+///
+/// The surgery APPENDS one byte to input zero's control block. A parsable
+/// control block is [`CONTROL_BLOCK_BASE_BYTES`] plus a whole number of
+/// [`CONTROL_BLOCK_PATH_ENTRY_BYTES`] path entries, so a length one above
+/// a parsable one is never itself parsable — one is not a multiple of
+/// thirty-two — while every byte the control block already held stays
+/// exactly where it was. Appending rather than truncating is what keeps
+/// that second half true: a truncation would drop a path byte, and the
+/// mutant would then be arguing about the path as well as the size.
+///
+/// The signature is NOT re-taken, and unlike the consensus surgeries the
+/// reason is not that the refusal comes first. The tapscript message is
+/// taken over the tapleaf hash — the leaf version and the leaf script —
+/// and not over the control block, so the control's own signature is
+/// still the correct signature for these bytes and the candidate reaches
+/// the size check rather than stopping at a signature gate.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::CandidateNotConstructible`] where the
+/// control does not decode, carries no input at the surgery's index, has
+/// no item at the control-block position, or carries a control block
+/// whose size is ALREADY unparsable — that last one because a mutant cut
+/// from a malformed control would be refused for the control's fault
+/// rather than for the surgery's.
+/// [`OwnerSigningNegativeRefusal::MutationNotConfined`] where the
+/// witnessless serialization moved, which would mean the mutation was
+/// not confined to the witness.
+fn build_witness_surgery(
+    control_bytes: &[u8],
+) -> Result<WitnessSurgeryObservation, OwnerSigningNegativeRefusal> {
+    let control = TargetTransaction::decode(control_bytes)
+        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+
+    let mut witnesses = control.witnesses().to_vec();
+    let witness = witnesses
+        .get_mut(MALFORMED_CONTROL_INPUT)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let mut stack = witness.stack().to_vec();
+    let item = stack
+        .get_mut(CONTROL_BLOCK_ITEM)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let control_item_bytes = item.len();
+    if !control_block_size_is_valid(control_item_bytes) {
+        return Err(OwnerSigningNegativeRefusal::CandidateNotConstructible);
+    }
+    item.push(CONTROL_BLOCK_PAD_BYTE);
+    let mutant_item_bytes = item.len();
+    *witness = InputWitness::new(stack);
+
+    let mutant = rebuild(
+        &control,
+        control.inputs().to_vec(),
+        control.outputs().to_vec(),
+        witnesses,
+        control.output_witnesses().to_vec(),
+    )?;
+
+    // The two witnessless serializations must be the SAME bytes, which
+    // `changed_range` states as the empty range at their common end. This
+    // is the witness-only claim made checkable: every consensus surgery
+    // declares a range it moved, and this one declares that it moved
+    // nothing there at all.
+    let control_witnessless = control.encode_without_witness();
+    let declared = (control_witnessless.len(), control_witnessless.len());
+    let touched = changed_range(&control_witnessless, &mutant.encode_without_witness());
+    if touched != declared {
+        return Err(OwnerSigningNegativeRefusal::MutationNotConfined { touched, declared });
+    }
+
+    let mutant_bytes = mutant.encode();
+    Ok(WitnessSurgeryObservation {
+        row: MALFORMED_CONTROL_PATH_STEP,
+        input_index: MALFORMED_CONTROL_INPUT,
+        item_index: CONTROL_BLOCK_ITEM,
+        control_item_bytes,
+        mutant_item_bytes,
+        submitted_bytes: mutant_bytes.len(),
+        mutant_bytes,
+        observed_layer: None,
+        observed_detail: None,
+    })
 }
 
 /// Build every consensus-conservation mutant from the signed control's
@@ -1917,6 +2268,23 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
         ));
     }
 
+    if let Some(surgery) = record.witness_surgery() {
+        let (control_item, mutant_item) = surgery.item_lengths();
+        lines.push(format!(
+            "witness_surgery row {} input {} item {} control_item_bytes {control_item} mutant_item_bytes {mutant_item} submitted_bytes {} layer {} detail {}",
+            surgery.row(),
+            surgery.input_index(),
+            surgery.item_index(),
+            surgery.submitted_bytes(),
+            surgery
+                .observed_layer()
+                .map_or_else(|| "none".to_owned(), |layer| format!("{layer:?}")),
+            surgery.observed_detail().unwrap_or("none"),
+        ));
+    } else {
+        lines.push("witness_surgery none".to_owned());
+    }
+
     if let Some(control) = record.control() {
         lines.push(format!(
             "control submitted_bytes {} message {} layer {} txid {} detail {}",
@@ -1963,7 +2331,10 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
 
 #[cfg(test)]
 mod tests {
-    use super::{BARE_U_PROGRAM, changed_range};
+    use super::{
+        BARE_U_PROGRAM, CONTROL_BLOCK_BASE_BYTES, CONTROL_BLOCK_MAX_PATH_ENTRIES,
+        CONTROL_BLOCK_PATH_ENTRY_BYTES, changed_range, control_block_size_is_valid,
+    };
 
     #[test]
     fn changed_range_bounds_a_mutation_from_both_ends() {
@@ -1975,15 +2346,22 @@ mod tests {
     #[test]
     fn the_leaf_arrangements_declare_distinct_reveal_orders() {
         // Each driven row's arrangement is distinct from the control's and
-        // from its sibling's, which is what makes the two leaf-arrangement
-        // mutants distinct candidates when their verdicts read as a plain
-        // OP_EQUALVERIFY or OP_VERIFY. The control reveals coordinator then
-        // member; two-coordinators collapses to coordinator at both, and
-        // no-coordinator to member at both.
+        // from every sibling's, which is what makes the three
+        // leaf-arrangement mutants distinct candidates when their verdicts
+        // read as a plain OP_EQUALVERIFY or OP_VERIFY. The control reveals
+        // coordinator then member; two-coordinators collapses to
+        // coordinator at both, no-coordinator to member at both, and the
+        // member/coordinator exchange keeps one of each but swaps which
+        // input carries which. The exchange is the case that makes this
+        // check load-bearing rather than decorative: it holds the same
+        // MULTISET of leaves as the control and separates from it only by
+        // order, so an arrangement compared as a set would not tell the
+        // two apart.
         let arrangements = [
             [0, 1],
             super::LeafArrangement::TwoCoordinators.sources(),
             super::LeafArrangement::NoCoordinator.sources(),
+            super::LeafArrangement::MemberCoordinatorExchange.sources(),
         ];
         let mut seen = std::collections::BTreeSet::new();
         for arrangement in arrangements {
@@ -1992,6 +2370,36 @@ mod tests {
                 "two leaf arrangements share the reveal order {arrangement:?}",
             );
         }
+    }
+
+    #[test]
+    fn appending_one_byte_makes_every_parsable_control_block_size_unparsable() {
+        // The malformed control-path surgery rests on one arithmetic fact
+        // and this is it: a parsable control block is the base plus a whole
+        // number of path entries, so adding a single byte leaves a
+        // remainder of one against a modulus of thirty-two and can never
+        // land back on a parsable length. Checked across the whole
+        // admissible depth rather than at one example, because the surgery
+        // does not get to choose how deep the ceremony's taptree is.
+        for entries in 0..=CONTROL_BLOCK_MAX_PATH_ENTRIES {
+            let parsable = CONTROL_BLOCK_BASE_BYTES + entries * CONTROL_BLOCK_PATH_ENTRY_BYTES;
+            assert!(
+                control_block_size_is_valid(parsable),
+                "a base plus {entries} whole path entries was rejected as unparsable",
+            );
+            assert!(
+                !control_block_size_is_valid(parsable + 1),
+                "one byte past a parsable size was still parsable at {entries} entries",
+            );
+        }
+        // And the two ends are refused for their own reasons: one byte
+        // short of the base has no room for the internal key, and one
+        // entry past the bound is deeper than the target will read.
+        assert!(!control_block_size_is_valid(CONTROL_BLOCK_BASE_BYTES - 1));
+        assert!(!control_block_size_is_valid(
+            CONTROL_BLOCK_BASE_BYTES
+                + (CONTROL_BLOCK_MAX_PATH_ENTRIES + 1) * CONTROL_BLOCK_PATH_ENTRY_BYTES
+        ));
     }
 
     #[test]
