@@ -753,19 +753,6 @@ const fn missing_sponsor_authorization(mutation: &RelationMutation) -> bool {
     matches!(mutation, RelationMutation::MissingSponsorAuthorization)
 }
 
-/// The `SponsorEnvelopeMultiplicityExceeded` predicate, spelled once.
-const fn envelope_multiplicity(mutation: &RelationMutation) -> bool {
-    matches!(
-        mutation,
-        RelationMutation::SponsorEnvelopeMultiplicityExceeded
-    )
-}
-
-/// The `ExternalEvidenceFailed` predicate, spelled once.
-const fn external_evidence_failed(mutation: &RelationMutation) -> bool {
-    matches!(mutation, RelationMutation::ExternalEvidenceFailed)
-}
-
 /// The `WrongRootEffect` predicate, spelled once.
 const fn wrong_root_effect(mutation: &RelationMutation) -> bool {
     matches!(mutation, RelationMutation::WrongRootEffect)
@@ -1155,14 +1142,18 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         wrong_asset,
         "WrongRecognizedAsset",
     ),
-    linked(
+    // RETYPED FIRST-PARTY. `CompleteFamilyRanges::new` is deliberately
+    // unchecked, because completeness is a fact the value's validator
+    // decides rather than a promise its constructor makes. An output
+    // position omitted from those ranges is therefore producible, and
+    // `tapscript::family_range_defects` names it `PositionUnaccounted`.
+    // Bundle emission runs that validator before returning any bundle,
+    // so no script-path run is the boundary this row has.
+    pre_target(
         S::ObjectFault,
         "unclassified-u",
-        L::SemanticFact,
-        B::ScriptPathRejection,
-        allowed_families(TransactionSide::Output),
-        undeclared_family,
-        "UndeclaredObjectFamily",
+        L::AbiLayout,
+        B::BackendEmissionRejection,
     ),
     // RETYPED ARCHITECTURE CLOSURE. `tapscript` defines a fee-role FORM
     // clause, so this is not an impossibility claim about every
@@ -1261,17 +1252,15 @@ pub const VALUE_FAULTS: &[LiveSafetyRow] = &[
         L::SemanticFact,
         B::SemanticRequestRejection,
     ),
-    // Owner ruling: the ceiling is blockchain-enforced, the same class as
-    // conservation. The row arrived declaring a semantic-request
-    // rejection, which read as a missing request-path validator; it is
-    // not one. The protocol domain is `realization::ProtocolAmount`'s
-    // exclusive limit of two to the fifty-first, and the reviewed target
-    // refuses a stated amount above twenty-one million coins in
-    // `CheckTransaction` — before any script runs. Every amount outside
-    // the protocol domain is therefore above the target's own bound, and
-    // the target is what refuses it. `ProtocolValue` deliberately gains
-    // no new check: the ruling changes who enforces the ceiling, not
-    // whether anything has observed the enforcement.
+    // RETYPED TARGET-SIDE. The protocol domain is
+    // `realization::ProtocolAmount`'s exclusive limit of two to the
+    // fifty-first, while the reviewed target's `MAX_MONEY` ceiling is
+    // lower. `CheckTransaction` therefore refuses any out-of-domain
+    // explicit output as `bad-txns-vout-toolarge` before a script runs.
+    // Raw transaction reconstruction can write that field directly, so
+    // what remains owed is the target run of such a candidate, not a new
+    // request-path validator and not an argument that no coin can fund
+    // the value.
     no_class(
         S::ValueFault,
         "amount-outside-semantic-domain",
@@ -1421,6 +1410,13 @@ pub const VALUE_FAULTS: &[LiveSafetyRow] = &[
         duplicate_endpoint,
         "DuplicateCanonicalSourceOrDestination",
     ),
+    // The fault here is not the valid multiset split its sibling above
+    // describes. Observation normalization tracks every destination
+    // reference already claimed by an open flow and returns
+    // `ObservedOpenFlowOverlap` when a second flow claims it. The
+    // destination-specific open-flow test drives exactly that input, so
+    // the row's own published gate is an already-observed first-party
+    // fact rather than a target verdict still to obtain.
     linked(
         S::ValueFault,
         "output-claimed-through-two-flows",
@@ -1492,33 +1488,28 @@ pub const SPONSOR_FAULTS: &[LiveSafetyRow] = &[
         sponsor_overlap,
         "SponsorProtocolOverlap",
     ),
-    linked(
+    // RETYPED FIRST-PARTY. The one-sponsor maximum is a checked runtime
+    // bound, not a type-level inability to state two envelopes:
+    // `LiveTransferShapeBounds` refuses shapes above it, and live
+    // finalization counts the offered sponsor inputs and fails shape
+    // selection with `UnsupportedLiveShape`. That refusal happens in
+    // construction before any program is offered to a target.
+    pre_target(
         S::SponsorFault,
         "two-sponsor-envelopes",
         L::AbiLayout,
-        B::ScriptPathRejection,
-        relation(
-            RelationKind::SponsorEnvelopeMultiplicity,
-            RelationSubject::Sponsor,
-        ),
-        envelope_multiplicity,
-        "SponsorEnvelopeMultiplicityExceeded",
+        B::AbiConstructionRejection,
     ),
-    // A foreign sponsor asset leaves the reserve asset unbalanced, which
-    // the target settles for the whole transaction and no script sees.
-    linked(
+    // RETYPED FIRST-PARTY. Target conservation would reject a candidate
+    // funded in the wrong asset, but construction never produces one:
+    // stage 3 recognizes sponsor inputs before shape selection and
+    // returns `LiveSponsorInputCarriesForeignAsset` as soon as the
+    // public view names anything other than the deployment reserve.
+    pre_target(
         S::SponsorFault,
         "foreign-sponsor-asset",
         L::SemanticFact,
-        B::ConsensusRejectionBeforeScript,
-        relation(
-            RelationKind::SubstrateConservation,
-            RelationSubject::Asset {
-                asset: AssetId::Lbtc,
-            },
-        ),
-        external_evidence_failed,
-        "ExternalEvidenceFailed",
+        B::AbiConstructionRejection,
     ),
     linked(
         S::SponsorFault,
@@ -1553,6 +1544,12 @@ pub const SPONSOR_FAULTS: &[LiveSafetyRow] = &[
         L::AbiLayout,
         B::AbiConstructionRejection,
     ),
+    // The old ground said construction classified every member and no
+    // unclassified value existed. `ObservedFlowRole::Unclaimed` is an
+    // explicit public member, `flow_role` returns it when no flow claims
+    // a reference, and sponsor isolation refuses an ordinary L-BTC
+    // member in exactly that state. The focused zero-valued test drives
+    // the fall-through, so the row is answered by that deciding fact.
     ambiguous(
         S::SponsorFault,
         "sponsor-member-unclassified",
@@ -1632,6 +1629,14 @@ pub const SPONSOR_FAULTS: &[LiveSafetyRow] = &[
         L::AbiLayout,
         B::ScriptPathRejection,
     ),
+    // The §15.6 fault listing conflicts with the guide's own §15.2
+    // positive `private-sponsor-values` row. The standing corpus binds
+    // that positive row to the accepted `sponsored-private-with-change`
+    // ceremony, whose sponsor coin and balancing change are committed.
+    // The negative name identifies no distinct mutation of that same
+    // shape, so it is the fault listing — not the accepted twin — that
+    // is in error. As with the zero-valued sponsor precedent, the table
+    // declaration remains visible while its standing records the fact.
     ambiguous(
         S::SponsorFault,
         "confidential-sponsor-values",
