@@ -25,6 +25,8 @@ marked decided and implemented. Most clauses are therefore satisfied by
 construction; the deltas are exactly the places where the draft
 generalizes a repository-specific mechanism into an adoption parameter.
 
+This reading is dated: the calculus's fourth edition is now the normative body of [ADR-019](../../adr/019-label-calculus.md), and it moves the clauses two of the rows below turn on. A generated register no longer stands outside the graph — participation holds of it in full, its occurrences are mints and citations like any others, and the exclusion that once sat in (`[ADR019-judg:labels:participation]`) now sits at the harvest instead, under the edition's new (`[ADR019-inv:labels:generated-compliance]`): what a register presents, it never feeds. Two dispositions are inverted by that move rather than merely reworded. The minting-and-resolution row reads the census exclusion of the registers as satisfying its clause, and the Ansätze row reads their removal from discovery as the refusal of participating registers; under the fourth edition each is a divergence, because the checker buys the no-feeding half by dropping the registers from discovery altogether and forfeits the participation the text now requires in the same stroke. That standing is recorded, not claimed away: ADR-019's status line and its implementation-standing entry both carry it, and closing it is a checker change rather than an amendment. The rows are kept as the reading that justified adoption.
+
 | Clause | Disposition | Evidence |
 |---|---|---|
 | (`[ADR019-lang:labels:label-language]`) | divergent | `Label::parse` in `packages/labels/src/label.rs` admits hyphens in every segment, so kind and area range over a wider alphabet than the words the clause fixes. |
@@ -63,7 +65,7 @@ below is a block on adoption rather than a defect of work already done.
 | bracket-free cross-owner tokens and self-qualified imports fail | holds, but the import form is not suggested when the label mints in another owner |
 | resolution independent of traversal order | holds |
 | designated typed-data strings resolve synthetically | holds for the two hardcoded classes only |
-| generated registers nonparticipating, current, deterministic | holds |
+| every generated occurrence a unique mint or a resolving citation, generated mints standing on their warrant, no generated region feeding what it presents, registers current and deterministic | partial under the fourth edition: no-feeding, currency and determinism hold; the two occurrence clauses do not, the registers being dropped from discovery rather than harvested |
 | pinned anchor-set hash from body citations only | holds |
 | traversal failures surface as diagnostics | holds |
 | scoped generation ignores unrelated owners' defects | holds, in `derive_register_sources` and `derive_model_sources` |
@@ -88,6 +90,8 @@ vocabulary only for the realization owner, and every other prose owner
 accepts any word as a kind. The census below is therefore of the
 repository's kind usage against the registry's assignments, harvested
 from every mint in `plans/`, `adr/`, `docs/` and `packages/`.
+
+This reading is dated in the same way: the registry's fourth edition is now the normative body of [ADR-020](../../adr/020-environment-kinds.md), adding a fifteenth Convention over works and publication and extending the records Convention with the deliberative rows — twenty rows and twelve kind tokens, none of which collides with a kind this repository mints. No disposition below is inverted by it, and the counts quoted in this section are the third edition's, as read.
 
 Forty-eight of the sixty-one kinds in current use are assigned
 identically by the third-edition registry, among them `sec`, `rule`,
