@@ -990,8 +990,20 @@ impl SponsoredOwnerSigningNegativePlanner {
 
         let authorized = authorize_live_transfer(finalized, responses)
             .map_err(|_| SponsoredOwnerSigningRefusal::ControlNotConstructible)?;
-        complete_live_transfer(&target, authorized.clone(), report.clone(), Some(&envelope))
-            .map_err(|_| SponsoredOwnerSigningRefusal::ControlNotConstructible)?;
+
+        // The recording pass exists to collect the request the adapter must
+        // be handed, and the transaction it completes is DISCARDED: it is
+        // authorized by a placeholder and must never be able to become
+        // evidence. Its bytes are still read, because a completion that
+        // produced none finalized nothing and the run would otherwise carry
+        // on to ask a node to sign a candidate that does not exist.
+        let placeholder =
+            complete_live_transfer(&target, authorized.clone(), report.clone(), Some(&envelope))
+                .map_err(|_| SponsoredOwnerSigningRefusal::ControlNotConstructible)?
+                .bytes();
+        if placeholder.is_empty() {
+            return Err(SponsoredOwnerSigningRefusal::ControlNotConstructible);
+        }
 
         let Answers::Recording(recorded) = &envelope.answers else {
             // Unreachable: the value was just built with this arm.
