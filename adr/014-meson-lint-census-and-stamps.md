@@ -163,15 +163,11 @@ The no-op guarantee therefore applies to the incremental lint suites and the gen
 
 ## Generators emit stamps for committed publications · `rule:build:generator-stamps`
 
-Generators keep writing committed in-tree publications under the
-generation/check split (`[ADR019-judg:labels:participation]`); a committed
-publication cannot be a declared build-directory output, so the
-generator target's declared output is a stamp, and regeneration is
-incremental over the same census slices.
+Generators keep writing committed in-tree publications under the generation/check split (`[ADR019-inv:labels:generated-compliance]`); a committed publication cannot be a declared build-directory output, so the generator target's declared output is a stamp, and regeneration is incremental over the same census slices.
 
-Generated files remain publications, never semantic inputs
-(`[ADR011-rule:toolchain:generated]`), and remain nonparticipating in
-the label graph (`[ADR019-judg:labels:participation]`).
+Generated files remain publications, never semantic inputs (`[ADR011-rule:toolchain:generated]`). They are not, however, outside the label graph: a committed generated source participates in it like any other, its every occurrence the unique mint of its label or a citation that resolves, and what a generated region presents it never feeds (`[ADR019-inv:labels:generated-compliance]`). Being generated is a fact about the pen, and the graph attaches to no pen — what the designation costs a register is the harvest it feeds, not its standing as a source.
+
+That is the adopted policy, and it is ahead of the checker: the registers are still dropped from discovery altogether, which secures the no-feeding half and leaves their own occurrences unharvested. ADR-019's status line and implementation-standing entry record that gap; nothing here claims it closed.
 
 ## Publications gate on lints · `rule:build:publication-gating`
 

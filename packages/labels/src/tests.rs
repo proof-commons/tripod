@@ -2390,12 +2390,12 @@ fn committed_registry_kinds_match_the_normative_adr() {
         parsed, committed,
         "the committed kind table must equal the ADR's Convention tables",
     );
-    // The edition in force reports 208 kinds over its own generated
+    // The edition in force reports 220 kinds over its own generated
     // headline table, which the extraction must reproduce.
     assert_eq!(
         parsed.len(),
-        208,
-        "the adopted edition catalogues 208 kinds"
+        220,
+        "the adopted edition catalogues 220 kinds"
     );
 }
 
@@ -2484,11 +2484,11 @@ fn committed_registry_pairs_match_the_normative_adr() {
         parsed, committed,
         "the committed pair table must equal the ADR's Convention rows",
     );
-    // The edition in force reports 349 rows over 333 names, which the
+    // The edition in force reports 369 rows over 352 names, which the
     // extraction must reproduce once the daggers are off the names.
-    assert_eq!(parsed.len(), 349, "the adopted edition carries 349 rows");
+    assert_eq!(parsed.len(), 369, "the adopted edition carries 369 rows");
     let names: std::collections::BTreeSet<&String> = parsed.iter().map(|(name, _)| name).collect();
-    assert_eq!(names.len(), 333, "the adopted edition carries 333 names");
+    assert_eq!(names.len(), 352, "the adopted edition carries 352 names");
 }
 
 /// The committed extension pairs are pinned to the adopting record.
@@ -2823,9 +2823,9 @@ fn derived_base_relation_matches_the_registry_headline_counts() {
         .map(|record| record.key.kind.as_str())
         .collect::<std::collections::BTreeSet<_>>();
 
-    assert_eq!(rows.len(), 349, "rows");
-    assert_eq!(names.len(), 333, "names");
-    assert_eq!(kinds.len(), 208, "kinds");
+    assert_eq!(rows.len(), 369, "rows");
+    assert_eq!(names.len(), 352, "names");
+    assert_eq!(kinds.len(), 220, "kinds");
 }
 
 /// The recorded extension rows carry everything an acceptee's own
@@ -2862,8 +2862,8 @@ fn homonymy_is_derived_from_the_effective_relation() {
         .map(|record| record.key.name.as_str())
         .collect::<std::collections::BTreeSet<_>>();
 
-    assert_eq!(homonyms.len(), 34);
-    assert_eq!(names.len(), 16);
+    assert_eq!(homonyms.len(), 36);
+    assert_eq!(names.len(), 17);
     // The extension row is what puts Task's third sense in Hom.
     let task = homonyms
         .iter()

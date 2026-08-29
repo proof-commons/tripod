@@ -1,8 +1,8 @@
 # ADR-020: Adoption of the Environment-Kind Registry
 
 **Status:** Decided and adopted; implemented, with every recorded kind-token migration complete.
-**Document:** This ADR is the normative third-edition text of _A Taxonomy of Environments in Formal Writing, as a Kind Registry_, formerly the archived adopted-source draft.
-**Provenance:** Externally authored in its third edition; normative here by adoption rather than by authorship.
+**Document:** This ADR is the normative fourth-edition text, supplied 2026-08-29, of _A Taxonomy of Environments in Formal Writing, as a Kind Registry_, formerly the archived adopted-source draft.
+**Provenance:** Externally authored in its fourth edition; normative here by adoption rather than by authorship.
 **Scope:** The kind segment of every label minted in this repository, and the checker's kind vocabulary.
 **Depends on:** [ADR-019](019-label-calculus.md), which fixes the label form the kind segment opens.
 **Does not establish:** Any obligation to use a catalogued kind; the registry fixes what a kind means when used, never that it must be used.
@@ -62,13 +62,15 @@ The pairs this repository adds to the normative registry relation, each with fir
 
 The third edition incorporates four pairs once carried locally, so `pkg`, `q`, `req`, and `test` are registry kinds rather than members of X_A. No mint moved when those rows left the extension set.
 
+The fourth edition incorporates none. Its twenty new rows share no name and no kind token with the extension set above, so every entry of X_A keeps its warrant of distinctness under (`rule:kinds:extension-entry`) and the set stands unchanged; and none of its twelve new tokens is a kind this repository mints, so it adjudicates no new conflict and adds no row to the migration record.
+
 ### Registry sense · `rem:kinds:registry-sense`
 
 Inside a labels context, an unqualified registry means this kind registry. The checker's per-owner minting registries are runtime data structures, and `plans/registers/identities.md` is the separate identity register. The edition's candidate attestation status is likewise unrelated to this repository's `candidate` kind.
 
 ### Edition statuses and extension evidence · `rem:kinds:attestation`
 
-This repository neither strengthens nor weakens an edition status. Yoga, Meta-question, and Schema in its data-shape sense remain daggered; the candidate Record/member-bearing-aggregate pair remains outside C_A; none is in use. Every pair of X_A is firm on the evidence located above.
+This repository neither strengthens nor weakens an edition status. Yoga, Meta-question, Oration, Sitting, and Schema in its data-shape sense remain daggered; the candidate Record/member-bearing-aggregate pair remains outside C_A; none is in use. Every pair of X_A is firm on the evidence located above.
 
 ### Companion register · `rem:kinds:companion-register`
 
@@ -76,7 +78,7 @@ The generated companion register at [plans/labels/attestation.md](../plans/label
 
 ### Heading depth · `rule:kinds:heading-depth`
 
-Folding the adopted text into this record demoted every one of its headings by exactly one level: the document title became the second-level head that opens the body below, and each of the text's twenty-three section heads became a third-level head. A record carries one title, which is the record's own, so the adopted text cannot keep a first-level head of its own inside it.
+Folding the adopted text into this record demoted every one of its headings by exactly one level: the document title became the second-level head that opens the body below, and each of the text's twenty-four section heads became a third-level head. A record carries one title, which is the record's own, so the adopted text cannot keep a first-level head of its own inside it.
 
 Nothing else in the text changed. Below the head that opens it the body is byte-identical to the adopted draft, and every label value, every catalogue row, every classification, and every status stands as adopted. The change is presentation and not genre: a head's depth is a rendering of the division it names, and no pair of the effective relation and no head-validation judgment depends on it.
 
@@ -84,13 +86,15 @@ Nothing else in the text changed. Below the head that opens it the body is byte-
 
 The registry relation and X_A are the checker's enforced vocabulary for every label owner, including the attestation surface. Unknown kinds fail, migrated tokens do not survive as kinds, and participating authored environment heads validate by one exact pair or one presentation reduction.
 
+That vocabulary is committed data, checked against this document's tables rather than re-parsed from them at every run, so an edition that moves the tables moves the committed relation in the same batch and the drift check holds the two together in the meantime. The reading is deliberate: the relation the checker enforces is reviewable as a diff, and no run of the checker depends on parsing prose.
+
 The companion attestation register is generated and checked for freshness. Its evidence and status rows, and Hom(C_A), derive from this document and the corpus census rather than remaining an unchecked prose claim.
 
 ---
 
 ## A Taxonomy of Environments in Formal Writing, as a Kind Registry
 
-This document constitutes the taxonomy of environments as a kind registry: a catalogue of the environments of formal writing — headed like the theorem family, displayed like the equation, structural like the section, kept like the record, carried by the code like the test — from papers, monographs, textbooks, lecture notes, standards, specifications, decision records, and the labeled assets of their code, in which every distinct genre carries one kind, a short token fit to serve as the first segment of a label. Synonymous surface names share a kind, and a homonymous name carries one kind per catalogued sense: a Language fixes the token shape, two Signatures name the registry's data and its acceptee, one Inference rule composes hybrid kinds, three Judgments classify names, validate heads, and record attestation, two Definitions derive homonymy and presentation reduction, five Invariants govern the assignment and its evidence, one Requirement binds the acceptee's companion register, fourteen Conventions lay out the registry itself, a Diagram charts their dependencies, a Table presents the headline counts, Caveats bound it, four rejected Ansätze delimit it negatively, and a Gate blocks adoption until met. The catalogue's headline counts — its names, its rows, its kinds, its declared hybrids, its device classes — are derived from the tables by the register generator and presented in (`tab:kinds:headline-counts`), maintained by hand nowhere, this sentence included; the preamble's inventory of this document's own environments is, by contrast, hand-maintained prose, checked by the gate like every other head. The registry is normative in its kind assignments and evidence-conditioned in its inventory of names: the Convention tables lay down the classification relation, and each edition carries its own evidence base, from which the attestation status printed at each row derives. Adoption names a corpus acceptee, who owns that corpus's evidence, extensions, and generated companion register; this document materializes no index of any corpus's facts, its own headline counts excepted, which derive from its tables alone, and the registry classifies this document's own environment heads. This document is self-contained and cites only itself; where an adopting corpus uses it beside other disciplines, their alignment is fixed by the corpus's recorded adoption decisions, not by this text. Acceptance of this document presupposes acceptance of no other document: where another discipline's artifact is consumed — a set of reserved kinds, a labeling convention, a format's declared environment classes — this registry consumes the artifact as adoption data and asks nothing of its provenance.
+This document constitutes the taxonomy of environments as a kind registry: a catalogue of the environments of formal writing — headed like the theorem family, displayed like the equation, structural like the section, kept like the record, carried by the code like the test — from papers, monographs, textbooks, lecture notes, standards, specifications, decision records, and the labeled assets of their code, in which every distinct genre carries one kind, a short token fit to serve as the first segment of a label. Synonymous surface names share a kind, and a homonymous name carries one kind per catalogued sense: a Language fixes the token shape, two Signatures name the registry's data and its acceptee, one Inference rule composes hybrid kinds, three Judgments classify names, validate heads, and record attestation, two Definitions derive homonymy and presentation reduction, five Invariants govern the assignment and its evidence, one Requirement binds the acceptee's companion register, fifteen Conventions lay out the registry itself, a Diagram charts their dependencies, a Table presents the headline counts, Caveats bound it, four rejected Ansätze delimit it negatively, and a Gate blocks adoption until met. The catalogue's headline counts — its names, its rows, its kinds, its declared hybrids, its device classes — are derived from the tables by the register generator and presented in (`tab:kinds:headline-counts`), maintained by hand nowhere, this sentence included; the preamble's inventory of this document's own environments is, by contrast, hand-maintained prose, checked by the gate like every other head. The registry is normative in its kind assignments and evidence-conditioned in its inventory of names: the Convention tables lay down the classification relation, and each edition carries its own evidence base, from which the attestation status printed at each row derives. Adoption names a corpus acceptee, who owns that corpus's evidence, extensions, and generated companion register; this document materializes no index of any corpus's facts, its own headline counts excepted, which derive from its tables alone, and the registry classifies this document's own environment heads. This document is self-contained and cites only itself; where an adopting corpus uses it beside other disciplines, their alignment is fixed by the corpus's recorded adoption decisions, not by this text. Acceptance of this document presupposes acceptance of no other document: where another discipline's artifact is consumed — a set of reserved kinds, a labeling convention, a format's declared environment classes — this registry consumes the artifact as adoption data and asks nothing of its provenance.
 
 The document practices the discipline it serves. The label at each heading or environment head is that environment's mint; a parenthesized label in running text is a same-owner citation; material in fenced blocks, double-backtick spans, and plain code spans that are not label-shaped — including every kind token in the tables — is displayed without participating. The document title is publication metadata, not an environment head; it mints nothing and participates in nothing. Every label minted here has area `kinds`, and each heading anchor carries `sec` — the kind this registry assigns to the section — so the document's skeleton is classified by its own tables. Environments carry no numbers: the mint at each head is the sole name of its environment.
 
@@ -124,7 +128,7 @@ An arrow points from dependency to dependent.
 ```text
 lang:kinds:kind-language
     └─→ sig:kinds:registry-data
-            ├─→ conv:kinds:* (fourteen)
+            ├─→ conv:kinds:* (fifteen)
             │       ├─→ inf:kinds:hybrid ─┐
             │       └────────────────────┴─→ judg:kinds:classification
             │                                   ├─→ inv:kinds:one-kind
@@ -152,9 +156,9 @@ A generated region: the five counts below are derived from the Convention tables
 
 | Measure          | Count |
 | ---------------- | ----- |
-| Names            | 333   |
-| Rows             | 349   |
-| Kinds            | 208   |
+| Names            | 352   |
+| Rows             | 369   |
+| Kinds            | 220   |
 | Declared hybrids | 3     |
 | Device classes   | 4     |
 
@@ -528,11 +532,33 @@ The framing environments outside the sectioning ladder: what a document says abo
 | Supplement  | `adden` |
 | Synopsis    | `abst`  |
 
+### Works and publication · `sec:kinds:works`
+
+**Convention (Works and publication)** · `conv:kinds:works`
+
+The whole works of formal writing: the genres a complete document instantiates, the very genres the preamble names as this catalogue's sources. The family's mark is the place of the head: within a work, its title is publication metadata and mints nothing, and it is where a corpus catalogues its works — a register, an index, a syllabus, a reading list — that a work is headed by its genre, exactly as an asset is headed by the identifier it already bears (`conv:kinds:assets`). Synonymy runs by genre, never by stage or venue: Paper and Preprint row with Article, since the research article is one genre and its circulation stage a status; Thesis rows with Dissertation, the defended work, its asserted-position sense catalogued with the results (`cav:kinds:homonymy`); and Speech, Oration, and Keynote row with Address, the delivered piece set down in writing, whose qualified forms — a Presidential Address, a Keynote Address — are emphasis on the base, reducing by the modifier rule of (`def:kinds:presentation-reduction`). Address carries the full word as its token: the standard abbreviation is entrenched for the machine address, and the deviation is deliberate. A Draft is no genre but a status a work passes through, a status note like the "(normative)" annex mark, and so presentation; the venue a work appears in — the conference, the periodical — is no environment at all (`cav:kinds:homonymy`); and Proceedings rows with the records family, a body's kept record in publication (`conv:kinds:records`).
+
+| Environment  | Kind       |
+| ------------ | ---------- |
+| Address      | `address`  |
+| Article      | `article`  |
+| Dissertation | `diss`     |
+| Document     | `doc`      |
+| Essay        | `essay`    |
+| Keynote      | `address`  |
+| Monograph    | `mono`     |
+| Oration †    | `address`  |
+| Paper        | `article`  |
+| Preprint     | `article`  |
+| Speech       | `address`  |
+| Textbook     | `textbook` |
+| Thesis       | `diss`     |
+
 ### Records and archives · `sec:kinds:records`
 
 **Convention (Records and archives)** · `conv:kinds:records`
 
-The kept documents of a project or institution: records of decisions, events, meetings, accounts, changes, and versions, maintained over time and cited long after writing. The numbered decision record is the attested exemplar of `rec`; an Entry is the dated unit a log, journal, or ledger accumulates; and recurrence over time is the genre itself here, never a presentation device. A Version is the recorded statement of what a version comprises and changes — the version value it states is data, not an environment; an Amendment modifies, an Addendum extends, a Corrigendum corrects — three genres; and a Version history is no environment but a log or register that Version statements accumulate. Proposal carries the full word as its token: the standard abbreviation is entrenched for Proposition, and the deviation is deliberate. This registry is its own instance — a kept, cited register, classified `reg` by its own table.
+The kept documents of a project or institution: records of decisions, events, meetings, accounts, changes, and versions, maintained over time and cited long after writing. The numbered decision record is the attested exemplar of `rec`; an Entry is the dated unit a log, journal, or ledger accumulates; and recurrence over time is the genre itself here, never a presentation device. A Version is the recorded statement of what a version comprises and changes — the version value it states is data, not an environment; an Amendment modifies, an Addendum extends, a Corrigendum corrects — three genres; and a Version history is no environment but a log or register that Version statements accumulate. Proposal carries the full word as its token: the standard abbreviation is entrenched for Proposition, and the deviation is deliberate. The deliberative record rows here too: a Meeting, a Session, a Sitting — one genre, the dated unit of assembly a minute-book or annals accumulates, as Entry is the dated unit of a log; a Motion and a Resolution are the citable acts the record carries, named for years like the Decision; a Transcript is the verbatim record; and Proceedings are a body's kept transactions, one genre whether held in the archive or published as the volume that bears the name. The order-of-business heads within minutes — a Call to Order, an Adjournment — are named divisions, reducing to the rung's kind (`def:kinds:presentation-reduction`); the adjournment itself is an event, and what the minutes state of it is data, like the version value. Resolution shortens only to `resol`: the bare three letters are entrenched across mathematics and computing for other readings, and the deviation is deliberate. This registry is its own instance — a kept, cited register, classified `reg` by its own table.
 
 | Environment   | Kind         |
 | ------------- | ------------ |
@@ -550,10 +576,13 @@ The kept documents of a project or institution: records of decisions, events, me
 | Journal       | `jour`       |
 | Ledger        | `ledger`     |
 | Log           | `log`        |
+| Meeting       | `session`    |
 | Memo          | `memo`       |
 | Memorandum    | `memo`       |
 | Minutes       | `minutes`    |
+| Motion        | `motion`     |
 | Postmortem    | `postmortem` |
+| Proceedings   | `proc`       |
 | Proposal      | `proposal`   |
 | Protocol      | `minutes`    |
 | Record        | `rec`        |
@@ -561,9 +590,13 @@ The kept documents of a project or institution: records of decisions, events, me
 | Registry      | `reg`        |
 | Release notes | `relnotes`   |
 | Report        | `rep`        |
+| Resolution    | `resol`      |
 | Retrospective | `retro`      |
 | Review        | `rep`        |
 | Revision      | `ver`        |
+| Session       | `session`    |
+| Sitting †     | `session`    |
+| Transcript    | `transcript` |
 | Version       | `ver`        |
 
 ### Assets and inventory · `sec:kinds:assets`
@@ -701,13 +734,13 @@ The acceptee owns, generates, and maintains Ê_A = G_A(E_A, σ_A), under a total
 
 Edition clause: a base row of C carries the dagger (†) exactly when the registry authority's edition evidence records borderline status; the dagger changes only by edition. Corpus clause: for every (n, k) ∈ C_A, exactly one of firm and borderline holds under A, no weaker than the edition status of a base row; no member of C_A is a candidate, and every candidate lies outside C_A. Loss of the last supporting evidence fails coverage; it removes no row, changes no kind, and never lets Ê_A stand as evidence for itself.
 
-For the present edition, the daggered rows are Yoga, Meta-question, and Schema in its data-shape sense, and the edition's one candidate is Record in the member-bearing-aggregate sense, outside C accordingly.
+For the present edition, the daggered rows are Yoga, Meta-question, Oration, Sitting, and Schema in its data-shape sense, and the edition's one candidate is Record in the member-bearing-aggregate sense, outside C accordingly.
 
 ### Caveats · `sec:kinds:caveats`
 
 **Caveat (Homonymy)** · `cav:kinds:homonymy`
 
-A surface name alone need not determine a kind: for a name in Hom(C_A), the kind token at the label is the author's declaration of the catalogued sense, and the registry validates the pair. This caveat enumerates nothing — the acceptee's register presents Hom(C_A) (`req:kinds:attestation-register`) — and its examples are explanatory, and of three species. Homonyms proper: Structure's senses — the fixed object beside Model, the declared shape beside Schema, and the member-bearing aggregate beside Class — with the paper-roadmap head a Preview or a named division. Ambiguities that are not homonymy: the division-head pattern, where a Discussion or a Motivation heading a division takes the rung's kind by reduction, and no pair is created. And second senses outside C entirely, no environment at all — the mathematical graph, the periodical journal, the legal article, the statute, the lexicographic lemma, the cryptographic signature, the runtime metric value, the version value, the contents table, and the word registry itself, which names distinct artifacts across a corpus's disciplines, the sense fixed by each document's preamble. Homonymy is distinct from synonymy, and the two are independent facts: of the Construction–Model–Structure genre, one kind throughout in its fixed-object sense, Construction rows nowhere in Hom while Model and Structure both do, each carrying a second catalogued sense besides; and several names under one kind — `heur`, `assum`, `por`, `fact`, `pred` — row nowhere in Hom at all.
+A surface name alone need not determine a kind: for a name in Hom(C_A), the kind token at the label is the author's declaration of the catalogued sense, and the registry validates the pair. This caveat enumerates nothing — the acceptee's register presents Hom(C_A) (`req:kinds:attestation-register`) — and its examples are explanatory, and of three species. Homonyms proper: Structure's senses — the fixed object beside Model, the declared shape beside Schema, and the member-bearing aggregate beside Class — with the paper-roadmap head a Preview or a named division; and Thesis's pair, the defended work of (`conv:kinds:works`) beside the asserted position of the results. Ambiguities that are not homonymy: the division-head pattern, where a Discussion or a Motivation heading a division takes the rung's kind by reduction, and no pair is created. And second senses outside C entirely, no environment at all — the mathematical graph, the periodical journal, the legal article, the statute, the lexicographic lemma, the cryptographic signature, the postal and the machine address, the runtime metric value, the version value, the contents table, and the word registry itself, which names distinct artifacts across a corpus's disciplines, the sense fixed by each document's preamble. Homonymy is distinct from synonymy, and the two are independent facts: of the Construction–Model–Structure genre, one kind throughout in its fixed-object sense, Construction rows nowhere in Hom while Model and Structure both do, each carrying a second catalogued sense besides; and several names under one kind — `heur`, `assum`, `por`, `fact`, `pred` — row nowhere in Hom at all.
 
 **Caveat (Limits of attestation)** · `cav:kinds:attestation-limits`
 

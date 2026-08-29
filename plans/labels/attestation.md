@@ -34,7 +34,7 @@ tree's mint census of the kind.
 ## Statuses
 
 Every pair of the effective relation carries exactly one admitting
-status. The 349 base rows hold the edition's status by reference; below
+status. The 369 base rows hold the edition's status by reference; below
 are the ones the edition does not record as firm, together with the
 recorded extensions, which are firm on the evidence above. The
 edition's candidate is no member of the relation and appears nowhere
@@ -43,7 +43,9 @@ here.
 | Name | Kind | Source | Status | Held |
 |---|---|---|---|---|
 | Meta-question | ``metaq`` | C | borderline | by reference |
+| Oration | ``address`` | C | borderline | by reference |
 | Schema | ``dataschema`` | C | borderline | by reference |
+| Sitting | ``session`` | C | borderline | by reference |
 | Yoga | ``yoga`` | C | borderline | by reference |
 | Branch | ``branch`` | X_A | firm | first-hand |
 | Candidate | ``candidate`` | X_A | firm | first-hand |
@@ -63,7 +65,7 @@ here.
 ## Homonyms
 
 Every pair of the effective relation whose name carries another kind:
-34 pairs over 16 names. A name here needs the kind token at its
+36 pairs over 17 names. A name here needs the kind token at its
 label to fix the catalogued sense. Derived from the rows above,
 declared nowhere.
 
@@ -103,3 +105,5 @@ declared nowhere.
 | Task | ``task`` | X_A |
 | Test | ``quiz`` | C |
 | Test | ``test`` | C |
+| Thesis | ``diss`` | C |
+| Thesis | ``thesis`` | C |
