@@ -114,8 +114,8 @@ use target_elements::LeafVersion;
 use target_elements_conformance::constructor::curve::FIELD_ELEMENT_BYTES;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
-    FundedOutput, MinedFundingReadback, NativeOperationResponse, ObservedOutcomeLayer,
-    OperationCaseId, OperationSubject, TargetFundingSubject, TargetSubmissionSubject,
+    MinedFundingReadback, NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId,
+    OperationSubject, TargetFundingSubject, TargetSubmissionSubject,
 };
 use transaction::bytes::{
     AssetField, AssetId, InputWitness, NonceField, Outpoint, OutputWitness, TargetOutput,
@@ -132,7 +132,7 @@ use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message}
 use transaction::live_request::{
     LiveReceiptDestination, LiveTransferRequest, ProtocolValue, RequestedForm, SponsorChangeRequest,
 };
-use transaction::taproot::{Digest32, leaf_hash};
+use transaction::taproot::{CONTROL_BASE_BYTES, DIGEST_BYTES, Digest32, leaf_hash};
 use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::error::VectorError;
@@ -141,8 +141,8 @@ use crate::live_owner_observation::{
     ObservedFundedCoin, asset_of, decode_hex, outpoint_of, printed,
 };
 use crate::live_plan::{
-    FEE_PROGRAM_DIGEST, FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, demonstration_live_abi,
-    live_abi_for_asset, published_owner, reviewed_target, signing_material,
+    FEE_PROGRAM_DIGEST, FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, THIRD_SCALAR,
+    demonstration_live_abi, live_abi_for_asset, published_owner, reviewed_target, signing_material,
 };
 use crate::live_report::LiveMutationLocator;
 
@@ -151,7 +151,13 @@ use crate::live_report::LiveMutationLocator;
 /// Equal to the owner-observation ceremony's figure deliberately: the
 /// control this ceremony accepts is the same candidate that ceremony
 /// accepts, and a different amount would make the two runs incomparable.
-const RECEIPT_AMOUNT: u64 = 5_000;
+///
+/// Crate-visible because [`finalize_explicit`] totals the created side as
+/// this figure times the number of coins consumed. Any ceremony using that
+/// route must fund at THIS amount, or its candidate is built to balance
+/// against a total its coins do not hold and the target refuses it at the
+/// tally instead of at the clause the ceremony is about.
+pub(crate) const RECEIPT_AMOUNT: u64 = 5_000;
 
 /// How many receipts the ceremony funds and then consumes.
 const RECEIPT_COUNT: u8 = 2;
@@ -213,6 +219,51 @@ const SECOND_RECEIPT: usize = 1;
 /// The input the omitted-source surgery drops.
 const DROPPED_INPUT: usize = 1;
 
+/// The explicit value the out-of-domain surgery writes.
+///
+/// Two to the fifty-first, the exclusive upper limit of the protocol's
+/// own amount domain and above the reviewed target's money ceiling, so
+/// `CheckTransaction` refuses the output as too large before the balance
+/// rule is reached and before any script runs. It is written ABSOLUTELY
+/// rather than as a delta: a value one below or above the input total is
+/// a different fault at the same field, and only an absolute write puts
+/// the field outside the domain regardless of what the control held.
+const OUT_OF_DOMAIN_VALUE: u64 = 1 << 51;
+
+/// The input whose control block the witness surgery malforms.
+const MALFORMED_CONTROL_INPUT: usize = 0;
+
+/// The witness-stack position the control block occupies.
+///
+/// The ceremony assembles every script-path witness as `[signature,
+/// leaf_script, control_block]`, so the control block is the third item.
+const CONTROL_BLOCK_ITEM: usize = 2;
+
+/// The ceremony's own name for the malformed control-path submission,
+/// which is also the §15 row it drives.
+///
+/// The two coincide here where they do not for the other two families:
+/// the consensus and leaf-arrangement steps each stage several rows and
+/// take a prefix to keep their siblings apart, while this surgery stages
+/// exactly one row and has no sibling to be separated from.
+pub const MALFORMED_CONTROL_PATH_STEP: &str = "malformed-control-path";
+
+/// The deepest merkle path a control block may carry.
+///
+/// Stated here because the census that enforces it keeps it private; the
+/// head and path-entry sizes are the published ones and are taken from
+/// the taproot module rather than restated, so this surgery cannot drift
+/// away from the geometry the census checks.
+const CONTROL_BLOCK_MAX_PATH_ENTRIES: usize = 128;
+
+/// The byte the witness surgery appends to the control block.
+///
+/// Its VALUE is immaterial and deliberately so: the size test fires
+/// before any byte of the path is read, so a zero states that the
+/// surgery is about the LENGTH and nothing else. A byte chosen to mean
+/// something would invite the mutant to be read as a path claim.
+const CONTROL_BLOCK_PAD_BYTE: u8 = 0x00;
+
 /// One consensus-conservation surgery this ceremony stages on the signed
 /// explicit control, each breaking the explicit per-asset sum in its own
 /// way so the target answers `bad-txns-in-ne-out` (or a surjection
@@ -247,10 +298,14 @@ enum ConsensusSurgery {
     HiddenPrivateUOutput,
     /// Delete the second receipt input: the input sum drops.
     OmittedSource,
+    /// Write the first receipt's explicit value outside the protocol's
+    /// amount domain: the field itself is refused before the sum is
+    /// taken.
+    AmountOutsideSemanticDomain,
 }
 
 /// Every consensus surgery, in the order the ceremony submits them.
-const CONSENSUS_SURGERIES: [ConsensusSurgery; 7] = [
+const CONSENSUS_SURGERIES: [ConsensusSurgery; 8] = [
     ConsensusSurgery::WrongExplicitAsset,
     ConsensusSurgery::ConfidentialAssetCommitment,
     ConsensusSurgery::OutputTotalOneBelowInput,
@@ -258,6 +313,7 @@ const CONSENSUS_SURGERIES: [ConsensusSurgery; 7] = [
     ConsensusSurgery::PrivateOutputOmitted,
     ConsensusSurgery::HiddenPrivateUOutput,
     ConsensusSurgery::OmittedSource,
+    ConsensusSurgery::AmountOutsideSemanticDomain,
 ];
 
 impl ConsensusSurgery {
@@ -272,6 +328,7 @@ impl ConsensusSurgery {
             Self::PrivateOutputOmitted => "private-output-omitted",
             Self::HiddenPrivateUOutput => "hidden-private-u-output",
             Self::OmittedSource => "omitted-source",
+            Self::AmountOutsideSemanticDomain => "amount-outside-semantic-domain",
         }
     }
 
@@ -304,6 +361,16 @@ impl ConsensusSurgery {
             Self::PrivateOutputOmitted => remove_output(control, SECOND_RECEIPT),
             Self::HiddenPrivateUOutput => append_hidden_output(control),
             Self::OmittedSource => remove_input(control, DROPPED_INPUT),
+            // The SAME field the one-below surgery lowers, written
+            // absolutely instead of shifted. The two separate by the
+            // measured range rather than by the field: a delta of one
+            // moves the low-order bytes of the amount, while a write of
+            // two to the fifty-first moves the high-order bytes and
+            // leaves the low ones as they were, so the bounded diff
+            // reports two different `(start, end)` pairs on one field.
+            Self::AmountOutsideSemanticDomain => {
+                set_output_value(control, FIRST_RECEIPT, OUT_OF_DOMAIN_VALUE)
+            }
         }
     }
 }
@@ -340,12 +407,26 @@ enum LeafArrangement {
     /// and fails the member bound's lower check (`... 1;
     /// GreaterThanOrEqual64; Verify`), the one input that fails.
     NoCoordinator,
+    /// EXCHANGE the two roles rather than collapsing them: input zero
+    /// reveals receipt one's MEMBER leaf and input one reveals receipt
+    /// zero's COORDINATOR leaf. Both inputs then run a leaf its own
+    /// covenant clause forbids at that position — the member fails the
+    /// bound's lower check at index zero and the coordinator fails the
+    /// index `EqualVerify` at index one — so this arrangement carries
+    /// TWO failing inputs where the other two carry one. That is why no
+    /// verdict is predicted for it: which of two failures a target
+    /// reports across a multi-input candidate is the target's own abort
+    /// selection, and no source in this workspace settles it. What the
+    /// row rests on instead is the ARRANGEMENT, which is `[1, 0]` and
+    /// distinct from the control's and from both siblings'.
+    MemberCoordinatorExchange,
 }
 
 /// Every leaf-arrangement surgery, in the order the ceremony submits them.
-const LEAF_ARRANGEMENTS: [LeafArrangement; 2] = [
+const LEAF_ARRANGEMENTS: [LeafArrangement; 3] = [
     LeafArrangement::TwoCoordinators,
     LeafArrangement::NoCoordinator,
+    LeafArrangement::MemberCoordinatorExchange,
 ];
 
 impl LeafArrangement {
@@ -355,31 +436,40 @@ impl LeafArrangement {
         match self {
             Self::TwoCoordinators => "two-coordinators",
             Self::NoCoordinator => "no-coordinator",
+            Self::MemberCoordinatorExchange => "member-coordinator-leaf-exchange",
         }
     }
 
-    /// The pair-partner this drive leaves typed: its arrangement carries a
-    /// SECOND failing input beside the clause this row already drove, so it
-    /// has no separating fact of its own against this row and stays
-    /// `TargetVerdictDoesNotSeparateTheRows`. WHICH of its two failures a
-    /// target would report is NOT settled here — abort selection across a
-    /// multi-input candidate is the target's, and no in-repo source says —
-    /// so no exact verdict is predicted for it.
+    /// The pair-partner this drive leaves without a separating fact, or
+    /// `"none"` where the pair carries no such partner any more.
+    ///
+    /// Both collision pairs are now closed and neither closes by being
+    /// left typed. `wrong-coordinator` stands adjudicated: its own
+    /// arrangements are exhausted by faults already registered, so it is
+    /// not an undriven partner waiting on a run. And
+    /// `member-coordinator-leaf-exchange` is driven HERE, by the
+    /// exchanged arrangement below, which is a distinct candidate from
+    /// either collapse and rests on that arrangement rather than on a
+    /// verdict. So every arrangement reports `"none"`, and the line is
+    /// kept rather than dropped because that is the fact the drive
+    /// establishes: this ceremony leaves no leaf-arrangement row behind
+    /// it.
     const fn typed_partner(self) -> &'static str {
         match self {
-            Self::TwoCoordinators => "wrong-coordinator",
-            Self::NoCoordinator => "member-coordinator-leaf-exchange",
+            Self::TwoCoordinators | Self::NoCoordinator | Self::MemberCoordinatorExchange => "none",
         }
     }
 
     /// The receipt POSITION whose leaf each input reveals. The control's
-    /// arrangement is `[0, 1]`; each mutant collapses it to one role. The
-    /// ceremony funds exactly two receipts, so the arrangement is two
-    /// positions wide.
+    /// arrangement is `[0, 1]`; the two collapsing mutants reduce it to
+    /// one role and the exchanging mutant swaps the two. The ceremony
+    /// funds exactly two receipts, so the arrangement is two positions
+    /// wide.
     const fn sources(self) -> [u16; RECEIPT_COUNT as usize] {
         match self {
             Self::TwoCoordinators => [0, 0],
             Self::NoCoordinator => [1, 1],
+            Self::MemberCoordinatorExchange => [1, 0],
         }
     }
 
@@ -435,6 +525,78 @@ impl LeafArrangementObservation {
     #[must_use]
     pub const fn message(&self) -> &Digest32 {
         &self.message
+    }
+
+    /// The layer the target refused this mutant at, where it was observed.
+    #[must_use]
+    pub const fn observed_layer(&self) -> Option<ObservedOutcomeLayer> {
+        self.observed_layer
+    }
+
+    /// The node's own words, where it gave any.
+    #[must_use]
+    pub fn observed_detail(&self) -> Option<&str> {
+        self.observed_detail.as_deref()
+    }
+}
+
+/// The malformed control-path mutant, as this ceremony built, submitted
+/// and observed it.
+///
+/// The mutation is a WITNESS mutation and nothing else: one item of one
+/// input's stack changes length and every other byte of the candidate,
+/// witnessless serialization included, is the control's. That is why the
+/// signature is not re-taken. The tapscript message commits to the
+/// tapleaf hash — the leaf version and the leaf script — and not to the
+/// control block's path bytes, so a control block of a different size
+/// leaves the signature valid and the target reaches the size check
+/// rather than the signature gate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WitnessSurgeryObservation {
+    row: &'static str,
+    input_index: usize,
+    item_index: usize,
+    control_item_bytes: usize,
+    mutant_item_bytes: usize,
+    mutant_bytes: Vec<u8>,
+    submitted_bytes: usize,
+    observed_layer: Option<ObservedOutcomeLayer>,
+    observed_detail: Option<String>,
+}
+
+impl WitnessSurgeryObservation {
+    /// The §15 row this mutant drives.
+    #[must_use]
+    pub const fn row(&self) -> &'static str {
+        self.row
+    }
+
+    /// The input whose witness carries the malformed item.
+    #[must_use]
+    pub const fn input_index(&self) -> usize {
+        self.input_index
+    }
+
+    /// The witness-stack position the malformed item occupies.
+    #[must_use]
+    pub const fn item_index(&self) -> usize {
+        self.item_index
+    }
+
+    /// How long the control's item at that position was, and how long
+    /// the mutant's is. A valid control block is thirty-three bytes plus
+    /// a whole number of thirty-two-byte path entries, so the two
+    /// lengths differing by one is exactly what makes the mutant's size
+    /// invalid while its path bytes stay the control's.
+    #[must_use]
+    pub const fn item_lengths(&self) -> (usize, usize) {
+        (self.control_item_bytes, self.mutant_item_bytes)
+    }
+
+    /// How many bytes this mutant handed the node.
+    #[must_use]
+    pub const fn submitted_bytes(&self) -> usize {
+        self.submitted_bytes
     }
 
     /// The layer the target refused this mutant at, where it was observed.
@@ -662,6 +824,7 @@ pub struct OwnerSigningNegativeRecord {
     mutant: Option<MutantObservation>,
     consensus_mutants: Vec<ConsensusMutantObservation>,
     leaf_arrangements: Vec<LeafArrangementObservation>,
+    witness_surgery: Option<WitnessSurgeryObservation>,
     control: Option<ControlObservation>,
     refusal: Option<OwnerSigningNegativeRefusal>,
 }
@@ -671,6 +834,12 @@ impl OwnerSigningNegativeRecord {
     #[must_use]
     pub fn consensus_mutants(&self) -> &[ConsensusMutantObservation] {
         &self.consensus_mutants
+    }
+
+    /// The malformed control-path mutant, where it was built.
+    #[must_use]
+    pub const fn witness_surgery(&self) -> Option<&WitnessSurgeryObservation> {
+        self.witness_surgery.as_ref()
     }
 
     /// The leaf-arrangement mutants, in the order they ran.
@@ -689,6 +858,13 @@ impl OwnerSigningNegativeRecord {
         if step == "bare-u-output-mutant" {
             let (start, end) = self.mutant.as_ref()?.declared_field_range();
             return Some(LiveMutationLocator::WitnesslessRange { start, end });
+        }
+        if step == MALFORMED_CONTROL_PATH_STEP {
+            let surgery = self.witness_surgery.as_ref()?;
+            return Some(LiveMutationLocator::WitnessItem {
+                input_index: surgery.input_index(),
+                item_index: surgery.item_index(),
+            });
         }
         if let Some(row) = step.strip_prefix("consensus-") {
             let mutant = self
@@ -794,12 +970,15 @@ impl OwnerSigningNegativeRecord {
              row's, and each consensus surgery breaks conservation in its own field so its refusal \
              separates by a distinct declared range and transaction shape rather than sharing one \
              observation",
-            "drives ONE leaf-arrangement row per collision pair and moves no taptree: \
-             two-coordinators and no-coordinator each reveal a committed leaf at a forbidden \
-             position and are refused at the covenant's own index or bound clause, while \
-             wrong-coordinator and member-coordinator-leaf-exchange stay typed because their own \
-             arrangements have a SECOND failing input, so nothing separates their observation from \
-             the pair-partner's already driven",
+            "drives every leaf-arrangement row it stages and moves no taptree: two-coordinators \
+             and no-coordinator each reveal a committed leaf at a forbidden position and are \
+             refused at the covenant's own index or bound clause, while \
+             member-coordinator-leaf-exchange exchanges the two roles and rests on its ARRANGEMENT \
+             rather than on a verdict, because both of its inputs fail and which failure a target \
+             reports across a multi-input candidate is the target's own abort selection",
+            "predicts no verdict for the malformed control path beyond the layer: the control \
+             block is refused for its SIZE during taproot script verification, and the exact words \
+             a target gives for a wrong-sized control block are the target's",
             "claims nothing about any deployment but the one this run created and destroyed",
         ]
     }
@@ -837,6 +1016,9 @@ enum Stage {
     /// Submit the leaf-arrangement mutant at this index, before the control
     /// so its coins stay unspent for the acceptance.
     LeafArrangement(usize),
+    /// Submit the malformed control-path mutant, before the control so
+    /// its coins stay unspent for the acceptance.
+    WitnessSurgery,
     /// Submit the unmutated control, last, which is what consumes them.
     Control,
     /// Nothing further.
@@ -925,18 +1107,11 @@ impl OwnerSigningNegativePlanner {
         &mut self,
         response: &NativeOperationResponse,
     ) -> Result<(), OwnerSigningNegativeRefusal> {
-        let asset = response
-            .issued_asset
-            .clone()
-            .ok_or(OwnerSigningNegativeRefusal::IssuanceNamedNoAsset)?;
-        let identity = asset_of(&asset).ok_or(OwnerSigningNegativeRefusal::IssuanceNamedNoAsset)?;
-        let abi = live_abi_for_asset(*identity.internal(), RESERVE_ASSET, FEE_PROGRAM_DIGEST)
-            .map_err(|_| OwnerSigningNegativeRefusal::RelinkRefused)?;
-        self.explicit_program = explicit_destination_program(&abi)
-            .map_err(|_| OwnerSigningNegativeRefusal::RelinkRefused)?;
-        self.record.issued_asset = Some(asset);
+        let relinked = relink_explicit(response)?;
+        self.explicit_program = relinked.explicit_program;
+        self.record.issued_asset = Some(relinked.issued_asset);
         self.record.relinked = true;
-        self.abi = abi;
+        self.abi = relinked.abi;
         Ok(())
     }
 
@@ -945,174 +1120,314 @@ impl OwnerSigningNegativePlanner {
         &mut self,
         response: &NativeOperationResponse,
     ) -> Result<(), OwnerSigningNegativeRefusal> {
-        if response.funded_outputs.is_empty() {
-            return Err(OwnerSigningNegativeRefusal::FundingCreatedNoPredecessor);
-        }
         let expected_asset = self
             .record
             .issued_asset
             .as_deref()
             .and_then(asset_of)
             .ok_or(OwnerSigningNegativeRefusal::IssuanceNamedNoAsset)?;
-
-        let mut coins = Vec::with_capacity(response.funded_outputs.len());
-        for funded in &response.funded_outputs {
-            coins.push(self.observed_coin(funded, expected_asset)?);
-        }
-        self.record.coins = coins;
+        self.record.coins = observed_explicit_coins(
+            response,
+            expected_asset,
+            &self.explicit_program,
+            RECEIPT_AMOUNT,
+        )?;
         Ok(())
     }
 
-    /// One funded coin, as reported and as expected.
-    fn observed_coin(
-        &self,
-        funded: &FundedOutput,
-        expected_asset: AssetId,
-    ) -> Result<ObservedFundedCoin, OwnerSigningNegativeRefusal> {
+    /// One finalized explicit candidate over the funded coins, paying the
+    /// two destinations this ceremony's successor has always paid.
+    fn finalize(&self) -> Result<FinalizedLiveTransfer, OwnerSigningNegativeRefusal> {
+        finalize_explicit(&self.abi, &self.record.coins, usize::from(RECEIPT_COUNT))
+    }
+}
+
+/// The published owners an explicit successor pays, in output order.
+///
+/// The first two are the pair the sponsorless two-output successor has
+/// always paid, in that order, and a wider successor APPENDS rather than
+/// inserts. That is what lets the destination count become a parameter
+/// without moving the two-output candidate's bytes: widening the array
+/// leaves the shorter prefix exactly as it was, so the ceremony whose
+/// control digest is already recorded still builds the candidate it
+/// recorded.
+const DESTINATION_SCALARS: [[u8; FIELD_ELEMENT_BYTES]; 3] =
+    [SECOND_SCALAR, FIRST_SCALAR, THIRD_SCALAR];
+
+/// How much each destination takes: every one but the last an equal share,
+/// the last the remainder.
+///
+/// Split out from the finalization so the property the wider candidates
+/// rest on is checkable without a node. That property is CONSERVATION —
+/// the shares put back together are the consumed total, exactly, at every
+/// width. It matters most for the offsetting-flow row, whose whole premise
+/// is that its extra input-and-output pair balances: a created side that
+/// came up short would be refused at the consensus tally, and the
+/// observation would belong to conservation rather than to the covenant's
+/// cardinality clause the row is about.
+///
+/// `None` for a zero width, or for arithmetic that does not compute.
+fn destination_shares(total: u64, width: u64) -> Option<(u64, u64)> {
+    let share = total.checked_div(width)?;
+    let head = share.checked_mul(width.saturating_sub(1))?;
+    let remainder = total.checked_sub(head)?;
+    Some((share, remainder))
+}
+
+/// A deployment relinked against the asset the target issued.
+pub(crate) struct RelinkedDeployment {
+    /// The candidate ABI bound to the issued asset.
+    pub(crate) abi: CandidateLiveTransferAbi,
+    /// The explicit destination program funded receipts are paid to.
+    pub(crate) explicit_program: Vec<u8>,
+    /// The asset as the node printed it.
+    pub(crate) issued_asset: String,
+}
+
+/// Link a deployment against the asset the target just issued.
+///
+/// Shared because every explicit ceremony relinks the same way: the asset
+/// the node named becomes the ABI's, and the destination program is
+/// rederived from that ABI rather than carried over. A ceremony that kept
+/// the pre-issuance program would fund coins nothing in the successor
+/// could spend.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::IssuanceNamedNoAsset`] where the
+/// issuance named no asset or it does not decode;
+/// [`OwnerSigningNegativeRefusal::RelinkRefused`] where the deployment
+/// does not relink or the destination program does not derive.
+pub(crate) fn relink_explicit(
+    response: &NativeOperationResponse,
+) -> Result<RelinkedDeployment, OwnerSigningNegativeRefusal> {
+    let asset = response
+        .issued_asset
+        .clone()
+        .ok_or(OwnerSigningNegativeRefusal::IssuanceNamedNoAsset)?;
+    let identity = asset_of(&asset).ok_or(OwnerSigningNegativeRefusal::IssuanceNamedNoAsset)?;
+    let abi = live_abi_for_asset(*identity.internal(), RESERVE_ASSET, FEE_PROGRAM_DIGEST)
+        .map_err(|_| OwnerSigningNegativeRefusal::RelinkRefused)?;
+    let explicit_program = explicit_destination_program(&abi)
+        .map_err(|_| OwnerSigningNegativeRefusal::RelinkRefused)?;
+    Ok(RelinkedDeployment {
+        abi,
+        explicit_program,
+        issued_asset: asset,
+    })
+}
+
+/// The funded coins the node reported, each carrying whether it is the
+/// coin that was asked for.
+///
+/// The expectation is RECORDED rather than enforced: a coin whose asset,
+/// amount or program differs from the request is still returned, marked as
+/// not matching, so the transcript states the disagreement instead of the
+/// ceremony refusing and saying nothing about it.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::FundingCreatedNoPredecessor`] where the
+/// node reported no funded output at all;
+/// [`OwnerSigningNegativeRefusal::MalformedFundedOutput`] where one of
+/// them does not decode.
+pub(crate) fn observed_explicit_coins(
+    response: &NativeOperationResponse,
+    expected_asset: AssetId,
+    expected_program: &[u8],
+    expected_amount: u64,
+) -> Result<Vec<ObservedFundedCoin>, OwnerSigningNegativeRefusal> {
+    if response.funded_outputs.is_empty() {
+        return Err(OwnerSigningNegativeRefusal::FundingCreatedNoPredecessor);
+    }
+    let mut coins = Vec::with_capacity(response.funded_outputs.len());
+    for funded in &response.funded_outputs {
         let outpoint = outpoint_of(&funded.outpoint)
             .ok_or(OwnerSigningNegativeRefusal::MalformedFundedOutput)?;
         let asset =
             asset_of(&funded.asset).ok_or(OwnerSigningNegativeRefusal::MalformedFundedOutput)?;
         let program =
             decode_hex(&funded.script).ok_or(OwnerSigningNegativeRefusal::MalformedFundedOutput)?;
-
         let matches_expectation = asset == expected_asset
-            && funded.amount_satoshis == RECEIPT_AMOUNT
-            && program == self.explicit_program;
-
-        Ok(ObservedFundedCoin::observed(
+            && funded.amount_satoshis == expected_amount
+            && program.as_slice() == expected_program;
+        coins.push(ObservedFundedCoin::observed(
             outpoint,
             AssetField::Explicit(asset),
             ValueField::Explicit(funded.amount_satoshis),
             program,
             matches_expectation,
-        ))
+        ));
     }
+    Ok(coins)
+}
 
-    /// The public view the ceremony constructs against.
-    fn view(&self) -> Result<PublicConstructionView, OwnerSigningNegativeRefusal> {
-        PublicConstructionView::new(self.record.coins.iter().map(|coin| {
-            PublicOutputView::new(
-                coin.outpoint(),
-                coin.asset(),
-                coin.value(),
-                coin.program().to_vec(),
-            )
-        }))
-        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)
-    }
+/// The public view a ceremony constructs against, over its funded coins.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::CandidateNotConstructible`] where the
+/// coins do not form a construction view.
+pub(crate) fn explicit_view(
+    coins: &[ObservedFundedCoin],
+) -> Result<PublicConstructionView, OwnerSigningNegativeRefusal> {
+    PublicConstructionView::new(coins.iter().map(|coin| {
+        PublicOutputView::new(
+            coin.outpoint(),
+            coin.asset(),
+            coin.value(),
+            coin.program().to_vec(),
+        )
+    }))
+    .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)
+}
 
-    /// One finalized explicit candidate over the funded coins.
-    fn finalize(&self) -> Result<FinalizedLiveTransfer, OwnerSigningNegativeRefusal> {
-        let view = self.view()?;
-        let points: Vec<Outpoint> = self
-            .record
-            .coins
-            .iter()
-            .map(ObservedFundedCoin::outpoint)
-            .collect();
-        let total = RECEIPT_AMOUNT
-            .checked_mul(u64::try_from(points.len()).unwrap_or(0))
-            .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+/// One finalized explicit sponsorless candidate spending every funded coin
+/// and paying `destinations` published owners.
+///
+/// The consumed total is divided evenly and the LAST destination takes the
+/// remainder, so the created side sums to the consumed side exactly and the
+/// candidate balances whatever the counts are. At two destinations this is
+/// the same arithmetic the two-output successor always did — an even half
+/// and the rest — so its bytes do not move.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::CandidateNotConstructible`] where the
+/// coins do not view, the count is zero or wider than the published owners
+/// available, the totals do not compute, or the request does not finalize;
+/// [`OwnerSigningNegativeRefusal::SubstrateUnavailable`] where the reviewed
+/// target or a published owner is unavailable.
+pub(crate) fn finalize_explicit(
+    abi: &CandidateLiveTransferAbi,
+    coins: &[ObservedFundedCoin],
+    destinations: usize,
+) -> Result<FinalizedLiveTransfer, OwnerSigningNegativeRefusal> {
+    let view = explicit_view(coins)?;
+    let points: Vec<Outpoint> = coins.iter().map(ObservedFundedCoin::outpoint).collect();
+    let total = RECEIPT_AMOUNT
+        .checked_mul(u64::try_from(points.len()).unwrap_or(0))
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let scalars = DESTINATION_SCALARS
+        .get(..destinations)
+        .filter(|scalars| !scalars.is_empty())
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
 
-        let destination = |scalar: &[u8; FIELD_ELEMENT_BYTES], amount: u64| {
-            let owner = published_owner(scalar)
-                .map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
-            let value = ProtocolValue::new(amount)
-                .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-            Ok::<_, OwnerSigningNegativeRefusal>(LiveReceiptDestination::new(
-                linker::OwnerParameter::new(owner),
-                value,
-            ))
+    let width = u64::try_from(destinations).unwrap_or(0);
+    let (share, remainder) = destination_shares(total, width)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+
+    let mut receipts = Vec::with_capacity(destinations);
+    for (index, scalar) in scalars.iter().enumerate() {
+        let amount = if index + 1 == destinations {
+            remainder
+        } else {
+            share
         };
-        let first = destination(&SECOND_SCALAR, total / 2)?;
-        let second = destination(&FIRST_SCALAR, total - total / 2)?;
-
-        let request = LiveTransferRequest::new(
-            points,
-            [first, second],
-            LiveTransferRepresentationPlan::Explicit,
-            RequestedForm::Sponsorless,
-            SponsorChangeRequest::NotRequested,
-            None,
-        )
-        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-
-        let target =
-            reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
-        let finalization = finalize_live_transfer(&target, &self.abi, &request, &view, None, None)
+        let owner = published_owner(scalar)
+            .map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
+        let value = ProtocolValue::new(amount)
             .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-        Ok(finalization.into_finalized())
+        receipts.push(LiveReceiptDestination::new(
+            linker::OwnerParameter::new(owner),
+            value,
+        ));
     }
 
-    /// The per-input signing requests for a finalized candidate.
-    fn requests(finalized: &FinalizedLiveTransfer) -> Vec<OwnerSigningInputRequest> {
-        finalized
-            .receipts()
-            .iter()
-            .map(|record| {
-                OwnerSigningInputRequest::new(
-                    u32::from(record.position()),
-                    leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
-                    LeafVersion::TAPSCRIPT,
-                    OWNER_CODESEPARATOR_POSITION,
-                    AnnexDisposition::Absent,
-                    IssuanceDisposition::Absent,
-                    record.control_block().to_vec(),
-                )
-            })
-            .collect()
-    }
+    let request = LiveTransferRequest::new(
+        points,
+        receipts,
+        LiveTransferRepresentationPlan::Explicit,
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+        None,
+    )
+    .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
 
-    /// The census of one candidate's parts, over the negative-evidence
-    /// route.
-    fn census(
-        candidate: TargetTransaction,
-        spent_outputs: Vec<transaction::live_census::SpentOutputCensusEntry>,
-        genesis: Digest32,
-        requests: &[OwnerSigningInputRequest],
-    ) -> Result<OwnerSigningCensus, OwnerSigningNegativeRefusal> {
-        let target =
-            reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
-        let curve = OracleLiveCurve::new(
-            reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?,
-        );
-        let protected_bytes = candidate.encode_without_witness();
-        let output_witnesses = candidate.output_witnesses().to_vec();
-        OwnerSigningCensus::over_foreign_bytes_for_negative_evidence(
-            &target,
-            candidate,
-            protected_bytes,
-            output_witnesses,
-            spent_outputs,
-            LiveDeployment::new(genesis),
-            requests,
-            &curve,
-        )
-        .map_err(OwnerSigningNegativeRefusal::CensusRefused)
-    }
+    let target =
+        reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
+    let finalization = finalize_live_transfer(&target, abi, &request, &view, None, None)
+        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    Ok(finalization.into_finalized())
+}
 
-    /// The spent-output census the finalized explicit form carries, read
-    /// through the production route so its entries are exactly the ones
-    /// that route would sign over.
+/// The per-input signing requests for a finalized candidate, one per
+/// receipt, each naming the leaf that input executes.
+pub(crate) fn signing_requests(finalized: &FinalizedLiveTransfer) -> Vec<OwnerSigningInputRequest> {
+    finalized
+        .receipts()
+        .iter()
+        .map(|record| {
+            OwnerSigningInputRequest::new(
+                u32::from(record.position()),
+                leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
+                LeafVersion::TAPSCRIPT,
+                OWNER_CODESEPARATOR_POSITION,
+                AnnexDisposition::Absent,
+                IssuanceDisposition::Absent,
+                record.control_block().to_vec(),
+            )
+        })
+        .collect()
+}
+
+/// The census of one candidate's parts, over the negative-evidence route.
+pub(crate) fn negative_census(
+    candidate: TargetTransaction,
+    spent_outputs: Vec<transaction::live_census::SpentOutputCensusEntry>,
+    genesis: Digest32,
+    requests: &[OwnerSigningInputRequest],
+) -> Result<OwnerSigningCensus, OwnerSigningNegativeRefusal> {
+    let target =
+        reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
+    let curve = OracleLiveCurve::new(
+        reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?,
+    );
+    let protected_bytes = candidate.encode_without_witness();
+    let output_witnesses = candidate.output_witnesses().to_vec();
+    OwnerSigningCensus::over_foreign_bytes_for_negative_evidence(
+        &target,
+        candidate,
+        protected_bytes,
+        output_witnesses,
+        spent_outputs,
+        LiveDeployment::new(genesis),
+        requests,
+        &curve,
+    )
+    .map_err(OwnerSigningNegativeRefusal::CensusRefused)
+}
+
+/// The spent-output census the finalized explicit form carries, read
+/// through the production route so its entries are exactly the ones that
+/// route would sign over.
+pub(crate) fn explicit_spent_outputs(
+    finalized: &FinalizedLiveTransfer,
+    genesis: Digest32,
+) -> Result<Vec<transaction::live_census::SpentOutputCensusEntry>, OwnerSigningNegativeRefusal> {
+    let target =
+        reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
+    let curve = OracleLiveCurve::new(
+        reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?,
+    );
+    let census = OwnerSigningCensus::from_explicit_finalized(
+        &target,
+        finalized,
+        LiveDeployment::new(genesis),
+        &curve,
+    )
+    .map_err(OwnerSigningNegativeRefusal::CensusRefused)?;
+    Ok(census.spent_outputs().to_vec())
+}
+
+impl OwnerSigningNegativePlanner {
+    /// The spent-output census for this ceremony's own deployment.
     fn spent_outputs(
         &self,
         finalized: &FinalizedLiveTransfer,
     ) -> Result<Vec<transaction::live_census::SpentOutputCensusEntry>, OwnerSigningNegativeRefusal>
     {
-        let target =
-            reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
-        let curve = OracleLiveCurve::new(
-            reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?,
-        );
-        let census = OwnerSigningCensus::from_explicit_finalized(
-            &target,
-            finalized,
-            LiveDeployment::new(self.genesis_block_hash),
-            &curve,
-        )
-        .map_err(OwnerSigningNegativeRefusal::CensusRefused)?;
-        Ok(census.spent_outputs().to_vec())
+        explicit_spent_outputs(finalized, self.genesis_block_hash)
     }
 
     /// One candidate's submittable bytes and its first input's message.
@@ -1136,65 +1451,98 @@ impl OwnerSigningNegativePlanner {
             candidate
         };
 
-        let requests = Self::requests(finalized);
-        let census = Self::census(
-            candidate.clone(),
-            spent_outputs.to_vec(),
+        sign_explicit_candidate(
+            &candidate,
+            finalized,
+            spent_outputs,
             self.genesis_block_hash,
-            &requests,
-        )?;
-
-        // Every funded receipt is paid to the FIRST owner's explicit
-        // destination program, so every input's leaf checks that one
-        // owner's key, and every input is signed by that one scalar. A
-        // per-position scalar would sign an input's leaf with a key it does
-        // not authenticate, which the target refuses as an invalid
-        // signature before any output clause runs.
-        let material = signing_material(&FIRST_SCALAR)
-            .map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
-        let mut witnesses = candidate.witnesses().to_vec();
-        let mut first_message = None;
-        for record in finalized.receipts() {
-            let position = usize::from(record.position());
-            let input = census
-                .signing_inputs()
-                .iter()
-                .find(|entry| entry.input_index() == u32::from(record.position()))
-                .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-            let message =
-                candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown);
-            if first_message.is_none() {
-                first_message = Some(message);
-            }
-            let signature = material
-                .sign(&message, &SIGNING_AUXILIARY)
-                .map_err(|_| OwnerSigningNegativeRefusal::SigningRefused)?
-                .to_vec();
-            let witness = InputWitness::new(vec![
-                signature,
-                record.leaf_script().to_vec(),
-                record.control_block().to_vec(),
-            ]);
-            *witnesses
-                .get_mut(position)
-                .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)? = witness;
-        }
-
-        let assembled = TargetTransaction::with_output_witnesses(
-            candidate.version(),
-            candidate.inputs().to_vec(),
-            candidate.outputs().to_vec(),
-            candidate.lock_time(),
-            witnesses,
-            candidate.output_witnesses().to_vec(),
         )
-        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    }
+}
 
-        let message =
-            first_message.ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-        Ok((assembled.encode(), message))
+/// One explicit candidate signed by every receipt owner over its own
+/// census, assembled into submittable bytes.
+///
+/// The candidate arrives ALREADY mutated where a ceremony mutates it,
+/// which is what makes this the shared half: each input is signed over the
+/// bytes the node will actually see, so a mutant passes the signature gate
+/// and reaches the clause its row is about. A ceremony that signed the
+/// control and mutated afterwards would be testing the signature check
+/// instead of its own row.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::SubstrateUnavailable`] where the signing
+/// material is unavailable; [`OwnerSigningNegativeRefusal::SigningRefused`]
+/// where a signature is refused;
+/// [`OwnerSigningNegativeRefusal::CandidateNotConstructible`] where an
+/// input has no census entry or witness slot, or the signed candidate does
+/// not reassemble; [`OwnerSigningNegativeRefusal::CensusRefused`] where the
+/// census refuses the candidate.
+pub(crate) fn sign_explicit_candidate(
+    candidate: &TargetTransaction,
+    finalized: &FinalizedLiveTransfer,
+    spent_outputs: &[transaction::live_census::SpentOutputCensusEntry],
+    genesis: Digest32,
+) -> Result<(Vec<u8>, Digest32), OwnerSigningNegativeRefusal> {
+    let requests = signing_requests(finalized);
+    let census = negative_census(
+        candidate.clone(),
+        spent_outputs.to_vec(),
+        genesis,
+        &requests,
+    )?;
+
+    // Every funded receipt is paid to the FIRST owner's explicit
+    // destination program, so every input's leaf checks that one
+    // owner's key, and every input is signed by that one scalar. A
+    // per-position scalar would sign an input's leaf with a key it does
+    // not authenticate, which the target refuses as an invalid
+    // signature before any output clause runs.
+    let material = signing_material(&FIRST_SCALAR)
+        .map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
+    let mut witnesses = candidate.witnesses().to_vec();
+    let mut first_message = None;
+    for record in finalized.receipts() {
+        let position = usize::from(record.position());
+        let input = census
+            .signing_inputs()
+            .iter()
+            .find(|entry| entry.input_index() == u32::from(record.position()))
+            .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+        let message = candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown);
+        if first_message.is_none() {
+            first_message = Some(message);
+        }
+        let signature = material
+            .sign(&message, &SIGNING_AUXILIARY)
+            .map_err(|_| OwnerSigningNegativeRefusal::SigningRefused)?
+            .to_vec();
+        let witness = InputWitness::new(vec![
+            signature,
+            record.leaf_script().to_vec(),
+            record.control_block().to_vec(),
+        ]);
+        *witnesses
+            .get_mut(position)
+            .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)? = witness;
     }
 
+    let assembled = TargetTransaction::with_output_witnesses(
+        candidate.version(),
+        candidate.inputs().to_vec(),
+        candidate.outputs().to_vec(),
+        candidate.lock_time(),
+        witnesses,
+        candidate.output_witnesses().to_vec(),
+    )
+    .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+
+    let message = first_message.ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    Ok((assembled.encode(), message))
+}
+
+impl OwnerSigningNegativePlanner {
     /// Build the mutant and the control, and stage the mutant for
     /// submission. The declared field range is measured over the two
     /// candidates' WITNESSLESS serializations, where the re-signing does
@@ -1260,6 +1608,14 @@ impl OwnerSigningNegativePlanner {
         // holding both leaves, so the rearrangement reuses committed leaves
         // and moves no digest.
         self.record.leaf_arrangements = self.build_leaf_arrangements(&finalized, &spent_outputs)?;
+
+        // The malformed control-path mutant is cut from the same signed
+        // control and is NOT re-signed either, for a different reason
+        // than the consensus mutants: the tapscript message commits to
+        // the tapleaf hash rather than to the control block's path
+        // bytes, so resizing the control block leaves the signature
+        // valid and the size check is what the candidate reaches.
+        self.record.witness_surgery = Some(build_witness_surgery(&control_bytes)?);
 
         // The control's bytes are stashed on the control record's message
         // check; the bytes themselves are rebuilt for the control step so
@@ -1356,7 +1712,7 @@ impl OwnerSigningNegativePlanner {
             ));
         }
 
-        let census = Self::census(
+        let census = negative_census(
             candidate.clone(),
             spent_outputs.to_vec(),
             self.genesis_block_hash,
@@ -1433,6 +1789,27 @@ impl OwnerSigningNegativePlanner {
         ))
     }
 
+    /// Record what the target did with the malformed control-path mutant.
+    fn settle_witness_surgery(&mut self, response: &NativeOperationResponse) {
+        if let Some(surgery) = self.record.witness_surgery.as_mut() {
+            surgery.observed_layer = Some(response.observed_layer);
+            surgery
+                .observed_detail
+                .clone_from(&response.observed_detail);
+        }
+    }
+
+    /// The submission step for the malformed control-path mutant.
+    fn witness_surgery_step(&self) -> Option<OperationStep> {
+        let surgery = self.record.witness_surgery.as_ref()?;
+        Some(OperationStep::new(
+            MALFORMED_CONTROL_PATH_STEP,
+            OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                transaction_bytes: surgery.mutant_bytes.clone(),
+            })),
+        ))
+    }
+
     /// Rebuild and stage the control for submission.
     fn stage_control(&self) -> Result<Vec<u8>, OwnerSigningNegativeRefusal> {
         let finalized = self.finalize()?;
@@ -1493,8 +1870,12 @@ impl TargetOperationPlanner for OwnerSigningNegativePlanner {
                     self.stage = if index + 1 < self.record.leaf_arrangements.len() {
                         Stage::LeafArrangement(index + 1)
                     } else {
-                        Stage::Control
+                        Stage::WitnessSurgery
                     };
+                }
+                Stage::WitnessSurgery => {
+                    self.settle_witness_surgery(response);
+                    self.stage = Stage::Control;
                 }
                 Stage::Control => {
                     let submitted = self
@@ -1534,6 +1915,10 @@ impl TargetOperationPlanner for OwnerSigningNegativePlanner {
                 || Err(self.refuse(OwnerSigningNegativeRefusal::CandidateNotConstructible)),
                 |step| Ok(Some(step)),
             ),
+            Stage::WitnessSurgery => self.witness_surgery_step().map_or_else(
+                || Err(self.refuse(OwnerSigningNegativeRefusal::CandidateNotConstructible)),
+                |step| Ok(Some(step)),
+            ),
             Stage::Control => match self.stage_control() {
                 Ok(bytes) => {
                     self.pending = Some(PendingSubmission {
@@ -1554,7 +1939,9 @@ impl TargetOperationPlanner for OwnerSigningNegativePlanner {
 }
 
 /// The explicit destination program of the first published owner.
-fn explicit_destination_program(abi: &CandidateLiveTransferAbi) -> Result<Vec<u8>, VectorError> {
+pub(crate) fn explicit_destination_program(
+    abi: &CandidateLiveTransferAbi,
+) -> Result<Vec<u8>, VectorError> {
     Ok(abi
         .destinations()
         .get(
@@ -1660,6 +2047,41 @@ fn adjust_output_value(
     *target = TargetOutput::new(
         target.asset(),
         ValueField::Explicit(shifted),
+        target.nonce(),
+        target.program().to_vec(),
+    );
+    rebuild(
+        candidate,
+        candidate.inputs().to_vec(),
+        outputs,
+        candidate.witnesses().to_vec(),
+        candidate.output_witnesses().to_vec(),
+    )
+}
+
+/// One candidate with a single explicit output's value REPLACED, asset,
+/// nonce and program held fixed.
+///
+/// The absolute sibling of [`adjust_output_value`]. A delta cannot reach
+/// the out-of-domain range from an arbitrary control amount without
+/// arithmetic that depends on what the control held; an absolute write
+/// states the field the candidate is to carry and leaves the dependence
+/// out of the mutation.
+fn set_output_value(
+    candidate: &TargetTransaction,
+    output: usize,
+    amount: u64,
+) -> Result<TargetTransaction, OwnerSigningNegativeRefusal> {
+    let mut outputs = candidate.outputs().to_vec();
+    let target = outputs
+        .get_mut(output)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let ValueField::Explicit(_) = target.value() else {
+        return Err(OwnerSigningNegativeRefusal::CandidateNotConstructible);
+    };
+    *target = TargetOutput::new(
+        target.asset(),
+        ValueField::Explicit(amount),
         target.nonce(),
         target.program().to_vec(),
     );
@@ -1780,6 +2202,105 @@ fn rebuild(
     .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)
 }
 
+/// Whether a control block of this many bytes is one the reviewed target
+/// will parse.
+///
+/// It reads a leaf version and parity byte, a thirty-two-byte internal
+/// key, and then a whole number of thirty-two-byte merkle path entries up
+/// to a bounded depth, and refuses any other length outright — before it
+/// looks at what the path spells.
+const fn control_block_size_is_valid(bytes: usize) -> bool {
+    bytes >= CONTROL_BASE_BYTES
+        && bytes <= CONTROL_BASE_BYTES + CONTROL_BLOCK_MAX_PATH_ENTRIES * DIGEST_BYTES
+        && (bytes - CONTROL_BASE_BYTES).is_multiple_of(DIGEST_BYTES)
+}
+
+/// Build the malformed control-path mutant from the signed control's own
+/// bytes.
+///
+/// The surgery APPENDS one byte to input zero's control block. A parsable
+/// control block is [`CONTROL_BASE_BYTES`] plus a whole number of
+/// [`DIGEST_BYTES`] path entries, so a length one above
+/// a parsable one is never itself parsable — one is not a multiple of
+/// thirty-two — while every byte the control block already held stays
+/// exactly where it was. Appending rather than truncating is what keeps
+/// that second half true: a truncation would drop a path byte, and the
+/// mutant would then be arguing about the path as well as the size.
+///
+/// The signature is NOT re-taken, and unlike the consensus surgeries the
+/// reason is not that the refusal comes first. The tapscript message is
+/// taken over the tapleaf hash — the leaf version and the leaf script —
+/// and not over the control block, so the control's own signature is
+/// still the correct signature for these bytes and the candidate reaches
+/// the size check rather than stopping at a signature gate.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::CandidateNotConstructible`] where the
+/// control does not decode, carries no input at the surgery's index, has
+/// no item at the control-block position, or carries a control block
+/// whose size is ALREADY unparsable — that last one because a mutant cut
+/// from a malformed control would be refused for the control's fault
+/// rather than for the surgery's.
+/// [`OwnerSigningNegativeRefusal::MutationNotConfined`] where the
+/// witnessless serialization moved, which would mean the mutation was
+/// not confined to the witness.
+fn build_witness_surgery(
+    control_bytes: &[u8],
+) -> Result<WitnessSurgeryObservation, OwnerSigningNegativeRefusal> {
+    let control = TargetTransaction::decode(control_bytes)
+        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+
+    let mut witnesses = control.witnesses().to_vec();
+    let witness = witnesses
+        .get_mut(MALFORMED_CONTROL_INPUT)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let mut stack = witness.stack().to_vec();
+    let item = stack
+        .get_mut(CONTROL_BLOCK_ITEM)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let control_item_bytes = item.len();
+    if !control_block_size_is_valid(control_item_bytes) {
+        return Err(OwnerSigningNegativeRefusal::CandidateNotConstructible);
+    }
+    item.push(CONTROL_BLOCK_PAD_BYTE);
+    let mutant_item_bytes = item.len();
+    *witness = InputWitness::new(stack);
+
+    let mutant = rebuild(
+        &control,
+        control.inputs().to_vec(),
+        control.outputs().to_vec(),
+        witnesses,
+        control.output_witnesses().to_vec(),
+    )?;
+
+    // The two witnessless serializations must be the SAME bytes, which
+    // `changed_range` states as the empty range at their common end. This
+    // is the witness-only claim made checkable: every consensus surgery
+    // declares a range it moved, and this one declares that it moved
+    // nothing there at all.
+    let control_witnessless = control.encode_without_witness();
+    let declared = (control_witnessless.len(), control_witnessless.len());
+    let touched = changed_range(&control_witnessless, &mutant.encode_without_witness());
+    if touched != declared {
+        return Err(OwnerSigningNegativeRefusal::MutationNotConfined { touched, declared });
+    }
+
+    let mutant_bytes = mutant.encode();
+    Ok(WitnessSurgeryObservation {
+        row: MALFORMED_CONTROL_PATH_STEP,
+        input_index: MALFORMED_CONTROL_INPUT,
+        item_index: CONTROL_BLOCK_ITEM,
+        control_item_bytes,
+        mutant_item_bytes,
+        submitted_bytes: mutant_bytes.len(),
+        mutant_bytes,
+        observed_layer: None,
+        observed_detail: None,
+    })
+}
+
 /// Build every consensus-conservation mutant from the signed control's
 /// own bytes.
 ///
@@ -1870,6 +2391,60 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
         ));
     }
 
+    push_mutant_lines(&mut lines, record);
+
+    if let Some(control) = record.control() {
+        lines.push(format!(
+            "control submitted_bytes {} message {} layer {} txid {} detail {}",
+            control.submitted_bytes(),
+            printed(control.message().as_slice()),
+            control
+                .observed_layer()
+                .map_or_else(|| "none".to_owned(), |layer| format!("{layer:?}")),
+            control.accepted_txid().unwrap_or("none"),
+            control.observed_detail().unwrap_or("none"),
+        ));
+        if let Some(check) = control.reverification() {
+            lines.push(format!(
+                "control_reverification readback_matches_submission {}",
+                check.readback_matches_submission(),
+            ));
+        }
+    } else {
+        lines.push("control none".to_owned());
+    }
+
+    // Whether the two candidates' messages differ, stated as its own line:
+    // a mutant whose message coincided with the control's would be signed
+    // over the same bytes and the whole comparison would be vacuous.
+    let distinct_messages = matches!(
+        (record.mutant(), record.control()),
+        (Some(mutant), Some(control)) if mutant.message() != control.message()
+    );
+    lines.push(format!("messages_differ {distinct_messages}"));
+
+    if let Some(refusal) = record.refusal() {
+        lines.push(format!("ceremony_refused {refusal:?}"));
+    }
+
+    for claim in OwnerSigningNegativeRecord::non_claims() {
+        lines.push(format!("non_claim {claim}"));
+    }
+    lines.push("each_row_by_its_own_mutant true".to_owned());
+
+    let mut out = lines.join("\n");
+    out.push('\n');
+    out
+}
+
+/// The four mutant families this ceremony stages, one fact per line.
+///
+/// Split from [`render_owner_signing_negatives`] rather than allowed past
+/// the line bound: the four families are one subject — every mutant the
+/// run built and what the target did with it — while what remains in the
+/// caller is the run's frame, its coins, its control and its non-claims.
+/// Splitting on that seam keeps each half about one thing.
+fn push_mutant_lines(lines: &mut Vec<String>, record: &OwnerSigningNegativeRecord) {
     if let Some(mutant) = record.mutant() {
         lines.push(format!(
             "mutant row vault-control-entitlement-or-bare-u-output declared_range {}..{} submitted_bytes {} message {} layer {} detail {}",
@@ -1917,53 +2492,30 @@ pub fn render_owner_signing_negatives(record: &OwnerSigningNegativeRecord) -> St
         ));
     }
 
-    if let Some(control) = record.control() {
+    if let Some(surgery) = record.witness_surgery() {
+        let (control_item, mutant_item) = surgery.item_lengths();
         lines.push(format!(
-            "control submitted_bytes {} message {} layer {} txid {} detail {}",
-            control.submitted_bytes(),
-            printed(control.message().as_slice()),
-            control
+            "witness_surgery row {} input {} item {} control_item_bytes {control_item} mutant_item_bytes {mutant_item} submitted_bytes {} layer {} detail {}",
+            surgery.row(),
+            surgery.input_index(),
+            surgery.item_index(),
+            surgery.submitted_bytes(),
+            surgery
                 .observed_layer()
                 .map_or_else(|| "none".to_owned(), |layer| format!("{layer:?}")),
-            control.accepted_txid().unwrap_or("none"),
-            control.observed_detail().unwrap_or("none"),
+            surgery.observed_detail().unwrap_or("none"),
         ));
-        if let Some(check) = control.reverification() {
-            lines.push(format!(
-                "control_reverification readback_matches_submission {}",
-                check.readback_matches_submission(),
-            ));
-        }
     } else {
-        lines.push("control none".to_owned());
+        lines.push("witness_surgery none".to_owned());
     }
-
-    // Whether the two candidates' messages differ, stated as its own line:
-    // a mutant whose message coincided with the control's would be signed
-    // over the same bytes and the whole comparison would be vacuous.
-    let distinct_messages = matches!(
-        (record.mutant(), record.control()),
-        (Some(mutant), Some(control)) if mutant.message() != control.message()
-    );
-    lines.push(format!("messages_differ {distinct_messages}"));
-
-    if let Some(refusal) = record.refusal() {
-        lines.push(format!("ceremony_refused {refusal:?}"));
-    }
-
-    for claim in OwnerSigningNegativeRecord::non_claims() {
-        lines.push(format!("non_claim {claim}"));
-    }
-    lines.push("each_row_by_its_own_mutant true".to_owned());
-
-    let mut out = lines.join("\n");
-    out.push('\n');
-    out
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BARE_U_PROGRAM, changed_range};
+    use super::{
+        BARE_U_PROGRAM, CONTROL_BASE_BYTES, CONTROL_BLOCK_MAX_PATH_ENTRIES, DIGEST_BYTES,
+        changed_range, control_block_size_is_valid,
+    };
 
     #[test]
     fn changed_range_bounds_a_mutation_from_both_ends() {
@@ -1975,15 +2527,22 @@ mod tests {
     #[test]
     fn the_leaf_arrangements_declare_distinct_reveal_orders() {
         // Each driven row's arrangement is distinct from the control's and
-        // from its sibling's, which is what makes the two leaf-arrangement
-        // mutants distinct candidates when their verdicts read as a plain
-        // OP_EQUALVERIFY or OP_VERIFY. The control reveals coordinator then
-        // member; two-coordinators collapses to coordinator at both, and
-        // no-coordinator to member at both.
+        // from every sibling's, which is what makes the three
+        // leaf-arrangement mutants distinct candidates when their verdicts
+        // read as a plain OP_EQUALVERIFY or OP_VERIFY. The control reveals
+        // coordinator then member; two-coordinators collapses to
+        // coordinator at both, no-coordinator to member at both, and the
+        // member/coordinator exchange keeps one of each but swaps which
+        // input carries which. The exchange is the case that makes this
+        // check load-bearing rather than decorative: it holds the same
+        // MULTISET of leaves as the control and separates from it only by
+        // order, so an arrangement compared as a set would not tell the
+        // two apart.
         let arrangements = [
             [0, 1],
             super::LeafArrangement::TwoCoordinators.sources(),
             super::LeafArrangement::NoCoordinator.sources(),
+            super::LeafArrangement::MemberCoordinatorExchange.sources(),
         ];
         let mut seen = std::collections::BTreeSet::new();
         for arrangement in arrangements {
@@ -1992,6 +2551,80 @@ mod tests {
                 "two leaf arrangements share the reveal order {arrangement:?}",
             );
         }
+    }
+
+    #[test]
+    fn every_destination_width_puts_the_consumed_total_back_together() {
+        // The created side must sum to the consumed side at every width, or
+        // a wider candidate is refused at the consensus tally and its
+        // observation belongs to conservation rather than to the clause the
+        // row is about.
+        for width in 1..=3_u64 {
+            for total in [0, 1, 2, 3, 4, 5_000, 10_000, 15_000, 1 << 40] {
+                let (share, remainder) =
+                    super::destination_shares(total, width).expect("the shares compute");
+                let head = share
+                    .checked_mul(width - 1)
+                    .expect("the head of the split computes");
+                assert_eq!(
+                    head + remainder,
+                    total,
+                    "width {width} over total {total} did not conserve",
+                );
+            }
+        }
+        // At TWO destinations the split is the one the recorded two-output
+        // successor was built with — an even half and the rest — which is
+        // half of why widening the count cannot move its bytes.
+        assert_eq!(
+            super::destination_shares(10_000, 2),
+            Some((5_000, 5_000)),
+            "the two-destination split is not the recorded one",
+        );
+        assert_eq!(
+            super::destination_shares(1, 0),
+            None,
+            "a zero-width split was not refused",
+        );
+    }
+
+    #[test]
+    fn the_wider_destination_roster_keeps_the_recorded_pair_as_its_prefix() {
+        // The other half of why widening cannot move the recorded bytes:
+        // the wider roster APPENDS, so the two-output candidate still pays
+        // the same owners in the same order. An insertion here would
+        // renumber the recorded successor's destinations silently.
+        assert_eq!(super::DESTINATION_SCALARS[0], super::SECOND_SCALAR);
+        assert_eq!(super::DESTINATION_SCALARS[1], super::FIRST_SCALAR);
+    }
+
+    #[test]
+    fn appending_one_byte_makes_every_parsable_control_block_size_unparsable() {
+        // The malformed control-path surgery rests on one arithmetic fact
+        // and this is it: a parsable control block is the base plus a whole
+        // number of path entries, so adding a single byte leaves a
+        // remainder of one against a modulus of thirty-two and can never
+        // land back on a parsable length. Checked across the whole
+        // admissible depth rather than at one example, because the surgery
+        // does not get to choose how deep the ceremony's taptree is.
+        for entries in 0..=CONTROL_BLOCK_MAX_PATH_ENTRIES {
+            let parsable = CONTROL_BASE_BYTES + entries * DIGEST_BYTES;
+            assert!(
+                control_block_size_is_valid(parsable),
+                "a base plus {entries} whole path entries was rejected as unparsable",
+            );
+            assert!(
+                !control_block_size_is_valid(parsable + 1),
+                "one byte past a parsable size was still parsable at {entries} entries",
+            );
+        }
+        // And the two ends are refused for their own reasons: one byte
+        // short of the base has no room for the internal key, and one
+        // entry past the bound is deeper than the target will read.
+        assert!(!control_block_size_is_valid(CONTROL_BASE_BYTES - 1));
+        assert!(!control_block_size_is_valid(
+            CONTROL_BASE_BYTES + (CONTROL_BLOCK_MAX_PATH_ENTRIES + 1) * DIGEST_BYTES
+        ));
     }
 
     #[test]

@@ -288,18 +288,26 @@ impl FixtureDigestFact {
 /// The matrix mutation one refused request stages.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LiveMutantKind {
+    /// The out-of-domain explicit output-value mutant.
+    AmountOutsideSemanticDomain,
     /// The confidential asset-commitment mutant.
     ConfidentialAssetCommitment,
+    /// The duplicated value-commitment mutant.
+    CopiedCommitment,
     /// The empty-signature mutant.
     EmptySignature,
     /// The hidden private-U output mutant.
     HiddenPrivateUOutput,
     /// The key-path escape mutant.
     KeyPathEscape,
+    /// The wrong-sized control-block mutant.
+    MalformedControlPath,
     /// The malformed range-proof mutant.
     MalformedRangeproof,
     /// The malformed signature mutant.
     MalformedSignature,
+    /// The member-and-coordinator exchanged leaf arrangement.
+    MemberCoordinatorLeafExchange,
     /// The missing sponsor-authorization mutant.
     MissingSponsorAuthorization,
     /// The no-coordinator leaf arrangement.
@@ -314,6 +322,14 @@ pub enum LiveMutantKind {
     PrivateCtImbalance,
     /// The private-output omission mutant.
     PrivateOutputOmitted,
+    /// The receipt coin swapped into the sponsor range.
+    ReceiptSponsorRangeExchange,
+    /// The added balanced input-and-output flow.
+    SecondOffsettingUFlow,
+    /// The sponsor-change output moved into the protocol range.
+    SponsorChangeInProtocolRange,
+    /// The position claimed by both the sponsor and protocol ranges.
+    SponsorProtocolOverlap,
     /// The two-coordinator leaf arrangement.
     TwoCoordinators,
     /// The vault-control entitlement or bare-U program mutant.
@@ -329,12 +345,16 @@ impl LiveMutantKind {
     #[must_use]
     pub const fn row(self) -> &'static str {
         match self {
+            Self::AmountOutsideSemanticDomain => "amount-outside-semantic-domain",
             Self::ConfidentialAssetCommitment => "confidential-asset-commitment",
+            Self::CopiedCommitment => "copied-commitment",
             Self::EmptySignature => "empty-signature",
             Self::HiddenPrivateUOutput => "hidden-private-u-output",
             Self::KeyPathEscape => "key-path-escape",
+            Self::MalformedControlPath => "malformed-control-path",
             Self::MalformedRangeproof => "malformed-rangeproof",
             Self::MalformedSignature => "malformed-signature",
+            Self::MemberCoordinatorLeafExchange => "member-coordinator-leaf-exchange",
             Self::MissingSponsorAuthorization => "missing-sponsor-authorization",
             Self::NoCoordinator => "no-coordinator",
             Self::OmittedSource => "omitted-source",
@@ -342,6 +362,10 @@ impl LiveMutantKind {
             Self::OutputTotalOneBelowInput => "output-total-one-below-input",
             Self::PrivateCtImbalance => "private-ct-imbalance",
             Self::PrivateOutputOmitted => "private-output-omitted",
+            Self::ReceiptSponsorRangeExchange => "receipt-sponsor-range-exchange",
+            Self::SecondOffsettingUFlow => "second-offsetting-u-flow",
+            Self::SponsorChangeInProtocolRange => "sponsor-change-in-protocol-range",
+            Self::SponsorProtocolOverlap => "sponsor-protocol-overlap",
             Self::TwoCoordinators => "two-coordinators",
             Self::VaultControlEntitlementOrBareUOutput => {
                 "vault-control-entitlement-or-bare-u-output"
@@ -2294,9 +2318,19 @@ fn committed_leaf_arrangement_matches(
         .zip(&mutant_programs)
         .filter_map(|(index, program)| (program == coordinator_program).then_some(*index))
         .collect::<Vec<_>>();
+    // How many inputs the arrangement puts a COORDINATOR leaf at, which is
+    // what names the arrangement and is recomputed here from the revealed
+    // programs rather than taken from the declaration. Collapsing the
+    // control's one-coordinator arrangement to a single role gives two or
+    // zero; EXCHANGING the two roles keeps exactly one coordinator and moves
+    // it off input zero, so the count alone does not separate the exchange
+    // from the control — the recomputed INDICES, checked below against a
+    // control that must carry its coordinator at the first input, are what
+    // do.
     let expected_mutant_coordinators = match mutant_kind {
         LiveMutantKind::TwoCoordinators => 2,
         LiveMutantKind::NoCoordinator => 0,
+        LiveMutantKind::MemberCoordinatorLeafExchange => 1,
         _ => return false,
     };
     recomputed_control_indices.as_slice() == control_coordinator_leaf_indices.as_slice()

@@ -93,6 +93,7 @@ enum CeremonyId {
     MultiSeveralOwners,
     MultiSplit,
     MultiStrictOneToOne,
+    OffsettingFlowNegatives,
     OwnerObservation,
     OwnerSigningNegatives,
     PairsArc,
@@ -100,17 +101,19 @@ enum CeremonyId {
     PrivateRestartParity,
     ProofBearingObservation,
     Report,
+    SplitCommitmentNegatives,
     SponsoredChangeAbsent,
     SponsoredChangePresent,
     SponsoredCommittedValue,
     SponsoredMissingAuthorization,
+    SponsoredOwnerSigningNegatives,
     SponsoredPrivateExplicitNoChange,
     SponsoredPrivateWithChange,
     ConfidentialPredecessorSetup,
 }
 
 impl CeremonyId {
-    const ALL: [Self; 40] = [
+    const ALL: [Self; 43] = [
         Self::ConservationNegatives,
         Self::ExplicitBoundaryValues,
         Self::ExplicitMaximumInputs,
@@ -137,6 +140,7 @@ impl CeremonyId {
         Self::MultiSeveralOwners,
         Self::MultiSplit,
         Self::MultiStrictOneToOne,
+        Self::OffsettingFlowNegatives,
         Self::OwnerObservation,
         Self::OwnerSigningNegatives,
         Self::PairsArc,
@@ -144,10 +148,12 @@ impl CeremonyId {
         Self::PrivateRestartParity,
         Self::ProofBearingObservation,
         Self::Report,
+        Self::SplitCommitmentNegatives,
         Self::SponsoredChangeAbsent,
         Self::SponsoredChangePresent,
         Self::SponsoredCommittedValue,
         Self::SponsoredMissingAuthorization,
+        Self::SponsoredOwnerSigningNegatives,
         Self::SponsoredPrivateExplicitNoChange,
         Self::SponsoredPrivateWithChange,
         Self::ConfidentialPredecessorSetup,
@@ -181,6 +187,7 @@ impl CeremonyId {
             Self::MultiSeveralOwners => "multi-several-owners",
             Self::MultiSplit => "multi-split",
             Self::MultiStrictOneToOne => "multi-strict-one-to-one",
+            Self::OffsettingFlowNegatives => "offsetting-flow-negatives",
             Self::OwnerObservation => "owner-observation",
             Self::OwnerSigningNegatives => "owner-signing-negatives",
             Self::PairsArc => "pairs-arc",
@@ -188,21 +195,26 @@ impl CeremonyId {
             Self::PrivateRestartParity => "private-restart-parity",
             Self::ProofBearingObservation => "proof-bearing-observation",
             Self::Report => "report",
+            Self::SplitCommitmentNegatives => "split-commitment-negatives",
             Self::SponsoredChangeAbsent => "sponsored-change-absent",
             Self::SponsoredChangePresent => "sponsored-change-present",
             Self::SponsoredCommittedValue => "sponsored-committed-value",
             Self::SponsoredMissingAuthorization => "sponsored-missing-authorization",
+            Self::SponsoredOwnerSigningNegatives => "sponsored-owner-signing-negatives",
             Self::SponsoredPrivateExplicitNoChange => "sponsored-private-explicit-no-change",
             Self::SponsoredPrivateWithChange => "sponsored-private-with-change",
             Self::ConfidentialPredecessorSetup => "confidential-predecessor",
         }
     }
 
+    /// The name of the `#[ignore]` test that runs this ceremony.
+    ///
+    /// Split in two at the explicit family. Neither half is arbitrary: the
+    /// TAIL is exhaustive, so a ceremony added tomorrow must be given an
+    /// arm there or the crate does not compile, which is the property the
+    /// split was not allowed to cost.
     const fn rust_test_name(self) -> &'static str {
         match self {
-            Self::ConservationNegatives => {
-                "conservation_is_recorded_against_a_control_the_proof_negatives_mutate"
-            }
             Self::ExplicitBoundaryValues => {
                 "the_explicit_boundary_values_shape_is_submitted_to_a_real_target"
             }
@@ -242,6 +254,25 @@ impl CeremonyId {
             Self::ExplicitWitnessNegatives => {
                 "the_witness_content_negatives_are_offered_beside_their_control"
             }
+            other => other.rust_test_name_beyond_the_explicit_family(),
+        }
+    }
+
+    /// What the explicit half returns for a variant it does not answer.
+    ///
+    /// Unreachable through [`Self::rust_test_name`], which never delegates
+    /// an explicit variant here. It exists so the match below can stay
+    /// exhaustive over the whole enum while still being the half that does
+    /// not answer for the explicit family, and if it were ever reached the
+    /// roster's own uniqueness gate would fail on the duplicate.
+    const ANSWERED_BY_THE_EXPLICIT_HALF: &'static str = "answered-by-the-explicit-half";
+
+    /// The test name for every ceremony outside the explicit family.
+    const fn rust_test_name_beyond_the_explicit_family(self) -> &'static str {
+        match self {
+            Self::ConservationNegatives => {
+                "conservation_is_recorded_against_a_control_the_proof_negatives_mutate"
+            }
             Self::KeypathProbe => "one_key_path_spend_attempt_is_offered_to_a_real_target",
             Self::MultiEntryCrossing => "the_entry_crossing_shape_is_submitted_to_a_real_target",
             Self::MultiExitCrossing => "the_exit_crossing_shape_is_submitted_to_a_real_target",
@@ -258,6 +289,9 @@ impl CeremonyId {
             Self::MultiStrictOneToOne => {
                 "the_strict_one_to_one_shape_is_submitted_to_a_real_target"
             }
+            Self::OffsettingFlowNegatives => {
+                "one_offsetting_flow_is_refused_before_the_narrower_control_is_accepted"
+            }
             Self::OwnerObservation => "one_owner_authorization_is_observed_on_the_explicit_lane",
             Self::OwnerSigningNegatives => {
                 "one_bare_u_output_mutant_is_refused_before_the_control_is_accepted"
@@ -272,6 +306,9 @@ impl CeremonyId {
             Self::ProofBearingObservation => {
                 "one_owner_authorization_is_observed_on_the_proof_bearing_lane"
             }
+            Self::SplitCommitmentNegatives => {
+                "one_copied_value_commitment_is_refused_before_the_split_control_is_accepted"
+            }
             Self::Report => "the_live_transfer_candidate_runs_against_a_real_target",
             Self::SponsoredChangeAbsent => {
                 "the_sponsored_change_absent_shape_is_submitted_to_a_real_target"
@@ -285,6 +322,9 @@ impl CeremonyId {
             Self::SponsoredMissingAuthorization => {
                 "the_missing_sponsor_authorization_negative_is_refused_behind_its_control"
             }
+            Self::SponsoredOwnerSigningNegatives => {
+                "the_three_sponsor_range_rearrangements_are_refused_behind_their_control"
+            }
             Self::SponsoredPrivateExplicitNoChange => {
                 "the_sponsored_explicit_no_change_shape_is_submitted_to_a_real_target"
             }
@@ -294,6 +334,21 @@ impl CeremonyId {
             Self::ConfidentialPredecessorSetup => {
                 "one_confidential_predecessor_is_funded_mined_and_read_back"
             }
+            Self::ExplicitBoundaryValues
+            | Self::ExplicitMaximumInputs
+            | Self::ExplicitMaximumOutputs
+            | Self::ExplicitMerge
+            | Self::ExplicitNormalization
+            | Self::ExplicitOneDestinationOwner
+            | Self::ExplicitOneToOne
+            | Self::ExplicitRepeatedOwner
+            | Self::ExplicitSelfPaidFee
+            | Self::ExplicitSeveralDestinationOwners
+            | Self::ExplicitSeveralOwners
+            | Self::ExplicitSeveralToSeveral
+            | Self::ExplicitSplit
+            | Self::ExplicitSponsorless
+            | Self::ExplicitWitnessNegatives => Self::ANSWERED_BY_THE_EXPLICIT_HALF,
         }
     }
 
@@ -507,8 +562,11 @@ const fn is_negative_ceremony(ceremony: CeremonyId) -> bool {
         CeremonyId::ConservationNegatives
             | CeremonyId::ExplicitWitnessNegatives
             | CeremonyId::KeypathProbe
+            | CeremonyId::OffsettingFlowNegatives
             | CeremonyId::OwnerSigningNegatives
+            | CeremonyId::SplitCommitmentNegatives
             | CeremonyId::SponsoredMissingAuthorization
+            | CeremonyId::SponsoredOwnerSigningNegatives
     )
 }
 
@@ -520,8 +578,11 @@ fn control_submission(
     let named = match ceremony {
         CeremonyId::ConservationNegatives => Some("submit-balance-valid-control"),
         CeremonyId::KeypathProbe => Some("script-path-control"),
+        CeremonyId::OffsettingFlowNegatives => Some("submit-two-in-two-out-control"),
         CeremonyId::OwnerSigningNegatives => Some("vault-control-entitlement-control"),
+        CeremonyId::SplitCommitmentNegatives => Some("submit-split-control"),
         CeremonyId::SponsoredMissingAuthorization => Some("submit-sponsor-signed-control"),
+        CeremonyId::SponsoredOwnerSigningNegatives => Some("submit-sponsored-control"),
         _ => None,
     };
     named
@@ -557,6 +618,13 @@ fn mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveMutationLoca
             LiveMutantKind::PrivateCtImbalance,
             field(1, SerializedOutputField::ValueCommitment),
         ),
+        // The same FIELD KIND as the row above and deliberately so: the
+        // two share a class and an arithmetic, and what separates them is
+        // the output index together with the shape it sits on.
+        "copied-commitment" => (
+            LiveMutantKind::CopiedCommitment,
+            field(2, SerializedOutputField::ValueCommitment),
+        ),
         "malformed-rangeproof" => (
             LiveMutantKind::MalformedRangeproof,
             field(0, SerializedOutputField::RangeproofBytes),
@@ -578,6 +646,17 @@ fn mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveMutationLoca
         "submit-unauthorized-sponsor-control" => {
             (LiveMutantKind::MissingSponsorAuthorization, witness_item())
         }
+        // Item TWO rather than item zero: the witness stack is signature,
+        // leaf script, control block, and this surgery resizes the control
+        // block. The other witness mutants move item zero, which is what
+        // keeps this row's locator its own.
+        "malformed-control-path" => (
+            LiveMutantKind::MalformedControlPath,
+            LiveMutationLocator::WitnessItem {
+                input_index: 0,
+                item_index: 2,
+            },
+        ),
         "bare-u-output-mutant" => (
             LiveMutantKind::VaultControlEntitlementOrBareUOutput,
             LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
@@ -630,6 +709,79 @@ fn structural_mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveM
                 mutant_inputs: 1,
                 control_outputs: 2,
                 mutant_outputs: 2,
+            },
+        ),
+        // The added flow widens BOTH sides by one, which is what keeps the
+        // candidate balanced and the refusal the covenant's rather than the
+        // consensus tally's.
+        "offsetting-flow" => (
+            LiveMutantKind::SecondOffsettingUFlow,
+            LiveMutationLocator::TransactionShape {
+                control_inputs: 2,
+                mutant_inputs: 3,
+                control_outputs: 2,
+                mutant_outputs: 3,
+            },
+        ),
+        "consensus-amount-outside-semantic-domain" => (
+            LiveMutantKind::AmountOutsideSemanticDomain,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        // The three sponsor-range rows separate by RANGE and by nothing
+        // else: they ride one sponsored control, sit behind one leaf's
+        // signature check, and draw the same generic equality failure. The
+        // ranges below are placeholders in the same sense every other
+        // witnessless row's are — the ceremony measures each one over the
+        // bytes it actually submitted and files it through the capture's
+        // own locator, which is the only value a declaration may carry.
+        "sponsor-receipt-range-exchange" => (
+            LiveMutantKind::ReceiptSponsorRangeExchange,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        "sponsor-change-in-protocol-range" => (
+            LiveMutantKind::SponsorChangeInProtocolRange,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        "sponsor-protocol-overlap" => (
+            LiveMutantKind::SponsorProtocolOverlap,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        _ => return arrangement_mutation_fact(step),
+    };
+    (Some(fact.0), Some(fact.1))
+}
+
+/// The facts the owner-signing ceremony's leaf arrangements declare.
+///
+/// Split from its caller when the sponsor-range family pushed that
+/// function past the line bound, but taken at the seam that was already
+/// there rather than by moving the newest arrivals out. Every arm here
+/// declares a COMMITTED LEAF ARRANGEMENT — which input reveals which
+/// committed leaf — while every arm left behind declares a byte range or
+/// a transaction shape. That is a difference in the kind of fact and not
+/// in how many lines it takes to write, so the three move together and a
+/// fourth arrangement joins them here.
+///
+/// The chain's contract is unchanged: a step this half does not answer
+/// falls through to the same `(None, None)` the caller used to return, so
+/// every step keeps the fact it had. The exhaustive-tail idiom the
+/// ceremony test-name match uses does not transfer, because that match is
+/// over an enum the compiler can check and this one is over a string
+/// where no arm set is exhaustive; total coverage is what is preserved.
+fn arrangement_mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveMutationLocator>) {
+    let fact = match step {
+        // Exactly ONE coordinator, at input one rather than input zero.
+        // The two collapsing arrangements give two coordinators or none;
+        // this one keeps the control's count and moves the position, so
+        // the mutant indices are what separate it from the control.
+        "leaf-arrangement-member-coordinator-leaf-exchange" => (
+            LiveMutantKind::MemberCoordinatorLeafExchange,
+            LiveMutationLocator::CommittedLeafArrangement {
+                input_indices: vec![0, 1],
+                control_coordinator_leaf_indices: vec![0],
+                mutant_coordinator_leaf_indices: vec![1],
+                control_committed_leaf_programs: Vec::new(),
+                mutant_committed_leaf_programs: Vec::new(),
             },
         ),
         "leaf-arrangement-two-coordinators" => (
@@ -2273,7 +2425,7 @@ fn scripted_ceremony_capture(ceremony: CeremonyId) -> NativeOperationCapture {
 
 #[test]
 fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
-    const SEMANTIC_IDS: [&str; 39] = [
+    const SEMANTIC_IDS: [&str; 42] = [
         "conservation-negatives",
         "explicit-boundary-values",
         "explicit-maximum-inputs",
@@ -2300,6 +2452,7 @@ fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
         "multi-several-owners",
         "multi-split",
         "multi-strict-one-to-one",
+        "offsetting-flow-negatives",
         "owner-observation",
         "owner-signing-negatives",
         "pairs-arc",
@@ -2307,10 +2460,12 @@ fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
         "private-restart-parity",
         "proof-bearing-observation",
         "report",
+        "split-commitment-negatives",
         "sponsored-change-absent",
         "sponsored-change-present",
         "sponsored-committed-value",
         "sponsored-missing-authorization",
+        "sponsored-owner-signing-negatives",
         "sponsored-private-explicit-no-change",
         "sponsored-private-with-change",
     ];
@@ -2321,7 +2476,7 @@ fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
         .map(CeremonyId::as_str)
         .collect();
     assert_eq!(observed, SEMANTIC_IDS);
-    assert_eq!(CeremonyId::ALL.len(), 40);
+    assert_eq!(CeremonyId::ALL.len(), 43);
     let names: BTreeSet<_> = CeremonyId::ALL
         .iter()
         .copied()
@@ -4169,6 +4324,545 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
 ///
 /// # What this run is for
 ///
+/// The offsetting flow drove its own row: the shapes the ceremony built,
+/// the wider candidate refused, the narrower control accepted, and the
+/// shape locator recorded against the mutant alone.
+///
+/// Split from the test body for the reason the other ceremony assertions
+/// are: the facts the drive rests on are stated once, and the test stays
+/// under the line bound.
+fn assert_offsetting_flow_drove_its_shape(
+    record: &vectors::live_offsetting_flow_negatives::OffsettingFlowNegativeRecord,
+) {
+    use vectors::live_offsetting_flow_negatives::{CONTROL_STEP, MUTANT_STEP};
+
+    assert!(record.relinked(), "the ceremony funded before it linked");
+    assert_eq!(
+        record.coins().len(),
+        3,
+        "the ceremony did not fund the coin the added flow spends",
+    );
+    assert!(
+        record
+            .coins()
+            .iter()
+            .all(vectors::live_owner_observation::ObservedFundedCoin::matches_expectation),
+        "the node reported a coin the ceremony did not ask for",
+    );
+
+    let mutant = record.mutant().expect("the offsetting flow was built");
+    assert_eq!(
+        mutant.control_shape(),
+        (2, 2),
+        "the control is not the two-in two-out successor",
+    );
+    assert_eq!(
+        mutant.mutant_shape(),
+        (3, 3),
+        "the mutant is not one balanced flow wider than the control",
+    );
+
+    // The weakest claim that still fails a broken drive: a negative row
+    // whose candidate is ACCEPTED has driven nothing. Which clause refuses
+    // it is deliberately not named — the equality failure is the covenant
+    // fragment's own and reads the same for any count fault.
+    assert_ne!(
+        mutant.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the offsetting flow was accepted, so it drove nothing",
+    );
+
+    let control = record.control().expect("the control was submitted");
+    assert_eq!(
+        control.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the control was not accepted, so the mutant's refusal separates nothing",
+    );
+
+    // The separating fact is the shape, recorded as the locator the import
+    // will read. The control step carries none, because it is not a
+    // mutation and a locator on an acceptance would claim a fault.
+    assert_eq!(
+        record.capture_locator(MUTANT_STEP),
+        Some(LiveMutationLocator::TransactionShape {
+            control_inputs: 2,
+            mutant_inputs: 3,
+            control_outputs: 2,
+            mutant_outputs: 3,
+        }),
+        "the offsetting flow did not declare its shape locator",
+    );
+    assert_eq!(
+        record.capture_locator(CONTROL_STEP),
+        None,
+        "the control declared a mutation locator",
+    );
+}
+
+/// The copied commitment drove its own row: the outputs it ran between,
+/// the shape it ran on, the mutant refused, the control accepted, and the
+/// field locator recorded against the mutant alone.
+///
+/// Split from the test body for the reason the other ceremony assertions
+/// are: the facts the drive rests on are stated once, and the test stays
+/// under the line bound.
+fn assert_copied_commitment_drove_its_locator(
+    record: &vectors::live_split_commitment_negatives::SplitCommitmentNegativeRecord,
+) {
+    use transaction::bytes::{SerializedFieldLocator, SerializedOutputField};
+    use vectors::live_split_commitment_negatives::{CONTROL_STEP, MUTANT_STEP};
+
+    let mutant = record.mutant().expect("the copied commitment was built");
+    assert_eq!(
+        mutant.outputs(),
+        (0, 2),
+        "the copy did not run from the first output onto the third",
+    );
+    assert_eq!(
+        mutant.shape(),
+        (1, 3),
+        "the successor is not the one-in three-out split the row declares",
+    );
+
+    // The weakest claim that still fails a broken drive: a negative row
+    // whose candidate is ACCEPTED has driven nothing. No words are
+    // predicted, because the ones this row draws are the ones
+    // private-ct-imbalance already drew and the target phrases them.
+    assert_ne!(
+        mutant.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the copied commitment was accepted, so it drove nothing",
+    );
+
+    let control = record.control().expect("the control was submitted");
+    assert_eq!(
+        control.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the control was not accepted, so the mutant's refusal separates nothing",
+    );
+
+    // The separating fact is the field locator, which differs from
+    // private-ct-imbalance's in BOTH members — output two rather than
+    // output one, on a three-output successor rather than a two-output
+    // one. Sharing a class is what the matrix expects of two faults with
+    // one arithmetic; sharing an observation is what it forbids.
+    assert_eq!(
+        record.capture_locator(MUTANT_STEP),
+        Some(LiveMutationLocator::SerializedOutputField(
+            SerializedFieldLocator::new(2, SerializedOutputField::ValueCommitment)
+        )),
+        "the copied commitment did not declare its field locator",
+    );
+    assert_eq!(
+        record.capture_locator(CONTROL_STEP),
+        None,
+        "the control declared a mutation locator",
+    );
+}
+
+/// The `copied-commitment` row duplicates one output's value commitment
+/// onto another, so the output side commits one amount twice against one
+/// input-side occurrence and the per-asset sum breaks by exactly the
+/// copied value.
+///
+/// # Why a three-output successor
+///
+/// Because the verdict cannot separate this row from `private-ct-imbalance`
+/// — the arithmetic is the same and so are the words — the locator has to,
+/// and a locator separates only if both of its members differ. A third
+/// confidential output gives this row an output-index-two field on a
+/// one-in three-out shape against that row's output-index-one field on a
+/// one-in two-out shape.
+///
+/// # Why the assertions are first-party only
+///
+/// The frozen run of record predates this ceremony and carries no outcome
+/// to bind it to. The gate checks what the ceremony establishes and the
+/// binding to recorded words arrives with the capture; the capture is
+/// written before any of it runs.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn one_copied_value_commitment_is_refused_before_the_split_control_is_accepted() {
+    use vectors::live_split_commitment_negatives::{
+        SplitCommitmentNegativePlanner, render_split_commitment_negatives,
+    };
+
+    let mut capture_guard = CaptureGuard::new(CeremonyId::SplitCommitmentNegatives);
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let report = legacy_report(Some("split-commitment-negatives"));
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::SplitCommitmentNegatives,
+            report.as_deref(),
+        )),
+    );
+
+    let mut planner =
+        SplitCommitmentNegativePlanner::new(identifier(&genesis)).expect("the ceremony builds");
+    let started = Instant::now();
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_split_commitment_negatives(record);
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let mut facts =
+        CeremonyCaptureFacts::from_capture(CeremonyId::SplitCommitmentNegatives, &capture);
+    for operation in capture.operations() {
+        let step = operation.request().case.step.as_str();
+        if let Some(locator) = record.capture_locator(step) {
+            facts = facts.with_locator(step, locator);
+        }
+    }
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as one.
+    // It is never a target verdict, so it is reported and the test stops
+    // here rather than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the split-commitment ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    assert_copied_commitment_drove_its_locator(record);
+}
+
+/// The `second-offsetting-u-flow` row drives a candidate that consensus
+/// has no reason to refuse: its added input-and-output pair offsets
+/// exactly, so the per-asset sum still closes and the covenant's own
+/// cardinality clause is what answers.
+///
+/// # Why the assertions are first-party only
+///
+/// The frozen run of record predates this ceremony and carries no outcome
+/// to bind it to, and the lookup that fetches one panics rather than
+/// returning nothing. So the gate here checks what the ceremony itself
+/// establishes — the shapes it built, that the wider candidate was not
+/// accepted, and that the narrower control was — and the binding to
+/// recorded words arrives with the capture that observes it. The capture
+/// is written BEFORE any of it runs, so a failure still leaves a
+/// diagnosable artifact.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn one_offsetting_flow_is_refused_before_the_narrower_control_is_accepted() {
+    use vectors::live_offsetting_flow_negatives::{
+        OffsettingFlowNegativePlanner, render_offsetting_flow_negatives,
+    };
+
+    let mut capture_guard = CaptureGuard::new(CeremonyId::OffsettingFlowNegatives);
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let report = legacy_report(Some("offsetting-flow-negatives"));
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::OffsettingFlowNegatives,
+            report.as_deref(),
+        )),
+    );
+
+    let mut planner =
+        OffsettingFlowNegativePlanner::new(identifier(&genesis)).expect("the ceremony builds");
+    let started = Instant::now();
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_offsetting_flow_negatives(record);
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let mut facts =
+        CeremonyCaptureFacts::from_capture(CeremonyId::OffsettingFlowNegatives, &capture);
+    for operation in capture.operations() {
+        let step = operation.request().case.step.as_str();
+        if let Some(locator) = record.capture_locator(step) {
+            facts = facts.with_locator(step, locator);
+        }
+    }
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as one.
+    // It is never a target verdict, so it is reported and the test stops
+    // here rather than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the offsetting-flow ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    assert_offsetting_flow_drove_its_shape(record);
+}
+
+/// The three sponsor-range rearrangements each drove their own row: one
+/// mutant per row in offer order, none of them accepted, the control
+/// accepted, and three PAIRWISE DISTINCT witnessless ranges recorded
+/// against the mutants alone.
+///
+/// Split from the test body for the reason the other ceremony assertions
+/// are: the facts the drive rests on are stated once, and the test stays
+/// under the line bound.
+fn assert_sponsor_range_rearrangements_drove_their_ranges(
+    record: &vectors::live_sponsored_owner_signing_negatives::SponsoredOwnerSigningRecord,
+) {
+    use vectors::live_sponsored_owner_signing_negatives::{CONTROL_STEP, SPONSOR_RANGE_MUTANTS};
+
+    let mutants = record.mutants();
+    assert_eq!(
+        mutants.len(),
+        SPONSOR_RANGE_MUTANTS.len(),
+        "the ceremony did not offer one mutant for each of the three rows",
+    );
+
+    let mut declared = BTreeSet::new();
+    for (observed, expected) in mutants.iter().zip(SPONSOR_RANGE_MUTANTS) {
+        assert_eq!(
+            observed.mutant(),
+            expected,
+            "the mutants were not offered in the order the roster names them",
+        );
+
+        // The weakest claim that still fails a broken drive: a negative row
+        // whose candidate is ACCEPTED has driven nothing. No words are
+        // predicted — all three sit behind one leaf's signature check and
+        // draw the same generic equality failure, which is exactly why the
+        // range and not the verdict is what separates them.
+        assert_ne!(
+            observed.observed_layer(),
+            Some(ObservedOutcomeLayer::Accepted),
+            "the {} mutant was accepted, so it drove nothing",
+            observed.row(),
+        );
+
+        let (start, end) = observed.declared_range();
+        assert!(
+            start < end,
+            "the {} mutant declared an empty witnessless range",
+            observed.row(),
+        );
+        assert_eq!(
+            record.capture_locator(observed.step()),
+            Some(LiveMutationLocator::WitnesslessRange { start, end }),
+            "the {} mutant did not file the range it measured",
+            observed.row(),
+        );
+        declared.insert((start, end));
+    }
+
+    // The separating fact, checked rather than asserted in prose: three
+    // rows that share a control, a leaf and a verdict are told apart by
+    // their ranges alone, so two rows declaring one range would leave the
+    // pair indistinguishable in the record.
+    assert_eq!(
+        declared.len(),
+        SPONSOR_RANGE_MUTANTS.len(),
+        "two sponsor-range rows declared the same witnessless range",
+    );
+
+    let control = record.control().expect("the control was submitted");
+    assert_eq!(
+        control.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the control was not accepted, so the mutants' refusals separate nothing",
+    );
+    assert_eq!(
+        record.capture_locator(CONTROL_STEP),
+        None,
+        "the control declared a mutation locator",
+    );
+}
+
+/// The three sponsor-range rows — `receipt-sponsor-range-exchange`,
+/// `sponsor-change-in-protocol-range` and `sponsor-protocol-overlap` —
+/// each confuse the sponsor region with the protocol region on one
+/// sponsored successor.
+///
+/// # Why one ceremony carries three rows
+///
+/// Because they need the same successor and differ only in which part of
+/// it they rearrange. A sponsorless candidate has none of the regions
+/// they confuse, so none of the three could ride the ceremony that builds
+/// one; and building three sponsored successors would record three
+/// controls where one suffices.
+///
+/// # Why the separator is the range
+///
+/// All three keep the per-asset sums the control carried, so consensus
+/// has nothing to refuse and each reaches the coordinator leaf. That leaf
+/// answers a region fault with a generic equality failure, the same words
+/// for any of them, so the verdict is the fragment's rather than any
+/// row's. What differs is the witnessless byte range each rearrangement
+/// confined itself to, which the ceremony measures over the bytes it
+/// actually submitted.
+///
+/// # Why the assertions are first-party only
+///
+/// The frozen run of record predates this ceremony and carries no outcome
+/// to bind it to. The gate checks what the ceremony establishes and the
+/// binding to recorded words arrives with the capture; the capture is
+/// written before any of it runs.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_three_sponsor_range_rearrangements_are_refused_behind_their_control() {
+    use vectors::live_sponsored_owner_signing_negatives::{
+        SponsoredOwnerSigningNegativePlanner, render_sponsored_owner_signing_negatives,
+    };
+
+    let mut capture_guard = CaptureGuard::new(CeremonyId::SponsoredOwnerSigningNegatives);
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let report = legacy_report(Some("sponsored-owner-signing-negatives"));
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::SponsoredOwnerSigningNegatives,
+            report.as_deref(),
+        )),
+    );
+
+    let mut planner = SponsoredOwnerSigningNegativePlanner::new(identifier(&genesis))
+        .expect("the ceremony builds");
+    let started = Instant::now();
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_sponsored_owner_signing_negatives(record);
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let mut facts =
+        CeremonyCaptureFacts::from_capture(CeremonyId::SponsoredOwnerSigningNegatives, &capture);
+    for operation in capture.operations() {
+        let step = operation.request().case.step.as_str();
+        if let Some(locator) = record.capture_locator(step) {
+            facts = facts.with_locator(step, locator);
+        }
+    }
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as one.
+    // It is never a target verdict, so it is reported and the test stops
+    // here rather than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the sponsored owner-signing ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    assert_sponsor_range_rearrangements_drove_their_ranges(record);
+}
+
 /// The `vault-control-entitlement-or-bare-u-output` row declares a
 /// script-path refusal, and a mutant with a stale signature would die at
 /// the signature gate before the leaf ran. This ceremony re-signs the
@@ -4312,16 +5006,19 @@ fn one_bare_u_output_mutant_is_refused_before_the_control_is_accepted() {
     // The run says in its own bytes what it did not establish.
     assert!(rendered.contains("each_row_by_its_own_mutant true"));
 
-    // The seven consensus-conservation mutants were each built, submitted
-    // and refused at consensus in the recorded words, and each declared the
-    // (range, shape) separator the run of record carries for its row, so no
-    // two rows rest on one observation.
+    // Every consensus-conservation mutant was built and submitted; each row
+    // the run of record carries was refused in its recorded words on the
+    // recorded (range, shape) separator, and the revision-8 row is checked
+    // on what the ceremony establishes until a capture observes it. The
+    // separators are distinct across all of them, so no two rows rest on
+    // one observation.
     assert_consensus_mutants_separate(record);
 
-    // The two leaf-arrangement mutants — one per collision pair — were each
-    // built, submitted and refused at the script path in their recorded
-    // words, and each declared the revealed-leaf arrangement the run of
-    // record carries, so no two rows rest on one observation.
+    // Every leaf-arrangement mutant was built and submitted; the recorded
+    // rows were refused at the script path in their recorded words on the
+    // recorded arrangement, and the revision-8 exchange is checked on the
+    // arrangement it declares. The arrangements are distinct across all of
+    // them, so no two rows rest on one observation.
     assert_leaf_arrangements_drive(record);
 }
 
@@ -4448,29 +5145,28 @@ fn recorded_leaf_arrangements() -> [(LiveMutantKind, Vec<usize>, Vec<usize>); 2]
     })
 }
 
-/// The two leaf-arrangement mutants were each refused at the script path in
-/// the recorded words, each declared the recorded revealed-leaf arrangement,
-/// and the two arrangements are distinct from each other and from the
-/// control's.
+/// Every leaf-arrangement mutant declared a distinct revealed-leaf
+/// arrangement, distinct also from the control's, and each row the run of
+/// record carries was refused at the script path in its recorded words.
 ///
 /// Split out for the same reason the consensus assertion is: the fact the
-/// drive rests on — that one mutant per pair is a distinct candidate — is
-/// stated once and the test body stays under the line bound.
+/// drive rests on — that each mutant is a distinct candidate — is stated
+/// once and the test body stays under the line bound.
 fn assert_leaf_arrangements_drive(
     record: &vectors::live_owner_signing_negatives::OwnerSigningNegativeRecord,
 ) {
     use std::collections::BTreeSet;
     use vectors::live_owner_signing_negatives::LeafArrangementObservation;
     let arrangements = record.leaf_arrangements();
+    let recorded = recorded_leaf_arrangements();
     assert_eq!(
         arrangements.len(),
-        2,
-        "the two leaf-arrangement mutants — one per collision pair — were built",
+        recorded.len() + PENDING_LEAF_ARRANGEMENTS.len(),
+        "the leaf-arrangement mutants — the recorded rows and the revision-8 exchange — were built",
     );
-    let recorded = recorded_leaf_arrangements();
-    // Set equality: the two built are exactly the two the run of record
-    // names, so a renamed or substituted row fails rather than passing as
-    // "two of something".
+    // Set equality: the built rows are exactly the recorded ones plus the
+    // rows declared pending, so a renamed or substituted row fails rather
+    // than passing as "three of something".
     let built: BTreeSet<&str> = arrangements
         .iter()
         .map(LeafArrangementObservation::row)
@@ -4480,14 +5176,18 @@ fn assert_leaf_arrangements_drive(
         recorded
             .iter()
             .map(|(kind, ..)| kind.row())
+            .chain(PENDING_LEAF_ARRANGEMENTS.iter().map(|(kind, _)| kind.row()))
             .collect::<BTreeSet<_>>(),
-        "the leaf-arrangement mutants are not the two recorded rows",
+        "the leaf-arrangement mutants are not the recorded rows and the pending row",
     );
     for mutant in arrangements {
-        let (kind, arrangement, control_arrangement) = recorded
+        let Some((kind, arrangement, control_arrangement)) = recorded
             .iter()
             .find(|(kind, ..)| kind.row() == mutant.row())
-            .expect("every built mutant is a recorded row");
+        else {
+            assert_pending_leaf_arrangement(mutant);
+            continue;
+        };
         let expected = current_outcome_for_mutant("owner-signing-negatives", *kind);
         assert_eq!(
             mutant.observed_layer(),
@@ -4541,6 +5241,11 @@ fn assert_leaf_arrangements_drive(
         record.leaf_arrangements().len(),
         "two leaf-arrangement mutants share a revealed-leaf arrangement and do not separate",
     );
+    // The pending row is included in that distinctness check deliberately.
+    // Its outcome is not yet recorded anywhere, but the fact its row rests
+    // on — that its arrangement is its own — is established by construction
+    // and is checkable now, so the check that matters does not wait for the
+    // capture.
 }
 
 /// One consensus row's separating fact: the half-open witnessless byte
@@ -4548,7 +5253,86 @@ fn assert_leaf_arrangements_drive(
 /// mutant handed the node.
 type ConsensusSeparator = ((usize, usize), (usize, usize));
 
-const OWNER_SIGNING_CONSENSUS_MUTANTS: [LiveMutantKind; 7] = [
+/// The consensus rows this ceremony drives that the CURRENT corpus cannot
+/// yet answer for.
+///
+/// The revision-8 rows are built and submitted by the same ceremony as the
+/// recorded ones, but the frozen run of record predates them and carries no
+/// outcome to bind them to. Asserting them against it would not be a
+/// stricter test — it would be a lookup that panics. They are checked here
+/// on what the ceremony itself establishes and bound to a recorded outcome
+/// when the capture that observes them is imported.
+const OWNER_SIGNING_PENDING_CONSENSUS_MUTANTS: [LiveMutantKind; 1] =
+    [LiveMutantKind::AmountOutsideSemanticDomain];
+
+/// The leaf-arrangement rows the current corpus cannot yet answer for, with
+/// the arrangement each declares.
+const PENDING_LEAF_ARRANGEMENTS: [(LiveMutantKind, [u16; 2]); 1] =
+    [(LiveMutantKind::MemberCoordinatorLeafExchange, [1, 0])];
+
+/// The arrangement the control reveals: the coordinator leaf at input zero
+/// and the member leaf at input one.
+const CONTROL_LEAF_ARRANGEMENT: [u16; 2] = [0, 1];
+
+/// One leaf-arrangement mutant the current corpus cannot answer for, checked
+/// on what the ceremony itself establishes.
+///
+/// Three facts, none of which needs a recorded outcome: it declared the
+/// arrangement its row is defined by, that arrangement is not the control's,
+/// and the target did not ACCEPT it. The third is the weakest statement that
+/// still fails a broken drive — a negative row whose candidate is accepted
+/// has driven nothing — and it deliberately stops short of naming a clause,
+/// because which of two failing inputs this row's target reports is the
+/// target's own abort selection.
+fn assert_pending_leaf_arrangement(
+    mutant: &vectors::live_owner_signing_negatives::LeafArrangementObservation,
+) {
+    let (_, declared) = PENDING_LEAF_ARRANGEMENTS
+        .iter()
+        .find(|(kind, _)| kind.row() == mutant.row())
+        .expect("every built leaf arrangement is a recorded or a pending row");
+    assert_eq!(
+        mutant.revealed_arrangement(),
+        declared.as_slice(),
+        "{} revealed an arrangement its row does not declare",
+        mutant.row(),
+    );
+    assert_ne!(
+        mutant.revealed_arrangement(),
+        CONTROL_LEAF_ARRANGEMENT.as_slice(),
+        "{} reveals the control's own arrangement and rearranges nothing",
+        mutant.row(),
+    );
+    assert_ne!(
+        mutant.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "{} was accepted, so the arrangement drove nothing",
+        mutant.row(),
+    );
+}
+
+/// One consensus mutant the current corpus cannot answer for, checked on
+/// what the ceremony itself establishes: it is a row this ceremony declares
+/// as pending, and the target did not accept it.
+fn assert_pending_consensus_mutant(
+    mutant: &vectors::live_owner_signing_negatives::ConsensusMutantObservation,
+) {
+    assert!(
+        OWNER_SIGNING_PENDING_CONSENSUS_MUTANTS
+            .iter()
+            .any(|kind| kind.row() == mutant.row()),
+        "{} is neither a recorded nor a pending consensus row",
+        mutant.row(),
+    );
+    assert_ne!(
+        mutant.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "{} was accepted, so the surgery drove nothing",
+        mutant.row(),
+    );
+}
+
+const OWNER_SIGNING_RECORDED_CONSENSUS_MUTANTS: [LiveMutantKind; 7] = [
     LiveMutantKind::WrongExplicitAsset,
     LiveMutantKind::ConfidentialAssetCommitment,
     LiveMutantKind::OutputTotalOneBelowInput,
@@ -4604,21 +5388,23 @@ fn current_consensus_separator(kind: LiveMutantKind) -> ConsensusSeparator {
     (range, shape)
 }
 
-/// Each consensus row and the `(range, shape)` separator the run of record
-/// declares for it.
+/// Each RECORDED consensus row and the `(range, shape)` separator the run of
+/// record declares for it.
 ///
 /// The four field surgeries keep the control's 2-in-2-out shape and separate
 /// by four distinct ranges; the two output-cardinality surgeries share the
 /// structural range `changed_range` cannot localize past the output-count
 /// varint and separate by shape; `omitted-source` separates by both.
 fn recorded_consensus_separators() -> [(&'static str, ConsensusSeparator); 7] {
-    OWNER_SIGNING_CONSENSUS_MUTANTS.map(|kind| (kind.row(), current_consensus_separator(kind)))
+    OWNER_SIGNING_RECORDED_CONSENSUS_MUTANTS
+        .map(|kind| (kind.row(), current_consensus_separator(kind)))
 }
 
-/// The seven consensus-conservation mutants are the seven recorded rows,
-/// each refused at consensus before script in the recorded words, each on
-/// the separator the run of record declares for it, and the seven
-/// separators are pairwise distinct.
+/// The consensus-conservation mutants are the recorded rows together with
+/// the rows declared pending; each recorded one was refused at consensus
+/// before script in the recorded words on the separator the run of record
+/// declares for it, and the separators are pairwise distinct across all of
+/// them.
 ///
 /// Split from the test body so the assertion the run rests on — that no
 /// two rows share one observation — is stated once and the test stays
@@ -4629,11 +5415,15 @@ fn assert_consensus_mutants_separate(
     use std::collections::BTreeSet;
     use vectors::live_owner_signing_negatives::ConsensusMutantObservation;
     let consensus = record.consensus_mutants();
-    assert_eq!(consensus.len(), 7, "the seven consensus mutants were built");
     let recorded = recorded_consensus_separators();
-    // Set equality: the seven built are exactly the seven the run of record
-    // names, so a renamed or substituted row fails rather than passing as
-    // "seven of something".
+    assert_eq!(
+        consensus.len(),
+        recorded.len() + OWNER_SIGNING_PENDING_CONSENSUS_MUTANTS.len(),
+        "the consensus mutants — the recorded rows and the revision-8 out-of-domain write — were built",
+    );
+    // Set equality: the built rows are exactly the recorded ones plus the
+    // rows declared pending, so a renamed or substituted row fails rather
+    // than passing as "eight of something".
     let built: BTreeSet<&str> = consensus
         .iter()
         .map(ConsensusMutantObservation::row)
@@ -4643,20 +5433,28 @@ fn assert_consensus_mutants_separate(
         recorded
             .iter()
             .map(|(row, _)| *row)
+            .chain(
+                OWNER_SIGNING_PENDING_CONSENSUS_MUTANTS
+                    .iter()
+                    .map(|kind| kind.row())
+            )
             .collect::<BTreeSet<_>>(),
-        "the consensus mutants are not the seven recorded rows",
+        "the consensus mutants are not the recorded rows and the pending row",
     );
     for mutant in consensus {
-        let kind = OWNER_SIGNING_CONSENSUS_MUTANTS
+        let Some(kind) = OWNER_SIGNING_RECORDED_CONSENSUS_MUTANTS
             .iter()
             .copied()
             .find(|kind| kind.row() == mutant.row())
-            .expect("every built mutant has a typed current-corpus row");
+        else {
+            assert_pending_consensus_mutant(mutant);
+            continue;
+        };
         let expected = current_outcome_for_mutant("owner-signing-negatives", kind);
         let (_, separator) = recorded
             .iter()
             .find(|(row, _)| *row == mutant.row())
-            .expect("every built mutant is a recorded row");
+            .expect("every recorded mutant carries its separator");
         assert_eq!(
             mutant.observed_layer(),
             Some(expected.layer()),
@@ -4683,10 +5481,13 @@ fn assert_consensus_mutants_separate(
         );
     }
     // The separating fact is the byte range together with the shape: the
-    // four field surgeries keep the control's shape and separate by range,
-    // the three structural surgeries separate by shape where the
-    // output-count varint defeats a localized range. The tuple is distinct
-    // across all seven, so no two rows rest on one observation.
+    // field surgeries keep the control's shape and separate by range, the
+    // structural surgeries separate by shape where the output-count varint
+    // defeats a localized range, and the out-of-domain write separates from
+    // the one-below surgery at the SAME field because an absolute write of
+    // a high value moves different bytes than a delta of one. The tuple is
+    // distinct across all of them, recorded and pending alike, so no two
+    // rows rest on one observation.
     let mut separators: Vec<((usize, usize), (usize, usize))> = consensus
         .iter()
         .map(ConsensusMutantObservation::separator)

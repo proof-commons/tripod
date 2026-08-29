@@ -1569,6 +1569,7 @@ const OWNER_SIGNING_FIELDS: &[&str] = &[
     "non_claim",
     "relinked",
     "role",
+    "witness_surgery",
 ];
 
 const OWNER_SIGNING_REPEATED_FIELDS: &[&str] =

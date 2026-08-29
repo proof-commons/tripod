@@ -112,7 +112,7 @@ use crate::live_proof_bearing_observation::{materialization_profiles, register_m
 /// One destination of a shape: which published owner receives it and how
 /// much, in the order the outputs are created.
 #[derive(Clone, Copy, Debug)]
-struct Destination {
+pub(crate) struct Destination {
     /// The receiving owner's published scalar.
     scalar: [u8; SCALAR_BYTES],
     /// The semantic amount the output carries.
@@ -419,7 +419,7 @@ impl PrivateShape {
     /// The successor fixture's handle, its own per shape so a digest drift
     /// between two shapes is detectable.
     #[must_use]
-    fn successor_handle(self) -> String {
+    pub(crate) fn successor_handle(self) -> String {
         format!("ctf-v1/wave-seven-{}-successor", self.name())
     }
 
@@ -584,7 +584,7 @@ impl PrivateShape {
 
     /// Which predecessor outputs this shape consumes, in fixed order.
     #[must_use]
-    const fn consumed(self) -> &'static [ConsumedReceipt] {
+    pub(crate) const fn consumed(self) -> &'static [ConsumedReceipt] {
         match self {
             Self::Split
             | Self::PureSplit
@@ -612,7 +612,7 @@ impl PrivateShape {
     /// commitment balance and a set that did not add up would be refused
     /// there rather than here.
     #[must_use]
-    fn destinations(self) -> Vec<Destination> {
+    pub(crate) fn destinations(self) -> Vec<Destination> {
         // A primary output's blinder is derived; the balancing one's is
         // solved from the others. Every shape below states which is which
         // rather than leaving it to be read off the output order.
@@ -1360,7 +1360,7 @@ impl MultiShapePlanner {
 
     /// The successor's wire bytes, every owner's authorization in its own
     /// input's witness.
-    fn control_bytes(&mut self) -> Result<Vec<u8>, PrivateRestartRefusal> {
+    pub(crate) fn control_bytes(&mut self) -> Result<Vec<u8>, PrivateRestartRefusal> {
         let finalization = self.finalize_shape()?;
         let built = assemble_control(&finalization, self.genesis_block_hash, None)?;
         self.spent_owner_bytes = built.spent_owner_bytes;
