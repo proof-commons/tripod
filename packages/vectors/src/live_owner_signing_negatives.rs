@@ -141,8 +141,8 @@ use crate::live_owner_observation::{
     ObservedFundedCoin, asset_of, decode_hex, outpoint_of, printed,
 };
 use crate::live_plan::{
-    FEE_PROGRAM_DIGEST, FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, demonstration_live_abi,
-    live_abi_for_asset, published_owner, reviewed_target, signing_material,
+    FEE_PROGRAM_DIGEST, FIRST_SCALAR, RESERVE_ASSET, SECOND_SCALAR, THIRD_SCALAR,
+    demonstration_live_abi, live_abi_for_asset, published_owner, reviewed_target, signing_material,
 };
 use crate::live_report::LiveMutationLocator;
 
@@ -1165,130 +1165,203 @@ impl OwnerSigningNegativePlanner {
         ))
     }
 
-    /// The public view the ceremony constructs against.
-    fn view(&self) -> Result<PublicConstructionView, OwnerSigningNegativeRefusal> {
-        PublicConstructionView::new(self.record.coins.iter().map(|coin| {
-            PublicOutputView::new(
-                coin.outpoint(),
-                coin.asset(),
-                coin.value(),
-                coin.program().to_vec(),
-            )
-        }))
-        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)
-    }
-
-    /// One finalized explicit candidate over the funded coins.
+    /// One finalized explicit candidate over the funded coins, paying the
+    /// two destinations this ceremony's successor has always paid.
     fn finalize(&self) -> Result<FinalizedLiveTransfer, OwnerSigningNegativeRefusal> {
-        let view = self.view()?;
-        let points: Vec<Outpoint> = self
-            .record
-            .coins
-            .iter()
-            .map(ObservedFundedCoin::outpoint)
-            .collect();
-        let total = RECEIPT_AMOUNT
-            .checked_mul(u64::try_from(points.len()).unwrap_or(0))
-            .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-
-        let destination = |scalar: &[u8; FIELD_ELEMENT_BYTES], amount: u64| {
-            let owner = published_owner(scalar)
-                .map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
-            let value = ProtocolValue::new(amount)
-                .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-            Ok::<_, OwnerSigningNegativeRefusal>(LiveReceiptDestination::new(
-                linker::OwnerParameter::new(owner),
-                value,
-            ))
-        };
-        let first = destination(&SECOND_SCALAR, total / 2)?;
-        let second = destination(&FIRST_SCALAR, total - total / 2)?;
-
-        let request = LiveTransferRequest::new(
-            points,
-            [first, second],
-            LiveTransferRepresentationPlan::Explicit,
-            RequestedForm::Sponsorless,
-            SponsorChangeRequest::NotRequested,
-            None,
-        )
-        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-
-        let target =
-            reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
-        let finalization = finalize_live_transfer(&target, &self.abi, &request, &view, None, None)
-            .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-        Ok(finalization.into_finalized())
+        finalize_explicit(&self.abi, &self.record.coins, usize::from(RECEIPT_COUNT))
     }
 
     /// The per-input signing requests for a finalized candidate.
     fn requests(finalized: &FinalizedLiveTransfer) -> Vec<OwnerSigningInputRequest> {
-        finalized
-            .receipts()
-            .iter()
-            .map(|record| {
-                OwnerSigningInputRequest::new(
-                    u32::from(record.position()),
-                    leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
-                    LeafVersion::TAPSCRIPT,
-                    OWNER_CODESEPARATOR_POSITION,
-                    AnnexDisposition::Absent,
-                    IssuanceDisposition::Absent,
-                    record.control_block().to_vec(),
-                )
-            })
-            .collect()
+        signing_requests(finalized)
     }
+}
 
-    /// The census of one candidate's parts, over the negative-evidence
-    /// route.
-    fn census(
-        candidate: TargetTransaction,
-        spent_outputs: Vec<transaction::live_census::SpentOutputCensusEntry>,
-        genesis: Digest32,
-        requests: &[OwnerSigningInputRequest],
-    ) -> Result<OwnerSigningCensus, OwnerSigningNegativeRefusal> {
-        let target =
-            reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
-        let curve = OracleLiveCurve::new(
-            reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?,
-        );
-        let protected_bytes = candidate.encode_without_witness();
-        let output_witnesses = candidate.output_witnesses().to_vec();
-        OwnerSigningCensus::over_foreign_bytes_for_negative_evidence(
-            &target,
-            candidate,
-            protected_bytes,
-            output_witnesses,
-            spent_outputs,
-            LiveDeployment::new(genesis),
-            requests,
-            &curve,
+/// The published owners an explicit successor pays, in output order.
+///
+/// The first two are the pair the sponsorless two-output successor has
+/// always paid, in that order, and a wider successor APPENDS rather than
+/// inserts. That is what lets the destination count become a parameter
+/// without moving the two-output candidate's bytes: widening the array
+/// leaves the shorter prefix exactly as it was, so the ceremony whose
+/// control digest is already recorded still builds the candidate it
+/// recorded.
+const DESTINATION_SCALARS: [[u8; FIELD_ELEMENT_BYTES]; 3] =
+    [SECOND_SCALAR, FIRST_SCALAR, THIRD_SCALAR];
+
+/// The public view a ceremony constructs against, over its funded coins.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::CandidateNotConstructible`] where the
+/// coins do not form a construction view.
+pub(crate) fn explicit_view(
+    coins: &[ObservedFundedCoin],
+) -> Result<PublicConstructionView, OwnerSigningNegativeRefusal> {
+    PublicConstructionView::new(coins.iter().map(|coin| {
+        PublicOutputView::new(
+            coin.outpoint(),
+            coin.asset(),
+            coin.value(),
+            coin.program().to_vec(),
         )
-        .map_err(OwnerSigningNegativeRefusal::CensusRefused)
+    }))
+    .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)
+}
+
+/// One finalized explicit sponsorless candidate spending every funded coin
+/// and paying `destinations` published owners.
+///
+/// The consumed total is divided evenly and the LAST destination takes the
+/// remainder, so the created side sums to the consumed side exactly and the
+/// candidate balances whatever the counts are. At two destinations this is
+/// the same arithmetic the two-output successor always did — an even half
+/// and the rest — so its bytes do not move.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::CandidateNotConstructible`] where the
+/// coins do not view, the count is zero or wider than the published owners
+/// available, the totals do not compute, or the request does not finalize;
+/// [`OwnerSigningNegativeRefusal::SubstrateUnavailable`] where the reviewed
+/// target or a published owner is unavailable.
+pub(crate) fn finalize_explicit(
+    abi: &CandidateLiveTransferAbi,
+    coins: &[ObservedFundedCoin],
+    destinations: usize,
+) -> Result<FinalizedLiveTransfer, OwnerSigningNegativeRefusal> {
+    let view = explicit_view(coins)?;
+    let points: Vec<Outpoint> = coins.iter().map(ObservedFundedCoin::outpoint).collect();
+    let total = RECEIPT_AMOUNT
+        .checked_mul(u64::try_from(points.len()).unwrap_or(0))
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let scalars = DESTINATION_SCALARS
+        .get(..destinations)
+        .filter(|scalars| !scalars.is_empty())
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+
+    let width = u64::try_from(destinations).unwrap_or(0);
+    let share = total
+        .checked_div(width)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let head = share
+        .checked_mul(width.saturating_sub(1))
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    let remainder = total
+        .checked_sub(head)
+        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+
+    let mut receipts = Vec::with_capacity(destinations);
+    for (index, scalar) in scalars.iter().enumerate() {
+        let amount = if index + 1 == destinations {
+            remainder
+        } else {
+            share
+        };
+        let owner = published_owner(scalar)
+            .map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
+        let value = ProtocolValue::new(amount)
+            .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+        receipts.push(LiveReceiptDestination::new(
+            linker::OwnerParameter::new(owner),
+            value,
+        ));
     }
 
-    /// The spent-output census the finalized explicit form carries, read
-    /// through the production route so its entries are exactly the ones
-    /// that route would sign over.
+    let request = LiveTransferRequest::new(
+        points,
+        receipts,
+        LiveTransferRepresentationPlan::Explicit,
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+        None,
+    )
+    .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+
+    let target =
+        reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
+    let finalization = finalize_live_transfer(&target, abi, &request, &view, None, None)
+        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    Ok(finalization.into_finalized())
+}
+
+/// The per-input signing requests for a finalized candidate, one per
+/// receipt, each naming the leaf that input executes.
+pub(crate) fn signing_requests(finalized: &FinalizedLiveTransfer) -> Vec<OwnerSigningInputRequest> {
+    finalized
+        .receipts()
+        .iter()
+        .map(|record| {
+            OwnerSigningInputRequest::new(
+                u32::from(record.position()),
+                leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
+                LeafVersion::TAPSCRIPT,
+                OWNER_CODESEPARATOR_POSITION,
+                AnnexDisposition::Absent,
+                IssuanceDisposition::Absent,
+                record.control_block().to_vec(),
+            )
+        })
+        .collect()
+}
+
+/// The census of one candidate's parts, over the negative-evidence route.
+pub(crate) fn negative_census(
+    candidate: TargetTransaction,
+    spent_outputs: Vec<transaction::live_census::SpentOutputCensusEntry>,
+    genesis: Digest32,
+    requests: &[OwnerSigningInputRequest],
+) -> Result<OwnerSigningCensus, OwnerSigningNegativeRefusal> {
+    let target =
+        reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
+    let curve = OracleLiveCurve::new(
+        reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?,
+    );
+    let protected_bytes = candidate.encode_without_witness();
+    let output_witnesses = candidate.output_witnesses().to_vec();
+    OwnerSigningCensus::over_foreign_bytes_for_negative_evidence(
+        &target,
+        candidate,
+        protected_bytes,
+        output_witnesses,
+        spent_outputs,
+        LiveDeployment::new(genesis),
+        requests,
+        &curve,
+    )
+    .map_err(OwnerSigningNegativeRefusal::CensusRefused)
+}
+
+/// The spent-output census the finalized explicit form carries, read
+/// through the production route so its entries are exactly the ones that
+/// route would sign over.
+pub(crate) fn explicit_spent_outputs(
+    finalized: &FinalizedLiveTransfer,
+    genesis: Digest32,
+) -> Result<Vec<transaction::live_census::SpentOutputCensusEntry>, OwnerSigningNegativeRefusal> {
+    let target =
+        reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
+    let curve = OracleLiveCurve::new(
+        reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?,
+    );
+    let census = OwnerSigningCensus::from_explicit_finalized(
+        &target,
+        finalized,
+        LiveDeployment::new(genesis),
+        &curve,
+    )
+    .map_err(OwnerSigningNegativeRefusal::CensusRefused)?;
+    Ok(census.spent_outputs().to_vec())
+}
+
+impl OwnerSigningNegativePlanner {
+    /// The spent-output census for this ceremony's own deployment.
     fn spent_outputs(
         &self,
         finalized: &FinalizedLiveTransfer,
     ) -> Result<Vec<transaction::live_census::SpentOutputCensusEntry>, OwnerSigningNegativeRefusal>
     {
-        let target =
-            reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
-        let curve = OracleLiveCurve::new(
-            reviewed_target().map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?,
-        );
-        let census = OwnerSigningCensus::from_explicit_finalized(
-            &target,
-            finalized,
-            LiveDeployment::new(self.genesis_block_hash),
-            &curve,
-        )
-        .map_err(OwnerSigningNegativeRefusal::CensusRefused)?;
-        Ok(census.spent_outputs().to_vec())
+        explicit_spent_outputs(finalized, self.genesis_block_hash)
     }
 
     /// One candidate's submittable bytes and its first input's message.
@@ -1313,7 +1386,7 @@ impl OwnerSigningNegativePlanner {
         };
 
         let requests = Self::requests(finalized);
-        let census = Self::census(
+        let census = negative_census(
             candidate.clone(),
             spent_outputs.to_vec(),
             self.genesis_block_hash,
@@ -1540,7 +1613,7 @@ impl OwnerSigningNegativePlanner {
             ));
         }
 
-        let census = Self::census(
+        let census = negative_census(
             candidate.clone(),
             spent_outputs.to_vec(),
             self.genesis_block_hash,
