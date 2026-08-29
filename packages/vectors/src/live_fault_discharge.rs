@@ -1948,7 +1948,7 @@ mod tests {
         else {
             panic!("family-range defects were re-spelled as another refusal");
         };
-        assert!(!defects.is_empty());
+        assert_ne!(defects, [] as [tapscript::FamilyRangeDefect; 0]);
     }
 
     #[test]
