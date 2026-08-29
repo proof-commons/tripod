@@ -746,6 +746,30 @@ fn structural_mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveM
             LiveMutantKind::SponsorProtocolOverlap,
             LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
         ),
+        _ => return arrangement_mutation_fact(step),
+    };
+    (Some(fact.0), Some(fact.1))
+}
+
+/// The facts the owner-signing ceremony's leaf arrangements declare.
+///
+/// Split from its caller when the sponsor-range family pushed that
+/// function past the line bound, but taken at the seam that was already
+/// there rather than by moving the newest arrivals out. Every arm here
+/// declares a COMMITTED LEAF ARRANGEMENT — which input reveals which
+/// committed leaf — while every arm left behind declares a byte range or
+/// a transaction shape. That is a difference in the kind of fact and not
+/// in how many lines it takes to write, so the three move together and a
+/// fourth arrangement joins them here.
+///
+/// The chain's contract is unchanged: a step this half does not answer
+/// falls through to the same `(None, None)` the caller used to return, so
+/// every step keeps the fact it had. The exhaustive-tail idiom the
+/// ceremony test-name match uses does not transfer, because that match is
+/// over an enum the compiler can check and this one is over a string
+/// where no arm set is exhaustive; total coverage is what is preserved.
+fn arrangement_mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveMutationLocator>) {
+    let fact = match step {
         // Exactly ONE coordinator, at input one rather than input zero.
         // The two collapsing arrangements give two coordinators or none;
         // this one keeps the control's count and moves the position, so
