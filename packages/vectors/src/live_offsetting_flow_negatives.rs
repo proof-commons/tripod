@@ -337,7 +337,7 @@ impl OffsettingFlowNegativePlanner {
     }
 
     /// Record one refusal and stop.
-    fn refuse(&mut self, refusal: OffsettingFlowRefusal) -> PlanRefused {
+    const fn refuse(&mut self, refusal: OffsettingFlowRefusal) -> PlanRefused {
         if self.record.refusal.is_none() {
             self.record.refusal = Some(refusal);
         }
@@ -415,9 +415,8 @@ impl OffsettingFlowNegativePlanner {
                 })?;
         let finalized = finalize_explicit(&self.abi, coins, width)?;
         let spent_outputs = explicit_spent_outputs(&finalized, self.genesis_block_hash)?;
-        let candidate = finalized.protected().clone();
         let (bytes, _message) = sign_explicit_candidate(
-            candidate,
+            finalized.protected(),
             &finalized,
             &spent_outputs,
             self.genesis_block_hash,

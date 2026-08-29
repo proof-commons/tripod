@@ -1451,7 +1451,12 @@ impl OwnerSigningNegativePlanner {
             candidate
         };
 
-        sign_explicit_candidate(candidate, finalized, spent_outputs, self.genesis_block_hash)
+        sign_explicit_candidate(
+            &candidate,
+            finalized,
+            spent_outputs,
+            self.genesis_block_hash,
+        )
     }
 }
 
@@ -1475,7 +1480,7 @@ impl OwnerSigningNegativePlanner {
 /// not reassemble; [`OwnerSigningNegativeRefusal::CensusRefused`] where the
 /// census refuses the candidate.
 pub(crate) fn sign_explicit_candidate(
-    candidate: TargetTransaction,
+    candidate: &TargetTransaction,
     finalized: &FinalizedLiveTransfer,
     spent_outputs: &[transaction::live_census::SpentOutputCensusEntry],
     genesis: Digest32,
