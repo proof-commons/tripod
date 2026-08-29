@@ -106,13 +106,14 @@ enum CeremonyId {
     SponsoredChangePresent,
     SponsoredCommittedValue,
     SponsoredMissingAuthorization,
+    SponsoredOwnerSigningNegatives,
     SponsoredPrivateExplicitNoChange,
     SponsoredPrivateWithChange,
     ConfidentialPredecessorSetup,
 }
 
 impl CeremonyId {
-    const ALL: [Self; 42] = [
+    const ALL: [Self; 43] = [
         Self::ConservationNegatives,
         Self::ExplicitBoundaryValues,
         Self::ExplicitMaximumInputs,
@@ -152,6 +153,7 @@ impl CeremonyId {
         Self::SponsoredChangePresent,
         Self::SponsoredCommittedValue,
         Self::SponsoredMissingAuthorization,
+        Self::SponsoredOwnerSigningNegatives,
         Self::SponsoredPrivateExplicitNoChange,
         Self::SponsoredPrivateWithChange,
         Self::ConfidentialPredecessorSetup,
@@ -198,6 +200,7 @@ impl CeremonyId {
             Self::SponsoredChangePresent => "sponsored-change-present",
             Self::SponsoredCommittedValue => "sponsored-committed-value",
             Self::SponsoredMissingAuthorization => "sponsored-missing-authorization",
+            Self::SponsoredOwnerSigningNegatives => "sponsored-owner-signing-negatives",
             Self::SponsoredPrivateExplicitNoChange => "sponsored-private-explicit-no-change",
             Self::SponsoredPrivateWithChange => "sponsored-private-with-change",
             Self::ConfidentialPredecessorSetup => "confidential-predecessor",
@@ -318,6 +321,9 @@ impl CeremonyId {
             }
             Self::SponsoredMissingAuthorization => {
                 "the_missing_sponsor_authorization_negative_is_refused_behind_its_control"
+            }
+            Self::SponsoredOwnerSigningNegatives => {
+                "the_three_sponsor_range_rearrangements_are_refused_behind_their_control"
             }
             Self::SponsoredPrivateExplicitNoChange => {
                 "the_sponsored_explicit_no_change_shape_is_submitted_to_a_real_target"
@@ -560,6 +566,7 @@ const fn is_negative_ceremony(ceremony: CeremonyId) -> bool {
             | CeremonyId::OwnerSigningNegatives
             | CeremonyId::SplitCommitmentNegatives
             | CeremonyId::SponsoredMissingAuthorization
+            | CeremonyId::SponsoredOwnerSigningNegatives
     )
 }
 
@@ -575,6 +582,7 @@ fn control_submission(
         CeremonyId::OwnerSigningNegatives => Some("vault-control-entitlement-control"),
         CeremonyId::SplitCommitmentNegatives => Some("submit-split-control"),
         CeremonyId::SponsoredMissingAuthorization => Some("submit-sponsor-signed-control"),
+        CeremonyId::SponsoredOwnerSigningNegatives => Some("submit-sponsored-control"),
         _ => None,
     };
     named
@@ -717,6 +725,25 @@ fn structural_mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveM
         ),
         "consensus-amount-outside-semantic-domain" => (
             LiveMutantKind::AmountOutsideSemanticDomain,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        // The three sponsor-range rows separate by RANGE and by nothing
+        // else: they ride one sponsored control, sit behind one leaf's
+        // signature check, and draw the same generic equality failure. The
+        // ranges below are placeholders in the same sense every other
+        // witnessless row's are — the ceremony measures each one over the
+        // bytes it actually submitted and files it through the capture's
+        // own locator, which is the only value a declaration may carry.
+        "sponsor-receipt-range-exchange" => (
+            LiveMutantKind::ReceiptSponsorRangeExchange,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        "sponsor-change-in-protocol-range" => (
+            LiveMutantKind::SponsorChangeInProtocolRange,
+            LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
+        ),
+        "sponsor-protocol-overlap" => (
+            LiveMutantKind::SponsorProtocolOverlap,
             LiveMutationLocator::WitnesslessRange { start: 0, end: 0 },
         ),
         // Exactly ONE coordinator, at input one rather than input zero.
@@ -2374,7 +2401,7 @@ fn scripted_ceremony_capture(ceremony: CeremonyId) -> NativeOperationCapture {
 
 #[test]
 fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
-    const SEMANTIC_IDS: [&str; 41] = [
+    const SEMANTIC_IDS: [&str; 42] = [
         "conservation-negatives",
         "explicit-boundary-values",
         "explicit-maximum-inputs",
@@ -2414,6 +2441,7 @@ fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
         "sponsored-change-present",
         "sponsored-committed-value",
         "sponsored-missing-authorization",
+        "sponsored-owner-signing-negatives",
         "sponsored-private-explicit-no-change",
         "sponsored-private-with-change",
     ];
@@ -2424,7 +2452,7 @@ fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
         .map(CeremonyId::as_str)
         .collect();
     assert_eq!(observed, SEMANTIC_IDS);
-    assert_eq!(CeremonyId::ALL.len(), 42);
+    assert_eq!(CeremonyId::ALL.len(), 43);
     let names: BTreeSet<_> = CeremonyId::ALL
         .iter()
         .copied()
@@ -4615,6 +4643,200 @@ fn one_offsetting_flow_is_refused_before_the_narrower_control_is_accepted() {
     outcome.expect("the ceremony reached the target");
 
     assert_offsetting_flow_drove_its_shape(record);
+}
+
+/// The three sponsor-range rearrangements each drove their own row: one
+/// mutant per row in offer order, none of them accepted, the control
+/// accepted, and three PAIRWISE DISTINCT witnessless ranges recorded
+/// against the mutants alone.
+///
+/// Split from the test body for the reason the other ceremony assertions
+/// are: the facts the drive rests on are stated once, and the test stays
+/// under the line bound.
+fn assert_sponsor_range_rearrangements_drove_their_ranges(
+    record: &vectors::live_sponsored_owner_signing_negatives::SponsoredOwnerSigningRecord,
+) {
+    use vectors::live_sponsored_owner_signing_negatives::{CONTROL_STEP, SPONSOR_RANGE_MUTANTS};
+
+    let mutants = record.mutants();
+    assert_eq!(
+        mutants.len(),
+        SPONSOR_RANGE_MUTANTS.len(),
+        "the ceremony did not offer one mutant for each of the three rows",
+    );
+
+    let mut declared = BTreeSet::new();
+    for (observed, expected) in mutants.iter().zip(SPONSOR_RANGE_MUTANTS) {
+        assert_eq!(
+            observed.mutant(),
+            expected,
+            "the mutants were not offered in the order the roster names them",
+        );
+
+        // The weakest claim that still fails a broken drive: a negative row
+        // whose candidate is ACCEPTED has driven nothing. No words are
+        // predicted — all three sit behind one leaf's signature check and
+        // draw the same generic equality failure, which is exactly why the
+        // range and not the verdict is what separates them.
+        assert_ne!(
+            observed.observed_layer(),
+            Some(ObservedOutcomeLayer::Accepted),
+            "the {} mutant was accepted, so it drove nothing",
+            observed.row(),
+        );
+
+        let (start, end) = observed.declared_range();
+        assert!(
+            start < end,
+            "the {} mutant declared an empty witnessless range",
+            observed.row(),
+        );
+        assert_eq!(
+            record.capture_locator(observed.step()),
+            Some(LiveMutationLocator::WitnesslessRange { start, end }),
+            "the {} mutant did not file the range it measured",
+            observed.row(),
+        );
+        declared.insert((start, end));
+    }
+
+    // The separating fact, checked rather than asserted in prose: three
+    // rows that share a control, a leaf and a verdict are told apart by
+    // their ranges alone, so two rows declaring one range would leave the
+    // pair indistinguishable in the record.
+    assert_eq!(
+        declared.len(),
+        SPONSOR_RANGE_MUTANTS.len(),
+        "two sponsor-range rows declared the same witnessless range",
+    );
+
+    let control = record.control().expect("the control was submitted");
+    assert_eq!(
+        control.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the control was not accepted, so the mutants' refusals separate nothing",
+    );
+    assert_eq!(
+        record.capture_locator(CONTROL_STEP),
+        None,
+        "the control declared a mutation locator",
+    );
+}
+
+/// The three sponsor-range rows — `receipt-sponsor-range-exchange`,
+/// `sponsor-change-in-protocol-range` and `sponsor-protocol-overlap` —
+/// each confuse the sponsor region with the protocol region on one
+/// sponsored successor.
+///
+/// # Why one ceremony carries three rows
+///
+/// Because they need the same successor and differ only in which part of
+/// it they rearrange. A sponsorless candidate has none of the regions
+/// they confuse, so none of the three could ride the ceremony that builds
+/// one; and building three sponsored successors would record three
+/// controls where one suffices.
+///
+/// # Why the separator is the range
+///
+/// All three keep the per-asset sums the control carried, so consensus
+/// has nothing to refuse and each reaches the coordinator leaf. That leaf
+/// answers a region fault with a generic equality failure, the same words
+/// for any of them, so the verdict is the fragment's rather than any
+/// row's. What differs is the witnessless byte range each rearrangement
+/// confined itself to, which the ceremony measures over the bytes it
+/// actually submitted.
+///
+/// # Why the assertions are first-party only
+///
+/// The frozen run of record predates this ceremony and carries no outcome
+/// to bind it to. The gate checks what the ceremony establishes and the
+/// binding to recorded words arrives with the capture; the capture is
+/// written before any of it runs.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn the_three_sponsor_range_rearrangements_are_refused_behind_their_control() {
+    use vectors::live_sponsored_owner_signing_negatives::{
+        SponsoredOwnerSigningNegativePlanner, render_sponsored_owner_signing_negatives,
+    };
+
+    let mut capture_guard = CaptureGuard::new(CeremonyId::SponsoredOwnerSigningNegatives);
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let report = legacy_report(Some("sponsored-owner-signing-negatives"));
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::SponsoredOwnerSigningNegatives,
+            report.as_deref(),
+        )),
+    );
+
+    let mut planner = SponsoredOwnerSigningNegativePlanner::new(identifier(&genesis))
+        .expect("the ceremony builds");
+    let started = Instant::now();
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_sponsored_owner_signing_negatives(record);
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let mut facts =
+        CeremonyCaptureFacts::from_capture(CeremonyId::SponsoredOwnerSigningNegatives, &capture);
+    for operation in capture.operations() {
+        let step = operation.request().case.step.as_str();
+        if let Some(locator) = record.capture_locator(step) {
+            facts = facts.with_locator(step, locator);
+        }
+    }
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as one.
+    // It is never a target verdict, so it is reported and the test stops
+    // here rather than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the sponsored owner-signing ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    assert_sponsor_range_rearrangements_drove_their_ranges(record);
 }
 
 /// The `vault-control-entitlement-or-bare-u-output` row declares a
