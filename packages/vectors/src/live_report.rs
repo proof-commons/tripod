@@ -88,8 +88,13 @@ use crate::matrix::EvidenceBoundary;
 /// Revision 6 adds the narrow forward-capture vocabulary: one composite
 /// two-acceptance observation, two decoded witness locators, reusable
 /// accepted-control support links, and one independently proven multi-row
-/// semantic witness. It is the sole accepted live safety report schema.
-pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 6;
+/// semantic witness.
+///
+/// Revision 7 adds separate census lines and outstanding spellings for
+/// architecture closure, typing correction, and adjudicated duplicate.
+/// Schema 6 cannot name those non-answers without misreporting them as an
+/// operation-vocabulary closure or as rows waiting on a run.
+pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 7;
 
 /// What a safety report is, said in the bytes.
 ///
@@ -1964,6 +1969,9 @@ fn observations_from_overlay(
             | LiveRowStanding::NativeRunRequired(_)
             | LiveRowStanding::InfrastructureBlocked(_)
             | LiveRowStanding::OperationVocabularyClosed
+            | LiveRowStanding::ArchitectureClosed
+            | LiveRowStanding::TypingCorrectionClosed
+            | LiveRowStanding::AdjudicatedDuplicateClosed
             | LiveRowStanding::Experimental => None,
         };
         if let Some(observation) = observation {
@@ -3487,6 +3495,9 @@ fn validated_outstanding_rows(
                     row.standing(),
                     LiveRowStanding::ReportLayerRequired(_)
                         | LiveRowStanding::OperationVocabularyClosed
+                        | LiveRowStanding::ArchitectureClosed
+                        | LiveRowStanding::TypingCorrectionClosed
+                        | LiveRowStanding::AdjudicatedDuplicateClosed
                         | LiveRowStanding::Experimental
                 )
         })
@@ -3719,6 +3730,17 @@ fn render_evidence_census(text: &mut String, census: LiveEvidenceCensus) {
         text,
         "operation_vocabulary_closed {}",
         census.vocabulary_closed()
+    );
+    let _ = writeln!(text, "architecture_closed {}", census.architecture_closed());
+    let _ = writeln!(
+        text,
+        "typing_correction_closed {}",
+        census.typing_correction_closed()
+    );
+    let _ = writeln!(
+        text,
+        "adjudicated_duplicate_closed {}",
+        census.adjudicated_duplicate_closed()
     );
     let _ = writeln!(text, "experimental {}", census.experimental());
 }
@@ -4152,6 +4174,9 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         LiveRowStanding::InfrastructureBlocked(_) => "infrastructure-blocked",
         LiveRowStanding::ReportLayerRequired(_) => "report-layer-required",
         LiveRowStanding::OperationVocabularyClosed => "operation-vocabulary-closed",
+        LiveRowStanding::ArchitectureClosed => "architecture-closed",
+        LiveRowStanding::TypingCorrectionClosed => "typing-correction-closed",
+        LiveRowStanding::AdjudicatedDuplicateClosed => "adjudicated-duplicate-closed",
         LiveRowStanding::Experimental => "experimental",
     }
 }
@@ -5646,6 +5671,27 @@ mod tests {
     }
 
     #[test]
+    fn typed_closure_standings_keep_distinct_wire_spellings() {
+        use super::standing_name;
+        use crate::live_evidence::LiveRowStanding;
+
+        for (standing, spelling) in [
+            (LiveRowStanding::ArchitectureClosed, "architecture-closed"),
+            (
+                LiveRowStanding::TypingCorrectionClosed,
+                "typing-correction-closed",
+            ),
+            (
+                LiveRowStanding::AdjudicatedDuplicateClosed,
+                "adjudicated-duplicate-closed",
+            ),
+        ] {
+            assert_eq!(standing_name(&standing), spelling);
+            assert!(!standing.is_answered());
+        }
+    }
+
+    #[test]
     fn a_report_validates_against_the_plan_it_is_about() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
@@ -5709,6 +5755,9 @@ mod tests {
             "determinism_observed 1\n",
             "paired_relation_observed 1\n",
             "first_party_fact_observed 3\n",
+            "architecture_closed 0\n",
+            "typing_correction_closed 0\n",
+            "adjudicated_duplicate_closed 0\n",
             "observations 48\n",
             "accepted 24\n",
             "refused 17\n",
