@@ -1201,11 +1201,21 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         L::WitnessProof,
         B::KeyPathRejection,
     ),
+    // BOUNDARY ERRATUM. The declared consensus boundary cannot be this
+    // row's: `CheckTransaction` reads the witnessless census — versions,
+    // inputs, outputs, amounts — and never sizes a control block, so
+    // nothing it does could refuse a malformed control path. The size
+    // check belongs to taproot script verification, which measures the
+    // control block before it can parse a path out of it and refuses a
+    // wrong-sized one there. Declaring consensus would file a script-path
+    // observation under a consensus claim, which is the one thing the
+    // boundary column exists to prevent. `L::WitnessProof` is untouched:
+    // the malformed object is still the witness's own proof material.
     no_class(
         S::ObjectFault,
         "malformed-control-path",
         L::WitnessProof,
-        B::ConsensusRejectionBeforeScript,
+        B::ScriptPathRejection,
     ),
 ];
 
@@ -1313,11 +1323,34 @@ pub const VALUE_FAULTS: &[LiveSafetyRow] = &[
         "malformed-surjection-proof",
         LiveArchitectureClosure::HybridOutputRequiresEmptySurjectionProof,
     ),
-    ambiguous(
+    // CLASS NARROWED. The row was carried as underdetermined because a
+    // copied value commitment had not been tied to a semantic relation:
+    // the raw duplication was visible but which published class it fell
+    // under was not settled. It is settled by what the duplication does.
+    // A value commitment repeated at a second output commits that value
+    // twice on the output side while the input side still carries it
+    // once, so the per-asset in-equals-out sum breaks by exactly the
+    // copied amount. That is `AmountMismatch` against the closed asset's
+    // conservation relation, and the target answers it in `CheckAmounts`
+    // before any script runs — the same class, relation and boundary
+    // `private-ct-imbalance` draws for the same arithmetic.
+    //
+    // The two rows are not one observation: they separate by LOCATOR.
+    // `private-ct-imbalance` mutates the value commitment at output one
+    // of a `(1, 2)` successor; this row copies output zero's commitment
+    // onto output TWO of a `(1, 3)` split, so the declared `(range,
+    // shape)` pair differs in both members. Sharing a class is what the
+    // matrix expects of two faults with one arithmetic; sharing an
+    // observation is what it forbids, and the locator is what keeps them
+    // apart.
+    linked(
         S::ValueFault,
         "copied-commitment",
         L::TargetTransaction,
         B::ConsensusRejectionBeforeScript,
+        conservation(),
+        amount_mismatch,
+        "AmountMismatch",
     ),
     // RETYPED, for the same reason. Removing a receipt drops the output
     // side of the per-asset sum, so the break is arithmetic and consensus
