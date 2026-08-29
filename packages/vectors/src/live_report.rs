@@ -5876,7 +5876,9 @@ mod tests {
             .lines()
             .filter(|line| line.starts_with("observation "))
             .count();
-        assert_eq!(rendered_observations, 47);
+        // 41 unique corpus observations + 7 plan-derived observations
+        // + 2 report-layer observations are rendered as 50 lines.
+        assert_eq!(rendered_observations, 50);
         assert_eq!(
             rendered_observations,
             corpus_observations + plan_derived_observations + report_layer_observations,
