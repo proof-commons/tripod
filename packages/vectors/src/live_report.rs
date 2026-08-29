@@ -6487,7 +6487,7 @@ mod tests {
     fn non_live_schema_values_are_hard_rejected() {
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let target = projection();
-        for schema in [4, 7, u32::MAX] {
+        for schema in [0, 4, 5, 6, 8, u32::MAX] {
             let mut report = assemble_live_safety_report(&plan, target.clone()).expect("assembles");
             report.schema = schema;
             assert_eq!(
