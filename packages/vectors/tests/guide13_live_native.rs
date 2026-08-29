@@ -93,6 +93,7 @@ enum CeremonyId {
     MultiSeveralOwners,
     MultiSplit,
     MultiStrictOneToOne,
+    OffsettingFlowNegatives,
     OwnerObservation,
     OwnerSigningNegatives,
     PairsArc,
@@ -110,7 +111,7 @@ enum CeremonyId {
 }
 
 impl CeremonyId {
-    const ALL: [Self; 40] = [
+    const ALL: [Self; 41] = [
         Self::ConservationNegatives,
         Self::ExplicitBoundaryValues,
         Self::ExplicitMaximumInputs,
@@ -137,6 +138,7 @@ impl CeremonyId {
         Self::MultiSeveralOwners,
         Self::MultiSplit,
         Self::MultiStrictOneToOne,
+        Self::OffsettingFlowNegatives,
         Self::OwnerObservation,
         Self::OwnerSigningNegatives,
         Self::PairsArc,
@@ -181,6 +183,7 @@ impl CeremonyId {
             Self::MultiSeveralOwners => "multi-several-owners",
             Self::MultiSplit => "multi-split",
             Self::MultiStrictOneToOne => "multi-strict-one-to-one",
+            Self::OffsettingFlowNegatives => "offsetting-flow-negatives",
             Self::OwnerObservation => "owner-observation",
             Self::OwnerSigningNegatives => "owner-signing-negatives",
             Self::PairsArc => "pairs-arc",
@@ -257,6 +260,9 @@ impl CeremonyId {
             Self::MultiSplit => "the_split_shape_is_submitted_to_a_real_target",
             Self::MultiStrictOneToOne => {
                 "the_strict_one_to_one_shape_is_submitted_to_a_real_target"
+            }
+            Self::OffsettingFlowNegatives => {
+                "one_offsetting_flow_is_refused_before_the_narrower_control_is_accepted"
             }
             Self::OwnerObservation => "one_owner_authorization_is_observed_on_the_explicit_lane",
             Self::OwnerSigningNegatives => {
@@ -507,6 +513,7 @@ const fn is_negative_ceremony(ceremony: CeremonyId) -> bool {
         CeremonyId::ConservationNegatives
             | CeremonyId::ExplicitWitnessNegatives
             | CeremonyId::KeypathProbe
+            | CeremonyId::OffsettingFlowNegatives
             | CeremonyId::OwnerSigningNegatives
             | CeremonyId::SponsoredMissingAuthorization
     )
@@ -520,6 +527,7 @@ fn control_submission(
     let named = match ceremony {
         CeremonyId::ConservationNegatives => Some("submit-balance-valid-control"),
         CeremonyId::KeypathProbe => Some("script-path-control"),
+        CeremonyId::OffsettingFlowNegatives => Some("submit-two-in-two-out-control"),
         CeremonyId::OwnerSigningNegatives => Some("vault-control-entitlement-control"),
         CeremonyId::SponsoredMissingAuthorization => Some("submit-sponsor-signed-control"),
         _ => None,
@@ -641,6 +649,18 @@ fn structural_mutation_fact(step: &str) -> (Option<LiveMutantKind>, Option<LiveM
                 mutant_inputs: 1,
                 control_outputs: 2,
                 mutant_outputs: 2,
+            },
+        ),
+        // The added flow widens BOTH sides by one, which is what keeps the
+        // candidate balanced and the refusal the covenant's rather than the
+        // consensus tally's.
+        "offsetting-flow" => (
+            LiveMutantKind::SecondOffsettingUFlow,
+            LiveMutationLocator::TransactionShape {
+                control_inputs: 2,
+                mutant_inputs: 3,
+                control_outputs: 2,
+                mutant_outputs: 3,
             },
         ),
         "consensus-amount-outside-semantic-domain" => (
@@ -2302,7 +2322,7 @@ fn scripted_ceremony_capture(ceremony: CeremonyId) -> NativeOperationCapture {
 
 #[test]
 fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
-    const SEMANTIC_IDS: [&str; 39] = [
+    const SEMANTIC_IDS: [&str; 40] = [
         "conservation-negatives",
         "explicit-boundary-values",
         "explicit-maximum-inputs",
@@ -2329,6 +2349,7 @@ fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
         "multi-several-owners",
         "multi-split",
         "multi-strict-one-to-one",
+        "offsetting-flow-negatives",
         "owner-observation",
         "owner-signing-negatives",
         "pairs-arc",
@@ -2350,7 +2371,7 @@ fn the_ceremony_roster_matches_the_driver_and_each_test_name_is_unique() {
         .map(CeremonyId::as_str)
         .collect();
     assert_eq!(observed, SEMANTIC_IDS);
-    assert_eq!(CeremonyId::ALL.len(), 40);
+    assert_eq!(CeremonyId::ALL.len(), 41);
     let names: BTreeSet<_> = CeremonyId::ALL
         .iter()
         .copied()
@@ -4198,6 +4219,168 @@ fn conservation_is_recorded_against_a_control_the_proof_negatives_mutate() {
 ///
 /// # What this run is for
 ///
+/// The `second-offsetting-u-flow` row drives a candidate that consensus
+/// has no reason to refuse: its added input-and-output pair offsets
+/// exactly, so the per-asset sum still closes and the covenant's own
+/// cardinality clause is what answers.
+///
+/// # Why the assertions are first-party only
+///
+/// The frozen run of record predates this ceremony and carries no outcome
+/// to bind it to, and the lookup that fetches one panics rather than
+/// returning nothing. So the gate here checks what the ceremony itself
+/// establishes — the shapes it built, that the wider candidate was not
+/// accepted, and that the narrower control was — and the binding to
+/// recorded words arrives with the capture that observes it. The capture
+/// is written BEFORE any of it runs, so a failure still leaves a
+/// diagnosable artifact.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn one_offsetting_flow_is_refused_before_the_narrower_control_is_accepted() {
+    use vectors::live_offsetting_flow_negatives::{
+        CONTROL_STEP, MUTANT_STEP, OffsettingFlowNegativePlanner, render_offsetting_flow_negatives,
+    };
+
+    let mut capture_guard = CaptureGuard::new(CeremonyId::OffsettingFlowNegatives);
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let report = legacy_report(Some("offsetting-flow-negatives"));
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(&capture_diagnostics(
+            CeremonyId::OffsettingFlowNegatives,
+            report.as_deref(),
+        )),
+    );
+
+    let mut planner =
+        OffsettingFlowNegativePlanner::new(identifier(&genesis)).expect("the ceremony builds");
+    let started = Instant::now();
+    let (outcome, capture) = execute_and_capture(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_offsetting_flow_negatives(record);
+    if let Some(report) = report.as_deref() {
+        std::fs::write(report, &rendered).expect("the transcript is written");
+        std::fs::write(
+            timing_path(report),
+            format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+        )
+        .expect("the run's wall time is written");
+    }
+    let mut facts =
+        CeremonyCaptureFacts::from_capture(CeremonyId::OffsettingFlowNegatives, &capture);
+    for operation in capture.operations() {
+        let step = operation.request().case.step.as_str();
+        if let Some(locator) = record.capture_locator(step) {
+            facts = facts.with_locator(step, locator);
+        }
+    }
+    write_capture_before_gates(&mut capture_guard, &capture, &facts, &rendered);
+    if let (Some(report), Err(error)) = (report.as_deref(), &outcome) {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    // A construction refusal is a valid outcome and is written down as one.
+    // It is never a target verdict, so it is reported and the test stops
+    // here rather than pretending the node said anything.
+    if let Some(refusal) = record.refusal() {
+        panic!("the offsetting-flow ceremony refused before the node: {refusal:?}");
+    }
+    outcome.expect("the ceremony reached the target");
+
+    assert!(record.relinked(), "the ceremony funded before it linked");
+    assert_eq!(
+        record.coins().len(),
+        3,
+        "the ceremony did not fund the coin the added flow spends",
+    );
+    assert!(
+        record
+            .coins()
+            .iter()
+            .all(vectors::live_owner_observation::ObservedFundedCoin::matches_expectation),
+        "the node reported a coin the ceremony did not ask for",
+    );
+
+    let mutant = record.mutant().expect("the offsetting flow was built");
+    assert_eq!(
+        mutant.control_shape(),
+        (2, 2),
+        "the control is not the two-in two-out successor",
+    );
+    assert_eq!(
+        mutant.mutant_shape(),
+        (3, 3),
+        "the mutant is not one balanced flow wider than the control",
+    );
+
+    // The weakest claim that still fails a broken drive: a negative row
+    // whose candidate is ACCEPTED has driven nothing. Which clause refuses
+    // it is deliberately not named — the equality failure is the covenant
+    // fragment's own and reads the same for any count fault.
+    assert_ne!(
+        mutant.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the offsetting flow was accepted, so it drove nothing",
+    );
+
+    let control = record.control().expect("the control was submitted");
+    assert_eq!(
+        control.observed_layer(),
+        Some(ObservedOutcomeLayer::Accepted),
+        "the control was not accepted, so the mutant's refusal separates nothing",
+    );
+
+    // The separating fact is the shape, recorded as the locator the import
+    // will read. The control step carries none, because it is not a
+    // mutation and a locator on an acceptance would claim a fault.
+    assert_eq!(
+        record.capture_locator(MUTANT_STEP),
+        Some(LiveMutationLocator::TransactionShape {
+            control_inputs: 2,
+            mutant_inputs: 3,
+            control_outputs: 2,
+            mutant_outputs: 3,
+        }),
+        "the offsetting flow did not declare its shape locator",
+    );
+    assert_eq!(
+        record.capture_locator(CONTROL_STEP),
+        None,
+        "the control declared a mutation locator",
+    );
+}
+
 /// The `vault-control-entitlement-or-bare-u-output` row declares a
 /// script-path refusal, and a mutant with a stale signature would die at
 /// the signature gate before the leaf ran. This ceremony re-signs the
