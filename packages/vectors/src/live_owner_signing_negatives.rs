@@ -114,8 +114,8 @@ use target_elements::LeafVersion;
 use target_elements_conformance::constructor::curve::FIELD_ELEMENT_BYTES;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
-    FundedOutput, MinedFundingReadback, NativeOperationResponse, ObservedOutcomeLayer,
-    OperationCaseId, OperationSubject, TargetFundingSubject, TargetSubmissionSubject,
+    MinedFundingReadback, NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId,
+    OperationSubject, TargetFundingSubject, TargetSubmissionSubject,
 };
 use transaction::bytes::{
     AssetField, AssetId, InputWitness, NonceField, Outpoint, OutputWitness, TargetOutput,
@@ -151,7 +151,13 @@ use crate::live_report::LiveMutationLocator;
 /// Equal to the owner-observation ceremony's figure deliberately: the
 /// control this ceremony accepts is the same candidate that ceremony
 /// accepts, and a different amount would make the two runs incomparable.
-const RECEIPT_AMOUNT: u64 = 5_000;
+///
+/// Crate-visible because [`finalize_explicit`] totals the created side as
+/// this figure times the number of coins consumed. Any ceremony using that
+/// route must fund at THIS amount, or its candidate is built to balance
+/// against a total its coins do not hold and the target refuses it at the
+/// tally instead of at the clause the ceremony is about.
+pub(crate) const RECEIPT_AMOUNT: u64 = 5_000;
 
 /// How many receipts the ceremony funds and then consumes.
 const RECEIPT_COUNT: u8 = 2;
@@ -1101,18 +1107,11 @@ impl OwnerSigningNegativePlanner {
         &mut self,
         response: &NativeOperationResponse,
     ) -> Result<(), OwnerSigningNegativeRefusal> {
-        let asset = response
-            .issued_asset
-            .clone()
-            .ok_or(OwnerSigningNegativeRefusal::IssuanceNamedNoAsset)?;
-        let identity = asset_of(&asset).ok_or(OwnerSigningNegativeRefusal::IssuanceNamedNoAsset)?;
-        let abi = live_abi_for_asset(*identity.internal(), RESERVE_ASSET, FEE_PROGRAM_DIGEST)
-            .map_err(|_| OwnerSigningNegativeRefusal::RelinkRefused)?;
-        self.explicit_program = explicit_destination_program(&abi)
-            .map_err(|_| OwnerSigningNegativeRefusal::RelinkRefused)?;
-        self.record.issued_asset = Some(asset);
+        let relinked = relink_explicit(response)?;
+        self.explicit_program = relinked.explicit_program;
+        self.record.issued_asset = Some(relinked.issued_asset);
         self.record.relinked = true;
-        self.abi = abi;
+        self.abi = relinked.abi;
         Ok(())
     }
 
@@ -1121,59 +1120,25 @@ impl OwnerSigningNegativePlanner {
         &mut self,
         response: &NativeOperationResponse,
     ) -> Result<(), OwnerSigningNegativeRefusal> {
-        if response.funded_outputs.is_empty() {
-            return Err(OwnerSigningNegativeRefusal::FundingCreatedNoPredecessor);
-        }
         let expected_asset = self
             .record
             .issued_asset
             .as_deref()
             .and_then(asset_of)
             .ok_or(OwnerSigningNegativeRefusal::IssuanceNamedNoAsset)?;
-
-        let mut coins = Vec::with_capacity(response.funded_outputs.len());
-        for funded in &response.funded_outputs {
-            coins.push(self.observed_coin(funded, expected_asset)?);
-        }
-        self.record.coins = coins;
+        self.record.coins = observed_explicit_coins(
+            response,
+            expected_asset,
+            &self.explicit_program,
+            RECEIPT_AMOUNT,
+        )?;
         Ok(())
-    }
-
-    /// One funded coin, as reported and as expected.
-    fn observed_coin(
-        &self,
-        funded: &FundedOutput,
-        expected_asset: AssetId,
-    ) -> Result<ObservedFundedCoin, OwnerSigningNegativeRefusal> {
-        let outpoint = outpoint_of(&funded.outpoint)
-            .ok_or(OwnerSigningNegativeRefusal::MalformedFundedOutput)?;
-        let asset =
-            asset_of(&funded.asset).ok_or(OwnerSigningNegativeRefusal::MalformedFundedOutput)?;
-        let program =
-            decode_hex(&funded.script).ok_or(OwnerSigningNegativeRefusal::MalformedFundedOutput)?;
-
-        let matches_expectation = asset == expected_asset
-            && funded.amount_satoshis == RECEIPT_AMOUNT
-            && program == self.explicit_program;
-
-        Ok(ObservedFundedCoin::observed(
-            outpoint,
-            AssetField::Explicit(asset),
-            ValueField::Explicit(funded.amount_satoshis),
-            program,
-            matches_expectation,
-        ))
     }
 
     /// One finalized explicit candidate over the funded coins, paying the
     /// two destinations this ceremony's successor has always paid.
     fn finalize(&self) -> Result<FinalizedLiveTransfer, OwnerSigningNegativeRefusal> {
         finalize_explicit(&self.abi, &self.record.coins, usize::from(RECEIPT_COUNT))
-    }
-
-    /// The per-input signing requests for a finalized candidate.
-    fn requests(finalized: &FinalizedLiveTransfer) -> Vec<OwnerSigningInputRequest> {
-        signing_requests(finalized)
     }
 }
 
@@ -1207,6 +1172,94 @@ fn destination_shares(total: u64, width: u64) -> Option<(u64, u64)> {
     let head = share.checked_mul(width.saturating_sub(1))?;
     let remainder = total.checked_sub(head)?;
     Some((share, remainder))
+}
+
+/// A deployment relinked against the asset the target issued.
+pub(crate) struct RelinkedDeployment {
+    /// The candidate ABI bound to the issued asset.
+    pub(crate) abi: CandidateLiveTransferAbi,
+    /// The explicit destination program funded receipts are paid to.
+    pub(crate) explicit_program: Vec<u8>,
+    /// The asset as the node printed it.
+    pub(crate) issued_asset: String,
+}
+
+/// Link a deployment against the asset the target just issued.
+///
+/// Shared because every explicit ceremony relinks the same way: the asset
+/// the node named becomes the ABI's, and the destination program is
+/// rederived from that ABI rather than carried over. A ceremony that kept
+/// the pre-issuance program would fund coins nothing in the successor
+/// could spend.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::IssuanceNamedNoAsset`] where the
+/// issuance named no asset or it does not decode;
+/// [`OwnerSigningNegativeRefusal::RelinkRefused`] where the deployment
+/// does not relink or the destination program does not derive.
+pub(crate) fn relink_explicit(
+    response: &NativeOperationResponse,
+) -> Result<RelinkedDeployment, OwnerSigningNegativeRefusal> {
+    let asset = response
+        .issued_asset
+        .clone()
+        .ok_or(OwnerSigningNegativeRefusal::IssuanceNamedNoAsset)?;
+    let identity = asset_of(&asset).ok_or(OwnerSigningNegativeRefusal::IssuanceNamedNoAsset)?;
+    let abi = live_abi_for_asset(*identity.internal(), RESERVE_ASSET, FEE_PROGRAM_DIGEST)
+        .map_err(|_| OwnerSigningNegativeRefusal::RelinkRefused)?;
+    let explicit_program = explicit_destination_program(&abi)
+        .map_err(|_| OwnerSigningNegativeRefusal::RelinkRefused)?;
+    Ok(RelinkedDeployment {
+        abi,
+        explicit_program,
+        issued_asset: asset,
+    })
+}
+
+/// The funded coins the node reported, each carrying whether it is the
+/// coin that was asked for.
+///
+/// The expectation is RECORDED rather than enforced: a coin whose asset,
+/// amount or program differs from the request is still returned, marked as
+/// not matching, so the transcript states the disagreement instead of the
+/// ceremony refusing and saying nothing about it.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::FundingCreatedNoPredecessor`] where the
+/// node reported no funded output at all;
+/// [`OwnerSigningNegativeRefusal::MalformedFundedOutput`] where one of
+/// them does not decode.
+pub(crate) fn observed_explicit_coins(
+    response: &NativeOperationResponse,
+    expected_asset: AssetId,
+    expected_program: &[u8],
+    expected_amount: u64,
+) -> Result<Vec<ObservedFundedCoin>, OwnerSigningNegativeRefusal> {
+    if response.funded_outputs.is_empty() {
+        return Err(OwnerSigningNegativeRefusal::FundingCreatedNoPredecessor);
+    }
+    let mut coins = Vec::with_capacity(response.funded_outputs.len());
+    for funded in &response.funded_outputs {
+        let outpoint = outpoint_of(&funded.outpoint)
+            .ok_or(OwnerSigningNegativeRefusal::MalformedFundedOutput)?;
+        let asset =
+            asset_of(&funded.asset).ok_or(OwnerSigningNegativeRefusal::MalformedFundedOutput)?;
+        let program =
+            decode_hex(&funded.script).ok_or(OwnerSigningNegativeRefusal::MalformedFundedOutput)?;
+        let matches_expectation = asset == expected_asset
+            && funded.amount_satoshis == expected_amount
+            && program.as_slice() == expected_program;
+        coins.push(ObservedFundedCoin::observed(
+            outpoint,
+            AssetField::Explicit(asset),
+            ValueField::Explicit(funded.amount_satoshis),
+            program,
+            matches_expectation,
+        ));
+    }
+    Ok(coins)
 }
 
 /// The public view a ceremony constructs against, over its funded coins.
@@ -1398,65 +1451,93 @@ impl OwnerSigningNegativePlanner {
             candidate
         };
 
-        let requests = Self::requests(finalized);
-        let census = negative_census(
-            candidate.clone(),
-            spent_outputs.to_vec(),
-            self.genesis_block_hash,
-            &requests,
-        )?;
+        sign_explicit_candidate(candidate, finalized, spent_outputs, self.genesis_block_hash)
+    }
+}
 
-        // Every funded receipt is paid to the FIRST owner's explicit
-        // destination program, so every input's leaf checks that one
-        // owner's key, and every input is signed by that one scalar. A
-        // per-position scalar would sign an input's leaf with a key it does
-        // not authenticate, which the target refuses as an invalid
-        // signature before any output clause runs.
-        let material = signing_material(&FIRST_SCALAR)
-            .map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
-        let mut witnesses = candidate.witnesses().to_vec();
-        let mut first_message = None;
-        for record in finalized.receipts() {
-            let position = usize::from(record.position());
-            let input = census
-                .signing_inputs()
-                .iter()
-                .find(|entry| entry.input_index() == u32::from(record.position()))
-                .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-            let message =
-                candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown);
-            if first_message.is_none() {
-                first_message = Some(message);
-            }
-            let signature = material
-                .sign(&message, &SIGNING_AUXILIARY)
-                .map_err(|_| OwnerSigningNegativeRefusal::SigningRefused)?
-                .to_vec();
-            let witness = InputWitness::new(vec![
-                signature,
-                record.leaf_script().to_vec(),
-                record.control_block().to_vec(),
-            ]);
-            *witnesses
-                .get_mut(position)
-                .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)? = witness;
+/// One explicit candidate signed by every receipt owner over its own
+/// census, assembled into submittable bytes.
+///
+/// The candidate arrives ALREADY mutated where a ceremony mutates it,
+/// which is what makes this the shared half: each input is signed over the
+/// bytes the node will actually see, so a mutant passes the signature gate
+/// and reaches the clause its row is about. A ceremony that signed the
+/// control and mutated afterwards would be testing the signature check
+/// instead of its own row.
+///
+/// # Errors
+///
+/// [`OwnerSigningNegativeRefusal::SubstrateUnavailable`] where the signing
+/// material is unavailable; [`OwnerSigningNegativeRefusal::SigningRefused`]
+/// where a signature is refused;
+/// [`OwnerSigningNegativeRefusal::CandidateNotConstructible`] where an
+/// input has no census entry or witness slot, or the signed candidate does
+/// not reassemble; [`OwnerSigningNegativeRefusal::CensusRefused`] where the
+/// census refuses the candidate.
+pub(crate) fn sign_explicit_candidate(
+    candidate: TargetTransaction,
+    finalized: &FinalizedLiveTransfer,
+    spent_outputs: &[transaction::live_census::SpentOutputCensusEntry],
+    genesis: Digest32,
+) -> Result<(Vec<u8>, Digest32), OwnerSigningNegativeRefusal> {
+    let requests = signing_requests(finalized);
+    let census = negative_census(
+        candidate.clone(),
+        spent_outputs.to_vec(),
+        genesis,
+        &requests,
+    )?;
+
+    // Every funded receipt is paid to the FIRST owner's explicit
+    // destination program, so every input's leaf checks that one
+    // owner's key, and every input is signed by that one scalar. A
+    // per-position scalar would sign an input's leaf with a key it does
+    // not authenticate, which the target refuses as an invalid
+    // signature before any output clause runs.
+    let material = signing_material(&FIRST_SCALAR)
+        .map_err(|_| OwnerSigningNegativeRefusal::SubstrateUnavailable)?;
+    let mut witnesses = candidate.witnesses().to_vec();
+    let mut first_message = None;
+    for record in finalized.receipts() {
+        let position = usize::from(record.position());
+        let input = census
+            .signing_inputs()
+            .iter()
+            .find(|entry| entry.input_index() == u32::from(record.position()))
+            .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+        let message = candidate_owner_message(&census, input, WitnessVectorTreatment::BothGrown);
+        if first_message.is_none() {
+            first_message = Some(message);
         }
-
-        let assembled = TargetTransaction::with_output_witnesses(
-            candidate.version(),
-            candidate.inputs().to_vec(),
-            candidate.outputs().to_vec(),
-            candidate.lock_time(),
-            witnesses,
-            candidate.output_witnesses().to_vec(),
-        )
-        .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-
-        let message =
-            first_message.ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-        Ok((assembled.encode(), message))
+        let signature = material
+            .sign(&message, &SIGNING_AUXILIARY)
+            .map_err(|_| OwnerSigningNegativeRefusal::SigningRefused)?
+            .to_vec();
+        let witness = InputWitness::new(vec![
+            signature,
+            record.leaf_script().to_vec(),
+            record.control_block().to_vec(),
+        ]);
+        *witnesses
+            .get_mut(position)
+            .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)? = witness;
     }
 
+    let assembled = TargetTransaction::with_output_witnesses(
+        candidate.version(),
+        candidate.inputs().to_vec(),
+        candidate.outputs().to_vec(),
+        candidate.lock_time(),
+        witnesses,
+        candidate.output_witnesses().to_vec(),
+    )
+    .map_err(|_| OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+
+    let message = first_message.ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
+    Ok((assembled.encode(), message))
+}
+
+impl OwnerSigningNegativePlanner {
     /// Build the mutant and the control, and stage the mutant for
     /// submission. The declared field range is measured over the two
     /// candidates' WITNESSLESS serializations, where the re-signing does
@@ -1853,7 +1934,9 @@ impl TargetOperationPlanner for OwnerSigningNegativePlanner {
 }
 
 /// The explicit destination program of the first published owner.
-fn explicit_destination_program(abi: &CandidateLiveTransferAbi) -> Result<Vec<u8>, VectorError> {
+pub(crate) fn explicit_destination_program(
+    abi: &CandidateLiveTransferAbi,
+) -> Result<Vec<u8>, VectorError> {
     Ok(abi
         .destinations()
         .get(
