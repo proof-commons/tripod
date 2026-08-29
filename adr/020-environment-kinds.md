@@ -1,8 +1,8 @@
 # ADR-020: Adoption of the Environment-Kind Registry
 
 **Status:** Decided and adopted; implemented, with every recorded kind-token migration complete.
-**Document:** This ADR is the normative third-edition text of _A Taxonomy of Environments in Formal Writing, as a Kind Registry_, formerly the archived adopted-source draft.
-**Provenance:** Externally authored in its third edition; normative here by adoption rather than by authorship.
+**Document:** This ADR is the normative fourth-edition text, supplied 2026-08-29, of _A Taxonomy of Environments in Formal Writing, as a Kind Registry_, formerly the archived adopted-source draft.
+**Provenance:** Externally authored in its fourth edition; normative here by adoption rather than by authorship.
 **Scope:** The kind segment of every label minted in this repository, and the checker's kind vocabulary.
 **Depends on:** [ADR-019](019-label-calculus.md), which fixes the label form the kind segment opens.
 **Does not establish:** Any obligation to use a catalogued kind; the registry fixes what a kind means when used, never that it must be used.
@@ -62,13 +62,15 @@ The pairs this repository adds to the normative registry relation, each with fir
 
 The third edition incorporates four pairs once carried locally, so `pkg`, `q`, `req`, and `test` are registry kinds rather than members of X_A. No mint moved when those rows left the extension set.
 
+The fourth edition incorporates none. Its twenty new rows share no name and no kind token with the extension set above, so every entry of X_A keeps its warrant of distinctness under (`rule:kinds:extension-entry`) and the set stands unchanged; and none of its twelve new tokens is a kind this repository mints, so it adjudicates no new conflict and adds no row to the migration record.
+
 ### Registry sense · `rem:kinds:registry-sense`
 
 Inside a labels context, an unqualified registry means this kind registry. The checker's per-owner minting registries are runtime data structures, and `plans/registers/identities.md` is the separate identity register. The edition's candidate attestation status is likewise unrelated to this repository's `candidate` kind.
 
 ### Edition statuses and extension evidence · `rem:kinds:attestation`
 
-This repository neither strengthens nor weakens an edition status. Yoga, Meta-question, and Schema in its data-shape sense remain daggered; the candidate Record/member-bearing-aggregate pair remains outside C_A; none is in use. Every pair of X_A is firm on the evidence located above.
+This repository neither strengthens nor weakens an edition status. Yoga, Meta-question, Oration, Sitting, and Schema in its data-shape sense remain daggered; the candidate Record/member-bearing-aggregate pair remains outside C_A; none is in use. Every pair of X_A is firm on the evidence located above.
 
 ### Companion register · `rem:kinds:companion-register`
 
@@ -76,13 +78,15 @@ The generated companion register at [plans/labels/attestation.md](../plans/label
 
 ### Heading depth · `rule:kinds:heading-depth`
 
-Folding the adopted text into this record demoted every one of its headings by exactly one level: the document title became the second-level head that opens the body below, and each of the text's twenty-three section heads became a third-level head. A record carries one title, which is the record's own, so the adopted text cannot keep a first-level head of its own inside it.
+Folding the adopted text into this record demoted every one of its headings by exactly one level: the document title became the second-level head that opens the body below, and each of the text's twenty-four section heads became a third-level head. A record carries one title, which is the record's own, so the adopted text cannot keep a first-level head of its own inside it.
 
 Nothing else in the text changed. Below the head that opens it the body is byte-identical to the adopted draft, and every label value, every catalogue row, every classification, and every status stands as adopted. The change is presentation and not genre: a head's depth is a rendering of the division it names, and no pair of the effective relation and no head-validation judgment depends on it.
 
 ### Implementation standing · `gate:kinds:implementation`
 
 The registry relation and X_A are the checker's enforced vocabulary for every label owner, including the attestation surface. Unknown kinds fail, migrated tokens do not survive as kinds, and participating authored environment heads validate by one exact pair or one presentation reduction.
+
+That vocabulary is committed data, checked against this document's tables rather than re-parsed from them at every run, so an edition that moves the tables moves the committed relation in the same batch and the drift check holds the two together in the meantime. The reading is deliberate: the relation the checker enforces is reviewable as a diff, and no run of the checker depends on parsing prose.
 
 The companion attestation register is generated and checked for freshness. Its evidence and status rows, and Hom(C_A), derive from this document and the corpus census rather than remaining an unchecked prose claim.
 
