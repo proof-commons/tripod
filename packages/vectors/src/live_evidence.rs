@@ -84,8 +84,8 @@ use crate::live_first_party::{
 use crate::live_plan::{demonstration_live_abi, demonstration_live_bundle, live_transfer_plan};
 use crate::live_report::{LiveReportObservation, LiveRunBinding, LiveTargetResponse};
 use crate::live_safety::{
-    LiveRelationStanding, LiveReportRequirement, LiveRowLink, LiveSafetyRow, LiveSafetySection,
-    LiveUnlinkedReason, required_safety_matrix, resolve_row,
+    LiveRelationStanding, LiveReportRequirement, LiveRowBoundary, LiveRowLink, LiveSafetyRow,
+    LiveSafetySection, LiveUnlinkedReason, required_safety_matrix, resolve_row,
 };
 use crate::matrix::EvidenceBoundary;
 use crate::observed_boundary::observed_boundary;
@@ -880,6 +880,37 @@ pub enum LiveRowStanding {
     /// there is no malformed input for a validator to refuse, so there
     /// is no §4.2 discharge to be owed one.
     OperationVocabularyClosed,
+    /// Architecture, or an explicitly named deployment shape, closes the
+    /// row before any validator or run could be asked.
+    ///
+    /// The exact claim is carried by
+    /// [`crate::live_safety::LiveRowBoundary::ArchitectureClosure`], whose
+    /// argument permits no generic inexpressibility claim. This standing
+    /// is not answered: [`Self::is_answered`] is false, and it is neither
+    /// a refusal nor evidence. It is outside the run-owed denominator
+    /// because the typed argument says no candidate carrying that fault
+    /// exists for a run to accept or refuse; counting it as waiting would
+    /// promise an observation the named construction boundary excludes.
+    ArchitectureClosed,
+    /// The row asks about a state the live type does not possess.
+    ///
+    /// [`crate::live_safety::LiveRowBoundary::TypingCorrection`] names the
+    /// exact missing state. This standing is not answered and
+    /// [`Self::is_answered`] is false, but it is outside the run-owed
+    /// denominator: a run cannot observe an event whose premise has no
+    /// referent in the live lane. Leaving it among runnable obligations
+    /// would describe a type correction as a missing execution.
+    TypingCorrectionClosed,
+    /// Existing fault rows exhaust every arrangement the row could stage.
+    ///
+    /// The exact partition is carried by
+    /// [`crate::live_safety::LiveRowBoundary::AdjudicatedDuplicate`]. This
+    /// standing is not answered and [`Self::is_answered`] is false: it
+    /// supplies no new evidence. It is outside the run-owed denominator
+    /// because every candidate arrangement belongs to a named existing
+    /// fault; demanding another run would count the same arrangement as
+    /// an independent obligation without an independent separating fact.
+    AdjudicatedDuplicateClosed,
     /// The row is ad hoc and outside the required denominator.
     ///
     /// §13.1's last sentence. No row of §15 is experimental today, and
@@ -977,6 +1008,9 @@ pub struct LiveEvidenceCensus {
     report_layer_required: usize,
     report_layer_observed: usize,
     vocabulary_closed: usize,
+    architecture_closed: usize,
+    typing_correction_closed: usize,
+    adjudicated_duplicate_closed: usize,
     experimental: usize,
 }
 
@@ -1142,6 +1176,24 @@ impl LiveEvidenceCensus {
         self.vocabulary_closed
     }
 
+    /// How many rows an exact architecture or deployment fact closes.
+    #[must_use]
+    pub const fn architecture_closed(&self) -> usize {
+        self.architecture_closed
+    }
+
+    /// How many rows are closed because their premise is mis-typed.
+    #[must_use]
+    pub const fn typing_correction_closed(&self) -> usize {
+        self.typing_correction_closed
+    }
+
+    /// How many rows have no arrangement independent of existing faults.
+    #[must_use]
+    pub const fn adjudicated_duplicate_closed(&self) -> usize {
+        self.adjudicated_duplicate_closed
+    }
+
     /// How many rows are outside the required denominator.
     #[must_use]
     pub const fn experimental(&self) -> usize {
@@ -1154,12 +1206,13 @@ impl LiveEvidenceCensus {
     /// report-byte validation, or blocked on a component, which is what
     /// stops a report built on this plan from calling itself complete.
     ///
-    /// [`Self::vocabulary_closed`] is not among those conditions, and that is
+    /// The four closure buckets are not among those conditions. That is
     /// §4.2's own instruction rather than leniency: a requirement whose
     /// policy cannot be met belongs outside the denominator instead of
-    /// permanently outstanding inside it. Leaving it in would make the
-    /// bar unreachable by construction and say nothing true about the
-    /// pipeline.
+    /// permanently outstanding inside it. Each non-operation closure is
+    /// admitted only through its typed boundary argument. Leaving one in
+    /// the run-owed denominator would make the bar unreachable by the
+    /// exact construction or typing fact its argument records.
     ///
     /// The unbound term preserves an event without treating its incomplete
     /// provenance as evidence. The final term is not a row WAITING but a row CONTRADICTED, and
@@ -1210,6 +1263,9 @@ impl LiveEvidenceCensus {
             report_layer_required: 0,
             report_layer_observed: 0,
             vocabulary_closed: 0,
+            architecture_closed: 0,
+            typing_correction_closed: 0,
+            adjudicated_duplicate_closed: 0,
             experimental: 0,
         }
     }
@@ -1942,6 +1998,11 @@ fn census_from_rows(rows: &[LiveEvidenceRow]) -> LiveEvidenceCensus {
             LiveRowStanding::InfrastructureBlocked(_) => census.infrastructure_blocked += 1,
             LiveRowStanding::ReportLayerRequired(_) => census.report_layer_required += 1,
             LiveRowStanding::OperationVocabularyClosed => census.vocabulary_closed += 1,
+            LiveRowStanding::ArchitectureClosed => census.architecture_closed += 1,
+            LiveRowStanding::TypingCorrectionClosed => census.typing_correction_closed += 1,
+            LiveRowStanding::AdjudicatedDuplicateClosed => {
+                census.adjudicated_duplicate_closed += 1;
+            }
             LiveRowStanding::Experimental => census.experimental += 1,
         }
     }
@@ -2505,22 +2566,39 @@ fn observed_row_first_party_fact(row: &LiveSafetyRow) -> Option<(&'static str, &
     }
 }
 
+/// Classify a typed non-layer boundary without weakening it to one bucket.
+const fn closure_standing(boundary: LiveRowBoundary) -> Option<LiveRowStanding> {
+    match boundary {
+        LiveRowBoundary::Layer(_) => None,
+        LiveRowBoundary::OperationVocabularyClosure => {
+            Some(LiveRowStanding::OperationVocabularyClosed)
+        }
+        LiveRowBoundary::ArchitectureClosure(_) => Some(LiveRowStanding::ArchitectureClosed),
+        LiveRowBoundary::TypingCorrection(_) => Some(LiveRowStanding::TypingCorrectionClosed),
+        LiveRowBoundary::AdjudicatedDuplicate(_) => {
+            Some(LiveRowStanding::AdjudicatedDuplicateClosed)
+        }
+    }
+}
+
 /// Classify one row of the §15 matrix.
 fn classify(
     row: &'static LiveSafetyRow,
     plan: &ValidatedLiveTransferOperationPlan,
     discharged: &BTreeMap<&'static str, (DischargingValidator, &'static str)>,
 ) -> Result<LiveRowStanding, VectorError> {
-    // The row no layer answers, before anything else: it is not
-    // discharged, not blocked, and not waiting on a run, and every later
-    // branch here presumes a layer was asked.
+    // A typed closure before anything else: it is not discharged, not
+    // blocked, and not waiting on a run. Matching the boundary itself is
+    // load-bearing — routing every layerless row through the operation
+    // standing would erase the exact argument that made its closure
+    // reviewable.
+    if let Some(standing) = closure_standing(row.boundary()) {
+        return Ok(standing);
+    }
     if let LiveRelationStanding::Unlinked(LiveUnlinkedReason::ReportIsTheBoundary(requirement)) =
         row.relation()
     {
         return Ok(LiveRowStanding::ReportLayerRequired(*requirement));
-    }
-    if row.refusing_layer().is_none() {
-        return Ok(LiveRowStanding::OperationVocabularyClosed);
     }
     if let Some((validator, class)) = discharged.get(row.name()) {
         return Ok(LiveRowStanding::FirstPartyDischarged {
@@ -2874,9 +2952,13 @@ mod tests {
         CorpusEvidenceRefusal, EvidenceBoundary, LiveInfrastructureBlocker, LiveReportObservation,
         LiveRowStanding, MinimalityRegistryStanding, NativeObservedAcceptance, NativeV2LinkClass,
         ObservedOutcomeLayer, OverlayInputs, Txid, ValidatedCorpusEvidence, blocker_census,
-        derive_live_evidence_plan, derive_raw_live_evidence_plan, observed_boundary,
+        closure_standing, derive_live_evidence_plan, derive_raw_live_evidence_plan,
+        observed_boundary,
     };
-    use crate::live_safety::{LiveReportRequirement, LiveSafetyPolarity, LiveSafetySection};
+    use crate::live_safety::{
+        LiveAdjudicatedDuplicate, LiveArchitectureClosure, LiveReportRequirement, LiveRowBoundary,
+        LiveSafetyPolarity, LiveSafetySection, LiveTypingCorrection,
+    };
     use std::collections::{BTreeMap, BTreeSet};
 
     fn real_overlay_inputs() -> OverlayInputs {
@@ -2947,6 +3029,9 @@ mod tests {
                 + census.report_layer_required()
                 + census.report_layer_observed()
                 + census.vocabulary_closed()
+                + census.architecture_closed()
+                + census.typing_correction_closed()
+                + census.adjudicated_duplicate_closed()
                 + census.experimental(),
             108,
         );
@@ -2995,6 +3080,67 @@ mod tests {
                 assert_eq!(leaf.representation(), representation);
             }
         }
+    }
+
+    #[test]
+    fn every_typed_closure_routes_to_its_own_non_answer() {
+        use LiveAdjudicatedDuplicate as Duplicate;
+        use LiveArchitectureClosure as Architecture;
+        use LiveRowBoundary as Boundary;
+        use LiveTypingCorrection as Typing;
+
+        let cases = [
+            (
+                Boundary::ArchitectureClosure(
+                    Architecture::DestinationConstructorTableKeyHasNoObjectFamily,
+                ),
+                LiveRowStanding::ArchitectureClosed,
+            ),
+            (
+                Boundary::ArchitectureClosure(
+                    Architecture::HybridOutputRequiresEmptySurjectionProof,
+                ),
+                LiveRowStanding::ArchitectureClosed,
+            ),
+            (
+                Boundary::ArchitectureClosure(Architecture::DemonstrationLiveShapeSetOmitsFeeRole),
+                LiveRowStanding::ArchitectureClosed,
+            ),
+            (
+                Boundary::ArchitectureClosure(Architecture::LiveWitnessItemOrderIsAbiConstant),
+                LiveRowStanding::ArchitectureClosed,
+            ),
+            (
+                Boundary::TypingCorrection(Typing::LiveAbiStatusHasOnlyCandidate),
+                LiveRowStanding::TypingCorrectionClosed,
+            ),
+            (
+                Boundary::AdjudicatedDuplicate(
+                    Duplicate::WrongCoordinatorHasNoIndependentFaultArrangement,
+                ),
+                LiveRowStanding::AdjudicatedDuplicateClosed,
+            ),
+        ];
+
+        for (boundary, expected) in cases {
+            let standing = closure_standing(boundary).expect("a closure has a standing");
+            assert_eq!(standing, expected);
+            assert_ne!(standing, LiveRowStanding::OperationVocabularyClosed);
+            assert!(!standing.is_answered());
+        }
+        assert_eq!(
+            closure_standing(Boundary::Layer(EvidenceBoundary::ScriptPathRejection)),
+            None,
+        );
+
+        let only_typed_closures = super::LiveEvidenceCensus {
+            rows: 3,
+            architecture_closed: 1,
+            typing_correction_closed: 1,
+            adjudicated_duplicate_closed: 1,
+            ..super::LiveEvidenceCensus::default()
+        };
+        assert!(only_typed_closures.every_required_row_is_answered());
     }
 
     #[test]
@@ -3062,6 +3208,9 @@ mod tests {
                 + census.report_layer_required()
                 + census.report_layer_observed()
                 + census.vocabulary_closed()
+                + census.architecture_closed()
+                + census.typing_correction_closed()
+                + census.adjudicated_duplicate_closed()
                 + census.experimental(),
             census.rows(),
         );
@@ -3621,6 +3770,9 @@ mod tests {
         assert_eq!(answered, 38);
         assert_eq!(census.report_layer_required(), 2);
         assert_eq!(census.vocabulary_closed(), 1);
+        assert_eq!(census.architecture_closed(), 0);
+        assert_eq!(census.typing_correction_closed(), 0);
+        assert_eq!(census.adjudicated_duplicate_closed(), 0);
         assert_eq!(census.native_run_required(), 25);
         assert_eq!(census.recorded_observation_unbound(), 42);
         assert_eq!(recorded_kinds, (24, 17, 1));
@@ -3658,6 +3810,9 @@ mod tests {
         assert_eq!(census.native_refusal_observed(), 17);
         assert_eq!(census.paired_relation_observed(), 1);
         assert_eq!(census.recorded_observation_unbound(), 0);
+        assert_eq!(census.architecture_closed(), 0);
+        assert_eq!(census.typing_correction_closed(), 0);
+        assert_eq!(census.adjudicated_duplicate_closed(), 0);
         assert_eq!(census.native_run_required(), 25);
         assert_eq!(80 + 2 + 1 + 25, census.rows());
 

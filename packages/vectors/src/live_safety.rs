@@ -242,10 +242,62 @@ impl PartialEq for LiveRelationStanding {
 
 impl Eq for LiveRelationStanding {}
 
-/// Where one §15 row's verdict comes from.
+/// The exact architecture or deployment fact that closes a row.
 ///
-/// Two members, because §15 names one class no layer answers. Most rows
-/// expect a layer to accept or refuse, and [`Self::Layer`] carries which.
+/// Each member names a fact a reviewer can check at the cited code site.
+/// There is no general "inexpressible" member: selecting one of these
+/// arguments commits the caller to the particular construction limit it
+/// states.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum LiveArchitectureClosure {
+    /// `DestinationConstructorTable` is keyed by exactly
+    /// `(OwnerParameter, LiveTransferRepresentationPlan)`, with no
+    /// object-family dimension. A request can therefore select an owner
+    /// and representation but cannot name an ASH destination.
+    DestinationConstructorTableKeyHasNoObjectFamily,
+    /// Every admitted protocol output has the hybrid representation in
+    /// which `EmptySurjectionProof` is mandatory. The isolation fragment
+    /// still introspects the asset, and a surjection proof is needed only
+    /// by the confidential-asset encoding this representation excludes.
+    HybridOutputRequiresEmptySurjectionProof,
+    /// `demonstration_live_shape_set` never emits the tapscript fee-role
+    /// form, so this DEPLOYMENT has no fee-role position carrying `u`.
+    ///
+    /// This is not an architectural impossibility. The closure is
+    /// revisable if a deployment ever emits that form.
+    DemonstrationLiveShapeSetOmitsFeeRole,
+    /// `LiveWitnessItem::ORDER` is the ABI constant from which signing
+    /// writes the stack. There is no input field that can express a
+    /// different order for a validator to refuse.
+    LiveWitnessItemOrderIsAbiConstant,
+}
+
+/// The exact type defect that makes a row's premise unavailable.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum LiveTypingCorrection {
+    /// `LiveAbiStatus` has only `Candidate`; the live lane has no
+    /// validated status to which "after ABI validation" could refer.
+    LiveAbiStatusHasOnlyCandidate,
+}
+
+/// The exact arrangement partition that makes a row a duplicate.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum LiveAdjudicatedDuplicate {
+    /// Every single-failure arrangement is `two-coordinators`' fault.
+    /// The two-failure arrangement carries
+    /// `member-coordinator-leaf-exchange`'s separating fact, so no
+    /// independent arrangement remains for `wrong-coordinator`.
+    WrongCoordinatorHasNoIndependentFaultArrangement,
+}
+
+/// Where one §15 row's verdict or typed closure comes from.
+///
+/// Most rows expect a layer to accept or refuse, and [`Self::Layer`]
+/// carries which. A row no layer answers carries the exact non-verdict
+/// argument that closes it instead.
 ///
 /// # Why a row may name no layer at all
 ///
@@ -264,14 +316,14 @@ impl Eq for LiveRelationStanding {}
 /// refusal for an unrelated reason, and the layer named would never have
 /// been asked the row's question.
 ///
-/// # The second member is deliberately specific
+/// # Every closure member is deliberately specific
 ///
-/// It names *this* closure rather than typed inexpressibility in
-/// general. A general standing would need a proof contract identifying
-/// the exact closed type, every construction route, and every package
-/// crossing — and without one, "inexpressible" could launder a missing
-/// validator into evidence. A row closed by some other vocabulary gets
-/// its own member and its own argument.
+/// [`Self::OperationVocabularyClosure`] names *that* closure rather than
+/// typed inexpressibility in general. The other closure members require a
+/// typed argument naming their exact code fact. A general standing would
+/// need a proof contract identifying the closed type, every construction
+/// route, and every package crossing — and without one, "inexpressible"
+/// could launder a missing validator into evidence.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum LiveRowBoundary {
@@ -279,6 +331,13 @@ pub enum LiveRowBoundary {
     Layer(EvidenceBoundary),
     /// No layer does: the operation vocabulary admits no such input.
     OperationVocabularyClosure,
+    /// Architecture, or the explicitly named deployment shape, admits no
+    /// value carrying the fault.
+    ArchitectureClosure(LiveArchitectureClosure),
+    /// The row's premise names a state the live type does not have.
+    TypingCorrection(LiveTypingCorrection),
+    /// Existing fault rows exhaust the possible arrangements.
+    AdjudicatedDuplicate(LiveAdjudicatedDuplicate),
 }
 
 impl LiveRowBoundary {
@@ -287,7 +346,10 @@ impl LiveRowBoundary {
     pub const fn layer(self) -> Option<EvidenceBoundary> {
         match self {
             Self::Layer(boundary) => Some(boundary),
-            Self::OperationVocabularyClosure => None,
+            Self::OperationVocabularyClosure
+            | Self::ArchitectureClosure(_)
+            | Self::TypingCorrection(_)
+            | Self::AdjudicatedDuplicate(_) => None,
         }
     }
 }
@@ -381,7 +443,10 @@ impl LiveSafetyRow {
             LiveRowBoundary::Layer(boundary) => boundary.is_pre_target(),
             // No layer is asked, so no first-party validator owns a
             // refusal §4.2 could ask for.
-            LiveRowBoundary::OperationVocabularyClosure => false,
+            LiveRowBoundary::OperationVocabularyClosure
+            | LiveRowBoundary::ArchitectureClosure(_)
+            | LiveRowBoundary::TypingCorrection(_)
+            | LiveRowBoundary::AdjudicatedDuplicate(_) => false,
         }
     }
 }

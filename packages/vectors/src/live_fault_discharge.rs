@@ -2,9 +2,11 @@
 //!
 //! [`crate::live_first_party`] discharges §15.3's owner and signature
 //! faults, whose boundary is one entry point. The rest of the matrix's
-//! pre-target rows are spread across the entry points named by
-//! [`LiveFaultValidator`] and counted by [`LIVE_FAULT_VALIDATOR_COUNT`].
-//! This module meets §4.2 for those.
+//! current pre-target rows are spread across the entry points their cases
+//! name and count in [`LIVE_FAULT_VALIDATOR_COUNT`].
+//! [`LiveFaultValidator`] also carries an unwired entry point for later
+//! rows; merely naming one is not a §4.2 discharge. This module meets
+//! §4.2 for the current cases.
 //!
 //! # The same argument as §15.3's, at every owning entry point
 //!
@@ -63,9 +65,9 @@ use linker::{
     OwnerParameter, collect_live_definitions,
 };
 use tapscript::{
-    LiveConstructorRefusal, LiveTransferLeafRole, OwnerKey, OwnerKeyRejection,
-    demonstration_live_shape_set, derive_live_receipt_constructor, owner_key_encoding_closure,
-    static_transfer_leaf_set,
+    CompleteFamilyRanges, FamilyRangeDefect, LiveConstructorRefusal, LiveTransferLeafRole,
+    OwnerKey, OwnerKeyRejection, demonstration_live_shape_set, derive_live_receipt_constructor,
+    family_range_defects, owner_key_encoding_closure, static_transfer_leaf_set,
 };
 use target_elements::{EncodingClass, LeafVersion};
 use transaction::bytes::{
@@ -106,7 +108,7 @@ pub const LIVE_FAULT_CASE_COUNT: usize = 23;
 /// The asserted number of distinct validators in [`live_fault_cases`].
 pub const LIVE_FAULT_VALIDATOR_COUNT: usize = 8;
 
-/// Which first-party validator owns one §15.4–§15.7 row.
+/// Which exact first-party validator can own a §15.4–§15.7 row.
 ///
 /// A name for the exact entry point a discharge drove. There is
 /// deliberately no arm naming a *crate*: the linker refuses many things
@@ -160,6 +162,11 @@ pub enum LiveFaultValidator {
     /// `FinalizedLiveTransfer::check_offered`, which compares an offered
     /// transaction against the finalized one.
     OfferedTransactionCheck,
+    /// `tapscript::family_range_defects`, which returns every way a
+    /// shape's family ranges fail to cover its transaction exactly once.
+    /// No current [`LiveFaultCase`] names it; the member is vocabulary for
+    /// a later case, not evidence that such a case has run.
+    FamilyRangeDefects,
 }
 
 impl LiveFaultValidator {
@@ -179,6 +186,7 @@ impl LiveFaultValidator {
             Self::ProtocolValueDomain => "protocol-value-domain",
             Self::LiveTransferFinalization => "live-transfer-finalization",
             Self::OfferedTransactionCheck => "offered-transaction-check",
+            Self::FamilyRangeDefects => "tapscript::family_range_defects",
         }
     }
 }
@@ -309,12 +317,12 @@ pub enum FaultMutation {
 
 /// The refusal one owning validator returned.
 ///
-/// Four vocabularies, because the rows are spread across three crates
-/// and tapscript owns two of them: the owner-key encoding closure and
-/// the constructor derivation refuse different things and say so in
-/// different words. Collapsing them into one enum of this crate's would
-/// mean re-spelling somebody else's refusal, and a discharge would then
-/// be evidence about the re-spelling.
+/// Separate vocabularies preserve the owning entry points' own words.
+///
+/// The rows are spread across three crates, and tapscript itself owns
+/// three distinct sources. Collapsing them into one enum of this crate's
+/// would mean re-spelling somebody else's refusal, and a discharge would
+/// then be evidence about the re-spelling.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ObservedFaultRefusal {
@@ -335,6 +343,30 @@ pub enum ObservedFaultRefusal {
     /// commitments, control-block shape, annex disposition — and a row
     /// answered by one of them is not answered by the finalization.
     Census(OwnerCensusRefusal),
+    /// Every defect `tapscript::family_range_defects` returned.
+    ///
+    /// Kept as the complete `Vec` rather than one selected defect: the
+    /// entry point reports all failures, and choosing one here could hide
+    /// a second change that makes a future case non-focused.
+    FamilyRangeDefects(Vec<FamilyRangeDefect>),
+}
+
+impl ObservedFaultRefusal {
+    /// Run `tapscript::family_range_defects` and preserve its convention.
+    ///
+    /// An empty `Vec` is the accepted control and therefore maps to
+    /// `None`; a non-empty `Vec` is the typed refusal. This is the adapter
+    /// future cases use instead of pretending the entry point returns a
+    /// `Result` or discarding all but one defect.
+    #[must_use]
+    pub fn observe_family_range_defects(ranges: &CompleteFamilyRanges) -> Option<Self> {
+        let defects = family_range_defects(ranges);
+        if defects.is_empty() {
+            None
+        } else {
+            Some(Self::FamilyRangeDefects(defects))
+        }
+    }
 }
 
 /// One first-party case: a §15 row, an owning validator, and one change.
@@ -1874,8 +1906,9 @@ fn run_every_fault_case() -> Result<Vec<ValidatedLiveFaultEvidence>, LiveFaultRe
 #[cfg(test)]
 mod tests {
     use super::{
-        LIVE_FAULT_CASE_COUNT, LIVE_FAULT_VALIDATOR_COUNT, LiveFaultCase, discharge_live_faults,
-        live_fault_cases, matrix_row, validate_live_fault,
+        LIVE_FAULT_CASE_COUNT, LIVE_FAULT_VALIDATOR_COUNT, LiveFaultCase, LiveFaultValidator,
+        ObservedFaultRefusal, discharge_live_faults, live_fault_cases, matrix_row,
+        validate_live_fault,
     };
     use std::collections::BTreeSet;
 
@@ -1886,6 +1919,36 @@ mod tests {
 
         assert_eq!(cases.len(), LIVE_FAULT_CASE_COUNT);
         assert_eq!(validators.len(), LIVE_FAULT_VALIDATOR_COUNT);
+    }
+
+    #[test]
+    fn family_range_defects_keep_the_vec_returning_entry_points_vocabulary() {
+        use tapscript::{CompleteFamilyRanges, demonstration_live_shape_set, live_family_ranges};
+
+        assert_eq!(
+            LiveFaultValidator::FamilyRangeDefects.name(),
+            "tapscript::family_range_defects",
+        );
+
+        let shapes = demonstration_live_shape_set();
+        let shape = shapes
+            .shapes()
+            .next()
+            .expect("the demonstration set has a shape");
+        let control = live_family_ranges(shape);
+        assert_eq!(
+            ObservedFaultRefusal::observe_family_range_defects(&control),
+            None,
+        );
+
+        let malformed = CompleteFamilyRanges::new(shape, Vec::new(), Vec::new());
+        let ObservedFaultRefusal::FamilyRangeDefects(defects) =
+            ObservedFaultRefusal::observe_family_range_defects(&malformed)
+                .expect("empty ranges leave positions unaccounted")
+        else {
+            panic!("family-range defects were re-spelled as another refusal");
+        };
+        assert_ne!(defects, [] as [tapscript::FamilyRangeDefect; 0]);
     }
 
     #[test]
