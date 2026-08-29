@@ -2862,8 +2862,8 @@ fn homonymy_is_derived_from_the_effective_relation() {
         .map(|record| record.key.name.as_str())
         .collect::<std::collections::BTreeSet<_>>();
 
-    assert_eq!(homonyms.len(), 34);
-    assert_eq!(names.len(), 16);
+    assert_eq!(homonyms.len(), 36);
+    assert_eq!(names.len(), 17);
     // The extension row is what puts Task's third sense in Hom.
     let task = homonyms
         .iter()
