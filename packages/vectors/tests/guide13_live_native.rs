@@ -204,11 +204,14 @@ impl CeremonyId {
         }
     }
 
+    /// The name of the `#[ignore]` test that runs this ceremony.
+    ///
+    /// Split in two at the explicit family. Neither half is arbitrary: the
+    /// TAIL is exhaustive, so a ceremony added tomorrow must be given an
+    /// arm there or the crate does not compile, which is the property the
+    /// split was not allowed to cost.
     const fn rust_test_name(self) -> &'static str {
         match self {
-            Self::ConservationNegatives => {
-                "conservation_is_recorded_against_a_control_the_proof_negatives_mutate"
-            }
             Self::ExplicitBoundaryValues => {
                 "the_explicit_boundary_values_shape_is_submitted_to_a_real_target"
             }
@@ -247,6 +250,25 @@ impl CeremonyId {
             }
             Self::ExplicitWitnessNegatives => {
                 "the_witness_content_negatives_are_offered_beside_their_control"
+            }
+            other => other.rust_test_name_beyond_the_explicit_family(),
+        }
+    }
+
+    /// What the explicit half returns for a variant it does not answer.
+    ///
+    /// Unreachable through [`Self::rust_test_name`], which never delegates
+    /// an explicit variant here. It exists so the match below can stay
+    /// exhaustive over the whole enum while still being the half that does
+    /// not answer for the explicit family, and if it were ever reached the
+    /// roster's own uniqueness gate would fail on the duplicate.
+    const ANSWERED_BY_THE_EXPLICIT_HALF: &'static str = "answered-by-the-explicit-half";
+
+    /// The test name for every ceremony outside the explicit family.
+    const fn rust_test_name_beyond_the_explicit_family(self) -> &'static str {
+        match self {
+            Self::ConservationNegatives => {
+                "conservation_is_recorded_against_a_control_the_proof_negatives_mutate"
             }
             Self::KeypathProbe => "one_key_path_spend_attempt_is_offered_to_a_real_target",
             Self::MultiEntryCrossing => "the_entry_crossing_shape_is_submitted_to_a_real_target",
@@ -306,6 +328,21 @@ impl CeremonyId {
             Self::ConfidentialPredecessorSetup => {
                 "one_confidential_predecessor_is_funded_mined_and_read_back"
             }
+            Self::ExplicitBoundaryValues
+            | Self::ExplicitMaximumInputs
+            | Self::ExplicitMaximumOutputs
+            | Self::ExplicitMerge
+            | Self::ExplicitNormalization
+            | Self::ExplicitOneDestinationOwner
+            | Self::ExplicitOneToOne
+            | Self::ExplicitRepeatedOwner
+            | Self::ExplicitSelfPaidFee
+            | Self::ExplicitSeveralDestinationOwners
+            | Self::ExplicitSeveralOwners
+            | Self::ExplicitSeveralToSeveral
+            | Self::ExplicitSplit
+            | Self::ExplicitSponsorless
+            | Self::ExplicitWitnessNegatives => Self::ANSWERED_BY_THE_EXPLICIT_HALF,
         }
     }
 
