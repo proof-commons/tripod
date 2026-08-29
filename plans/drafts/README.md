@@ -8,7 +8,12 @@ The directory stands even when empty: it is the template for the next adopted dr
 
 ## Index · `tab:drafts:index`
 
-No draft is currently archived. A new draft joins this index with its subject and its integration owner, and joins the census in `meson.build` in the same commit.
+A new draft joins this index with its subject and its integration owner, and joins the census in `meson.build` in the same commit.
+
+| Draft | Subject | Integration owner |
+|---|---|---|
+| [label-calculus.md](label-calculus.md) | Revised edition of the label calculus: a new generated-compliance invariant, a reworked profile signature, and restated warrant, minting, and participation judgments | [ADR-019](../../adr/019-label-calculus.md), amendment pending |
+| [environment-kinds.md](environment-kinds.md) | Revised edition of the environment-kind registry: a fifteenth Convention with its coordinated table and preamble updates | [ADR-020](../../adr/020-environment-kinds.md), amendment pending |
 
 ## Draft rule · `rule:drafts:authority`
 

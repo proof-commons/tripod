@@ -3,4 +3,6 @@
 # meson.build accumulates this list into its role group.
 plans_drafts_files = files(
   'README.md',
+  'environment-kinds.md',
+  'label-calculus.md',
 )
