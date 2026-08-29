@@ -1,7 +1,7 @@
 #!/bin/sh
-# Pure-shell contract for live-native-v2-r7-capture.sh.
+# Pure-shell contract for live-native-v2-r8-capture.sh.
 #
-# Usage: test-live-native-v2-r7-capture.sh <repository-root>
+# Usage: test-live-native-v2-r8-capture.sh <repository-root>
 #
 # Synthetic captures exercise only the driver's boundary: names, censuses,
 # hashes, CR rejection, terminal state, run identities, and timing sidecars.
@@ -12,9 +12,9 @@ set -eu
 LC_ALL=C
 export LC_ALL
 
-root=${1:?usage: test-live-native-v2-r7-capture.sh <repository-root>}
+root=${1:?usage: test-live-native-v2-r8-capture.sh <repository-root>}
 root=$(cd "$root" && pwd -P)
-driver=$root/scripts/live-native-v2-r7-capture.sh
+driver=$root/scripts/live-native-v2-r8-capture.sh
 
 [ -x "$driver" ] || {
   echo "FAIL: capture driver is not executable" >&2
@@ -26,7 +26,7 @@ driver=$root/scripts/live-native-v2-r7-capture.sh
   exit 1
 }
 
-work=$(mktemp -d "$TMPDIR/live-native-capture-contract.XXXXXX")
+work=$(mktemp -d "$TMPDIR/live-native-v2-r8-capture-contract.XXXXXX")
 cleanup() {
   chmod -R u+w "$work" 2>/dev/null || true
   rm -rf "$work"
@@ -97,6 +97,7 @@ multi-pure-split
 multi-several-owners
 multi-split
 multi-strict-one-to-one
+offsetting-flow-negatives
 owner-observation
 owner-signing-negatives
 pairs-arc
@@ -104,10 +105,12 @@ private-restart-control
 private-restart-parity
 proof-bearing-observation
 report
+split-commitment-negatives
 sponsored-change-absent
 sponsored-change-present
 sponsored-committed-value
 sponsored-missing-authorization
+sponsored-owner-signing-negatives
 sponsored-private-explicit-no-change
 sponsored-private-with-change'
 
@@ -209,14 +212,14 @@ fi
 
 case "$scenario" in
   test-count)
-    echo 'test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
+    echo 'test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
     ;;
   cargo-failure)
-    echo 'test result: FAILED. 39 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
+    echo 'test result: FAILED. 42 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
     exit 7
     ;;
   *)
-    echo 'test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
+    echo 'test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
     ;;
 esac
 MOCK_CARGO
@@ -309,10 +312,10 @@ fi
 [ -f "$case_output/RUN-REPORT" ] || fail "happy path did not emit RUN-REPORT"
 if [ -f "$case_output/RUN-REPORT" ]; then
   grep -qx 'eligible yes' "$case_output/RUN-REPORT" || fail "happy path is not eligible"
-  grep -qx 'run-report-schema native-v2-r7-run-report 1' "$case_output/RUN-REPORT" || fail "happy path report schema differs"
-  grep -qx 'capture-format-schema native-v2-r7-capture 1' "$case_output/RUN-REPORT" || fail "happy path capture schema differs"
-  grep -qx 'observed-test-count 40' "$case_output/RUN-REPORT" || fail "happy path test census differs"
-  grep -qx 'observed-ceremony-count 39' "$case_output/RUN-REPORT" || fail "happy path ceremony census differs"
+  grep -qx 'run-report-schema native-v2-r8-run-report 1' "$case_output/RUN-REPORT" || fail "happy path report schema differs"
+  grep -qx 'capture-format-schema native-v2-r8-capture 1' "$case_output/RUN-REPORT" || fail "happy path capture schema differs"
+  grep -qx 'observed-test-count 43' "$case_output/RUN-REPORT" || fail "happy path test census differs"
+  grep -qx 'observed-ceremony-count 42' "$case_output/RUN-REPORT" || fail "happy path ceremony census differs"
   grep -qx 'observed-setup-count 1' "$case_output/RUN-REPORT" || fail "happy path setup census differs"
   grep -qx 'cargo-exit-code 0' "$case_output/RUN-REPORT" || fail "happy path Cargo exit differs"
   grep -qx 'protocol-revision 7' "$case_output/RUN-REPORT" || fail "happy path protocol differs"
@@ -322,11 +325,11 @@ if [ -f "$case_output/RUN-REPORT" ]; then
 fi
 
 happy_files=$(find "$case_output" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')
-[ "$happy_files" -eq 81 ] || fail "happy path has $happy_files files, expected 81"
+[ "$happy_files" -eq 87 ] || fail "happy path has $happy_files files, expected 87"
 happy_directories=$(find "$case_output" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
 [ "$happy_directories" -eq 1 ] || fail "happy path has $happy_directories top-level directories, expected diagnostics only"
 manifest_lines=$(wc -l < "$case_output/MANIFEST.sha256" | tr -d ' ')
-[ "$manifest_lines" -eq 79 ] || fail "manifest has $manifest_lines entries, expected 79 harness artifacts"
+[ "$manifest_lines" -eq 85 ] || fail "manifest has $manifest_lines entries, expected 85 harness artifacts"
 if ! (cd "$case_output" && "$real_sha256sum" -c MANIFEST.sha256 >/dev/null); then
   fail "happy path manifest does not independently verify"
 fi
@@ -358,7 +361,7 @@ assert_ineligible_case unexpected-file unexpected-file 'unexpected or noncanonic
 assert_ineligible_case cr-byte cr-byte 'contains a CR byte'
 assert_ineligible_case noncanonical-name noncanonical-name 'unexpected or noncanonical entry'
 assert_ineligible_case incomplete-transcript incomplete-transcript 'terminal-state differs'
-assert_ineligible_case test-count test-count 'observed test census is not 40'
+assert_ineligible_case test-count test-count 'observed test census is not 43'
 assert_ineligible_case non-prefix-revision non-prefix-revision 'binary-reported elementsd revision'
 assert_ineligible_case short-revision short-revision 'binary-reported elementsd revision'
 assert_ineligible_case non-hex-revision non-hex-revision 'binary-reported elementsd revision'
