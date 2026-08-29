@@ -1,7 +1,7 @@
 #!/bin/sh
-# Host-reviewed driver for the one authorized native-v2, revision-7 capture.
+# Host-reviewed driver for the one authorized native-v2, revision-8 capture.
 #
-# Usage: scripts/live-native-v2-r7-capture.sh <new-capture-directory>
+# Usage: scripts/live-native-v2-r8-capture.sh <new-capture-directory>
 #
 # The harness owns capture grammar and semantic assertions. This driver owns
 # the run boundary: clean source identity, one serialized invocation, the
@@ -13,12 +13,12 @@ LC_ALL=C
 export LC_ALL
 
 EXPECTED_ELEMENTSD_TIP=b7fc5d080a7e9ccc0ef48c3ba11db243e794bdb0
-EXPECTED_TEST_COUNT=40
-EXPECTED_CEREMONY_COUNT=39
+EXPECTED_TEST_COUNT=43
+EXPECTED_CEREMONY_COUNT=42
 EXPECTED_SETUP_COUNT=1
 
 # Fixed semantic roster, sorted bytewise. The confidential-predecessor test
-# is the fortieth outcome and writes the separate audit-only setup artifact.
+# is the forty-third outcome and writes the separate audit-only setup artifact.
 CEREMONY_IDS='conservation-negatives
 explicit-boundary-values
 explicit-maximum-inputs
@@ -45,6 +45,7 @@ multi-pure-split
 multi-several-owners
 multi-split
 multi-strict-one-to-one
+offsetting-flow-negatives
 owner-observation
 owner-signing-negatives
 pairs-arc
@@ -52,10 +53,12 @@ private-restart-control
 private-restart-parity
 proof-bearing-observation
 report
+split-commitment-negatives
 sponsored-change-absent
 sponsored-change-present
 sponsored-committed-value
 sponsored-missing-authorization
+sponsored-owner-signing-negatives
 sponsored-private-explicit-no-change
 sponsored-private-with-change'
 
@@ -290,7 +293,7 @@ timing_field_findings() {
 }
 
 if [ "$#" -ne 1 ]; then
-  die "usage: live-native-v2-r7-capture.sh <new-capture-directory>"
+  die "usage: live-native-v2-r8-capture.sh <new-capture-directory>"
 fi
 
 capture_argument=$1
@@ -332,7 +335,7 @@ for roster_id in $CEREMONY_IDS; do
   fi
   previous_id=$roster_id
 done
-[ "$roster_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || die "the declared ceremony roster is not 39 IDs"
+[ "$roster_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || die "the declared ceremony roster is not 42 IDs"
 
 live_executor=${TRIPOD_LIVE_EXECUTOR:-}
 [ -n "$live_executor" ] || die "TRIPOD_LIVE_EXECUTOR is required"
@@ -439,8 +442,8 @@ fi
 observed_test_count=$((observed_passed + observed_failed + observed_ignored))
 
 [ "$cargo_exit_code" -eq 0 ] || record_error "Cargo exited $cargo_exit_code"
-[ "$observed_test_count" -eq "$EXPECTED_TEST_COUNT" ] || record_error "the observed test census is not 40"
-[ "$observed_passed" -eq "$EXPECTED_TEST_COUNT" ] || record_error "the run was not 40 of 40 passed"
+[ "$observed_test_count" -eq "$EXPECTED_TEST_COUNT" ] || record_error "the observed test census is not 43"
+[ "$observed_passed" -eq "$EXPECTED_TEST_COUNT" ] || record_error "the run was not 43 of 43 passed"
 [ "$observed_failed" -eq 0 ] || record_error "the run contains failed tests"
 [ "$observed_ignored" -eq 0 ] || record_error "the selected run contains ignored outcomes"
 
@@ -526,9 +529,9 @@ for ceremony_id in $CEREMONY_IDS; do
 done
 
 observed_ceremony_count=$(wc -l < "$seen_ids" | tr -d ' ')
-[ "$physical_capture_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || record_error "the physical capture census is not 39"
-[ "$observed_ceremony_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || record_error "the unique ceremony census is not 39"
-[ "$physical_timing_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || record_error "the timing census is not 39"
+[ "$physical_capture_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || record_error "the physical capture census is not 42"
+[ "$observed_ceremony_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || record_error "the unique ceremony census is not 42"
+[ "$physical_timing_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || record_error "the timing census is not 42"
 
 setup_file=$capture_directory/$suite_short_sha.confidential-predecessor.setup
 if [ -f "$setup_file" ]; then
@@ -547,7 +550,7 @@ for entry in "$capture_directory"/* "$capture_directory"/.[!.]* "$capture_direct
   if [ "$entry_name" = diagnostics ] && [ -d "$entry" ] && [ ! -L "$entry" ]; then
     # The recorder owns diagnostics/<ceremony-id> below this one recognized
     # audit-only root. Its contents are intentionally unparsed, do not enter
-    # the 81-file evidence census, and are not manifest or eligibility input.
+    # the 87-file evidence census, and are not manifest or eligibility input.
     diagnostics_present=yes
     entry_expected=yes
   elif [ "$entry_name" = "$suite_short_sha.confidential-predecessor.setup" ]; then
@@ -585,8 +588,8 @@ phase_start manifest
 
 # RUN-REPORT contains the digest of MANIFEST.sha256. Including RUN-REPORT in
 # that same manifest would create an unsatisfiable hash cycle. The manifest
-# therefore binds the 79 harness artifacts; RUN-REPORT then binds the
-# manifest. The directory still has the chartered 81-file eligible census.
+# therefore binds the 85 harness artifacts; RUN-REPORT then binds the
+# manifest. The directory still has the chartered 87-file eligible census.
 : > "$manifest_names"
 for entry in "$capture_directory"/* "$capture_directory"/.[!.]* "$capture_directory"/..?*; do
   [ -f "$entry" ] || continue
@@ -623,8 +626,8 @@ cargo_argv="$capture_cargo test -p tripod-vectors --test guide13_live_native -- 
 cargo_argv_hex=$(printf '%s' "$cargo_argv" | od -An -tx1 | tr -d ' \n')
 
 {
-  printf 'run-report-schema native-v2-r7-run-report 1\n'
-  printf 'capture-format-schema native-v2-r7-capture 1\n'
+  printf 'run-report-schema native-v2-r8-run-report 1\n'
+  printf 'capture-format-schema native-v2-r8-capture 1\n'
   printf 'suite-commit %s\n' "$suite_commit"
   printf 'suite-tree %s\n' "$suite_tree"
   printf 'suite-clean yes\n'
