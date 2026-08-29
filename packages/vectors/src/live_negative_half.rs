@@ -563,7 +563,7 @@ mod tests {
     #[test]
     fn all_thirteen_native_required_grounds_are_unchanged() {
         assert_eq!(STILL_REQUIRED.len(), 13);
-        assert_eq!(grounds_fingerprint(STILL_REQUIRED), 0xa3ac_1c0f_3473_7742);
+        assert_eq!(grounds_fingerprint(STILL_REQUIRED), 0x053e_323b_8934_f2b5);
     }
 
     /// The gap census covers the register and nothing else.

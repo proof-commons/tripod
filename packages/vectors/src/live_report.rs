@@ -5868,7 +5868,9 @@ mod tests {
         let report_layer_observations = validated.report_layer_observations().len();
         assert_eq!(plan.attributions().len(), 42);
         assert_eq!(corpus_observations, 41);
-        assert_eq!(plan_derived_observations, 4);
+        // One determinism observation is unchanged; T9-003 moves three
+        // more rows into the fact bucket, so this is 1 + 6 rather than 1 + 3.
+        assert_eq!(plan_derived_observations, 7);
         assert_eq!(report_layer_observations, 2);
         let rendered_observations = rendered
             .lines()
