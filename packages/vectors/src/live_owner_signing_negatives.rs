@@ -132,7 +132,7 @@ use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message}
 use transaction::live_request::{
     LiveReceiptDestination, LiveTransferRequest, ProtocolValue, RequestedForm, SponsorChangeRequest,
 };
-use transaction::taproot::{Digest32, leaf_hash};
+use transaction::taproot::{CONTROL_BASE_BYTES, DIGEST_BYTES, Digest32, leaf_hash};
 use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::error::VectorError;
@@ -242,14 +242,12 @@ const CONTROL_BLOCK_ITEM: usize = 2;
 /// exactly one row and has no sibling to be separated from.
 pub const MALFORMED_CONTROL_PATH_STEP: &str = "malformed-control-path";
 
-/// The fixed head of a control block: the leaf version and parity byte
-/// followed by the thirty-two-byte internal key.
-const CONTROL_BLOCK_BASE_BYTES: usize = 33;
-
-/// One merkle path entry in a control block.
-const CONTROL_BLOCK_PATH_ENTRY_BYTES: usize = 32;
-
 /// The deepest merkle path a control block may carry.
+///
+/// Stated here because the census that enforces it keeps it private; the
+/// head and path-entry sizes are the published ones and are taken from
+/// the taproot module rather than restated, so this surgery cannot drift
+/// away from the geometry the census checks.
 const CONTROL_BLOCK_MAX_PATH_ENTRIES: usize = 128;
 
 /// The byte the witness surgery appends to the control block.
@@ -2038,19 +2036,17 @@ fn rebuild(
 /// to a bounded depth, and refuses any other length outright — before it
 /// looks at what the path spells.
 const fn control_block_size_is_valid(bytes: usize) -> bool {
-    bytes >= CONTROL_BLOCK_BASE_BYTES
-        && bytes
-            <= CONTROL_BLOCK_BASE_BYTES
-                + CONTROL_BLOCK_MAX_PATH_ENTRIES * CONTROL_BLOCK_PATH_ENTRY_BYTES
-        && (bytes - CONTROL_BLOCK_BASE_BYTES).is_multiple_of(CONTROL_BLOCK_PATH_ENTRY_BYTES)
+    bytes >= CONTROL_BASE_BYTES
+        && bytes <= CONTROL_BASE_BYTES + CONTROL_BLOCK_MAX_PATH_ENTRIES * DIGEST_BYTES
+        && (bytes - CONTROL_BASE_BYTES).is_multiple_of(DIGEST_BYTES)
 }
 
 /// Build the malformed control-path mutant from the signed control's own
 /// bytes.
 ///
 /// The surgery APPENDS one byte to input zero's control block. A parsable
-/// control block is [`CONTROL_BLOCK_BASE_BYTES`] plus a whole number of
-/// [`CONTROL_BLOCK_PATH_ENTRY_BYTES`] path entries, so a length one above
+/// control block is [`CONTROL_BASE_BYTES`] plus a whole number of
+/// [`DIGEST_BYTES`] path entries, so a length one above
 /// a parsable one is never itself parsable — one is not a multiple of
 /// thirty-two — while every byte the control block already held stays
 /// exactly where it was. Appending rather than truncating is what keeps
@@ -2343,8 +2339,8 @@ fn push_mutant_lines(lines: &mut Vec<String>, record: &OwnerSigningNegativeRecor
 #[cfg(test)]
 mod tests {
     use super::{
-        BARE_U_PROGRAM, CONTROL_BLOCK_BASE_BYTES, CONTROL_BLOCK_MAX_PATH_ENTRIES,
-        CONTROL_BLOCK_PATH_ENTRY_BYTES, changed_range, control_block_size_is_valid,
+        BARE_U_PROGRAM, CONTROL_BASE_BYTES, CONTROL_BLOCK_MAX_PATH_ENTRIES, DIGEST_BYTES,
+        changed_range, control_block_size_is_valid,
     };
 
     #[test]
@@ -2393,7 +2389,7 @@ mod tests {
         // admissible depth rather than at one example, because the surgery
         // does not get to choose how deep the ceremony's taptree is.
         for entries in 0..=CONTROL_BLOCK_MAX_PATH_ENTRIES {
-            let parsable = CONTROL_BLOCK_BASE_BYTES + entries * CONTROL_BLOCK_PATH_ENTRY_BYTES;
+            let parsable = CONTROL_BASE_BYTES + entries * DIGEST_BYTES;
             assert!(
                 control_block_size_is_valid(parsable),
                 "a base plus {entries} whole path entries was rejected as unparsable",
@@ -2406,10 +2402,9 @@ mod tests {
         // And the two ends are refused for their own reasons: one byte
         // short of the base has no room for the internal key, and one
         // entry past the bound is deeper than the target will read.
-        assert!(!control_block_size_is_valid(CONTROL_BLOCK_BASE_BYTES - 1));
+        assert!(!control_block_size_is_valid(CONTROL_BASE_BYTES - 1));
         assert!(!control_block_size_is_valid(
-            CONTROL_BLOCK_BASE_BYTES
-                + (CONTROL_BLOCK_MAX_PATH_ENTRIES + 1) * CONTROL_BLOCK_PATH_ENTRY_BYTES
+            CONTROL_BASE_BYTES + (CONTROL_BLOCK_MAX_PATH_ENTRIES + 1) * DIGEST_BYTES
         ));
     }
 
