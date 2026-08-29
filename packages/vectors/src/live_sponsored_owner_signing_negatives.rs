@@ -260,7 +260,7 @@ impl SponsorRangeMutant {
         match self {
             Self::ReceiptExchange => inputs.swap(EXCHANGED_RECEIPT_INPUT, SPONSOR_INPUT),
             Self::ChangeInProtocolRange => {
-                outputs.swap(PROTOCOL_RANGE_OUTPUT, SPONSOR_CHANGE_OUTPUT)
+                outputs.swap(PROTOCOL_RANGE_OUTPUT, SPONSOR_CHANGE_OUTPUT);
             }
             Self::ProtocolOverlap => {
                 let claimed = outputs
@@ -1144,9 +1144,10 @@ impl SponsoredOwnerSigningNegativePlanner {
                     declared,
                 });
             }
-            let range = declared.ok_or(SponsoredOwnerSigningRefusal::MutantNotDistinct {
-                step: mutant.step(),
-            })?;
+            let range =
+                declared.ok_or_else(|| SponsoredOwnerSigningRefusal::MutantNotDistinct {
+                    step: mutant.step(),
+                })?;
             // The three rows are separated by range alone, so a range this
             // run has already declared cannot be declared again.
             if self
@@ -1479,45 +1480,78 @@ mod tests {
             usize::from(RECEIPT_COUNT) + 1,
             "the input side does not carry the sponsor suffix beside the receipts",
         );
-        assert!(
-            SPONSOR_INPUT < DECLARED_SHAPE.0 && EXCHANGED_RECEIPT_INPUT < DECLARED_SHAPE.0,
-            "an input the exchange names is outside the declared shape",
-        );
-        assert!(
-            SPONSOR_CHANGE_OUTPUT < DECLARED_SHAPE.1 && PROTOCOL_RANGE_OUTPUT < DECLARED_SHAPE.1,
-            "an output a mutant names is outside the declared shape",
-        );
+        // Both positions are pinned to the BOUNDARY they must equal rather
+        // than bounded inside the shape. A bound is the weaker claim in a
+        // way that matters here: every receipt position also lies inside
+        // the shape, and the sponsor suffix is precisely the position the
+        // receipts are not, so a check that admits them is not checking
+        // the thing the two output mutants and the exchange rest on.
+        // Being inside the shape follows from the equalities, so nothing
+        // is given up by stating them instead.
+        const {
+            // The sponsor coin is the suffix: the LAST input, after every
+            // receipt.
+            assert!(
+                SPONSOR_INPUT == DECLARED_SHAPE.0 - 1,
+                "the sponsor input is not the suffix the declared shape ends with",
+            );
+            // Destinations, then the sponsor change, then the fee. The
+            // change being second-to-last is what makes everything before
+            // it the protocol destination prefix.
+            assert!(
+                DECLARED_SHAPE.1 == SPONSOR_CHANGE_OUTPUT + 2,
+                "the sponsor change is not the output the fee alone follows",
+            );
+        }
     }
 
     #[test]
     fn the_exchange_leaves_the_coordinator_input_where_it_was() {
-        // Input zero carries the only leaf that inspects the regions at
-        // all. An exchange that moved it would leave the candidate with
-        // no clause able to see the fault the exchange introduced, and
-        // the observation would belong to whatever refused instead.
-        assert_ne!(
-            EXCHANGED_RECEIPT_INPUT, 0,
-            "the exchange moves the coordinator input out of position zero",
-        );
-        assert_ne!(
-            EXCHANGED_RECEIPT_INPUT, SPONSOR_INPUT,
-            "the exchange would trade the sponsor input with itself",
-        );
+        const {
+            // Input zero carries the only leaf that inspects the regions
+            // at all. An exchange that moved it would leave the candidate
+            // with no clause able to see the fault the exchange
+            // introduced, and the observation would belong to whatever
+            // refused instead. This is the invariant rather than the
+            // choice: it stays the thing to check however many receipts
+            // the ceremony funds.
+            assert!(
+                EXCHANGED_RECEIPT_INPUT != 0,
+                "the exchange moves the coordinator input out of position zero",
+            );
+            // The receipt traded is the one ADJACENT to the suffix, which
+            // is the last receipt. Stated as adjacency rather than as
+            // distinctness from the sponsor input: two positions merely
+            // being different is satisfied by input zero as well, and
+            // input zero is exactly the case the line above exists to
+            // exclude.
+            assert!(
+                EXCHANGED_RECEIPT_INPUT == SPONSOR_INPUT - 1,
+                "the exchange does not trade the last receipt with the suffix",
+            );
+        }
     }
 
     #[test]
     fn the_two_output_mutants_name_positions_in_different_regions() {
-        // One moves the change INTO the protocol range and the other
-        // gives a sponsor position a protocol program. Both rest on the
-        // two indices being in different regions to begin with.
-        assert_ne!(
-            PROTOCOL_RANGE_OUTPUT, SPONSOR_CHANGE_OUTPUT,
-            "the change output and the destination it is confused with are one position",
-        );
-        assert!(
-            PROTOCOL_RANGE_OUTPUT < SPONSOR_CHANGE_OUTPUT,
-            "the destination prefix does not precede the sponsor change",
-        );
+        const {
+            // The destination prefix ends exactly where the sponsor change
+            // begins, and that ADJACENCY is what both output mutants rest
+            // on: the change moved one place left lands on the last
+            // protocol destination, and the overlap mutant copies that
+            // destination's program onto the change.
+            //
+            // Stated as adjacency rather than as an ordering or a
+            // difference. Either weaker form is satisfied by a destination
+            // several positions away, and a change output moved somewhere
+            // in the middle of the prefix would still be a fault — just
+            // not the one these two mutants declare, whose ranges are
+            // measured over this exact pair.
+            assert!(
+                SPONSOR_CHANGE_OUTPUT == PROTOCOL_RANGE_OUTPUT + 1,
+                "the sponsor change does not sit immediately after the destination it is confused with",
+            );
+        }
     }
 
     #[test]
