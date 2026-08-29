@@ -916,6 +916,19 @@ test(
   timeout: 180,
 )
 
+live_native_r8_capture_test = find_program('scripts/test-live-native-v2-r8-capture.sh')
+
+# Budget: 1:05, tolerance 1:30. Pure shell with a synthetic Git suite and
+# mock Cargo; no Rust toolchain, target binary, node, or network. The time is
+# hashing and parsing 85 artifacts across the isolated refusal cases.
+test(
+  'live-native-v2-r8-capture-contract',
+  live_native_r8_capture_test,
+  args: [meson.project_source_root()],
+  suite: 'integration',
+  timeout: 180,
+)
+
 attestation_stamps_test = find_program('scripts/test-attestation-stamps.sh')
 
 # Budget: 1:00, tolerance 3:00. Real cargo and git, no TeX; pinned serial
