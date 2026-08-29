@@ -1950,8 +1950,8 @@ pub const fn answered_by_a_target(role: &EvidenceRole) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveRelationStanding, LiveRowLink, LiveSafetyPolarity, LiveSafetyRow, LiveSafetySection,
-        required_safety_matrix, resolve_row, row_count, section_census,
+        LiveRelationStanding, LiveRowBoundary, LiveRowLink, LiveSafetyPolarity, LiveSafetyRow,
+        LiveSafetySection, required_safety_matrix, resolve_row, row_count, section_census,
     };
     use crate::matrix::EvidenceBoundary;
     use std::collections::BTreeSet;
@@ -2077,18 +2077,63 @@ mod tests {
     }
 
     #[test]
-    fn exactly_one_row_names_no_layer_at_all() {
-        // §15's one class no layer answers, held as a count so that a
-        // second row acquiring the standing has to be argued for rather
-        // than added. A row here is outside §4.2's refusal denominator
-        // and is not evidence either: `crate::live_evidence` gives it a
-        // standing of its own and leaves it out of the discharged count.
-        let closed: BTreeSet<_> = required_safety_matrix()
+    fn the_seven_layerless_rows_are_exactly_the_typed_closures() {
+        // Every layerless row is held by name so that an eighth has to be
+        // argued for rather than added. These rows are outside §4.2's
+        // refusal denominator and are not evidence: `crate::live_evidence`
+        // gives each closure family a standing of its own and leaves it
+        // out of the discharged count.
+        let layerless: Vec<_> = required_safety_matrix()
             .into_iter()
             .filter(|row| row.refusing_layer().is_none())
-            .map(LiveSafetyRow::name)
             .collect();
-        assert_eq!(closed, BTreeSet::from(["mixed-operation-program"]));
+        let names: BTreeSet<_> = layerless.iter().map(|row| row.name()).collect();
+        assert_eq!(
+            names,
+            BTreeSet::from([
+                "malformed-surjection-proof",
+                "mixed-operation-program",
+                "sponsor-or-fee-role-carrying-u",
+                "target-bytes-changed-after-abi-validation",
+                "value-routed-into-ash-or-time-locked-receipt",
+                "witness-reorder",
+                "wrong-coordinator",
+            ]),
+        );
+
+        let operation_closed: BTreeSet<_> = layerless
+            .iter()
+            .filter(|row| matches!(row.boundary(), LiveRowBoundary::OperationVocabularyClosure))
+            .map(|row| row.name())
+            .collect();
+        assert_eq!(
+            operation_closed,
+            BTreeSet::from(["mixed-operation-program"]),
+        );
+
+        let typed_closed: BTreeSet<_> = layerless
+            .iter()
+            .filter(|row| {
+                matches!(
+                    row.boundary(),
+                    LiveRowBoundary::ArchitectureClosure(_)
+                        | LiveRowBoundary::TypingCorrection(_)
+                        | LiveRowBoundary::AdjudicatedDuplicate(_)
+                )
+            })
+            .map(|row| row.name())
+            .collect();
+        assert_eq!(
+            typed_closed,
+            BTreeSet::from([
+                "malformed-surjection-proof",
+                "sponsor-or-fee-role-carrying-u",
+                "target-bytes-changed-after-abi-validation",
+                "value-routed-into-ash-or-time-locked-receipt",
+                "witness-reorder",
+                "wrong-coordinator",
+            ]),
+        );
     }
 
     #[test]
