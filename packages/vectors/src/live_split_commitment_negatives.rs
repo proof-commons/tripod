@@ -451,11 +451,12 @@ impl SplitCommitmentNegativePlanner {
         &mut self,
         previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
     ) -> Result<Option<OperationStep>, PlanRefused> {
+        // The step is passed through unchanged and only the REFUSAL is
+        // translated, which is what `map_err` says and a two-armed match
+        // would only restate. The result is bound first because inlining
+        // would borrow the inner planner and this one at the same time.
         let stepped = self.inner.next_step(previous);
-        match stepped {
-            Ok(step) => Ok(step),
-            Err(_) => Err(self.refuse(SplitCommitmentRefusal::ShapeRouteRefused)),
-        }
+        stepped.map_err(|_| self.refuse(SplitCommitmentRefusal::ShapeRouteRefused))
     }
 }
 
@@ -608,9 +609,16 @@ mod tests {
             SOURCE_OUTPUT, COPIED_OUTPUT,
             "the copy would write an output's commitment back onto itself",
         );
-        assert!(
-            SOURCE_OUTPUT < DECLARED_SHAPE.1 && COPIED_OUTPUT < DECLARED_SHAPE.1,
-            "the copy names an output the declared shape does not have",
+        // The LAST output of the declared shape, which is the one a
+        // two-output successor does not have and therefore the one that
+        // makes this row's locator unreachable by the narrower row.
+        // Stated as the index it must be rather than as a range it must
+        // fall in: the range is satisfied by output one as well, and
+        // output one is exactly the collision this row has to avoid.
+        assert_eq!(
+            COPIED_OUTPUT,
+            DECLARED_SHAPE.1 - 1,
+            "the copy does not land on the output the narrower successor lacks",
         );
     }
 
