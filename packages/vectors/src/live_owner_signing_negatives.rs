@@ -1189,6 +1189,26 @@ impl OwnerSigningNegativePlanner {
 const DESTINATION_SCALARS: [[u8; FIELD_ELEMENT_BYTES]; 3] =
     [SECOND_SCALAR, FIRST_SCALAR, THIRD_SCALAR];
 
+/// How much each destination takes: every one but the last an equal share,
+/// the last the remainder.
+///
+/// Split out from the finalization so the property the wider candidates
+/// rest on is checkable without a node. That property is CONSERVATION —
+/// the shares put back together are the consumed total, exactly, at every
+/// width. It matters most for the offsetting-flow row, whose whole premise
+/// is that its extra input-and-output pair balances: a created side that
+/// came up short would be refused at the consensus tally, and the
+/// observation would belong to conservation rather than to the covenant's
+/// cardinality clause the row is about.
+///
+/// `None` for a zero width, or for arithmetic that does not compute.
+fn destination_shares(total: u64, width: u64) -> Option<(u64, u64)> {
+    let share = total.checked_div(width)?;
+    let head = share.checked_mul(width.saturating_sub(1))?;
+    let remainder = total.checked_sub(head)?;
+    Some((share, remainder))
+}
+
 /// The public view a ceremony constructs against, over its funded coins.
 ///
 /// # Errors
@@ -1241,14 +1261,7 @@ pub(crate) fn finalize_explicit(
         .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
 
     let width = u64::try_from(destinations).unwrap_or(0);
-    let share = total
-        .checked_div(width)
-        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-    let head = share
-        .checked_mul(width.saturating_sub(1))
-        .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
-    let remainder = total
-        .checked_sub(head)
+    let (share, remainder) = destination_shares(total, width)
         .ok_or(OwnerSigningNegativeRefusal::CandidateNotConstructible)?;
 
     let mut receipts = Vec::with_capacity(destinations);
@@ -2450,6 +2463,51 @@ mod tests {
                 "two leaf arrangements share the reveal order {arrangement:?}",
             );
         }
+    }
+
+    #[test]
+    fn every_destination_width_puts_the_consumed_total_back_together() {
+        // The created side must sum to the consumed side at every width, or
+        // a wider candidate is refused at the consensus tally and its
+        // observation belongs to conservation rather than to the clause the
+        // row is about.
+        for width in 1..=3_u64 {
+            for total in [0, 1, 2, 3, 4, 5_000, 10_000, 15_000, 1 << 40] {
+                let (share, remainder) =
+                    super::destination_shares(total, width).expect("the shares compute");
+                let head = share
+                    .checked_mul(width - 1)
+                    .expect("the head of the split computes");
+                assert_eq!(
+                    head + remainder,
+                    total,
+                    "width {width} over total {total} did not conserve",
+                );
+            }
+        }
+        // At TWO destinations the split is the one the recorded two-output
+        // successor was built with — an even half and the rest — which is
+        // half of why widening the count cannot move its bytes.
+        assert_eq!(
+            super::destination_shares(10_000, 2),
+            Some((5_000, 5_000)),
+            "the two-destination split is not the recorded one",
+        );
+        assert_eq!(
+            super::destination_shares(1, 0),
+            None,
+            "a zero-width split was not refused",
+        );
+    }
+
+    #[test]
+    fn the_wider_destination_roster_keeps_the_recorded_pair_as_its_prefix() {
+        // The other half of why widening cannot move the recorded bytes:
+        // the wider roster APPENDS, so the two-output candidate still pays
+        // the same owners in the same order. An insertion here would
+        // renumber the recorded successor's destinations silently.
+        assert_eq!(super::DESTINATION_SCALARS[0], super::SECOND_SCALAR);
+        assert_eq!(super::DESTINATION_SCALARS[1], super::FIRST_SCALAR);
     }
 
     #[test]
