@@ -4552,8 +4552,13 @@ mod tests {
     /// looked inside it, so a value removed from the archive and left in this
     /// region would stay published and nothing in the repository would say so.
     ///
-    /// The check is on the values, not on the field names, because the field
-    /// names are not what the pin criterion removed. A rendering may state a
+    /// The check is on the values, and only on the values. It is not on the
+    /// field names, because the field names are not what the pin criterion
+    /// removed. It is not the archive's schema either: this region is the
+    /// native run's rendering, ninety-four minor versions later than the
+    /// archive's, and it carries fields the older schema never knew. Holding it
+    /// to that schema would refuse a capture for being newer than the record it
+    /// reproduces. A rendering may state a
     /// forward-v2 fixture digest, and thirteen of them do: those are the native
     /// run's own digests, which this tree regenerates from the fixture it
     /// builds. What went was the archive's copies of an older run, under an
@@ -4598,16 +4603,6 @@ mod tests {
                 "{}: the encoded rendering is not the length it declares",
                 file.name,
             );
-
-            let ceremony = file
-                .name
-                .trim_start_matches(
-                    "e8836e79b631b96420fb8006353df5b673ec7c69b830fb5f0555fb06add02517.",
-                )
-                .trim_end_matches(".capture");
-            let name = format!("rerun-0.6.52-dev.{ceremony}");
-            crate::live_corpus_rerun_day::parse_rerun_day_transcript(&name, &bytes)
-                .expect("the decoded rendering parses under the archive's own schema");
 
             // The digests this capture states in the open, which a suite run
             // regenerates from the fixture the tree constructs.
