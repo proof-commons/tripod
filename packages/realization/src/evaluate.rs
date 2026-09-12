@@ -114,8 +114,8 @@ pub enum RelationStatus {
         prerequisites: Vec<RelationId>,
     },
     StaticallyValidated,
-    /// The relation is well-formed but only external evidence can
-    /// discharge it; it never becomes `Passed` at this boundary.
+    /// The relation is well-formed but only external evidence can discharge it;
+    /// it releases dependents because the model kernel or target owns that proof.
     EvidenceRequired {
         requirement: ExternalEvidenceRequirement,
     },
@@ -258,12 +258,12 @@ pub(crate) fn evaluate_operation(
             .filter_map(|edge| {
                 let prerequisite = &relation_graph[edge.source()].id;
 
-                // Everything except an established prerequisite blocks
-                // its dependents — including an undischarged external
-                // premise: nothing downstream may build on evidence
-                // this boundary has not seen.
                 match status_by_relation.get(prerequisite) {
-                    Some(RelationStatus::Passed | RelationStatus::StaticallyValidated) => None,
+                    Some(
+                        RelationStatus::Passed
+                        | RelationStatus::StaticallyValidated
+                        | RelationStatus::EvidenceRequired { .. },
+                    ) => None,
                     _ => Some(prerequisite.clone()),
                 }
             })

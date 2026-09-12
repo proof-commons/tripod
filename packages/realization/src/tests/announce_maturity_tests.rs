@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{
-    ARCHITECTURE, Architecture, AssetId, BoundId, MaxCount, ObjectId, OperationId, OperationSpec,
-    ProjectionId, RootId,
+    ARCHITECTURE, Architecture, AssetId, BoundId, DeltaKind, MaxCount, ObjectId, OperationId,
+    OperationSpec, ProjectionId, RootId,
 };
 
 use crate::{
@@ -10,13 +10,14 @@ use crate::{
     CardinalityMaximum, ConstructibilityClass, ConstructibilityDependencyDeclaration,
     ConstructibilityEdge, ConstructibilityEdgeRole, ConstructibilityNodeId, Count, DisclosureNode,
     DisclosureReason, FactId, InitialVisibility, LifecycleDependencyDeclaration, LifecycleEdge,
-    LifecycleNodeId, ObservedAsset, ObservedCanonicalPartition, ObservedObject, ObservedObjectKind,
-    ObservedObjectRef, ObservedRootEffect, ObservedRootEffectKind, ObservedSide, ObservedValue,
-    OperationObservation, OperationRealization, OwnerId, ProofAlternativeId, ProofKind,
-    ProtocolAmount, RealizationError, RealizationScope, Relation, RelationDeclaration,
-    RelationDependencyDeclaration, RelationEdge, RelationId, RelationKind, RelationStatus,
-    RelationSubject, RepresentationMode, RequirementStrength, ScopedRealizationSpec, StateField,
-    TransactionSide, WitnessRole, derive, derive::assemble_scoped_realization,
+    LifecycleNodeId, ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition,
+    ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedRootEffect,
+    ObservedRootEffectKind, ObservedSide, ObservedValue, OperationObservation, OperationRealization,
+    OwnerId, ProofAlternativeId, ProofKind, ProtocolAmount, RealizationError, RealizationScope,
+    Relation, RelationDeclaration, RelationDependencyDeclaration, RelationEdge, RelationId,
+    RelationKind, RelationStatus, RelationSubject, RepresentationMode, RequirementStrength,
+    ScopedRealizationSpec, StateField, TransactionSide, WitnessRole, derive,
+    derive::assemble_scoped_realization,
 };
 
 pub(super) const OP: OperationId = OperationId::AnnounceMaturity;
@@ -711,51 +712,298 @@ fn operator_authorization_is_external_evidence() {
     for signers in [BTreeSet::new(), BTreeSet::from([OwnerId([1; 32])])] {
         let mut observed = observation();
         observed.protocol_signers = signers;
-        let report = realization().evaluate_operation(&observed).unwrap();
-        assert!(!report.is_evidence_complete());
-        {
-            let kind = RelationKind::Authorization;
-            assert_eq!(
-                report
-                    .verdict(&id(kind, RelationSubject::Operation))
-                    .unwrap()
-                    .status,
-                RelationStatus::EvidenceRequired {
-                    requirement: crate::ExternalEvidenceRequirement::OperatorAuthorization {
-                        operation: OP
+        let realization = realization();
+        let report = realization.evaluate_operation(&observed).unwrap();
+
+        let expected: BTreeMap<_, _> = realization.operations[&OP]
+            .relations
+            .iter()
+            .map(|declaration| {
+                let status = match &declaration.relation {
+                    Relation::OperatorAuthorization
+                    | Relation::Constructibility {
+                        class: ConstructibilityClass::Operator,
+                    } => RelationStatus::EvidenceRequired {
+                        requirement:
+                            crate::ExternalEvidenceRequirement::OperatorAuthorization {
+                                operation: OP,
+                            },
+                    },
+                    Relation::SubstrateConservation { asset } => {
+                        RelationStatus::EvidenceRequired {
+                            requirement:
+                                crate::ExternalEvidenceRequirement::SubstrateConservation {
+                                    operation: OP,
+                                    asset: *asset,
+                                },
+                        }
                     }
-                }
-            );
-        }
+                    Relation::LifecycleExit { .. } => RelationStatus::StaticallyValidated,
+                    _ => RelationStatus::Passed,
+                };
+                (declaration.id.clone(), status)
+            })
+            .collect();
+        let actual = report
+            .verdicts
+            .iter()
+            .map(|verdict| (verdict.relation.clone(), verdict.status.clone()))
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(actual, expected);
+        assert_eq!(report.verdicts.len(), 26);
+        assert!(report.is_conformant());
+        assert!(!report.is_evidence_complete());
+        assert_eq!(
+            report
+                .verdict(&id(RelationKind::Authorization, RelationSubject::Operation))
+                .unwrap()
+                .status,
+            RelationStatus::EvidenceRequired {
+                requirement: crate::ExternalEvidenceRequirement::OperatorAuthorization {
+                    operation: OP,
+                },
+            }
+        );
         assert_eq!(
             report
                 .verdict(&id(
                     RelationKind::Constructibility,
-                    RelationSubject::Operation
+                    RelationSubject::Operation,
                 ))
                 .unwrap()
                 .status,
-            RelationStatus::Blocked {
-                prerequisites: vec![id(RelationKind::Authorization, RelationSubject::Operation)]
+            RelationStatus::EvidenceRequired {
+                requirement: crate::ExternalEvidenceRequirement::OperatorAuthorization {
+                    operation: OP,
+                },
             }
         );
         assert_eq!(
             report
                 .verdict(&id(
-                    RelationKind::SubstrateConservation,
-                    RelationSubject::Asset {
-                        asset: AssetId::Lbtc
-                    }
+                    RelationKind::AllowedObjectFamilies,
+                    RelationSubject::TransactionSide {
+                        side: TransactionSide::Input,
+                    },
                 ))
                 .unwrap()
                 .status,
-            RelationStatus::EvidenceRequired {
-                requirement: crate::ExternalEvidenceRequirement::SubstrateConservation {
-                    operation: OP,
-                    asset: AssetId::Lbtc
-                }
-            }
+            RelationStatus::Passed,
         );
+        assert_eq!(
+            report
+                .verdict(&id(
+                    RelationKind::Representation,
+                    RelationSubject::Representation {
+                        object: ObjectId::State,
+                    },
+                ))
+                .unwrap()
+                .status,
+            RelationStatus::Passed,
+        );
+
+        let exits = ARCHITECTURE.object(ObjectId::State).unwrap().mutators;
+        assert_eq!(exits.len(), 6);
+        for exit in exits {
+            assert_eq!(
+                report
+                    .verdict(&id(
+                        RelationKind::Lifecycle,
+                        RelationSubject::LifecycleExit {
+                            object: ObjectId::State,
+                            exit: *exit,
+                        },
+                    ))
+                    .unwrap()
+                    .status,
+                RelationStatus::StaticallyValidated,
+            );
+        }
+        assert!(!report
+            .verdicts
+            .iter()
+            .any(|verdict| matches!(verdict.status, RelationStatus::Blocked { .. })));
+
+        let evidence_multiset = report.required_external_evidence().cloned().fold(
+            BTreeMap::new(),
+            |mut counts, requirement| {
+                *counts.entry(requirement).or_insert(0_usize) += 1;
+                counts
+            },
+        );
+        assert_eq!(
+            evidence_multiset,
+            BTreeMap::from([
+                (
+                    crate::ExternalEvidenceRequirement::OperatorAuthorization {
+                        operation: OP,
+                    },
+                    2,
+                ),
+                (
+                    crate::ExternalEvidenceRequirement::SubstrateConservation {
+                        operation: OP,
+                        asset: AssetId::Lbtc,
+                    },
+                    1,
+                ),
+            ]),
+        );
+    }
+}
+
+#[test]
+fn failed_input_recognition_still_blocks_input_cardinality() {
+    let mut observed = observation();
+    observed.objects[0].asset = ObservedAsset::Declared(AssetId::U);
+
+    let report = realization().evaluate_operation(&observed).unwrap();
+    let recognition = family_id(
+        RelationKind::Recognition,
+        TransactionSide::Input,
+        ObjectId::State,
+    );
+    let cardinality = family_id(
+        RelationKind::Cardinality,
+        TransactionSide::Input,
+        ObjectId::State,
+    );
+
+    assert_eq!(
+        report.verdict(&recognition).unwrap().status,
+        RelationStatus::Failed {
+            reason: crate::RelationFailure::ObjectRecognition,
+        },
+    );
+    assert_eq!(
+        report.verdict(&cardinality).unwrap().status,
+        RelationStatus::Blocked {
+            prerequisites: vec![recognition],
+        },
+    );
+}
+
+fn compact_ash_pilot_observation() -> OperationObservation {
+    let input0 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 0,
+    };
+    let input1 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 1,
+    };
+    let output0 = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 0,
+    };
+    let ash = |side, ordinal, value| ObservedObject {
+        reference: ObservedObjectRef { side, ordinal },
+        kind: ObservedObjectKind::Declared(ObjectId::Ash),
+        asset: ObservedAsset::Declared(AssetId::U),
+        value: ObservedValue::Protocol(ProtocolAmount::new(value).unwrap()),
+        owner: None,
+        representation: RepresentationMode::Explicit,
+    };
+
+    OperationObservation {
+        operation: OperationId::CompactAsh,
+        objects: vec![
+            ash(ObservedSide::Input, 0, 40),
+            ash(ObservedSide::Input, 1, 60),
+            ash(ObservedSide::Output, 0, 100),
+        ],
+        protocol_signers: BTreeSet::new(),
+        sponsor_signers: BTreeSet::new(),
+        canonical_partition: ObservedCanonicalPartition {
+            issuances: Vec::new(),
+            flows: vec![ObservedCanonicalFlow {
+                asset: AssetId::U,
+                sources: vec![input0, input1],
+                destinations: vec![output0],
+                movement_kind: Some(DeltaKind::OwnerlessLateral),
+                destructions: Vec::new(),
+            }],
+        },
+        open_flows: Vec::new(),
+        root_effects: Vec::new(),
+        projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
+        bounds: BTreeMap::from([
+            (BoundId::AshBatchMax, Count::new(64)),
+            (BoundId::FeeSponsorInputMax, Count::new(16)),
+        ]),
+    }
+}
+
+fn live_transfer_pilot_observation() -> OperationObservation {
+    let input0 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 0,
+    };
+    let output0 = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 0,
+    };
+    let output1 = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 1,
+    };
+    let receipt = |side, ordinal, value, owner| ObservedObject {
+        reference: ObservedObjectRef { side, ordinal },
+        kind: ObservedObjectKind::Declared(ObjectId::ReceiptLive),
+        asset: ObservedAsset::Declared(AssetId::U),
+        value: ObservedValue::Protocol(ProtocolAmount::new(value).unwrap()),
+        owner: Some(owner),
+        representation: RepresentationMode::Explicit,
+    };
+
+    OperationObservation {
+        operation: OperationId::TransferLive,
+        objects: vec![
+            receipt(ObservedSide::Input, 0, 100, OwnerId([1; 32])),
+            receipt(ObservedSide::Output, 0, 40, OwnerId([2; 32])),
+            receipt(ObservedSide::Output, 1, 60, OwnerId([3; 32])),
+        ],
+        protocol_signers: BTreeSet::from([OwnerId([1; 32])]),
+        sponsor_signers: BTreeSet::new(),
+        canonical_partition: ObservedCanonicalPartition {
+            issuances: Vec::new(),
+            flows: vec![ObservedCanonicalFlow {
+                asset: AssetId::U,
+                sources: vec![input0],
+                destinations: vec![output0, output1],
+                movement_kind: Some(DeltaKind::Lateral),
+                destructions: Vec::new(),
+            }],
+        },
+        open_flows: Vec::new(),
+        root_effects: Vec::new(),
+        projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
+        bounds: BTreeMap::from([
+            (BoundId::TransferInputMax, Count::new(64)),
+            (BoundId::TransferOutputMax, Count::new(64)),
+            (BoundId::FeeSponsorInputMax, Count::new(16)),
+        ]),
+    }
+}
+
+#[test]
+fn phase1_pilot_reports_remain_deterministic_and_unblocked() {
+    let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap();
+
+    for observation in [
+        compact_ash_pilot_observation(),
+        live_transfer_pilot_observation(),
+    ] {
+        let baseline = realization.evaluate_operation(&observation).unwrap();
+        let repeated = realization.evaluate_operation(&observation).unwrap();
+
+        assert!(!baseline
+            .verdicts
+            .iter()
+            .any(|verdict| matches!(verdict.status, RelationStatus::Blocked { .. })));
+        assert_eq!(repeated, baseline);
     }
 }
 
