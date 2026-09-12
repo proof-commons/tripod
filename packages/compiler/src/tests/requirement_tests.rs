@@ -1040,12 +1040,29 @@ fn a_permuted_relation_source_yields_equal_requirements() {
 
 #[test]
 fn operator_authorization_names_no_objects() {
-    assert_eq!(relation_objects(&Relation::OperatorAuthorization), relation_objects(&Relation::SubstrateConservation { asset: AssetId::Lbtc }));
+    assert_eq!(
+        relation_objects(&Relation::OperatorAuthorization),
+        relation_objects(&Relation::SubstrateConservation {
+            asset: AssetId::Lbtc
+        })
+    );
     assert!(relation_objects(&Relation::OperatorAuthorization).is_empty());
 }
 
 #[test]
 fn operator_constructibility_names_no_objects() {
-    assert_eq!(relation_objects(&Relation::Constructibility { class: realization::ConstructibilityClass::Operator }), relation_objects(&Relation::SubstrateConservation { asset: AssetId::Lbtc }));
-    assert!(relation_objects(&Relation::Constructibility { class: realization::ConstructibilityClass::Operator }).is_empty());
+    assert_eq!(
+        relation_objects(&Relation::Constructibility {
+            class: realization::ConstructibilityClass::Operator
+        }),
+        relation_objects(&Relation::SubstrateConservation {
+            asset: AssetId::Lbtc
+        })
+    );
+    assert!(
+        relation_objects(&Relation::Constructibility {
+            class: realization::ConstructibilityClass::Operator
+        })
+        .is_empty()
+    );
 }

@@ -281,8 +281,11 @@ pub fn classify_relation_case(
 
     match &declaration.relation {
         Relation::OperatorAuthorization
-        | Relation::Constructibility { class: realization::ConstructibilityClass::Operator } => {
-            external_evidence.insert(ExternalEvidenceRequirement::OperatorAuthorization { operation });
+        | Relation::Constructibility {
+            class: realization::ConstructibilityClass::Operator,
+        } => {
+            external_evidence
+                .insert(ExternalEvidenceRequirement::OperatorAuthorization { operation });
         }
 
         Relation::Constructibility { class } => {
@@ -604,7 +607,9 @@ fn classify_discharge(
         },
 
         Relation::OperatorAuthorization
-        | Relation::Constructibility { class: realization::ConstructibilityClass::Operator } => RelationDischarge {
+        | Relation::Constructibility {
+            class: realization::ConstructibilityClass::Operator,
+        } => RelationDischarge {
             boundaries: BTreeSet::from([Boundary::ExternalEvidence]),
             activation: ActivationCondition::Always,
             runtime: None,

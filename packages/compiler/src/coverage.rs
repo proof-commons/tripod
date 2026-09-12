@@ -845,7 +845,9 @@ fn static_mutations(
         )],
 
         Relation::OperatorAuthorization
-        | Relation::Constructibility { class: realization::ConstructibilityClass::Operator } => vec![
+        | Relation::Constructibility {
+            class: realization::ConstructibilityClass::Operator,
+        } => vec![
             (
                 Boundary::ExternalEvidence,
                 Mutation::ExternalEvidenceMissing,

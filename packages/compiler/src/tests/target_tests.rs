@@ -415,5 +415,10 @@ fn the_complete_census_orders_the_present_members() {
 
 #[test]
 fn operator_evidence_projects_to_its_own_role() {
-    assert_eq!(ExternalEvidenceRole::of(&ExternalEvidenceRequirement::OperatorAuthorization { operation: OperationId::AnnounceMaturity }), ExternalEvidenceRole::OperatorAuthorization);
+    assert_eq!(
+        ExternalEvidenceRole::of(&ExternalEvidenceRequirement::OperatorAuthorization {
+            operation: OperationId::AnnounceMaturity
+        }),
+        ExternalEvidenceRole::OperatorAuthorization
+    );
 }

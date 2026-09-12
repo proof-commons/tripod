@@ -967,14 +967,27 @@ fn assert_operator_placement(relation: Relation, kind: RelationKind) {
     for mut case in pilot(OperationId::CompactAsh).cases {
         case.id.operation = operation;
         case.active_sources.clear();
-        let plan = crate::placement::classify_relation_case(&declaration, &case, crate::sponsor_region::OrdinaryLbtcRole::Absent).unwrap();
-        assert_eq!(plan.boundaries, BTreeSet::from([DischargeBoundary::ExternalEvidence]));
+        let plan = crate::placement::classify_relation_case(
+            &declaration,
+            &case,
+            crate::sponsor_region::OrdinaryLbtcRole::Absent,
+        )
+        .unwrap();
+        assert_eq!(
+            plan.boundaries,
+            BTreeSet::from([DischargeBoundary::ExternalEvidence])
+        );
         assert_eq!(plan.activation, ActivationCondition::Always);
         assert_eq!(plan.activity, RelationActivity::Active);
         assert!(plan.runtime_requirements.is_empty());
         assert!(plan.compiler_requirements.is_empty());
         assert!(plan.structural_requirements.is_empty());
-        assert_eq!(plan.external_evidence, BTreeSet::from([realization::ExternalEvidenceRequirement::OperatorAuthorization { operation }]));
+        assert_eq!(
+            plan.external_evidence,
+            BTreeSet::from([
+                realization::ExternalEvidenceRequirement::OperatorAuthorization { operation }
+            ])
+        );
     }
 }
 
@@ -985,5 +998,10 @@ fn operator_authorization_is_always_active_external_evidence() {
 
 #[test]
 fn operator_constructibility_is_always_active_external_evidence() {
-    assert_operator_placement(Relation::Constructibility { class: realization::ConstructibilityClass::Operator }, RelationKind::Constructibility);
+    assert_operator_placement(
+        Relation::Constructibility {
+            class: realization::ConstructibilityClass::Operator,
+        },
+        RelationKind::Constructibility,
+    );
 }
