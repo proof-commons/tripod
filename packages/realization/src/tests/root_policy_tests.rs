@@ -136,11 +136,18 @@ fn a_root_may_carry_only_one_effect() {
 #[test]
 fn announcement_requires_state_succession() {
     use super::announce_maturity_tests as announcement;
-    assert_eq!(announcement::status(&announcement::observation(), &announcement::root_id()), crate::RelationStatus::Passed);
+    assert_eq!(
+        announcement::status(&announcement::observation(), &announcement::root_id()),
+        crate::RelationStatus::Passed
+    );
     let mut observed = announcement::observation();
     observed.root_effects.clear();
-    assert_eq!(announcement::status(&observed, &announcement::root_id()),
-        crate::RelationStatus::Failed { reason: crate::RelationFailure::RootPolicy });
+    assert_eq!(
+        announcement::status(&observed, &announcement::root_id()),
+        crate::RelationStatus::Failed {
+            reason: crate::RelationFailure::RootPolicy
+        }
+    );
 }
 
 #[test]
@@ -148,19 +155,33 @@ fn announcement_rejects_state_termination() {
     use super::announce_maturity_tests as announcement;
     let mut observed = announcement::observation();
     observed.root_effects[0].effect = ObservedRootEffectKind::Termination;
-    assert_eq!(announcement::status(&observed, &announcement::root_id()),
-        crate::RelationStatus::Failed { reason: crate::RelationFailure::RootPolicy });
+    assert_eq!(
+        announcement::status(&observed, &announcement::root_id()),
+        crate::RelationStatus::Failed {
+            reason: crate::RelationFailure::RootPolicy
+        }
+    );
 }
 
 #[test]
 fn announcement_rejects_every_foreign_root_effect() {
     use super::announce_maturity_tests as announcement;
     for root in RootId::ALL.iter().filter(|root| **root != RootId::State) {
-        for effect in [ObservedRootEffectKind::Succession, ObservedRootEffectKind::Termination] {
+        for effect in [
+            ObservedRootEffectKind::Succession,
+            ObservedRootEffectKind::Termination,
+        ] {
             let mut observed = announcement::observation();
-            observed.root_effects.push(ObservedRootEffect { root: *root, effect });
-            assert_eq!(announcement::status(&observed, &announcement::root_id()),
-                crate::RelationStatus::Failed { reason: crate::RelationFailure::RootPolicy });
+            observed.root_effects.push(ObservedRootEffect {
+                root: *root,
+                effect,
+            });
+            assert_eq!(
+                announcement::status(&observed, &announcement::root_id()),
+                crate::RelationStatus::Failed {
+                    reason: crate::RelationFailure::RootPolicy
+                }
+            );
         }
     }
 }

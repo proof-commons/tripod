@@ -835,28 +835,61 @@ fn announcement_lead_dependencies_retain_the_fact_operation() {
 #[test]
 fn announcement_operator_graph_validates() {
     let realization = super::announce_maturity_tests::realization();
-    assert_eq!(realization.constructibility_authorizations(OperationId::AnnounceMaturity).unwrap(),
-        &[ConstructibilityAuthorization::Operator]);
-    validate_constructibility(&realization.constructibility_graph, &realization.constructibility_node_by_id,
-        OperationId::AnnounceMaturity, &ConstructibilityAuthorization::Operator).unwrap();
+    assert_eq!(
+        realization
+            .constructibility_authorizations(OperationId::AnnounceMaturity)
+            .unwrap(),
+        &[ConstructibilityAuthorization::Operator]
+    );
+    validate_constructibility(
+        &realization.constructibility_graph,
+        &realization.constructibility_node_by_id,
+        OperationId::AnnounceMaturity,
+        &ConstructibilityAuthorization::Operator,
+    )
+    .unwrap();
 }
 
 #[test]
 fn announcement_operator_witness_is_unavailable_to_owners() {
     let realization = super::announce_maturity_tests::realization();
-    let error = validate_constructibility(&realization.constructibility_graph, &realization.constructibility_node_by_id,
-        OperationId::AnnounceMaturity, &input_owners(ObjectId::State)).unwrap_err();
-    assert!(matches!(error, RealizationError::ConstructibilityWitnessUnavailable {
-        source_node: ConstructibilityNodeId::Witness { availability: AvailabilityClass::Operator, .. }, ..
-    }));
+    let error = validate_constructibility(
+        &realization.constructibility_graph,
+        &realization.constructibility_node_by_id,
+        OperationId::AnnounceMaturity,
+        &input_owners(ObjectId::State),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        RealizationError::ConstructibilityWitnessUnavailable {
+            source_node: ConstructibilityNodeId::Witness {
+                availability: AvailabilityClass::Operator,
+                ..
+            },
+            ..
+        }
+    ));
 }
 
 #[test]
 fn announcement_operator_witness_is_unavailable_permissionlessly() {
     let realization = super::announce_maturity_tests::realization();
-    let error = validate_constructibility(&realization.constructibility_graph, &realization.constructibility_node_by_id,
-        OperationId::AnnounceMaturity, &permissionless()).unwrap_err();
-    assert!(matches!(error, RealizationError::PermissionlessPrivateDependency {
-        source_node: ConstructibilityNodeId::Witness { availability: AvailabilityClass::Operator, .. }, ..
-    }));
+    let error = validate_constructibility(
+        &realization.constructibility_graph,
+        &realization.constructibility_node_by_id,
+        OperationId::AnnounceMaturity,
+        &permissionless(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        RealizationError::PermissionlessPrivateDependency {
+            source_node: ConstructibilityNodeId::Witness {
+                availability: AvailabilityClass::Operator,
+                ..
+            },
+            ..
+        }
+    ));
 }

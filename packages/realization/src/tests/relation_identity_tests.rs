@@ -290,27 +290,57 @@ fn announcement_relations_satisfy_the_identity_weld() {
 
 #[test]
 fn state_is_a_surplus_family_in_the_receipt_pilot() {
-    let mut realization = derive(&ARCHITECTURE, RealizationScope::from_operations([OperationId::TransferLive]).unwrap()).unwrap();
+    let mut realization = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations([OperationId::TransferLive]).unwrap(),
+    )
+    .unwrap();
     let extra = declaration(
-        id(RelationKind::Recognition, family(TransactionSide::Input, ObjectId::State)),
-        Relation::Recognition { side: ObservedSide::Input, object: ObjectId::State, asset: AssetId::Pid },
+        id(
+            RelationKind::Recognition,
+            family(TransactionSide::Input, ObjectId::State),
+        ),
+        Relation::Recognition {
+            side: ObservedSide::Input,
+            object: ObjectId::State,
+            asset: AssetId::Pid,
+        },
     );
     let relation = extra.id.clone();
-    realization.operations.get_mut(&OperationId::TransferLive).unwrap().relations.push(extra);
-    assert_eq!(validate_scoped_realization(&ARCHITECTURE, &realization),
-        Err(RealizationError::SurplusArchitectureRelation { relation }));
+    realization
+        .operations
+        .get_mut(&OperationId::TransferLive)
+        .unwrap()
+        .relations
+        .push(extra);
+    assert_eq!(
+        validate_scoped_realization(&ARCHITECTURE, &realization),
+        Err(RealizationError::SurplusArchitectureRelation { relation })
+    );
 }
 
 #[test]
 fn announcement_rejects_a_surplus_receipt_family() {
-    let mut declaration = super::announce_maturity_tests::realization().operations.remove(&OperationId::AnnounceMaturity).unwrap();
-    let relation = RelationId::new(OperationId::AnnounceMaturity, RelationKind::Recognition,
-        family(TransactionSide::Input, ObjectId::ReceiptLive));
+    let mut declaration = super::announce_maturity_tests::realization()
+        .operations
+        .remove(&OperationId::AnnounceMaturity)
+        .unwrap();
+    let relation = RelationId::new(
+        OperationId::AnnounceMaturity,
+        RelationKind::Recognition,
+        family(TransactionSide::Input, ObjectId::ReceiptLive),
+    );
     declaration.relations.push(crate::RelationDeclaration {
         id: relation.clone(),
-        relation: Relation::Recognition { side: ObservedSide::Input, object: ObjectId::ReceiptLive, asset: AssetId::U },
+        relation: Relation::Recognition {
+            side: ObservedSide::Input,
+            object: ObjectId::ReceiptLive,
+            asset: AssetId::U,
+        },
         proof_alternatives: BTreeSet::new(),
     });
-    assert_eq!(super::announce_maturity_tests::rebuild(declaration).unwrap_err(),
-        RealizationError::SurplusArchitectureRelation { relation });
+    assert_eq!(
+        super::announce_maturity_tests::rebuild(declaration).unwrap_err(),
+        RealizationError::SurplusArchitectureRelation { relation }
+    );
 }

@@ -15,17 +15,21 @@ use architecture::{
 use crate::{
     AnnouncementLeadBound, AvailabilityClass, CardinalityMaximum,
     ConstructibilityDependencyDeclaration, ConstructibilityEdge, ConstructibilityEdgeRole,
-    ConstructibilityNode, ConstructibilityNodeId, Count, DisclosureNode, FactId,
-    InitialVisibility, LifecycleDependencyDeclaration, LifecycleEdge, LifecycleNode,
-    LifecycleNodeId, OperationRealization, ProofAlternativeId, ProofKind, RealizationError,
-    Relation, RelationDeclaration, RelationDependencyDeclaration, RelationEdge, RelationId,
-    RelationKind, RelationSubject, RepresentationMode, RequirementStrength, StateField,
-    TransactionSide, WitnessRole, validate::validate_announce_maturity_architecture,
+    ConstructibilityNode, ConstructibilityNodeId, Count, DisclosureNode, FactId, InitialVisibility,
+    LifecycleDependencyDeclaration, LifecycleEdge, LifecycleNode, LifecycleNodeId,
+    OperationRealization, ProofAlternativeId, ProofKind, RealizationError, Relation,
+    RelationDeclaration, RelationDependencyDeclaration, RelationEdge, RelationId, RelationKind,
+    RelationSubject, RepresentationMode, RequirementStrength, StateField, TransactionSide,
+    WitnessRole, validate::validate_announce_maturity_architecture,
 };
 
 const EXITS: [OperationId; 6] = [
-    OperationId::AdmitDeposits, OperationId::Cycle, OperationId::Redeem,
-    OperationId::ReceiptRelabel, OperationId::Clear, OperationId::AnnounceMaturity,
+    OperationId::AdmitDeposits,
+    OperationId::Cycle,
+    OperationId::Redeem,
+    OperationId::ReceiptRelabel,
+    OperationId::Clear,
+    OperationId::AnnounceMaturity,
 ];
 
 pub fn derive(architecture: &Architecture) -> Result<OperationRealization, RealizationError> {
@@ -147,7 +151,8 @@ impl Ids {
 }
 
 fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
-    cardinality_relations(ids).into_iter()
+    cardinality_relations(ids)
+        .into_iter()
         .chain(recognition_relations(ids))
         .chain(structural_relations(ids))
         .chain(policy_relations(ids))
@@ -282,7 +287,16 @@ fn structural_relations(ids: &Ids) -> Vec<RelationDeclaration> {
 fn policy_relations(ids: &Ids) -> Vec<RelationDeclaration> {
     let expected_roots = RootId::ALL
         .iter()
-        .map(|root| (*root, if *root == RootId::State { RootUse::Succession } else { RootUse::Forbidden }))
+        .map(|root| {
+            (
+                *root,
+                if *root == RootId::State {
+                    RootUse::Succession
+                } else {
+                    RootUse::Forbidden
+                },
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     let expected_projections = ProjectionId::ALL
         .iter()
@@ -354,34 +368,119 @@ fn policy_relations(ids: &Ids) -> Vec<RelationDeclaration> {
 }
 
 fn lifecycle_relations(ids: &Ids) -> Vec<RelationDeclaration> {
-    ids.exits.iter().zip(EXITS).map(|(id, exit)| relation_only(
-        id.clone(), Relation::LifecycleExit { object: ObjectId::State, exit },
-    )).collect()
+    ids.exits
+        .iter()
+        .zip(EXITS)
+        .map(|(id, exit)| {
+            relation_only(
+                id.clone(),
+                Relation::LifecycleExit {
+                    object: ObjectId::State,
+                    exit,
+                },
+            )
+        })
+        .collect()
 }
 
 fn relation_dependencies(ids: &Ids) -> Vec<RelationDependencyDeclaration> {
     let mut edges = [
-        (&ids.input_recognition, &ids.input_cardinality, RelationEdge::RecognitionBeforeCardinality),
-        (&ids.output_recognition, &ids.output_cardinality, RelationEdge::RecognitionBeforeCardinality),
-        (&ids.sponsor_input_recognition, &ids.sponsor_input_cardinality, RelationEdge::RecognitionBeforeCardinality),
-        (&ids.sponsor_output_recognition, &ids.sponsor_output_cardinality, RelationEdge::RecognitionBeforeCardinality),
-        (&ids.authorization, &ids.input_closure, RelationEdge::AuthorizationBeforeClosure),
-        (&ids.authorization, &ids.constructibility, RelationEdge::AuthorizationBeforeConstructibility),
-        (&ids.open_flow_policy, &ids.sponsor, RelationEdge::OpenFlowPolicyBeforeSponsor),
-        (&ids.open_flow_policy, &ids.sponsor_multiplicity, RelationEdge::StaticRequirement),
-        (&ids.sponsor_multiplicity, &ids.sponsor, RelationEdge::StaticRequirement),
-        (&ids.sponsor_input_recognition, &ids.sponsor, RelationEdge::StaticRequirement),
-        (&ids.sponsor_output_recognition, &ids.sponsor, RelationEdge::StaticRequirement),
-        (&ids.sponsor, &ids.constructibility, RelationEdge::SponsorBeforeConstructibility),
-        (&ids.sponsor, &ids.substrate_conservation, RelationEdge::SponsorBeforeOperation),
-        (&ids.constructibility, &ids.representation, RelationEdge::StaticRequirement),
-        (&ids.output_recognition, &ids.representation, RelationEdge::StaticRequirement),
-        (&ids.roots, &ids.constructibility, RelationEdge::RootPolicyBeforeOperation),
-        (&ids.projections, &ids.constructibility, RelationEdge::ProjectionPolicyBeforeOperation),
-    ].into_iter().map(|(source, target, edge)| dep(source, target, edge)).collect::<Vec<_>>();
-    edges.extend(ids.exits.iter().map(|exit| dep(
-        &ids.representation, exit, RelationEdge::RepresentationBeforeLifecycle,
-    )));
+        (
+            &ids.input_recognition,
+            &ids.input_cardinality,
+            RelationEdge::RecognitionBeforeCardinality,
+        ),
+        (
+            &ids.output_recognition,
+            &ids.output_cardinality,
+            RelationEdge::RecognitionBeforeCardinality,
+        ),
+        (
+            &ids.sponsor_input_recognition,
+            &ids.sponsor_input_cardinality,
+            RelationEdge::RecognitionBeforeCardinality,
+        ),
+        (
+            &ids.sponsor_output_recognition,
+            &ids.sponsor_output_cardinality,
+            RelationEdge::RecognitionBeforeCardinality,
+        ),
+        (
+            &ids.authorization,
+            &ids.input_closure,
+            RelationEdge::AuthorizationBeforeClosure,
+        ),
+        (
+            &ids.authorization,
+            &ids.constructibility,
+            RelationEdge::AuthorizationBeforeConstructibility,
+        ),
+        (
+            &ids.open_flow_policy,
+            &ids.sponsor,
+            RelationEdge::OpenFlowPolicyBeforeSponsor,
+        ),
+        (
+            &ids.open_flow_policy,
+            &ids.sponsor_multiplicity,
+            RelationEdge::StaticRequirement,
+        ),
+        (
+            &ids.sponsor_multiplicity,
+            &ids.sponsor,
+            RelationEdge::StaticRequirement,
+        ),
+        (
+            &ids.sponsor_input_recognition,
+            &ids.sponsor,
+            RelationEdge::StaticRequirement,
+        ),
+        (
+            &ids.sponsor_output_recognition,
+            &ids.sponsor,
+            RelationEdge::StaticRequirement,
+        ),
+        (
+            &ids.sponsor,
+            &ids.constructibility,
+            RelationEdge::SponsorBeforeConstructibility,
+        ),
+        (
+            &ids.sponsor,
+            &ids.substrate_conservation,
+            RelationEdge::SponsorBeforeOperation,
+        ),
+        (
+            &ids.constructibility,
+            &ids.representation,
+            RelationEdge::StaticRequirement,
+        ),
+        (
+            &ids.output_recognition,
+            &ids.representation,
+            RelationEdge::StaticRequirement,
+        ),
+        (
+            &ids.roots,
+            &ids.constructibility,
+            RelationEdge::RootPolicyBeforeOperation,
+        ),
+        (
+            &ids.projections,
+            &ids.constructibility,
+            RelationEdge::ProjectionPolicyBeforeOperation,
+        ),
+    ]
+    .into_iter()
+    .map(|(source, target, edge)| dep(source, target, edge))
+    .collect::<Vec<_>>();
+    edges.extend(ids.exits.iter().map(|exit| {
+        dep(
+            &ids.representation,
+            exit,
+            RelationEdge::RepresentationBeforeLifecycle,
+        )
+    }));
     edges
 }
 
@@ -441,11 +540,24 @@ fn lifecycle_declarations() -> (Vec<LifecycleNode>, Vec<LifecycleDependencyDecla
 
 fn disclosure_declarations() -> Vec<DisclosureNode> {
     let operation = OperationId::AnnounceMaturity;
-    StateField::ALL.iter().map(|field| FactId::StateField { operation, field: *field })
+    StateField::ALL
+        .iter()
+        .map(|field| FactId::StateField {
+            operation,
+            field: *field,
+        })
         .chain([FactId::RequestedAnnouncementCycle { operation }])
-        .chain([AnnouncementLeadBound::Minimum, AnnouncementLeadBound::Maximum]
-            .map(|bound| FactId::AnnouncementLead { operation, bound }))
-        .map(|id| DisclosureNode::Fact { id, initial_visibility: InitialVisibility::Public })
+        .chain(
+            [
+                AnnouncementLeadBound::Minimum,
+                AnnouncementLeadBound::Maximum,
+            ]
+            .map(|bound| FactId::AnnouncementLead { operation, bound }),
+        )
+        .map(|id| DisclosureNode::Fact {
+            id,
+            initial_visibility: InitialVisibility::Public,
+        })
         .collect()
 }
 

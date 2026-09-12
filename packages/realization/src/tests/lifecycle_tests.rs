@@ -535,30 +535,67 @@ fn announcement_state_satisfies_the_lifecycle_weld() {
 #[test]
 fn announcement_coherent_exit_omission_rejects() {
     use super::announce_maturity_tests as announcement;
-    let mut declaration = announcement::realization().operations.remove(&OperationId::AnnounceMaturity).unwrap();
+    let mut declaration = announcement::realization()
+        .operations
+        .remove(&OperationId::AnnounceMaturity)
+        .unwrap();
     announcement::omit_exit(&mut declaration, OperationId::Clear);
-    assert_eq!(announcement::rebuild(declaration).unwrap_err(),
-        RealizationError::MissingLifecycleExitNode { object: ObjectId::State, exit: OperationId::Clear });
+    assert_eq!(
+        announcement::rebuild(declaration).unwrap_err(),
+        RealizationError::MissingLifecycleExitNode {
+            object: ObjectId::State,
+            exit: OperationId::Clear
+        }
+    );
 }
 
 #[test]
 fn announcement_coherent_extra_exit_rejects() {
     use super::announce_maturity_tests as announcement;
-    let mut declaration = announcement::realization().operations.remove(&OperationId::AnnounceMaturity).unwrap();
+    let mut declaration = announcement::realization()
+        .operations
+        .remove(&OperationId::AnnounceMaturity)
+        .unwrap();
     let exit = OperationId::Burn;
-    let id = announcement::id(crate::RelationKind::Lifecycle,
-        crate::RelationSubject::LifecycleExit { object: ObjectId::State, exit });
+    let id = announcement::id(
+        crate::RelationKind::Lifecycle,
+        crate::RelationSubject::LifecycleExit {
+            object: ObjectId::State,
+            exit,
+        },
+    );
     declaration.relations.push(crate::RelationDeclaration {
-        id, relation: Relation::LifecycleExit { object: ObjectId::State, exit },
+        id,
+        relation: Relation::LifecycleExit {
+            object: ObjectId::State,
+            exit,
+        },
         proof_alternatives: std::collections::BTreeSet::new(),
     });
-    let target = LifecycleNodeId::RequiredExit { object: ObjectId::State, operation: exit };
-    declaration.lifecycle_nodes.push(LifecycleNode { id: target.clone() });
-    for mode in [RepresentationMode::Explicit, RepresentationMode::PublicCommitted] {
-        declaration.lifecycle_edges.push(LifecycleDependencyDeclaration {
-            source: LifecycleNodeId::Representation { object: ObjectId::State, mode },
-            target: target.clone(), edge: LifecycleEdge::RequiresExit,
-        });
+    let target = LifecycleNodeId::RequiredExit {
+        object: ObjectId::State,
+        operation: exit,
+    };
+    declaration
+        .lifecycle_nodes
+        .push(LifecycleNode { id: target.clone() });
+    for mode in [
+        RepresentationMode::Explicit,
+        RepresentationMode::PublicCommitted,
+    ] {
+        declaration
+            .lifecycle_edges
+            .push(LifecycleDependencyDeclaration {
+                source: LifecycleNodeId::Representation {
+                    object: ObjectId::State,
+                    mode,
+                },
+                target: target.clone(),
+                edge: LifecycleEdge::RequiresExit,
+            });
     }
-    assert_eq!(announcement::rebuild(declaration).unwrap_err(), RealizationError::UndeclaredLifecycleNode(target));
+    assert_eq!(
+        announcement::rebuild(declaration).unwrap_err(),
+        RealizationError::UndeclaredLifecycleNode(target)
+    );
 }

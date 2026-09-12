@@ -521,16 +521,35 @@ fn announcement_singleton_derivation_is_repeatable() {
 
 #[test]
 fn three_operation_scope_is_order_independent() {
-    let operations = [OperationId::AnnounceMaturity, OperationId::CompactAsh, OperationId::TransferLive];
-    let first = derive(&ARCHITECTURE, RealizationScope::from_operations(operations).unwrap()).unwrap();
-    let second = derive(&ARCHITECTURE, RealizationScope::from_operations(operations.into_iter().rev()).unwrap()).unwrap();
+    let operations = [
+        OperationId::AnnounceMaturity,
+        OperationId::CompactAsh,
+        OperationId::TransferLive,
+    ];
+    let first = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations(operations).unwrap(),
+    )
+    .unwrap();
+    let second = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations(operations.into_iter().rev()).unwrap(),
+    )
+    .unwrap();
     assert_eq!(first.project(), second.project());
 }
 
 #[test]
 fn three_operation_declarations_are_permutation_stable() {
-    let realization = derive(&ARCHITECTURE, RealizationScope::from_operations([
-        OperationId::AnnounceMaturity, OperationId::CompactAsh, OperationId::TransferLive,
-    ]).unwrap()).unwrap();
+    let realization = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations([
+            OperationId::AnnounceMaturity,
+            OperationId::CompactAsh,
+            OperationId::TransferLive,
+        ])
+        .unwrap(),
+    )
+    .unwrap();
     super::announce_maturity_tests::assert_permutations(&realization);
 }

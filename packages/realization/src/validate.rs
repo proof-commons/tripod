@@ -728,17 +728,24 @@ fn validate_announcement_lifecycle(
         return Ok(());
     };
     let modes = BTreeSet::from([
-        RepresentationMode::Explicit, RepresentationMode::PublicCommitted,
+        RepresentationMode::Explicit,
+        RepresentationMode::PublicCommitted,
     ]);
     let exits = announcement_exits();
     let mut actual_modes = BTreeSet::new();
     let mut actual_exits = BTreeSet::new();
     for relation in &declaration.relations {
         match &relation.relation {
-            Relation::Representation { object: ObjectId::State, allowed } => {
+            Relation::Representation {
+                object: ObjectId::State,
+                allowed,
+            } => {
                 actual_modes.extend(allowed.iter().copied());
             }
-            Relation::LifecycleExit { object: ObjectId::State, exit } => {
+            Relation::LifecycleExit {
+                object: ObjectId::State,
+                exit,
+            } => {
                 actual_exits.insert(*exit);
             }
             _ => {}
@@ -746,29 +753,40 @@ fn validate_announcement_lifecycle(
     }
     if let Some(mode) = modes.difference(&actual_modes).next() {
         return Err(RealizationError::MissingLifecycleRepresentation {
-            object: ObjectId::State, mode: *mode,
+            object: ObjectId::State,
+            mode: *mode,
         });
     }
     if let Some(mode) = actual_modes.difference(&modes).next() {
         return Err(RealizationError::UndeclaredLifecycleNode(
-            crate::LifecycleNodeId::Representation { object: ObjectId::State, mode: *mode },
+            crate::LifecycleNodeId::Representation {
+                object: ObjectId::State,
+                mode: *mode,
+            },
         ));
     }
     if let Some(exit) = exits.difference(&actual_exits).next() {
         return Err(RealizationError::MissingLifecycleExitNode {
-            object: ObjectId::State, exit: *exit,
+            object: ObjectId::State,
+            exit: *exit,
         });
     }
     if let Some(exit) = actual_exits.difference(&exits).next() {
         return Err(RealizationError::UndeclaredLifecycleNode(
-            crate::LifecycleNodeId::RequiredExit { object: ObjectId::State, operation: *exit },
+            crate::LifecycleNodeId::RequiredExit {
+                object: ObjectId::State,
+                operation: *exit,
+            },
         ));
     }
     for mode in modes {
         for exit in &exits {
             require_lifecycle_exit(
-                &realization.lifecycle_graph, &realization.lifecycle_node_by_id,
-                ObjectId::State, mode, *exit,
+                &realization.lifecycle_graph,
+                &realization.lifecycle_node_by_id,
+                ObjectId::State,
+                mode,
+                *exit,
             )?;
         }
     }
@@ -1154,9 +1172,11 @@ fn mismatch_live(field: ArchitectureMismatchField) -> Result<(), RealizationErro
 pub fn validate_announce_maturity_architecture(
     architecture: &Architecture,
 ) -> Result<(), RealizationError> {
-    let operation = architecture.operation(OperationId::AnnounceMaturity).ok_or(
-        RealizationError::MissingArchitectureOperation(OperationId::AnnounceMaturity),
-    )?;
+    let operation = architecture
+        .operation(OperationId::AnnounceMaturity)
+        .ok_or(RealizationError::MissingArchitectureOperation(
+            OperationId::AnnounceMaturity,
+        ))?;
 
     if operation.kind != OperationKind::CovenantBranch {
         return mismatch_announcement(ArchitectureMismatchField::OperationKind);
@@ -1238,9 +1258,7 @@ fn validate_announcement_families(
         .find(|output| output.object == ObjectId::State)
         .ok_or_else(|| announcement_error(ArchitectureMismatchField::StateOutput))?;
 
-    if state_output.minimum != 1
-        || state_output.maximum != MaxCount::Exact(1)
-    {
+    if state_output.minimum != 1 || state_output.maximum != MaxCount::Exact(1) {
         return mismatch_announcement(ArchitectureMismatchField::StateOutput);
     }
 
@@ -1261,9 +1279,7 @@ fn validate_announcement_policies(
     operation: &architecture::OperationSpec,
 ) -> Result<(), RealizationError> {
     if operation.bounds.iter().copied().collect::<BTreeSet<_>>()
-        != BTreeSet::from([
-            BoundId::FeeSponsorInputMax,
-        ])
+        != BTreeSet::from([BoundId::FeeSponsorInputMax])
     {
         return mismatch_announcement(ArchitectureMismatchField::Bounds);
     }
@@ -1292,7 +1308,11 @@ fn validate_announcement_policies(
     }
 
     for root in RootId::ALL {
-        let expected = if *root == RootId::State { RootUse::Succession } else { RootUse::Forbidden };
+        let expected = if *root == RootId::State {
+            RootUse::Succession
+        } else {
+            RootUse::Forbidden
+        };
         if operation.root_use(*root) != expected {
             return mismatch_announcement(ArchitectureMismatchField::RootPolicy);
         }
@@ -1334,7 +1354,8 @@ fn validate_announcement_policies(
 }
 
 fn validate_announcement_state_object(architecture: &Architecture) -> Result<(), RealizationError> {
-    let state = architecture.object(ObjectId::State)
+    let state = architecture
+        .object(ObjectId::State)
         .ok_or_else(|| announcement_error(ArchitectureMismatchField::StateObject))?;
     if state.mutators.iter().copied().collect::<BTreeSet<_>>() != announcement_exits()
         || state.deallocators != [architecture::DeallocatorId::None]
@@ -1347,8 +1368,12 @@ fn validate_announcement_state_object(architecture: &Architecture) -> Result<(),
 
 fn announcement_exits() -> BTreeSet<OperationId> {
     BTreeSet::from([
-        OperationId::AdmitDeposits, OperationId::Cycle, OperationId::Redeem,
-        OperationId::ReceiptRelabel, OperationId::Clear, OperationId::AnnounceMaturity,
+        OperationId::AdmitDeposits,
+        OperationId::Cycle,
+        OperationId::Redeem,
+        OperationId::ReceiptRelabel,
+        OperationId::Clear,
+        OperationId::AnnounceMaturity,
     ])
 }
 
