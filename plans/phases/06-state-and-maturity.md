@@ -155,7 +155,54 @@ Guide 14 §3.1 asks Wave 0 to record the existing owners of the STATE semantics.
 
 (c) The architecture data census names four of the six STATE fields. `G14C-14`'s field-slicing law, that field slicing commutes with semantic projection, will need architecture names for cycle and maturity, or an explicit statement that the law ranges over the four declared quantities only and that the remaining two are model-owned.
 
-(d) Wave 0's remaining deliverable, the §5.1 carrier-sufficiency proof, was not recorded. §5.1 accepts the witness carrier only if Wave 0 proves that an unrelated process can reconstruct the successor from the accepted transaction alone, and directs that implementation stop for a focused carrier decision if that proof fails. Neither outcome is on record, so the proof is owed before the constructor wave and is carried here as Wave-0 debt.
+(d) Wave 0's remaining deliverable, the §5.1 carrier-sufficiency proof, was not recorded. §5.1 accepts the witness carrier only if Wave 0 proves that an unrelated process can reconstruct the successor from the accepted transaction alone, and directs that implementation stop for a focused carrier decision if that proof fails. The proof is now recorded at (`sec:phase6:carrier-proof`), and this item is discharged.
+
+### Wave-0 carrier sufficiency · `sec:phase6:carrier-proof`
+
+The claim proved here is recovery, not fresh consensus validation: Guide 14 makes the accepted announcement transaction's public script-path witness and output set the publication source (`plans/guides/guide_fourteen.md:270-283`), and §5.1 says the witness publishes predecessor-construction data, the announced cycle, and the canonical successor representation nonce without a second metadata output (`plans/guides/guide_fourteen.md:882-890`).
+
+The carrier's public recovery inputs divide between facts already owned by this tree and exact construction work a later wave still owes:
+
+| Recovery value from §1.8 | Public source | Owned today | Later wave owes |
+|---|---|---|---|
+| predecessor metadata | STATE input witness, in full | `StateMetadata` owns the six-field census `omega`, `y_l`, `y_t`, `q`, `cycle`, and `maturity` (`packages/realization/src/state.rs:44-70`). | The Wave-1 codec bite must decode all six fields under the published schema rather than substitute a digest. |
+| requested announcement cycle | STATE input witness | The ordinal `Cycle` domain and checked advance are typed at `packages/realization/src/domain.rs:134-168`; `announce_maturity` accepts the announced `Cycle` at `packages/realization/src/state.rs:223-227`. | The codec must give that cycle one canonical public representation. |
+| successor semantic metadata | derived from the preceding two values, not separately published | The total transition and its closed result are owned at `packages/realization/src/state.rs:210-252`. | Model conformance must continue to pin the projection law named by the second Wave-1 ruling (`plans/phases/06-state-and-maturity.md:142`). |
+| successor representation nonce | STATE input witness | The fifth Wave-1 ruling fixes big-endian canonical metadata encoding and a `u32` nonce (`plans/phases/06-state-and-maturity.md:148`); semantic STATE deliberately excludes representation (`packages/realization/src/state.rs:9-15`). | The in-flight Wave-1 codec bite must implement those ruled bytes, and the constructor wave must verify the canonical retry result. |
+| metadata schema | published recovery schema | The semantic field set and the ruled byte order and nonce width are fixed by the two owners above. | The codec bite must finish the exact field layout, discriminants, versioning, and strict decoding. |
+| static constructor recipe or exact linked static-root reference | STATE input witness and published constructor schema | The successor must reuse one exact linked static subtree, with a dynamic metadata leaf and fixed branch side (`plans/guides/guide_fourteen.md:892-918`); the leading construction combines that root with the metadata leaf (`plans/research/state-constructor.md:137-175`). | The constructor wave must implement and bind that recipe or reference without an additional private input. |
+| successor output position | accepted transaction's public output set | §1.8 requires the position as recovery data (`plans/guides/guide_fourteen.md:274-283`). | The transaction and ABI waves must bind its canonical representation and validate the selected output. |
+| target leaf version and internal-key policy | witness-visible target policy and published constructor schema | The research requires target leaf-version capability (`plans/research/state-constructor.md:60-72`) and a deterministic, publicly auditable internal key (`plans/research/state-constructor.md:177-193`). | The target and constructor waves must bind the exact leaf version and key while preserving those policies. |
+
+As implemented, `announce_maturity` is a total deterministic function of predecessor metadata, announced cycle, and typed lead bounds: every input returns either one complete successor or one member of the closed refusal sum (`packages/realization/src/state.rs:155-208`, `:210-252`).
+
+For an accepted announcement, the successful branch is unique: it copies `omega`, `y_l`, `y_t`, `q`, and the predecessor's current `cycle`, and replaces only `maturity` with `Announced { cycle: announced_cycle }` (`packages/realization/src/state.rs:72-89`, `:238-252`).
+
+Thus each of the six successor fields has a public source: `omega`, `y_l`, `y_t`, `q`, and `cycle` come from the full predecessor metadata, while `maturity` comes from the announced cycle plus the publicly visible fact that the transaction was accepted.
+
+Once the ruled encoding is implemented, successor metadata bytes are the deterministic encoding of that unique semantic successor and the public successor nonce; neither value admits an additional author.
+
+Under §5.2 through §5.4, constructor bytes are then a deterministic function of those metadata bytes, the shared static subtree, the fixed branch side, deterministic nonce retry, and the published target policy (`plans/guides/guide_fourteen.md:892-946`).
+
+Recovery steps 1 and 2 locate the accepted transaction and verify its bytes and deployment binding; both operate on the named public publication source (`plans/guides/guide_fourteen.md:272-283`, `:285-289`).
+
+Step 3 decodes the witness under the published schema, and step 4 applies the typed transition to the recovered predecessor metadata and announced cycle (`plans/guides/guide_fourteen.md:289-290`).
+
+Step 5 evaluates the canonical constructor from the encoded successor, shared static subtree, and target policy, and step 6 compares the result with the output at the carried public position (`plans/guides/guide_fourteen.md:291-292`).
+
+The lead bounds are not a successor-derivation input after acceptance: they decide whether the transition may succeed, but the accepted successor itself is the field-for-field mapping above.
+
+Those bounds currently live as `min_maturity_lead` and `max_maturity_lead` in the model's `Constants` (`packages/model/src/constants.rs:17-18`), while the realization transition receives a validated typed pair (`packages/realization/src/state.rs:92-152`, `:223-227`).
+
+A third party independently checking validity therefore also needs the consensus constants published elsewhere; whether the typed architecture must name them remains open in question (b) above (`plans/phases/06-state-and-maturity.md:154`).
+
+The predecessor's own representation nonce is likewise unnecessary for successor derivation: it authenticates predecessor constructor linkage, whereas the successor constructor consumes its separately public successor nonce (`plans/guides/guide_fourteen.md:240-258`).
+
+The proof holds only while the witness carries predecessor metadata in full, rather than a hash of it, and carries the announced cycle; otherwise the reconstructor cannot recover the five copied fields or the new `maturity` value.
+
+It would also fail if `omega`, `y_l`, `y_t`, `q`, or `cycle` acquired any source other than predecessor metadata, if `maturity` acquired any source other than predecessor maturity plus the announced cycle, or if encoding or construction consulted data outside the witness, output set, and published schemas.
+
+Accordingly, the §5.1 carrier is accepted for the initial candidate, no second publication is introduced, and the residual obligation is a constructor-wave test tripwire proving that the constructor remains a function of exactly the public inputs listed here.
 
 ## Exit gate · `gate:phase6:exit`
 
