@@ -510,3 +510,27 @@ fn a_different_valid_schedule_leaves_the_projection_equal() {
         "a different valid schedule moved the stable projection",
     );
 }
+
+#[test]
+fn announcement_singleton_derivation_is_repeatable() {
+    let first = super::announce_maturity_tests::realization();
+    let second = super::announce_maturity_tests::realization();
+    assert_eq!(first.scope.operations(), &[OperationId::AnnounceMaturity]);
+    assert_eq!(first.project(), second.project());
+}
+
+#[test]
+fn three_operation_scope_is_order_independent() {
+    let operations = [OperationId::AnnounceMaturity, OperationId::CompactAsh, OperationId::TransferLive];
+    let first = derive(&ARCHITECTURE, RealizationScope::from_operations(operations).unwrap()).unwrap();
+    let second = derive(&ARCHITECTURE, RealizationScope::from_operations(operations.into_iter().rev()).unwrap()).unwrap();
+    assert_eq!(first.project(), second.project());
+}
+
+#[test]
+fn three_operation_declarations_are_permutation_stable() {
+    let realization = derive(&ARCHITECTURE, RealizationScope::from_operations([
+        OperationId::AnnounceMaturity, OperationId::CompactAsh, OperationId::TransferLive,
+    ]).unwrap()).unwrap();
+    super::announce_maturity_tests::assert_permutations(&realization);
+}

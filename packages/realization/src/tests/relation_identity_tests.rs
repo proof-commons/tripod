@@ -278,3 +278,39 @@ fn a_projection_policy_is_subjected_to_the_operation_and_not_to_a_projection_it_
         "a projection subject on a projection policy is a subject mismatch, got {error}",
     );
 }
+
+#[test]
+fn announcement_relations_satisfy_the_identity_weld() {
+    let realization = super::announce_maturity_tests::realization();
+    for relation in realization.relations() {
+        validate_relation_identity(relation).unwrap();
+    }
+    validate_scoped_realization(&ARCHITECTURE, &realization).unwrap();
+}
+
+#[test]
+fn state_is_a_surplus_family_in_the_receipt_pilot() {
+    let mut realization = derive(&ARCHITECTURE, RealizationScope::from_operations([OperationId::TransferLive]).unwrap()).unwrap();
+    let extra = declaration(
+        id(RelationKind::Recognition, family(TransactionSide::Input, ObjectId::State)),
+        Relation::Recognition { side: ObservedSide::Input, object: ObjectId::State, asset: AssetId::Pid },
+    );
+    let relation = extra.id.clone();
+    realization.operations.get_mut(&OperationId::TransferLive).unwrap().relations.push(extra);
+    assert_eq!(validate_scoped_realization(&ARCHITECTURE, &realization),
+        Err(RealizationError::SurplusArchitectureRelation { relation }));
+}
+
+#[test]
+fn announcement_rejects_a_surplus_receipt_family() {
+    let mut declaration = super::announce_maturity_tests::realization().operations.remove(&OperationId::AnnounceMaturity).unwrap();
+    let relation = RelationId::new(OperationId::AnnounceMaturity, RelationKind::Recognition,
+        family(TransactionSide::Input, ObjectId::ReceiptLive));
+    declaration.relations.push(crate::RelationDeclaration {
+        id: relation.clone(),
+        relation: Relation::Recognition { side: ObservedSide::Input, object: ObjectId::ReceiptLive, asset: AssetId::U },
+        proof_alternatives: BTreeSet::new(),
+    });
+    assert_eq!(super::announce_maturity_tests::rebuild(declaration).unwrap_err(),
+        RealizationError::SurplusArchitectureRelation { relation });
+}

@@ -1,3 +1,4 @@
+mod announce_maturity_tests;
 mod compact_ash_tests;
 mod constructibility_tests;
 mod derivation_tests;
@@ -147,4 +148,9 @@ fn complete_architecture_scope_upgrades() {
     let complete = scope.try_complete(&ARCHITECTURE).unwrap();
 
     assert_eq!(complete.as_scope().operations(), scope.operations());
+}
+
+#[test]
+fn announcement_remains_outside_the_phase1_scope() {
+    assert!(!RealizationScope::phase1_pilots().contains(OperationId::AnnounceMaturity));
 }

@@ -247,3 +247,16 @@ fn authorization_discharge_semantics_are_owner_defined() {
     }));
     assert!(!permissionless.discharges(AvailabilityClass::Operator));
 }
+
+#[test]
+fn announcement_is_available_through_explicit_public_scope() {
+    let realization = derive(&ARCHITECTURE, RealizationScope::from_operations([OperationId::AnnounceMaturity]).unwrap()).unwrap();
+    realization.validate_against(&ARCHITECTURE).unwrap();
+    assert_eq!(realization.scope().operations(), &[OperationId::AnnounceMaturity]);
+    assert!(realization.operation(OperationId::AnnounceMaturity).unwrap().expressions.is_empty());
+    assert_eq!(realization.constructibility_authorizations(OperationId::AnnounceMaturity).unwrap(),
+        &[realization::ConstructibilityAuthorization::Operator]);
+    assert_eq!(realization.declassification().required_public.len(), 9);
+    assert_eq!(RealizationScope::phase1_pilots().operations(),
+        &[OperationId::TransferLive, OperationId::CompactAsh]);
+}

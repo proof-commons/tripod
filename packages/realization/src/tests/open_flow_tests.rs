@@ -305,3 +305,58 @@ fn an_unclaimed_sponsor_member_is_a_relation_verdict_not_a_parse_error() {
         "the sponsor-isolation relation must reject the unclaimed member",
     );
 }
+
+fn announcement_sponsored() -> OperationObservation {
+    let mut observed = super::announce_maturity_tests::observation();
+    observed.objects.extend([sponsor(ObservedSide::Input, 1), sponsor(ObservedSide::Output, 1)]);
+    observed.open_flows.push(fee_sponsor_flow(vec![input(1)], vec![output(1)]));
+    observed.sponsor_signers.insert(CAROL);
+    observed
+}
+
+fn announcement_sponsor_status(observed: &OperationObservation) -> crate::RelationStatus {
+    use super::announce_maturity_tests as announcement;
+    announcement::status(observed, &announcement::id(crate::RelationKind::SponsorIsolation, crate::RelationSubject::Sponsor))
+}
+
+#[test]
+fn announcement_sponsor_ownership_is_required() {
+    let mut observed = announcement_sponsored();
+    assert_eq!(announcement_sponsor_status(&observed), crate::RelationStatus::Passed);
+    observed.sponsor_signers.clear();
+    assert!(matches!(announcement_sponsor_status(&observed), crate::RelationStatus::Failed { .. }));
+}
+
+#[test]
+fn announcement_sponsor_amounts_must_be_erased() {
+    use super::announce_maturity_tests as announcement;
+    for side in [ObservedSide::Input, ObservedSide::Output] {
+        let mut observed = announcement_sponsored();
+        observed.objects.iter_mut().find(|o| o.reference == ObservedObjectRef { side, ordinal: 1 }).unwrap().value =
+            ObservedValue::Protocol(ProtocolAmount::ONE);
+        let relation = announcement::id(crate::RelationKind::Recognition, crate::RelationSubject::ObjectFamily {
+            side: match side { ObservedSide::Input => crate::TransactionSide::Input, ObservedSide::Output => crate::TransactionSide::Output },
+            object: ObjectId::PlainLbtc,
+        });
+        assert!(matches!(announcement::status(&observed, &relation), crate::RelationStatus::Failed { .. }));
+    }
+}
+
+#[test]
+fn announcement_unclaimed_sponsor_members_reject() {
+    let mut observed = announcement_sponsored();
+    observed.open_flows.clear();
+    assert!(matches!(announcement_sponsor_status(&observed), crate::RelationStatus::Failed { .. }));
+}
+
+#[test]
+fn announcement_non_sponsor_open_flows_reject() {
+    use super::announce_maturity_tests as announcement;
+    for kind in architecture::OpenFlowKind::ALL.iter().filter(|kind| **kind != architecture::OpenFlowKind::FeeSponsor) {
+        let mut observed = announcement::observation();
+        observed.open_flows.push(ObservedOpenFlow { kind: *kind, sources: Vec::new(), destinations: Vec::new(), fee: ProtocolAmount::ZERO });
+        let relation = announcement::id(crate::RelationKind::OpenFlowPolicy, crate::RelationSubject::Operation);
+        assert_eq!(announcement::status(&observed, &relation),
+            crate::RelationStatus::Failed { reason: crate::RelationFailure::OpenFlowPolicy });
+    }
+}

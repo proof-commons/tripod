@@ -340,3 +340,25 @@ fn a_sponsor_amount_read_is_rejected_structurally() {
         Err(RealizationError::SponsorValueRead),
     );
 }
+
+#[test]
+fn announcement_sponsor_amount_declaration_rejects() {
+    use super::announce_maturity_tests as announcement;
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        let mut declaration = announcement::realization().operations.remove(&announcement::OP).unwrap();
+        declaration.disclosure_nodes.push(DisclosureNode::Fact {
+            id: FactId::FamilyAmount { operation: announcement::OP, side, object: architecture::ObjectId::PlainLbtc },
+            initial_visibility: InitialVisibility::Private,
+        });
+        assert_eq!(announcement::rebuild(declaration).unwrap_err(), RealizationError::SponsorValueRead);
+    }
+}
+
+#[test]
+fn announcement_derivation_preserves_the_phase1_disclosure_helper() {
+    let before = phase1_declassification();
+    let announcement = super::announce_maturity_tests::realization();
+    assert_eq!(announcement.declassification.required_public.len(), 9);
+    assert_eq!(phase1_declassification(), before);
+    assert_eq!(derive(&architecture::ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap().declassification, before);
+}
