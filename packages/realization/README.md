@@ -227,9 +227,28 @@ source locations, declaration ordinals, target identities, or backend handles.
 - `Count` — cardinality, deliberately a distinct type; `new(u64) -> Self`
   (infallible), `ZERO`, `ONE`, `get()`, `is_zero()`, `checked_add`
   (`CountOverflow`). A count is not an amount merely because both are integers.
+- `Cycle` — an ordinal over the full `u64` domain; `Cycle::new(value: u64) -> Self`, `Cycle::ZERO`, `Cycle::MAX`, `Cycle::get(self) -> u64`, and `Cycle::checked_add(self, other: Self) -> Result<Self, RealizationError>`, which fails closed with `CycleOverflow`. A cycle is neither a count nor an amount: the three integer domains never convert implicitly, preserving cardinality, value, and sequence-position semantics.
 - `RepresentationMode` — explicit or private-committed value representation.
 - `SemanticType`, `SemanticValue` (with `semantic_type()`, `as_bool()`,
   `as_count()`, `as_amount()`, `as_owner_set()`), `OwnerId([u8; 32])`.
+
+### STATE metadata, transition, and canonical bytes (`state`, `state_codec`)
+
+- `StateMetadata` — public fields `omega: ProtocolAmount`, `y_l: ProtocolAmount`, `y_t: ProtocolAmount`, `q: ProtocolAmount`, `cycle: Cycle`, and `maturity: Maturity`; `with_maturity(self, maturity: Maturity) -> Self` copies all five other fields and replaces only `maturity`.
+- `Maturity` — the closed variants `Unannounced`, `Announced { cycle: Cycle }`, and `Complete`.
+- `AnnouncementLeadBounds` — `new(minimum: Cycle, maximum: Cycle) -> Result<Self, RealizationError>` refuses a zero minimum or an inverted pair with `InvalidAnnouncementLeadBounds { minimum, maximum }`; `minimum(self) -> Cycle` and `maximum(self) -> Cycle` return the inclusive bounds, while `window(self, current: Cycle) -> Result<(Cycle, Cycle), MaturityTransitionRefusal>` returns the inclusive earliest and latest announceable cycles and refuses checked-arithmetic overflow with `CycleArithmeticOverflow`.
+- `announce_maturity(predecessor: &StateMetadata, announced_cycle: Cycle, bounds: AnnouncementLeadBounds) -> Result<StateMetadata, MaturityTransitionRefusal>` — total: every input yields either one semantic successor or one refusal; the successor copies `omega`, `y_l`, `y_t`, `q`, and `cycle` and replaces only `maturity`.
+- `MaturityTransitionRefusal` — the closed members, in declaration order, are `PredecessorAlreadyAnnounced`, `PredecessorMaturityComplete`, `AnnouncementBelowMinimum`, `AnnouncementAboveMaximum`, and `CycleArithmeticOverflow`; `ALL: &'static [Self]` enumerates them in that order and `name(self) -> &'static str` returns each stable kebab-case name.
+- Codec constants — `STATE_METADATA_DOMAIN: &[u8] = b"tripod/state-metadata"`, `STATE_METADATA_SCHEMA: u32 = 1`, and `STATE_METADATA_BYTES: usize = 86`; the width is 21 domain bytes + 4 schema bytes + four 8-byte amounts + 8 current-cycle bytes + 1 maturity-discriminant byte + 8 announced-cycle bytes + 4 nonce bytes + 8 reserved bytes = 86. The canonical encoding fixes its domain separator, schema revision, field order, field widths, integer byte order, maturity discriminants, representation-nonce position, reserved-field behavior, and rejection of trailing bytes.
+- `StateRepresentationNonce` — `ZERO`, `new(value: u32) -> Self`, `get(self) -> u32`, and `next(self) -> Option<Self>`, which advances deterministically and returns `None` at `u32::MAX`.
+- `EncodedStateMetadata` — public fields `semantic: StateMetadata` and `representation: StateRepresentationNonce`.
+- `encode_state_metadata(semantic: &StateMetadata, representation: StateRepresentationNonce) -> Vec<u8>` — always returns exactly `STATE_METADATA_BYTES` bytes.
+- `decode_state_metadata(bytes: &[u8]) -> Result<EncodedStateMetadata, StateMetadataRefusal>` — strict and returns one refusal per rejected input, checking in decoder order for an input shorter than the domain (`WrongLength`), a wrong domain (`WrongDomain`), a truncated schema (`WrongLength`), an unsupported schema (`UnsupportedSchema`), a truncated later fixed-width field (`WrongLength`), an out-of-domain amount (`AmountOutOfDomain`), a malformed zero-payload maturity (`MaturityPayloadMalformed`) or unknown maturity discriminant (`UnknownMaturityDiscriminant`), a nonzero reserved field (`ReservedFieldNonzero`), and trailing bytes (`TrailingBytes`).
+- `StateMetadataRefusal` — the closed members, in declaration order, are `WrongDomain`, `UnsupportedSchema`, `WrongLength`, `AmountOutOfDomain`, `UnknownMaturityDiscriminant`, `MaturityPayloadMalformed`, `ReservedFieldNonzero`, and `TrailingBytes`; `ALL: &'static [Self]` enumerates them in that order and `name(self) -> &'static str` returns each stable kebab-case name.
+
+Integers are big-endian, and the nonce belongs to representation rather than semantics: semantic projection erases it.
+
+The two refusal sums are closed, distinct from each other and from `RealizationError`; constructor-layer names reserved by the guide are not decode refusals.
 
 ### Declarations and graphs
 
