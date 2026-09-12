@@ -46,6 +46,7 @@ impl StateRepresentationNonce {
 
     /// Advance deterministically, returning `None` at the domain maximum.
     #[must_use]
+    #[allow(clippy::should_implement_trait)]
     pub fn next(self) -> Option<Self> {
         self.0.checked_add(1).map(Self)
     }
