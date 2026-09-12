@@ -50,67 +50,79 @@ use serde::Serialize;
 /// `combined_bytes` and added `adr_hard_cap_bytes` to [`PlansReport`].
 pub const PLANS_REPORT_SCHEMA: u32 = 3;
 
-/// Ceiling for the maintained-prose budget (1180 KiB).
+/// Ceiling for the maintained-prose budget (1536 KiB, 1.5 MiB).
 ///
-/// Raised from 1126 KiB, carried with the Guide-14 document import: the
-/// hard cap goes to 1180 KiB, 1208320 bytes — the measured tree rounded
-/// up to the nearest 10 KiB above roughly 64 KiB of headroom — because
-/// every constant in this budget is a whole number of KiB, and the soft
-/// target rises by the same ratio.
+/// Raised from 1180 KiB on 2026-09-12. The preliminary maintained-tree
+/// measurement was 1207998 bytes against the 1208320-byte cap — 322
+/// bytes of headroom — while Phase 6's first wave was still recording.
+/// Recomputing every tracked plans Markdown file at `afcac9a7` measures
+/// 1207999 bytes and 321 bytes of headroom, a one-byte variance that does
+/// not change the threshold decision. This is the third time in three
+/// weeks that a phase's records have pressed the cap.
 ///
-/// What motivated the raise is again a measurement rather than a
-/// preference, and it is not the import's own bytes. On 2026-08-27 the
-/// maintained tree measured 1139302 bytes against the 1153024-byte
-/// cap — roughly 13.4 KiB of headroom — with Phase 6 just opened and
-/// its records entirely unwritten. The imported packet does not itself
-/// press on this budget: the two guide drafts and the archived review
-/// are verbatim records under `ARCHIVE_DIRECTORIES`, charged to
-/// `ARCHIVE_HARD_CAP_BYTES` instead. What presses is the same thing as
-/// last time — a phase's worth of maintained records with nowhere to
-/// go. The cap still exists to catch duplication, so it is raised
-/// rather than removed.
+/// The hard cap goes to a round 1.5 MiB expressed as 1536 KiB because
+/// every constant in this budget is a whole number of KiB. The raise is
+/// paired with moving the exited Phase-3, Phase-4, and Phase-5 closed
+/// rows to the history archive; after that move the maintained tree
+/// measures 877493 bytes. The new room is therefore for the remaining
+/// Phase-6 waves rather than for duplicated closed records. The cap
+/// still exists to catch duplication, so it is raised rather than
+/// removed.
 ///
-/// The previous raises, kept as provenance. The pair went from 1 MiB to
-/// 1126 KiB: the round target was 1.1 MiB, expressed as the nearest
-/// whole KiB not exceeding it — 1.1 * 1024 is 1126.4 — because every
-/// constant in this budget is a whole number of KiB. The raise followed
-/// the maintained tree measuring 1036814 bytes against the 1048576-byte
-/// cap on 2026-08-26 — roughly 11.5 KiB of headroom — with that phase's
-/// own closing records still unwritten. Before that the pair went from
-/// 768 KiB to 1 MiB. That oldest pair was inherited verbatim from the
-/// retired `scripts/check_plans.py`, which stated no derivation for it,
-/// so the raise had to supply one: the hard cap went to a round 1 MiB
-/// and the soft target rose by the same ratio, after the maintained
-/// tree measured 787489 bytes against the 768 KiB cap on 2026-08-25 —
-/// over it, reached while recording one routine gate paragraph.
-const HARD_CAP_BYTES: u64 = 1180 * 1024;
-/// Advisory target for the maintained-prose budget (798 KiB).
+/// The previous raises, kept as provenance. The pair went from 1126 KiB
+/// to 1180 KiB with the Guide-14 document import: the measured tree was
+/// rounded up to the nearest 10 KiB above roughly 64 KiB of headroom,
+/// and the soft target rose by the same ratio. On 2026-08-27 the
+/// maintained tree measured 1139302 bytes against the 1153024-byte cap
+/// — roughly 13.4 KiB of headroom — with Phase 6 just opened and its
+/// records entirely unwritten. The import did not itself press on this
+/// budget: its verbatim records sit under `ARCHIVE_DIRECTORIES` and are
+/// charged to `ARCHIVE_HARD_CAP_BYTES` instead.
 ///
-/// The old 762 KiB scaled by the same ratio the hard cap took is
-/// 762 * 1180 / 1126 = 798.54 KiB. That is rounded DOWN to 798 KiB,
-/// 817152 bytes — the nearest whole KiB below it — because every
+/// Before that the pair went from 1 MiB to 1126 KiB: the round target
+/// was 1.1 MiB, expressed as the nearest whole KiB not exceeding it —
+/// 1.1 * 1024 is 1126.4 — because every constant in this budget is a
+/// whole number of KiB. The raise followed the maintained tree measuring
+/// 1036814 bytes against the 1048576-byte cap on 2026-08-26 — roughly
+/// 11.5 KiB of headroom — with that phase's own closing records still
+/// unwritten. Before that the pair went from 768 KiB to 1 MiB. That
+/// oldest pair was inherited verbatim from the retired
+/// `scripts/check_plans.py`, which stated no derivation for it, so the
+/// raise had to supply one: the hard cap went to a round 1 MiB and the
+/// soft target rose by the same ratio, after the maintained tree measured
+/// 787489 bytes against the 768 KiB cap on 2026-08-25 — over it, reached
+/// while recording one routine gate paragraph.
+const HARD_CAP_BYTES: u64 = 1536 * 1024;
+/// Advisory target for the maintained-prose budget (1038 KiB).
+///
+/// The old 798 KiB scaled by the same ratio the hard cap took is
+/// 798 * 1536 / 1180 = 1038.7525 KiB. That is rounded DOWN to 1038 KiB,
+/// 1062912 bytes — the nearest whole KiB below it — because every
 /// constant in this budget is a whole number of KiB and rounding down
 /// keeps the advisory strictly no weaker than the proportion asks. The
-/// figure it replaced was derived the same way, 693 KiB scaled by
-/// 1126/1024 to 762.06 KiB and rounded down to 762 KiB.
+/// previous pair was derived the same way: 762 KiB scaled by 1180/1126
+/// to 798.54 KiB and rounded down to 798 KiB; before that, 693 KiB scaled
+/// by 1126/1024 to 762.06 KiB and rounded down to 762 KiB.
 ///
 /// Exceeding this is a warning and never a failure: it is the tree
 /// saying it is getting heavy, which is a thing an author should know
 /// and not a thing that should stop a commit.
-const SOFT_TARGET_BYTES: u64 = 798 * 1024;
+const SOFT_TARGET_BYTES: u64 = 1038 * 1024;
 
 /// Ceiling for the root-ADR budget (2 MiB).
 ///
-/// Half the archive backstop; its only purpose is to catch a runaway
+/// One quarter of the archive backstop; its only purpose is to catch a runaway
 /// paste, not to shape normative ADR prose.
 const ADR_HARD_CAP_BYTES: u64 = 2 * 1024 * 1024;
 
-/// Ceiling for the archived-document budget (4 MiB).
+/// Ceiling for the archived-document budget (8 MiB).
 ///
-/// Deliberately far above the present archive: the archive is verbatim
-/// history, so the cap is a runaway-paste tripwire, not a shaping
-/// force.
-const ARCHIVE_HARD_CAP_BYTES: u64 = 4 * 1024 * 1024;
+/// After the exited-phase move the archive measures 3273117 bytes,
+/// roughly three quarters of the old 4 MiB tripwire. A tripwire meant to
+/// stay deliberately far above verbatim history is no longer far above
+/// at that distance, so doubling it keeps the cap a runaway-paste check
+/// rather than a shaping force.
+const ARCHIVE_HARD_CAP_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Directories holding verbatim archived documents, excluded from the
 /// load-bearing combined budget and accounted against
@@ -1172,11 +1184,11 @@ mod tests {
 
     #[test]
     fn weight_class_caps_match_the_budget_rule() {
-        assert_eq!(SOFT_TARGET_BYTES, 798 * 1024);
-        assert_eq!(HARD_CAP_BYTES, 1180 * 1024);
+        assert_eq!(SOFT_TARGET_BYTES, 1038 * 1024);
+        assert_eq!(HARD_CAP_BYTES, 1536 * 1024);
         assert_eq!(ADR_HARD_CAP_BYTES, 2 * 1024 * 1024);
-        assert_eq!(ARCHIVE_HARD_CAP_BYTES, 4 * 1024 * 1024);
-        assert_eq!(ADR_HARD_CAP_BYTES * 2, ARCHIVE_HARD_CAP_BYTES);
+        assert_eq!(ARCHIVE_HARD_CAP_BYTES, 8 * 1024 * 1024);
+        assert_eq!(ADR_HARD_CAP_BYTES * 4, ARCHIVE_HARD_CAP_BYTES);
     }
 
     #[test]
