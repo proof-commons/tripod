@@ -35,6 +35,7 @@ realization_source_files = files(
   'src/tests/property_graph_tests.rs',
   'src/tests/relation_identity_tests.rs',
   'src/tests/root_policy_tests.rs',
+  'src/tests/state_tests.rs',
   'src/tests/type_tests.rs',
   'src/validate.rs',
   'src/value.rs',
