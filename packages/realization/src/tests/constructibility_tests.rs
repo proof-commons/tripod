@@ -816,9 +816,7 @@ fn state_field_dependencies_retain_the_fact_operation() {
 
 #[test]
 fn requested_cycle_dependencies_retain_the_fact_operation() {
-    assert_fact_operation_is_retained(|operation| FactId::RequestedAnnouncementCycle {
-        operation,
-    });
+    assert_fact_operation_is_retained(|operation| FactId::RequestedAnnouncementCycle { operation });
 }
 
 #[test]

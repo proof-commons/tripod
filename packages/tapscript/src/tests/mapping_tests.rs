@@ -498,7 +498,10 @@ fn every_named_evidence_requirement_exists_in_the_target_registry() {
 #[test]
 fn operator_role_retains_external_signature_evidence() {
     let projection = assess_evidence_role(ExternalEvidenceRole::OperatorAuthorization).projection();
-    assert_eq!(projection.role(), ExternalEvidenceRole::OperatorAuthorization);
+    assert_eq!(
+        projection.role(),
+        ExternalEvidenceRole::OperatorAuthorization
+    );
     assert_eq!(
         projection.disposition(),
         EvidenceAssessmentDisposition::TargetEvidenceRequired,
@@ -510,7 +513,9 @@ fn operator_role_retains_external_signature_evidence() {
             TargetEvidenceRequirementId::SighashSemantics,
         ],
     );
-    assert!(!projection.evidence().contains(
-        &TargetEvidenceRequirementId::ConfidentialValueConservation,
-    ));
+    assert!(
+        !projection
+            .evidence()
+            .contains(&TargetEvidenceRequirementId::ConfidentialValueConservation,)
+    );
 }
