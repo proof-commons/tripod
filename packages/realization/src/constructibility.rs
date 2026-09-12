@@ -417,6 +417,9 @@ fn fact_operation(fact: &FactId) -> Option<OperationId> {
     match fact {
         FactId::FamilyCount { operation, .. }
         | FactId::FamilyAmount { operation, .. }
+        | FactId::StateField { operation, .. }
+        | FactId::RequestedAnnouncementCycle { operation }
+        | FactId::AnnouncementLead { operation, .. }
         | FactId::InputOwners { operation, .. }
         | FactId::Signers { operation }
         | FactId::ProjectionPresent { operation, .. }

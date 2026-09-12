@@ -251,7 +251,7 @@ struct ExpectedEvidence {
 /// production match. As with the capability table, a mistake copied
 /// into production does not reproduce itself here.
 ///
-/// Both roles land on that one requirement, and the repetition is the
+/// Both conservation roles land on that one requirement, and the repetition is the
 /// finding rather than an oversight: this target balances a whole
 /// transaction across its explicit and confidential value classes in a
 /// single consensus rule and offers no separate claim about either
@@ -272,6 +272,11 @@ fn evidence_oracle() -> Vec<ExpectedEvidence> {
             role: E::SubstrateConservation,
             disposition: D::TargetEvidenceRequired,
             evidence: &[R::ConfidentialValueConservation],
+        },
+        ExpectedEvidence {
+            role: E::OperatorAuthorization,
+            disposition: D::TargetEvidenceRequired,
+            evidence: &[R::SignatureSemantics, R::SighashSemantics],
         },
     ]
 }
@@ -488,4 +493,24 @@ fn every_named_evidence_requirement_exists_in_the_target_registry() {
             );
         }
     }
+}
+
+#[test]
+fn operator_role_retains_external_signature_evidence() {
+    let projection = assess_evidence_role(ExternalEvidenceRole::OperatorAuthorization).projection();
+    assert_eq!(projection.role(), ExternalEvidenceRole::OperatorAuthorization);
+    assert_eq!(
+        projection.disposition(),
+        EvidenceAssessmentDisposition::TargetEvidenceRequired,
+    );
+    assert_eq!(
+        projection.evidence(),
+        &[
+            TargetEvidenceRequirementId::SignatureSemantics,
+            TargetEvidenceRequirementId::SighashSemantics,
+        ],
+    );
+    assert!(!projection.evidence().contains(
+        &TargetEvidenceRequirementId::ConfidentialValueConservation,
+    ));
 }

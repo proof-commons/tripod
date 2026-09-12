@@ -822,9 +822,11 @@ pub(crate) fn assess_validated_capability(
 
 /// What one compiler external-evidence role obliges of this target.
 ///
-/// One variant today, because one disposition is true today: every role
-/// the compiler publishes is discharged by the target's own consensus
-/// rules and by nothing a program could do. It is an enum rather than a
+/// One variant today, because every role retains a target evidence
+/// obligation that no local program result can discharge here.
+/// Operator authorization also retains the approved operator profile
+/// as an external premise; target signature semantics do not identify
+/// that operator. It is an enum rather than a
 /// struct so that a role whose obligation is *not* target evidence — a
 /// role a backend pattern could discharge, say — is added as a new
 /// disposition rather than by widening this one until it means nothing.
@@ -954,6 +956,14 @@ pub fn assess_evidence_role(role: ExternalEvidenceRole) -> ExternalEvidenceAsses
         // appears here. Commitment equality in particular is absent: it
         // is a script mechanism a program can execute, and offering it
         // would answer an external consensus claim with a primitive.
+        // Authorization needs the target's signature and sighash semantics,
+        // as the operator capability does. These requirements do not establish
+        // the approved operator identity or profile: the retained operator
+        // role still requires that external authorization evidence.
+        ExternalEvidenceRole::OperatorAuthorization => &[
+            TargetEvidenceRequirementId::SignatureSemantics,
+            TargetEvidenceRequirementId::SighashSemantics,
+        ],
         ExternalEvidenceRole::ConfidentialValueConservation
         | ExternalEvidenceRole::SubstrateConservation => {
             &[TargetEvidenceRequirementId::ConfidentialValueConservation]

@@ -764,3 +764,72 @@ fn an_optional_dependency_still_cannot_cross_operations() {
         Err(RealizationError::CrossOperationConstructibilityDependency { .. }),
     ));
 }
+
+fn assert_fact_operation_is_retained(make_fact: impl Fn(OperationId) -> FactId) {
+    let operation = OperationId::AnnounceMaturity;
+    for fact_operation in [operation, OperationId::TransferLive] {
+        let target = ConstructibilityNodeId::Operation(operation);
+        let source = ConstructibilityNodeId::Fact {
+            operation,
+            fact: make_fact(fact_operation),
+            availability: AvailabilityClass::Public,
+        };
+        let (graph, nodes, _) = build_constructibility_graph(
+            [node(target.clone()), node(source.clone())],
+            [edge(
+                source.clone(),
+                target.clone(),
+                ConstructibilityEdgeRole::RequiredFact,
+            )],
+        )
+        .unwrap();
+        let result = validate_constructibility(
+            &graph,
+            &nodes,
+            operation,
+            &ConstructibilityAuthorization::Operator,
+        );
+        if fact_operation == operation {
+            assert_eq!(result, Ok(()));
+        } else {
+            assert_eq!(
+                result,
+                Err(RealizationError::CrossOperationConstructibilityDependency {
+                    operation,
+                    source_node: source.clone(),
+                    path: vec![source, target],
+                }),
+            );
+        }
+    }
+}
+
+#[test]
+fn state_field_dependencies_retain_the_fact_operation() {
+    for field in crate::StateField::ALL {
+        assert_fact_operation_is_retained(|operation| FactId::StateField {
+            operation,
+            field: *field,
+        });
+    }
+}
+
+#[test]
+fn requested_cycle_dependencies_retain_the_fact_operation() {
+    assert_fact_operation_is_retained(|operation| FactId::RequestedAnnouncementCycle {
+        operation,
+    });
+}
+
+#[test]
+fn announcement_lead_dependencies_retain_the_fact_operation() {
+    for bound in [
+        crate::AnnouncementLeadBound::Minimum,
+        crate::AnnouncementLeadBound::Maximum,
+    ] {
+        assert_fact_operation_is_retained(|operation| FactId::AnnouncementLead {
+            operation,
+            bound,
+        });
+    }
+}
