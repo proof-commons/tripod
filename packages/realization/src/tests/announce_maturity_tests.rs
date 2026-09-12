@@ -12,11 +12,11 @@ use crate::{
     DisclosureReason, FactId, InitialVisibility, LifecycleDependencyDeclaration, LifecycleEdge,
     LifecycleNodeId, ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition,
     ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedRootEffect,
-    ObservedRootEffectKind, ObservedSide, ObservedValue, OperationObservation, OperationRealization,
-    OwnerId, ProofAlternativeId, ProofKind, ProtocolAmount, RealizationError, RealizationScope,
-    Relation, RelationDeclaration, RelationDependencyDeclaration, RelationEdge, RelationId,
-    RelationKind, RelationStatus, RelationSubject, RepresentationMode, RequirementStrength,
-    ScopedRealizationSpec, StateField, TransactionSide, WitnessRole, derive,
+    ObservedRootEffectKind, ObservedSide, ObservedValue, OperationObservation,
+    OperationRealization, OwnerId, ProofAlternativeId, ProofKind, ProtocolAmount, RealizationError,
+    RealizationScope, Relation, RelationDeclaration, RelationDependencyDeclaration, RelationEdge,
+    RelationId, RelationKind, RelationStatus, RelationSubject, RepresentationMode,
+    RequirementStrength, ScopedRealizationSpec, StateField, TransactionSide, WitnessRole, derive,
     derive::assemble_scoped_realization,
 };
 
@@ -724,20 +724,16 @@ fn operator_authorization_is_external_evidence() {
                     | Relation::Constructibility {
                         class: ConstructibilityClass::Operator,
                     } => RelationStatus::EvidenceRequired {
-                        requirement:
-                            crate::ExternalEvidenceRequirement::OperatorAuthorization {
-                                operation: OP,
-                            },
+                        requirement: crate::ExternalEvidenceRequirement::OperatorAuthorization {
+                            operation: OP,
+                        },
                     },
-                    Relation::SubstrateConservation { asset } => {
-                        RelationStatus::EvidenceRequired {
-                            requirement:
-                                crate::ExternalEvidenceRequirement::SubstrateConservation {
-                                    operation: OP,
-                                    asset: *asset,
-                                },
-                        }
-                    }
+                    Relation::SubstrateConservation { asset } => RelationStatus::EvidenceRequired {
+                        requirement: crate::ExternalEvidenceRequirement::SubstrateConservation {
+                            operation: OP,
+                            asset: *asset,
+                        },
+                    },
                     Relation::LifecycleExit { .. } => RelationStatus::StaticallyValidated,
                     _ => RelationStatus::Passed,
                 };
@@ -821,10 +817,12 @@ fn operator_authorization_is_external_evidence() {
                 RelationStatus::StaticallyValidated,
             );
         }
-        assert!(!report
-            .verdicts
-            .iter()
-            .any(|verdict| matches!(verdict.status, RelationStatus::Blocked { .. })));
+        assert!(
+            !report
+                .verdicts
+                .iter()
+                .any(|verdict| matches!(verdict.status, RelationStatus::Blocked { .. }))
+        );
 
         let evidence_multiset = report.required_external_evidence().cloned().fold(
             BTreeMap::new(),
@@ -837,9 +835,7 @@ fn operator_authorization_is_external_evidence() {
             evidence_multiset,
             BTreeMap::from([
                 (
-                    crate::ExternalEvidenceRequirement::OperatorAuthorization {
-                        operation: OP,
-                    },
+                    crate::ExternalEvidenceRequirement::OperatorAuthorization { operation: OP },
                     2,
                 ),
                 (
@@ -999,10 +995,12 @@ fn phase1_pilot_reports_remain_deterministic_and_unblocked() {
         let baseline = realization.evaluate_operation(&observation).unwrap();
         let repeated = realization.evaluate_operation(&observation).unwrap();
 
-        assert!(!baseline
-            .verdicts
-            .iter()
-            .any(|verdict| matches!(verdict.status, RelationStatus::Blocked { .. })));
+        assert!(
+            !baseline
+                .verdicts
+                .iter()
+                .any(|verdict| matches!(verdict.status, RelationStatus::Blocked { .. }))
+        );
         assert_eq!(repeated, baseline);
     }
 }
