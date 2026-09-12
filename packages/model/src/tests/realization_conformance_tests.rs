@@ -641,3 +641,244 @@ fn a_reference_in_both_regions_is_rejected_before_projection() {
         Ok(std::collections::BTreeSet::from([1])),
     );
 }
+
+fn announcement_realization() -> realization::ScopedRealizationSpec {
+    realization::derive(
+        &architecture::ARCHITECTURE,
+        realization::RealizationScope::from_operations([
+            architecture::OperationId::AnnounceMaturity,
+        ])
+        .unwrap(),
+    )
+    .unwrap()
+}
+
+fn announcement_request(world: &World, fee_envelope: FeeEnvelope) -> AnnounceMaturity {
+    AnnounceMaturity {
+        maturity_cycle: world.state().unwrap().1.cycle + world.constants.min_maturity_lead,
+        signers: signers(&[OPERATOR_KEY]),
+        fee_envelope,
+    }
+}
+
+fn announcement_id(
+    kind: realization::RelationKind,
+    subject: realization::RelationSubject,
+) -> realization::RelationId {
+    relation_id(architecture::OperationId::AnnounceMaturity, kind, subject)
+}
+
+fn announcement_family_statuses() -> Vec<(realization::RelationId, realization::RelationStatus)> {
+    use realization::{RelationKind, RelationStatus, RelationSubject, TransactionSide};
+
+    let mut rows = Vec::new();
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        for object in [architecture::ObjectId::State, architecture::ObjectId::PlainLbtc] {
+            for kind in [RelationKind::Cardinality, RelationKind::Recognition] {
+                rows.push((
+                    announcement_id(kind, RelationSubject::ObjectFamily { side, object }),
+                    RelationStatus::Passed,
+                ));
+            }
+        }
+        rows.push((
+            announcement_id(
+                RelationKind::AllowedObjectFamilies,
+                RelationSubject::TransactionSide { side },
+            ),
+            RelationStatus::Passed,
+        ));
+    }
+    rows
+}
+
+fn announcement_policy_statuses() -> Vec<(realization::RelationId, realization::RelationStatus)> {
+    use realization::{RelationKind, RelationStatus, RelationSubject};
+
+    let mut rows = Vec::new();
+    for kind in [
+        RelationKind::OpenFlowPolicy,
+        RelationKind::CanonicalDeltaPolicy,
+        RelationKind::RootPolicy,
+        RelationKind::ProjectionPolicy,
+    ] {
+        rows.push((announcement_id(kind, RelationSubject::Operation), RelationStatus::Passed));
+    }
+    for kind in [RelationKind::SponsorIsolation, RelationKind::SponsorEnvelopeMultiplicity] {
+        rows.push((announcement_id(kind, RelationSubject::Sponsor), RelationStatus::Passed));
+    }
+    rows.push((
+        announcement_id(
+            RelationKind::Representation,
+            RelationSubject::Representation { object: architecture::ObjectId::State },
+        ),
+        RelationStatus::Passed,
+    ));
+    rows
+}
+
+fn announcement_evidence_statuses() -> Vec<(realization::RelationId, realization::RelationStatus)> {
+    use realization::{ExternalEvidenceRequirement, RelationKind, RelationStatus, RelationSubject};
+
+    let operation = architecture::OperationId::AnnounceMaturity;
+    let mut rows = Vec::new();
+    for kind in [RelationKind::Authorization, RelationKind::Constructibility] {
+        rows.push((
+            announcement_id(kind, RelationSubject::Operation),
+            RelationStatus::EvidenceRequired {
+                requirement: ExternalEvidenceRequirement::OperatorAuthorization { operation },
+            },
+        ));
+    }
+    let asset = architecture::AssetId::Lbtc;
+    rows.push((
+        announcement_id(RelationKind::SubstrateConservation, RelationSubject::Asset { asset }),
+        RelationStatus::EvidenceRequired {
+            requirement: ExternalEvidenceRequirement::SubstrateConservation { operation, asset },
+        },
+    ));
+    rows
+}
+
+fn announcement_lifecycle_statuses() -> Vec<(realization::RelationId, realization::RelationStatus)> {
+    use architecture::{ObjectId, OperationId};
+    use realization::{RelationKind, RelationStatus, RelationSubject};
+
+    [
+        OperationId::AdmitDeposits,
+        OperationId::Cycle,
+        OperationId::Redeem,
+        OperationId::ReceiptRelabel,
+        OperationId::Clear,
+        OperationId::AnnounceMaturity,
+    ]
+    .map(|exit| (
+        announcement_id(
+            RelationKind::Lifecycle,
+            RelationSubject::LifecycleExit { object: ObjectId::State, exit },
+        ),
+        // These exits are declaration checks, not executed future transitions.
+        RelationStatus::StaticallyValidated,
+    ))
+    .into()
+}
+
+fn assert_announcement_census(observation: &ModelConformanceObservation) {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let spec = announcement_realization();
+    let report = spec.evaluate_operation(observation.observation()).unwrap();
+    let expected = announcement_family_statuses()
+        .into_iter()
+        .chain(announcement_policy_statuses())
+        .chain(announcement_evidence_statuses())
+        .chain(announcement_lifecycle_statuses())
+        .collect::<BTreeMap<_, _>>();
+    let actual = report.verdicts.iter()
+        .map(|verdict| (verdict.relation.clone(), verdict.status.clone()))
+        .collect::<BTreeMap<_, _>>();
+
+    assert_eq!(expected.len(), 26);
+    assert_eq!(report.verdicts.len(), expected.len());
+    assert_eq!(actual, expected);
+    assert_eq!(report.verdicts.iter()
+        .filter(|verdict| verdict.status == realization::RelationStatus::Passed).count(), 17);
+    assert!(report.is_conformant());
+    assert!(!report.is_evidence_complete());
+    assert!(!report.has_semantic_failure());
+    assert!(unresolved_model_evidence(&report, observation).is_empty());
+    let operation = architecture::OperationId::AnnounceMaturity;
+    assert_eq!(observation.established_evidence().cloned().collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            realization::ExternalEvidenceRequirement::OperatorAuthorization { operation },
+            realization::ExternalEvidenceRequirement::SubstrateConservation {
+                operation, asset: architecture::AssetId::Lbtc,
+            },
+        ]));
+}
+
+#[test]
+fn announce_maturity_model_transition_satisfies_realization() {
+    let world = test_fixtures::world();
+    let request = announcement_request(&world, FeeEnvelope::default());
+    let execution = execute_bound(&world, request, next_order(&world)).unwrap();
+    let observation = observe_announce_maturity(&execution).unwrap();
+
+    assert_eq!(execution.certificate().branch, BranchKind::AnnounceMaturity);
+    assert_eq!(observation.observation().operation, architecture::OperationId::AnnounceMaturity);
+    assert_eq!(observation.observation().protocol_signers,
+        std::collections::BTreeSet::from([realization::OwnerId(OPERATOR_KEY.0)]));
+    assert!(observation.observation().sponsor_signers.is_empty());
+    assert!(observation.observation().objects.iter()
+        .all(|object| object.representation == realization::RepresentationMode::Explicit));
+    assert_announcement_census(&observation);
+}
+
+#[test]
+fn announcement_declassification_matches_model_owned_artifact_row() {
+    let spec = announcement_realization();
+    let analysis = spec.declassification();
+    let operation = architecture::OperationId::AnnounceMaturity;
+    let expected = realization::StateField::ALL.iter()
+        .map(|field| realization::FactId::StateField { operation, field: *field })
+        .chain([realization::FactId::RequestedAnnouncementCycle { operation }])
+        .chain([
+            realization::AnnouncementLeadBound::Minimum,
+            realization::AnnouncementLeadBound::Maximum,
+        ].map(|bound| realization::FactId::AnnouncementLead { operation, bound }))
+        .collect::<std::collections::BTreeSet<_>>();
+
+    // These are disclosure keys without observation carriers. No expression
+    // reads them, so evaluating this declaration cannot demand their values.
+    assert!(spec.operation(operation).unwrap().expressions.is_empty());
+    assert_eq!(expected.len(), 9);
+    assert_eq!(analysis.required_public.keys().cloned().collect::<std::collections::BTreeSet<_>>(), expected);
+    assert!(analysis.newly_disclosed.is_empty());
+    let row = crate::artifacts::declassification_rows().into_iter()
+        .find(|row| row.operation == operation.as_str()).unwrap();
+    assert_eq!(row.declassifies, [] as [std::string::String; 0]);
+}
+
+#[test]
+fn sponsored_announcement_observes_an_isolated_sponsor_region() {
+    let (world, input) = fund_lbtc(&test_fixtures::world(), SPONSOR, sat(10));
+    let request = announcement_request(
+        &world, fee_envelope_exact(input, SPONSOR, sat(10), sat(4)),
+    );
+    let execution = execute_bound(&world, request, next_order(&world)).unwrap();
+    let observation = observe_announce_maturity(&execution).unwrap();
+    let observed = observation.observation();
+    let sponsor_refs = observed.open_flows.iter()
+        .filter(|flow| flow.kind == architecture::OpenFlowKind::FeeSponsor)
+        .flat_map(|flow| flow.sources.iter().chain(&flow.destinations))
+        .copied().collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(sponsor_refs.len(), 2);
+    assert_eq!(observed.sponsor_signers,
+        std::collections::BTreeSet::from([realization::OwnerId(SPONSOR.0)]));
+    assert_eq!(observed.protocol_signers,
+        std::collections::BTreeSet::from([realization::OwnerId(OPERATOR_KEY.0)]));
+    for object in &observed.objects {
+        let sponsor = sponsor_refs.contains(&object.reference);
+        assert_eq!(object.value == realization::ObservedValue::SponsorOpaque, sponsor);
+        assert_eq!(object.kind, realization::ObservedObjectKind::Declared(if sponsor {
+            architecture::ObjectId::PlainLbtc
+        } else {
+            architecture::ObjectId::State
+        }));
+    }
+    // The exact census includes SponsorIsolation = Passed.
+    assert_announcement_census(&observation);
+}
+
+#[test]
+fn announcement_without_sponsor_signature_is_rejected_before_observation() {
+    let (world, input) = fund_lbtc(&test_fixtures::world(), SPONSOR, sat(10));
+    let mut request = announcement_request(
+        &world, fee_envelope_exact(input, SPONSOR, sat(10), sat(10)),
+    );
+    request.fee_envelope.signers.clear();
+
+    // Model rejection is the oracle: no execution exists to observe or evaluate.
+    assert_eq!(execute_bound(&world, request, next_order(&world)), Err(Guard::BadSignature));
+}

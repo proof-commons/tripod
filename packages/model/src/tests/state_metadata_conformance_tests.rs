@@ -7,6 +7,12 @@
 //!
 //! Sealed and BadSignature precede the maturity checks. They are authorization
 //! checks, not maturity semantics, so the agreement table excludes them.
+//! Function equivalence compares the six fields under valid lead bounds on
+//! unsealed predecessors with operator authorization. Whole-transition acceptance
+//! equivalence additionally requires a valid model world and fee envelope; the
+//! bound-execution tests assert both in that domain. Sealed pools and missing
+//! operator signatures are model authorization outcomes outside the maturity law,
+//! and their precedence tests never consult the realization function.
 //!
 //! | Realization refusal | Model guard |
 //! | --- | --- |
@@ -250,7 +256,8 @@ fn assert_agrees(
         signers: signers(&[OPERATOR_KEY]),
         fee_envelope: FeeEnvelope::default(),
     };
-    let model_result = transition.apply(world, next_order(world));
+    let model_result = execute_bound(world, transition, next_order(world))
+        .map(ExecutedTransition::into_world);
     let realization_result = realization::announce_maturity(
         &project(state),
         realization::Cycle::new(maturity_cycle),
@@ -432,5 +439,190 @@ fn every_realization_refusal_is_mapped() {
             "unmapped refusal: {}",
             refusal.name(),
         );
+    }
+}
+
+fn announcement_with_distinct_fields() -> World {
+    let world = super::advanced_fixtures::give_live_receipt(
+        &announcement_world(), ALICE, sat(37),
+    );
+    let receipt = find_receipts(&world, ALICE, ReceiptClass::Live)[0];
+    let redeemed = apply_checked(
+        &world,
+        &RedeemReceipt {
+            receipt,
+            signers: signers(&[ALICE]),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
+    let requested = create_request_for(&redeemed, ALICE, BOB, sat(1234), Sat::ONE);
+    admit_all_requests(&requested)
+}
+
+#[test]
+fn executed_successor_projects_to_realization_successor() {
+    let world = announcement_with_distinct_fields();
+    let (input, predecessor) = world.state().unwrap();
+    assert_eq!(std::collections::BTreeSet::from([
+        predecessor.omega.get(), predecessor.y_l.get(), predecessor.y_t.get(),
+        predecessor.q.get(), predecessor.cycle,
+    ]).len(), 5);
+    assert!(!predecessor.q.is_zero());
+    assert_ne!(predecessor.cycle, 0);
+
+    for lead in [world.constants.min_maturity_lead, world.constants.max_maturity_lead] {
+        let request = AnnounceMaturity {
+            maturity_cycle: predecessor.cycle + lead,
+            signers: signers(&[OPERATOR_KEY]),
+            fee_envelope: FeeEnvelope::default(),
+        };
+        let executed = execute_bound(&world, request, next_order(&world)).unwrap();
+        let observation = observe_announce_maturity(&executed).unwrap();
+        let (output, successor) = executed.after().state().unwrap();
+        let realized = realization::announce_maturity(
+            &project(executed.before().state().unwrap().1),
+            realization::Cycle::new(executed.request().maturity_cycle),
+            lead_bounds(&executed.before().constants),
+        )
+        .unwrap();
+
+        assert_eq!(project(successor), realized);
+        assert_eq!(successor, embed(realized));
+        assert_eq!(successor.omega, predecessor.omega);
+        assert_eq!(successor.y_l, predecessor.y_l);
+        assert_eq!(successor.y_t, predecessor.y_t);
+        assert_eq!(successor.q, predecessor.q);
+        assert_eq!(successor.cycle, predecessor.cycle);
+        assert_eq!(successor.maturity, Maturity::Announced {
+            cycle: executed.request().maturity_cycle,
+        });
+        assert_ne!(input, output);
+        assert!(!executed.after().utxos.contains_key(&input));
+        assert_eq!(executed.certificate().state_edge, Some(RootEdge::Succ { input, output }));
+        assert_eq!(observation.observation().objects.len(), 2);
+        for object in &observation.observation().objects {
+            assert_eq!(object.kind,
+                realization::ObservedObjectKind::Declared(architecture::ObjectId::State));
+            assert_eq!(object.asset,
+                realization::ObservedAsset::Declared(architecture::AssetId::Pid));
+            assert_eq!(object.value,
+                realization::ObservedValue::Protocol(realization::ProtocolAmount::ONE));
+            assert_eq!(object.representation, realization::RepresentationMode::Explicit);
+        }
+    }
+}
+
+fn overflow_execution_world(minimum: Cycle) -> World {
+    let mut constants = test_fixtures::constants();
+    constants.min_maturity_lead = minimum;
+    constants.max_maturity_lead = u64::MAX;
+    let world = genesis(
+        constants,
+        sat(1_000_000),
+        CanonicalOrder { height: 0, tx_index: 0 },
+        test_fixtures::txid(0),
+    )
+    .unwrap();
+    let aged = advance_blocks(&world, world.constants.max_cadence_blocks);
+    execute_bound(
+        &aged,
+        RunCycle {
+            caller: CycleCaller::Anyone,
+            operator_signers: SignerSet::new(),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&aged),
+    )
+    .unwrap()
+    .into_world()
+}
+
+#[test]
+fn earliest_endpoint_overflow_agrees_through_execution() {
+    // Valid custom genesis bounds let one executed cycle overflow the earliest
+    // endpoint. With the fixed fixture bounds, reaching this ordinal would need
+    // almost u64::MAX cycles; cycle_overflow_agrees uses metadata mutation there.
+    let world = overflow_execution_world(u64::MAX);
+    let state = world.state().unwrap().1;
+    assert_eq!(state.cycle, 1);
+    check_invariant(&world).unwrap();
+    assert!(state.cycle.checked_add(world.constants.min_maturity_lead).is_none());
+    for requested in [0, u64::MAX] {
+        assert_agrees(&world, requested,
+            Err(realization::MaturityTransitionRefusal::CycleArithmeticOverflow))
+            .unwrap_err();
+    }
+}
+
+#[test]
+fn latest_endpoint_overflow_agrees_through_execution() {
+    // A distinct valid genesis configuration keeps the earliest endpoint in
+    // range and overflows only the latest after one executed cycle. The existing
+    // fixed-constant near-maximum-cycle probe remains a metadata mutation.
+    let world = overflow_execution_world(test_fixtures::constants().min_maturity_lead);
+    let state = world.state().unwrap().1;
+    assert_eq!(state.cycle, 1);
+    check_invariant(&world).unwrap();
+    assert!(state.cycle.checked_add(world.constants.min_maturity_lead).is_some());
+    assert!(state.cycle.checked_add(world.constants.max_maturity_lead).is_none());
+    for requested in [0, u64::MAX] {
+        assert_agrees(&world, requested,
+            Err(realization::MaturityTransitionRefusal::CycleArithmeticOverflow))
+            .unwrap_err();
+    }
+}
+
+#[test]
+fn sealed_pool_precedes_signature_and_maturity_checks() {
+    let (world, receipt) = super::advanced_fixtures::sealing_world();
+    let sealed = execute_bound(
+        &world,
+        RedeemReceipt {
+            receipt,
+            signers: signers(&[GENESIS_OWNER]),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    )
+    .unwrap()
+    .into_world();
+    assert!(sealed.state().unwrap().1.is_sealed().unwrap());
+    assert_eq!(sealed.state().unwrap().1.maturity, Maturity::Complete);
+
+    // Even an absent signature and invalid request cannot outrank Sealed.
+    // These authorization verdicts do not consult the realization function.
+    for signers in [SignerSet::new(), signers(&[OPERATOR_KEY])] {
+        for maturity_cycle in [0, u64::MAX] {
+            let request = AnnounceMaturity {
+                maturity_cycle,
+                signers: signers.clone(),
+                fee_envelope: FeeEnvelope::default(),
+            };
+            assert_eq!(execute_bound(&sealed, request, next_order(&sealed)), Err(Guard::Sealed));
+        }
+    }
+}
+
+#[test]
+fn missing_operator_signature_precedes_maturity_checks() {
+    let world = announcement_world();
+    let (announced, _) = super::distribution_fixtures::announce_at_minimum_lead(&world);
+    let complete = mature_world(&world);
+
+    // Unannounced, announced, and complete worlds all reject without consulting
+    // realization, even when the requested cycle would violate the maturity law.
+    let overflow = overflow_execution_world(test_fixtures::constants().min_maturity_lead);
+    for world in [world, announced, complete, overflow] {
+        check_invariant(&world).unwrap();
+        assert!(!world.state().unwrap().1.is_sealed().unwrap());
+        for maturity_cycle in [0, u64::MAX] {
+            let request = AnnounceMaturity {
+                maturity_cycle,
+                signers: SignerSet::new(),
+                fee_envelope: FeeEnvelope::default(),
+            };
+            assert_eq!(execute_bound(&world, request, next_order(&world)), Err(Guard::BadSignature));
+        }
     }
 }
