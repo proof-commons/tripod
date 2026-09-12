@@ -294,12 +294,7 @@ pub fn classify_relation_case(
         }
 
         Relation::Representation { object, allowed } => {
-            let selected = case.id.representations.get(object).copied().ok_or(
-                CompileError::MissingRepresentationChoice {
-                    operation,
-                    object: *object,
-                },
-            )?;
+            let selected = selected_representation(operation, *object, case)?;
 
             compiler_requirements.push(CompilerStaticRequirement::RepresentationSelection {
                 object: *object,
@@ -483,6 +478,16 @@ pub fn validate_relation_case_census(
     Ok(())
 }
 
+fn selected_representation(
+    operation: OperationId,
+    object: ObjectId,
+    case: &ExecutionCase,
+) -> Result<RepresentationMode, CompileError> {
+    case.id.representations.get(&object).copied().ok_or(
+        CompileError::MissingRepresentationChoice { operation, object },
+    )
+}
+
 /// The case-independent discharge of one relation variant.
 ///
 /// The pilots' conceptual matrix in one place: input recognition and
@@ -606,7 +611,8 @@ fn classify_discharge(
             runtime: None,
         },
 
-        Relation::OperatorAuthorization
+        Relation::SubstrateConservation { .. }
+        | Relation::OperatorAuthorization
         | Relation::Constructibility {
             class: realization::ConstructibilityClass::Operator,
         } => RelationDischarge {
@@ -627,11 +633,7 @@ fn classify_discharge(
             runtime: None,
         },
 
-        Relation::SubstrateConservation { .. } => RelationDischarge {
-            boundaries: BTreeSet::from([Boundary::ExternalEvidence]),
-            activation: ActivationCondition::Always,
-            runtime: None,
-        },
+
     }
 }
 

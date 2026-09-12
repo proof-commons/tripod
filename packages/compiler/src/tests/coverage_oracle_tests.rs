@@ -84,7 +84,8 @@ fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<Co
     }
 
     match relation {
-        Relation::OperatorAuthorization
+        Relation::SubstrateConservation { .. }
+        | Relation::OperatorAuthorization
         | Relation::Constructibility {
             class: realization::ConstructibilityClass::Operator,
         } => BTreeSet::from([Boundary::ExternalEvidence]),
@@ -93,7 +94,6 @@ fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<Co
         Relation::Representation { .. } | Relation::LifecycleExit { .. } => {
             BTreeSet::from([Boundary::CompilerStatic, Boundary::BackendStructural])
         }
-        Relation::SubstrateConservation { .. } => BTreeSet::from([Boundary::ExternalEvidence]),
         Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }
         | Relation::Recognition { .. }
@@ -227,7 +227,8 @@ fn oracle_mutations(
             Mutation::UnexpectedProtocolSecret,
         )]),
 
-        Relation::OperatorAuthorization
+        Relation::SubstrateConservation { .. }
+        | Relation::OperatorAuthorization
         | Relation::Constructibility {
             class: ConstructibilityClass::Operator,
         } => BTreeSet::from([
@@ -280,17 +281,7 @@ fn oracle_mutations(
             ),
         ]),
 
-        Relation::SubstrateConservation { .. } => BTreeSet::from([
-            (
-                Boundary::ExternalEvidence,
-                Mutation::ExternalEvidenceMissing,
-            ),
-            (Boundary::ExternalEvidence, Mutation::ExternalEvidenceFailed),
-            (
-                Boundary::ExternalEvidence,
-                Mutation::ExternalEvidenceIdentityMismatch,
-            ),
-        ]),
+
     }
 }
 

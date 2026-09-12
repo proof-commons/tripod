@@ -936,6 +936,14 @@ impl EvidenceAssessmentProjection {
 #[must_use]
 pub fn assess_evidence_role(role: ExternalEvidenceRole) -> ExternalEvidenceAssessment {
     let evidence: &[TargetEvidenceRequirementId] = match role {
+        // Authorization needs the target's signature and sighash semantics,
+        // as the operator capability does. These requirements do not establish
+        // the approved operator identity or profile: the retained operator
+        // role still requires that external authorization evidence.
+        ExternalEvidenceRole::OperatorAuthorization => &[
+            TargetEvidenceRequirementId::SignatureSemantics,
+            TargetEvidenceRequirementId::SighashSemantics,
+        ],
         // Both roles land on one requirement, and the arms are merged
         // rather than written twice because the target really does
         // answer them with one rule.
@@ -956,14 +964,6 @@ pub fn assess_evidence_role(role: ExternalEvidenceRole) -> ExternalEvidenceAsses
         // appears here. Commitment equality in particular is absent: it
         // is a script mechanism a program can execute, and offering it
         // would answer an external consensus claim with a primitive.
-        // Authorization needs the target's signature and sighash semantics,
-        // as the operator capability does. These requirements do not establish
-        // the approved operator identity or profile: the retained operator
-        // role still requires that external authorization evidence.
-        ExternalEvidenceRole::OperatorAuthorization => &[
-            TargetEvidenceRequirementId::SignatureSemantics,
-            TargetEvidenceRequirementId::SighashSemantics,
-        ],
         ExternalEvidenceRole::ConfidentialValueConservation
         | ExternalEvidenceRole::SubstrateConservation => {
             &[TargetEvidenceRequirementId::ConfidentialValueConservation]

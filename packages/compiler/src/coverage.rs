@@ -844,7 +844,8 @@ fn static_mutations(
             Mutation::UnexpectedProtocolSecret,
         )],
 
-        Relation::OperatorAuthorization
+        Relation::SubstrateConservation { .. }
+        | Relation::OperatorAuthorization
         | Relation::Constructibility {
             class: realization::ConstructibilityClass::Operator,
         } => vec![
@@ -900,17 +901,7 @@ fn static_mutations(
             ),
         ],
 
-        Relation::SubstrateConservation { .. } => vec![
-            (
-                Boundary::ExternalEvidence,
-                Mutation::ExternalEvidenceMissing,
-            ),
-            (Boundary::ExternalEvidence, Mutation::ExternalEvidenceFailed),
-            (
-                Boundary::ExternalEvidence,
-                Mutation::ExternalEvidenceIdentityMismatch,
-            ),
-        ],
+
 
         Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }

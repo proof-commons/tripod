@@ -177,7 +177,10 @@ fn assert_fact(fact: crate::FactId, ty: crate::SemanticType, reason: crate::Disc
         }
     ));
     let analysis = crate::declassification::analyze_disclosure(&graph, &nodes, &[]).unwrap();
-    assert_eq!(analysis.required_public[&fact], BTreeSet::from([reason]));
+    assert_eq!(
+        analysis.required_public,
+        BTreeMap::from([(fact, BTreeSet::from([reason]))]),
+    );
     assert!(analysis.newly_disclosed.is_empty());
     assert!(analysis.retained_private.is_empty());
 }

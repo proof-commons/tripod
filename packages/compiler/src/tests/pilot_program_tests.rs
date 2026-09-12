@@ -1521,7 +1521,8 @@ fn the_combined_program_requires_unresolved_external_evidence_with_no_verdict() 
 
                 Some(*operation)
             }
-            ExternalEvidenceRequirement::ConfidentialValueConservation { .. } => None,
+            ExternalEvidenceRequirement::ConfidentialValueConservation { .. }
+                | ExternalEvidenceRequirement::OperatorAuthorization { .. } => None,
         })
         .collect::<BTreeSet<_>>();
 
@@ -1538,7 +1539,8 @@ fn the_combined_program_requires_unresolved_external_evidence_with_no_verdict() 
 
                 Some(*operation)
             }
-            ExternalEvidenceRequirement::SubstrateConservation { .. } => None,
+            ExternalEvidenceRequirement::SubstrateConservation { .. }
+            | ExternalEvidenceRequirement::OperatorAuthorization { .. } => None,
         })
         .collect::<BTreeSet<_>>();
 

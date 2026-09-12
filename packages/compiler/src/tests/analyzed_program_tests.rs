@@ -338,7 +338,8 @@ fn the_pilots_retain_unresolved_substrate_conservation_evidence() {
                 // plans hold a protocol amount as a commitment. Folding
                 // them together would make this assertion pass for the
                 // wrong reason.
-                ExternalEvidenceRequirement::ConfidentialValueConservation { .. } => None,
+                ExternalEvidenceRequirement::ConfidentialValueConservation { .. }
+                | ExternalEvidenceRequirement::OperatorAuthorization { .. } => None,
             })
             .collect::<BTreeSet<_>>();
 

@@ -211,20 +211,14 @@ pub fn relation_operands(
             output_objects,
             ..
         } => {
-            let inputs = input_objects.iter().map(|object| {
-                operand(OperandRole::ObjectFamilyAmount {
-                    side: realization::TransactionSide::Input,
-                    object: *object,
-                })
-            });
-            let outputs = output_objects.iter().map(|object| {
-                operand(OperandRole::ObjectFamilyAmount {
-                    side: realization::TransactionSide::Output,
-                    object: *object,
-                })
-            });
-
-            inputs.chain(outputs).collect()
+            family_amount_operands(id, realization::TransactionSide::Input, input_objects)
+                .into_iter()
+                .chain(family_amount_operands(
+                    id,
+                    realization::TransactionSide::Output,
+                    output_objects,
+                ))
+                .collect()
         }
 
         Relation::OwnerAuthorization { object } => vec![
@@ -294,6 +288,20 @@ pub fn relation_operands(
 
     operands.sort();
     Ok(operands)
+}
+
+fn family_amount_operands(
+    id: &realization::RelationId,
+    side: realization::TransactionSide,
+    objects: &BTreeSet<architecture::ObjectId>,
+) -> Vec<OperandId> {
+    objects
+        .iter()
+        .map(|object| OperandId::new(id.clone(), OperandRole::ObjectFamilyAmount {
+            side,
+            object: *object,
+        }))
+        .collect()
 }
 
 /// Abstract capabilities one (relation, proof) pairing requires.

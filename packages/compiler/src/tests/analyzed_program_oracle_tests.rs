@@ -303,7 +303,8 @@ fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<Co
     }
 
     match relation {
-        Relation::OperatorAuthorization
+        Relation::SubstrateConservation { .. }
+        | Relation::OperatorAuthorization
         | Relation::Constructibility {
             class: realization::ConstructibilityClass::Operator,
         } => BTreeSet::from([Boundary::ExternalEvidence]),
@@ -312,7 +313,6 @@ fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<Co
         Relation::Representation { .. } | Relation::LifecycleExit { .. } => {
             BTreeSet::from([Boundary::CompilerStatic, Boundary::BackendStructural])
         }
-        Relation::SubstrateConservation { .. } => BTreeSet::from([Boundary::ExternalEvidence]),
         Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }
         | Relation::Recognition { .. }
