@@ -884,7 +884,10 @@ fn announcement_declassification_matches_model_owned_artifact_row() {
 
     // These are disclosure keys without observation carriers. No expression
     // reads them, so evaluating this declaration cannot demand their values.
-    assert!(spec.operation(operation).unwrap().expressions.is_empty());
+    assert_eq!(
+        spec.operation(operation).unwrap().expressions,
+        [] as [realization::ExpressionDeclaration; 0]
+    );
     assert_eq!(expected.len(), 9);
     assert_eq!(
         analysis
