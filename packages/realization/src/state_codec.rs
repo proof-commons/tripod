@@ -157,9 +157,7 @@ pub fn encode_state_metadata(
 }
 
 /// Decode one canonical STATE metadata representation strictly.
-pub fn decode_state_metadata(
-    bytes: &[u8],
-) -> Result<EncodedStateMetadata, StateMetadataRefusal> {
+pub fn decode_state_metadata(bytes: &[u8]) -> Result<EncodedStateMetadata, StateMetadataRefusal> {
     if bytes.len() < STATE_METADATA_DOMAIN.len() {
         return Err(StateMetadataRefusal::WrongLength);
     }
@@ -202,12 +200,9 @@ pub fn decode_state_metadata(
     let representation = u32::from_be_bytes(take::<4>(bytes, &mut cursor)?);
     let reserved = take::<8>(bytes, &mut cursor)?;
 
-    let omega = ProtocolAmount::new(omega)
-        .map_err(|_| StateMetadataRefusal::AmountOutOfDomain)?;
-    let y_l =
-        ProtocolAmount::new(y_l).map_err(|_| StateMetadataRefusal::AmountOutOfDomain)?;
-    let y_t =
-        ProtocolAmount::new(y_t).map_err(|_| StateMetadataRefusal::AmountOutOfDomain)?;
+    let omega = ProtocolAmount::new(omega).map_err(|_| StateMetadataRefusal::AmountOutOfDomain)?;
+    let y_l = ProtocolAmount::new(y_l).map_err(|_| StateMetadataRefusal::AmountOutOfDomain)?;
+    let y_t = ProtocolAmount::new(y_t).map_err(|_| StateMetadataRefusal::AmountOutOfDomain)?;
     let q = ProtocolAmount::new(q).map_err(|_| StateMetadataRefusal::AmountOutOfDomain)?;
 
     let maturity = match maturity_tag {
