@@ -24,7 +24,9 @@ pub enum ConstructibilityClass {
     /// Runtime evaluation requires external operator-authorization evidence;
     /// graph availability still uses `ConstructibilityAuthorization::Operator`.
     Operator,
-    OwnersOf { object: ObjectId },
+    OwnersOf {
+        object: ObjectId,
+    },
 }
 
 /// Cardinality maximum retained in architecture-owned form.

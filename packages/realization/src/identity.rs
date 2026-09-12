@@ -33,7 +33,12 @@ pub enum StateField {
 impl StateField {
     /// Every field, in declaration order.
     pub const ALL: &'static [Self] = &[
-        Self::Omega, Self::YL, Self::YT, Self::Q, Self::Cycle, Self::Maturity,
+        Self::Omega,
+        Self::YL,
+        Self::YT,
+        Self::Q,
+        Self::Cycle,
+        Self::Maturity,
     ];
 
     /// Return the stable kebab-case name of this field.

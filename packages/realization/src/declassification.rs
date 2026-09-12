@@ -175,7 +175,11 @@ pub(crate) fn build_disclosure_graph(
     let mut node_by_id = BTreeMap::new();
 
     for mut node_weight in nodes {
-        if let DisclosureNode::Fact { id, initial_visibility } = &mut node_weight {
+        if let DisclosureNode::Fact {
+            id,
+            initial_visibility,
+        } = &mut node_weight
+        {
             if public_fact_reason(id).is_some() {
                 *initial_visibility = InitialVisibility::Public;
             }
@@ -220,7 +224,10 @@ pub(crate) fn disclosure_reasons_by_node(
     for node in graph.node_weights() {
         if let DisclosureNode::Fact { id, .. } = node {
             if let Some(reason) = public_fact_reason(id) {
-                sorted_seeds.push(DisclosureSeed { node: DisclosureNodeId::Fact(id.clone()), reason });
+                sorted_seeds.push(DisclosureSeed {
+                    node: DisclosureNodeId::Fact(id.clone()),
+                    reason,
+                });
             }
         }
     }

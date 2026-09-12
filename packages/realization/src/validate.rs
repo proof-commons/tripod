@@ -161,9 +161,7 @@ const fn expected_relation_kind(relation: &Relation) -> crate::RelationKind {
         Relation::AmountConservation { .. } => Kind::Conservation,
         Relation::OwnerAuthorization { .. }
         | Relation::PermissionlessAuthorization
-        | Relation::OperatorAuthorization => {
-            Kind::Authorization
-        }
+        | Relation::OperatorAuthorization => Kind::Authorization,
         Relation::SponsorIsolation => Kind::SponsorIsolation,
         Relation::SponsorEnvelopeMultiplicity { .. } => Kind::SponsorEnvelopeMultiplicity,
         Relation::RootPolicy { .. } => Kind::RootPolicy,
