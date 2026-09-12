@@ -5,6 +5,7 @@
 realization_source_files = files(
   'src/binding.rs',
   'src/constructibility.rs',
+  'src/declarations/announce_maturity.rs',
   'src/declarations/compact_ash.rs',
   'src/declarations/mod.rs',
   'src/declarations/transfer_live.rs',
