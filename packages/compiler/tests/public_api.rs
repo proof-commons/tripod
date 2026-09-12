@@ -245,6 +245,7 @@ fn every_evidence_role_is_publicly_nameable() {
         [
             ExternalEvidenceRole::ConfidentialValueConservation,
             ExternalEvidenceRole::SubstrateConservation,
+            ExternalEvidenceRole::OperatorAuthorization,
         ],
     );
 }
