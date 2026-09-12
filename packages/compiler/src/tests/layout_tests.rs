@@ -432,3 +432,34 @@ fn repeated_layout_derivation_is_equal() {
         assert_eq!(pilot.requirements, second);
     }
 }
+
+fn assert_operator_layout(relation: realization::Relation, kind: RelationKind) {
+    let mut pilot = pilot(OperationId::CompactAsh);
+    let id = RelationId::new(OperationId::AnnounceMaturity, kind, RelationSubject::Operation);
+    let node = crate::relation::CompilerRelationNode {
+        id: crate::relation::AnalysisNodeId::SourceRelation(id.clone()),
+        source: realization::RelationDeclaration { id: id.clone(), relation, proof_alternatives: std::collections::BTreeSet::new() },
+    };
+    pilot.relations.graph.add_node(node);
+    let mut case = pilot.cases[0].id.clone();
+    case.operation = OperationId::AnnounceMaturity;
+    let eligibility = CarrierEligibility {
+        relation: id,
+        case,
+        scope: crate::placement::SemanticScope::TransactionGlobal,
+        multiplicity: crate::placement::CarrierMultiplicity::ExactlyOne,
+        eligible: Vec::new(),
+        ineligible: Vec::new(),
+    };
+    assert!(crate::layout::derive_layout_requirements(&pilot.relations, &[], &[eligibility]).unwrap().is_empty());
+}
+
+#[test]
+fn operator_authorization_introduces_no_layout_obligation() {
+    assert_operator_layout(realization::Relation::OperatorAuthorization, RelationKind::Authorization);
+}
+
+#[test]
+fn operator_constructibility_introduces_no_layout_obligation() {
+    assert_operator_layout(realization::Relation::Constructibility { class: realization::ConstructibilityClass::Operator }, RelationKind::Constructibility);
+}

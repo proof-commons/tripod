@@ -98,6 +98,7 @@ fn the_evidence_role_census_is_complete_and_duplicate_free() {
         [
             ExternalEvidenceRole::ConfidentialValueConservation,
             ExternalEvidenceRole::SubstrateConservation,
+            ExternalEvidenceRole::OperatorAuthorization,
         ],
     );
     assert!(
@@ -119,6 +120,9 @@ fn every_realization_requirement_class_projects_to_a_role() {
         .map(|requirement| match requirement {
             ExternalEvidenceRequirement::ConfidentialValueConservation { .. } => {
                 ExternalEvidenceRole::ConfidentialValueConservation
+            }
+            ExternalEvidenceRequirement::OperatorAuthorization { .. } => {
+                ExternalEvidenceRole::OperatorAuthorization
             }
             ExternalEvidenceRequirement::SubstrateConservation { .. } => {
                 ExternalEvidenceRole::SubstrateConservation
@@ -175,6 +179,9 @@ fn the_projection_carries_every_open_evidence_role() {
         .map(|requirement| match requirement {
             ExternalEvidenceRequirement::ConfidentialValueConservation { .. } => {
                 ExternalEvidenceRole::ConfidentialValueConservation
+            }
+            ExternalEvidenceRequirement::OperatorAuthorization { .. } => {
+                ExternalEvidenceRole::OperatorAuthorization
             }
             ExternalEvidenceRequirement::SubstrateConservation { .. } => {
                 ExternalEvidenceRole::SubstrateConservation
@@ -404,4 +411,9 @@ fn the_complete_census_orders_the_present_members() {
             RequiredCapability::PublicConstructibility,
         ],
     );
+}
+
+#[test]
+fn operator_evidence_projects_to_its_own_role() {
+    assert_eq!(ExternalEvidenceRole::of(&ExternalEvidenceRequirement::OperatorAuthorization { operation: OperationId::AnnounceMaturity }), ExternalEvidenceRole::OperatorAuthorization);
 }

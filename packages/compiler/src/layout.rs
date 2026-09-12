@@ -452,6 +452,7 @@ fn global_relation_requirements(
         | Relation::Representation { .. }
         | Relation::LifecycleExit { .. }
         | Relation::ExpressionPredicate { .. }
+        | Relation::OperatorAuthorization
         | Relation::SubstrateConservation { .. } => {}
     }
 }

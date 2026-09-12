@@ -82,6 +82,8 @@ census_enum! {
         /// No analysis, and no program the analysis could emit,
         /// discharges this. Only the target's own consensus rules do.
         SubstrateConservation,
+        /// The model kernel or target must establish approved operator authorization.
+        OperatorAuthorization,
     }
 }
 
@@ -95,6 +97,9 @@ impl ExternalEvidenceRole {
         match requirement {
             ExternalEvidenceRequirement::ConfidentialValueConservation { .. } => {
                 Self::ConfidentialValueConservation
+            }
+            ExternalEvidenceRequirement::OperatorAuthorization { .. } => {
+                Self::OperatorAuthorization
             }
             ExternalEvidenceRequirement::SubstrateConservation { .. } => {
                 Self::SubstrateConservation

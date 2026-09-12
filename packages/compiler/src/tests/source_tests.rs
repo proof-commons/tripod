@@ -271,3 +271,19 @@ fn evidence_bounds_and_predicates_stay_typed() {
         )
     }));
 }
+
+#[test]
+fn operator_authorization_requires_an_external_evidence_operand() {
+    let declaration = declaration(OperationId::AnnounceMaturity, RelationKind::Authorization, Relation::OperatorAuthorization);
+    let operands = relation_operands(&declaration).unwrap();
+    assert_eq!(operands.len(), 1);
+    assert_eq!(operands[0].role(), &OperandRole::ExternalEvidence { requirement: realization::ExternalEvidenceRequirement::OperatorAuthorization { operation: OperationId::AnnounceMaturity } });
+}
+
+#[test]
+fn operator_constructibility_requires_an_external_evidence_operand() {
+    let declaration = declaration(OperationId::AnnounceMaturity, RelationKind::Constructibility, Relation::Constructibility { class: realization::ConstructibilityClass::Operator });
+    let operands = relation_operands(&declaration).unwrap();
+    assert_eq!(operands.len(), 1);
+    assert_eq!(operands[0].role(), &OperandRole::ExternalEvidence { requirement: realization::ExternalEvidenceRequirement::OperatorAuthorization { operation: OperationId::AnnounceMaturity } });
+}

@@ -84,6 +84,8 @@ fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<Co
     }
 
     match relation {
+        Relation::OperatorAuthorization
+        | Relation::Constructibility { class: realization::ConstructibilityClass::Operator } => BTreeSet::from([Boundary::ExternalEvidence]),
         Relation::Constructibility { .. } => BTreeSet::from([Boundary::CompilerStatic]),
         Relation::PermissionlessAuthorization => BTreeSet::from([Boundary::BackendStructural]),
         Relation::Representation { .. } | Relation::LifecycleExit { .. } => {
@@ -222,6 +224,23 @@ fn oracle_mutations(
             Boundary::BackendStructural,
             Mutation::UnexpectedProtocolSecret,
         )]),
+
+        Relation::OperatorAuthorization
+        | Relation::Constructibility { class: realization::ConstructibilityClass::Operator } => BTreeSet::from([Boundary::ExternalEvidence]),
+        Relation::Cardinality { .. }
+        | Relation::AllowedObjectFamilies { .. }
+        | Relation::Recognition { .. }
+        | Relation::AmountConservation { .. }
+        | Relation::OwnerAuthorization { .. }
+        | Relation::SponsorIsolation
+        | Relation::SponsorEnvelopeMultiplicity { .. }
+        | Relation::RootPolicy { .. }
+        | Relation::ProjectionPolicy { .. }
+        | Relation::CanonicalDeltaPolicy { .. }
+        | Relation::OpenFlowPolicy { .. }
+        | Relation::ExpressionPredicate { .. } => BTreeSet::from([Boundary::RuntimeCarrier]),
+    }
+}
 
         Relation::Constructibility { class } => {
             let mut mutations = BTreeSet::from([(

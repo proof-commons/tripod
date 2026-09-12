@@ -956,3 +956,34 @@ fn the_placement_state_budget_counts_every_visited_state_and_its_boundary_is_exa
         visited,
     );
 }
+
+fn assert_operator_placement(relation: Relation, kind: RelationKind) {
+    let operation = OperationId::AnnounceMaturity;
+    let declaration = realization::RelationDeclaration {
+        id: RelationId::new(operation, kind, RelationSubject::Operation),
+        relation,
+        proof_alternatives: BTreeSet::new(),
+    };
+    for mut case in pilot(OperationId::CompactAsh).cases {
+        case.id.operation = operation;
+        case.active_sources.clear();
+        let plan = crate::placement::classify_relation_case(&declaration, &case, crate::sponsor_region::OrdinaryLbtcRole::Absent).unwrap();
+        assert_eq!(plan.boundaries, BTreeSet::from([DischargeBoundary::ExternalEvidence]));
+        assert_eq!(plan.activation, ActivationCondition::Always);
+        assert_eq!(plan.activity, RelationActivity::Active);
+        assert!(plan.runtime_requirements.is_empty());
+        assert!(plan.compiler_requirements.is_empty());
+        assert!(plan.structural_requirements.is_empty());
+        assert_eq!(plan.external_evidence, BTreeSet::from([realization::ExternalEvidenceRequirement::OperatorAuthorization { operation }]));
+    }
+}
+
+#[test]
+fn operator_authorization_is_always_active_external_evidence() {
+    assert_operator_placement(Relation::OperatorAuthorization, RelationKind::Authorization);
+}
+
+#[test]
+fn operator_constructibility_is_always_active_external_evidence() {
+    assert_operator_placement(Relation::Constructibility { class: realization::ConstructibilityClass::Operator }, RelationKind::Constructibility);
+}

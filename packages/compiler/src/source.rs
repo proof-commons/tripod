@@ -253,6 +253,13 @@ pub fn relation_operands(
             vec![operand(OperandRole::CanonicalPartition)]
         }
 
+        Relation::OperatorAuthorization
+        | Relation::Constructibility { class: realization::ConstructibilityClass::Operator } => vec![operand(OperandRole::ExternalEvidence {
+            requirement: realization::ExternalEvidenceRequirement::OperatorAuthorization {
+                operation: id.operation(),
+            },
+        })],
+
         Relation::Constructibility { .. } => vec![operand(OperandRole::ConstructibilityCase)],
 
         Relation::Representation { object, .. } => {

@@ -280,6 +280,11 @@ pub fn classify_relation_case(
     let mut external_evidence = BTreeSet::new();
 
     match &declaration.relation {
+        Relation::OperatorAuthorization
+        | Relation::Constructibility { class: realization::ConstructibilityClass::Operator } => {
+            external_evidence.insert(ExternalEvidenceRequirement::OperatorAuthorization { operation });
+        }
+
         Relation::Constructibility { class } => {
             compiler_requirements
                 .push(CompilerStaticRequirement::ConstructibilityValidated { class: *class });
@@ -594,6 +599,13 @@ fn classify_discharge(
 
         Relation::PermissionlessAuthorization => RelationDischarge {
             boundaries: BTreeSet::from([Boundary::BackendStructural]),
+            activation: ActivationCondition::Always,
+            runtime: None,
+        },
+
+        Relation::OperatorAuthorization
+        | Relation::Constructibility { class: realization::ConstructibilityClass::Operator } => RelationDischarge {
+            boundaries: BTreeSet::from([Boundary::ExternalEvidence]),
             activation: ActivationCondition::Always,
             runtime: None,
         },
