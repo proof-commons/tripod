@@ -806,10 +806,12 @@ fn assert_announcement_relation_census(
             RelationStatus::StaticallyValidated,
         );
     }
-    assert!(!report
-        .verdicts
-        .iter()
-        .any(|verdict| matches!(verdict.status, RelationStatus::Blocked { .. })));
+    assert!(
+        !report
+            .verdicts
+            .iter()
+            .any(|verdict| matches!(verdict.status, RelationStatus::Blocked { .. }))
+    );
 }
 
 fn assert_announcement_evidence_multiset(report: &crate::ConformanceReport) {
