@@ -157,6 +157,22 @@ pub fn encode_state_metadata(
     output
 }
 
+fn take<const N: usize>(
+    input: &[u8],
+    cursor: &mut usize,
+) -> Result<[u8; N], StateMetadataRefusal> {
+    let end = cursor
+        .checked_add(N)
+        .ok_or(StateMetadataRefusal::WrongLength)?;
+    let slice = input
+        .get(*cursor..end)
+        .ok_or(StateMetadataRefusal::WrongLength)?;
+    let mut field = [0_u8; N];
+    field.copy_from_slice(slice);
+    *cursor = end;
+    Ok(field)
+}
+
 /// Decode one canonical STATE metadata representation strictly.
 pub fn decode_state_metadata(bytes: &[u8]) -> Result<EncodedStateMetadata, StateMetadataRefusal> {
     if bytes.len() < STATE_METADATA_DOMAIN.len() {
@@ -168,22 +184,6 @@ pub fn decode_state_metadata(bytes: &[u8]) -> Result<EncodedStateMetadata, State
     }
 
     let mut cursor = STATE_METADATA_DOMAIN.len();
-
-    fn take<const N: usize>(
-        input: &[u8],
-        cursor: &mut usize,
-    ) -> Result<[u8; N], StateMetadataRefusal> {
-        let end = cursor
-            .checked_add(N)
-            .ok_or(StateMetadataRefusal::WrongLength)?;
-        let slice = input
-            .get(*cursor..end)
-            .ok_or(StateMetadataRefusal::WrongLength)?;
-        let mut field = [0_u8; N];
-        field.copy_from_slice(slice);
-        *cursor = end;
-        Ok(field)
-    }
 
     let schema = u32::from_be_bytes(take::<4>(bytes, &mut cursor)?);
 
@@ -213,7 +213,7 @@ pub fn decode_state_metadata(bytes: &[u8]) -> Result<EncodedStateMetadata, State
             cycle: Cycle::new(announced_cycle),
         },
         2 if announced_cycle == 0 => Maturity::Complete,
-        2 => return Err(StateMetadataRefusal::MaturityPayloadMalformed),
+        0 | 2 => return Err(StateMetadataRefusal::MaturityPayloadMalformed),
         _ => return Err(StateMetadataRefusal::UnknownMaturityDiscriminant),
     };
 
