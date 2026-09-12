@@ -492,8 +492,7 @@ fn check_file(
         {
             continue;
         }
-        let destination = path.parent().unwrap_or(root).join(target);
-        if !destination.exists() {
+        if !link_destination_exists(root, path, &relative_path, target) {
             failures.push(format!("broken link: {relative_path} -> {target}"));
         }
     }
@@ -536,6 +535,15 @@ fn check_file(
         }
     }
     Ok(())
+}
+
+/// Whether a Markdown link resolves from its stored location or, for
+/// backlog history, from the maintained document that supplied its
+/// byte-verbatim rows.
+fn link_destination_exists(root: &Path, path: &Path, relative_path: &str, target: &str) -> bool {
+    path.parent().unwrap_or(root).join(target).exists()
+        || (relative_path == "plans/history/backlog-history.md"
+            && root.join("plans").join(target).exists())
 }
 
 /// Per-file weight threshold by tree position; `None` means unbounded.
@@ -1321,6 +1329,34 @@ mod tests {
         assert!(all.contains("draft scaffolding: adr/README.md"));
         assert!(all.contains("placeholder data: adr/README.md"));
         assert!(all.contains("confidence percentage: adr/README.md"));
+    }
+
+    #[test]
+    fn backlog_history_links_resolve_from_their_verbatim_origin() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let history = root.join("plans/history/backlog-history.md");
+        fs::create_dir_all(history.parent().expect("history parent")).expect("history directory");
+        fs::write(&history, "# Backlog history\n").expect("backlog history");
+
+        assert!(link_destination_exists(
+            root,
+            &history,
+            "plans/history/backlog-history.md",
+            "history/backlog-history.md",
+        ));
+        assert!(!link_destination_exists(
+            root,
+            &history,
+            "plans/history/backlog-history.md",
+            "history/missing.md",
+        ));
+        assert!(!link_destination_exists(
+            root,
+            &root.join("plans/history/other.md"),
+            "plans/history/other.md",
+            "history/backlog-history.md",
+        ));
     }
 
     #[test]
