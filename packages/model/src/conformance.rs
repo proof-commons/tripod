@@ -14,8 +14,8 @@ use realization::{
 };
 
 use crate::{
-    Asset, BranchKind, CompactAsh, ExecutedTransition, Meta, OutPoint, ReceiptClass, RootEdge, Sat,
-    SignerSet, Tag, TransferReceipts, TransitionCertificate, Utxo, World,
+    AnnounceMaturity, Asset, BranchKind, CompactAsh, ExecutedTransition, Meta, OutPoint,
+    ReceiptClass, RootEdge, Sat, SignerSet, Tag, TransferReceipts, TransitionCertificate, Utxo, World,
 };
 
 /// Failure while projecting a model transition into realization facts.
@@ -88,6 +88,32 @@ pub fn unresolved_model_evidence(
         .filter(|requirement| !observation.established_evidence.contains(requirement))
         .cloned()
         .collect()
+}
+
+/// Observe a bound announcement after the model has checked operator authorization.
+pub fn observe_announce_maturity(
+    executed: &ExecutedTransition<AnnounceMaturity>,
+) -> Result<ModelConformanceObservation, ConformanceProjectionError> {
+    let request = executed.request();
+    let observation = observe_transition(
+        executed.before(),
+        executed.after(),
+        BranchKind::AnnounceMaturity,
+        owner_ids(&request.signers),
+        owner_ids(&request.fee_envelope.signers),
+        RepresentationMode::Explicit,
+    )?;
+    let mut observation = bind_model_evidence(observation);
+
+    // The bound request passed the model's operator-key require_signer check
+    // on this exact transition; realization did not establish this premise.
+    observation.established_evidence.insert(
+        realization::ExternalEvidenceRequirement::OperatorAuthorization {
+            operation: observation.observation.operation,
+        },
+    );
+
+    Ok(observation)
 }
 
 pub fn observe_compact_ash(
