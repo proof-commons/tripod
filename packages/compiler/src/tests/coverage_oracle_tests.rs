@@ -226,21 +226,19 @@ fn oracle_mutations(
         )]),
 
         Relation::OperatorAuthorization
-        | Relation::Constructibility { class: realization::ConstructibilityClass::Operator } => BTreeSet::from([Boundary::ExternalEvidence]),
-        Relation::Cardinality { .. }
-        | Relation::AllowedObjectFamilies { .. }
-        | Relation::Recognition { .. }
-        | Relation::AmountConservation { .. }
-        | Relation::OwnerAuthorization { .. }
-        | Relation::SponsorIsolation
-        | Relation::SponsorEnvelopeMultiplicity { .. }
-        | Relation::RootPolicy { .. }
-        | Relation::ProjectionPolicy { .. }
-        | Relation::CanonicalDeltaPolicy { .. }
-        | Relation::OpenFlowPolicy { .. }
-        | Relation::ExpressionPredicate { .. } => BTreeSet::from([Boundary::RuntimeCarrier]),
-    }
-}
+        | Relation::Constructibility {
+            class: ConstructibilityClass::Operator,
+        } => BTreeSet::from([
+            (
+                Boundary::ExternalEvidence,
+                Mutation::ExternalEvidenceMissing,
+            ),
+            (Boundary::ExternalEvidence, Mutation::ExternalEvidenceFailed),
+            (
+                Boundary::ExternalEvidence,
+                Mutation::ExternalEvidenceIdentityMismatch,
+            ),
+        ]),
 
         Relation::Constructibility { class } => {
             let mut mutations = BTreeSet::from([(
