@@ -215,9 +215,7 @@ fn map_refusal(refusal: realization::MaturityTransitionRefusal) -> Guard {
     match refusal {
         // The model collapses announced and complete into the same guard.
         MaturityTransitionRefusal::PredecessorAlreadyAnnounced
-        | MaturityTransitionRefusal::PredecessorMaturityComplete => {
-            Guard::MaturityAlreadyAnnounced
-        }
+        | MaturityTransitionRefusal::PredecessorMaturityComplete => Guard::MaturityAlreadyAnnounced,
         MaturityTransitionRefusal::AnnouncementBelowMinimum => Guard::MaturityLeadTooShort,
         MaturityTransitionRefusal::AnnouncementAboveMaximum => Guard::MaturityLeadTooLong,
         MaturityTransitionRefusal::CycleArithmeticOverflow => Guard::CycleOverflow,
