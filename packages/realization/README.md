@@ -328,12 +328,10 @@ projections are what a consumer compares.
 
 ## Error handling
 
-`RealizationError` is the single error root for the whole crate. It derives
-`thiserror::Error`, so it implements `Display` and `std::error::Error`, and it
-is `PartialEq` — variants can be matched or compared directly, as the public
-API test does. Every fallible function in the crate returns it.
+`RealizationError` remains the single error root for construction, scoping, binding, derivation, evaluation, and arithmetic. It derives `thiserror::Error`, so it implements `Display` and `std::error::Error`, and it is `PartialEq` — variants can be matched or compared directly, as the public API test does.
 
-There are no error subtypes and no panicking alternative to any fallible call.
+Two closed refusal sums are separate public results: `MaturityTransitionRefusal` from `announce_maturity` and `StateMetadataRefusal` from `decode_state_metadata`. Each exposes `ALL` and `name()`, is never wrapped into `RealizationError`, and represents a lawful outcome of a total function rather than a failure of the crate. There is still no panicking alternative to any fallible call.
+
 Which families arise where:
 
 | Operation | Expect |
@@ -342,7 +340,9 @@ Which families arise where:
 | `RealizationScope::validate_against`, `try_complete` | `OperationOutsideArchitecture`, `IncompleteScope { missing }` |
 | `ArchitectureBinding::from_architecture` | `ArchitectureValidationFailed { errors }` (wrapping `Vec<architecture::ManifestError>`), `ArchitectureHashUnavailable` |
 | `derive` | the scope and binding families above, plus every declaration-integrity family: duplicate/unknown/cyclic expressions and relations, type mismatches (`ExpressionTypeMismatch`, `BinaryOperandTypeMismatch`, `InvalidSumType`, `InvalidOrderedType`), foreign-ownership violations (`ForeignExpressionOwnership`, `ForeignRelationOwnership`, `ForeignRelationDependency`, `ForeignProofAlternativeBinding`, `ForeignConstructibilityOwnership`, `ForeignDisclosureOwnership`), architecture-agreement violations (`MissingArchitectureOperation`, `ArchitectureOperationMismatch`, `MissingArchitectureRelation`, `RelationKindMismatch`), and graph-policy violations (`ConstructibilityCycle`, `RelationDependencyCycle`, `PermissionlessPrivateDependency`, `SponsorValueRead`) |
-| `ProtocolAmount` / `Count` arithmetic | `AmountOutOfDomain`, `AmountOverflow`, `AmountUnderflow`, `CountOverflow` |
+| `ProtocolAmount` / `Count` / `Cycle` arithmetic; `AnnouncementLeadBounds::new` | `AmountOutOfDomain`, `AmountOverflow`, `AmountUnderflow`, `CountOverflow`, `CycleOverflow`, `InvalidAnnouncementLeadBounds { minimum, maximum }` |
+| `announce_maturity` | `MaturityTransitionRefusal` |
+| `decode_state_metadata` | `StateMetadataRefusal` |
 | `evaluate_operation`, `validate_observation` | the observation families: `UnknownObservedObject`, `DuplicateObservedObject`, `DuplicateObservedReference`, `WrongObservedReferenceSide`, `ObservedCanonicalPartitionOverlap`, `ObservedOpenFlowOverlap`, `AnchorInObservedOpenFlow`, `DuplicateObservedRoot`, `MissingBoundValue`, plus `UnknownRelation` |
 | `spec.constructibility_authorizations`, `spec.validate_against` | `OperationOutsideScope`, `ArchitectureBindingMismatch` |
 
