@@ -1522,7 +1522,7 @@ fn the_combined_program_requires_unresolved_external_evidence_with_no_verdict() 
                 Some(*operation)
             }
             ExternalEvidenceRequirement::ConfidentialValueConservation { .. }
-                | ExternalEvidenceRequirement::OperatorAuthorization { .. } => None,
+            | ExternalEvidenceRequirement::OperatorAuthorization { .. } => None,
         })
         .collect::<BTreeSet<_>>();
 

@@ -901,8 +901,6 @@ fn static_mutations(
             ),
         ],
 
-
-
         Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }
         | Relation::Recognition { .. }

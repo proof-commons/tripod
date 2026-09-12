@@ -483,9 +483,11 @@ fn selected_representation(
     object: ObjectId,
     case: &ExecutionCase,
 ) -> Result<RepresentationMode, CompileError> {
-    case.id.representations.get(&object).copied().ok_or(
-        CompileError::MissingRepresentationChoice { operation, object },
-    )
+    case.id
+        .representations
+        .get(&object)
+        .copied()
+        .ok_or(CompileError::MissingRepresentationChoice { operation, object })
 }
 
 /// The case-independent discharge of one relation variant.
@@ -632,8 +634,6 @@ fn classify_discharge(
             activation: ActivationCondition::Always,
             runtime: None,
         },
-
-
     }
 }
 

@@ -210,16 +210,14 @@ pub fn relation_operands(
             input_objects,
             output_objects,
             ..
-        } => {
-            family_amount_operands(id, realization::TransactionSide::Input, input_objects)
-                .into_iter()
-                .chain(family_amount_operands(
-                    id,
-                    realization::TransactionSide::Output,
-                    output_objects,
-                ))
-                .collect()
-        }
+        } => family_amount_operands(id, realization::TransactionSide::Input, input_objects)
+            .into_iter()
+            .chain(family_amount_operands(
+                id,
+                realization::TransactionSide::Output,
+                output_objects,
+            ))
+            .collect(),
 
         Relation::OwnerAuthorization { object } => vec![
             operand(OperandRole::ObjectFamilyOwners { object: *object }),
@@ -297,10 +295,15 @@ fn family_amount_operands(
 ) -> Vec<OperandId> {
     objects
         .iter()
-        .map(|object| OperandId::new(id.clone(), OperandRole::ObjectFamilyAmount {
-            side,
-            object: *object,
-        }))
+        .map(|object| {
+            OperandId::new(
+                id.clone(),
+                OperandRole::ObjectFamilyAmount {
+                    side,
+                    object: *object,
+                },
+            )
+        })
         .collect()
 }
 

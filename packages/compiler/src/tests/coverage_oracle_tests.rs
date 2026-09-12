@@ -280,8 +280,6 @@ fn oracle_mutations(
                 Mutation::RequiredLifecycleExitMissing,
             ),
         ]),
-
-
     }
 }
 
