@@ -459,10 +459,10 @@ fn assert_operator_layout(relation: realization::Relation, kind: RelationKind) {
         eligible: Vec::new(),
         ineligible: Vec::new(),
     };
-    assert!(
+    assert_eq!(
         crate::layout::derive_layout_requirements(&pilot.relations, &[], &[eligibility])
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        [] as [LayoutRequirement; 0],
     );
 }
 

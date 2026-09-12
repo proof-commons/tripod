@@ -979,9 +979,18 @@ fn assert_operator_placement(relation: Relation, kind: RelationKind) {
         );
         assert_eq!(plan.activation, ActivationCondition::Always);
         assert_eq!(plan.activity, RelationActivity::Active);
-        assert!(plan.runtime_requirements.is_empty());
-        assert!(plan.compiler_requirements.is_empty());
-        assert!(plan.structural_requirements.is_empty());
+        assert_eq!(
+            plan.runtime_requirements,
+            [] as [crate::placement::RuntimePlacementRequirement; 0],
+        );
+        assert_eq!(
+            plan.compiler_requirements,
+            [] as [CompilerStaticRequirement; 0],
+        );
+        assert_eq!(
+            plan.structural_requirements,
+            [] as [BackendStructuralRequirement; 0],
+        );
         assert_eq!(
             plan.external_evidence,
             BTreeSet::from([
