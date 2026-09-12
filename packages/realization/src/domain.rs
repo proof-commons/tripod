@@ -4,6 +4,11 @@
 //! both currently have integer representations. A count describes
 //! cardinality. A protocol amount participates in economic value
 //! relations and carries the v13 amount-domain bound.
+//!
+//! A cycle is an ordinal: it names a position in the cycle sequence,
+//! neither a count nor an amount. Ordinals compare and advance, they
+//! carry no cardinality, and they take part in no value relation, so
+//! a cycle never stands in for either neighbouring domain.
 
 use crate::RealizationError;
 
@@ -124,4 +129,41 @@ pub enum RepresentationMode {
     /// Amount is public through an authenticated opening while target
     /// commitment algebra remains available.
     PublicCommitted,
+}
+
+/// A cycle ordinal.
+///
+/// The cycle domain is the whole `u64`, matching the model's `Cycle`
+/// alias, so construction is total. An announcement lead is expressed
+/// in the same domain, because a lead is a distance between ordinals;
+/// that is why `checked_add` takes a second cycle.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Cycle(u64);
+
+impl Cycle {
+    /// The least cycle ordinal.
+    pub const ZERO: Self = Self(0);
+
+    /// The greatest representable cycle ordinal.
+    pub const MAX: Self = Self(u64::MAX);
+
+    /// Construct a cycle ordinal.
+    #[must_use]
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// Return the underlying exact integer ordinal.
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    /// Advance a cycle ordinal, failing closed on overflow.
+    pub fn checked_add(self, other: Self) -> Result<Self, RealizationError> {
+        self.0
+            .checked_add(other.0)
+            .map(Self)
+            .ok_or(RealizationError::CycleOverflow)
+    }
 }

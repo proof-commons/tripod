@@ -10,6 +10,7 @@ mod open_flow_tests;
 mod property_graph_tests;
 mod relation_identity_tests;
 mod root_policy_tests;
+mod state_tests;
 mod type_tests;
 
 use architecture::{ARCHITECTURE, OperationId, semantic_hash, validate_draft};
