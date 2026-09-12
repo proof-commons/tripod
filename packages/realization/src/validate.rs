@@ -64,6 +64,7 @@ pub fn validate_scoped_realization(
     validate_lifecycle_relation_weld(realization)?;
 
     validate_pilot_lifecycle(realization)?;
+    validate_announcement_lifecycle(realization)?;
 
     validate_sponsor_value_opacity(realization)?;
 
@@ -719,6 +720,61 @@ fn validate_pilot_lifecycle(realization: &ScopedRealizationSpec) -> Result<(), R
     Ok(())
 }
 
+/// Pin State's complete public representation and mutator census in announcement scope.
+fn validate_announcement_lifecycle(
+    realization: &ScopedRealizationSpec,
+) -> Result<(), RealizationError> {
+    let Some(declaration) = realization.operations.get(&OperationId::AnnounceMaturity) else {
+        return Ok(());
+    };
+    let modes = BTreeSet::from([
+        RepresentationMode::Explicit, RepresentationMode::PublicCommitted,
+    ]);
+    let exits = announcement_exits();
+    let mut actual_modes = BTreeSet::new();
+    let mut actual_exits = BTreeSet::new();
+    for relation in &declaration.relations {
+        match &relation.relation {
+            Relation::Representation { object: ObjectId::State, allowed } => {
+                actual_modes.extend(allowed.iter().copied());
+            }
+            Relation::LifecycleExit { object: ObjectId::State, exit } => {
+                actual_exits.insert(*exit);
+            }
+            _ => {}
+        }
+    }
+    if let Some(mode) = modes.difference(&actual_modes).next() {
+        return Err(RealizationError::MissingLifecycleRepresentation {
+            object: ObjectId::State, mode: *mode,
+        });
+    }
+    if let Some(mode) = actual_modes.difference(&modes).next() {
+        return Err(RealizationError::UndeclaredLifecycleNode(
+            crate::LifecycleNodeId::Representation { object: ObjectId::State, mode: *mode },
+        ));
+    }
+    if let Some(exit) = exits.difference(&actual_exits).next() {
+        return Err(RealizationError::MissingLifecycleExitNode {
+            object: ObjectId::State, exit: *exit,
+        });
+    }
+    if let Some(exit) = actual_exits.difference(&exits).next() {
+        return Err(RealizationError::UndeclaredLifecycleNode(
+            crate::LifecycleNodeId::RequiredExit { object: ObjectId::State, operation: *exit },
+        ));
+    }
+    for mode in modes {
+        for exit in &exits {
+            require_lifecycle_exit(
+                &realization.lifecycle_graph, &realization.lifecycle_node_by_id,
+                ObjectId::State, mode, *exit,
+            )?;
+        }
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn validate_compact_ash_architecture(
     architecture: &Architecture,
@@ -1093,6 +1149,218 @@ fn live_error(field: ArchitectureMismatchField) -> RealizationError {
 
 fn mismatch_live(field: ArchitectureMismatchField) -> Result<(), RealizationError> {
     Err(live_error(field))
+}
+
+pub fn validate_announce_maturity_architecture(
+    architecture: &Architecture,
+) -> Result<(), RealizationError> {
+    let operation = architecture.operation(OperationId::AnnounceMaturity).ok_or(
+        RealizationError::MissingArchitectureOperation(OperationId::AnnounceMaturity),
+    )?;
+
+    if operation.kind != OperationKind::CovenantBranch {
+        return mismatch_announcement(ArchitectureMismatchField::OperationKind);
+    }
+
+    if operation.authorization != PermissionClass::Operator {
+        return mismatch_announcement(ArchitectureMismatchField::Authorization);
+    }
+
+    if !operation.issuances.is_empty() {
+        return mismatch_announcement(ArchitectureMismatchField::Issuances);
+    }
+
+    if !operation.reads.is_empty() {
+        return mismatch_announcement(ArchitectureMismatchField::Reads);
+    }
+
+    if !operation.writes.is_empty() {
+        return mismatch_announcement(ArchitectureMismatchField::Writes);
+    }
+
+    validate_announcement_families(operation)?;
+    validate_announcement_policies(operation)?;
+    validate_announcement_state_object(architecture)
+}
+
+fn validate_announcement_families(
+    operation: &architecture::OperationSpec,
+) -> Result<(), RealizationError> {
+    let input_families = operation
+        .inputs
+        .iter()
+        .map(|input| input.object)
+        .collect::<BTreeSet<_>>();
+
+    if input_families != BTreeSet::from([ObjectId::State, ObjectId::PlainLbtc]) {
+        return mismatch_announcement(ArchitectureMismatchField::InputFamilies);
+    }
+
+    let output_families = operation
+        .outputs
+        .iter()
+        .map(|output| output.object)
+        .collect::<BTreeSet<_>>();
+
+    if output_families != BTreeSet::from([ObjectId::State, ObjectId::PlainLbtc]) {
+        return mismatch_announcement(ArchitectureMismatchField::OutputFamilies);
+    }
+
+    let state_input = operation
+        .inputs
+        .iter()
+        .find(|input| input.object == ObjectId::State)
+        .ok_or_else(|| announcement_error(ArchitectureMismatchField::StateInput))?;
+
+    if state_input.minimum != 1
+        || state_input.maximum != MaxCount::Exact(1)
+        || state_input.authorization != InputAuthorization::CovenantCompanion
+    {
+        return mismatch_announcement(ArchitectureMismatchField::StateInput);
+    }
+
+    let sponsor_input = operation
+        .inputs
+        .iter()
+        .find(|input| input.object == ObjectId::PlainLbtc)
+        .ok_or_else(|| announcement_error(ArchitectureMismatchField::SponsorInput))?;
+
+    if sponsor_input.minimum != 0
+        || sponsor_input.maximum != MaxCount::Bound(BoundId::FeeSponsorInputMax)
+        || sponsor_input.authorization != InputAuthorization::SponsorOwner
+    {
+        return mismatch_announcement(ArchitectureMismatchField::SponsorInput);
+    }
+
+    let state_output = operation
+        .outputs
+        .iter()
+        .find(|output| output.object == ObjectId::State)
+        .ok_or_else(|| announcement_error(ArchitectureMismatchField::StateOutput))?;
+
+    if state_output.minimum != 1
+        || state_output.maximum != MaxCount::Exact(1)
+    {
+        return mismatch_announcement(ArchitectureMismatchField::StateOutput);
+    }
+
+    let sponsor_output = operation
+        .outputs
+        .iter()
+        .find(|output| output.object == ObjectId::PlainLbtc)
+        .ok_or_else(|| announcement_error(ArchitectureMismatchField::SponsorOutput))?;
+
+    if sponsor_output.minimum != 0 || sponsor_output.maximum != MaxCount::Exact(1) {
+        return mismatch_announcement(ArchitectureMismatchField::SponsorOutput);
+    }
+
+    Ok(())
+}
+
+fn validate_announcement_policies(
+    operation: &architecture::OperationSpec,
+) -> Result<(), RealizationError> {
+    if operation.bounds.iter().copied().collect::<BTreeSet<_>>()
+        != BTreeSet::from([
+            BoundId::FeeSponsorInputMax,
+        ])
+    {
+        return mismatch_announcement(ArchitectureMismatchField::Bounds);
+    }
+
+    if operation
+        .open_flows
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        != BTreeSet::from([OpenFlowKind::FeeSponsor])
+    {
+        return mismatch_announcement(ArchitectureMismatchField::OpenFlows);
+    }
+
+    if operation
+        .value_flows
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        != BTreeSet::from([
+            ValueFlowClass::OwnerConsented,
+            ValueFlowClass::SponsorEnvelope,
+        ])
+    {
+        return mismatch_announcement(ArchitectureMismatchField::ValueFlows);
+    }
+
+    for root in RootId::ALL {
+        let expected = if *root == RootId::State { RootUse::Succession } else { RootUse::Forbidden };
+        if operation.root_use(*root) != expected {
+            return mismatch_announcement(ArchitectureMismatchField::RootPolicy);
+        }
+    }
+
+    if !operation.canonical_deltas.is_empty() {
+        return mismatch_announcement(ArchitectureMismatchField::CanonicalDeltas);
+    }
+
+    if !operation.data_outputs.is_empty() {
+        return mismatch_announcement(ArchitectureMismatchField::DataOutputs);
+    }
+
+    if operation.projection_rule(ProjectionId::TransitionCertificate) != ProjectionRule::Required {
+        return mismatch_announcement(ArchitectureMismatchField::ProjectionPolicy);
+    }
+
+    for projection in [
+        ProjectionId::BurnEvent,
+        ProjectionId::ClearEvent,
+        ProjectionId::DistributionResidue,
+    ] {
+        if operation.projection_rule(projection) != ProjectionRule::Forbidden {
+            return mismatch_announcement(ArchitectureMismatchField::ProjectionPolicy);
+        }
+    }
+
+    if operation.witnesses.iter().copied().collect::<BTreeSet<_>>()
+        != BTreeSet::from([
+            WitnessId::StateSuccession,
+            WitnessId::NativeFeeAuction,
+            WitnessId::ValueFlowClosure,
+        ])
+    {
+        return mismatch_announcement(ArchitectureMismatchField::Witnesses);
+    }
+
+    Ok(())
+}
+
+fn validate_announcement_state_object(architecture: &Architecture) -> Result<(), RealizationError> {
+    let state = architecture.object(ObjectId::State)
+        .ok_or_else(|| announcement_error(ArchitectureMismatchField::StateObject))?;
+    if state.mutators.iter().copied().collect::<BTreeSet<_>>() != announcement_exits()
+        || state.deallocators != [architecture::DeallocatorId::None]
+        || !state.consensus_value_authoritative
+    {
+        return mismatch_announcement(ArchitectureMismatchField::StateObject);
+    }
+    Ok(())
+}
+
+fn announcement_exits() -> BTreeSet<OperationId> {
+    BTreeSet::from([
+        OperationId::AdmitDeposits, OperationId::Cycle, OperationId::Redeem,
+        OperationId::ReceiptRelabel, OperationId::Clear, OperationId::AnnounceMaturity,
+    ])
+}
+
+fn announcement_error(field: ArchitectureMismatchField) -> RealizationError {
+    RealizationError::ArchitectureOperationMismatch {
+        operation: OperationId::AnnounceMaturity,
+        field,
+    }
+}
+
+fn mismatch_announcement(field: ArchitectureMismatchField) -> Result<(), RealizationError> {
+    Err(announcement_error(field))
 }
 
 /// Generic per-operation ownership validation (F3-006).
