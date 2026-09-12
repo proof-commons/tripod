@@ -707,6 +707,137 @@ fn zero_state_outputs_reject() {
     );
 }
 
+fn expected_announcement_statuses(
+    realization: &ScopedRealizationSpec,
+) -> BTreeMap<RelationId, RelationStatus> {
+    realization.operations[&OP]
+        .relations
+        .iter()
+        .map(|declaration| {
+            let status = match &declaration.relation {
+                Relation::OperatorAuthorization
+                | Relation::Constructibility {
+                    class: ConstructibilityClass::Operator,
+                } => RelationStatus::EvidenceRequired {
+                    requirement: crate::ExternalEvidenceRequirement::OperatorAuthorization {
+                        operation: OP,
+                    },
+                },
+                Relation::SubstrateConservation { asset } => RelationStatus::EvidenceRequired {
+                    requirement: crate::ExternalEvidenceRequirement::SubstrateConservation {
+                        operation: OP,
+                        asset: *asset,
+                    },
+                },
+                Relation::LifecycleExit { .. } => RelationStatus::StaticallyValidated,
+                _ => RelationStatus::Passed,
+            };
+            (declaration.id.clone(), status)
+        })
+        .collect()
+}
+
+fn assert_announcement_relation_census(
+    report: &crate::ConformanceReport,
+    realization: &ScopedRealizationSpec,
+) {
+    let actual = report
+        .verdicts
+        .iter()
+        .map(|verdict| (verdict.relation.clone(), verdict.status.clone()))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(actual, expected_announcement_statuses(realization));
+    assert_eq!(report.verdicts.len(), 26);
+    assert!(report.is_conformant());
+    assert!(!report.is_evidence_complete());
+
+    for kind in [RelationKind::Authorization, RelationKind::Constructibility] {
+        assert_eq!(
+            report
+                .verdict(&id(kind, RelationSubject::Operation))
+                .unwrap()
+                .status,
+            RelationStatus::EvidenceRequired {
+                requirement: crate::ExternalEvidenceRequirement::OperatorAuthorization {
+                    operation: OP,
+                },
+            }
+        );
+    }
+    assert_eq!(
+        report
+            .verdict(&id(
+                RelationKind::AllowedObjectFamilies,
+                RelationSubject::TransactionSide {
+                    side: TransactionSide::Input,
+                },
+            ))
+            .unwrap()
+            .status,
+        RelationStatus::Passed,
+    );
+    assert_eq!(
+        report
+            .verdict(&id(
+                RelationKind::Representation,
+                RelationSubject::Representation {
+                    object: ObjectId::State,
+                },
+            ))
+            .unwrap()
+            .status,
+        RelationStatus::Passed,
+    );
+
+    let exits = ARCHITECTURE.object(ObjectId::State).unwrap().mutators;
+    assert_eq!(exits.len(), 6);
+    for exit in exits {
+        assert_eq!(
+            report
+                .verdict(&id(
+                    RelationKind::Lifecycle,
+                    RelationSubject::LifecycleExit {
+                        object: ObjectId::State,
+                        exit: *exit,
+                    },
+                ))
+                .unwrap()
+                .status,
+            RelationStatus::StaticallyValidated,
+        );
+    }
+    assert!(!report
+        .verdicts
+        .iter()
+        .any(|verdict| matches!(verdict.status, RelationStatus::Blocked { .. })));
+}
+
+fn assert_announcement_evidence_multiset(report: &crate::ConformanceReport) {
+    let evidence_multiset = report.required_external_evidence().cloned().fold(
+        BTreeMap::new(),
+        |mut counts, requirement| {
+            *counts.entry(requirement).or_insert(0_usize) += 1;
+            counts
+        },
+    );
+    assert_eq!(
+        evidence_multiset,
+        BTreeMap::from([
+            (
+                crate::ExternalEvidenceRequirement::OperatorAuthorization { operation: OP },
+                2,
+            ),
+            (
+                crate::ExternalEvidenceRequirement::SubstrateConservation {
+                    operation: OP,
+                    asset: AssetId::Lbtc,
+                },
+                1,
+            ),
+        ]),
+    );
+}
+
 #[test]
 fn operator_authorization_is_external_evidence() {
     for signers in [BTreeSet::new(), BTreeSet::from([OwnerId([1; 32])])] {
@@ -715,138 +846,8 @@ fn operator_authorization_is_external_evidence() {
         let realization = realization();
         let report = realization.evaluate_operation(&observed).unwrap();
 
-        let expected: BTreeMap<_, _> = realization.operations[&OP]
-            .relations
-            .iter()
-            .map(|declaration| {
-                let status = match &declaration.relation {
-                    Relation::OperatorAuthorization
-                    | Relation::Constructibility {
-                        class: ConstructibilityClass::Operator,
-                    } => RelationStatus::EvidenceRequired {
-                        requirement: crate::ExternalEvidenceRequirement::OperatorAuthorization {
-                            operation: OP,
-                        },
-                    },
-                    Relation::SubstrateConservation { asset } => RelationStatus::EvidenceRequired {
-                        requirement: crate::ExternalEvidenceRequirement::SubstrateConservation {
-                            operation: OP,
-                            asset: *asset,
-                        },
-                    },
-                    Relation::LifecycleExit { .. } => RelationStatus::StaticallyValidated,
-                    _ => RelationStatus::Passed,
-                };
-                (declaration.id.clone(), status)
-            })
-            .collect();
-        let actual = report
-            .verdicts
-            .iter()
-            .map(|verdict| (verdict.relation.clone(), verdict.status.clone()))
-            .collect::<BTreeMap<_, _>>();
-
-        assert_eq!(actual, expected);
-        assert_eq!(report.verdicts.len(), 26);
-        assert!(report.is_conformant());
-        assert!(!report.is_evidence_complete());
-        assert_eq!(
-            report
-                .verdict(&id(RelationKind::Authorization, RelationSubject::Operation))
-                .unwrap()
-                .status,
-            RelationStatus::EvidenceRequired {
-                requirement: crate::ExternalEvidenceRequirement::OperatorAuthorization {
-                    operation: OP,
-                },
-            }
-        );
-        assert_eq!(
-            report
-                .verdict(&id(
-                    RelationKind::Constructibility,
-                    RelationSubject::Operation,
-                ))
-                .unwrap()
-                .status,
-            RelationStatus::EvidenceRequired {
-                requirement: crate::ExternalEvidenceRequirement::OperatorAuthorization {
-                    operation: OP,
-                },
-            }
-        );
-        assert_eq!(
-            report
-                .verdict(&id(
-                    RelationKind::AllowedObjectFamilies,
-                    RelationSubject::TransactionSide {
-                        side: TransactionSide::Input,
-                    },
-                ))
-                .unwrap()
-                .status,
-            RelationStatus::Passed,
-        );
-        assert_eq!(
-            report
-                .verdict(&id(
-                    RelationKind::Representation,
-                    RelationSubject::Representation {
-                        object: ObjectId::State,
-                    },
-                ))
-                .unwrap()
-                .status,
-            RelationStatus::Passed,
-        );
-
-        let exits = ARCHITECTURE.object(ObjectId::State).unwrap().mutators;
-        assert_eq!(exits.len(), 6);
-        for exit in exits {
-            assert_eq!(
-                report
-                    .verdict(&id(
-                        RelationKind::Lifecycle,
-                        RelationSubject::LifecycleExit {
-                            object: ObjectId::State,
-                            exit: *exit,
-                        },
-                    ))
-                    .unwrap()
-                    .status,
-                RelationStatus::StaticallyValidated,
-            );
-        }
-        assert!(
-            !report
-                .verdicts
-                .iter()
-                .any(|verdict| matches!(verdict.status, RelationStatus::Blocked { .. }))
-        );
-
-        let evidence_multiset = report.required_external_evidence().cloned().fold(
-            BTreeMap::new(),
-            |mut counts, requirement| {
-                *counts.entry(requirement).or_insert(0_usize) += 1;
-                counts
-            },
-        );
-        assert_eq!(
-            evidence_multiset,
-            BTreeMap::from([
-                (
-                    crate::ExternalEvidenceRequirement::OperatorAuthorization { operation: OP },
-                    2,
-                ),
-                (
-                    crate::ExternalEvidenceRequirement::SubstrateConservation {
-                        operation: OP,
-                        asset: AssetId::Lbtc,
-                    },
-                    1,
-                ),
-            ]),
-        );
+        assert_announcement_relation_census(&report, &realization);
+        assert_announcement_evidence_multiset(&report);
     }
 }
 
