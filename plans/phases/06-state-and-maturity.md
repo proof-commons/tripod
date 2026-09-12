@@ -3,9 +3,12 @@
 > **Status:** Active — opened by the owner 2026-08-27 as the roadmap's
 > current phase when Phase 5 exited; both entry conditions hold — the
 > amended phase-5 exit gate is met on its countersigned assessment, and
-> the STATE-constructor research decision is accepted. No execution
-> guide is chartered yet: the Guide-14 drafting decision is the owner's
-> and remains open.
+> the STATE-constructor research decision is accepted. The owner
+> supplied Guide 14, archived verbatim (`T6-001`); its Wave 0 — the
+> tenth-review disposition and the Phase-5 handoff revalidation — ran
+> and closed out (`T6-002`, `T6-031`); the owner-issued conceptual
+> preflight register binds Waves 1–13 (`T8-001`). Wave 1, typed STATE
+> metadata and semantic transition, is the next wave.
 > **Entry:** (`gate:phase5:exit`) and accepted STATE-constructor decision
 > **Packages:** tapscript, linker, transaction, vectors
 > **Operation:** `announce-maturity`
