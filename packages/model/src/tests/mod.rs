@@ -112,6 +112,7 @@ mod root_provenance_tests;
 mod serialization_tests;
 mod settlement_tests;
 mod specification_bound_tests;
+mod state_metadata_conformance_tests;
 mod stronger_fee_auction_tests;
 mod sweepability_tests;
 mod transfer_tests;
