@@ -159,7 +159,9 @@ const fn expected_relation_kind(relation: &Relation) -> crate::RelationKind {
         Relation::AllowedObjectFamilies { .. } => Kind::AllowedObjectFamilies,
         Relation::Recognition { .. } => Kind::Recognition,
         Relation::AmountConservation { .. } => Kind::Conservation,
-        Relation::OwnerAuthorization { .. } | Relation::PermissionlessAuthorization => {
+        Relation::OwnerAuthorization { .. }
+        | Relation::PermissionlessAuthorization
+        | Relation::OperatorAuthorization => {
             Kind::Authorization
         }
         Relation::SponsorIsolation => Kind::SponsorIsolation,
@@ -225,6 +227,7 @@ fn expected_relation_subject(relation: &Relation) -> crate::RelationSubject {
         // inventing one for a relation nothing declares yet would be
         // minting identity ahead of need.
         Relation::PermissionlessAuthorization
+        | Relation::OperatorAuthorization
         | Relation::Constructibility { .. }
         | Relation::RootPolicy { .. }
         | Relation::ProjectionPolicy { .. }

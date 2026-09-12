@@ -21,6 +21,9 @@ use crate::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConstructibilityClass {
     PublicPermissionless,
+    /// Runtime evaluation requires external operator-authorization evidence;
+    /// graph availability still uses `ConstructibilityAuthorization::Operator`.
+    Operator,
     OwnersOf { object: ObjectId },
 }
 
@@ -66,6 +69,13 @@ pub enum Relation {
         object: ObjectId,
     },
     PermissionlessAuthorization,
+    /// Operator authorization for the operation named by this relation's identity.
+    ///
+    /// This never evaluates to `Passed`: the observation contains no expected
+    /// operator identity, and a nonempty signer set is not approved operator
+    /// authorization. The operator profile is target-wave evidence, discharged
+    /// by an external-evidence requirement exactly as substrate conservation is.
+    OperatorAuthorization,
     SponsorIsolation,
     SponsorEnvelopeMultiplicity {
         maximum: Count,

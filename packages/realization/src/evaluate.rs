@@ -27,8 +27,9 @@ use crate::{
 ///
 /// # Two boundaries, not one
 ///
-/// The two members are raised by different boundaries and neither
-/// implies the other.
+/// Value-conservation requirements are raised by different boundaries
+/// and neither implies the other. Operator authorization also requires
+/// evidence from the model kernel or target.
 ///
 /// [`Self::SubstrateConservation`] is raised by the evaluator itself:
 /// the observation it reads has the sponsor amounts erased, so the
@@ -50,6 +51,13 @@ use crate::{
 /// [`Relation::SubstrateConservation`]: crate::Relation::SubstrateConservation
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ExternalEvidenceRequirement {
+    /// The model kernel or target must establish that the approved operator
+    /// authorized this operation under its operator profile. The observation
+    /// has no expected operator identity, so no local signer-set check can
+    /// substitute for that evidence.
+    OperatorAuthorization {
+        operation: architecture::OperationId,
+    },
     /// The target's own confidential-transaction rules must establish
     /// the value equation for one asset across one operation.
     ///
@@ -78,17 +86,19 @@ impl ExternalEvidenceRequirement {
     #[must_use]
     pub const fn operation(&self) -> architecture::OperationId {
         match self {
-            Self::ConfidentialValueConservation { operation, .. }
+            Self::OperatorAuthorization { operation }
+            | Self::ConfidentialValueConservation { operation, .. }
             | Self::SubstrateConservation { operation, .. } => *operation,
         }
     }
 
-    /// The asset whose value equation stays open.
+    /// The asset whose value equation stays open, or `None` for authorization.
     #[must_use]
-    pub const fn asset(&self) -> AssetId {
+    pub const fn asset(&self) -> Option<AssetId> {
         match self {
+            Self::OperatorAuthorization { .. } => None,
             Self::ConfidentialValueConservation { asset, .. }
-            | Self::SubstrateConservation { asset, .. } => *asset,
+            | Self::SubstrateConservation { asset, .. } => Some(*asset),
         }
     }
 }
@@ -296,6 +306,11 @@ fn evaluate_relation(
     evaluated: Option<&EvaluatedExpressions>,
 ) -> Result<RelationStatus, RealizationError> {
     match relation {
+        Relation::OperatorAuthorization => Ok(RelationStatus::EvidenceRequired {
+            requirement: ExternalEvidenceRequirement::OperatorAuthorization {
+                operation: id.operation(),
+            },
+        }),
         Relation::SubstrateConservation { asset } => Ok(RelationStatus::EvidenceRequired {
             requirement: ExternalEvidenceRequirement::SubstrateConservation {
                 operation: id.operation(),
@@ -411,6 +426,11 @@ fn evaluate_relation(
             RelationFailure::OpenFlowPolicy,
         ),
         Relation::Constructibility { class } => match class {
+            ConstructibilityClass::Operator => Ok(RelationStatus::EvidenceRequired {
+                requirement: ExternalEvidenceRequirement::OperatorAuthorization {
+                    operation: id.operation(),
+                },
+            }),
             ConstructibilityClass::PublicPermissionless => status(
                 observation.protocol_signers.is_empty(),
                 RelationFailure::Constructibility,

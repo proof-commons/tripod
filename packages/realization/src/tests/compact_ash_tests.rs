@@ -1706,6 +1706,7 @@ fn no_compact_ash_relation_names_a_sponsor_amount() {
             | crate::Relation::Recognition { .. }
             | crate::Relation::AllowedObjectFamilies { .. }
             | crate::Relation::OwnerAuthorization { .. }
+            | crate::Relation::OperatorAuthorization
             | crate::Relation::PermissionlessAuthorization
             | crate::Relation::SponsorIsolation
             | crate::Relation::SponsorEnvelopeMultiplicity { .. }
