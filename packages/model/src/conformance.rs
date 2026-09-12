@@ -15,7 +15,8 @@ use realization::{
 
 use crate::{
     AnnounceMaturity, Asset, BranchKind, CompactAsh, ExecutedTransition, Meta, OutPoint,
-    ReceiptClass, RootEdge, Sat, SignerSet, Tag, TransferReceipts, TransitionCertificate, Utxo, World,
+    ReceiptClass, RootEdge, Sat, SignerSet, Tag, TransferReceipts, TransitionCertificate, Utxo,
+    World,
 };
 
 /// Failure while projecting a model transition into realization facts.
