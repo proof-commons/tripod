@@ -51,7 +51,9 @@ pub(crate) use declassification::{
 pub use derive::{
     ScopedRealizationProjection, ScopedRealizationSpec, derive, project_scoped_realization,
 };
-pub use domain::{Count, Cycle, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RepresentationMode};
+pub use domain::{
+    Count, Cycle, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RepresentationMode,
+};
 pub use error::{ArchitectureMismatchField, RealizationError};
 #[cfg(test)]
 #[allow(unused_imports)]
