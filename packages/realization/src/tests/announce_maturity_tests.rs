@@ -180,7 +180,7 @@ fn expected_policies(row: &OperationSpec) -> Vec<RelationDeclaration> {
 }
 
 fn expected_relations(row: &OperationSpec) -> BTreeMap<RelationId, RelationDeclaration> {
-    assert!(row.canonical_deltas.is_empty());
+    assert_eq!(row.canonical_deltas, &[]);
     assert_eq!(row.authorization, architecture::PermissionClass::Operator);
     let mut expected = expected_families(row);
     expected.extend(expected_policies(row));
@@ -346,26 +346,7 @@ fn expected_edges() -> BTreeSet<RelationDependencyDeclaration> {
             RelationEdge::ProjectionPolicyBeforeOperation,
         ),
     ]);
-    edges.extend(
-        ARCHITECTURE
-            .object(ObjectId::State)
-            .unwrap()
-            .mutators
-            .iter()
-            .map(|exit| {
-                (
-                    representation.clone(),
-                    id(
-                        RelationKind::Lifecycle,
-                        RelationSubject::LifecycleExit {
-                            object: ObjectId::State,
-                            exit: *exit,
-                        },
-                    ),
-                    RelationEdge::RepresentationBeforeLifecycle,
-                )
-            }),
-    );
+    edges.extend(expected_exit_edges(&representation));
     edges
         .into_iter()
         .map(
@@ -376,6 +357,29 @@ fn expected_edges() -> BTreeSet<RelationDependencyDeclaration> {
             },
         )
         .collect()
+}
+
+fn expected_exit_edges(
+    representation: &RelationId,
+) -> impl Iterator<Item = (RelationId, RelationId, RelationEdge)> + '_ {
+    ARCHITECTURE
+        .object(ObjectId::State)
+        .unwrap()
+        .mutators
+        .iter()
+        .map(|exit| {
+            (
+                representation.clone(),
+                id(
+                    RelationKind::Lifecycle,
+                    RelationSubject::LifecycleExit {
+                        object: ObjectId::State,
+                        exit: *exit,
+                    },
+                ),
+                RelationEdge::RepresentationBeforeLifecycle,
+            )
+        })
 }
 
 fn assert_constructibility(declaration: &OperationRealization) {
@@ -519,7 +523,7 @@ fn derive_matches_architecture_spec() {
             .iter()
             .any(|r| matches!(r.relation, Relation::AmountConservation { .. }))
     );
-    assert!(declaration.expressions.is_empty());
+    assert_eq!(declaration.expressions.as_slice(), &[]);
     assert_eq!(
         declaration
             .relation_dependencies
@@ -541,8 +545,8 @@ fn derive_matches_architecture_spec() {
             .map(crate::DisclosureNodeId::Fact)
             .collect()
     );
-    assert!(declaration.disclosure_edges.is_empty());
-    assert!(declaration.disclosure_seeds.is_empty());
+    assert_eq!(declaration.disclosure_edges.as_slice(), &[]);
+    assert_eq!(declaration.disclosure_seeds.as_slice(), &[]);
     assert_eq!(realization.relation_graph.node_count(), 26);
     assert_eq!(realization.relation_graph.edge_count(), 23);
     assert_eq!(realization.lifecycle_graph.node_count(), 8);
@@ -688,7 +692,8 @@ fn operator_authorization_is_external_evidence() {
         observed.protocol_signers = signers;
         let report = realization().evaluate_operation(&observed).unwrap();
         assert!(!report.is_evidence_complete());
-        for kind in [RelationKind::Authorization] {
+        {
+            let kind = RelationKind::Authorization;
             assert_eq!(
                 report
                     .verdict(&id(kind, RelationSubject::Operation))
@@ -838,7 +843,7 @@ fn public_facts_are_declared_and_public() {
     assert_eq!(realization.declassification.required_public, public_facts());
     assert!(realization.declassification.newly_disclosed.is_empty());
     assert!(realization.declassification.retained_private.is_empty());
-    assert!(realization.operations[&OP].disclosure_seeds.is_empty());
+    assert_eq!(realization.operations[&OP].disclosure_seeds.as_slice(), &[]);
     for node in realization.disclosure_graph.node_weights() {
         assert!(matches!(
             node,
@@ -883,10 +888,10 @@ fn shape_mutations() -> Vec<Mutation> {
     use ArchitectureMismatchField as F;
     vec![
         (F::OperationKind, |o| {
-            o.kind = architecture::OperationKind::ClientProtocol
+            o.kind = architecture::OperationKind::ClientProtocol;
         }),
         (F::Authorization, |o| {
-            o.authorization = architecture::PermissionClass::Permissionless
+            o.authorization = architecture::PermissionClass::Permissionless;
         }),
         (F::Issuances, |o| {
             o.issuances = vec![architecture::IssuanceSpec {
@@ -894,13 +899,13 @@ fn shape_mutations() -> Vec<Mutation> {
                 authority: AssetId::U,
                 condition: architecture::IssuanceCondition::PositiveAdmittedPrincipal,
             }]
-            .leak()
+            .leak();
         }),
         (F::Reads, |o| {
-            o.reads = vec![architecture::QuantityId::Floor].leak()
+            o.reads = vec![architecture::QuantityId::Floor].leak();
         }),
         (F::Writes, |o| {
-            o.writes = vec![architecture::QuantityId::Floor].leak()
+            o.writes = vec![architecture::QuantityId::Floor].leak();
         }),
         (F::InputFamilies, |o| o.inputs = &[]),
         (F::OutputFamilies, |o| o.outputs = &[]),
@@ -912,7 +917,7 @@ fn shape_mutations() -> Vec<Mutation> {
             o.canonical_deltas = ARCHITECTURE
                 .operation(OperationId::TransferLive)
                 .unwrap()
-                .canonical_deltas
+                .canonical_deltas;
         }),
         (F::DataOutputs, |o| {
             o.data_outputs = vec![architecture::DataOutputSpec {
@@ -923,7 +928,7 @@ fn shape_mutations() -> Vec<Mutation> {
                 maximum: MaxCount::Exact(1),
                 condition: architecture::DeltaCondition::Always,
             }]
-            .leak()
+            .leak();
         }),
         (F::ProjectionPolicy, |o| o.projections = &[]),
         (F::Witnesses, |o| o.witnesses = &[]),

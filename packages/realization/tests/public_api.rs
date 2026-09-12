@@ -260,12 +260,13 @@ fn announcement_is_available_through_explicit_public_scope() {
         realization.scope().operations(),
         &[OperationId::AnnounceMaturity]
     );
-    assert!(
+    assert_eq!(
         realization
             .operation(OperationId::AnnounceMaturity)
             .unwrap()
             .expressions
-            .is_empty()
+            .as_slice(),
+        &[]
     );
     assert_eq!(
         realization

@@ -266,7 +266,7 @@ projections are what a consumer compares.
 - Operations: `OperationRealization` and `OperationRealizationProjection`
   (`project()`).
 
-AnnounceMaturity is available through an explicit `RealizationScope::from_operations` scope and the public `derive` entry point; its declaration covers State and sponsor structure, evidence-required operator authorization, the public representation pair, the six-exit State lifecycle census, and the nine public facts; the typed State transition owns the maturity law and the declaration carries no cycle-window expression; `phase1_pilots()` remains the original two-operation scope.
+`AnnounceMaturity` is available through an explicit `RealizationScope::from_operations` scope and the public `derive` entry point; its declaration covers State and sponsor structure, evidence-required operator authorization, the public representation pair, the six-exit State lifecycle census, and the nine public facts; the typed State transition owns the maturity law and the declaration carries no cycle-window expression; `phase1_pilots()` remains the original two-operation scope.
 
 - Constructibility: `ConstructibilityNodeId`, `ConstructibilityNode`,
   `ConstructibilityEdge`, `ConstructibilityEdgeRole`, `RequirementStrength`,
