@@ -57,9 +57,9 @@ fn embed(meta: realization::StateMetadata) -> PoolState {
         cycle: cycle.get(),
         maturity: match maturity {
             realization::Maturity::Unannounced => Maturity::Unannounced,
-            realization::Maturity::Announced { cycle } => Maturity::Announced {
-                cycle: cycle.get(),
-            },
+            realization::Maturity::Announced { cycle } => {
+                Maturity::Announced { cycle: cycle.get() }
+            }
             realization::Maturity::Complete => Maturity::Complete,
         },
     }
