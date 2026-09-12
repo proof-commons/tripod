@@ -157,10 +157,7 @@ pub fn encode_state_metadata(
     output
 }
 
-fn take<const N: usize>(
-    input: &[u8],
-    cursor: &mut usize,
-) -> Result<[u8; N], StateMetadataRefusal> {
+fn take<const N: usize>(input: &[u8], cursor: &mut usize) -> Result<[u8; N], StateMetadataRefusal> {
     let end = cursor
         .checked_add(N)
         .ok_or(StateMetadataRefusal::WrongLength)?;
