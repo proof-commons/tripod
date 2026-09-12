@@ -256,8 +256,8 @@ fn assert_agrees(
         signers: signers(&[OPERATOR_KEY]),
         fee_envelope: FeeEnvelope::default(),
     };
-    let model_result = execute_bound(world, transition, next_order(world))
-        .map(ExecutedTransition::into_world);
+    let model_result =
+        execute_bound(world, transition, next_order(world)).map(ExecutedTransition::into_world);
     let realization_result = realization::announce_maturity(
         &project(state),
         realization::Cycle::new(maturity_cycle),
@@ -443,9 +443,7 @@ fn every_realization_refusal_is_mapped() {
 }
 
 fn announcement_with_distinct_fields() -> World {
-    let world = super::advanced_fixtures::give_live_receipt(
-        &announcement_world(), ALICE, sat(37),
-    );
+    let world = super::advanced_fixtures::give_live_receipt(&announcement_world(), ALICE, sat(37));
     let receipt = find_receipts(&world, ALICE, ReceiptClass::Live)[0];
     let redeemed = apply_checked(
         &world,
@@ -464,14 +462,24 @@ fn announcement_with_distinct_fields() -> World {
 fn executed_successor_projects_to_realization_successor() {
     let world = announcement_with_distinct_fields();
     let (input, predecessor) = world.state().unwrap();
-    assert_eq!(std::collections::BTreeSet::from([
-        predecessor.omega.get(), predecessor.y_l.get(), predecessor.y_t.get(),
-        predecessor.q.get(), predecessor.cycle,
-    ]).len(), 5);
+    assert_eq!(
+        std::collections::BTreeSet::from([
+            predecessor.omega.get(),
+            predecessor.y_l.get(),
+            predecessor.y_t.get(),
+            predecessor.q.get(),
+            predecessor.cycle,
+        ])
+        .len(),
+        5
+    );
     assert!(!predecessor.q.is_zero());
     assert_ne!(predecessor.cycle, 0);
 
-    for lead in [world.constants.min_maturity_lead, world.constants.max_maturity_lead] {
+    for lead in [
+        world.constants.min_maturity_lead,
+        world.constants.max_maturity_lead,
+    ] {
         let request = AnnounceMaturity {
             maturity_cycle: predecessor.cycle + lead,
             signers: signers(&[OPERATOR_KEY]),
@@ -494,21 +502,36 @@ fn executed_successor_projects_to_realization_successor() {
         assert_eq!(successor.y_t, predecessor.y_t);
         assert_eq!(successor.q, predecessor.q);
         assert_eq!(successor.cycle, predecessor.cycle);
-        assert_eq!(successor.maturity, Maturity::Announced {
-            cycle: executed.request().maturity_cycle,
-        });
+        assert_eq!(
+            successor.maturity,
+            Maturity::Announced {
+                cycle: executed.request().maturity_cycle,
+            }
+        );
         assert_ne!(input, output);
         assert!(!executed.after().utxos.contains_key(&input));
-        assert_eq!(executed.certificate().state_edge, Some(RootEdge::Succ { input, output }));
+        assert_eq!(
+            executed.certificate().state_edge,
+            Some(RootEdge::Succ { input, output })
+        );
         assert_eq!(observation.observation().objects.len(), 2);
         for object in &observation.observation().objects {
-            assert_eq!(object.kind,
-                realization::ObservedObjectKind::Declared(architecture::ObjectId::State));
-            assert_eq!(object.asset,
-                realization::ObservedAsset::Declared(architecture::AssetId::Pid));
-            assert_eq!(object.value,
-                realization::ObservedValue::Protocol(realization::ProtocolAmount::ONE));
-            assert_eq!(object.representation, realization::RepresentationMode::Explicit);
+            assert_eq!(
+                object.kind,
+                realization::ObservedObjectKind::Declared(architecture::ObjectId::State)
+            );
+            assert_eq!(
+                object.asset,
+                realization::ObservedAsset::Declared(architecture::AssetId::Pid)
+            );
+            assert_eq!(
+                object.value,
+                realization::ObservedValue::Protocol(realization::ProtocolAmount::ONE)
+            );
+            assert_eq!(
+                object.representation,
+                realization::RepresentationMode::Explicit
+            );
         }
     }
 }
@@ -520,7 +543,10 @@ fn overflow_execution_world(minimum: Cycle) -> World {
     let world = genesis(
         constants,
         sat(1_000_000),
-        CanonicalOrder { height: 0, tx_index: 0 },
+        CanonicalOrder {
+            height: 0,
+            tx_index: 0,
+        },
         test_fixtures::txid(0),
     )
     .unwrap();
@@ -547,11 +573,19 @@ fn earliest_endpoint_overflow_agrees_through_execution() {
     let state = world.state().unwrap().1;
     assert_eq!(state.cycle, 1);
     check_invariant(&world).unwrap();
-    assert!(state.cycle.checked_add(world.constants.min_maturity_lead).is_none());
+    assert!(
+        state
+            .cycle
+            .checked_add(world.constants.min_maturity_lead)
+            .is_none()
+    );
     for requested in [0, u64::MAX] {
-        assert_agrees(&world, requested,
-            Err(realization::MaturityTransitionRefusal::CycleArithmeticOverflow))
-            .unwrap_err();
+        assert_agrees(
+            &world,
+            requested,
+            Err(realization::MaturityTransitionRefusal::CycleArithmeticOverflow),
+        )
+        .unwrap_err();
     }
 }
 
@@ -564,12 +598,25 @@ fn latest_endpoint_overflow_agrees_through_execution() {
     let state = world.state().unwrap().1;
     assert_eq!(state.cycle, 1);
     check_invariant(&world).unwrap();
-    assert!(state.cycle.checked_add(world.constants.min_maturity_lead).is_some());
-    assert!(state.cycle.checked_add(world.constants.max_maturity_lead).is_none());
+    assert!(
+        state
+            .cycle
+            .checked_add(world.constants.min_maturity_lead)
+            .is_some()
+    );
+    assert!(
+        state
+            .cycle
+            .checked_add(world.constants.max_maturity_lead)
+            .is_none()
+    );
     for requested in [0, u64::MAX] {
-        assert_agrees(&world, requested,
-            Err(realization::MaturityTransitionRefusal::CycleArithmeticOverflow))
-            .unwrap_err();
+        assert_agrees(
+            &world,
+            requested,
+            Err(realization::MaturityTransitionRefusal::CycleArithmeticOverflow),
+        )
+        .unwrap_err();
     }
 }
 
@@ -599,7 +646,10 @@ fn sealed_pool_precedes_signature_and_maturity_checks() {
                 signers: signers.clone(),
                 fee_envelope: FeeEnvelope::default(),
             };
-            assert_eq!(execute_bound(&sealed, request, next_order(&sealed)), Err(Guard::Sealed));
+            assert_eq!(
+                execute_bound(&sealed, request, next_order(&sealed)),
+                Err(Guard::Sealed)
+            );
         }
     }
 }
@@ -622,7 +672,10 @@ fn missing_operator_signature_precedes_maturity_checks() {
                 signers: SignerSet::new(),
                 fee_envelope: FeeEnvelope::default(),
             };
-            assert_eq!(execute_bound(&world, request, next_order(&world)), Err(Guard::BadSignature));
+            assert_eq!(
+                execute_bound(&world, request, next_order(&world)),
+                Err(Guard::BadSignature)
+            );
         }
     }
 }
