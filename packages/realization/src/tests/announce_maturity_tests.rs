@@ -247,19 +247,31 @@ fn modes() -> BTreeSet<RepresentationMode> {
     ])
 }
 
+type ExpectedEdge = (RelationId, RelationId, RelationEdge);
+
 fn expected_edges() -> BTreeSet<RelationDependencyDeclaration> {
-    let operation = |kind| id(kind, RelationSubject::Operation);
-    let sponsor = id(RelationKind::SponsorIsolation, RelationSubject::Sponsor);
-    let multiplicity = id(
-        RelationKind::SponsorEnvelopeMultiplicity,
-        RelationSubject::Sponsor,
-    );
     let representation = id(
         RelationKind::Representation,
         RelationSubject::Representation {
             object: ObjectId::State,
         },
     );
+    expected_recognition_edges()
+        .into_iter()
+        .chain(expected_sponsor_edges())
+        .chain(expected_constructibility_edges(&representation))
+        .chain(expected_exit_edges(&representation))
+        .map(
+            |(prerequisite, dependent, edge)| RelationDependencyDeclaration {
+                prerequisite,
+                dependent,
+                edge,
+            },
+        )
+        .collect()
+}
+
+fn expected_recognition_edges() -> Vec<ExpectedEdge> {
     let mut edges = Vec::new();
     for side in [TransactionSide::Input, TransactionSide::Output] {
         for object in [ObjectId::State, ObjectId::PlainLbtc] {
@@ -269,6 +281,19 @@ fn expected_edges() -> BTreeSet<RelationDependencyDeclaration> {
                 RelationEdge::RecognitionBeforeCardinality,
             ));
         }
+    }
+    edges
+}
+
+fn expected_sponsor_edges() -> Vec<ExpectedEdge> {
+    let operation = |kind| id(kind, RelationSubject::Operation);
+    let sponsor = id(RelationKind::SponsorIsolation, RelationSubject::Sponsor);
+    let multiplicity = id(
+        RelationKind::SponsorEnvelopeMultiplicity,
+        RelationSubject::Sponsor,
+    );
+    let mut edges = Vec::new();
+    for side in [TransactionSide::Input, TransactionSide::Output] {
         edges.push((
             family_id(RelationKind::Recognition, side, ObjectId::PlainLbtc),
             sponsor.clone(),
@@ -276,21 +301,6 @@ fn expected_edges() -> BTreeSet<RelationDependencyDeclaration> {
         ));
     }
     edges.extend([
-        (
-            operation(RelationKind::Authorization),
-            id(
-                RelationKind::AllowedObjectFamilies,
-                RelationSubject::TransactionSide {
-                    side: TransactionSide::Input,
-                },
-            ),
-            RelationEdge::AuthorizationBeforeClosure,
-        ),
-        (
-            operation(RelationKind::Authorization),
-            operation(RelationKind::Constructibility),
-            RelationEdge::AuthorizationBeforeConstructibility,
-        ),
         (
             operation(RelationKind::OpenFlowPolicy),
             sponsor.clone(),
@@ -321,6 +331,28 @@ fn expected_edges() -> BTreeSet<RelationDependencyDeclaration> {
             ),
             RelationEdge::SponsorBeforeOperation,
         ),
+    ]);
+    edges
+}
+
+fn expected_constructibility_edges(representation: &RelationId) -> Vec<ExpectedEdge> {
+    let operation = |kind| id(kind, RelationSubject::Operation);
+    vec![
+        (
+            operation(RelationKind::Authorization),
+            id(
+                RelationKind::AllowedObjectFamilies,
+                RelationSubject::TransactionSide {
+                    side: TransactionSide::Input,
+                },
+            ),
+            RelationEdge::AuthorizationBeforeClosure,
+        ),
+        (
+            operation(RelationKind::Authorization),
+            operation(RelationKind::Constructibility),
+            RelationEdge::AuthorizationBeforeConstructibility,
+        ),
         (
             operation(RelationKind::Constructibility),
             representation.clone(),
@@ -345,18 +377,7 @@ fn expected_edges() -> BTreeSet<RelationDependencyDeclaration> {
             operation(RelationKind::Constructibility),
             RelationEdge::ProjectionPolicyBeforeOperation,
         ),
-    ]);
-    edges.extend(expected_exit_edges(&representation));
-    edges
-        .into_iter()
-        .map(
-            |(prerequisite, dependent, edge)| RelationDependencyDeclaration {
-                prerequisite,
-                dependent,
-                edge,
-            },
-        )
-        .collect()
+    ]
 }
 
 fn expected_exit_edges(
