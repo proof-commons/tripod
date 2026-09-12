@@ -21,6 +21,7 @@ pub mod observation;
 pub mod operation;
 pub mod relation;
 pub mod scope;
+pub mod state;
 pub mod value;
 
 mod declarations;
@@ -96,6 +97,9 @@ pub use relation::{
 #[allow(unused_imports)]
 pub(crate) use relation::{build_relation_graph, project_relation_graph};
 pub use scope::{CompleteRealizationScope, RealizationScope};
+pub use state::{
+    AnnouncementLeadBounds, Maturity, MaturityTransitionRefusal, StateMetadata, announce_maturity,
+};
 #[cfg(test)]
 pub(crate) use validate::constructibility_authorizations;
 pub use value::{OwnerId, SemanticType, SemanticValue};
