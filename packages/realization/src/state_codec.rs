@@ -205,7 +205,6 @@ pub fn decode_state_metadata(bytes: &[u8]) -> Result<EncodedStateMetadata, State
 
     let maturity = match maturity_tag {
         0 if announced_cycle == 0 => Maturity::Unannounced,
-        0 => return Err(StateMetadataRefusal::MaturityPayloadMalformed),
         1 => Maturity::Announced {
             cycle: Cycle::new(announced_cycle),
         },
