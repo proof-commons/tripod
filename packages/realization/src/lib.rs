@@ -73,8 +73,8 @@ pub(crate) use expression::{
     build_expression_graph, evaluate_expressions, project_expression_graph,
 };
 pub use identity::{
-    ExprId, ExpressionRole, FactId, ProofAlternativeId, ProofKind, RelationId, RelationKind,
-    RelationSubject, TransactionSide,
+    AnnouncementLeadBound, ExprId, ExpressionRole, FactId, ProofAlternativeId, ProofKind, RelationId, RelationKind,
+    RelationSubject, StateField, TransactionSide,
 };
 pub(crate) use lifecycle::require_lifecycle_exit;
 pub use lifecycle::{

@@ -173,6 +173,9 @@ impl FactId {
         match self {
             Self::FamilyCount { operation, .. }
             | Self::FamilyAmount { operation, .. }
+            | Self::StateField { operation, .. }
+            | Self::RequestedAnnouncementCycle { operation }
+            | Self::AnnouncementLead { operation, .. }
             | Self::InputOwners { operation, .. }
             | Self::Signers { operation }
             | Self::ProjectionPresent { operation, .. }
@@ -189,7 +192,14 @@ impl FactId {
         match self {
             Self::FamilyCount { .. } | Self::BoundValue { .. } => SemanticType::Count,
 
-            Self::FamilyAmount { .. } => SemanticType::Amount,
+            Self::FamilyAmount { .. }
+            | Self::StateField { field: crate::StateField::Omega | crate::StateField::YL | crate::StateField::YT | crate::StateField::Q, .. } => SemanticType::Amount,
+
+            Self::StateField { field: crate::StateField::Cycle, .. }
+            | Self::RequestedAnnouncementCycle { .. }
+            | Self::AnnouncementLead { .. } => SemanticType::Cycle,
+
+            Self::StateField { field: crate::StateField::Maturity, .. } => SemanticType::Maturity,
 
             Self::InputOwners { .. } | Self::Signers { .. } => SemanticType::OwnerSet,
 

@@ -557,6 +557,10 @@ fn derive_fact(
 
             Ok(SemanticValue::Amount(total))
         }
+        // These keys have no primitive carrier in this observation yet.
+        FactId::StateField { .. }
+        | FactId::RequestedAnnouncementCycle { .. }
+        | FactId::AnnouncementLead { .. } => Err(RealizationError::MissingFactValue(fact.clone())),
         FactId::InputOwners { object, .. } => required_owners(observation, *object)
             .map(SemanticValue::OwnerSet)
             .ok_or_else(|| RealizationError::UnderivableOwnerFact { fact: fact.clone() }),

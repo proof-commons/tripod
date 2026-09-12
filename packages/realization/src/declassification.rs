@@ -98,6 +98,8 @@ pub enum DisclosureReason {
     PublicState,
     PublicEvent,
     PublicInterface,
+    /// The announcement request publishes its cycle and uses public consensus lead inputs.
+    PublicRequest,
     PermissionlessConstructibility {
         operation: OperationId,
         relation: RelationId,
@@ -108,6 +110,25 @@ pub enum DisclosureReason {
     DeploymentPolicy {
         policy: String,
     },
+}
+
+/// Public facts whose visibility follows from their semantic ownership.
+fn public_fact_reason(fact: &FactId) -> Option<DisclosureReason> {
+    match fact {
+        FactId::StateField { .. } => Some(DisclosureReason::PublicState),
+        FactId::RequestedAnnouncementCycle { .. } | FactId::AnnouncementLead { .. } => {
+            Some(DisclosureReason::PublicRequest)
+        }
+        FactId::FamilyCount { .. }
+        | FactId::FamilyAmount { .. }
+        | FactId::InputOwners { .. }
+        | FactId::Signers { .. }
+        | FactId::ProjectionPresent { .. }
+        | FactId::BoundValue { .. }
+        | FactId::FamilyRecognized { .. }
+        | FactId::SponsorIsolated { .. }
+        | FactId::ProtocolSecretUsed { .. } => None,
+    }
 }
 
 /// Required-public and newly-disclosed fact analysis.
@@ -153,7 +174,12 @@ pub(crate) fn build_disclosure_graph(
         DiGraph::<DisclosureNode, DisclosureEdge, u32>::with_capacity(nodes.len(), edges.len());
     let mut node_by_id = BTreeMap::new();
 
-    for node_weight in nodes {
+    for mut node_weight in nodes {
+        if let DisclosureNode::Fact { id, initial_visibility } = &mut node_weight {
+            if public_fact_reason(id).is_some() {
+                *initial_visibility = InitialVisibility::Public;
+            }
+        }
         let id = node_weight.id();
         let node = graph.add_node(node_weight);
         node_by_id.insert(id, node);
@@ -191,6 +217,13 @@ pub(crate) fn disclosure_reasons_by_node(
     let mut reasons_by_node: BTreeMap<NodeIndex<u32>, BTreeSet<DisclosureReason>> = BTreeMap::new();
     let mut queue = VecDeque::new();
     let mut sorted_seeds = seeds.to_vec();
+    for node in graph.node_weights() {
+        if let DisclosureNode::Fact { id, .. } = node {
+            if let Some(reason) = public_fact_reason(id) {
+                sorted_seeds.push(DisclosureSeed { node: DisclosureNodeId::Fact(id.clone()), reason });
+            }
+        }
+    }
     sorted_seeds.sort();
 
     for seed in sorted_seeds {

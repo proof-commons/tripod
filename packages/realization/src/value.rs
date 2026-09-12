@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::{Count, ProtocolAmount};
+use crate::{Count, Cycle, Maturity, ProtocolAmount};
 
 /// Opaque owner identity used by realization observations.
 ///
@@ -22,6 +22,8 @@ pub enum SemanticType {
     Bool,
     Count,
     Amount,
+    Cycle,
+    Maturity,
     OwnerSet,
 }
 
@@ -31,6 +33,8 @@ pub enum SemanticValue {
     Bool(bool),
     Count(Count),
     Amount(ProtocolAmount),
+    Cycle(Cycle),
+    Maturity(Maturity),
     OwnerSet(BTreeSet<OwnerId>),
 }
 
@@ -42,6 +46,8 @@ impl SemanticValue {
             Self::Bool(_) => SemanticType::Bool,
             Self::Count(_) => SemanticType::Count,
             Self::Amount(_) => SemanticType::Amount,
+            Self::Cycle(_) => SemanticType::Cycle,
+            Self::Maturity(_) => SemanticType::Maturity,
             Self::OwnerSet(_) => SemanticType::OwnerSet,
         }
     }
@@ -69,6 +75,24 @@ impl SemanticValue {
     pub const fn as_amount(&self) -> Option<ProtocolAmount> {
         match self {
             Self::Amount(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    /// Read this value as a cycle ordinal.
+    #[must_use]
+    pub const fn as_cycle(&self) -> Option<Cycle> {
+        match self {
+            Self::Cycle(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    /// Read this value as a maturity status.
+    #[must_use]
+    pub const fn as_maturity(&self) -> Option<Maturity> {
+        match self {
+            Self::Maturity(value) => Some(*value),
             _ => None,
         }
     }

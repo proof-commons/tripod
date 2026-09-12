@@ -13,6 +13,52 @@ pub enum TransactionSide {
     Output,
 }
 
+/// One predecessor STATE metadata field read on the STATE input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum StateField {
+    /// Pool backing quantity.
+    Omega,
+    /// Live receipt quantity.
+    YL,
+    /// Time-locked receipt quantity.
+    YT,
+    /// Pending entitlement quantity.
+    Q,
+    /// Current cycle ordinal.
+    Cycle,
+    /// Maturity status.
+    Maturity,
+}
+
+impl StateField {
+    /// Every field, in declaration order.
+    pub const ALL: &'static [Self] = &[
+        Self::Omega, Self::YL, Self::YT, Self::Q, Self::Cycle, Self::Maturity,
+    ];
+
+    /// Return the stable kebab-case name of this field.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Omega => "omega",
+            Self::YL => "y-l",
+            Self::YT => "y-t",
+            Self::Q => "q",
+            Self::Cycle => "cycle",
+            Self::Maturity => "maturity",
+        }
+    }
+}
+
+/// One consensus lead input to an announcement observation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AnnouncementLeadBound {
+    /// Minimum announcement lead.
+    Minimum,
+    /// Maximum announcement lead.
+    Maximum,
+}
+
 /// Stable identity of one primitive semantic observation.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FactId {
@@ -28,6 +74,23 @@ pub enum FactId {
         operation: OperationId,
         side: TransactionSide,
         object: ObjectId,
+    },
+
+    /// One predecessor metadata field read on the STATE input.
+    /// The STATE family amount remains PID value, not metadata.
+    StateField {
+        operation: OperationId,
+        field: StateField,
+    },
+
+    /// Announced cycle carried by the public announcement request.
+    RequestedAnnouncementCycle { operation: OperationId },
+
+    /// Consensus lead input carried by the observation, not an
+    /// architecture-owned cardinality bound.
+    AnnouncementLead {
+        operation: OperationId,
+        bound: AnnouncementLeadBound,
     },
 
     /// Owners committed by one input family.
