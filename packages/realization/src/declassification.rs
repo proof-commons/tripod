@@ -179,10 +179,9 @@ pub(crate) fn build_disclosure_graph(
             id,
             initial_visibility,
         } = &mut node_weight
+            && public_fact_reason(id).is_some()
         {
-            if public_fact_reason(id).is_some() {
-                *initial_visibility = InitialVisibility::Public;
-            }
+            *initial_visibility = InitialVisibility::Public;
         }
         let id = node_weight.id();
         let node = graph.add_node(node_weight);
@@ -222,13 +221,13 @@ pub(crate) fn disclosure_reasons_by_node(
     let mut queue = VecDeque::new();
     let mut sorted_seeds = seeds.to_vec();
     for node in graph.node_weights() {
-        if let DisclosureNode::Fact { id, .. } = node {
-            if let Some(reason) = public_fact_reason(id) {
-                sorted_seeds.push(DisclosureSeed {
-                    node: DisclosureNodeId::Fact(id.clone()),
-                    reason,
-                });
-            }
+        if let DisclosureNode::Fact { id, .. } = node
+            && let Some(reason) = public_fact_reason(id)
+        {
+            sorted_seeds.push(DisclosureSeed {
+                node: DisclosureNodeId::Fact(id.clone()),
+                reason,
+            });
         }
     }
     sorted_seeds.sort();

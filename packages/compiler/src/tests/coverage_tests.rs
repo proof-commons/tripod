@@ -433,10 +433,6 @@ fn the_permissionless_path_is_covered_structurally_and_never_at_runtime() {
             matches!(
                 pilot.declaration(relation).relation,
                 Relation::PermissionlessAuthorization,
-                Relation::OperatorAuthorization,
-                Relation::Constructibility {
-                    class: ConstructibilityClass::Operator
-                },
             )
         })
         .expect("compact ASH is permissionless");
