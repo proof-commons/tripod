@@ -21,6 +21,7 @@ mod guide13_reproductions;
 mod layout_tests;
 mod lifecycle_tests;
 mod live_transfer_plan_tests;
+mod maturity_announcement_plan_tests;
 mod maturity_announcement_requirements_tests;
 mod operation_plan_tests;
 mod oracle_tests;

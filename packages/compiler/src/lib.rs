@@ -19,6 +19,7 @@ pub mod input;
 mod layout;
 mod lifecycle;
 pub mod live_transfer_plan;
+pub mod maturity_announcement_plan;
 mod maturity_announcement_requirements;
 pub mod operation_plan;
 mod placement;

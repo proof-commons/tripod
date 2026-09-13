@@ -1433,6 +1433,22 @@ pub enum CompileError {
     #[error("target plan evidence-role census is not the relation union")]
     TargetPlanEvidenceCensusMismatch,
 
+    /// A derived announcement projection does not satisfy its contract.
+    #[error("maturity-announcement contract defect: {clause:?}")]
+    MaturityAnnouncementContractDefect {
+        /// The failed semantic contract.
+        clause: crate::maturity_announcement_plan::MaturityAnnouncementClause,
+    },
+
+    /// An admitted STATE mode has no retained feasible factor.
+    #[error("no feasible announcement factor for {representation:?}")]
+    MissingMaturityAnnouncementRepresentation {
+        /// The operation whose factor is missing.
+        operation: OperationId,
+        /// The admitted representation without a complete factor.
+        representation: crate::maturity_announcement_plan::MaturityAnnouncementRepresentationPlan,
+    },
+
     /// A live-transfer contract clause the realization does not state as
     /// Guide-13 §5 fixes it.
     ///
