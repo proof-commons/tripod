@@ -1056,6 +1056,377 @@ fn no_internal_analysis_container_is_re_exported_by_the_live_transfer_plan() {
     }
 }
 
+// --- The public maturity-announcement target-operation plan ---
+
+use compiler::maturity_announcement_plan::{
+    ValidatedMaturityAnnouncementOperationPlan, plan_maturity_announcement_target_operation,
+};
+
+const MATURITY_ANNOUNCEMENT_SOURCE: &str = include_str!("../src/maturity_announcement_plan.rs");
+const ANNOUNCEMENT_OPERATIONS: [OperationId; 3] = [
+    OperationId::AnnounceMaturity,
+    OperationId::CompactAsh,
+    OperationId::TransferLive,
+];
+
+fn maturity_announcement_input(operations: &[OperationId]) -> compiler::BoundCompilerInput {
+    let realization_scope = realization::RealizationScope::from_operations(ANNOUNCEMENT_OPERATIONS)
+        .expect("announcement realization scope");
+    let realization = realization::derive(&architecture::ARCHITECTURE, realization_scope)
+        .expect("announcement realization");
+    let scope =
+        CompilationScope::from_operations(operations.iter().copied()).expect("compiler scope");
+
+    bind_input(
+        &architecture::ARCHITECTURE,
+        realization,
+        scope,
+        test_policy(),
+    )
+    .expect("bind input")
+}
+
+fn maturity_announcement_code() -> String {
+    MATURITY_ANNOUNCEMENT_SOURCE
+        .lines()
+        .filter(|line| {
+            let line = line.trim_start();
+            !(line.starts_with("//") || line.starts_with("///") || line.starts_with("//!"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn maturity_announcement_plan(
+    operations: &[OperationId],
+) -> ValidatedMaturityAnnouncementOperationPlan {
+    plan_maturity_announcement_target_operation(
+        &maturity_announcement_input(operations),
+        placement_limits(),
+    )
+    .expect("announcement plan")
+}
+
+#[test]
+fn the_maturity_announcement_plan_comes_only_from_a_completed_analysis() {
+    let plan = maturity_announcement_plan(&[OperationId::AnnounceMaturity]);
+
+    assert_eq!(plan.operation(), OperationId::AnnounceMaturity);
+    assert_eq!(plan.representations().count(), 2);
+    for projection in plan.representations() {
+        assert_eq!(projection.relations().count(), 26);
+        assert_eq!(projection.cases().count(), 2);
+        assert_eq!(projection.carriers().count(), 28);
+        assert_eq!(projection.layout().count(), 59);
+    }
+}
+
+#[test]
+fn an_incomplete_analysis_publishes_no_maturity_announcement_plan() {
+    let input = maturity_announcement_input(&[OperationId::AnnounceMaturity]);
+    let truncated = PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(1).expect("nonzero"),
+        std::num::NonZeroU64::new(1).expect("nonzero"),
+    );
+    let error = plan_maturity_announcement_target_operation(&input, truncated).unwrap_err();
+
+    assert_eq!(
+        error,
+        CompileError::PlacementSearchStateLimitExceeded { maximum: 1 },
+    );
+    assert_eq!(error.to_string(), "placement search exceeded 1 states");
+}
+
+#[test]
+fn a_scope_without_announcement_publishes_no_partial_plan() {
+    let input = maturity_announcement_input(&[OperationId::CompactAsh]);
+    let error =
+        plan_maturity_announcement_target_operation(&input, placement_limits()).unwrap_err();
+
+    assert_eq!(
+        error,
+        CompileError::TargetOperationOutOfScope {
+            operation: OperationId::AnnounceMaturity,
+        },
+    );
+    assert!(error.to_string().contains("out-of-scope"));
+}
+
+#[test]
+fn scope_permutations_and_equal_inputs_produce_equal_announcement_plans() {
+    let first = maturity_announcement_plan(&ANNOUNCEMENT_OPERATIONS);
+    let permuted = maturity_announcement_plan(&[
+        OperationId::TransferLive,
+        OperationId::AnnounceMaturity,
+        OperationId::CompactAsh,
+    ]);
+
+    assert_eq!(first, permuted);
+    assert_eq!(first, maturity_announcement_plan(&ANNOUNCEMENT_OPERATIONS),);
+}
+
+#[test]
+fn the_announcement_representation_and_clause_censuses_are_literal() {
+    use compiler::maturity_announcement_plan::{
+        MaturityAnnouncementClause as Clause, MaturityAnnouncementRepresentationPlan as Mode,
+    };
+    use realization::{Relation, RepresentationMode};
+
+    let input = maturity_announcement_input(&[OperationId::AnnounceMaturity]);
+    let plan = plan_maturity_announcement_target_operation(&input, placement_limits()).unwrap();
+    let approved = input
+        .realization()
+        .operation(OperationId::AnnounceMaturity)
+        .unwrap()
+        .relations
+        .iter()
+        .find_map(|row| match &row.relation {
+            Relation::Representation { object, allowed }
+                if *object == architecture::ObjectId::State =>
+            {
+                Some(allowed)
+            }
+            _ => None,
+        })
+        .expect("STATE representation declaration");
+
+    assert_eq!(Mode::ALL, [Mode::Explicit, Mode::PublicCommitted],);
+    assert_eq!(
+        plan.representation().admitted(),
+        &BTreeSet::from([Mode::Explicit, Mode::PublicCommitted]),
+    );
+    assert_eq!(
+        plan.representation().approved(),
+        &BTreeSet::from([
+            RepresentationMode::Explicit,
+            RepresentationMode::PublicCommitted,
+        ]),
+    );
+    assert_eq!(plan.representation().approved(), approved);
+    assert_eq!(
+        Clause::ALL,
+        [
+            Clause::Declaration,
+            Clause::ProtocolObject,
+            Clause::ProtocolCardinality,
+            Clause::ClassClosure,
+            Clause::OperatorAuthorization,
+            Clause::CanonicalDelta,
+            Clause::SponsorObject,
+            Clause::SponsorFlow,
+            Clause::SponsorIsolation,
+            Clause::SponsorEnvelope,
+            Clause::SubstrateConservation,
+            Clause::SponsorInputs,
+            Clause::SponsorChange,
+            Clause::RootPolicy,
+            Clause::CertificateProjection,
+            Clause::RepresentationApproval,
+            Clause::LifecycleExits,
+            Clause::PublicFacts,
+            Clause::Transition,
+        ],
+    );
+}
+
+#[test]
+fn the_announcement_lifecycle_closure_is_literal() {
+    let plan = maturity_announcement_plan(&[OperationId::AnnounceMaturity]);
+
+    assert_eq!(
+        plan.lifecycle().implemented().collect::<Vec<_>>(),
+        [OperationId::AnnounceMaturity],
+    );
+    assert_eq!(
+        plan.lifecycle().outstanding().collect::<Vec<_>>(),
+        [
+            OperationId::AdmitDeposits,
+            OperationId::Cycle,
+            OperationId::Redeem,
+            OperationId::ReceiptRelabel,
+            OperationId::Clear,
+        ],
+    );
+    assert!(!plan.lifecycle().release_complete());
+}
+
+#[test]
+fn the_announcement_state_closure_and_empty_canonical_projection_are_literal() {
+    use architecture::ObjectId;
+    use realization::{RelationId, RelationKind, RelationSubject, TransactionSide};
+
+    let plan = maturity_announcement_plan(&[OperationId::AnnounceMaturity]);
+    let relation = |side| {
+        RelationId::new(
+            OperationId::AnnounceMaturity,
+            RelationKind::AllowedObjectFamilies,
+            RelationSubject::TransactionSide { side },
+        )
+    };
+
+    assert_eq!(
+        plan.state().input_closure(),
+        &relation(TransactionSide::Input)
+    );
+    assert_eq!(
+        plan.state().output_closure(),
+        &relation(TransactionSide::Output)
+    );
+    assert_eq!(
+        plan.state().admitted(),
+        &BTreeSet::from([ObjectId::State, ObjectId::PlainLbtc,]),
+    );
+    assert_eq!(
+        plan.state().forbidden(),
+        &BTreeSet::from([
+            ObjectId::Resv,
+            ObjectId::Pace,
+            ObjectId::EntitlementAuthority,
+            ObjectId::DistributionAuthority,
+            ObjectId::ReceiptLive,
+            ObjectId::ReceiptTimeLocked,
+            ObjectId::DepositRequest,
+            ObjectId::DepositEntitlement,
+            ObjectId::DistributionControl,
+            ObjectId::DistributionVault,
+            ObjectId::Ash,
+            ObjectId::CpfpAnchor,
+        ]),
+    );
+    assert!(plan.canonical().expected().is_empty());
+}
+
+#[test]
+fn validated_announcement_types_have_no_public_construction_route() {
+    let code = maturity_announcement_code();
+
+    for prefix in ["pub fn new(", "pub const fn new(", "pub fn default("] {
+        assert!(
+            !code
+                .lines()
+                .map(str::trim_start)
+                .any(|line| line.starts_with(prefix))
+        );
+    }
+    for banned in ["impl Default for", "Builder", "builder"] {
+        assert!(
+            !code.contains(banned),
+            "validated plan must not expose {banned}"
+        );
+    }
+
+    let re_exports = MATURITY_ANNOUNCEMENT_SOURCE
+        .split("pub use crate::{")
+        .nth(1)
+        .and_then(|rest| rest.split("\n};").next())
+        .expect("the module's re-export block");
+    for container in [
+        "ScopedAnalyzedProgram",
+        "AnalyzedProofPlan",
+        "AnalyzedOperation",
+        "AnalyzedSource",
+        "RelationCaseRequirements",
+        "OperationPlacementAnalysis",
+        "PlacementCandidate",
+        "CoverageGraphProjection",
+        "PlanCoverageAnalysis",
+        "CompilerRelationAnalysis",
+    ] {
+        assert!(
+            !re_exports.contains(container),
+            "{container} must not be re-exported"
+        );
+    }
+}
+
+#[test]
+fn no_announcement_value_or_target_handle_reaches_the_public_surface() {
+    let plan = maturity_announcement_plan(&[OperationId::AnnounceMaturity]);
+    let names_sponsor_amount = |requirement: &LayoutRequirement| {
+        matches!(
+            requirement,
+            LayoutRequirement::MakeSourceAvailable { source, .. }
+                if matches!(
+                    source.operand.role(),
+                    OperandRole::ObjectFamilyAmount { object: ORDINARY_LBTC, .. },
+                )
+        )
+    };
+
+    for projection in plan.representations() {
+        assert!(!projection.layout().any(names_sponsor_amount));
+        assert!(projection.relations().all(|relation| {
+            relation
+                .source_requirements
+                .iter()
+                .chain(
+                    relation
+                        .cases
+                        .values()
+                        .flat_map(|case| &case.active_sources),
+                )
+                .all(|source| {
+                    !matches!(
+                        source.operand.role(),
+                        OperandRole::ObjectFamilyAmount {
+                            object: ORDINARY_LBTC,
+                            ..
+                        },
+                    )
+                })
+        }));
+    }
+
+    let code = maturity_announcement_code();
+    for banned in [
+        "digest",
+        "Digest",
+        "NodeIndex",
+        "EdgeIndex",
+        "petgraph",
+        "DiGraph",
+        "PlanHash",
+        "TransactionPosition",
+        "transaction_position",
+        "output_index",
+        "input_index",
+        "MetadataBytes",
+        "metadata_bytes",
+        "metadata_byte_count",
+        "METADATA_SIZE",
+        "SponsorAmount",
+        "sponsor_amount:",
+        "sponsor_amount(&self",
+        "PrivateKey",
+        "Blinder",
+        "target_encoding",
+        "codec_constant",
+    ] {
+        assert!(!code.contains(banned), "public plan surface names {banned}");
+    }
+}
+
+#[test]
+fn the_public_announcement_validator_accepts_every_derived_plan() {
+    for operations in [
+        &[OperationId::AnnounceMaturity][..],
+        &ANNOUNCEMENT_OPERATIONS[..],
+    ] {
+        let input = maturity_announcement_input(operations);
+        let plan = plan_maturity_announcement_target_operation(&input, placement_limits()).unwrap();
+
+        compiler::validate_maturity_announcement_plan(&plan, &input).unwrap();
+    }
+    let one = maturity_announcement_input(&[OperationId::AnnounceMaturity]);
+    let all = maturity_announcement_input(&ANNOUNCEMENT_OPERATIONS);
+    let plan = plan_maturity_announcement_target_operation(&one, placement_limits()).unwrap();
+
+    assert_eq!(
+        compiler::validate_maturity_announcement_plan(&plan, &all),
+        Err(CompileError::TargetPlanSourceMismatch),
+    );
+}
+
 #[test]
 fn announcement_requirement_vocabulary_is_public_without_a_validated_plan() {
     use compiler::{
