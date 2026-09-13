@@ -24,6 +24,8 @@ fn set_bound(constants: &mut Constants, bound: BoundId, value: usize) {
         BoundId::TransferInputMax => constants.transfer_input_max = value,
         BoundId::TransferOutputMax => constants.transfer_output_max = value,
         BoundId::FeeSponsorInputMax => constants.fee_sponsor_input_max = value,
+        BoundId::MaturityLeadMin => constants.min_maturity_lead = u64::try_from(value).unwrap(),
+        BoundId::MaturityLeadMax => constants.max_maturity_lead = u64::try_from(value).unwrap(),
     }
 }
 
@@ -145,6 +147,38 @@ fn global_invariant_enforces_every_architecture_bound_minimum() {
             Ok(()),
             "bound {:?} at its manifest minimum must pass the invariant",
             bound.id,
+        );
+    }
+}
+
+/// The architecture-keyed cycle magnitudes equal the model's announcement constants.
+#[test]
+fn architecture_keyed_announcement_leads_equal_model_constants() {
+    for (minimum, maximum) in [(10, 1000), (1, 1), (37, 509), (u64::MAX - 1, u64::MAX)] {
+        let mut constants = test_fixtures::constants();
+        constants.min_maturity_lead = minimum;
+        constants.max_maturity_lead = maximum;
+        validate_bound_conformance(&constants).unwrap();
+        for (id, expected) in [
+            (BoundId::MaturityLeadMin, minimum),
+            (BoundId::MaturityLeadMax, maximum),
+        ] {
+            assert_eq!(id.unit(), architecture::BoundUnit::Cycle);
+            assert_eq!(bound_magnitude(&constants, id), Ok(expected));
+            assert_eq!(bound_value(&constants, id), Err(Guard::BadConstant));
+        }
+    }
+}
+
+#[test]
+fn invalid_runtime_lead_pairs_are_rejected() {
+    for (minimum, maximum) in [(0, 1000), (1001, 1000)] {
+        let mut constants = test_fixtures::constants();
+        constants.min_maturity_lead = minimum;
+        constants.max_maturity_lead = maximum;
+        assert_eq!(
+            validate_bound_conformance(&constants),
+            Err(Guard::BadConstant)
         );
     }
 }

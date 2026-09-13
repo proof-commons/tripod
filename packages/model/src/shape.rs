@@ -189,14 +189,20 @@ pub struct ShapePolicy {
 // the typed manifest's operation input/output declarations, with
 // finite bounds resolved through the calibrated runtime constants.
 
-fn resolve_max_count(constants: &Constants, maximum: architecture::MaxCount) -> usize {
+fn resolve_max_count(
+    constants: &Constants,
+    maximum: architecture::MaxCount,
+) -> Result<usize, Guard> {
     match maximum {
-        architecture::MaxCount::Exact(value) => usize::from(value),
+        architecture::MaxCount::Exact(value) => Ok(usize::from(value)),
         architecture::MaxCount::Bound(bound) => crate::manifest::bound_value(constants, bound),
     }
 }
 
-pub(crate) fn shape_policy(constants: &Constants, branch: BranchKind) -> ShapePolicy {
+pub(crate) fn shape_policy(
+    constants: &Constants,
+    branch: BranchKind,
+) -> Result<ShapePolicy, Guard> {
     let spec = crate::manifest::operation_spec(branch);
 
     let mut allowed_inputs = BTreeSet::new();
@@ -213,7 +219,7 @@ pub(crate) fn shape_policy(constants: &Constants, branch: BranchKind) -> ShapePo
 
         allowed_inputs.insert(kind);
         min_inputs.insert(kind, usize::from(input.minimum));
-        max_inputs.insert(kind, resolve_max_count(constants, input.maximum));
+        max_inputs.insert(kind, resolve_max_count(constants, input.maximum)?);
     }
 
     for output in spec.outputs {
@@ -221,17 +227,17 @@ pub(crate) fn shape_policy(constants: &Constants, branch: BranchKind) -> ShapePo
 
         allowed_outputs.insert(kind);
         min_outputs.insert(kind, usize::from(output.minimum));
-        max_outputs.insert(kind, resolve_max_count(constants, output.maximum));
+        max_outputs.insert(kind, resolve_max_count(constants, output.maximum)?);
     }
 
-    ShapePolicy {
+    Ok(ShapePolicy {
         allowed_inputs,
         allowed_outputs,
         min_inputs,
         max_inputs,
         min_outputs,
         max_outputs,
-    }
+    })
 }
 
 // ´rule:verification:branch-shape-validation´
@@ -243,7 +249,7 @@ pub(crate) fn validate_branch_shape_precommit(
     outputs: &[PendingOutput],
     data_outputs: &[DataOutput],
 ) -> Result<(), Guard> {
-    let policy = shape_policy(&world.constants, branch);
+    let policy = shape_policy(&world.constants, branch)?;
 
     let mut input_counts: BTreeMap<ObjectKind, usize> = BTreeMap::new();
 

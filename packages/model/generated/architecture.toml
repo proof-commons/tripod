@@ -1,10 +1,10 @@
 publication_status = "final"
-architecture_schema_version = 17
+architecture_schema_version = 18
 realization_version = "0.6.0-dev"
 semantic_hash_algorithm = "sha256-canonical-json-v3"
-semantic_hash = "c1d0c6716317543c0e6d6376ec69995c5b40078449af5c9eda909d474249f6bb"
+semantic_hash = "5ddd15e3609382bf37418ff4cf7fd5fb1c21ddaceab34e38dde98cdfc0aa4c26"
 behavioural_hash_algorithm = "sha256-canonical-json-behavioural-v3"
-behavioural_hash = "756ea65ce3dc370e76ec70dc001231693facd58e53ebca315d549967f03cf206"
+behavioural_hash = "783eb6a803f6389c618d28720f583a4f20a8e773d62e7ceaf9c7afbd3a3bdf2b"
 
 [architecture]
 target_network = "liquid"
@@ -887,6 +887,7 @@ open_flows = [
     "reserve-carry",
 ]
 reads = [
+    "announcement-window",
     "cycle-issuance",
     "floor-phi",
 ]
@@ -1877,7 +1878,7 @@ id = "announce-maturity"
 kind = "covenant-branch"
 authorization = "operator"
 open_flows = ["fee-sponsor"]
-reads = []
+reads = ["announcement-window"]
 writes = []
 witnesses = [
     "native-fee-auction",
@@ -1888,7 +1889,11 @@ value_flows = [
     "owner-consented",
     "sponsor-envelope",
 ]
-bounds = ["FEE_SPONSOR_INPUT_MAX"]
+bounds = [
+    "FEE_SPONSOR_INPUT_MAX",
+    "MATURITY_LEAD_MAX",
+    "MATURITY_LEAD_MIN",
+]
 issuances = []
 canonical_deltas = []
 data_outputs = []
@@ -2058,6 +2063,27 @@ writers = []
 
 [[architecture.quantities.readers]]
 kind = "invariant-checker"
+
+[[architecture.quantities.readers]]
+kind = "external-auditor"
+
+[[architecture.quantities]]
+code = 9
+id = "announcement-window"
+kind = "derived"
+reads = [
+    "state.cycle",
+    "state.maturity",
+]
+writers = []
+
+[[architecture.quantities.readers]]
+kind = "operation"
+operation = "announce-maturity"
+
+[[architecture.quantities.readers]]
+kind = "operation"
+operation = "cycle"
 
 [[architecture.quantities.readers]]
 kind = "external-auditor"
@@ -2371,6 +2397,16 @@ requires_deployment_calibration = true
 code = 10
 id = "FEE_SPONSOR_INPUT_MAX"
 default_value = 16
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 11
+id = "MATURITY_LEAD_MIN"
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 12
+id = "MATURITY_LEAD_MAX"
 requires_deployment_calibration = true
 
 [[architecture.amount_limits]]

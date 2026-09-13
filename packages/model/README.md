@@ -260,8 +260,11 @@ unchanged by construction.
 - `validate_bound_conformance(&Constants) -> Result<(), Guard>` and
   `validate_profile_bound_conformance(..)` — finite bounds meet the manifest
   minima (the first is what `genesis` calls).
-- `bound_value(&Constants, architecture::BoundId) -> usize`,
-  `declared_asset(Asset) -> Option<architecture::AssetId>`,
+- `bound_magnitude(&Constants, architecture::BoundId) -> Result<u64, Guard>`
+  resolves a magnitude in its declared unit;
+  `bound_value(&Constants, architecture::BoundId) -> Result<usize, Guard>`
+  resolves counts and rejects cycle bounds.
+- `declared_asset(Asset) -> Option<architecture::AssetId>`,
   `asset_of(architecture::AssetId) -> Asset`,
   `branch_operation(BranchKind) -> architecture::OperationId`,
   `operation_branch(architecture::OperationId) -> BranchKind` — the

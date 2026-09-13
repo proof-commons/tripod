@@ -902,7 +902,9 @@ fn announcement_declassification_matches_model_owned_artifact_row() {
         .into_iter()
         .find(|row| row.operation == operation.as_str())
         .unwrap();
-    assert_eq!(row.declassifies, [] as [std::string::String; 0]);
+    // Architecture quantity reads are exported as public read obligations;
+    // they do not add newly disclosed realization facts.
+    assert_eq!(row.declassifies, ["read:announcement-window"]);
 }
 
 #[test]

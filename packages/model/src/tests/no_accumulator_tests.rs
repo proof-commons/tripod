@@ -99,7 +99,7 @@ fn full_operation_manifest_conformance() {
         // Every declared finite bound resolves to a nonzero runtime
         // value.
         for bound in operation.bounds {
-            assert!(bound_value(&world.constants, *bound) > 0);
+            assert!(bound_magnitude(&world.constants, *bound).unwrap() > 0);
         }
 
         // Input authorization legality against the object schemas:
@@ -140,13 +140,14 @@ fn manifest_derived_shape_policy_matches_all_branches() {
 
     let resolve = |maximum: architecture::MaxCount| match maximum {
         architecture::MaxCount::Exact(value) => usize::from(value),
-        architecture::MaxCount::Bound(bound) => bound_value(&world.constants, bound),
+        architecture::MaxCount::Bound(bound) => bound_value(&world.constants, bound).unwrap(),
     };
 
     for operation in architecture::OperationId::ALL {
         let spec = ARCHITECTURE.operation(*operation).unwrap();
 
-        let policy = crate::shape::shape_policy(&world.constants, operation_branch(*operation));
+        let policy =
+            crate::shape::shape_policy(&world.constants, operation_branch(*operation)).unwrap();
 
         assert_eq!(policy.allowed_inputs.len(), spec.inputs.len());
         assert_eq!(policy.allowed_outputs.len(), spec.outputs.len());
@@ -209,7 +210,7 @@ fn manifest_derived_shape_policy_matches_all_branches() {
     }
 
     // Representative pins against the frozen v13 shape expectations.
-    let cycle = crate::shape::shape_policy(&world.constants, BranchKind::Cycle);
+    let cycle = crate::shape::shape_policy(&world.constants, BranchKind::Cycle).unwrap();
 
     assert!(cycle.allowed_outputs.contains(&ObjectKind::CpfpAnchor));
     assert_eq!(cycle.max_outputs.get(&ObjectKind::ReceiptLive), Some(&1));
@@ -220,7 +221,8 @@ fn manifest_derived_shape_policy_matches_all_branches() {
         Some(&world.constants.fee_sponsor_input_max),
     );
 
-    let settle = crate::shape::shape_policy(&world.constants, BranchKind::SettleDistribution);
+    let settle =
+        crate::shape::shape_policy(&world.constants, BranchKind::SettleDistribution).unwrap();
 
     assert_eq!(
         settle.max_inputs.get(&ObjectKind::DepositEntitlement),
@@ -232,7 +234,7 @@ fn manifest_derived_shape_policy_matches_all_branches() {
     );
     assert!(!settle.allowed_inputs.contains(&ObjectKind::State));
 
-    let burn = crate::shape::shape_policy(&world.constants, BranchKind::Burn);
+    let burn = crate::shape::shape_policy(&world.constants, BranchKind::Burn).unwrap();
 
     assert_eq!(burn.min_outputs.get(&ObjectKind::Ash), Some(&1));
     assert_eq!(burn.max_outputs.get(&ObjectKind::Ash), Some(&1));
@@ -242,7 +244,7 @@ fn manifest_derived_shape_policy_matches_all_branches() {
         Some(&world.constants.burn_input_max),
     );
 
-    let compact = crate::shape::shape_policy(&world.constants, BranchKind::CompactAsh);
+    let compact = crate::shape::shape_policy(&world.constants, BranchKind::CompactAsh).unwrap();
 
     assert_eq!(compact.min_inputs.get(&ObjectKind::Ash), Some(&2));
 }
@@ -495,19 +497,13 @@ fn manifest_data_outputs_match_real_transitions() {
     }
 }
 
-#[test]
-fn runtime_constants_match_a_calibrated_deployment_profile() {
-    // Constants built from the profile's calibrated values conform;
-    // any divergence between published calibration evidence and the
-    // running limits is rejected.
-    let world = test_fixtures::world();
-
+fn bound_profile(world: &World) -> architecture::DeploymentProfile {
     let calibrated_bounds = ARCHITECTURE
         .bounds
         .iter()
         .map(|bound| architecture::BoundCalibration {
             bound: bound.id,
-            value: u64::try_from(bound_value(&world.constants, bound.id)).unwrap(),
+            value: bound_magnitude(&world.constants, bound.id).unwrap(),
             evidence_hash: [0xA1; 32],
             script_bundle_hash: [0xA2; 32],
             measured_weight: 150_000,
@@ -516,7 +512,7 @@ fn runtime_constants_match_a_calibrated_deployment_profile() {
         })
         .collect::<Vec<_>>();
 
-    let profile = architecture::DeploymentProfile {
+    architecture::DeploymentProfile {
         schema_version: architecture::DEPLOYMENT_PROFILE_SCHEMA_VERSION,
         status: architecture::PublicationStatus::Draft,
         architecture_semantic_hash: architecture::semantic_hash(
@@ -549,7 +545,13 @@ fn runtime_constants_match_a_calibrated_deployment_profile() {
             independent_receipt_accounting_report_hash: [0; 32],
             script_integration_report_hash: [0; 32],
         },
-    };
+    }
+}
+
+#[test]
+fn runtime_constants_match_a_calibrated_deployment_profile() {
+    let world = test_fixtures::world();
+    let profile = bound_profile(&world);
 
     validate_profile_bound_conformance(&world.constants, &profile).unwrap();
 
@@ -571,11 +573,9 @@ fn runtime_constants_match_a_calibrated_deployment_profile() {
     // declared value: a matching runtime passes, a diverging runtime
     // fails, and a fixed bound with no declared value is a defect,
     // never a free runtime constant.
-    let runtime_burn_input_max = u64::try_from(crate::manifest::bound_value(
-        &world.constants,
-        architecture::BoundId::BurnInputMax,
-    ))
-    .unwrap();
+    let runtime_burn_input_max =
+        crate::manifest::bound_magnitude(&world.constants, architecture::BoundId::BurnInputMax)
+            .unwrap();
 
     let fixed_bound = |default_value| {
         [architecture::BoundSpec {
@@ -613,4 +613,49 @@ fn runtime_constants_match_a_calibrated_deployment_profile() {
     // A draft profile with no verified dependencies is never a
     // deployment release, even though the abstract model is green.
     assert!(architecture::validate_deployment_profile_structure(&ARCHITECTURE, &profile).is_err());
+}
+
+#[test]
+fn either_announcement_lead_must_equal_its_calibrated_authority() {
+    let world = test_fixtures::world();
+    for id in [
+        architecture::BoundId::MaturityLeadMin,
+        architecture::BoundId::MaturityLeadMax,
+    ] {
+        let mut profile = bound_profile(&world);
+        profile
+            .calibrated_bounds
+            .iter_mut()
+            .find(|entry| entry.bound == id)
+            .unwrap()
+            .value += 1;
+        assert_eq!(
+            validate_profile_bound_conformance(&world.constants, &profile),
+            Err(Guard::BadConstant)
+        );
+        profile.calibrated_bounds.retain(|entry| entry.bound != id);
+        assert_eq!(
+            validate_profile_bound_conformance(&world.constants, &profile),
+            Err(Guard::BadConstant)
+        );
+    }
+}
+
+#[test]
+fn announcement_window_reads_state_without_residue_or_accumulator_writers() {
+    let quantity = ARCHITECTURE
+        .quantity(architecture::QuantityId::AnnouncementWindow)
+        .unwrap();
+    assert_eq!(quantity.kind, architecture::QuantityKind::Derived);
+    assert_eq!(
+        quantity.reads,
+        &[
+            architecture::DataId::StateCycle,
+            architecture::DataId::StateMaturity
+        ]
+    );
+    assert_eq!(quantity.writers, []);
+    assert!(!quantity_reads_residue(QuantityId::AnnouncementWindow));
+    assert_residue_reader_policy().unwrap();
+    validate_architecture_conformance().unwrap();
 }

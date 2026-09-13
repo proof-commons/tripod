@@ -205,6 +205,7 @@ pub enum DeploymentError {
     DuplicateBoundCalibration(BoundId),
     UnexpectedBoundCalibration(BoundId),
     ZeroCalibratedValue(BoundId),
+    InvalidMaturityLeadPair,
     CalibratedValueBelowManifestMinimum(BoundId),
     MissingBoundEvidence(BoundId),
     BoundCalibrationBundleMismatch(BoundId),
@@ -263,6 +264,8 @@ impl fmt::Display for DeploymentError {
             Self::ZeroCalibratedValue(bound) => {
                 write!(formatter, "zero calibrated value for bound {bound}")
             }
+            Self::InvalidMaturityLeadPair => formatter
+                .write_str("maturity lead minimum must be positive and no greater than maximum"),
             Self::CalibratedValueBelowManifestMinimum(bound) => {
                 write!(formatter, "calibrated {bound} below a manifest minimum")
             }
@@ -428,6 +431,7 @@ pub fn validate_deployment_profile_structure(
     }
 
     validate_bound_calibrations(architecture, profile, &mut errors);
+    validate_maturity_lead_pair(profile, &mut errors);
     validate_dependency_evidence(architecture, profile, &mut errors);
     validate_artifact_hashes(profile, &mut errors);
     validate_test_evidence(profile, &mut errors);
@@ -436,6 +440,23 @@ pub fn validate_deployment_profile_structure(
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+fn validate_maturity_lead_pair(profile: &DeploymentProfile, errors: &mut Vec<DeploymentError>) {
+    let value = |id| {
+        profile
+            .calibrated_bounds
+            .iter()
+            .find(|entry| entry.bound == id)
+            .map(|entry| entry.value)
+    };
+    if let (Some(minimum), Some(maximum)) = (
+        value(BoundId::MaturityLeadMin),
+        value(BoundId::MaturityLeadMax),
+    ) && (minimum == 0 || minimum > maximum)
+    {
+        errors.push(DeploymentError::InvalidMaturityLeadPair);
     }
 }
 

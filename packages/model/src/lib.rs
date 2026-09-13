@@ -109,9 +109,9 @@ pub use maintenance::{
     maintenance_phase_potential, next_model_order,
 };
 pub use manifest::{
-    assert_no_attestation_singleton, asset_of, bound_value, branch_operation, declared_asset,
-    operation_branch, validate_architecture_conformance, validate_bound_conformance,
-    validate_profile_bound_conformance,
+    assert_no_attestation_singleton, asset_of, bound_magnitude, bound_value, branch_operation,
+    declared_asset, operation_branch, validate_architecture_conformance,
+    validate_bound_conformance, validate_profile_bound_conformance,
 };
 pub use object::{DataOutput, Meta, Tag, Utxo};
 pub use ops::{

@@ -214,6 +214,20 @@ procedure requires, in the order
   body fields — retiring its predecessor; the
   behavioural hash was unchanged across the same commit, witnessing that the
   denotation did not move.
+  Announcement-bound completion (2026-09-13): both architecture values move
+  with the body — two calibrated bound rows and the announcement's bound
+  references — under the unchanged recipes. The realized window check in
+  `packages/realization/src/state.rs` and the model's constants already required
+  these bounds. The finite presentation is completed; denotation does not move
+  and none of the versioning decision procedure's verdicts fires. The deciding
+  witness is `architecture_keyed_announcement_leads_equal_model_constants` in
+  `packages/model/src/tests/bound_conformance_tests.rs`.
+  The data census also names the cycle and maturity fields already used by the
+  realized law; the derived announcement-window quantity and mirrored operation
+  reads complete the presentation without a decision-procedure verdict firing.
+- **Value:** the `semantic_hash` field of
+  `packages/model/generated/architecture.json` at this landing, mirrored in
+  the realization document's masthead.
 - **Non-claims:** not authenticity, not deployment readiness, not target
   correctness, and not a substitute for validation.
 - **Status:** active.
@@ -232,8 +246,9 @@ procedure requires, in the order
   `packages/architecture/src/tests/versioning_gate_tests.rs`. That test is the
   gate: the hash moving while the realization version is unchanged fails the
   build.
-- **Decision:** whether a change moved the denotation. Only a change of
-  denotation may move the behavioural hash.
+- **Decision:** whether a change moved the denotation. A changed measurement
+  requires a denotation record distinguishing a completed finite presentation
+  from a changed law.
 - **Class:** semantic, over a projection rather than the whole export. Its
   completeness is claimed over the behavioural projection alone, which is why
   it is not a second architecture identity.
@@ -247,6 +262,21 @@ procedure requires, in the order
 - **Migration:** the gate is pinned per algorithm. Two earlier algorithms are
   retired, each recorded in the gate test with its pinned release value and the
   reason it was replaced, so no published value is silently redefined.
+  Announcement-bound completion (2026-09-13): both architecture values move
+  with the body — two calibrated bound rows and the announcement's bound
+  references — under the unchanged recipes. The realized window check in
+  `packages/realization/src/state.rs` and the model's constants already required
+  these bounds. The finite presentation is completed; denotation does not move
+  and none of the versioning decision procedure's verdicts fires. The deciding
+  witness is `architecture_keyed_announcement_leads_equal_model_constants` in
+  `packages/model/src/tests/bound_conformance_tests.rs`.
+  The data census also names the cycle and maturity fields already used by the
+  realized law; the derived announcement-window quantity and mirrored operation
+  reads complete the presentation without a decision-procedure verdict firing.
+- **Value:** the `behavioural_hash` field of
+  `packages/model/generated/architecture.json` at this landing, mirrored in
+  the realization document's masthead and pinned in
+  `packages/architecture/src/tests/versioning_gate_tests.rs`.
 - **Non-claims:** not the complete publication bytes, and not a second general
   architecture identity. It must not be repeated through future artifacts as
   though it identified the architecture.

@@ -385,3 +385,153 @@ fn duplicate_data_output_declaration_is_rejected() {
         reason: "duplicate data-output declaration",
     }));
 }
+
+#[test]
+fn public_bound_units_and_announcement_census() {
+    assert_eq!(BoundId::ALL.len(), 12);
+    assert_eq!(
+        BoundId::ALL
+            .iter()
+            .filter(|id| id.unit() == BoundUnit::Count)
+            .count(),
+        10
+    );
+    for (id, code, name) in [
+        (BoundId::MaturityLeadMin, 11, "MATURITY_LEAD_MIN"),
+        (BoundId::MaturityLeadMax, 12, "MATURITY_LEAD_MAX"),
+    ] {
+        assert_eq!(id.code(), code);
+        assert_eq!(id.as_str(), name);
+        assert_eq!(id.unit(), BoundUnit::Cycle);
+        let bound = ARCHITECTURE.bound(id).unwrap();
+        assert!(bound.requires_deployment_calibration);
+        assert_eq!(bound.default_value, None);
+    }
+    assert_eq!(
+        ARCHITECTURE
+            .operation(OperationId::AnnounceMaturity)
+            .unwrap()
+            .bounds,
+        &[
+            BoundId::FeeSponsorInputMax,
+            BoundId::MaturityLeadMin,
+            BoundId::MaturityLeadMax
+        ]
+    );
+}
+
+#[test]
+fn cardinalities_reject_cycle_bounds() {
+    for bound in [BoundId::MaturityLeadMin, BoundId::MaturityLeadMax] {
+        let mut architecture = ARCHITECTURE;
+        let mut operations = architecture.operations.to_vec();
+        let operation = operations
+            .iter_mut()
+            .find(|op| op.id == OperationId::AnnounceMaturity)
+            .unwrap();
+        let mut inputs = operation.inputs.to_vec();
+        inputs[0].maximum = MaxCount::Bound(bound);
+        operation.inputs = inputs.leak();
+        architecture.operations = operations.leak();
+        let errors = validate_draft(&architecture).unwrap_err();
+        assert!(errors.contains(&ManifestError::InvalidOperation {
+            operation: OperationId::AnnounceMaturity,
+            reason: "cardinality maximum requires a count bound",
+        }));
+    }
+}
+
+#[test]
+fn cycle_bounds_require_calibration_without_defaults() {
+    for id in [BoundId::MaturityLeadMin, BoundId::MaturityLeadMax] {
+        for (calibrated, default) in [(false, None), (false, Some(10)), (true, Some(10))] {
+            let mut architecture = ARCHITECTURE;
+            let mut bounds = architecture.bounds.to_vec();
+            let bound = bounds.iter_mut().find(|bound| bound.id == id).unwrap();
+            bound.requires_deployment_calibration = calibrated;
+            bound.default_value = default;
+            architecture.bounds = bounds.leak();
+            assert!(validate_draft(&architecture).unwrap_err().contains(
+                &ManifestError::InvalidBound {
+                    bound: id,
+                    reason: "cycle lead bounds require calibration without a draft default",
+                }
+            ));
+        }
+    }
+}
+
+#[test]
+fn announcement_window_names_both_state_data_sources_and_mirrored_readers() {
+    assert_eq!(DataId::StateCycle.code(), 11);
+    assert_eq!(DataId::StateMaturity.code(), 12);
+    assert_eq!(DataId::StateCycle.as_str(), "state.cycle");
+    assert_eq!(DataId::StateMaturity.as_str(), "state.maturity");
+    assert_eq!(QuantityId::AnnouncementWindow.code(), 9);
+    assert_eq!(
+        QuantityId::AnnouncementWindow.as_str(),
+        "announcement-window"
+    );
+    let quantity = ARCHITECTURE
+        .quantity(QuantityId::AnnouncementWindow)
+        .unwrap();
+    assert_eq!(quantity.kind, QuantityKind::Derived);
+    assert_eq!(quantity.reads, &[DataId::StateCycle, DataId::StateMaturity]);
+    assert_eq!(
+        quantity.readers,
+        &[
+            ReaderId::Operation(OperationId::AnnounceMaturity),
+            ReaderId::Operation(OperationId::Cycle),
+            ReaderId::ExternalAuditor,
+        ]
+    );
+    assert_eq!(quantity.writers, []);
+    for operation in [OperationId::AnnounceMaturity, OperationId::Cycle] {
+        assert!(
+            ARCHITECTURE
+                .operation(operation)
+                .unwrap()
+                .reads
+                .contains(&quantity.id)
+        );
+    }
+    validate_draft(&ARCHITECTURE).unwrap();
+}
+
+#[test]
+fn announcement_window_operation_readers_require_operation_side_reads() {
+    for id in [OperationId::AnnounceMaturity, OperationId::Cycle] {
+        let mut architecture = ARCHITECTURE;
+        let mut operations = architecture.operations.to_vec();
+        let operation = operations
+            .iter_mut()
+            .find(|operation| operation.id == id)
+            .unwrap();
+        operation.reads = operation
+            .reads
+            .iter()
+            .copied()
+            .filter(|quantity| *quantity != QuantityId::AnnouncementWindow)
+            .collect::<Vec<_>>()
+            .leak();
+        architecture.operations = operations.leak();
+        let errors = validate_draft(&architecture).unwrap_err();
+        assert!(errors.contains(&ManifestError::InvalidQuantity {
+            quantity: QuantityId::AnnouncementWindow,
+            reason: "operation reader does not declare the read",
+        }));
+    }
+}
+
+#[test]
+fn unused_primitive_data_names_are_not_a_quantity_census_error() {
+    let mut architecture = ARCHITECTURE;
+    let mut quantities = architecture.quantities.to_vec();
+    quantities
+        .iter_mut()
+        .find(|quantity| quantity.id == QuantityId::AnnouncementWindow)
+        .unwrap()
+        .reads = &[];
+    architecture.quantities = quantities.leak();
+    validate_draft(&architecture).unwrap();
+}

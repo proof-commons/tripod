@@ -1190,7 +1190,7 @@ pub fn validate_announce_maturity_architecture(
         return mismatch_announcement(ArchitectureMismatchField::Issuances);
     }
 
-    if !operation.reads.is_empty() {
+    if operation.reads != [architecture::QuantityId::AnnouncementWindow] {
         return mismatch_announcement(ArchitectureMismatchField::Reads);
     }
 
@@ -1279,7 +1279,11 @@ fn validate_announcement_policies(
     operation: &architecture::OperationSpec,
 ) -> Result<(), RealizationError> {
     if operation.bounds.iter().copied().collect::<BTreeSet<_>>()
-        != BTreeSet::from([BoundId::FeeSponsorInputMax])
+        != BTreeSet::from([
+            BoundId::FeeSponsorInputMax,
+            BoundId::MaturityLeadMin,
+            BoundId::MaturityLeadMax,
+        ])
     {
         return mismatch_announcement(ArchitectureMismatchField::Bounds);
     }

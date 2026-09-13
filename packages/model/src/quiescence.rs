@@ -36,6 +36,7 @@ pub enum QuantityId {
     RedemptionPayout,
     CycleIssuance,
     AttestationDelta,
+    AnnouncementWindow,
     InvariantCheck,
     ExternalAudit,
 }
@@ -56,6 +57,7 @@ pub fn assert_residue_reader_policy() -> Result<(), Guard> {
         QuantityId::RedemptionPayout,
         QuantityId::CycleIssuance,
         QuantityId::AttestationDelta,
+        QuantityId::AnnouncementWindow,
     ] {
         if quantity_reads_residue(quantity) {
             return Err(Guard::BadAuthorization);

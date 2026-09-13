@@ -6,7 +6,9 @@
     "operation": "admit-deposits"
   },
   {
-    "declassifies": [],
+    "declassifies": [
+      "read:announcement-window"
+    ],
     "operation": "announce-maturity"
   },
   {
@@ -40,6 +42,7 @@
     "declassifies": [
       "issuance:DIST_CTL:positive-cycle-principal",
       "issuance:U:positive-cycle-issuance",
+      "read:announcement-window",
       "read:cycle-issuance",
       "read:floor-phi"
     ],

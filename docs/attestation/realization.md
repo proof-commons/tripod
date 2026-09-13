@@ -2,7 +2,7 @@
 
 **An Elements/Liquid covenant realizing the attestation contract: a reserve-backed, two-class, conserved, burnable claim — specified as a typed architecture manifest, a conformance contract of invariants and oracle obligations, and a translation discipline for reaching script.**
 
-*The realization document of the* Attestation *specification. Self-contained, with one declared upward dependency: the abstract object it enforces is defined in* Attestation *(**v1.0.0**), cited throughout by ``[A-...]`` anchors under the consumer prefix `A-`. The dependency is machine-checked, not prose — the attached manifest's document block binds the specification version, and release validation refuses an unpinned anchor set (`rem:overview:anchor-pin`). The manifest itself —* `architecture.toml`*, architecture schema 17, semantic hash* `c1d0c6716317543c0e6d6376ec69995c5b40078449af5c9eda909d474249f6bb`*, behavioural hash* `756ea65ce3dc370e76ec70dc001231693facd58e53ebca315d549967f03cf206` *— is attached as the closing appendix (`app:realization:architecture`) and is authoritative on every enumerated fact.*
+*The realization document of the* Attestation *specification. Self-contained, with one declared upward dependency: the abstract object it enforces is defined in* Attestation *(**v1.0.0**), cited throughout by ``[A-...]`` anchors under the consumer prefix `A-`. The dependency is machine-checked, not prose — the attached manifest's document block binds the specification version, and release validation refuses an unpinned anchor set (`rem:overview:anchor-pin`). The manifest itself —* `architecture.toml`*, architecture schema 18, semantic hash* `5ddd15e3609382bf37418ff4cf7fd5fb1c21ddaceab34e38dde98cdfc0aa4c26`*, behavioural hash* `783eb6a803f6389c618d28720f583a4f20a8e773d62e7ceaf9c7afbd3a3bdf2b` *— is attached as the closing appendix (`app:realization:architecture`) and is authoritative on every enumerated fact.*
 
 > **Release envelope.** The attached manifest carries `publication_status = "final"` and `realization_version = "0.6.0-dev"` — the tracked binding of (`def:versioning:denotation-law`), which moves with the compiler line's minor and signals nothing about content; the behavioural hash printed above is the denotation's sole stability witness. The semantic hash printed above is the *release* hash, minted at the pin ceremony that set the specification anchor-set hash (`8a7ce765d33c08ee9e5132053a8308edec46d9e192128eb076e257eabbc16e2f`) for the specification's v1.0.0 release. The prior release identities were re-measured, not redefined: the ceremony renamed two anchor names with the specification's own-division label area, the retired anchor-set value was reproduced before the new one was taken, and the behavioural hash — unchanged across the ceremony — witnesses that the denotation did not move. The earlier recipe migration that domain-separated both identities is recorded in ADR-021.
 
@@ -339,7 +339,7 @@ The appendix (`app:realization:architecture`) is a typed declaration, generated 
 | `clauses` | `code, id` | the eleven invariant clauses, exported so the clause table of (`sec:invariant:clauses`) is generated, never re-typed |
 | `dependencies` | `code, id, verification_required, rationale` | the standing `{verify}` surface (`sec:trust:verify`) — a *requirement* for evidence, never a completed status |
 | `decisions` | `code, id, status, rationale` | the seven closed architecture decisions with recorded rationale (`sec:trust:decisions`) |
-| `bounds` | `code, id, default_value, requires_deployment_calibration` | the ten finite batch/script bounds; every `default_value` is a **calibration placeholder**, a draft default, never a shipped constant |
+| `bounds` | `code, id, default_value, requires_deployment_calibration` | the twelve finite bounds; any `default_value` is a **calibration placeholder**, a draft default, never a shipped constant |
 | `amount_limits` | `code, id, asset, value, unit, rationale` | fixed protocol maxima; presently one, the active-backing cap (`trap:domains:active-backing`) |
 | `tags` | `code, id, participates_in_attestation` | the six domain tags (`rem:architecture:tag-register`); exactly one participates |
 | evidence tables | `input_authorization_evidence`, `operation_authorization_evidence` | generated: the evidence class backing each authorization mode at model, compiler, and deployment layers (`sec:realization:authorization`) |
@@ -2152,12 +2152,12 @@ The complete `architecture.toml` is attached here **verbatim**. It is architectu
 
 ```toml
 publication_status = "final"
-architecture_schema_version = 17
+architecture_schema_version = 18
 realization_version = "0.6.0-dev"
 semantic_hash_algorithm = "sha256-canonical-json-v3"
-semantic_hash = "c1d0c6716317543c0e6d6376ec69995c5b40078449af5c9eda909d474249f6bb"
+semantic_hash = "5ddd15e3609382bf37418ff4cf7fd5fb1c21ddaceab34e38dde98cdfc0aa4c26"
 behavioural_hash_algorithm = "sha256-canonical-json-behavioural-v3"
-behavioural_hash = "756ea65ce3dc370e76ec70dc001231693facd58e53ebca315d549967f03cf206"
+behavioural_hash = "783eb6a803f6389c618d28720f583a4f20a8e773d62e7ceaf9c7afbd3a3bdf2b"
 
 [architecture]
 target_network = "liquid"
@@ -3040,6 +3040,7 @@ open_flows = [
     "reserve-carry",
 ]
 reads = [
+    "announcement-window",
     "cycle-issuance",
     "floor-phi",
 ]
@@ -4030,7 +4031,7 @@ id = "announce-maturity"
 kind = "covenant-branch"
 authorization = "operator"
 open_flows = ["fee-sponsor"]
-reads = []
+reads = ["announcement-window"]
 writes = []
 witnesses = [
     "native-fee-auction",
@@ -4041,7 +4042,11 @@ value_flows = [
     "owner-consented",
     "sponsor-envelope",
 ]
-bounds = ["FEE_SPONSOR_INPUT_MAX"]
+bounds = [
+    "FEE_SPONSOR_INPUT_MAX",
+    "MATURITY_LEAD_MAX",
+    "MATURITY_LEAD_MIN",
+]
 issuances = []
 canonical_deltas = []
 data_outputs = []
@@ -4211,6 +4216,27 @@ writers = []
 
 [[architecture.quantities.readers]]
 kind = "invariant-checker"
+
+[[architecture.quantities.readers]]
+kind = "external-auditor"
+
+[[architecture.quantities]]
+code = 9
+id = "announcement-window"
+kind = "derived"
+reads = [
+    "state.cycle",
+    "state.maturity",
+]
+writers = []
+
+[[architecture.quantities.readers]]
+kind = "operation"
+operation = "announce-maturity"
+
+[[architecture.quantities.readers]]
+kind = "operation"
+operation = "cycle"
 
 [[architecture.quantities.readers]]
 kind = "external-auditor"
@@ -4524,6 +4550,16 @@ requires_deployment_calibration = true
 code = 10
 id = "FEE_SPONSOR_INPUT_MAX"
 default_value = 16
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 11
+id = "MATURITY_LEAD_MIN"
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 12
+id = "MATURITY_LEAD_MAX"
 requires_deployment_calibration = true
 
 [[architecture.amount_limits]]

@@ -423,3 +423,36 @@ fn state_family_amount_remains_distinct_from_metadata() {
         assert_ne!(family, state_fact(*field));
     }
 }
+
+#[test]
+fn state_fields_resolve_to_distinct_architecture_data_identifiers() {
+    use crate::StateField;
+    use architecture::{ARCHITECTURE, DataId, QuantityId};
+    let expected = [
+        DataId::StateOmega,
+        DataId::StateYLive,
+        DataId::StateYTimeLocked,
+        DataId::StateQ,
+        DataId::StateCycle,
+        DataId::StateMaturity,
+    ];
+    let actual = StateField::ALL
+        .iter()
+        .map(|field| field.data_id())
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
+    assert_eq!(actual.iter().copied().collect::<BTreeSet<_>>().len(), 6);
+    for id in [QuantityId::Floor, QuantityId::RedemptionPayout] {
+        let quantity = ARCHITECTURE.quantity(id).unwrap();
+        assert_eq!(quantity.reads, &expected[..3]);
+    }
+    let issuance = ARCHITECTURE.quantity(QuantityId::CycleIssuance).unwrap();
+    assert_eq!(
+        issuance.reads.iter().copied().collect::<BTreeSet<_>>(),
+        expected[..4].iter().copied().collect::<BTreeSet<_>>()
+    );
+    let window = ARCHITECTURE
+        .quantity(QuantityId::AnnouncementWindow)
+        .unwrap();
+    assert_eq!(window.reads, &expected[4..]);
+}

@@ -4,7 +4,7 @@
 //! source locations, declaration ordinals, target identities, matrix
 //! positions, or backend handles.
 
-use architecture::{AssetId, BoundId, ObjectId, OperationId, ProjectionId, RootId};
+use architecture::{AssetId, BoundId, DataId, ObjectId, OperationId, ProjectionId, RootId};
 
 /// Input or output side of a transaction family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -31,6 +31,19 @@ pub enum StateField {
 }
 
 impl StateField {
+    /// Resolve the field to its architecture-owned primitive data identifier.
+    #[must_use]
+    pub const fn data_id(self) -> DataId {
+        match self {
+            Self::Omega => DataId::StateOmega,
+            Self::YL => DataId::StateYLive,
+            Self::YT => DataId::StateYTimeLocked,
+            Self::Q => DataId::StateQ,
+            Self::Cycle => DataId::StateCycle,
+            Self::Maturity => DataId::StateMaturity,
+        }
+    }
+
     /// Every field, in declaration order.
     pub const ALL: &'static [Self] = &[
         Self::Omega,

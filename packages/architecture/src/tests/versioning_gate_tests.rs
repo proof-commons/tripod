@@ -49,10 +49,27 @@
 //!   identify the same unchanged denotation under their respective
 //!   algorithms.
 //!
+//! ## Denotation record: announcement bound completion
+//!
+//! Schema 18 adds two named calibrated bounds and the announcement's
+//! references to the existing projected arrays. The recipes remain unchanged:
+//! no projection rule changed. The behavioural projection now names the lead
+//! window already required by `packages/realization/src/state.rs` and the model's
+//! constants. This completes the finite presentation without moving denotation;
+//! none of the versioning decision procedure's verdicts fires.
+//!
+//! The deciding witness is
+//! `architecture_keyed_announcement_leads_equal_model_constants` in
+//! `packages/model/src/tests/bound_conformance_tests.rs`: the architecture-keyed
+//! cycle values equal the model's constants, including custom valid pairs.
+//! The data census also names the cycle and maturity fields already used by the
+//! realized law, completing its presentation without any decision-procedure
+//! verdict firing.
+//!
 use crate::*;
 
 const PINNED_BEHAVIOURAL_HASH: &str =
-    "756ea65ce3dc370e76ec70dc001231693facd58e53ebca315d549967f03cf206";
+    "783eb6a803f6389c618d28720f583a4f20a8e773d62e7ceaf9c7afbd3a3bdf2b";
 
 /// Retired identifiers must stay retired: reusing one for new
 /// artifacts would silently redefine a published identifier.
@@ -100,17 +117,18 @@ fn tracked_version_derivation_is_patch_blind() {
 }
 
 /// The denotation gate: if the behavioural hash moves away from the
-/// pinned value, the denotation moved, and the build fails until the
-/// move is declared — here, in the masthead the weld checks, and in a
+/// pinned value, the presentation changed, and the build fails until its
+/// effect on denotation is recorded — here, in the masthead the weld checks, and in a
 /// denotation record.
 #[test]
 fn behavioural_hash_gate() {
     assert_eq!(
         behavioural_hash_hex(&super::validated(&ARCHITECTURE)).unwrap(),
         PINNED_BEHAVIOURAL_HASH,
-        "the behavioural hash moved: the denotation changed, and the \
-         change must be declared — re-pin here, update the realization \
-         document's masthead, and record the deciding test",
+        "the behavioural hash moved: assess denotation and declare the \
+         change — re-pin here, update the realization \
+         document's masthead, and record the deciding test; measured semantic hash: {}",
+        semantic_hash_hex(&super::validated(&ARCHITECTURE)).unwrap(),
     );
 }
 

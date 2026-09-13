@@ -493,6 +493,11 @@ fn generated_json_equals_typed_architecture_completely() {
     let generated = include_str!("../../../model/generated/architecture.json");
 
     let published: PublishedArchitecture = serde_json::from_str(generated).unwrap();
+    assert_eq!(
+        semantic_hash_hex(&super::validated(&ARCHITECTURE)).unwrap(),
+        published.semantic_hash,
+        "the architecture semantic publication must match the measured body",
+    );
     published.validate_envelope().unwrap();
 
     let expected =
@@ -520,6 +525,11 @@ fn generated_toml_equals_typed_architecture_completely() {
     let generated = include_str!("../../../model/generated/architecture.toml");
 
     let published: PublishedArchitecture = toml::from_str(generated).unwrap();
+    assert_eq!(
+        semantic_hash_hex(&super::validated(&ARCHITECTURE)).unwrap(),
+        published.semantic_hash,
+        "the architecture semantic publication must match the measured body",
+    );
     published.validate_envelope().unwrap();
 
     let expected =

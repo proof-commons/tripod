@@ -17,7 +17,7 @@ use crate::ids::{
 /// The architecture-export schema this crate implements. Envelope
 /// metadata (never a hash input); artifact ingestion rejects any other
 /// value.
-pub const ARCHITECTURE_SCHEMA_VERSION: u32 = 17;
+pub const ARCHITECTURE_SCHEMA_VERSION: u32 = 18;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SpecificationBinding {
@@ -961,7 +961,11 @@ pub const OPERATIONS: &[OperationSpec] = &[
         ],
         data_outputs: NO_DATA_OUTPUTS,
         open_flows: &[OpenFlowKind::ReserveCarry, OpenFlowKind::FeeSponsor],
-        reads: &[QuantityId::CycleIssuance, QuantityId::Floor],
+        reads: &[
+            QuantityId::CycleIssuance,
+            QuantityId::Floor,
+            QuantityId::AnnouncementWindow,
+        ],
         writes: &[],
         witnesses: &[
             WitnessId::CanonicalDelta,
@@ -1639,7 +1643,7 @@ pub const OPERATIONS: &[OperationSpec] = &[
         canonical_deltas: NO_DELTAS,
         data_outputs: NO_DATA_OUTPUTS,
         open_flows: &[OpenFlowKind::FeeSponsor],
-        reads: &[],
+        reads: &[QuantityId::AnnouncementWindow],
         writes: &[],
         witnesses: &[
             WitnessId::StateSuccession,
@@ -1650,7 +1654,11 @@ pub const OPERATIONS: &[OperationSpec] = &[
             ValueFlowClass::OwnerConsented,
             ValueFlowClass::SponsorEnvelope,
         ],
-        bounds: &[BoundId::FeeSponsorInputMax],
+        bounds: &[
+            BoundId::FeeSponsorInputMax,
+            BoundId::MaturityLeadMin,
+            BoundId::MaturityLeadMax,
+        ],
         projections: PROJECTION_TRANSITION,
     },
 ];
@@ -1740,6 +1748,17 @@ pub const QUANTITIES: &[QuantitySpec] = &[
             DataId::HistoricalTimeLockedResidue,
         ],
         readers: &[ReaderId::InvariantChecker, ReaderId::ExternalAuditor],
+        writers: &[],
+    },
+    QuantitySpec {
+        id: QuantityId::AnnouncementWindow,
+        kind: QuantityKind::Derived,
+        reads: &[DataId::StateCycle, DataId::StateMaturity],
+        readers: &[
+            ReaderId::Operation(OperationId::AnnounceMaturity),
+            ReaderId::Operation(OperationId::Cycle),
+            ReaderId::ExternalAuditor,
+        ],
         writers: &[],
     },
 ];
@@ -2005,6 +2024,16 @@ pub const BOUNDS: &[BoundSpec] = &[
     BoundSpec {
         id: BoundId::FeeSponsorInputMax,
         default_value: Some(16),
+        requires_deployment_calibration: true,
+    },
+    BoundSpec {
+        id: BoundId::MaturityLeadMin,
+        default_value: None,
+        requires_deployment_calibration: true,
+    },
+    BoundSpec {
+        id: BoundId::MaturityLeadMax,
+        default_value: None,
         requires_deployment_calibration: true,
     },
 ];

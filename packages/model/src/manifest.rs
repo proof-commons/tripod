@@ -263,20 +263,35 @@ const _: () = {
         index += 1;
     }
 };
-/// Calibrated runtime value for a declared finite bound.
-pub fn bound_value(constants: &Constants, bound: architecture::BoundId) -> usize {
+/// Resolve a public bound in its declared unit without truncating its magnitude.
+pub fn bound_magnitude(constants: &Constants, bound: architecture::BoundId) -> Result<u64, Guard> {
+    use architecture::BoundId;
     match bound {
-        architecture::BoundId::AdmissionBatchMax => constants.admission_batch_max,
-        architecture::BoundId::SettlementBatchMax => constants.settlement_batch_max,
-        architecture::BoundId::RelabelBatchMax => constants.relabel_batch_max,
-        architecture::BoundId::AshBatchMax => constants.ash_batch_max,
-        architecture::BoundId::BurnInputMax => constants.burn_input_max,
-        architecture::BoundId::BurnChangeMax => constants.burn_change_max,
-        architecture::BoundId::BurnRecordMax => constants.burn_record_max,
-        architecture::BoundId::TransferInputMax => constants.transfer_input_max,
-        architecture::BoundId::TransferOutputMax => constants.transfer_output_max,
-        architecture::BoundId::FeeSponsorInputMax => constants.fee_sponsor_input_max,
+        BoundId::MaturityLeadMin => Ok(constants.min_maturity_lead),
+        BoundId::MaturityLeadMax => Ok(constants.max_maturity_lead),
+        _ => u64::try_from(bound_value(constants, bound)?).map_err(|_| Guard::BadConstant),
     }
+}
+
+/// Resolve a cardinality bound, refusing cycle bounds instead of reinterpreting them.
+pub fn bound_value(constants: &Constants, bound: architecture::BoundId) -> Result<usize, Guard> {
+    use architecture::BoundId;
+    if bound.unit() != architecture::BoundUnit::Count {
+        return Err(Guard::BadConstant);
+    }
+    Ok(match bound {
+        BoundId::AdmissionBatchMax => constants.admission_batch_max,
+        BoundId::SettlementBatchMax => constants.settlement_batch_max,
+        BoundId::RelabelBatchMax => constants.relabel_batch_max,
+        BoundId::AshBatchMax => constants.ash_batch_max,
+        BoundId::BurnInputMax => constants.burn_input_max,
+        BoundId::BurnChangeMax => constants.burn_change_max,
+        BoundId::BurnRecordMax => constants.burn_record_max,
+        BoundId::TransferInputMax => constants.transfer_input_max,
+        BoundId::TransferOutputMax => constants.transfer_output_max,
+        BoundId::FeeSponsorInputMax => constants.fee_sponsor_input_max,
+        BoundId::MaturityLeadMin | BoundId::MaturityLeadMax => return Err(Guard::BadConstant),
+    })
 }
 
 // ´rule:verification:no-accumulator-manifest´
@@ -597,9 +612,12 @@ fn created_ash_total(after: &World, certificate: &TransitionCertificate) -> Resu
 /// check alone admits constants under which a declared operation is
 /// impossible.
 pub fn validate_bound_conformance(constants: &Constants) -> Result<(), Guard> {
+    if constants.min_maturity_lead == 0 || constants.min_maturity_lead > constants.max_maturity_lead
+    {
+        return Err(Guard::BadConstant);
+    }
     for bound in ARCHITECTURE.bounds {
-        let runtime =
-            u64::try_from(bound_value(constants, bound.id)).map_err(|_| Guard::BadConstant)?;
+        let runtime = bound_magnitude(constants, bound.id)?;
 
         if runtime == 0 {
             return Err(Guard::BadConstant);
@@ -632,8 +650,7 @@ pub(crate) fn validate_bounds_against_authority(
     profile: &architecture::DeploymentProfile,
 ) -> Result<(), Guard> {
     for bound in bounds {
-        let runtime =
-            u64::try_from(bound_value(constants, bound.id)).map_err(|_| Guard::BadConstant)?;
+        let runtime = bound_magnitude(constants, bound.id)?;
 
         if !bound.requires_deployment_calibration {
             // A fixed bound's value is the manifest declaration itself;

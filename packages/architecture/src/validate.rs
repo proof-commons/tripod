@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use crate::ids::{
-    AllocatorId, AmountLimitId, AssetClass, AssetId, AssetRole, BoundId, DataOutputKind,
+    AllocatorId, AmountLimitId, AssetClass, AssetId, AssetRole, BoundId, BoundUnit, DataOutputKind,
     DeallocatorId, DecisionId, DecisionStatus, DeltaKind, DependencyId, InputAuthorization,
     InvariantClauseId, LifecycleClass, ObjectId, OpenFlowKind, OperationId, PermissionClass,
     ProjectionId, ProjectionRule, PublicationStatus, QuantityId, QuantityKind, ReaderId, RootId,
@@ -898,6 +898,14 @@ fn validate_roots(architecture: &Architecture, errors: &mut Vec<ManifestError>) 
 /// manifest, not left to whatever constant the runtime happens to use.
 fn validate_bounds(architecture: &Architecture, errors: &mut Vec<ManifestError>) {
     for bound in architecture.bounds {
+        if bound.id.unit() == BoundUnit::Cycle
+            && (!bound.requires_deployment_calibration || bound.default_value.is_some())
+        {
+            errors.push(ManifestError::InvalidBound {
+                bound: bound.id,
+                reason: "cycle lead bounds require calibration without a draft default",
+            });
+        }
         if bound.requires_deployment_calibration {
             continue;
         }
@@ -1342,6 +1350,12 @@ fn validate_cardinality(
             }
 
             Some(spec) => {
+                if bound.unit() != BoundUnit::Count {
+                    errors.push(ManifestError::InvalidOperation {
+                        operation,
+                        reason: "cardinality maximum requires a count bound",
+                    });
+                }
                 if let Some(default) = spec.default_value
                     && u64::from(minimum) > default
                 {
@@ -1827,7 +1841,7 @@ fn validate_operation_witness_completeness(
 }
 
 /// The declared finite-bound set must equal the set of bounds
-/// referenced by input, output, and data-output maxima.
+/// referenced by cardinalities and the announcement lead window.
 fn validate_operation_bound_coverage(operation: &OperationSpec, errors: &mut Vec<ManifestError>) {
     let mut referenced = BTreeSet::new();
 
@@ -1844,12 +1858,16 @@ fn validate_operation_bound_coverage(operation: &OperationSpec, errors: &mut Vec
         }
     }
 
+    if operation.id == OperationId::AnnounceMaturity {
+        referenced.extend([BoundId::MaturityLeadMin, BoundId::MaturityLeadMax]);
+    }
+
     let declared = operation.bounds.iter().copied().collect::<BTreeSet<_>>();
 
     if referenced != declared {
         errors.push(ManifestError::InvalidOperation {
             operation: operation.id,
-            reason: "declared bounds disagree with referenced cardinality bounds",
+            reason: "declared bounds disagree with referenced cardinality and lead bounds",
         });
     }
 }

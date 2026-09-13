@@ -95,6 +95,7 @@ pub fn unresolved_model_evidence(
 pub fn observe_announce_maturity(
     executed: &ExecutedTransition<AnnounceMaturity>,
 ) -> Result<ModelConformanceObservation, ConformanceProjectionError> {
+    validate_announcement_lead_values(&executed.before().constants)?;
     let request = executed.request();
     let observation = observe_transition(
         executed.before(),
@@ -115,6 +116,28 @@ pub fn observe_announce_maturity(
     );
 
     Ok(observation)
+}
+
+fn validate_announcement_lead_values(
+    constants: &crate::Constants,
+) -> Result<(), ConformanceProjectionError> {
+    for (id, expected) in [
+        (
+            architecture::BoundId::MaturityLeadMin,
+            constants.min_maturity_lead,
+        ),
+        (
+            architecture::BoundId::MaturityLeadMax,
+            constants.max_maturity_lead,
+        ),
+    ] {
+        let magnitude = crate::manifest::bound_magnitude(constants, id)
+            .map_err(|_| ConformanceProjectionError::BoundOutOfDomain)?;
+        if realization::Cycle::new(magnitude) != realization::Cycle::new(expected) {
+            return Err(ConformanceProjectionError::BoundOutOfDomain);
+        }
+    }
+    Ok(())
 }
 
 pub fn observe_compact_ash(
@@ -649,8 +672,10 @@ fn observe_bounds(
 ) -> Result<BTreeMap<architecture::BoundId, Count>, ConformanceProjectionError> {
     architecture::BoundId::ALL
         .iter()
+        .filter(|bound| bound.unit() == architecture::BoundUnit::Count)
         .map(|bound| {
-            let value = crate::manifest::bound_value(constants, *bound);
+            let value = crate::manifest::bound_value(constants, *bound)
+                .map_err(|_| ConformanceProjectionError::BoundOutOfDomain)?;
             let value =
                 u64::try_from(value).map_err(|_| ConformanceProjectionError::BoundOutOfDomain)?;
 

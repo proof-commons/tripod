@@ -185,6 +185,7 @@ simple_id! {
         HistoricalLiveResidue       = 6 => "historical-live-residue",
         HistoricalTimeLockedResidue = 7 => "historical-time-locked-residue",
         ReceiptAccountingAudit      = 8 => "receipt-accounting-audit",
+        AnnouncementWindow          = 9 => "announcement-window",
     }
 }
 
@@ -201,6 +202,8 @@ simple_id! {
         HistoricalLiveResidue       = 8  => "history.residue-live",
         HistoricalTimeLockedResidue = 9  => "history.residue-time-locked",
         AttestationTerms            = 10 => "attestation.terms",
+        StateCycle                  = 11 => "state.cycle",
+        StateMaturity               = 12 => "state.maturity",
     }
 }
 
@@ -260,6 +263,36 @@ simple_id! {
         TransferInputMax   = 8  => "TRANSFER_INPUT_MAX",
         TransferOutputMax  = 9  => "TRANSFER_OUTPUT_MAX",
         FeeSponsorInputMax = 10 => "FEE_SPONSOR_INPUT_MAX",
+        MaturityLeadMin    = 11 => "MATURITY_LEAD_MIN",
+        MaturityLeadMax    = 12 => "MATURITY_LEAD_MAX",
+    }
+}
+
+/// The semantic unit of a public bound; cycles are never cardinalities.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BoundUnit {
+    /// A number of transaction objects or records.
+    Count,
+    /// A number of cycle steps in the announcement lead window.
+    Cycle,
+}
+
+impl BoundId {
+    /// Return the bound's unit without consulting a deployment value.
+    pub const fn unit(self) -> BoundUnit {
+        match self {
+            Self::AdmissionBatchMax
+            | Self::SettlementBatchMax
+            | Self::RelabelBatchMax
+            | Self::AshBatchMax
+            | Self::BurnInputMax
+            | Self::BurnChangeMax
+            | Self::BurnRecordMax
+            | Self::TransferInputMax
+            | Self::TransferOutputMax
+            | Self::FeeSponsorInputMax => BoundUnit::Count,
+            Self::MaturityLeadMin | Self::MaturityLeadMax => BoundUnit::Cycle,
+        }
     }
 }
 

@@ -1079,7 +1079,7 @@ fn validate_data_outputs(
         let maximum = match declared.maximum {
             architecture::MaxCount::Exact(value) => usize::from(value),
             architecture::MaxCount::Bound(bound) => {
-                crate::manifest::bound_value(&after.constants, bound)
+                crate::manifest::bound_value(&after.constants, bound)?
             }
         };
 

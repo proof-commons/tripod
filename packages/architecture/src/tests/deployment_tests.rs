@@ -925,3 +925,43 @@ fn profile_hash_changes_when_accounting_report_changes() {
         unchecked_deployment_profile_hash(&modified).unwrap(),
     );
 }
+
+#[test]
+fn calibrated_maturity_lead_pair_is_positive_ordered_and_complete() {
+    let architecture = release_architecture();
+    for (minimum, maximum, valid) in [
+        (10, 1000, true),
+        (1, 1, true),
+        (0, 1, false),
+        (2, 1, false),
+        (1, u64::MAX, true),
+    ] {
+        let mut profile = release_profile(&architecture);
+        for entry in &mut profile.calibrated_bounds {
+            match entry.bound {
+                BoundId::MaturityLeadMin => entry.value = minimum,
+                BoundId::MaturityLeadMax => entry.value = maximum,
+                _ => {}
+            }
+        }
+        let result = validate_deployment_profile_structure(&architecture, &profile);
+        if valid {
+            result.unwrap();
+        } else {
+            assert!(
+                result
+                    .unwrap_err()
+                    .contains(&DeploymentError::InvalidMaturityLeadPair)
+            );
+        }
+    }
+    for id in [BoundId::MaturityLeadMin, BoundId::MaturityLeadMax] {
+        let mut profile = release_profile(&architecture);
+        profile.calibrated_bounds.retain(|entry| entry.bound != id);
+        assert!(
+            validate_deployment_profile_structure(&architecture, &profile)
+                .unwrap_err()
+                .contains(&DeploymentError::MissingBoundCalibration(id))
+        );
+    }
+}
