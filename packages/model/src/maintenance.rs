@@ -562,7 +562,10 @@ fn relabelable_receipt_batch(world: &World) -> Result<Option<Vec<OutPoint>>, Gua
 
 impl MaintenanceScheduler for DeterministicMaintenanceScheduler {
     fn next_action(&self, world: &World) -> Result<Option<MaintenanceAction>, Guard> {
-        if self.mode == MaintenanceMode::FullSponsored {
+        // Sealed pools can still have locally valid open requests, but
+        // numeric headroom does not make their admission possible.
+        // Leave them for residual classification and continue shared work.
+        if self.mode == MaintenanceMode::FullSponsored && !world.state()?.1.is_sealed()? {
             let requests = capacity_admissible_request_batch(world)?;
 
             if !requests.is_empty() {

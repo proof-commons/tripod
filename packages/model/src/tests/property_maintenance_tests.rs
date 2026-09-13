@@ -116,6 +116,18 @@ proptest! {
     }
 }
 
+// One stated action. Both shrunken traces leave the second amount,
+// the owner and the shape at zero.
+const fn action(selector: u8, amount_a: u64) -> PropertyActionSeed {
+    PropertyActionSeed {
+        selector,
+        amount_a,
+        amount_b: 0,
+        owner_selector: 0,
+        shape_selector: 0,
+    }
+}
+
 /// The busy trace the maintenance property shrank to, written down as
 /// the actions it is.
 ///
@@ -126,18 +138,6 @@ proptest! {
 /// of them is here.
 #[test]
 fn the_shrunken_busy_trace_reaches_a_typed_outcome() {
-    // One action of the shrunken trace. Every seed in it leaves the
-    // second amount, the owner and the shape at zero.
-    const fn action(selector: u8, amount_a: u64) -> PropertyActionSeed {
-        PropertyActionSeed {
-            selector,
-            amount_a,
-            amount_b: 0,
-            owner_selector: 0,
-            shape_selector: 0,
-        }
-    }
-
     let seeds = vec![
         action(13, 0),
         action(0, 355),
@@ -166,6 +166,64 @@ fn the_shrunken_busy_trace_reaches_a_typed_outcome() {
 
     maintenance_reaches_a_typed_outcome(seeds)
         .expect("the shrunken trace still reaches a typed outcome");
+}
+
+// Terminal redemption leaves open requests that sponsored maintenance
+// must classify without attempting admission into the sealed pool.
+#[test]
+fn terminal_redemption_with_pending_requests_reaches_a_typed_outcome() {
+    let seeds = vec![
+        action(0, 2_251_799_813_685_246),
+        action(13, 0),
+        action(0, 0),
+        action(4, 0),
+        action(0, 3_337),
+        action(4, 65_535),
+        action(0, 63),
+        action(4, 2_251_799_813_685_247),
+        action(0, 63),
+        action(4, 2_251_799_813_685_247),
+        action(0, 63),
+        action(4, 1_225),
+        action(0, 9),
+        action(4, 25_303),
+        action(0, 9),
+        action(0, 0),
+        action(4, 2_251_799_813_685_247),
+        action(0, 63),
+        action(4, 15_949),
+        action(0, 2_251_799_813_685_246),
+        action(4, 0),
+        action(0, 9),
+        action(8, 0),
+        action(4, 63),
+        action(9, 0),
+        action(8, 0),
+        action(1, 0),
+    ];
+
+    let busy = drive_property_seed_trace(&property_genesis(), seeds.clone());
+    assert!(busy.state().unwrap().1.is_sealed().unwrap());
+    assert!(busy.roots.resv.is_none());
+
+    let capacity = admission_capacity_plan(&busy).unwrap();
+    assert_eq!(capacity.locally_valid.len(), 1);
+    assert_eq!(capacity.fitting_batch, capacity.locally_valid);
+    assert!(capacity.all_fit);
+    assert_eq!(
+        classify_quiescence_eligibility(&busy).unwrap(),
+        QuiescenceEligibility::Residual(
+            [
+                QuiescenceResidual::SealedPoolWithPendingRequests,
+                QuiescenceResidual::MalformedOpenJunkOnly,
+            ]
+            .into_iter()
+            .collect(),
+        ),
+    );
+
+    maintenance_reaches_a_typed_outcome(seeds)
+        .expect("terminal redemption with pending requests reaches a typed outcome");
 }
 
 // (´rule:verification:maintenance-progress´)
