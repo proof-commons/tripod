@@ -24,7 +24,7 @@ use crate::{
     maturity_announcement_plan::{
         MaturityAnnouncementRepresentationPlan as Mode, ValidatedMaturityAnnouncementOperationPlan,
         derive_plan, plan_maturity_announcement_target_operation as plan,
-        validate_maturity_announcement_plan,
+        validate_analyzed_maturity_announcement_plan as validate_maturity_announcement_plan,
     },
     placement::{DischargeBoundary, PlacementSearchLimits},
     relation::build_relation_graph,

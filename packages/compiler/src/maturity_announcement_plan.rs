@@ -36,6 +36,8 @@ use crate::{
         operation_relations, project_carriers, project_cases, project_coverage, project_lifecycle,
         project_relations,
     },
+    placement::RelationActivity,
+    source::{SourceRequirement, is_sponsor_amount_operand},
     sponsor_region::{ORDINARY_LBTC, ordinary_lbtc_role_of},
     target::canonical_census,
 };
@@ -724,7 +726,8 @@ pub fn plan_maturity_announcement_target_operation(
     }
     let analyzed = analyze_scoped_program(input, placement_limits)?;
     let plan = derive_plan(&analyzed)?;
-    validate_maturity_announcement_plan(&analyzed, &plan)?;
+    validate_analyzed_maturity_announcement_plan(&analyzed, &plan)?;
+    validate_maturity_announcement_plan(&plan, input)?;
     Ok(plan)
 }
 
@@ -1361,33 +1364,229 @@ fn validate_against_factor(
     Ok(())
 }
 
-fn validate_sponsor_erasure(
+pub(crate) fn validate_sponsor_erasure(
     plan: &ValidatedMaturityAnnouncementOperationPlan,
 ) -> Result<(), CompileError> {
-    let mut published = plan.representations.values().flat_map(|projection| {
-        projection
-            .layout
-            .iter()
-            .chain(projection.relations.values().flat_map(|relation| {
-                relation
-                    .cases
-                    .values()
-                    .flat_map(|case| case.layout_requirements.iter())
-            }))
-            .chain(
-                projection
-                    .carriers
+    for projection in plan.representations.values() {
+        if projection.layout.iter().any(names_sponsor_amount)
+            || projection
+                .relations
+                .values()
+                .any(relation_reads_erased_value)
+            || projection.carriers.iter().any(|carrier| {
+                carrier
+                    .alternatives
                     .iter()
-                    .flat_map(|carrier| carrier.alternatives.iter())
-                    .flat_map(|alternative| alternative.layout.iter()),
-            )
-    });
-
-    if published.any(names_sponsor_amount) {
+                    .any(|alternative| alternative.layout.iter().any(names_sponsor_amount))
+            })
+            || projection
+                .coverage
+                .values()
+                .any(coverage_reads_erased_value)
+        {
+            return Err(CompileError::SponsorValueRead);
+        }
+    }
+    let source = plan.source.realization();
+    let mut disclosed = source
+        .disclosure
+        .nodes
+        .iter()
+        .chain(
+            source
+                .disclosure
+                .edges
+                .iter()
+                .flat_map(|edge| [&edge.source, &edge.target]),
+        )
+        .filter_map(|node| match node {
+            DisclosureNodeId::Fact(fact) => Some(fact),
+            DisclosureNodeId::Relation(_) => None,
+        });
+    if disclosed.any(fact_reads_erased_value)
+        || source
+            .declassification
+            .required_public
+            .keys()
+            .any(fact_reads_erased_value)
+        || source
+            .declassification
+            .newly_disclosed
+            .keys()
+            .any(fact_reads_erased_value)
+        || source
+            .declassification
+            .retained_private
+            .iter()
+            .any(fact_reads_erased_value)
+        || supplemental_facts(plan).any(fact_reads_erased_value)
+    {
         return Err(CompileError::SponsorValueRead);
     }
-
     Ok(())
+}
+
+fn relation_reads_erased_value(row: &TargetRelationRequirement) -> bool {
+    row.source_requirements
+        .iter()
+        .any(source_reads_erased_value)
+        || row.cases.values().any(|case| {
+            case.active_sources.iter().any(source_reads_erased_value)
+                || case.layout_requirements.iter().any(names_sponsor_amount)
+        })
+}
+
+fn coverage_reads_erased_value(row: &TargetCoverageRequirement) -> bool {
+    use crate::operation_plan::TargetCoverageObligation;
+    let operands_read = match &row.obligation {
+        TargetCoverageObligation::Positive(requirement) => requirement
+            .operands
+            .iter()
+            .any(|operand| is_sponsor_amount_operand(operand.role())),
+        TargetCoverageObligation::Negative(_) => false,
+    };
+    operands_read
+        || row.projection.as_ref().is_some_and(|projection| {
+            projection
+                .operands
+                .iter()
+                .any(|operand| is_sponsor_amount_operand(operand.role()))
+                || projection.sources.iter().any(source_reads_erased_value)
+        })
+        || row
+            .carrier
+            .iter()
+            .any(|alternative| alternative.layout.iter().any(names_sponsor_amount))
+}
+
+const fn source_reads_erased_value(source: &SourceRequirement) -> bool {
+    is_sponsor_amount_operand(source.operand.role())
+}
+
+const fn fact_reads_erased_value(fact: &FactId) -> bool {
+    matches!(
+        fact,
+        FactId::FamilyAmount {
+            object: ORDINARY_LBTC,
+            ..
+        }
+    )
+}
+
+fn supplemental_facts(
+    plan: &ValidatedMaturityAnnouncementOperationPlan,
+) -> impl Iterator<Item = &FactId> {
+    let metadata = &plan.transition;
+    let succession = &plan.root_history.succession;
+    plan.public_facts
+        .iter()
+        .chain([
+            &metadata.input_cycle,
+            &metadata.requested_cycle,
+            &metadata.minimum_lead,
+            &metadata.maximum_lead,
+        ])
+        .chain(
+            metadata
+                .fields
+                .iter()
+                .flat_map(|row| [&row.input, &row.output]),
+        )
+        .chain(
+            metadata
+                .fields
+                .iter()
+                .flat_map(|row| &row.law.operands)
+                .filter_map(|operand| match operand {
+                    StateLawOperand::Fact(fact) => Some(fact),
+                    StateLawOperand::PublishedParameter(_) => None,
+                }),
+        )
+        .chain(succession.input_fields.iter().flatten())
+        .chain(succession.output_fields.iter().flatten())
+        .chain(&plan.public_recovery.source_facts)
+        .chain(&plan.public_recovery.result_facts)
+}
+
+/// Check the joins between independently projected evidence rows.
+/// The generic projector copies relation and case evidence separately; equality
+/// to that projector alone cannot establish agreement between those surfaces.
+pub(crate) fn validate_evidence_closure(
+    plan: &ValidatedMaturityAnnouncementOperationPlan,
+) -> Result<(), CompileError> {
+    for projection in plan.representations.values() {
+        let mut active = BTreeSet::new();
+        for relation in projection.relations.values() {
+            for case in relation.cases.values() {
+                if case.activity == RelationActivity::Active {
+                    if case.external_evidence != relation.external_evidence {
+                        return Err(CompileError::TargetPlanEvidenceCensusMismatch);
+                    }
+                    active.extend(case.external_evidence.iter().map(ExternalEvidenceRole::of));
+                } else if !case.external_evidence.is_empty() {
+                    return Err(CompileError::TargetPlanEvidenceCensusMismatch);
+                }
+            }
+        }
+        if active != projection.external_evidence {
+            return Err(CompileError::TargetPlanEvidenceCensusMismatch);
+        }
+        validate_coverage_evidence(projection)?;
+    }
+    Ok(())
+}
+
+fn validate_coverage_evidence(
+    projection: &MaturityAnnouncementRepresentationProjection,
+) -> Result<(), CompileError> {
+    for row in projection.coverage.values() {
+        let case = projection
+            .relations
+            .get(&row.id.relation)
+            .and_then(|relation| relation.cases.get(&row.id.case))
+            .ok_or(CompileError::TargetPlanEvidenceCensusMismatch)?;
+        if row.external_evidence != case.external_evidence {
+            return Err(CompileError::TargetPlanEvidenceCensusMismatch);
+        }
+    }
+    Ok(())
+}
+
+/// Independently validate a published announcement against its complete bound input.
+///
+/// Re-analysis retains the input's proof-search policy and uses the largest
+/// representable placement limits, because this signature carries no placement
+/// budget. The entry's caller-supplied placement limits still govern construction.
+/// Requirements describe future evidence; this check executes no transaction.
+///
+/// The three empty canonical-delta negatives remain exactly as generic coverage
+/// derives them. They have no focused runtime witness: the expected set is empty,
+/// and duplicate partition references are rejected during observation
+/// normalization, before the relation verdict.
+///
+/// # Errors
+/// Returns an operation or exact-source mismatch, an analysis error, or the typed
+/// contract/census error for a corrupted projection, evidence join or requirement.
+/// The sponsor-erasure check returns `CompileError::SponsorValueRead`; earlier
+/// source or factor mismatches retain their own typed errors.
+pub fn validate_maturity_announcement_plan(
+    plan: &ValidatedMaturityAnnouncementOperationPlan,
+    input: &BoundCompilerInput,
+) -> Result<(), CompileError> {
+    if plan.operation != PLANNED {
+        return Err(CompileError::TargetOperationOutOfScope {
+            operation: plan.operation,
+        });
+    }
+    if plan.source.architecture() != input.architecture_binding()
+        || *plan.source.realization() != input.realization().project()
+        || plan.source.compilation_scope() != input.scope()
+    {
+        return Err(CompileError::TargetPlanSourceMismatch);
+    }
+    let limits = PlacementSearchLimits::new(std::num::NonZeroU64::MAX, std::num::NonZeroU64::MAX);
+    let analyzed = analyze_scoped_program(input, limits)?;
+    validate_analyzed_maturity_announcement_plan(&analyzed, plan)
 }
 
 // The operation projection owns identity; its graphs own the declarations.
@@ -1428,7 +1627,7 @@ fn validate_declaration(analyzed: &ScopedAnalyzedProgram) -> Result<(), CompileE
     Ok(())
 }
 
-pub(crate) fn validate_maturity_announcement_plan(
+pub(crate) fn validate_analyzed_maturity_announcement_plan(
     analyzed: &ScopedAnalyzedProgram,
     plan: &ValidatedMaturityAnnouncementOperationPlan,
 ) -> Result<(), CompileError> {
@@ -1442,7 +1641,7 @@ pub(crate) fn validate_maturity_announcement_plan(
         return Err(CompileError::TargetPlanSourceMismatch);
     }
     validate_contract_projections(analyzed, plan)?;
-    validate_retained_requirements(analyzed, plan)?;
+    validate_public_contract(analyzed, plan)?;
     let admitted: BTreeSet<_> = MaturityAnnouncementRepresentationPlan::ALL
         .iter()
         .copied()
@@ -1483,6 +1682,8 @@ pub(crate) fn validate_maturity_announcement_plan(
     if plan.lifecycle != derive_lifecycle_closure(&plan.representations)? {
         return Err(CompileError::TargetPlanLifecycleMismatch);
     }
+    validate_evidence_closure(plan)?;
+    validate_retained_requirements(plan)?;
     validate_representation_equivalence(plan)?;
     validate_sponsor_erasure(plan)
 }
@@ -1523,7 +1724,7 @@ fn validate_contract_projections(
     Ok(())
 }
 
-fn validate_retained_requirements(
+fn validate_public_contract(
     analyzed: &ScopedAnalyzedProgram,
     plan: &ValidatedMaturityAnnouncementOperationPlan,
 ) -> Result<(), CompileError> {
@@ -1554,13 +1755,6 @@ fn validate_retained_requirements(
     {
         return Err(defect(MaturityAnnouncementClause::PublicFacts));
     }
-    if plan.constructibility != ConstructorContinuityRequirement::REQUIRED
-        || plan.transition != AnnouncementMetadataRequirement::required()
-        || plan.root_history != RootHistoryRequirement::REQUIRED
-        || plan.public_recovery != PublicRecoveryRequirement::REQUIRED
-    {
-        return Err(defect(MaturityAnnouncementClause::Transition));
-    }
     for row in &plan.transition.fields {
         if row.validate().is_err()
             || !facts.contains(&row.input)
@@ -1572,6 +1766,19 @@ fn validate_retained_requirements(
         {
             return Err(defect(MaturityAnnouncementClause::Transition));
         }
+    }
+    Ok(())
+}
+
+fn validate_retained_requirements(
+    plan: &ValidatedMaturityAnnouncementOperationPlan,
+) -> Result<(), CompileError> {
+    if plan.constructibility != ConstructorContinuityRequirement::REQUIRED
+        || plan.transition != AnnouncementMetadataRequirement::required()
+        || plan.root_history != RootHistoryRequirement::REQUIRED
+        || plan.public_recovery != PublicRecoveryRequirement::REQUIRED
+    {
+        return Err(defect(MaturityAnnouncementClause::Transition));
     }
     let succession = &plan.root_history.succession;
     if succession.root_relation != plan.roots.relation
@@ -1694,7 +1901,7 @@ fn validate_declaration_census(
 }
 
 // Typed mode-bearing rows may change their selected mode, but no proof family changes.
-fn validate_representation_equivalence(
+pub(crate) fn validate_representation_equivalence(
     plan: &ValidatedMaturityAnnouncementOperationPlan,
 ) -> Result<(), CompileError> {
     let reference = plan
@@ -1710,6 +1917,9 @@ fn validate_representation_equivalence(
             || semantic_carriers(projection) != semantic_carriers(reference)
         {
             return Err(CompileError::TargetPlanRelationRequirementMismatch);
+        }
+        if exit_closure(&projection.lifecycle) != exit_closure(&reference.lifecycle) {
+            return Err(CompileError::TargetPlanLifecycleMismatch);
         }
         let relations = semantic_relations(projection);
         if relations != semantic_relations(reference) {
@@ -1847,4 +2057,50 @@ fn semantic_layout(layout: &BTreeSet<LayoutRequirement>) -> BTreeSet<LayoutRequi
             row
         })
         .collect()
+}
+
+// Corruption handles exist only in crate tests; no unchecked public constructor.
+#[cfg(test)]
+macro_rules! corruption_accessors {
+    ($owner:ty; $($method:ident => $field:ident : $value:ty),+ $(,)?) => {
+        impl $owner {
+            $(pub(crate) const fn $method(&mut self) -> &mut $value {
+                &mut self.$field
+            })+
+        }
+    };
+}
+
+#[cfg(test)]
+corruption_accessors! {
+    ValidatedMaturityAnnouncementOperationPlan;
+    operation_mut => operation: OperationId,
+    source_mut => source: TargetOperationSource,
+    transition_mut => transition: AnnouncementMetadataRequirement,
+    history_mut => root_history: RootHistoryRequirement,
+    recovery_mut => public_recovery: PublicRecoveryRequirement,
+    constructor_mut => constructibility: ConstructorContinuityRequirement,
+    facts_mut => public_facts: [FactId; 15],
+    state_mut => state: MaturityAnnouncementStateProjection,
+    representations_mut => representations: BTreeMap<
+        MaturityAnnouncementRepresentationPlan, MaturityAnnouncementRepresentationProjection>,
+}
+
+#[cfg(test)]
+corruption_accessors! {
+    MaturityAnnouncementRepresentationProjection;
+    mode_mut => plan: MaturityAnnouncementRepresentationPlan,
+    relations_mut => relations: BTreeMap<RelationId, TargetRelationRequirement>,
+    cases_mut => cases: BTreeMap<ExecutionCaseId, TargetExecutionCase>,
+    carriers_mut => carriers: BTreeSet<AbstractCarrierRequirement>,
+    layout_mut => layout: BTreeSet<LayoutRequirement>,
+    coverage_mut => coverage: BTreeMap<CoverageRequirementId, TargetCoverageRequirement>,
+    capabilities_mut => capabilities: BTreeSet<RequiredCapability>,
+    evidence_mut => external_evidence: BTreeSet<ExternalEvidenceRole>,
+}
+
+#[cfg(test)]
+corruption_accessors! {
+    MaturityAnnouncementStateProjection;
+    asset_mut => asset: AssetId,
 }

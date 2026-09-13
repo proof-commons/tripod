@@ -15,6 +15,48 @@ use crate::capability::census_enum;
 const OPERATION: OperationId = OperationId::AnnounceMaturity;
 
 census_enum! {
+    /// Corruptions of retained announcement requirements, separate from relation
+    /// coverage classes. These name missing or altered obligations, never an
+    /// executed malformed transaction or discharged evidence.
+    pub enum AnnouncementRequirementMutation {
+        /// Mutates predecessor field authentication; Guide-14 requires authenticated input metadata.
+        UnauthenticatedPredecessorField,
+        /// Mutates the predecessor maturity requirement; Guide-14 requires unannounced maturity.
+        InvalidPredecessorMaturity,
+        /// Mutates the minimum window dependency; Guide-14 requires the inclusive lower endpoint.
+        LeadWindowBelow,
+        /// Mutates the maximum window dependency; Guide-14 requires the inclusive upper endpoint.
+        LeadWindowAbove,
+        /// Mutates the input-cycle dependency; Guide-14 requires checked endpoint arithmetic.
+        LeadWindowOverflowing,
+        /// Mutates a copy law; Guide-14 preserves every non-maturity STATE field.
+        ChangedPreservedField,
+        /// Mutates the maturity law; Guide-14 announces the public requested cycle.
+        WrongSuccessorMaturity,
+        /// Mutates a lead selector; Guide-14 requires its architecture-owned bound identity.
+        AlteredLeadBound,
+        /// Mutates constructor endpoint roles; Guide-14 requires authentication and reconstruction.
+        ConstructorDiscontinuity,
+        /// Mutates continuity duties; Guide-14 requires unchanged static code and target policy.
+        StaticPolicyDiscontinuity,
+        /// Mutates recovery inputs; Guide-14 requires all unrelated-process public inputs.
+        MissingRecoveryInput,
+        /// Mutates recovery comparison; Guide-14 compares the reconstruction with the actual output.
+        ReconstructionMismatch,
+        /// Mutates freshness checks; Guide-14 refuses a stale predecessor history.
+        RootHistoryStale,
+        /// Mutates succession endpoint keys; Guide-14 requires the actual STATE endpoints.
+        RootHistoryWrongEndpoint,
+        /// Mutates the certificate dependency; Guide-14 binds succession to the announcement certificate.
+        RootHistoryWrongCertificate,
+        /// Mutates intermediate-edge checks; Guide-14 validates every edge before advancing.
+        RootHistoryIntermediate,
+        /// Mutates checkpoint checks; Guide-14 invalidates observations after a binding-changing reorg.
+        RootHistoryReorgInvalid,
+    }
+}
+
+census_enum! {
     /// Ancillary public information needed to reconstruct the successor.
     pub enum AnnouncementRecoveryInputRole {
         /// Representation nonce needed by successor reconstruction.

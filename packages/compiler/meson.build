@@ -50,6 +50,7 @@ compiler_source_files = files(
   'src/tests/layout_tests.rs',
   'src/tests/lifecycle_tests.rs',
   'src/tests/live_transfer_plan_tests.rs',
+  'src/tests/maturity_announcement_corruption_tests.rs',
   'src/tests/maturity_announcement_oracle_tests.rs',
   'src/tests/maturity_announcement_plan_tests.rs',
   'src/tests/maturity_announcement_requirements_tests.rs',

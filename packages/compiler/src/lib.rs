@@ -37,13 +37,15 @@ pub use expression::ExpressionCycleComponent;
 pub use input::{
     AnalysisPolicy, BoundCompilerInput, CompilationScope, ProofSearchLimits, bind_input,
 };
+pub use maturity_announcement_plan::validate_maturity_announcement_plan;
 pub use maturity_announcement_requirements::{
     AnnouncementConstructorRole, AnnouncementDuty, AnnouncementMetadataRequirement,
     AnnouncementPolicyContinuity, AnnouncementPredecessorMaturity, AnnouncementPublicationRole,
     AnnouncementRecoveryInputRole, AnnouncementRecoveryStep, AnnouncementRequirementBoundary,
-    AnnouncementRootHistoryCheck, AnnouncementStaticContinuity, ConstructorContinuityRequirement,
-    PublicRecoveryRequirement, RootHistoryRequirement, StateFieldLaw, StateFieldLawKind,
-    StateFieldRequirement, StateFieldRequirementError, StateLawOperand, StateSuccessionRequirement,
+    AnnouncementRequirementMutation, AnnouncementRootHistoryCheck, AnnouncementStaticContinuity,
+    ConstructorContinuityRequirement, PublicRecoveryRequirement, RootHistoryRequirement,
+    StateFieldLaw, StateFieldLawKind, StateFieldRequirement, StateFieldRequirementError,
+    StateLawOperand, StateSuccessionRequirement,
 };
 pub use relation::RelationCycleComponent;
 pub use source::OperandId;
