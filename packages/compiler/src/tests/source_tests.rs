@@ -8,7 +8,12 @@ use realization::{
     RelationSubject,
 };
 
-use super::bound_input;
+use architecture::{
+    ObjectId::{PlainLbtc, State},
+    OperationId::AnnounceMaturity,
+};
+
+use super::{announcement_input, bound_input};
 use crate::{
     CompileError,
     capability::{CapabilityView, RequiredCapability},
@@ -279,6 +284,7 @@ fn operator_authorization_requires_an_external_evidence_operand() {
         RelationKind::Authorization,
         Relation::OperatorAuthorization,
     );
+    assert_operator_source(&declaration);
     let operands = relation_operands(&declaration).unwrap();
     assert_eq!(operands.len(), 1);
     assert_eq!(
@@ -300,6 +306,7 @@ fn operator_constructibility_requires_an_external_evidence_operand() {
             class: realization::ConstructibilityClass::Operator,
         },
     );
+    assert_operator_source(&declaration);
     let operands = relation_operands(&declaration).unwrap();
     assert_eq!(operands.len(), 1);
     assert_eq!(
@@ -310,4 +317,162 @@ fn operator_constructibility_requires_an_external_evidence_operand() {
             }
         }
     );
+}
+
+fn assert_operator_source(declaration: &RelationDeclaration) {
+    assert_eq!(
+        crate::source::proof_capabilities(declaration, ProofKind::ManifestShape),
+        BTreeSet::from([
+            RequiredCapability::AuthenticatedObjectRecognition,
+            RequiredCapability::OperatorAuthorization
+        ]),
+    );
+    assert_eq!(
+        derive_source_requirements(declaration, ProofKind::ManifestShape).unwrap(),
+        vec![crate::source::SourceRequirement {
+            operand: crate::source::OperandId::new(
+                declaration.id.clone(),
+                OperandRole::ExternalEvidence {
+                    requirement: realization::ExternalEvidenceRequirement::OperatorAuthorization {
+                        operation: OperationId::AnnounceMaturity
+                    },
+                }
+            ),
+            source: RequiredSourceKind::ExternalEvidence,
+            availability: AvailabilityClass::Public,
+            activation: RequirementActivation::Always,
+        }]
+    );
+}
+
+fn announcement_retained_operands(id: &RelationId) -> Vec<OperandRole> {
+    use OperandRole::{
+        CanonicalPartition, ExternalEvidence, ObjectFamilyCount, ObjectFamilyMembers, OpenFlowSet,
+        ProjectionSet, RootEffects, RuntimeBound, SponsorRegion, SponsorSignerSet,
+    };
+    use RelationKind::{
+        AllowedObjectFamilies, Authorization, CanonicalDeltaPolicy, Cardinality, Constructibility,
+        Lifecycle, OpenFlowPolicy, ProjectionPolicy, Recognition, RootPolicy,
+        SponsorEnvelopeMultiplicity, SponsorIsolation, SubstrateConservation,
+    };
+    use architecture::{AssetId, BoundId};
+    use realization::{ExternalEvidenceRequirement as Evidence, TransactionSide::Input};
+    let operation = AnnounceMaturity;
+    match (id.kind(), id.subject()) {
+        (Cardinality | Recognition, RelationSubject::ObjectFamily { side, object }) => {
+            assert!([State, PlainLbtc].contains(object));
+            let (side, object) = (*side, *object);
+            let mut roles = if id.kind() == Cardinality {
+                vec![ObjectFamilyCount { side, object }]
+            } else {
+                vec![ObjectFamilyMembers { side, object }]
+            };
+            if (id.kind(), side, object) == (Cardinality, Input, PlainLbtc) {
+                roles.push(RuntimeBound {
+                    bound: BoundId::FeeSponsorInputMax,
+                });
+            }
+            roles
+        }
+        (AllowedObjectFamilies, RelationSubject::TransactionSide { side }) => [State, PlainLbtc]
+            .map(|object| ObjectFamilyMembers {
+                side: *side,
+                object,
+            })
+            .into(),
+        (Authorization | Constructibility, RelationSubject::Operation) => vec![ExternalEvidence {
+            requirement: Evidence::OperatorAuthorization { operation },
+        }],
+        (
+            SubstrateConservation,
+            RelationSubject::Asset {
+                asset: AssetId::Lbtc,
+            },
+        ) => vec![ExternalEvidence {
+            requirement: Evidence::SubstrateConservation {
+                operation,
+                asset: AssetId::Lbtc,
+            },
+        }],
+        (SponsorIsolation, RelationSubject::Sponsor) => vec![SponsorRegion, SponsorSignerSet],
+        (SponsorEnvelopeMultiplicity, RelationSubject::Sponsor)
+        | (OpenFlowPolicy, RelationSubject::Operation) => vec![OpenFlowSet],
+        (CanonicalDeltaPolicy, RelationSubject::Operation) => vec![CanonicalPartition],
+        (RootPolicy, RelationSubject::Operation) => vec![RootEffects],
+        (ProjectionPolicy, RelationSubject::Operation) => vec![ProjectionSet],
+        (RelationKind::Representation, RelationSubject::Representation { object: State })
+        | (Lifecycle, RelationSubject::LifecycleExit { object: State, .. }) => vec![],
+        other => panic!("unexpected announcement relation {other:?}"),
+    }
+}
+
+#[test]
+fn announcement_sources_pin_retention_and_vacuous_bound_erasure() {
+    use crate::{
+        analyzed_operation::analyze_operation,
+        case::{SponsorCase, execution_cases},
+        constructibility::build_constructibility_analysis,
+        placement::{DischargeBoundary, PlacementSearchLimits},
+        proof::enumerate_feasible_plans,
+        requirement::derive_relation_requirements,
+    };
+    let input = announcement_input();
+    let relations = build_relation_analysis(&input).unwrap();
+    let construction = build_constructibility_analysis(&input).unwrap();
+    let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).unwrap();
+    for candidate in plans.candidates {
+        assert_eq!(candidate.source_requirements.len(), 23);
+        let owned = derive_relation_requirements(&relations, &construction, &candidate).unwrap();
+        assert_eq!(owned.len(), 26);
+        for (id, rows) in &owned {
+            let actual: BTreeSet<_> = rows
+                .source_requirements
+                .iter()
+                .map(|row| row.operand.role().clone())
+                .collect();
+            assert_eq!(
+                actual,
+                announcement_retained_operands(id).into_iter().collect(),
+                "{id:?}"
+            );
+        }
+        let cases = execution_cases(&relations, &candidate).unwrap();
+        let absent = cases
+            .iter()
+            .find(|case| case.id.sponsor == SponsorCase::Absent)
+            .unwrap();
+        assert_eq!(absent.active_sources.len(), 15);
+        let bound = absent
+            .active_sources
+            .iter()
+            .find(|row| matches!(row.operand.role(), OperandRole::RuntimeBound { .. }))
+            .unwrap();
+        assert_eq!(bound.source, RequiredSourceKind::RuntimeArchitectureBound);
+        assert_eq!(bound.activation, RequirementActivation::Always);
+        let limits = PlacementSearchLimits::new(
+            10_000_000_u64.try_into().unwrap(),
+            1_000_000_u64.try_into().unwrap(),
+        );
+        let analyzed =
+            analyze_operation(&relations, &owned, &candidate, AnnounceMaturity, limits).unwrap();
+        let rows: Vec<_> = analyzed
+            .relation_cases
+            .values()
+            .filter(|row| row.key.case.sponsor == SponsorCase::Absent)
+            .collect();
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.active_sources.len())
+                .sum::<usize>(),
+            14
+        );
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.boundaries.contains(&DischargeBoundary::RuntimeCarrier))
+                .map(|row| row.active_sources.len())
+                .sum::<usize>(),
+            11
+        );
+        assert!(rows.iter().all(|row| !row.active_sources.contains(bound)));
+    }
 }

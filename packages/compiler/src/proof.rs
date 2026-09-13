@@ -160,6 +160,11 @@ pub fn classify_obligations(
                 RelationObligationClass::StaticallyValidated
             }
 
+            Relation::OperatorAuthorization
+            | Relation::Constructibility {
+                class: realization::ConstructibilityClass::Operator,
+            } => operator_obligation(declaration)?,
+
             Relation::SubstrateConservation { asset } => {
                 // The realization approves exactly one proof class for
                 // this relation. The compiler validates that invariant
@@ -216,6 +221,34 @@ pub fn classify_obligations(
 
     obligations.sort_by(|left, right| left.relation.cmp(&right.relation));
     Ok(obligations)
+}
+
+fn operator_obligation(
+    declaration: &RelationDeclaration,
+) -> Result<RelationObligationClass, CompileError> {
+    // Both operator relations approve exactly ManifestShape. That class
+    // fixes their requirements but cannot discharge operator evidence.
+    let approved = ProofAlternativeId::new(
+        declaration.id.clone(),
+        realization::ProofKind::ManifestShape,
+    );
+
+    if declaration.proof_alternatives.len() != 1
+        || !declaration.proof_alternatives.contains(&approved)
+    {
+        return Err(CompileError::InvalidExternalEvidenceProofAlternatives {
+            relation: declaration.id.clone(),
+        });
+    }
+
+    Ok(RelationObligationClass::ExternalEvidence {
+        requirement: realization::ExternalEvidenceRequirement::OperatorAuthorization {
+            operation: declaration.id.operation(),
+        },
+        required_capabilities: proof_capabilities(declaration, approved.proof()),
+        source_requirements: derive_source_requirements(declaration, approved.proof())?,
+        proof: approved,
+    })
 }
 
 /// Enumerate the complete feasible plan set for one bound input.

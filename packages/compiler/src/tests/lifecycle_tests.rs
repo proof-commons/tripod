@@ -3,7 +3,10 @@
 use architecture::{ObjectId, OperationId};
 use realization::{ProofKind, RepresentationMode};
 
-use super::bound_input;
+use architecture::{ObjectId::State, OperationId::AnnounceMaturity};
+use realization::RepresentationMode::{Explicit, PublicCommitted};
+
+use super::{announcement_input, bound_input};
 use crate::{
     lifecycle::{
         LifecycleExitStatus, RepresentationChoiceId, build_lifecycle_analysis,
@@ -144,5 +147,65 @@ fn proof_representation_compatibility_is_exact() {
             ProofKind::SignerMembership,
             mode
         ));
+    }
+}
+
+#[test]
+fn announcement_lifecycle_crosses_two_modes_with_six_scoped_exits() {
+    use crate::{capability::CapabilityView, proof::enumerate_feasible_plans};
+    use LifecycleExitStatus::{AvailableInCompilerScope, DeclaredOutsideCompilerScope};
+    use std::collections::BTreeSet;
+
+    let input = announcement_input();
+    let relations = build_relation_analysis(&input).unwrap();
+    let analysis = build_lifecycle_analysis(&input, &relations).unwrap();
+    assert_eq!(
+        (
+            analysis.graph.node_count(),
+            analysis.graph.edge_count(),
+            analysis.requirements.len()
+        ),
+        (8, 12, 12)
+    );
+    let exits = [
+        (OperationId::AdmitDeposits, DeclaredOutsideCompilerScope),
+        (OperationId::Cycle, DeclaredOutsideCompilerScope),
+        (OperationId::Redeem, DeclaredOutsideCompilerScope),
+        (OperationId::ReceiptRelabel, DeclaredOutsideCompilerScope),
+        (OperationId::Clear, DeclaredOutsideCompilerScope),
+        (AnnounceMaturity, AvailableInCompilerScope),
+    ];
+    let mut expected = BTreeSet::new();
+    for mode in [Explicit, PublicCommitted] {
+        for (exit, status) in exits {
+            expected.insert(crate::lifecycle::LifecycleRequirement {
+                object: State,
+                representation: mode,
+                exit,
+                status,
+            });
+        }
+    }
+    assert_eq!(
+        analysis.requirements.into_iter().collect::<BTreeSet<_>>(),
+        expected
+    );
+    for candidate in enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
+        .unwrap()
+        .candidates
+    {
+        let mode = candidate.representations[&RepresentationChoiceId {
+            operation: AnnounceMaturity,
+            object: State,
+        }];
+        assert_eq!(candidate.lifecycle.len(), 6);
+        assert_eq!(
+            candidate.lifecycle.into_iter().collect::<BTreeSet<_>>(),
+            expected
+                .iter()
+                .filter(|row| row.representation == mode)
+                .cloned()
+                .collect()
+        );
     }
 }

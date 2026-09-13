@@ -8,7 +8,9 @@ use realization::{
     RelationDeclaration, RelationId, RelationKind, RelationSubject, TransactionSide,
 };
 
-use super::bound_input;
+use architecture::{ObjectId::State, OperationId::AnnounceMaturity};
+
+use super::{announcement_input, bound_input};
 use crate::{
     CompileError,
     capability::CapabilityView,
@@ -562,4 +564,86 @@ fn an_owner_witness_is_available_only_at_its_own_family_member() {
             object: ObjectId::ReceiptLive,
         },
     );
+}
+
+#[test]
+fn announcement_carrier_census_pins_every_alternative() {
+    use RelationKind::{
+        Authorization, Cardinality, Constructibility, Lifecycle, Recognition, Representation,
+        SubstrateConservation,
+    };
+    use TransactionSide::Input;
+    let operation = AnnounceMaturity;
+    let input = announcement_input();
+    let relations = build_relation_analysis(&input).unwrap();
+    assert_eq!(
+        coordinator_anchors(&relations, operation),
+        BTreeSet::from([State])
+    );
+    let candidates = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
+        .unwrap()
+        .candidates;
+    for candidate in candidates {
+        let cases = execution_cases(&relations, &candidate).unwrap();
+        let plans = classify_relation_cases(&relations, &cases).unwrap();
+        let rows = relation_case_eligibility(&relations, &plans).unwrap();
+        assert_eq!(rows.len(), 28);
+        for plan in &plans {
+            let mut expected = BTreeSet::new();
+            let kind = plan.relation.kind();
+            let inactive = plan.case.sponsor == SponsorCase::Absent
+                && matches!(kind, Cardinality | Recognition)
+                && matches!(
+                    plan.relation.subject(),
+                    RelationSubject::ObjectFamily {
+                        object: ObjectId::PlainLbtc,
+                        ..
+                    }
+                );
+            if !inactive
+                && !matches!(
+                    kind,
+                    Authorization
+                        | SubstrateConservation
+                        | Constructibility
+                        | Representation
+                        | Lifecycle
+                )
+            {
+                expected.insert(CarrierRole::OperationGlobal {
+                    operation,
+                    anchor: State,
+                });
+                if let (
+                    Cardinality | Recognition,
+                    RelationSubject::ObjectFamily {
+                        side: Input,
+                        object,
+                    },
+                ) = (kind, plan.relation.subject())
+                {
+                    expected.insert(CarrierRole::InputFamilyCoordinator { object: *object });
+                    if kind == Recognition {
+                        expected.insert(CarrierRole::EveryInputFamilyMember { object: *object });
+                    }
+                }
+            }
+            let actual: BTreeSet<_> = rows
+                .iter()
+                .filter(|row| row.relation == plan.relation && row.case == plan.case)
+                .flat_map(|row| row.eligible.iter().map(|entry| entry.carrier.clone()))
+                .collect();
+            assert_eq!(actual, expected, "{:?}", plan.relation);
+        }
+        for (sponsor, count) in [(SponsorCase::Present, 22), (SponsorCase::Absent, 15)] {
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| row.case.sponsor == sponsor)
+                    .map(|row| row.eligible.len())
+                    .sum::<usize>(),
+                count
+            );
+        }
+        assert_eq!(rows.iter().map(|row| row.eligible.len()).sum::<usize>(), 37);
+    }
 }

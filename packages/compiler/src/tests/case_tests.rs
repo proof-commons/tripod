@@ -5,7 +5,13 @@ use std::collections::BTreeMap;
 use architecture::{ObjectId, OpenFlowKind, OperationId};
 use realization::RepresentationMode;
 
-use super::bound_input;
+use architecture::{
+    ObjectId::{PlainLbtc, State},
+    OperationId::AnnounceMaturity,
+};
+use realization::RepresentationMode::{Explicit, PublicCommitted};
+
+use super::{announcement_input, bound_input};
 use crate::{
     CompileError,
     capability::CapabilityView,
@@ -593,4 +599,86 @@ fn a_relation_that_conserves_nothing_reads_no_representation() {
         conserved_amount_visibility(&declaration, &case),
         Ok(ConservedAmountVisibility::Readable),
     );
+}
+
+#[test]
+fn announcement_case_census_pins_activity_and_external_boundaries() {
+    use crate::placement::{RelationActivity, classify_relation_cases};
+    use realization::{RelationKind, RelationSubject, TransactionSide};
+    use std::collections::BTreeSet;
+
+    let input = announcement_input();
+    let relations = build_relation_analysis(&input).unwrap();
+    let candidates = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
+        .unwrap()
+        .candidates;
+    let mut expected = BTreeSet::new();
+    for mode in [Explicit, PublicCommitted] {
+        for sponsor in [SponsorCase::Absent, SponsorCase::Present] {
+            expected.insert(ExecutionCaseId {
+                operation: AnnounceMaturity,
+                sponsor,
+                representations: representation(State, mode),
+            });
+        }
+    }
+    assert_eq!(case_census(&relations, &candidates).unwrap(), expected);
+    assert_eq!(expected.len(), 4);
+    let vacuous: BTreeSet<_> = [RelationKind::Cardinality, RelationKind::Recognition]
+        .into_iter()
+        .flat_map(|kind| {
+            [TransactionSide::Input, TransactionSide::Output].map(|side| {
+                (
+                    kind,
+                    RelationSubject::ObjectFamily {
+                        side,
+                        object: PlainLbtc,
+                    },
+                )
+            })
+        })
+        .collect();
+    let mut total = 0;
+    for candidate in &candidates {
+        let cases = execution_cases(&relations, candidate).unwrap();
+        let rows = classify_relation_cases(&relations, &cases).unwrap();
+        assert_eq!(rows.len(), 52);
+        total += rows.len();
+        for case in cases {
+            let rows: Vec<_> = rows.iter().filter(|row| row.case == case.id).collect();
+            assert_eq!(rows.len(), 26);
+            let inactive: BTreeSet<_> = rows
+                .iter()
+                .filter(|row| row.activity == RelationActivity::Vacuous)
+                .map(|row| (row.relation.kind(), row.relation.subject().clone()))
+                .collect();
+            let absent = case.id.sponsor == SponsorCase::Absent;
+            assert_eq!(
+                inactive,
+                if absent {
+                    vacuous.clone()
+                } else {
+                    BTreeSet::new()
+                }
+            );
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| row.activity == RelationActivity::Active)
+                    .count(),
+                if absent { 22 } else { 26 }
+            );
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| !row.external_evidence.is_empty())
+                    .map(|row| row.relation.kind())
+                    .collect::<BTreeSet<_>>(),
+                BTreeSet::from([
+                    RelationKind::Authorization,
+                    RelationKind::SubstrateConservation,
+                    RelationKind::Constructibility
+                ])
+            );
+        }
+    }
+    assert_eq!(total, 104);
 }

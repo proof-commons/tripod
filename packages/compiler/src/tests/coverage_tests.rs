@@ -1958,3 +1958,112 @@ fn operator_constructibility_requires_the_substrate_evidence_mutations() {
         );
     }
 }
+
+#[test]
+fn announcement_coverage_has_three_external_rows_in_every_case() {
+    let input = super::proof_tests::announcement_input();
+    let relations = crate::relation::build_relation_analysis(&input).unwrap();
+    let candidates = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
+        .unwrap()
+        .candidates;
+    assert_eq!(candidates.len(), 2);
+    let mut modes = BTreeSet::new();
+    for candidate in candidates {
+        modes.extend(candidate.representations.values().copied());
+        let cases = crate::case::execution_cases(&relations, &candidate).unwrap();
+        let plans = classify_relation_cases(&relations, &cases).unwrap();
+        let coverage = analyze_plan_coverage(&relations, &plans).unwrap();
+        assert_eq!(plans.len(), 52);
+        assert_eq!(coverage.plans().count(), 52);
+        for sponsor in [SponsorCase::Absent, SponsorCase::Present] {
+            let rows = coverage
+                .plans()
+                .filter(|row| row.case.sponsor == sponsor)
+                .collect::<Vec<_>>();
+            assert_eq!(rows.len(), 26);
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| row.activity == RelationActivity::Active)
+                    .count(),
+                if sponsor == SponsorCase::Absent {
+                    22
+                } else {
+                    26
+                }
+            );
+            let external = rows
+                .into_iter()
+                .filter(|row| !row.external_evidence.is_empty())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                external
+                    .iter()
+                    .map(|row| row.relation.kind())
+                    .collect::<BTreeSet<_>>(),
+                BTreeSet::from([
+                    RelationKind::Authorization,
+                    RelationKind::Constructibility,
+                    RelationKind::SubstrateConservation
+                ])
+            );
+            for row in external {
+                assert_announcement_external_report(row);
+            }
+        }
+    }
+    assert_eq!(
+        modes,
+        BTreeSet::from([
+            RepresentationMode::Explicit,
+            RepresentationMode::PublicCommitted
+        ])
+    );
+}
+
+fn assert_announcement_external_report(row: &RelationCoveragePlan) {
+    let (requirement, capability) = if row.relation.kind() == RelationKind::SubstrateConservation {
+        (
+            realization::ExternalEvidenceRequirement::SubstrateConservation {
+                operation: OperationId::AnnounceMaturity,
+                asset: AssetId::Lbtc,
+            },
+            RequiredCapability::WholeTransactionValueConservation,
+        )
+    } else {
+        (
+            realization::ExternalEvidenceRequirement::OperatorAuthorization {
+                operation: OperationId::AnnounceMaturity,
+            },
+            RequiredCapability::OperatorAuthorization,
+        )
+    };
+    assert_eq!(row.external_evidence, BTreeSet::from([requirement.clone()]));
+    assert_eq!(
+        row.boundaries,
+        BTreeSet::from([CoverageBoundary::ExternalEvidence])
+    );
+    assert_eq!(row.activity, RelationActivity::Active);
+    assert!(row.carrier.is_none());
+    assert_eq!(row.positive.len(), 1);
+    assert_eq!(row.negative.len(), 3);
+    assert_eq!(
+        mutations(row),
+        BTreeSet::from([
+            RelationMutation::ExternalEvidenceMissing,
+            RelationMutation::ExternalEvidenceFailed,
+            RelationMutation::ExternalEvidenceIdentityMismatch
+        ])
+    );
+    let expected = EvidenceRole::ExternalReport {
+        requirement,
+        capability,
+    };
+    for role in row
+        .positive
+        .iter()
+        .map(|item| &item.role)
+        .chain(row.negative.iter().map(|item| &item.role))
+    {
+        assert_eq!(role, &expected);
+    }
+}

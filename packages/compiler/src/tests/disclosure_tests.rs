@@ -5,7 +5,10 @@ use std::collections::BTreeMap;
 use architecture::{ObjectId, OperationId};
 use realization::{FactId, RepresentationMode, TransactionSide};
 
-use super::bound_input;
+use crate::{capability::CapabilityView, proof::enumerate_feasible_plans};
+use architecture::OperationId::AnnounceMaturity;
+
+use super::{announcement_input, bound_input};
 use crate::{
     CompileError,
     disclosure::{derive_disclosure, is_sponsor_amount, validate_disclosure},
@@ -130,4 +133,50 @@ fn a_sponsor_amount_fact_is_rejected_even_if_marked_private() {
         derive_disclosure(&inherited, &BTreeMap::new()).unwrap_err(),
         CompileError::SponsorValueRead,
     );
+}
+
+#[test]
+fn announcement_inherits_nine_public_facts_without_amount_additions() {
+    use realization::{AnnouncementLeadBound, StateField};
+    use std::collections::BTreeSet;
+    let operation = AnnounceMaturity;
+    let mut expected: BTreeSet<_> = [
+        StateField::Omega,
+        StateField::YL,
+        StateField::YT,
+        StateField::Q,
+        StateField::Cycle,
+        StateField::Maturity,
+    ]
+    .map(|field| FactId::StateField { operation, field })
+    .into();
+    expected.extend([
+        FactId::RequestedAnnouncementCycle { operation },
+        FactId::AnnouncementLead {
+            operation,
+            bound: AnnouncementLeadBound::Minimum,
+        },
+        FactId::AnnouncementLead {
+            operation,
+            bound: AnnouncementLeadBound::Maximum,
+        },
+    ]);
+    let input = announcement_input();
+    for candidate in enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
+        .unwrap()
+        .candidates
+    {
+        assert_eq!(
+            candidate
+                .disclosure
+                .inherited_required_public
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            expected
+        );
+        assert_eq!(candidate.disclosure.inherited_required_public.len(), 9);
+        assert!(candidate.disclosure.added_required_public.is_empty());
+        assert!(candidate.disclosure.retained_private.is_empty());
+    }
 }

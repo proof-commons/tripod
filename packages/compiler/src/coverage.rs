@@ -955,7 +955,15 @@ fn boundary_subjects(
                 (
                     EvidenceRole::ExternalReport {
                         requirement: requirement.clone(),
-                        capability: RequiredCapability::WholeTransactionValueConservation,
+                        capability: match requirement {
+                            ExternalEvidenceRequirement::OperatorAuthorization { .. } => {
+                                RequiredCapability::OperatorAuthorization
+                            }
+                            ExternalEvidenceRequirement::SubstrateConservation { .. }
+                            | ExternalEvidenceRequirement::ConfidentialValueConservation {
+                                ..
+                            } => RequiredCapability::WholeTransactionValueConservation,
+                        },
                     },
                     Some(requirement.clone()),
                 )

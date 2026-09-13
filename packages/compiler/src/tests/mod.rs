@@ -21,6 +21,7 @@ mod guide13_reproductions;
 mod layout_tests;
 mod lifecycle_tests;
 mod live_transfer_plan_tests;
+mod maturity_announcement_requirements_tests;
 mod operation_plan_tests;
 mod oracle_tests;
 mod pilot_coverage_tests;
@@ -61,6 +62,22 @@ pub fn bound_input(operations: &[OperationId]) -> BoundCompilerInput {
         test_policy(),
     )
     .expect("bind input")
+}
+
+pub fn announcement_input() -> crate::BoundCompilerInput {
+    let operations = [OperationId::AnnounceMaturity];
+    let realization = realization::derive(
+        &architecture::ARCHITECTURE,
+        realization::RealizationScope::from_operations(operations).unwrap(),
+    )
+    .unwrap();
+    bind_input(
+        &architecture::ARCHITECTURE,
+        realization,
+        CompilationScope::from_operations(operations).unwrap(),
+        test_policy(),
+    )
+    .unwrap()
 }
 
 // --- foundation aggregate (Guide-2 Tranche F) ---

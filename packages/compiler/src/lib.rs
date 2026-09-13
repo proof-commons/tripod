@@ -19,6 +19,7 @@ pub mod input;
 mod layout;
 mod lifecycle;
 pub mod live_transfer_plan;
+mod maturity_announcement_requirements;
 pub mod operation_plan;
 mod placement;
 mod proof;
@@ -34,6 +35,14 @@ pub use error::CompileError;
 pub use expression::ExpressionCycleComponent;
 pub use input::{
     AnalysisPolicy, BoundCompilerInput, CompilationScope, ProofSearchLimits, bind_input,
+};
+pub use maturity_announcement_requirements::{
+    AnnouncementConstructorRole, AnnouncementDuty, AnnouncementFieldEffect,
+    AnnouncementFieldRequirement, AnnouncementMetadataRequirement, AnnouncementPolicyContinuity,
+    AnnouncementPredecessorMaturity, AnnouncementPublicationRole, AnnouncementRecoveryInputRole,
+    AnnouncementRecoveryStep, AnnouncementRequirementBoundary, AnnouncementRootHistoryCheck,
+    AnnouncementStateRole, AnnouncementStaticContinuity, ConstructorContinuityRequirement,
+    PublicRecoveryRequirement, RootHistoryRequirement, StateSuccessionRequirement,
 };
 pub use relation::RelationCycleComponent;
 pub use source::OperandId;

@@ -14,7 +14,9 @@ use realization::{
     TransactionSide,
 };
 
-use super::bound_input;
+use architecture::OperationId::AnnounceMaturity;
+
+use super::{announcement_input, bound_input};
 use crate::{
     CompileError,
     capability::CapabilityView,
@@ -928,4 +930,61 @@ fn a_reversed_collateral_claim_is_rejected() {
             edge: CoverageEdge::DependencyCollateral,
         },
     );
+}
+
+#[test]
+fn announcement_dependency_projection_keeps_vacuous_prerequisites() {
+    use crate::{
+        case::execution_cases, coverage::OperationCoverageAnalysis,
+        relation::build_relation_analysis,
+    };
+    let operation = AnnounceMaturity;
+    let input = announcement_input();
+    let relations = build_relation_analysis(&input).unwrap();
+    let edges = input.realization().project().relations.edges;
+    assert_eq!(relations.graph.edge_count(), 23);
+    assert_eq!(edges.len(), 23);
+    for candidate in enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
+        .unwrap()
+        .candidates
+    {
+        let cases = execution_cases(&relations, &candidate).unwrap();
+        let plans = classify_relation_cases(&relations, &cases).unwrap();
+        let nodes: Vec<_> = plans
+            .iter()
+            .map(|plan| {
+                synthetic_node(
+                    &RelationCaseKey {
+                        relation: plan.relation.clone(),
+                        case: plan.case.clone(),
+                    },
+                    plan.activity,
+                )
+            })
+            .collect();
+        // Project declaration prerequisites before adding carrier or collateral edges.
+        let analysis = PlanCoverageAnalysis {
+            operations: BTreeMap::from([(
+                operation,
+                OperationCoverageAnalysis {
+                    operation,
+                    cases: cases.iter().map(|case| case.id.clone()).collect(),
+                    requirements: BTreeMap::new(),
+                },
+            )]),
+        };
+        let dependencies =
+            derive_coverage_dependencies(&analysis, &synthetic_census(&nodes), &edges).unwrap();
+        assert_eq!(dependencies.len(), 46);
+        for case in &cases {
+            let rows: Vec<_> = dependencies.iter().filter(|edge| matches!(&edge.source, CoverageNodeId::RelationCase(key) if key.case == case.id)).collect();
+            assert_eq!(rows.len(), 23);
+            for row in rows {
+                assert_eq!(row.edge, CoverageEdge::RelationPrerequisite);
+                assert!(
+                    matches!(&row.target, CoverageNodeId::RelationCase(key) if key.case == case.id)
+                );
+            }
+        }
+    }
 }

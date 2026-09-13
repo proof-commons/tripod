@@ -1066,3 +1066,98 @@ fn operator_constructibility_names_no_objects() {
         .is_empty()
     );
 }
+
+#[test]
+fn announcement_operator_requirements_close_in_both_modes_and_sponsor_cases() {
+    let input = super::proof_tests::announcement_input();
+    let relations = build_relation_analysis(&input).unwrap();
+    let constructibility = build_constructibility_analysis(&input).unwrap();
+    let lifecycle = build_lifecycle_analysis(&input, &relations).unwrap();
+    let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).unwrap();
+    assert_eq!(plans.candidates.len(), 2);
+    let mut modes = BTreeSet::new();
+    for candidate in plans.candidates {
+        modes.extend(candidate.representations.values().copied());
+        let bundles = relation_requirements(
+            &input,
+            &relations,
+            &constructibility,
+            &lifecycle,
+            &candidate,
+        )
+        .unwrap();
+        assert_eq!(candidate.proofs.len(), 16);
+        assert_eq!(
+            candidate.external_evidence,
+            BTreeSet::from([
+                ExternalEvidenceRequirement::OperatorAuthorization {
+                    operation: OperationId::AnnounceMaturity
+                },
+                ExternalEvidenceRequirement::SubstrateConservation {
+                    operation: OperationId::AnnounceMaturity,
+                    asset: AssetId::Lbtc
+                },
+            ])
+        );
+        let cases = execution_cases(&relations, &candidate).unwrap();
+        assert_eq!(
+            cases
+                .iter()
+                .map(|case| case.id.sponsor)
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([SponsorCase::Absent, SponsorCase::Present])
+        );
+        for kind in [RelationKind::Authorization, RelationKind::Constructibility] {
+            let relation = RelationId::new(
+                OperationId::AnnounceMaturity,
+                kind,
+                RelationSubject::Operation,
+            );
+            let bundle = &bundles[&relation];
+            assert_operator_bundle(bundle, &relation);
+            assert!(!candidate.proofs.contains_key(&relation));
+            for case in &cases {
+                assert_eq!(
+                    active_source_requirements(bundle, &case.id),
+                    bundle.source_requirements
+                );
+            }
+        }
+    }
+    assert_eq!(
+        modes,
+        BTreeSet::from([
+            RepresentationMode::Explicit,
+            RepresentationMode::PublicCommitted
+        ])
+    );
+}
+
+fn assert_operator_bundle(bundle: &RelationRequirements, relation: &RelationId) {
+    assert_eq!(
+        bundle.proof,
+        ProofDisposition::ExternalEvidence {
+            approved_proof: realization::ProofAlternativeId::new(
+                relation.clone(),
+                ProofKind::ManifestShape
+            ),
+            requirement: ExternalEvidenceRequirement::OperatorAuthorization {
+                operation: OperationId::AnnounceMaturity
+            },
+        }
+    );
+    assert_eq!(
+        bundle.external_evidence,
+        BTreeSet::from([ExternalEvidenceRequirement::OperatorAuthorization {
+            operation: OperationId::AnnounceMaturity
+        }])
+    );
+    assert_eq!(
+        bundle.required_capabilities,
+        BTreeSet::from([
+            RequiredCapability::AuthenticatedObjectRecognition,
+            RequiredCapability::OperatorAuthorization
+        ])
+    );
+    assert_eq!(bundle.source_requirements.len(), 1);
+}

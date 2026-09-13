@@ -5,6 +5,7 @@ use std::{collections::BTreeSet, num::NonZeroU64};
 use architecture::{ObjectId, OperationId};
 use realization::{ProofKind, Relation, RelationKind, RepresentationMode};
 
+pub use super::announcement_input;
 use super::{bound_input, phase1_realization};
 use crate::{
     AnalysisPolicy, CompilationScope, CompileError, ProofSearchLimits, bind_input,
@@ -737,4 +738,85 @@ fn pilot_declarations(input: &crate::BoundCompilerInput) -> Vec<realization::Rel
         .into_iter()
         .map(|node| node.source)
         .collect()
+}
+
+#[test]
+fn announcement_classification_census_retains_three_external_relations() {
+    let input = announcement_input();
+    let relations = build_relation_analysis(&input).unwrap();
+    assert_eq!(relations.graph.node_count(), 26);
+    assert_eq!(relations.graph.edge_count(), 23);
+    let mut declaration_census = (0, 0, 0);
+    for node in relations.graph.node_weights() {
+        match node.source.relation {
+            Relation::LifecycleExit { .. } | Relation::Representation { .. } => {
+                declaration_census.2 += 1;
+            }
+            Relation::SubstrateConservation { .. } => declaration_census.1 += 1,
+            _ => declaration_census.0 += 1,
+        }
+    }
+    // The former classifier treated every non-static, non-substrate
+    // relation as selected, including the two operator relations.
+    assert_eq!(declaration_census, (18, 1, 7));
+    let mut census = (0, 0, 0);
+    for obligation in classify_obligations(&relations).unwrap() {
+        match obligation.class {
+            RelationObligationClass::ProofRequired { .. } => census.0 += 1,
+            RelationObligationClass::ExternalEvidence { .. } => census.1 += 1,
+            RelationObligationClass::StaticallyValidated => census.2 += 1,
+        }
+    }
+    assert_eq!(census, (16, 3, 7));
+}
+
+#[test]
+fn operator_external_proof_alternatives_are_exact() {
+    for kind in [RelationKind::Authorization, RelationKind::Constructibility] {
+        for proofs in [
+            vec![],
+            vec![ProofKind::PublicArithmetic],
+            vec![ProofKind::ManifestShape, ProofKind::PublicArithmetic],
+        ] {
+            let mut relations = build_relation_analysis(&announcement_input()).unwrap();
+            let node = relations
+                .graph
+                .node_weights_mut()
+                .find(|node| node.source.id.kind() == kind)
+                .unwrap();
+            let relation = node.source.id.clone();
+            node.source.proof_alternatives = proofs
+                .into_iter()
+                .map(|proof| realization::ProofAlternativeId::new(relation.clone(), proof))
+                .collect();
+            assert_eq!(
+                classify_obligations(&relations).unwrap_err(),
+                CompileError::InvalidExternalEvidenceProofAlternatives { relation }
+            );
+        }
+    }
+}
+
+#[test]
+fn missing_operator_capability_prunes_fixed_obligations() {
+    let available = RequiredCapability::ALL
+        .iter()
+        .copied()
+        .filter(|capability| *capability != RequiredCapability::OperatorAuthorization)
+        .collect();
+    let error =
+        enumerate_feasible_plans(&announcement_input(), &CapabilityView::Available(available))
+            .unwrap_err();
+    assert_eq!(
+        error,
+        CompileError::NoFeasibleProofPlan {
+            blocked_relations: [RelationKind::Authorization, RelationKind::Constructibility]
+                .map(|kind| realization::RelationId::new(
+                    OperationId::AnnounceMaturity,
+                    kind,
+                    realization::RelationSubject::Operation
+                ))
+                .into(),
+        }
+    );
 }

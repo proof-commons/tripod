@@ -420,6 +420,12 @@ fn oracle_evidence(
     declarations
         .values()
         .filter_map(|declaration| match &declaration.relation {
+            Relation::OperatorAuthorization
+            | Relation::Constructibility {
+                class: realization::ConstructibilityClass::Operator,
+            } => Some(ExternalEvidenceRequirement::OperatorAuthorization {
+                operation: declaration.id.operation(),
+            }),
             Relation::SubstrateConservation { asset } => {
                 Some(ExternalEvidenceRequirement::SubstrateConservation {
                     operation: declaration.id.operation(),
@@ -951,6 +957,11 @@ fn oracle_owned(
         Relation::Representation { .. } | Relation::LifecycleExit { .. } => {
             (BTreeSet::new(), BTreeSet::new(), BTreeSet::new())
         }
+
+        Relation::OperatorAuthorization
+        | Relation::Constructibility {
+            class: realization::ConstructibilityClass::Operator,
+        } => oracle_operator_owned(declaration),
 
         Relation::SubstrateConservation { asset } => {
             let approved =
@@ -1922,6 +1933,77 @@ fn the_layout_census_of_one_factor_is_canonical() {
 
             assert_eq!(census, resorted);
             assert_ne!(census, [] as [LayoutRequirement; 0]);
+        }
+    }
+}
+
+fn oracle_operator_owned(
+    declaration: &RelationDeclaration,
+) -> (
+    BTreeSet<RequiredCapability>,
+    BTreeSet<SourceRequirement>,
+    BTreeSet<ExternalEvidenceRequirement>,
+) {
+    let requirement = ExternalEvidenceRequirement::OperatorAuthorization {
+        operation: declaration.id.operation(),
+    };
+    (
+        BTreeSet::from([
+            RequiredCapability::AuthenticatedObjectRecognition,
+            RequiredCapability::OperatorAuthorization,
+        ]),
+        BTreeSet::from([SourceRequirement {
+            operand: crate::source::OperandId::new(
+                declaration.id.clone(),
+                crate::source::OperandRole::ExternalEvidence {
+                    requirement: requirement.clone(),
+                },
+            ),
+            source: crate::source::RequiredSourceKind::ExternalEvidence,
+            availability: realization::AvailabilityClass::Public,
+            activation: crate::source::RequirementActivation::Always,
+        }]),
+        BTreeSet::from([requirement]),
+    )
+}
+
+#[test]
+fn announcement_evidence_and_owned_requirements_match_the_oracle() {
+    let input = super::proof_tests::announcement_input();
+    let relations = build_relation_analysis(&input).unwrap();
+    let declarations = relations
+        .graph
+        .node_weights()
+        .map(|node| (node.source.id.clone(), node.source.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let constructibility = build_constructibility_analysis(&input).unwrap();
+    let lifecycle = build_lifecycle_analysis(&input, &relations).unwrap();
+    let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).unwrap();
+    assert_eq!(plans.candidates.len(), 2);
+    for candidate in plans.candidates {
+        assert_eq!(
+            candidate.external_evidence,
+            oracle_evidence(&declarations, &candidate)
+        );
+        let bundles = relation_requirements(
+            &input,
+            &relations,
+            &constructibility,
+            &lifecycle,
+            &candidate,
+        )
+        .unwrap();
+        for declaration in declarations.values() {
+            let expected = oracle_owned(declaration, &candidate);
+            let bundle = &bundles[&declaration.id];
+            assert_eq!(
+                (
+                    &bundle.required_capabilities,
+                    &bundle.source_requirements,
+                    &bundle.external_evidence
+                ),
+                (&expected.0, &expected.1, &expected.2)
+            );
         }
     }
 }

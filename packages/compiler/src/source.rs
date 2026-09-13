@@ -319,6 +319,12 @@ pub fn proof_capabilities(
             let mut capabilities = BTreeSet::from([Cap::AuthenticatedObjectRecognition]);
 
             match &declaration.relation {
+                Relation::OperatorAuthorization
+                | Relation::Constructibility {
+                    class: realization::ConstructibilityClass::Operator,
+                } => {
+                    capabilities.insert(Cap::OperatorAuthorization);
+                }
                 Relation::Cardinality { .. } => {
                     capabilities.insert(Cap::AuthenticatedFamilyCardinality);
                 }

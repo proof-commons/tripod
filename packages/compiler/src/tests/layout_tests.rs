@@ -3,7 +3,9 @@
 use architecture::{AssetId, ObjectId, OperationId};
 use realization::{RelationId, RelationKind, RelationSubject, TransactionSide};
 
-use super::bound_input;
+use architecture::ObjectId::{PlainLbtc, State};
+
+use super::{announcement_input, bound_input};
 use crate::{
     CompileError,
     capability::{CapabilityView, RequiredCapability},
@@ -481,4 +483,71 @@ fn operator_constructibility_introduces_no_layout_obligation() {
         },
         RelationKind::Constructibility,
     );
+}
+
+#[test]
+fn announcement_layout_census_pins_categories_and_source_routes() {
+    use LayoutRequirement::{
+        AuthenticateFamilyCensus, CanonicalCoordinator, CompleteAndDisjointFamilies,
+        EnforceRepresentation, IsolateSponsorRegion, MakeSourceAvailable, SecretFreeOperationPath,
+    };
+    use RelationKind::{
+        AllowedObjectFamilies, CanonicalDeltaPolicy, Cardinality, OpenFlowPolicy, ProjectionPolicy,
+        Recognition, RootPolicy, SponsorEnvelopeMultiplicity, SponsorIsolation,
+    };
+    use TransactionSide::{Input, Output};
+    let input = announcement_input();
+    let relations = build_relation_analysis(&input).unwrap();
+    let candidates = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
+        .unwrap()
+        .candidates;
+    for candidate in candidates {
+        let cases = execution_cases(&relations, &candidate).unwrap();
+        let plans = classify_relation_cases(&relations, &cases).unwrap();
+        let carriers = relation_case_eligibility(&relations, &plans).unwrap();
+        let rows = layout_requirements(&relations, &plans, &carriers).unwrap();
+        let mut census = [0; 7];
+        for row in &rows {
+            census[match row {
+                CanonicalCoordinator { .. } => 0,
+                AuthenticateFamilyCensus { .. } => 1,
+                CompleteAndDisjointFamilies { .. } => 2,
+                IsolateSponsorRegion { .. } => 3,
+                EnforceRepresentation { .. } => 4,
+                MakeSourceAvailable { .. } => 5,
+                SecretFreeOperationPath { .. } => 6,
+            }] += 1;
+        }
+        assert_eq!(rows.len(), 59);
+        assert_eq!(census, [3, 8, 8, 4, 1, 35, 0]);
+        for node in relations.graph.node_weights() {
+            let id = &node.source.id;
+            let expected = match (id.kind(), id.subject()) {
+                (Cardinality | Recognition, RelationSubject::ObjectFamily { side, object }) => {
+                    match (side, object) {
+                        (Input, State) => 4,
+                        (Output, State) | (Input, PlainLbtc) => 2,
+                        (Output, PlainLbtc) => 1,
+                        other => panic!("unexpected family {other:?}"),
+                    }
+                }
+                (AllowedObjectFamilies, _) => 3,
+                (SponsorIsolation, _) => 1,
+                (
+                    SponsorEnvelopeMultiplicity
+                    | OpenFlowPolicy
+                    | CanonicalDeltaPolicy
+                    | RootPolicy
+                    | ProjectionPolicy,
+                    _,
+                ) => 2,
+                _ => 0,
+            };
+            let actual = rows
+                .iter()
+                .filter(|row| matches!(row, MakeSourceAvailable { relation, .. } if relation == id))
+                .count();
+            assert_eq!(actual, expected, "{id:?}");
+        }
+    }
 }

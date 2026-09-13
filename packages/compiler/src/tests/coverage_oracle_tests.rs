@@ -312,6 +312,12 @@ fn oracle_external_evidence(
     case: &ExecutionCaseId,
 ) -> BTreeSet<ExternalEvidenceRequirement> {
     match &declaration.relation {
+        Relation::OperatorAuthorization
+        | Relation::Constructibility {
+            class: ConstructibilityClass::Operator,
+        } => BTreeSet::from([ExternalEvidenceRequirement::OperatorAuthorization {
+            operation: declaration.id.operation(),
+        }]),
         Relation::SubstrateConservation { asset } => {
             BTreeSet::from([ExternalEvidenceRequirement::SubstrateConservation {
                 operation: declaration.id.operation(),
@@ -363,7 +369,15 @@ fn oracle_subjects(
                 (
                     EvidenceRole::ExternalReport {
                         requirement: requirement.clone(),
-                        capability: RequiredCapability::WholeTransactionValueConservation,
+                        capability: match requirement {
+                            ExternalEvidenceRequirement::OperatorAuthorization { .. } => {
+                                RequiredCapability::OperatorAuthorization
+                            }
+                            ExternalEvidenceRequirement::SubstrateConservation { .. }
+                            | ExternalEvidenceRequirement::ConfidentialValueConservation {
+                                ..
+                            } => RequiredCapability::WholeTransactionValueConservation,
+                        },
                     },
                     Some(requirement.clone()),
                 )
@@ -2723,5 +2737,25 @@ proptest! {
             }
             other => prop_assert!(false, "a coverage cycle must be rejected: {:?}", other),
         }
+    }
+}
+
+#[test]
+fn announcement_coverage_matches_the_independent_oracle() {
+    let input = super::proof_tests::announcement_input();
+    let relations = crate::relation::build_relation_analysis(&input).unwrap();
+    let declarations = oracle_declarations(&relations);
+    let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).unwrap();
+    assert_eq!(plans.candidates.len(), 2);
+    for candidate in plans.candidates {
+        let cases = crate::case::execution_cases(&relations, &candidate).unwrap();
+        let rows = classify_relation_cases(&relations, &cases).unwrap();
+        let actual = analyze_plan_coverage(&relations, &rows).unwrap();
+        let expected = oracle_projection(
+            &declarations,
+            &oracle_case_ids(&declarations, &candidate),
+            None,
+        );
+        assert_eq!(actual.project(), expected);
     }
 }

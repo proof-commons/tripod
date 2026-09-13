@@ -6,7 +6,10 @@ use realization::{
     RelationId, RelationKind, RelationSubject, WitnessRole,
 };
 
-use super::bound_input;
+use crate::{capability::CapabilityView, proof::enumerate_feasible_plans};
+use architecture::OperationId::AnnounceMaturity;
+
+use super::{announcement_input, bound_input};
 use crate::{
     CompileError,
     constructibility::{build_constructibility_analysis, validate_source_constructibility},
@@ -135,5 +138,99 @@ fn single_pilot_scopes_analyze_independently() {
         // Diagnostic-free construction is repeatable and equal.
         let again = build_constructibility_analysis(&input).expect("builds again");
         assert_eq!(analysis.operations, again.operations);
+    }
+}
+
+#[test]
+fn announcement_requires_operator_and_keeps_sponsor_optional() {
+    use petgraph::visit::EdgeRef;
+    use realization::{
+        ConstructibilityEdgeRole as Role, ConstructibilityNodeId as Node,
+        RequirementStrength as Strength,
+    };
+    use std::collections::BTreeSet;
+
+    let input = announcement_input();
+    let analysis = build_constructibility_analysis(&input).unwrap();
+    let operation = AnnounceMaturity;
+    let operator = Node::Witness {
+        operation,
+        role: WitnessRole::OperatorAuthorization,
+        availability: AvailabilityClass::Operator,
+    };
+    let sponsor = Node::Witness {
+        operation,
+        role: WitnessRole::SponsorAuthorization,
+        availability: AvailabilityClass::SponsorLocal,
+    };
+    assert_eq!(
+        analysis.node_by_id.keys().cloned().collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            Node::Operation(operation),
+            operator.clone(),
+            sponsor.clone()
+        ])
+    );
+    assert_eq!(analysis.graph.node_count(), 3);
+    let edges: BTreeSet<_> = analysis
+        .graph
+        .edge_references()
+        .map(|edge| {
+            (
+                analysis.graph[edge.source()].id.clone(),
+                analysis.graph[edge.target()].id.clone(),
+                edge.weight().role,
+                edge.weight().strength,
+            )
+        })
+        .collect();
+    assert_eq!(
+        edges,
+        BTreeSet::from([
+            (
+                operator.clone(),
+                Node::Operation(operation),
+                Role::RequiredWitness,
+                Strength::Required
+            ),
+            (
+                sponsor.clone(),
+                Node::Operation(operation),
+                Role::SponsorOnly,
+                Strength::Optional
+            ),
+        ])
+    );
+    assert_eq!(analysis.graph.edge_count(), 2);
+    assert_eq!(analysis.operations.len(), 1);
+    assert_eq!(analysis.operations[0].cases.len(), 1);
+    let case = &analysis.operations[0].cases[0];
+    assert_eq!(case.authorization, ConstructibilityAuthorization::Operator);
+    assert_eq!(case.required_nodes, vec![operator]);
+    assert_eq!(case.optional_nodes, vec![sponsor]);
+    assert_eq!(
+        case.required_availability,
+        BTreeSet::from([AvailabilityClass::Operator])
+    );
+    let relations = crate::relation::build_relation_analysis(&input).unwrap();
+    for candidate in enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
+        .unwrap()
+        .candidates
+    {
+        let cases = crate::case::execution_cases(&relations, &candidate).unwrap();
+        let absent = cases
+            .iter()
+            .find(|case| case.id.sponsor == crate::case::SponsorCase::Absent)
+            .unwrap();
+        assert!(
+            absent
+                .active_sources
+                .iter()
+                .all(|row| row.availability != AvailabilityClass::SponsorLocal)
+        );
+        assert_eq!(
+            case.required_availability,
+            BTreeSet::from([AvailabilityClass::Operator])
+        );
     }
 }
