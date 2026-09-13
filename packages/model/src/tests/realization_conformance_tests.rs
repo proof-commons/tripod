@@ -866,21 +866,29 @@ fn announcement_declassification_matches_model_owned_artifact_row() {
     let spec = announcement_realization();
     let analysis = spec.declassification();
     let operation = architecture::OperationId::AnnounceMaturity;
-    let expected = realization::StateField::ALL
-        .iter()
-        .map(|field| realization::FactId::StateField {
-            operation,
-            field: *field,
-        })
-        .chain([realization::FactId::RequestedAnnouncementCycle { operation }])
-        .chain(
-            [
-                realization::AnnouncementLeadBound::Minimum,
-                realization::AnnouncementLeadBound::Maximum,
-            ]
-            .map(|bound| realization::FactId::AnnouncementLead { operation, bound }),
-        )
-        .collect::<std::collections::BTreeSet<_>>();
+    let expected = [
+        realization::TransactionSide::Input,
+        realization::TransactionSide::Output,
+    ]
+    .into_iter()
+    .flat_map(|side| {
+        realization::StateField::ALL
+            .iter()
+            .map(move |field| realization::FactId::StateField {
+                operation,
+                side,
+                field: *field,
+            })
+    })
+    .chain([realization::FactId::RequestedAnnouncementCycle { operation }])
+    .chain(
+        [
+            realization::AnnouncementLeadBound::Minimum,
+            realization::AnnouncementLeadBound::Maximum,
+        ]
+        .map(|bound| realization::FactId::AnnouncementLead { operation, bound }),
+    )
+    .collect::<std::collections::BTreeSet<_>>();
 
     // These are disclosure keys without observation carriers. No expression
     // reads them, so evaluating this declaration cannot demand their values.
@@ -888,7 +896,7 @@ fn announcement_declassification_matches_model_owned_artifact_row() {
         spec.operation(operation).unwrap().expressions,
         [] as [realization::ExpressionDeclaration; 0]
     );
-    assert_eq!(expected.len(), 9);
+    assert_eq!(expected.len(), 15);
     assert_eq!(
         analysis
             .required_public

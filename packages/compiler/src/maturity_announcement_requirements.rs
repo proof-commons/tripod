@@ -7,6 +7,7 @@
 use architecture::{OperationId, RootId};
 use realization::{
     AnnouncementLeadBound, FactId, RelationId, RelationKind, RelationSubject, StateField,
+    TransactionSide,
 };
 
 use crate::capability::census_enum;
@@ -100,6 +101,7 @@ impl AnnouncementFieldRequirement {
             field,
             predecessor: FactId::StateField {
                 operation: OPERATION,
+                side: TransactionSide::Input,
                 field,
             },
             effect,
@@ -151,9 +153,9 @@ impl AnnouncementMetadataRequirement {
         },
     };
 
-    /// Exact public fact census: six predecessor fields, request, and two leads.
+    /// Exact public fact census: six fields on each side, request, and two leads.
     #[must_use]
-    pub fn public_facts() -> [FactId; 9] {
+    pub fn public_facts() -> [FactId; 15] {
         let requirement = Self::REQUIRED;
         let [omega, y_l, y_t, q, cycle, maturity] = &requirement.fields;
         [
@@ -163,6 +165,36 @@ impl AnnouncementMetadataRequirement {
             q.predecessor.clone(),
             cycle.predecessor.clone(),
             maturity.predecessor.clone(),
+            FactId::StateField {
+                operation: OPERATION,
+                side: TransactionSide::Output,
+                field: StateField::Omega,
+            },
+            FactId::StateField {
+                operation: OPERATION,
+                side: TransactionSide::Output,
+                field: StateField::YL,
+            },
+            FactId::StateField {
+                operation: OPERATION,
+                side: TransactionSide::Output,
+                field: StateField::YT,
+            },
+            FactId::StateField {
+                operation: OPERATION,
+                side: TransactionSide::Output,
+                field: StateField::Q,
+            },
+            FactId::StateField {
+                operation: OPERATION,
+                side: TransactionSide::Output,
+                field: StateField::Cycle,
+            },
+            FactId::StateField {
+                operation: OPERATION,
+                side: TransactionSide::Output,
+                field: StateField::Maturity,
+            },
             requirement.requested_cycle,
             requirement.minimum_lead,
             requirement.maximum_lead,

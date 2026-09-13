@@ -368,7 +368,7 @@ fn announcement_sponsor_amount_declaration_rejects() {
 fn announcement_derivation_preserves_the_phase1_disclosure_helper() {
     let before = phase1_declassification();
     let announcement = super::announce_maturity_tests::realization();
-    assert_eq!(announcement.declassification.required_public.len(), 9);
+    assert_eq!(announcement.declassification.required_public.len(), 15);
     assert_eq!(phase1_declassification(), before);
     assert_eq!(
         derive(

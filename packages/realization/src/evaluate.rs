@@ -557,8 +557,11 @@ fn derive_fact(
 
             Ok(SemanticValue::Amount(total))
         }
-        // These keys have no primitive carrier in this observation yet.
-        FactId::StateField { .. }
+        // Neither STATE side, the request, nor the leads have a primitive carrier here yet.
+        FactId::StateField {
+            side: TransactionSide::Input | TransactionSide::Output,
+            ..
+        }
         | FactId::RequestedAnnouncementCycle { .. }
         | FactId::AnnouncementLead { .. } => Err(RealizationError::MissingFactValue(fact.clone())),
         FactId::InputOwners { object, .. } => required_owners(observation, *object)

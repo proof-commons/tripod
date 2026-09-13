@@ -265,6 +265,7 @@ impl OperationObservation {
     ///   the observation could not be read rather than that the
     ///   operation does not conform.
     pub fn validate_and_normalize(mut self) -> Result<Self, RealizationError> {
+        validate_count_bound_units(&self.bounds)?;
         self.objects.sort_by_key(|object| object.reference);
 
         for pair in self.objects.windows(2) {
@@ -533,4 +534,14 @@ pub fn validate_observation(
     observation: OperationObservation,
 ) -> Result<OperationObservation, RealizationError> {
     observation.validate_and_normalize()
+}
+
+fn validate_count_bound_units(bounds: &BTreeMap<BoundId, Count>) -> Result<(), RealizationError> {
+    if let Some(bound) = bounds
+        .keys()
+        .find(|bound| bound.unit() != architecture::BoundUnit::Count)
+    {
+        return Err(RealizationError::CycleBoundUsedAsCount(*bound));
+    }
+    Ok(())
 }

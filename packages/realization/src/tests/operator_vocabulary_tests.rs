@@ -185,9 +185,10 @@ fn assert_fact(fact: crate::FactId, ty: crate::SemanticType, reason: crate::Disc
     assert!(analysis.retained_private.is_empty());
 }
 
-fn state_fact(field: crate::StateField) -> crate::FactId {
+fn state_fact(side: TransactionSide, field: crate::StateField) -> crate::FactId {
     crate::FactId::StateField {
         operation: OperationId::AnnounceMaturity,
+        side,
         field,
     }
 }
@@ -216,56 +217,68 @@ fn state_field_names_are_complete_distinct_and_in_declaration_order() {
 
 #[test]
 fn state_omega_has_its_owner_type_and_public_state_seed() {
-    assert_fact(
-        state_fact(crate::StateField::Omega),
-        crate::SemanticType::Amount,
-        crate::DisclosureReason::PublicState,
-    );
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        assert_fact(
+            state_fact(side, crate::StateField::Omega),
+            crate::SemanticType::Amount,
+            crate::DisclosureReason::PublicState,
+        );
+    }
 }
 
 #[test]
 fn state_yl_has_its_owner_type_and_public_state_seed() {
-    assert_fact(
-        state_fact(crate::StateField::YL),
-        crate::SemanticType::Amount,
-        crate::DisclosureReason::PublicState,
-    );
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        assert_fact(
+            state_fact(side, crate::StateField::YL),
+            crate::SemanticType::Amount,
+            crate::DisclosureReason::PublicState,
+        );
+    }
 }
 
 #[test]
 fn state_yt_has_its_owner_type_and_public_state_seed() {
-    assert_fact(
-        state_fact(crate::StateField::YT),
-        crate::SemanticType::Amount,
-        crate::DisclosureReason::PublicState,
-    );
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        assert_fact(
+            state_fact(side, crate::StateField::YT),
+            crate::SemanticType::Amount,
+            crate::DisclosureReason::PublicState,
+        );
+    }
 }
 
 #[test]
 fn state_q_has_its_owner_type_and_public_state_seed() {
-    assert_fact(
-        state_fact(crate::StateField::Q),
-        crate::SemanticType::Amount,
-        crate::DisclosureReason::PublicState,
-    );
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        assert_fact(
+            state_fact(side, crate::StateField::Q),
+            crate::SemanticType::Amount,
+            crate::DisclosureReason::PublicState,
+        );
+    }
 }
 
 #[test]
 fn state_cycle_has_its_owner_type_and_public_state_seed() {
-    assert_fact(
-        state_fact(crate::StateField::Cycle),
-        crate::SemanticType::Cycle,
-        crate::DisclosureReason::PublicState,
-    );
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        assert_fact(
+            state_fact(side, crate::StateField::Cycle),
+            crate::SemanticType::Cycle,
+            crate::DisclosureReason::PublicState,
+        );
+    }
 }
 
 #[test]
 fn state_maturity_has_its_owner_type_and_public_state_seed() {
-    assert_fact(
-        state_fact(crate::StateField::Maturity),
-        crate::SemanticType::Maturity,
-        crate::DisclosureReason::PublicState,
-    );
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        assert_fact(
+            state_fact(side, crate::StateField::Maturity),
+            crate::SemanticType::Maturity,
+            crate::DisclosureReason::PublicState,
+        );
+    }
 }
 
 #[test]
@@ -304,50 +317,52 @@ fn maximum_lead_has_its_owner_type_and_public_request_seed() {
 }
 
 fn reject_numeric(field: crate::StateField, sum: bool) {
-    use crate::{ExprId, ExpressionDeclaration, ExpressionNode, ExpressionRole, SemanticType};
-    let fact = state_fact(field);
-    let ty = fact.semantic_type();
-    let input = ExprId::fact(fact.clone());
-    let id = ExprId::relation(
-        RelationId::new(
-            OperationId::AnnounceMaturity,
-            RelationKind::ExpressionPredicate,
-            RelationSubject::Operation,
-        ),
-        ExpressionRole::Predicate,
-    );
-    let node = if sum {
-        ExpressionNode::CheckedSum {
-            ty,
-            terms: vec![input.clone()],
-        }
-    } else {
-        ExpressionNode::LessOrEqual {
-            left: input.clone(),
-            right: input.clone(),
-        }
-    };
-    let error = crate::build_expression_graph([
-        ExpressionDeclaration {
-            id: input,
-            ty,
-            node: ExpressionNode::Fact(fact),
-        },
-        ExpressionDeclaration {
-            id,
-            ty: if sum { ty } else { SemanticType::Bool },
-            node,
-        },
-    ])
-    .unwrap_err();
-    assert_eq!(
-        error,
-        if sum {
-            RealizationError::InvalidSumType(ty)
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        use crate::{ExprId, ExpressionDeclaration, ExpressionNode, ExpressionRole, SemanticType};
+        let fact = state_fact(side, field);
+        let ty = fact.semantic_type();
+        let input = ExprId::fact(fact.clone());
+        let id = ExprId::relation(
+            RelationId::new(
+                OperationId::AnnounceMaturity,
+                RelationKind::ExpressionPredicate,
+                RelationSubject::Operation,
+            ),
+            ExpressionRole::Predicate,
+        );
+        let node = if sum {
+            ExpressionNode::CheckedSum {
+                ty,
+                terms: vec![input.clone()],
+            }
         } else {
-            RealizationError::InvalidOrderedType(ty)
-        }
-    );
+            ExpressionNode::LessOrEqual {
+                left: input.clone(),
+                right: input.clone(),
+            }
+        };
+        let error = crate::build_expression_graph([
+            ExpressionDeclaration {
+                id: input,
+                ty,
+                node: ExpressionNode::Fact(fact),
+            },
+            ExpressionDeclaration {
+                id,
+                ty: if sum { ty } else { SemanticType::Bool },
+                node,
+            },
+        ])
+        .unwrap_err();
+        assert_eq!(
+            error,
+            if sum {
+                RealizationError::InvalidSumType(ty)
+            } else {
+                RealizationError::InvalidOrderedType(ty)
+            }
+        );
+    }
 }
 
 #[test]
@@ -372,55 +387,159 @@ fn less_or_equal_refuses_maturity() {
 
 #[test]
 fn cycle_values_have_only_the_cycle_accessor() {
-    let cycle = crate::Cycle::new(8);
-    let value = crate::SemanticValue::Cycle(cycle);
-    assert_eq!(value.semantic_type(), crate::SemanticType::Cycle);
-    assert_eq!(value.as_cycle(), Some(cycle));
-    assert_eq!(value.as_maturity(), None);
-    assert_eq!(value.as_amount(), None);
-    assert_eq!(value.as_count(), None);
-    assert_eq!(value.as_bool(), None);
-    assert_eq!(value.as_owner_set(), None);
-    let mut facts = crate::FactValues::default();
-    facts
-        .insert(state_fact(crate::StateField::Cycle), value)
-        .unwrap();
-}
-
-#[test]
-fn maturity_values_have_only_the_maturity_accessor() {
-    for maturity in [
-        crate::Maturity::Unannounced,
-        crate::Maturity::Announced {
-            cycle: crate::Cycle::new(9),
-        },
-        crate::Maturity::Complete,
-    ] {
-        let value = crate::SemanticValue::Maturity(maturity);
-        assert_eq!(value.semantic_type(), crate::SemanticType::Maturity);
-        assert_eq!(value.as_maturity(), Some(maturity));
-        assert_eq!(value.as_cycle(), None);
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        let cycle = crate::Cycle::new(8);
+        let value = crate::SemanticValue::Cycle(cycle);
+        assert_eq!(value.semantic_type(), crate::SemanticType::Cycle);
+        assert_eq!(value.as_cycle(), Some(cycle));
+        assert_eq!(value.as_maturity(), None);
         assert_eq!(value.as_amount(), None);
         assert_eq!(value.as_count(), None);
         assert_eq!(value.as_bool(), None);
         assert_eq!(value.as_owner_set(), None);
         let mut facts = crate::FactValues::default();
         facts
-            .insert(state_fact(crate::StateField::Maturity), value)
+            .insert(state_fact(side, crate::StateField::Cycle), value)
             .unwrap();
     }
 }
 
 #[test]
+fn maturity_values_have_only_the_maturity_accessor() {
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        for maturity in [
+            crate::Maturity::Unannounced,
+            crate::Maturity::Announced {
+                cycle: crate::Cycle::new(9),
+            },
+            crate::Maturity::Complete,
+        ] {
+            let value = crate::SemanticValue::Maturity(maturity);
+            assert_eq!(value.semantic_type(), crate::SemanticType::Maturity);
+            assert_eq!(value.as_maturity(), Some(maturity));
+            assert_eq!(value.as_cycle(), None);
+            assert_eq!(value.as_amount(), None);
+            assert_eq!(value.as_count(), None);
+            assert_eq!(value.as_bool(), None);
+            assert_eq!(value.as_owner_set(), None);
+            let mut facts = crate::FactValues::default();
+            facts
+                .insert(state_fact(side, crate::StateField::Maturity), value)
+                .unwrap();
+        }
+    }
+}
+
+#[test]
 fn state_family_amount_remains_distinct_from_metadata() {
-    let family = crate::FactId::FamilyAmount {
-        operation: OperationId::AnnounceMaturity,
-        side: TransactionSide::Input,
-        object: ObjectId::State,
-    };
-    assert_eq!(family.semantic_type(), crate::SemanticType::Amount);
-    for field in crate::StateField::ALL {
-        assert_ne!(family, state_fact(*field));
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        let family = crate::FactId::FamilyAmount {
+            operation: OperationId::AnnounceMaturity,
+            side: TransactionSide::Input,
+            object: ObjectId::State,
+        };
+        assert_eq!(family.semantic_type(), crate::SemanticType::Amount);
+        for field in crate::StateField::ALL {
+            assert_ne!(family, state_fact(side, *field));
+        }
+    }
+}
+
+#[test]
+fn announcement_selectors_and_published_parameters_have_exact_names() {
+    assert_eq!(
+        crate::AnnouncementLeadBound::Minimum.bound_id(),
+        architecture::BoundId::MaturityLeadMin
+    );
+    assert_eq!(
+        crate::AnnouncementLeadBound::Maximum.bound_id(),
+        architecture::BoundId::MaturityLeadMax
+    );
+    assert_eq!(
+        crate::StateLawParameter::ALL,
+        &[crate::StateLawParameter::Zeta]
+    );
+    assert_eq!(crate::StateLawParameter::Zeta.name(), "zeta");
+}
+
+#[test]
+fn state_side_keys_are_distinct_and_values_do_not_overwrite_each_other() {
+    let mut values = crate::FactValues::default();
+    for (side, amount) in [(TransactionSide::Input, 3), (TransactionSide::Output, 7)] {
+        let fact = state_fact(side, crate::StateField::Omega);
+        values
+            .insert(
+                fact,
+                crate::SemanticValue::Amount(crate::ProtocolAmount::new(amount).unwrap()),
+            )
+            .unwrap();
+    }
+    assert_ne!(
+        state_fact(TransactionSide::Input, crate::StateField::Omega),
+        state_fact(TransactionSide::Output, crate::StateField::Omega)
+    );
+    for (side, amount) in [(TransactionSide::Input, 3), (TransactionSide::Output, 7)] {
+        assert_eq!(
+            values
+                .get(&state_fact(side, crate::StateField::Omega))
+                .unwrap()
+                .as_amount()
+                .unwrap()
+                .get(),
+            amount
+        );
+    }
+}
+
+#[test]
+fn cycle_bounds_cannot_be_inserted_or_declared_as_count_facts() {
+    for bound in [
+        architecture::BoundId::MaturityLeadMin,
+        architecture::BoundId::MaturityLeadMax,
+    ] {
+        let fact = crate::FactId::BoundValue { bound };
+        let expected = RealizationError::CycleBoundUsedAsCount(bound);
+        assert_eq!(
+            crate::FactValues::default()
+                .insert(fact.clone(), crate::SemanticValue::Count(crate::Count::ONE)),
+            Err(expected.clone())
+        );
+        let declaration = crate::ExpressionDeclaration {
+            id: crate::ExprId::fact(fact.clone()),
+            ty: crate::SemanticType::Count,
+            node: crate::ExpressionNode::Fact(fact),
+        };
+        assert_eq!(
+            crate::build_expression_graph([declaration]).unwrap_err(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn observations_reject_cycle_bounds_in_the_count_map() {
+    for bound in [
+        architecture::BoundId::MaturityLeadMin,
+        architecture::BoundId::MaturityLeadMax,
+    ] {
+        let observation = OperationObservation {
+            operation: OperationId::AnnounceMaturity,
+            objects: Vec::new(),
+            protocol_signers: BTreeSet::new(),
+            sponsor_signers: BTreeSet::new(),
+            canonical_partition: ObservedCanonicalPartition {
+                issuances: Vec::new(),
+                flows: Vec::new(),
+            },
+            open_flows: Vec::new(),
+            root_effects: Vec::new(),
+            projections: BTreeSet::new(),
+            bounds: BTreeMap::from([(bound, crate::Count::ONE)]),
+        };
+        assert_eq!(
+            observation.validate_and_normalize(),
+            Err(RealizationError::CycleBoundUsedAsCount(bound))
+        );
     }
 }
 

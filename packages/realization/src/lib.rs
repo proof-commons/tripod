@@ -74,7 +74,7 @@ pub(crate) use expression::{
 };
 pub use identity::{
     AnnouncementLeadBound, ExprId, ExpressionRole, FactId, ProofAlternativeId, ProofKind,
-    RelationId, RelationKind, RelationSubject, StateField, TransactionSide,
+    RelationId, RelationKind, RelationSubject, StateField, StateLawParameter, TransactionSide,
 };
 pub(crate) use lifecycle::require_lifecycle_exit;
 pub use lifecycle::{

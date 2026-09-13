@@ -93,7 +93,8 @@ impl StateMetadata {
 ///
 /// The bounds are a typed parameter of the transition rather than a
 /// constant of this crate: the admissible lead is configuration that
-/// callers own, and a transition that read it from a global could not
+/// callers supply for the architecture-owned lead identifiers; a transition
+/// that read it from a global could not
 /// be exercised against two different configurations at once. The
 /// invariant the constructor establishes — a nonzero minimum that does
 /// not exceed the maximum — is what makes the window nonempty, so the
@@ -119,6 +120,23 @@ impl AnnouncementLeadBounds {
         }
 
         Ok(Self { minimum, maximum })
+    }
+
+    /// Resolve both architecture-keyed cycle magnitudes and validate their window.
+    /// Missing identifiers are refused before constructing the validated pair.
+    pub fn from_architecture_bounds(
+        mut magnitude: impl FnMut(architecture::BoundId) -> Option<u64>,
+    ) -> Result<Self, RealizationError> {
+        let mut resolve = |selector: crate::AnnouncementLeadBound| {
+            let id = selector.bound_id();
+            magnitude(id)
+                .map(Cycle::new)
+                .ok_or(RealizationError::MissingAnnouncementLeadBound(id))
+        };
+        Self::new(
+            resolve(crate::AnnouncementLeadBound::Minimum)?,
+            resolve(crate::AnnouncementLeadBound::Maximum)?,
+        )
     }
 
     /// Return the minimum announcement lead.

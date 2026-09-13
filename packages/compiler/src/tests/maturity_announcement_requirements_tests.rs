@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use architecture::{OperationId, ProjectionId, ProjectionRule, RootId, RootUse};
 use realization::{
     AnnouncementLeadBound, DisclosureNode, FactId, InitialVisibility, Relation, StateField,
+    TransactionSide,
 };
 
 use crate::{
@@ -43,7 +44,14 @@ fn metadata_fields_are_exhaustive_and_symbolic() {
             | StateField::Cycle => AnnouncementFieldEffect::PreservePredecessor,
             StateField::Maturity => AnnouncementFieldEffect::AnnounceRequestedCycle,
         };
-        assert_eq!(predecessor, FactId::StateField { operation, field });
+        assert_eq!(
+            predecessor,
+            FactId::StateField {
+                operation,
+                side: TransactionSide::Input,
+                field
+            }
+        );
         assert_eq!(effect, expected);
     }
     assert_eq!(
@@ -71,7 +79,7 @@ fn metadata_fields_are_exhaustive_and_symbolic() {
 }
 
 #[test]
-fn nine_public_facts_equal_the_declaration() {
+fn fifteen_public_facts_equal_the_declaration() {
     let input = super::proof_tests::announcement_input();
     let declaration = input
         .realization()
@@ -92,8 +100,8 @@ fn nine_public_facts_equal_the_declaration() {
         })
         .collect::<Vec<_>>();
     let facts = AnnouncementMetadataRequirement::public_facts();
-    assert_eq!(facts.len(), 9);
-    assert_eq!(facts.iter().collect::<BTreeSet<_>>().len(), 9);
+    assert_eq!(facts.len(), 15);
+    assert_eq!(facts.iter().collect::<BTreeSet<_>>().len(), 15);
     assert_eq!(facts.as_slice(), declared);
 }
 

@@ -497,16 +497,19 @@ fn assert_lifecycle(declaration: &OperationRealization) {
 }
 
 fn public_facts() -> BTreeMap<FactId, BTreeSet<DisclosureReason>> {
-    let mut facts: BTreeMap<_, _> = StateField::ALL
-        .iter()
-        .map(|field| {
-            (
-                FactId::StateField {
-                    operation: OP,
-                    field: *field,
-                },
-                BTreeSet::from([DisclosureReason::PublicState]),
-            )
+    let mut facts: BTreeMap<_, _> = [TransactionSide::Input, TransactionSide::Output]
+        .into_iter()
+        .flat_map(|side| {
+            StateField::ALL.iter().map(move |field| {
+                (
+                    FactId::StateField {
+                        operation: OP,
+                        side,
+                        field: *field,
+                    },
+                    BTreeSet::from([DisclosureReason::PublicState]),
+                )
+            })
         })
         .collect();
     facts.insert(
@@ -573,7 +576,7 @@ fn derive_matches_architecture_spec() {
     assert_eq!(realization.relation_graph.edge_count(), 23);
     assert_eq!(realization.lifecycle_graph.node_count(), 8);
     assert_eq!(realization.lifecycle_graph.edge_count(), 12);
-    assert_eq!(realization.disclosure_graph.node_count(), 9);
+    assert_eq!(realization.disclosure_graph.node_count(), 15);
 }
 
 pub(super) fn assert_permutations(baseline: &ScopedRealizationSpec) {

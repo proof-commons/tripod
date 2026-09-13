@@ -540,11 +540,14 @@ fn lifecycle_declarations() -> (Vec<LifecycleNode>, Vec<LifecycleDependencyDecla
 
 fn disclosure_declarations() -> Vec<DisclosureNode> {
     let operation = OperationId::AnnounceMaturity;
-    StateField::ALL
-        .iter()
-        .map(|field| FactId::StateField {
-            operation,
-            field: *field,
+    [TransactionSide::Input, TransactionSide::Output]
+        .into_iter()
+        .flat_map(|side| {
+            StateField::ALL.iter().map(move |field| FactId::StateField {
+                operation,
+                side,
+                field: *field,
+            })
         })
         .chain([FactId::RequestedAnnouncementCycle { operation }])
         .chain(

@@ -274,7 +274,7 @@ fn announcement_is_available_through_explicit_public_scope() {
             .unwrap(),
         &[realization::ConstructibilityAuthorization::Operator]
     );
-    assert_eq!(realization.declassification().required_public.len(), 9);
+    assert_eq!(realization.declassification().required_public.len(), 15);
     assert_eq!(
         RealizationScope::phase1_pilots().operations(),
         &[OperationId::TransferLive, OperationId::CompactAsh]

@@ -13,7 +13,7 @@ pub enum TransactionSide {
     Output,
 }
 
-/// One predecessor STATE metadata field read on the STATE input.
+/// One semantic STATE metadata field, independent of transaction side.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StateField {
     /// Pool backing quantity.
@@ -68,13 +68,44 @@ impl StateField {
     }
 }
 
-/// One consensus lead input to an announcement observation.
+/// One selector for an architecture-owned calibrated cycle lead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AnnouncementLeadBound {
     /// Minimum announcement lead.
     Minimum,
     /// Maximum announcement lead.
     Maximum,
+}
+
+impl AnnouncementLeadBound {
+    /// Resolve this cycle selector to its public architecture bound.
+    #[must_use]
+    pub const fn bound_id(self) -> BoundId {
+        match self {
+            Self::Minimum => BoundId::MaturityLeadMin,
+            Self::Maximum => BoundId::MaturityLeadMax,
+        }
+    }
+}
+
+/// Published symbolic parameters available to STATE field laws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum StateLawParameter {
+    /// Published cycle split parameter whose value the model's `Constants::zeta` owns.
+    Zeta,
+}
+
+impl StateLawParameter {
+    /// Every published parameter in declaration order.
+    pub const ALL: &'static [Self] = &[Self::Zeta];
+
+    /// Return the stable name of this symbolic parameter.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Zeta => "zeta",
+        }
+    }
 }
 
 /// Stable identity of one primitive semantic observation.
@@ -94,18 +125,18 @@ pub enum FactId {
         object: ObjectId,
     },
 
-    /// One predecessor metadata field read on the STATE input.
+    /// One field of STATE metadata on one side of the transaction.
     /// The STATE family amount remains PID value, not metadata.
     StateField {
         operation: OperationId,
+        side: TransactionSide,
         field: StateField,
     },
 
     /// Announced cycle carried by the public announcement request.
     RequestedAnnouncementCycle { operation: OperationId },
 
-    /// Consensus lead input carried by the observation, not an
-    /// architecture-owned cardinality bound.
+    /// Public cycle lead keyed to its architecture-owned calibrated bound.
     AnnouncementLead {
         operation: OperationId,
         bound: AnnouncementLeadBound,

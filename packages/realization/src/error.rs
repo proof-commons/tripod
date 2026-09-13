@@ -104,6 +104,14 @@ pub enum RealizationError {
     #[error("announcement lead bounds are invalid: minimum {minimum}, maximum {maximum}")]
     InvalidAnnouncementLeadBounds { minimum: u64, maximum: u64 },
 
+    /// A required architecture-keyed cycle lead was not supplied.
+    #[error("missing announcement lead bound {0}")]
+    MissingAnnouncementLeadBound(BoundId),
+
+    /// A cycle bound appeared where a cardinality magnitude is required.
+    #[error("cycle bound {0} cannot supply a count")]
+    CycleBoundUsedAsCount(BoundId),
+
     /// One expression ID was declared more than once.
     #[error("expression {0:?} is declared more than once")]
     DuplicateExpression(ExprId),

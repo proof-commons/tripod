@@ -97,6 +97,7 @@ pub struct FactValues {
 impl FactValues {
     /// Insert one fact after checking its declared semantic type.
     pub fn insert(&mut self, fact: FactId, value: SemanticValue) -> Result<(), RealizationError> {
+        fact.validate_bound_unit()?;
         let expected = fact.semantic_type();
         let actual = value.semantic_type();
 
@@ -165,6 +166,15 @@ impl EvaluatedExpressions {
 }
 
 impl FactId {
+    pub(crate) fn validate_bound_unit(&self) -> Result<(), RealizationError> {
+        if let Self::BoundValue { bound } = self
+            && bound.unit() != architecture::BoundUnit::Count
+        {
+            return Err(RealizationError::CycleBoundUsedAsCount(*bound));
+        }
+        Ok(())
+    }
+
     /// Owning operation of one operation-scoped fact.
     ///
     /// Architecture-owned bound values are operation-independent.
@@ -531,7 +541,10 @@ fn infer_node_type(
     };
 
     match &declaration.node {
-        ExpressionNode::Fact(fact) => Ok(fact.semantic_type()),
+        ExpressionNode::Fact(fact) => {
+            fact.validate_bound_unit()?;
+            Ok(fact.semantic_type())
+        }
         ExpressionNode::Bool(_) => Ok(SemanticType::Bool),
         ExpressionNode::Count(_) => Ok(SemanticType::Count),
         ExpressionNode::Amount(_) => Ok(SemanticType::Amount),

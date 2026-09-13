@@ -136,20 +136,20 @@ fn a_sponsor_amount_fact_is_rejected_even_if_marked_private() {
 }
 
 #[test]
-fn announcement_inherits_nine_public_facts_without_amount_additions() {
+fn announcement_inherits_fifteen_public_facts_without_amount_additions() {
     use realization::{AnnouncementLeadBound, StateField};
     use std::collections::BTreeSet;
     let operation = AnnounceMaturity;
-    let mut expected: BTreeSet<_> = [
-        StateField::Omega,
-        StateField::YL,
-        StateField::YT,
-        StateField::Q,
-        StateField::Cycle,
-        StateField::Maturity,
-    ]
-    .map(|field| FactId::StateField { operation, field })
-    .into();
+    let mut expected: BTreeSet<_> = [TransactionSide::Input, TransactionSide::Output]
+        .into_iter()
+        .flat_map(|side| {
+            StateField::ALL.iter().map(move |field| FactId::StateField {
+                operation,
+                side,
+                field: *field,
+            })
+        })
+        .collect();
     expected.extend([
         FactId::RequestedAnnouncementCycle { operation },
         FactId::AnnouncementLead {
@@ -175,7 +175,7 @@ fn announcement_inherits_nine_public_facts_without_amount_additions() {
                 .collect::<BTreeSet<_>>(),
             expected
         );
-        assert_eq!(candidate.disclosure.inherited_required_public.len(), 9);
+        assert_eq!(candidate.disclosure.inherited_required_public.len(), 15);
         assert!(candidate.disclosure.added_required_public.is_empty());
         assert!(candidate.disclosure.retained_private.is_empty());
     }

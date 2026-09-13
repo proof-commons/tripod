@@ -806,11 +806,14 @@ fn assert_fact_operation_is_retained(make_fact: impl Fn(OperationId) -> FactId) 
 
 #[test]
 fn state_field_dependencies_retain_the_fact_operation() {
-    for field in crate::StateField::ALL {
-        assert_fact_operation_is_retained(|operation| FactId::StateField {
-            operation,
-            field: *field,
-        });
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        for field in crate::StateField::ALL {
+            assert_fact_operation_is_retained(|operation| FactId::StateField {
+                operation,
+                side,
+                field: *field,
+            });
+        }
     }
 }
 

@@ -208,10 +208,9 @@ fn both_censuses_have_six_fields() {
 }
 
 fn lead_bounds(constants: &Constants) -> realization::AnnouncementLeadBounds {
-    realization::AnnouncementLeadBounds::new(
-        realization::Cycle::new(constants.min_maturity_lead),
-        realization::Cycle::new(constants.max_maturity_lead),
-    )
+    realization::AnnouncementLeadBounds::from_architecture_bounds(|id| {
+        bound_magnitude(constants, id).ok()
+    })
     .unwrap()
 }
 
@@ -677,5 +676,70 @@ fn missing_operator_signature_precedes_maturity_checks() {
                 Err(Guard::BadSignature)
             );
         }
+    }
+}
+
+#[test]
+fn architecture_lead_adapter_preserves_calibrated_cycle_magnitudes() {
+    use architecture::BoundId;
+    use realization::AnnouncementLeadBound;
+    assert_eq!(
+        AnnouncementLeadBound::Minimum.bound_id(),
+        BoundId::MaturityLeadMin
+    );
+    assert_eq!(
+        AnnouncementLeadBound::Maximum.bound_id(),
+        BoundId::MaturityLeadMax
+    );
+    for (minimum, maximum) in [(10, 1000), (37, 509), (u64::MAX - 1, u64::MAX)] {
+        let mut constants = test_fixtures::constants();
+        constants.min_maturity_lead = minimum;
+        constants.max_maturity_lead = maximum;
+        let bounds = lead_bounds(&constants);
+        assert_eq!(bounds.minimum().get(), minimum);
+        assert_eq!(bounds.maximum().get(), maximum);
+        assert_eq!(
+            bounds.window(realization::Cycle::ZERO).unwrap(),
+            (
+                realization::Cycle::new(minimum),
+                realization::Cycle::new(maximum)
+            )
+        );
+        assert_eq!(
+            bounds.window(realization::Cycle::new(u64::MAX)),
+            Err(realization::MaturityTransitionRefusal::CycleArithmeticOverflow)
+        );
+    }
+}
+
+#[test]
+fn architecture_lead_adapter_refuses_invalid_or_missing_pairs() {
+    use architecture::BoundId;
+    for (minimum, maximum) in [(0, 1000), (1001, 1000)] {
+        let result = realization::AnnouncementLeadBounds::from_architecture_bounds(|id| match id {
+            BoundId::MaturityLeadMin => Some(minimum),
+            BoundId::MaturityLeadMax => Some(maximum),
+            _ => None,
+        });
+        assert_eq!(
+            result,
+            Err(realization::RealizationError::InvalidAnnouncementLeadBounds { minimum, maximum })
+        );
+    }
+    for missing in [BoundId::MaturityLeadMin, BoundId::MaturityLeadMax] {
+        let constants = test_fixtures::constants();
+        let result = realization::AnnouncementLeadBounds::from_architecture_bounds(|id| {
+            if id == missing {
+                None
+            } else {
+                bound_magnitude(&constants, id).ok()
+            }
+        });
+        assert_eq!(
+            result,
+            Err(realization::RealizationError::MissingAnnouncementLeadBound(
+                missing
+            ))
+        );
     }
 }
