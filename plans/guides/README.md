@@ -29,6 +29,7 @@ weight rule in [the plans README](../README.md).
 | [guide_eleven.md](guide_eleven.md) | Guide-11 preflight register and public declassification |
 | [guide_twelve.md](guide_twelve.md) | Guide-12 preflight register and end-to-end compact ASH |
 | [guide_thirteen.md](guide_thirteen.md) | Guide-13 preflight register and end-to-end live receipt transfer |
+| [guide_fourteen.md](guide_fourteen.md) | Guide-14 Wave 0 tenth-review disposition and Phase-5 handoff revalidation; Waves 1–13 bound by the conceptual register, in execution |
 | [guide_confidential_funding.md](guide_confidential_funding.md) | Intermediate confidential test materialization and funding, executed to the Wave-5 typed stop |
 
 ## Concept guides · `tab:guides:concepts`
@@ -64,11 +65,12 @@ batch was run against, and they may disagree. The executed guide is the
 record of the charter; neither is a record of the outcome.
 
 [guide_fourteen.md](guide_fourteen.md) is the numbered Guide-14 execution
-guide as the owner supplied it, archived verbatim beside its concept. It is
-deliberately absent from the executed table above, because no batch has been
-run against it: its Wave-0 disposition of the tenth static review's findings
-has not been chartered. It joins that table when its batch is chartered
-against it.
+guide as the owner supplied it, archived verbatim beside its concept
+(`T6-001`). It appears in the executed table above because a batch has been
+run against it: Wave 0 disposed of the tenth static review's findings and
+revalidated the Phase-5 handoff, closing out in the required order
+(`T6-002`, `T6-031`). Waves 1–13 are bound by the owner-issued conceptual
+preflight register and remain in execution (`T8-001`).
 
 [guide_fourteen_conceptual_register.md](guide_fourteen_conceptual_register.md) is the owner-issued conceptual preflight supplement that binds the three Guide-14 conceptual reviews to Waves 1–13 without editing the archived guide.
 
