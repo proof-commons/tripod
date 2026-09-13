@@ -9,7 +9,8 @@
 > and closed out (`T6-002`, `T6-031`); the owner-issued conceptual
 > preflight register binds Waves 1–13 (`T8-001`). Wave 1's deliverables
 > are landed except the architecture-owned lead-bound adapter, which waits
-> on question (b); Wave 2, the validated compiler operation plan, is next.
+> on question (b); Wave 2 is in progress under its recorded bite rows
+> (`T11-013` through `T11-020`).
 > **Entry:** (`gate:phase5:exit`) and accepted STATE-constructor decision
 > **Packages:** tapscript, linker, transaction, vectors
 > **Operation:** `announce-maturity`
@@ -158,17 +159,47 @@ Guide 14 §3.1 asks Wave 0 to record the existing owners of the STATE semantics.
 
 10. `ConformanceReport::is_conformant` already admits `RelationStatus::EvidenceRequired` beside `Passed` and `StaticallyValidated` because external proof incompleteness is not a semantic failure (`packages/realization/src/evaluate.rs`, the `impl ConformanceReport` block). The dependency walk in `evaluate_operation` now agrees: only `Failed` and `Blocked` prerequisites block, while `EvidenceRequired` releases its dependents as an established external premise. The distinction is observable through the announcement's `AuthorizationBeforeClosure` and `AuthorizationBeforeConstructibility` edges (`packages/realization/src/declarations/announce_maturity.rs`): without that release, no announcement observation could produce a conformant runtime report.
 
+### Wave-2 rulings · `rule:phase6:wave2-rulings`
+
+11. The announcement lead bounds become architecture-owned bound identifiers in the public `BoundId` census in `packages/architecture/src/ids.rs`, beside `FeeSponsorInputMax`. Question (b) already excludes unkeyed constants from a window expression; the announce-maturity architecture row already publishes `FeeSponsorInputMax` as the runtime bound it uses (`packages/architecture/src/spec.rs`); and the compiler's `RuntimeBound` source kind already carries an architecture `BoundId` (`packages/compiler/src/source.rs`). Independent validation of the announcement window therefore needs one public owner, while public recovery does not consume the bounds (`sec:phase6:carrier-proof`). Adding the two identifiers requires an architecture schema bump and a semantic-hash move under (`[ADR021-rule:identity:recipe-permanence]`), isolated as `T11-021` before B5: the realization's `AnnouncementLead` fact keys then resolve to those bounds, model conformance proves the architecture values agree with `min_maturity_lead` and `max_maturity_lead` in `packages/model/src/constants.rs`, and `T11-017` can state the altered-lead-bounds corruption.
+
+12. Operator authorization stays target-side evidence. `OperationObservation` carries presented protocol and sponsor signers but no expected operator identity (`packages/realization/src/observation.rs`), the operator relations remain `EvidenceRequired` in `packages/realization/src/evaluate.rs`, and the compiler's external classification in `packages/compiler/src/proof.rs` stands. Wave 3 discharges that evidence through operator-key encoding and target-native signature control, with the model's signer check in `packages/model/src/ops/maturity.rs` remaining the conformance ground truth. The shape deliberately abstracts the operator's identity out of analysis: the plan states the obligation and the capability that discharges it, while the deployment profile binds who satisfies it. That gives each fact one verdict owner and keeps the operator identity as deployment data rather than architecture data; the ADR-021 identity chain places keys and key policies at the deployment-profile end (`[ADR021-rem:identity:chain]`), so architecture ownership would make every key rotation a schema bump and invert the chain by making architecture depend on a per-deployment fact. The visible price is an honestly conformant but evidence-incomplete report until the deployment layer discharges the obligation (`packages/realization/src/evaluate.rs`).
+
+#### Ownership shapes · `rule:phase6:ownership-shapes`
+
+A consensus value that a plan must validate against is a schema-declared symbol with exactly one published definition, versioned with the schema and referenced by identifier from every plan, never a literal in a check and never an unnamed runtime struct. A verdict that needs key material or an identity is an external obligation emitted by the analysis together with the capability that discharges it, discharged where the key lives and bound by the deployment profile, never a comparison against an identity handed to the analysis. The analysis therefore never names an identity, and a report that is conformant but evidence-incomplete is the honest state until the deployment layer runs (`[ADR021-rem:identity:chain]`).
+
+### Wave-2 plan findings · `sec:phase6:wave2-findings`
+
+Wave 2 needs a bespoke validated announcement container while sharing the generic row vocabulary in `packages/compiler/src/operation_plan.rs`: that module's target relation, case, carrier, coverage and lifecycle rows are already reusable, but its `ValidatedTargetOperationPlan` and planning entry point are explicitly compact-specific.
+
+The compiler's announce-maturity Authorization/Operation and Constructibility/Operation relations are external obligations, not shape-proved obligations. The operator capability already exists in `packages/compiler/src/capability.rs`, but `packages/compiler/src/proof.rs`, `packages/compiler/src/source.rs` and `packages/compiler/src/coverage.rs` do not yet carry that classification through the plan, so the operator-evidence sweep (`T11-013`) precedes any plan publication.
+
+The public-fact census stays at nine: the six STATE fields, the requested cycle and the two lead facts declared in `packages/realization/src/declarations/announce_maturity.rs`. Derived successor roles belong in the requirement layer (`T11-015`), and no side-indexed STATE-field fact keys are claimed because `FactId::StateField` in `packages/realization/src/identity.rs` keys only the operation and predecessor field.
+
+Under ruling 11, the minimum and maximum announcement lead bounds become architecture-owned symbols in `T11-021`; the requirement vocabulary in `packages/compiler/src/maturity_announcement_requirements.rs` carries their `AnnouncementLead` fact keys, and the altered-lead-bounds corruption check lands in B5 (`T11-017`) after those keys resolve to the architecture bounds.
+
+The output position is an abstract role in the announcement plan, with its concrete index owned downstream. This follows the existing boundary in `packages/compiler/src/operation_plan.rs`, whose abstract carrier and coverage rows deliberately contain no transaction position or target encoding.
+
+No new digest enters the announcement plan, and the existing `ArchitectureBinding` in the typed `TargetOperationSource` remains the architecture binding. `packages/compiler/src/operation_plan.rs` expressly reserves no digest field, so the announcement container has no basis to mint one.
+
+The six typed STATE lifecycle exits — `AdmitDeposits`, `Cycle`, `Redeem`, `ReceiptRelabel`, `Clear` and `AnnounceMaturity` — are published by the declaration and architecture censuses in `packages/realization/src/declarations/announce_maturity.rs` and `packages/architecture/src/spec.rs`. `OperationId::AnnounceMaturity` already exists in `packages/architecture/src/ids.rs`, so Wave 2 invents no further operation identifier.
+
+The empty canonical-delta negative classes need an applicability decision before `T11-017`: the announce-maturity declaration's expected set is empty in `packages/architecture/src/spec.rs` and `packages/realization/src/validate.rs`, while duplicate normalization precedes evaluation, so there is no focused valid-observation mutation for those classes.
+
 ### Handed up for a ruling · `rem:phase6:wave1-questions`
 
 (a) Candidate R-6 reads `StateMetadata` as a projection of the model's canonical `PoolState`. Ruling 2 realizes that reading as a realization-owned type whose projection law is proved in model conformance, because the verified dependency direction admits no other placement that the constructor and ABI waves can reach. Under the register's candidate governance, evidence contradicting a candidate is escalated before any adoption or overturn, so `G14C-01` and R-6 stay OPEN until this reading is confirmed, or until a dependency admission of the model crate into the pipeline is directed instead — which would require the backlog's full dependency-admission record under §3.4.
 
-(b) The model's `Constants` own the announcement lead bounds, but no `BoundId` names them. Any window expression needs named minimum and maximum inputs, so this blocks the vocabulary bite and declaration, not merely Wave-2 calibration. Whether they enter the architecture through the schema rule at `packages/architecture/src/ids.rs:1-5` or gain another public typed owner remains open; unkeyed constants are not admissible.
+(b) The model's `Constants` own the announcement lead values, but no `BoundId` yet names them, and unkeyed constants are not admissible inputs to a window expression. Ruling 11 assigns the public definition to the architecture census, requires the schema and semantic-hash move, and opens `T11-021` before B5; this item is discharged.
 
 (c) The architecture data census names four of the six STATE fields. `G14C-14`'s field-slicing law, that field slicing commutes with semantic projection, will need architecture names for cycle and maturity, or an explicit statement that the law ranges over the four declared quantities only and that the remaining two are model-owned.
 
 (d) Wave 0's remaining deliverable, the §5.1 carrier-sufficiency proof, was not recorded. §5.1 accepts the witness carrier only if Wave 0 proves that an unrelated process can reconstruct the successor from the accepted transaction alone, and directs that implementation stop for a focused carrier decision if that proof fails. The proof is now recorded at (`sec:phase6:carrier-proof`), and this item is discharged.
 
-(e) Should the target wave discharge ruling 6's evidence-required operator relation from its key encoding and signature control, or should `OperationObservation` gain the expected operator identity for direct evaluation? It now carries only presented signers (`packages/realization/src/observation.rs:210-220`), and doing both would duplicate verdict ownership.
+(e) `OperationObservation` carries presented signers but no expected operator identity (`packages/realization/src/observation.rs`), while the model already checks the operator signer and the compiler emits the corresponding external obligation. Ruling 12 keeps the realization identity-free and assigns discharge to target-side operator-key encoding and signature control under the deployment profile; this item is discharged.
+
+(f) Must public STATE facts become side-indexed input/output keys as this card's earlier prose expects, given that the realization keys predecessor fields only and `FactId::StateField` carries no side (`packages/realization/src/identity.rs`)?
 
 ### Wave-0 carrier sufficiency · `sec:phase6:carrier-proof`
 
