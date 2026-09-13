@@ -5,6 +5,7 @@
 realization_source_files = files(
   'src/binding.rs',
   'src/constructibility.rs',
+  'src/declarations/announce_maturity.rs',
   'src/declarations/compact_ash.rs',
   'src/declarations/mod.rs',
   'src/declarations/transfer_live.rs',
@@ -23,6 +24,7 @@ realization_source_files = files(
   'src/scope.rs',
   'src/state.rs',
   'src/state_codec.rs',
+  'src/tests/announce_maturity_tests.rs',
   'src/tests/compact_ash_tests.rs',
   'src/tests/constructibility_tests.rs',
   'src/tests/disclosure_tests.rs',

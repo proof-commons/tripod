@@ -25,3 +25,17 @@ proptest! {
         );
     }
 }
+
+proptest! {
+    #[test]
+    fn three_operation_permutations_preserve_projection(keys in any::<[u8; 3]>()) {
+        let operations = [OperationId::AnnounceMaturity, OperationId::CompactAsh, OperationId::TransferLive];
+        let mut keyed = keys.into_iter().zip(operations).collect::<Vec<_>>();
+        keyed.sort();
+        let actual = derive(&ARCHITECTURE,
+            RealizationScope::from_operations(keyed.into_iter().map(|(_, operation)| operation)).unwrap()).unwrap();
+        let expected = derive(&ARCHITECTURE, RealizationScope::from_operations(operations).unwrap()).unwrap();
+        super::announce_maturity_tests::assert_permutations(&actual);
+        prop_assert_eq!(actual.project(), expected.project());
+    }
+}
