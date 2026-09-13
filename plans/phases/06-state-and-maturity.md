@@ -7,8 +7,9 @@
 > supplied Guide 14, archived verbatim (`T6-001`); its Wave 0 — the
 > tenth-review disposition and the Phase-5 handoff revalidation — ran
 > and closed out (`T6-002`, `T6-031`); the owner-issued conceptual
-> preflight register binds Waves 1–13 (`T8-001`). Wave 1, typed STATE
-> metadata and semantic transition, is the next wave.
+> preflight register binds Waves 1–13 (`T8-001`). Wave 1's deliverables
+> are landed except the architecture-owned lead-bound adapter, which waits
+> on question (b); Wave 2, the validated compiler operation plan, is next.
 > **Entry:** (`gate:phase5:exit`) and accepted STATE-constructor decision
 > **Packages:** tapscript, linker, transaction, vectors
 > **Operation:** `announce-maturity`
@@ -147,15 +148,90 @@ Guide 14 §3.1 asks Wave 0 to record the existing owners of the STATE semantics.
 
 5. The canonical metadata encoding is big-endian, with a `u32` representation nonce. Big-endian is the first-party precedent already load-bearing in the model's own codec (`packages/model/src/ledger.rs:1480`), and matching it means one byte-order convention to reason about across first-party encodings rather than two. The little-endian prototype in the conformance package is not counter-evidence: it is unpromoted evidence code whose own header refuses ABI standing. The encoding is an ABI-identity component — D006 binds constructor and metadata schemas and representation requirements into ABI identity ((`rule:abi:identity`)) — so it is recorded here, before any bytes exist, rather than left to be discovered from whatever the first implementation happened to write.
 
+6. Operator authorization is an operation-level evidence-required relation and an operator constructibility class. The existing owner/permissionless bodies and public-permissionless/owners-of classes cannot state it (`packages/realization/src/relation.rs:20-25`, `:42-68`): STATE has no owner, permissionlessness requires no signer, and the model requires the operator (`packages/realization/src/evaluate.rs:371-374`, `:828-840`; `packages/model/src/ops/maturity.rs:34-40`). Because the observation has presented signers but no expected operator identity (`packages/realization/src/observation.rs:210-220`), `OperatorAuthorization` yields `EvidenceRequired` like substrate conservation (`packages/realization/src/evaluate.rs:291-304`), never a forged pass. `ConstructibilityClass::Operator` reuses the graph's existing operator authorization, availability discharge, derived announce-maturity case, and test (`packages/realization/src/constructibility.rs:34-43`, `:276-289`; `packages/realization/src/validate.rs:493`; `packages/realization/src/tests/constructibility_tests.rs:400-410`). Wave 3 retains operator-key and target-signature closure (`plans/guides/guide_fourteen.md:2925-2935`).
+
+7. Each of `omega`, `y_l`, `y_t`, `q`, `cycle`, and `maturity` is a field-level public fact, keyed separately for STATE input and output. `FactId` has no STATE key and `FamilyAmount` is aggregate family value (`packages/realization/src/identity.rs:16-77`), so neither can name the six public fields in `StateMetadata` (`packages/realization/src/state.rs:44-70`). Add typed field identities, not an opaque blob or caller-authored truth; D005 requires explicit encoding or a public commitment with authenticated public opening (`plans/decisions/005-value-representation.md:84-97`).
+
+8. STATE admits exactly `Explicit` and `PublicCommitted`: they are D005's two public carriers (`plans/decisions/005-value-representation.md:84-97`) and the existing compact-ASH `Relation::Representation` pair (`packages/realization/src/declarations/compact_ash.rs:337-344`). `PrivateCommitted` cannot carry ruling 7's public facts.
+
+9. STATE has exactly six lifecycle exits — `AdmitDeposits`, `Cycle`, `Redeem`, `ReceiptRelabel`, `Clear`, and `AnnounceMaturity` — matching its six `ObjectSpec` mutators (`packages/architecture/src/spec.rs:2047-2063`). Declare all six under both ruled representations, and scope-gate a content pin comparing that census with the scoped State object's mutators: the generic weld derives expectations from declarations and cannot detect coherent omission from both relation and graph (`packages/realization/src/validate.rs:525-551`, `:635-678`). The announcement mirror separately checks its exact-one STATE input and output (`packages/architecture/src/spec.rs:1607-1638`) using `StateInput` and `StateOutput`; generic validation retains cardinality and recognition (`packages/realization/src/validate.rs:318-375`).
+
+10. `ConformanceReport::is_conformant` already admits `RelationStatus::EvidenceRequired` beside `Passed` and `StaticallyValidated` because external proof incompleteness is not a semantic failure (`packages/realization/src/evaluate.rs`, the `impl ConformanceReport` block). The dependency walk in `evaluate_operation` now agrees: only `Failed` and `Blocked` prerequisites block, while `EvidenceRequired` releases its dependents as an established external premise. The distinction is observable through the announcement's `AuthorizationBeforeClosure` and `AuthorizationBeforeConstructibility` edges (`packages/realization/src/declarations/announce_maturity.rs`): without that release, no announcement observation could produce a conformant runtime report.
+
 ### Handed up for a ruling · `rem:phase6:wave1-questions`
 
 (a) Candidate R-6 reads `StateMetadata` as a projection of the model's canonical `PoolState`. Ruling 2 realizes that reading as a realization-owned type whose projection law is proved in model conformance, because the verified dependency direction admits no other placement that the constructor and ABI waves can reach. Under the register's candidate governance, evidence contradicting a candidate is escalated before any adoption or overturn, so `G14C-01` and R-6 stay OPEN until this reading is confirmed, or until a dependency admission of the model crate into the pipeline is directed instead — which would require the backlog's full dependency-admission record under §3.4.
 
-(b) Guide §3.1 expects the announcement lead bounds in the typed architecture. The tree owns them in the model's `Constants`, with no `BoundId` naming them. Whether the architecture gains that bound — a schema bump under the header rule at `packages/architecture/src/ids.rs:1-5` — is needed before the Wave-2 compiler plan needs values to calibrate against, and is not needed for Wave 1 to close.
+(b) The model's `Constants` own the announcement lead bounds, but no `BoundId` names them. Any window expression needs named minimum and maximum inputs, so this blocks the vocabulary bite and declaration, not merely Wave-2 calibration. Whether they enter the architecture through the schema rule at `packages/architecture/src/ids.rs:1-5` or gain another public typed owner remains open; unkeyed constants are not admissible.
 
 (c) The architecture data census names four of the six STATE fields. `G14C-14`'s field-slicing law, that field slicing commutes with semantic projection, will need architecture names for cycle and maturity, or an explicit statement that the law ranges over the four declared quantities only and that the remaining two are model-owned.
 
-(d) Wave 0's remaining deliverable, the §5.1 carrier-sufficiency proof, was not recorded. §5.1 accepts the witness carrier only if Wave 0 proves that an unrelated process can reconstruct the successor from the accepted transaction alone, and directs that implementation stop for a focused carrier decision if that proof fails. Neither outcome is on record, so the proof is owed before the constructor wave and is carried here as Wave-0 debt.
+(d) Wave 0's remaining deliverable, the §5.1 carrier-sufficiency proof, was not recorded. §5.1 accepts the witness carrier only if Wave 0 proves that an unrelated process can reconstruct the successor from the accepted transaction alone, and directs that implementation stop for a focused carrier decision if that proof fails. The proof is now recorded at (`sec:phase6:carrier-proof`), and this item is discharged.
+
+(e) Should the target wave discharge ruling 6's evidence-required operator relation from its key encoding and signature control, or should `OperationObservation` gain the expected operator identity for direct evaluation? It now carries only presented signers (`packages/realization/src/observation.rs:210-220`), and doing both would duplicate verdict ownership.
+
+### Wave-0 carrier sufficiency · `sec:phase6:carrier-proof`
+
+The claim proved here is recovery, not fresh consensus validation: Guide 14 makes the accepted announcement transaction's public script-path witness and output set the publication source (`plans/guides/guide_fourteen.md:270-283`), and §5.1 says the witness publishes predecessor-construction data, the announced cycle, and the canonical successor representation nonce without a second metadata output (`plans/guides/guide_fourteen.md:882-890`).
+
+The carrier's public recovery inputs divide between facts already owned by this tree and exact construction work a later wave still owes:
+
+| Recovery value from §1.8 | Public source | Owned today | Later wave owes |
+|---|---|---|---|
+| predecessor metadata | STATE input witness, in full | `StateMetadata` owns the six-field census `omega`, `y_l`, `y_t`, `q`, `cycle`, and `maturity` (`packages/realization/src/state.rs:44-70`). | The Wave-1 codec bite must decode all six fields under the published schema rather than substitute a digest. |
+| requested announcement cycle | STATE input witness | The ordinal `Cycle` domain and checked advance are typed at `packages/realization/src/domain.rs:134-168`; `announce_maturity` accepts the announced `Cycle` at `packages/realization/src/state.rs:223-227`. | The codec must give that cycle one canonical public representation. |
+| successor semantic metadata | derived from the preceding two values, not separately published | The total transition and its closed result are owned at `packages/realization/src/state.rs:210-252`. | Model conformance must continue to pin the projection law named by the second Wave-1 ruling (`plans/phases/06-state-and-maturity.md:142`). |
+| successor representation nonce | STATE input witness | The fifth Wave-1 ruling fixes big-endian canonical metadata encoding and a `u32` nonce (`plans/phases/06-state-and-maturity.md:148`); semantic STATE deliberately excludes representation (`packages/realization/src/state.rs:9-15`). | The in-flight Wave-1 codec bite must implement those ruled bytes, and the constructor wave must verify the canonical retry result. |
+| metadata schema | published recovery schema | The semantic field set and the ruled byte order and nonce width are fixed by the two owners above. | The codec bite must finish the exact field layout, discriminants, versioning, and strict decoding. |
+| static constructor recipe or exact linked static-root reference | STATE input witness and published constructor schema | The successor must reuse one exact linked static subtree, with a dynamic metadata leaf and fixed branch side (`plans/guides/guide_fourteen.md:892-918`); the leading construction combines that root with the metadata leaf (`plans/research/state-constructor.md:137-175`). | The constructor wave must implement and bind that recipe or reference without an additional private input. |
+| successor output position | accepted transaction's public output set | §1.8 requires the position as recovery data (`plans/guides/guide_fourteen.md:274-283`). | The transaction and ABI waves must bind its canonical representation and validate the selected output. |
+| target leaf version and internal-key policy | witness-visible target policy and published constructor schema | The research requires target leaf-version capability (`plans/research/state-constructor.md:60-72`) and a deterministic, publicly auditable internal key (`plans/research/state-constructor.md:177-193`). | The target and constructor waves must bind the exact leaf version and key while preserving those policies. |
+
+As implemented, `announce_maturity` is a total deterministic function of predecessor metadata, announced cycle, and typed lead bounds: every input returns either one complete successor or one member of the closed refusal sum (`packages/realization/src/state.rs:155-208`, `:210-252`).
+
+For an accepted announcement, the successful branch is unique: it copies `omega`, `y_l`, `y_t`, `q`, and the predecessor's current `cycle`, and replaces only `maturity` with `Announced { cycle: announced_cycle }` (`packages/realization/src/state.rs:72-89`, `:238-252`).
+
+Thus each of the six successor fields has a public source: `omega`, `y_l`, `y_t`, `q`, and `cycle` come from the full predecessor metadata, while `maturity` comes from the announced cycle plus the publicly visible fact that the transaction was accepted.
+
+Once the ruled encoding is implemented, successor metadata bytes are the deterministic encoding of that unique semantic successor and the public successor nonce; neither value admits an additional author.
+
+Under §5.2 through §5.4, constructor bytes are then a deterministic function of those metadata bytes, the shared static subtree, the fixed branch side, deterministic nonce retry, and the published target policy (`plans/guides/guide_fourteen.md:892-946`).
+
+Recovery steps 1 and 2 locate the accepted transaction and verify its bytes and deployment binding; both operate on the named public publication source (`plans/guides/guide_fourteen.md:272-283`, `:285-289`).
+
+Step 3 decodes the witness under the published schema, and step 4 applies the typed transition to the recovered predecessor metadata and announced cycle (`plans/guides/guide_fourteen.md:289-290`).
+
+Step 5 evaluates the canonical constructor from the encoded successor, shared static subtree, and target policy, and step 6 compares the result with the output at the carried public position (`plans/guides/guide_fourteen.md:291-292`).
+
+The lead bounds are not a successor-derivation input after acceptance: they decide whether the transition may succeed, but the accepted successor itself is the field-for-field mapping above.
+
+Those bounds currently live as `min_maturity_lead` and `max_maturity_lead` in the model's `Constants` (`packages/model/src/constants.rs:17-18`), while the realization transition receives a validated typed pair (`packages/realization/src/state.rs:92-152`, `:223-227`).
+
+A third party independently checking validity therefore also needs the consensus constants published elsewhere; whether the typed architecture must name them remains open in question (b) above (`plans/phases/06-state-and-maturity.md:162`).
+
+The predecessor's own representation nonce is likewise unnecessary for successor derivation: it authenticates predecessor constructor linkage, whereas the successor constructor consumes its separately public successor nonce (`plans/guides/guide_fourteen.md:240-258`).
+
+The proof holds only while the witness carries predecessor metadata in full, rather than a hash of it, and carries the announced cycle; otherwise the reconstructor cannot recover the five copied fields or the new `maturity` value.
+
+It would also fail if `omega`, `y_l`, `y_t`, `q`, or `cycle` acquired any source other than predecessor metadata, if `maturity` acquired any source other than predecessor maturity plus the announced cycle, or if encoding or construction consulted data outside the witness, output set, and published schemas.
+
+Accordingly, the §5.1 carrier is accepted for the initial candidate, no second publication is introduced, and the residual obligation is a constructor-wave test tripwire proving that the constructor remains a function of exactly the public inputs listed here.
+
+### Declaration prerequisites · `sec:phase6:declaration-prerequisites`
+
+Three closed-vocabulary gaps precede an honest announce-maturity declaration:
+
+| Gap | Tree evidence | Vocabulary owed before declaration |
+|---|---|---|
+| operator relation | Only owner and permissionless bodies exist (`packages/realization/src/relation.rs:42-68`); STATE has no owner, permissionlessness requires no signer, and the model requires the operator (`packages/realization/src/evaluate.rs:371-374,828-840`; `packages/model/src/ops/maturity.rs:34-40`). | Add evidence-required `OperatorAuthorization`, then cover the exhaustive sites at `packages/compiler/src/requirement.rs:541-550`, `source.rs:230-237`, `layout.rs:442-451`, `placement.rs:566-573`, `coverage.rs:763-780`, and `packages/realization/src/tests/compact_ash_tests.rs:1695-1704`. |
+| operator constructibility | Only `PublicPermissionless` and `OwnersOf` exist (`packages/realization/src/relation.rs:20-25`), while operator graph support already exists (`packages/realization/src/constructibility.rs:34-43,276-289`; `packages/realization/src/validate.rs:493`). | Add `ConstructibilityClass::Operator`; reuse the existing graph authorization. |
+| public STATE fields | `FactId` lacks STATE-field keys and `FamilyAmount` is aggregate (`packages/realization/src/identity.rs:16-77`); `StateMetadata` exposes six fields (`packages/realization/src/state.rs:44-70`). | Add typed input/output identities for all six, without amount or boolean surrogates. |
+
+The dependency split is vocabulary, then declaration, then executed-model conformance. The declaration bite owns the exact relation/lifecycle censuses, scoped mirror, content pins and corruption tests; its mirror adds only `StateInput` and `StateOutput` to the current mismatch enum (`packages/realization/src/error.rs:12-37`) because generic cardinality and recognition stay in `packages/realization/src/validate.rs:318-375`.
+
+The declaration sits at the Wave-1/Wave-2 boundary: it closes Wave 1's realization semantics and supplies Wave 2's declaration-derived exact relation census (`plans/guides/guide_fourteen.md:2873-2892`, `:2900-2917`). Wave 3 still owns operator-key encoding, message recomputation and target-native signature control (`plans/guides/guide_fourteen.md:2925-2935`), separated by ruling 6's external requirement.
+
+The three declaration-prerequisite gaps are closed by the vocabulary landing in `0.6.147-dev`; the announce-maturity declaration, its dependency-release follow-up, and its executed-model conformance landed in `0.6.148-dev`.
 
 ## Exit gate · `gate:phase6:exit`
 

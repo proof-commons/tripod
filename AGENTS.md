@@ -25,6 +25,8 @@
   the generated-artifact and documentation checkers, or the document
   build. Until the full gate has run, report it as deferred rather
   than as a passing run.
+- Cite by label, never by object name. Cite a section, row, table, figure, or file by its label in the house form (for example, `sec:phase6:carrier-proof` or `T11-005`) or by its path; never cite a Git object name — full, abbreviated, or elided — in tracked prose, comments, or messages. Lanes may commit as often as needed while working, but import rebuilds the landing into a few commits, each carrying one meaningful unit of work and each passing the full gate with formatting checked last. An object name recorded before that rebuild therefore stops resolving, and the hash-citation audit refuses a value that nothing regenerates and nothing resolves (`[ADR021-rule:identity:hash-citation-audit]`). Commit and tree identifiers remain source provenance and never protocol identity (`[ADR021-tab:identity:current]`).
+- Patch tags name committed steps. When prose must name a committed step — such as the landing recorded by a backlog row or the tip on which a batch-boundary gate ran — cite an annotated patch tag of the form `0.6.N-dev`, minted on the landed commit when a citation first needs it, in demand order rather than commit order, with a message stating who can name what because of it (`Created so that … can name …`). Patch tags do not bump the workspace version: `Cargo.toml` remains at the minor's `.0` until a minor release. A citation that a label can carry does not get a tag.
 - Documentation-only changes need no Rust lane. The label and census
   checkers read their subjects at runtime, so an already-built
   checker binary re-checks edited prose without recompiling.

@@ -114,9 +114,9 @@ Maintained planning prose under:
 plans/
 ```
 
-excluding the archived documents and generated registers below, is the core class. Its hard cap is 1180 KiB and its soft target 798 KiB, raised with the Guide-14 document import when the tree measured within roughly 13.4 KiB of the previous 1126 KiB cap with Phase 6 just opened and its records entirely unwritten; the cap rose to the measured tree rounded up to the nearest 10 KiB above roughly 64 KiB of headroom, and the advisory by the same ratio, rounded down. The imported packet did not press on this class — verbatim records are charged to the archive backstop below — so what the raise absorbs is the phase's own maintained records. The earlier raises, to the nearest whole KiB under 1.1 MiB and before that from the 768 KiB and 520 KiB figures the checker had inherited verbatim from the retired Python script, are recorded with their derivations at the constants. That prose is maintained, so unchecked growth there is duplication rather than content, and the budget keeps one fact to one owner; a raise moves where duplication starts costing, and removes nothing.
+excluding the archived documents and generated registers below, is the core class. Its hard cap is 1536 KiB (1.5 MiB) and its soft target 1038 KiB, raised on 2026-09-12 when the tracked tree measured 1207999 bytes against the 1208320-byte cap — 321 bytes of headroom — while Phase 6's first wave was still recording. The hard cap is a round 1.5 MiB expressed in whole KiB; the advisory is the old 798 KiB scaled by the same ratio, `798 × 1536 / 1180 = 1038.7525 KiB`, and rounded down. The raise is paired with moving the exited Phase-3, Phase-4, and Phase-5 closed rows into history, so its room is for the remaining Phase-6 waves rather than duplicated closed records. The earlier raises are recorded with their derivations at the constants. That prose is maintained, so unchecked growth there is duplication rather than content, and the budget keeps one fact to one owner; a raise moves where duplication starts costing, and removes nothing.
 
-Root ADRs under `adr/` are their own class, excluded from the core class and checked against a 2 MiB backstop, half the archive backstop. ADRs are normative decision records, including externally authored texts adopted whole; the backstop's only purpose is to catch a runaway, not to shape their content.
+Root ADRs under `adr/` are their own class, excluded from the core class and checked against a 2 MiB backstop, one quarter of the archive backstop. ADRs are normative decision records, including externally authored texts adopted whole; the backstop's only purpose is to catch a runaway, not to shape their content.
 
 Archived documents — the verbatim records under:
 
@@ -127,7 +127,7 @@ plans/history/
 plans/reviews/
 ```
 
-are excluded from the core class and accounted separately against the 4 MiB archive backstop. An archive records a named tree exactly and is never trimmed to fit, so charging it to the maintained-prose budget would make the guardrail fire on the one class of file it must not police. The archive backstop is a runaway-paste tripwire, not a shaping force.
+are excluded from the core class and accounted separately against the 8 MiB archive backstop. After the exited-phase move the archive measures 3273117 bytes, roughly three quarters of the former 4 MiB tripwire; doubling the backstop keeps it deliberately far above verbatim history. An archive records a named tree exactly and is never trimmed to fit, so charging it to the maintained-prose budget would make the guardrail fire on the one class of file it must not police. The archive backstop is a runaway-paste tripwire, not a shaping force.
 
 [`history/`](history/README.md) belongs to that class by role rather than by
 provenance. The other three hold documents the project received; history holds
