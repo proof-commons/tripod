@@ -76,7 +76,11 @@ struct Accepted {
 /// against a fresh re-derivation of its input, not that one call
 /// happened to return `Ok`.
 fn analyze(operations: &[OperationId]) -> Accepted {
-    let input = bound_input(operations);
+    let input = if operations == [OperationId::AnnounceMaturity] {
+        super::announcement_input()
+    } else {
+        bound_input(operations)
+    };
     let program = analyze_scoped_program(&input, limits()).expect("scoped analyzed program");
 
     validate_scoped_analyzed_program(&input, limits(), &program).expect("assembly closure");
@@ -91,6 +95,13 @@ static COMPACT_ASH: LazyLock<Accepted> = LazyLock::new(|| analyze(&[OperationId:
 static TRANSFER_LIVE: LazyLock<Accepted> = LazyLock::new(|| analyze(&[OperationId::TransferLive]));
 static COMBINED: LazyLock<Accepted> =
     LazyLock::new(|| analyze(&[OperationId::CompactAsh, OperationId::TransferLive]));
+
+static ANNOUNCEMENT: LazyLock<Accepted> =
+    LazyLock::new(|| analyze(&[OperationId::AnnounceMaturity]));
+
+fn acceptance_programs() -> [&'static Accepted; 3] {
+    [&COMPACT_ASH, &TRANSFER_LIVE, &ANNOUNCEMENT]
+}
 
 fn pilots() -> [&'static Accepted; 2] {
     [&COMPACT_ASH, &TRANSFER_LIVE]
@@ -159,6 +170,7 @@ enum ExpectedProof {
     ConservationStrategy,
     StaticallyValidated,
     ExternalEvidence,
+    OperatorEvidence,
 }
 
 /// The conservation strategy each representation mode admits (§19.2).
@@ -646,10 +658,62 @@ fn transfer_live_rows() -> Vec<AcceptanceRow> {
     ]
 }
 
+// Announcement rows share only the independent test census's literal identities.
+fn announcement_rows() -> Vec<AcceptanceRow> {
+    use ExpectedProof::{ExternalEvidence, OperatorEvidence, Selected, StaticallyValidated};
+    use RequiredCapability as Needs;
+    (1..=26)
+        .map(|number| {
+            let proof = match number {
+                9 | 19 => OperatorEvidence,
+                13 => ExternalEvidence,
+                20..=26 => StaticallyValidated,
+                _ => Selected(ProofKind::ManifestShape),
+            };
+            let capabilities = match number {
+                1..=4 => BTreeSet::from([
+                    Needs::AuthenticatedObjectRecognition,
+                    Needs::AuthenticatedFamilyCardinality,
+                ]),
+                5..=8 | 10 | 11 => BTreeSet::from([Needs::AuthenticatedObjectRecognition]),
+                9 | 19 => BTreeSet::from([
+                    Needs::AuthenticatedObjectRecognition,
+                    Needs::OperatorAuthorization,
+                ]),
+                12 | 14 | 15 => BTreeSet::from([
+                    Needs::AuthenticatedObjectRecognition,
+                    Needs::AuthenticatedOpenFlowPartition,
+                ]),
+                13 => BTreeSet::from([Needs::WholeTransactionValueConservation]),
+                16 => BTreeSet::from([
+                    Needs::AuthenticatedObjectRecognition,
+                    Needs::AuthenticatedCanonicalPartition,
+                ]),
+                17 => BTreeSet::from([
+                    Needs::AuthenticatedObjectRecognition,
+                    Needs::AuthenticatedRootEffects,
+                ]),
+                18 => BTreeSet::from([
+                    Needs::AuthenticatedObjectRecognition,
+                    Needs::AuthenticatedProjectionSet,
+                ]),
+                20..=26 => BTreeSet::new(),
+                _ => unreachable!(),
+            };
+            AcceptanceRow {
+                relation: super::maturity_announcement_oracle_tests::identity(number),
+                proof,
+                capabilities,
+            }
+        })
+        .collect()
+}
+
 fn rows(operation: OperationId) -> Vec<AcceptanceRow> {
     match operation {
         OperationId::CompactAsh => compact_ash_rows(),
         OperationId::TransferLive => transfer_live_rows(),
+        OperationId::AnnounceMaturity => announcement_rows(),
         other => panic!("{other:?} is not a pilot"),
     }
 }
@@ -658,7 +722,7 @@ fn rows(operation: OperationId) -> Vec<AcceptanceRow> {
 /// complete plan set.
 fn approved_modes(operation: OperationId) -> BTreeSet<RepresentationMode> {
     match operation {
-        OperationId::CompactAsh => BTreeSet::from([
+        OperationId::CompactAsh | OperationId::AnnounceMaturity => BTreeSet::from([
             RepresentationMode::Explicit,
             RepresentationMode::PublicCommitted,
         ]),
@@ -751,14 +815,21 @@ fn plan_is_committed(analysis: &AnalyzedProofPlan, operation: OperationId) -> bo
 
 #[test]
 fn every_pilot_relation_list_is_exactly_the_analyzed_relation_census() {
-    for pilot in pilots() {
+    for pilot in acceptance_programs() {
         let operation = pilot.operation();
         let expected = rows(operation)
             .into_iter()
             .map(|row| row.relation)
             .collect::<BTreeSet<_>>();
 
-        assert_eq!(expected.len(), factor_census(operation, false).relations);
+        assert_eq!(
+            expected.len(),
+            if operation == OperationId::AnnounceMaturity {
+                26
+            } else {
+                factor_census(operation, false).relations
+            }
+        );
 
         for analysis in pilot.program.proof_plans.values() {
             // The guide's list is the complete relation census of every
@@ -792,7 +863,7 @@ fn every_pilot_relation_list_is_exactly_the_analyzed_relation_census() {
 
 #[test]
 fn every_pilot_plan_set_carries_exactly_its_approved_representations() {
-    for pilot in pilots() {
+    for pilot in acceptance_programs() {
         let operation = pilot.operation();
         let modes = pilot
             .program
@@ -811,7 +882,7 @@ fn every_pilot_plan_set_carries_exactly_its_approved_representations() {
 
 #[test]
 fn every_pilot_plan_analyzes_exactly_the_unsponsored_and_sponsored_cases() {
-    for pilot in pilots() {
+    for pilot in acceptance_programs() {
         let operation = pilot.operation();
 
         for (plan, analysis) in &pilot.program.proof_plans {
@@ -848,7 +919,7 @@ fn every_pilot_plan_analyzes_exactly_the_unsponsored_and_sponsored_cases() {
 
 #[test]
 fn every_pilot_relation_is_discharged_exactly_as_its_acceptance_row_states() {
-    for pilot in pilots() {
+    for pilot in acceptance_programs() {
         let operation = pilot.operation();
 
         for (plan, analysis) in &pilot.program.proof_plans {
@@ -868,6 +939,15 @@ fn every_pilot_relation_is_discharged_exactly_as_its_acceptance_row_states() {
                         ),
                     },
                     ExpectedProof::StaticallyValidated => ProofDisposition::StaticallyValidated,
+                    ExpectedProof::OperatorEvidence => ProofDisposition::ExternalEvidence {
+                        approved_proof: realization::ProofAlternativeId::new(
+                            row.relation.clone(),
+                            ProofKind::ManifestShape,
+                        ),
+                        requirement: ExternalEvidenceRequirement::OperatorAuthorization {
+                            operation,
+                        },
+                    },
                     ExpectedProof::ExternalEvidence => ProofDisposition::ExternalEvidence {
                         approved_proof: realization::ProofAlternativeId::new(
                             row.relation.clone(),

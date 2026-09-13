@@ -97,7 +97,11 @@ struct Analyzed {
 }
 
 fn analyze(operations: &[OperationId]) -> Analyzed {
-    let input = bound_input(operations);
+    let input = if operations == [OperationId::AnnounceMaturity] {
+        super::announcement_input()
+    } else {
+        bound_input(operations)
+    };
     let program = analyze_scoped_program(&input, limits()).expect("scoped analyzed program");
     let projection = program.project();
 
@@ -117,8 +121,11 @@ static TRANSFER_LIVE: LazyLock<Analyzed> = LazyLock::new(|| analyze(&[OperationI
 static COMBINED: LazyLock<Analyzed> =
     LazyLock::new(|| analyze(&[OperationId::CompactAsh, OperationId::TransferLive]));
 
-fn scopes() -> [&'static Analyzed; 3] {
-    [&COMPACT_ASH, &TRANSFER_LIVE, &COMBINED]
+static ANNOUNCEMENT: LazyLock<Analyzed> =
+    LazyLock::new(|| analyze(&[OperationId::AnnounceMaturity]));
+
+fn scopes() -> [&'static Analyzed; 4] {
+    [&COMPACT_ASH, &TRANSFER_LIVE, &COMBINED, &ANNOUNCEMENT]
 }
 
 impl Analyzed {
@@ -523,7 +530,12 @@ fn oracle_lifecycle_obligations(
 /// [`analyze_operation_placements`] builds, so the two routes are
 /// independent implementations of the same factor.
 fn single_operation_relations(operation: OperationId) -> CompilerRelationAnalysis {
-    build_relation_analysis(&bound_input(&[operation])).expect("single-operation relations")
+    let input = if operation == OperationId::AnnounceMaturity {
+        super::announcement_input()
+    } else {
+        bound_input(&[operation])
+    };
+    build_relation_analysis(&input).expect("single-operation relations")
 }
 
 static COMPACT_ASH_RELATIONS: LazyLock<CompilerRelationAnalysis> =
@@ -531,10 +543,14 @@ static COMPACT_ASH_RELATIONS: LazyLock<CompilerRelationAnalysis> =
 static TRANSFER_LIVE_RELATIONS: LazyLock<CompilerRelationAnalysis> =
     LazyLock::new(|| single_operation_relations(OperationId::TransferLive));
 
+static ANNOUNCEMENT_RELATIONS: LazyLock<CompilerRelationAnalysis> =
+    LazyLock::new(|| single_operation_relations(OperationId::AnnounceMaturity));
+
 fn operation_relations(operation: OperationId) -> &'static CompilerRelationAnalysis {
     match operation {
         OperationId::CompactAsh => &COMPACT_ASH_RELATIONS,
         OperationId::TransferLive => &TRANSFER_LIVE_RELATIONS,
+        OperationId::AnnounceMaturity => &ANNOUNCEMENT_RELATIONS,
         other => panic!("no pilot relations for {other:?}"),
     }
 }
@@ -1642,6 +1658,7 @@ fn permutable(operation: OperationId) -> Permutable {
     let analyzed = match operation {
         OperationId::CompactAsh => &COMPACT_ASH,
         OperationId::TransferLive => &TRANSFER_LIVE,
+        OperationId::AnnounceMaturity => &ANNOUNCEMENT,
         other => panic!("no pilot fixture for {other:?}"),
     };
 
@@ -1676,10 +1693,11 @@ fn permutable(operation: OperationId) -> Permutable {
     }
 }
 
-fn permutables() -> [Permutable; 2] {
+fn permutables() -> [Permutable; 3] {
     [
         permutable(OperationId::CompactAsh),
         permutable(OperationId::TransferLive),
+        permutable(OperationId::AnnounceMaturity),
     ]
 }
 
@@ -1817,9 +1835,17 @@ fn permuted_relation_dependencies_analyze_equally() {
     // Only the dependency edges are permuted: the declarations keep
     // their order, so anything that differed would have observed the
     // edge insertion order alone.
-    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+    for operation in [
+        OperationId::CompactAsh,
+        OperationId::TransferLive,
+        OperationId::AnnounceMaturity,
+    ] {
         let permutable = permutable(operation);
-        let input = bound_input(&[operation]);
+        let input = if operation == OperationId::AnnounceMaturity {
+            super::announcement_input()
+        } else {
+            bound_input(&[operation])
+        };
         let source = input.realization().project();
         let mut edges = source.relations.edges;
         edges.reverse();

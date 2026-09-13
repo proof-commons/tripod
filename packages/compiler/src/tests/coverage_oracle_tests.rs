@@ -881,7 +881,11 @@ struct Pilot {
 }
 
 fn pilot(operation: OperationId) -> Pilot {
-    let input = bound_input(&[operation]);
+    let input = if operation == OperationId::AnnounceMaturity {
+        super::announcement_input()
+    } else {
+        bound_input(&[operation])
+    };
     let relations = crate::relation::build_relation_analysis(&input).expect("relations");
     let candidates = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
         .expect("feasible plans")
@@ -908,10 +912,11 @@ fn pilot(operation: OperationId) -> Pilot {
     }
 }
 
-fn pilots() -> [Pilot; 2] {
+fn pilots() -> [Pilot; 3] {
     [
         pilot(OperationId::CompactAsh),
         pilot(OperationId::TransferLive),
+        pilot(OperationId::AnnounceMaturity),
     ]
 }
 
