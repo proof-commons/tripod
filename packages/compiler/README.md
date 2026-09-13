@@ -138,9 +138,10 @@ assert!(matches!(
 
 ## Public-API tour
 
-The public modules are `error`, `input`, `live_transfer_plan`, `operation_plan`,
-and `target`. Symbolic announcement requirements are also re-exported at the
-crate root; the internal analysis containers remain crate-private.
+The public modules are `error`, `input`, `live_transfer_plan`,
+`maturity_announcement_plan`, `operation_plan`, and `target`, in that order.
+Symbolic announcement requirements are also re-exported at the crate root; the
+internal analysis containers remain crate-private.
 
 ### `input` — the validated input boundary (P2-004)
 
@@ -193,19 +194,23 @@ target-specific type is not merely discouraged here — it is unnameable.
     still re-checks canonical order on every use. The order is a census
     order; it ranks nothing.
 - `ExternalEvidenceRole` — the *class* of external claim a requirement carries.
-  Two members. `SubstrateConservation`: no analysis, and no program an analysis
-  could emit, discharges it — only the target's own consensus rules do.
-  `ConfidentialValueConservation`: the plan holds a protocol asset's amounts as
-  commitments, so nothing the analysis emits reads them and only the target's
-  own confidential-transaction rules relate them. Neither implies the other — a
-  target could conserve the whole transaction while carrying a protocol asset's
-  amounts in the clear. `ExternalEvidenceRole::ALL` is its census. This is a compiler-owned
-  projection of `realization::ExternalEvidenceRequirement` with the operation
-  and asset identities dropped, because those are architecture-owned values a
-  target adapter has no business reading, and because the adapter's package
-  contract admits no realization dependency. The projection is total and
-  exhaustive: a new realization requirement class fails to compile here until
-  this module states its role.
+  Three members. `ConfidentialValueConservation`: the plan holds a protocol
+  asset's amounts as commitments, so nothing the analysis emits reads them and
+  only the target's own confidential-transaction rules relate them.
+  `SubstrateConservation`: no analysis, and no program an analysis could emit,
+  discharges it — only the target's own consensus rules do. Neither implies the
+  other — a target could conserve the whole transaction while carrying a
+  protocol asset's amounts in the clear. `OperatorAuthorization`: the operator's
+  authorization is an external claim because the realization carries no
+  operator identity. Target-side operator-key encoding and signature control
+  discharge it, never anything the analysis emits. `ExternalEvidenceRole::ALL`
+  is the census. This is a compiler-owned projection of
+  `realization::ExternalEvidenceRequirement` with the operation and asset
+  identities dropped, because those are architecture-owned values a target
+  adapter has no business reading, and because the adapter's package contract
+  admits no realization dependency. The projection is total and exhaustive: a
+  new realization requirement class fails to compile here until this module
+  states its role.
 - `PlacementSearchLimits::new(maximum_states: NonZeroU64, maximum_candidates: NonZeroU64) -> Self`
   — same explicit-configuration rule as `ProofSearchLimits`, for the placement
   search.
@@ -247,6 +252,42 @@ Burn and redeem appear in the plan only as outstanding lifecycle exits. No
 constructor is derivable from a plan whose lifecycle is complete, and no
 pretend leaf is emitted for an exit that is not implemented.
 
+### `maturity_announcement_plan` — the maturity-announcement target-operation projection (Guide-14 Wave 2)
+
+`plan_maturity_announcement_target_operation(&BoundCompilerInput, PlacementSearchLimits) -> Result<ValidatedMaturityAnnouncementOperationPlan, CompileError>`
+projects the fixed `AnnounceMaturity` operation. The operation is not a
+parameter: a successful result has committed to that one operation before
+target planning begins.
+
+The validated container carries the complete typed source and exposes only
+readers: `operation`, `source`, `representation`, `state`, `operator`,
+`canonical`, `sponsor`, `roots`, `certificate`, `lifecycle`,
+`constructibility`, `public_facts`, `transition`, `root_history`,
+`public_recovery`, `representations`, and `projection`. The representation
+policy admits exactly `Explicit` and `PublicCommitted`; `PrivateCommitted` has
+no announcement plan.
+
+The STATE projection retains separate input and output recognition and
+cardinality relations. Its `input_closure` and `output_closure` each admit
+exactly STATE and the ordinary L-BTC sponsor family, and its forbidden set is
+every other object family. It carries no owner family and states no conserved
+sum. The canonical projection likewise requires an empty delta: the operation
+updates STATE rather than moving a receipt value.
+
+The lifecycle has one implemented exit, `AnnounceMaturity`, and five
+outstanding exits: `AdmitDeposits`, `Cycle`, `Redeem`, `ReceiptRelabel`, and
+`Clear`. No public field carries a transaction position, target encoding,
+digest, byte count, or sponsor amount. The announcement-specific errors are
+`MaturityAnnouncementContractDefect { clause }` and
+`MissingMaturityAnnouncementRepresentation { operation, representation }`.
+
+The crate-root
+`validate_maturity_announcement_plan(&ValidatedMaturityAnnouncementOperationPlan, &BoundCompilerInput) -> Result<(), CompileError>`
+re-checks a plan against its complete input and returns either a complete
+verdict or a typed error, never a partial verdict. The planning entry is the
+only route to the validated type: there is no public constructor, `Default`,
+or builder.
+
 ### Crate root
 
 - `CompileError` — re-exported from `error`; see below.
@@ -258,6 +299,18 @@ pretend leaf is emitted for an exit that is not implemented.
 - `OperandId` — the stable identity of one relation operand, with
   `relation() -> &realization::RelationId`. Read the caveat under
   *Residuals* below before depending on it.
+- `validate_required_dependency` — checks whether one authorization case
+  discharges one required constructibility dependency, returning the typed
+  permissionless or unavailable-witness refusal when it does not; a node with
+  no availability class is discharged by every case.
+- `validate_maturity_announcement_plan` — re-checks the complete input as the
+  maturity-announcement section above describes.
+- The announcement requirement re-exports form one symbolic vocabulary: the
+  `Announcement*` roles and duties, the `StateField*` law vocabulary,
+  `StateSuccessionRequirement`, `PublicRecoveryRequirement`,
+  `ConstructorContinuityRequirement`, `RootHistoryRequirement`, and the
+  `AnnouncementRequirementMutation` mutation census. The residual below
+  describes what those values do and do not establish.
 
 ## Error handling
 
@@ -358,7 +411,11 @@ aggregate closure and complete scoped analyzed programs for the pilot scope,
 factorized per operation, with a corruption-resistant assembly validator and
 an independent assembly census oracle (P2-012); the abstract target
 requirement projection, derivable only from a completely validated analyzed
-program (Guide-8 §15).
+program (Guide-8 §15); the validated maturity-announcement plan boundary, its
+evidence-closure, sponsor-erasure-traversal, and requirement-precedence
+corruption validators and corruption catalogue, the independent announcement
+census oracle, and consumer-only public-API coverage of the symbolic
+announcement requirement vocabulary (Guide-14 Wave 2).
 
 Not implemented: target capability adapter, concrete target layout, and
 target program emission. The analysis structures are crate-private, no
@@ -407,6 +464,12 @@ provides eleven law signatures; `StateLawOperand` names either a fact or a
 realization-owned `StateLawParameter`. `StateFieldRequirement::validate()` checks
 subject sides, matching operation and field, and operand count, returning
 `StateFieldRequirementError` for a structural defect. It executes no transition.
+
+`AnnouncementRequirementMutation` is the payload-free census of seventeen
+announcement requirement mutations: a requirement row names an obligation for
+future validation, while a mutation names a way that obligation can be missing
+or altered. Neither is discharged evidence, and constructing or naming one
+claims no witness.
 
 The five copy laws have no operands; the maturity law names the requested cycle.
 The separate checked inclusive window names the input cycle, request, and two
