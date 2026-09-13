@@ -415,7 +415,8 @@ program (Guide-8 §15); the validated maturity-announcement plan boundary, its
 evidence-closure, sponsor-erasure-traversal, and requirement-precedence
 corruption validators and corruption catalogue, the independent announcement
 census oracle, and consumer-only public-API coverage of the symbolic
-announcement requirement vocabulary (Guide-14 Wave 2).
+announcement requirement vocabulary and of the validated plan boundary
+(Guide-14 Wave 2).
 
 Not implemented: target capability adapter, concrete target layout, and
 target program emission. The analysis structures are crate-private, no

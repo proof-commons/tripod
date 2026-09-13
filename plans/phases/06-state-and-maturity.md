@@ -183,7 +183,7 @@ The compiler's announce-maturity Authorization/Operation and Constructibility/Op
 
 Under ruling 13 the public-fact census becomes fifteen: six input-side and six output-side STATE fields, the requested cycle, and the two lead facts (`packages/realization/src/identity.rs`, `packages/realization/src/declarations/announce_maturity.rs`). The symbolic laws relating the sides live in the requirement layer (`packages/compiler/src/maturity_announcement_requirements.rs`), while the executable census remains 26 relations and 23 edges until a later lowering bite because disclosure nodes are not relations (`packages/realization/src/declassification.rs`, `packages/realization/src/tests/announce_maturity_tests.rs`).
 
-Under rulings 11 and 13, the combined refit bite `T11-021` for architecture-owned lead bounds and side-indexed STATE keys landed in `0.6.152-dev`; the altered-lead-bounds corruption check in B5 (`T11-017`) now waits on B4 (`T11-016`) alone because `packages/compiler/src/maturity_announcement_requirements.rs` can consume both keyed bounds and keyed successor laws.
+Under rulings 11 and 13, the combined refit bite `T11-021` for architecture-owned lead bounds and side-indexed STATE keys landed in `0.6.152-dev`; the altered-lead-bounds corruption check in B5 (`T11-017`) now waits on B4 (`T11-016`) alone because `packages/compiler/src/maturity_announcement_requirements.rs` can consume both keyed bounds and keyed successor laws. B4, B6, and B5 landed in `0.6.153-dev`, `0.6.154-dev`, and `0.6.155-dev`, and B7 landed in `0.6.156-dev`.
 
 The output position is an abstract role in the announcement plan, with its concrete index owned downstream. This follows the existing boundary in `packages/compiler/src/operation_plan.rs`, whose abstract carrier and coverage rows deliberately contain no transaction position or target encoding.
 
@@ -191,7 +191,7 @@ No new digest enters the announcement plan, and the existing `ArchitectureBindin
 
 The six typed STATE lifecycle exits — `AdmitDeposits`, `Cycle`, `Redeem`, `ReceiptRelabel`, `Clear` and `AnnounceMaturity` — are published by the declaration and architecture censuses in `packages/realization/src/declarations/announce_maturity.rs` and `packages/architecture/src/spec.rs`. `OperationId::AnnounceMaturity` already exists in `packages/architecture/src/ids.rs`, so Wave 2 invents no further operation identifier.
 
-The empty canonical-delta negative classes need an applicability decision before `T11-017`: the announce-maturity declaration's expected set is empty in `packages/architecture/src/spec.rs` and `packages/realization/src/validate.rs`, while duplicate normalization precedes evaluation, so there is no focused valid-observation mutation for those classes.
+The three empty canonical-delta negative classes remain in the corruption catalogue as derived negatives in `0.6.155-dev`; no focused runtime witness applies because the announce-maturity declaration's expected set is empty (`packages/architecture/src/spec.rs`, `packages/realization/src/validate.rs`) and duplicate partition references are refused during observation normalization, before the relation verdict. The catalogue pins them as derived rows, and the validator's documentation states that ground.
 
 ### Handed up for a ruling · `rem:phase6:wave1-questions`
 
