@@ -7,7 +7,7 @@
 use architecture::{OperationId, RootId};
 use realization::{
     AnnouncementLeadBound, FactId, RelationId, RelationKind, RelationSubject, StateField,
-    TransactionSide,
+    StateLawParameter, TransactionSide,
 };
 
 use crate::capability::census_enum;
@@ -15,14 +15,8 @@ use crate::capability::census_enum;
 const OPERATION: OperationId = OperationId::AnnounceMaturity;
 
 census_enum! {
-    /// Public information needed to recover the successor, named by role.
+    /// Ancillary public information needed to reconstruct the successor.
     pub enum AnnouncementRecoveryInputRole {
-        /// Consumed STATE semantic metadata.
-        PredecessorMetadata,
-        /// Public request for the maturity cycle.
-        RequestedCycle,
-        /// Semantic successor obtained through the realization's typed transition.
-        DerivedSuccessorMetadata,
         /// Representation nonce needed by successor reconstruction.
         SuccessorNonce,
         /// Schema needed to decode and encode semantic metadata.
@@ -57,12 +51,168 @@ census_enum! {
 }
 
 census_enum! {
-    /// Effect of the typed transition on a semantic field.
-    pub enum AnnouncementFieldEffect {
-        /// Copy the corresponding predecessor field unchanged.
-        PreservePredecessor,
-        /// Set maturity to announced at the requested cycle.
+    /// Symbolic STATE field laws. The subject's input is implicit; operands
+    /// are ordered additional inputs, never deployment admissibility bounds.
+    pub enum StateFieldLawKind {
+        /// Copy the input field unchanged. Model: `packages/model/src/ops/maturity.rs`
+        /// and `packages/model/src/ops/relabel.rs` preserve the other fields.
+        Copy,
+        /// Checked addition of one amount fact to the input amount.
+        /// Model: `packages/model/src/ops/admission.rs` adds admitted value to Q;
+        /// `packages/model/src/ops/cycle.rs` adds predecessor Q to backing.
+        CheckedAmountAdd,
+        /// Checked subtraction of one amount fact from the input amount.
+        /// Model: `packages/model/src/ops/redeem.rs` subtracts the live receipt amount.
+        CheckedAmountSubtract,
+        /// Set the amount to zero. Model: `packages/model/src/ops/cycle.rs` clears Q
+        /// and `packages/model/src/ops/redeem.rs` leaves a zero-amount tombstone.
+        ZeroAmount,
+        /// Increment the input cycle with checked arithmetic and no operands.
+        /// Model: `PoolState::next_cycle` in `packages/model/src/pool.rs`.
+        NextCycle,
+        /// Set maturity to announced at the single requested-cycle fact.
+        /// Model: `packages/model/src/ops/maturity.rs`.
         AnnounceRequestedCycle,
+        /// Derive issuance from Q and total supply over backing; use all issuance
+        /// as live when next cycle reaches maturity or maturity is complete,
+        /// otherwise its floored Zeta share; add it
+        /// to input live supply and add time-locked supply at maturity.
+        /// Operands: predecessor backing, time-locked supply, Q, cycle, maturity,
+        /// then published Zeta. Model: `packages/model/src/ops/cycle.rs`.
+        CycleLiveSupply,
+        /// Derive issuance from Q and total supply over backing, then add issuance
+        /// minus its normal-phase or floored Zeta live share to time-locked supply, except
+        /// set the output to zero at the maturity cycle. Operands: predecessor
+        /// backing, live supply, Q, cycle, maturity, then published Zeta.
+        /// Model: `packages/model/src/ops/cycle.rs`.
+        CycleTimeLockedSupply,
+        /// Complete an announced maturity exactly when predecessor cycle plus one
+        /// reaches its announced cycle; otherwise copy input maturity.
+        /// Operand: predecessor cycle. Model: `packages/model/src/ops/cycle.rs`.
+        CycleMaturity,
+        /// Subtract the floored payout (live input amount times input backing over
+        /// total supply) from input backing, reaching zero on sealing redemption.
+        /// Operands: predecessor live supply, time-locked supply, live input amount.
+        /// Model: `packages/model/src/ops/redeem.rs`.
+        RedemptionBacking,
+        /// Subtract the minimum of ASH input amount, input live supply, and total
+        /// supply minus one from input live supply. Operands: predecessor time-locked
+        /// supply, input ASH amount. Model: `packages/model/src/ops/ash.rs`.
+        ClearLiveSupply,
+    }
+}
+
+impl StateFieldLawKind {
+    /// Number of ordered additional operands in this law's signature.
+    #[must_use]
+    pub const fn operand_count(self) -> usize {
+        match self {
+            Self::Copy | Self::ZeroAmount | Self::NextCycle => 0,
+            Self::CheckedAmountAdd
+            | Self::CheckedAmountSubtract
+            | Self::AnnounceRequestedCycle
+            | Self::CycleMaturity => 1,
+            Self::CycleLiveSupply | Self::CycleTimeLockedSupply => 6,
+            Self::RedemptionBacking => 3,
+            Self::ClearLiveSupply => 2,
+        }
+    }
+}
+
+/// An ordered symbolic input to a STATE field law.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StateLawOperand {
+    /// A primitive semantic fact with its complete key.
+    Fact(FactId),
+    /// A published parameter whose value is owned by the model's constants.
+    PublishedParameter(StateLawParameter),
+}
+
+/// A law with an ordered operand list matching its kind's signature.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateFieldLaw {
+    pub kind: StateFieldLawKind,
+    pub operands: Vec<StateLawOperand>,
+}
+
+/// One field law whose subject is the output field and whose input is explicit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateFieldRequirement {
+    pub field: StateField,
+    pub input: FactId,
+    pub output: FactId,
+    pub law: StateFieldLaw,
+}
+
+census_enum! {
+    /// Structural defects in a symbolic field requirement; no transition is run.
+    #[derive(thiserror::Error)]
+    pub enum StateFieldRequirementError {
+        /// Input does not name the declared field on the input side.
+        #[error("input must name the declared STATE field on the input side")]
+        InvalidInput,
+        /// Output does not name the same operation and field on the output side.
+        #[error("output must name the same operation and STATE field on the output side")]
+        InvalidOutput,
+        /// Operand count differs from the law kind's signature.
+        #[error("operand count does not match the STATE field law signature")]
+        OperandCount,
+    }
+}
+
+impl StateFieldRequirement {
+    /// Validate subject keys and signature arity, without executing the law.
+    ///
+    /// # Errors
+    /// Returns a structural error when the subject sides, operation or field
+    /// disagree, or the operand count differs from the law's signature.
+    pub fn validate(&self) -> Result<(), StateFieldRequirementError> {
+        let FactId::StateField {
+            operation,
+            side: TransactionSide::Input,
+            field,
+        } = &self.input
+        else {
+            return Err(StateFieldRequirementError::InvalidInput);
+        };
+        if *field != self.field {
+            return Err(StateFieldRequirementError::InvalidInput);
+        }
+        if !matches!(&self.output,
+            FactId::StateField { operation: output_operation, side: TransactionSide::Output, field: output_field }
+                if output_operation == operation && *output_field == self.field)
+        {
+            return Err(StateFieldRequirementError::InvalidOutput);
+        }
+        if self.law.operands.len() != self.law.kind.operand_count() {
+            return Err(StateFieldRequirementError::OperandCount);
+        }
+        Ok(())
+    }
+
+    /// State the announcement law for one field, without executing it.
+    #[must_use]
+    pub fn for_field(field: StateField) -> Self {
+        let law = match field {
+            StateField::Omega
+            | StateField::YL
+            | StateField::YT
+            | StateField::Q
+            | StateField::Cycle => StateFieldLaw {
+                kind: StateFieldLawKind::Copy,
+                operands: Vec::new(),
+            },
+            StateField::Maturity => StateFieldLaw {
+                kind: StateFieldLawKind::AnnounceRequestedCycle,
+                operands: vec![StateLawOperand::Fact(requested_cycle())],
+            },
+        };
+        Self {
+            field,
+            input: state_fact(TransactionSide::Input, field),
+            output: state_fact(TransactionSide::Output, field),
+            law,
+        }
     }
 }
 
@@ -74,156 +224,119 @@ census_enum! {
     }
 }
 
-/// One entry in the exhaustive semantic field map.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AnnouncementFieldRequirement {
-    /// Realization-owned semantic field key.
-    pub field: StateField,
-    /// Public predecessor fact read for this field.
-    pub predecessor: FactId,
-    /// Symbolic effect; the realization executes it.
-    pub effect: AnnouncementFieldEffect,
-}
-
-impl AnnouncementFieldRequirement {
-    /// Map every realization field without an extensible fallback.
-    #[must_use]
-    pub const fn for_field(field: StateField) -> Self {
-        let effect = match field {
-            StateField::Omega
-            | StateField::YL
-            | StateField::YT
-            | StateField::Q
-            | StateField::Cycle => AnnouncementFieldEffect::PreservePredecessor,
-            StateField::Maturity => AnnouncementFieldEffect::AnnounceRequestedCycle,
-        };
-        Self {
-            field,
-            predecessor: FactId::StateField {
-                operation: OPERATION,
-                side: TransactionSide::Input,
-                field,
-            },
-            effect,
-        }
+const fn state_fact(side: TransactionSide, field: StateField) -> FactId {
+    FactId::StateField {
+        operation: OPERATION,
+        side,
+        field,
     }
 }
 
-/// Semantic inputs and effects required by the announcement transition.
+const fn state_fields(side: TransactionSide) -> [FactId; 6] {
+    [
+        state_fact(side, StateField::Omega),
+        state_fact(side, StateField::YL),
+        state_fact(side, StateField::YT),
+        state_fact(side, StateField::Q),
+        state_fact(side, StateField::Cycle),
+        state_fact(side, StateField::Maturity),
+    ]
+}
+
+const fn requested_cycle() -> FactId {
+    FactId::RequestedAnnouncementCycle {
+        operation: OPERATION,
+    }
+}
+
+/// The six field laws and their distinct admissibility conditions.
 ///
-/// Lead bounds are fact keys only. Their values and policy ownership are not
-/// supplied by compiler input. The realization validates bounds and uses checked
-/// arithmetic to enforce the inclusive window; this projection performs no law.
+/// Predecessor maturity must be unannounced. Checked cycle arithmetic must
+/// establish `input_cycle + minimum_lead <= requested_cycle <= input_cycle +
+/// maximum_lead`, inclusively. The lead selectors resolve to architecture bounds;
+/// their values constrain acceptance and are not field-law operands.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AnnouncementMetadataRequirement {
-    /// Exactly the six semantic fields, in realization declaration order.
-    pub fields: [AnnouncementFieldRequirement; 6],
-    /// Required status of the predecessor maturity field.
+    pub fields: [StateFieldRequirement; 6],
     pub predecessor_maturity: AnnouncementPredecessorMaturity,
-    /// Public requested announcement cycle key.
+    /// Input cycle used to derive both checked window endpoints.
+    pub input_cycle: FactId,
     pub requested_cycle: FactId,
-    /// Symbolic minimum lead key, with no value or owner binding.
+    /// Minimum selector resolves through `AnnouncementLeadBound::bound_id`.
     pub minimum_lead: FactId,
-    /// Symbolic maximum lead key, with no value or owner binding.
+    /// Maximum selector resolves through `AnnouncementLeadBound::bound_id`.
     pub maximum_lead: FactId,
 }
 
 impl AnnouncementMetadataRequirement {
-    /// Complete symbolic metadata requirement for maturity announcement.
-    pub const REQUIRED: Self = Self {
-        fields: [
-            AnnouncementFieldRequirement::for_field(StateField::Omega),
-            AnnouncementFieldRequirement::for_field(StateField::YL),
-            AnnouncementFieldRequirement::for_field(StateField::YT),
-            AnnouncementFieldRequirement::for_field(StateField::Q),
-            AnnouncementFieldRequirement::for_field(StateField::Cycle),
-            AnnouncementFieldRequirement::for_field(StateField::Maturity),
-        ],
-        predecessor_maturity: AnnouncementPredecessorMaturity::Unannounced,
-        requested_cycle: FactId::RequestedAnnouncementCycle {
-            operation: OPERATION,
-        },
-        minimum_lead: FactId::AnnouncementLead {
-            operation: OPERATION,
-            bound: AnnouncementLeadBound::Minimum,
-        },
-        maximum_lead: FactId::AnnouncementLead {
-            operation: OPERATION,
-            bound: AnnouncementLeadBound::Maximum,
-        },
-    };
-
-    /// Exact public fact census: six fields on each side, request, and two leads.
+    /// Complete symbolic requirement; constructing it validates no plan.
     #[must_use]
-    pub fn public_facts() -> [FactId; 15] {
-        let requirement = Self::REQUIRED;
-        let [omega, y_l, y_t, q, cycle, maturity] = &requirement.fields;
+    pub fn required() -> Self {
+        Self {
+            fields: [
+                StateField::Omega,
+                StateField::YL,
+                StateField::YT,
+                StateField::Q,
+                StateField::Cycle,
+                StateField::Maturity,
+            ]
+            .map(StateFieldRequirement::for_field),
+            predecessor_maturity: AnnouncementPredecessorMaturity::Unannounced,
+            input_cycle: state_fact(TransactionSide::Input, StateField::Cycle),
+            requested_cycle: requested_cycle(),
+            minimum_lead: FactId::AnnouncementLead {
+                operation: OPERATION,
+                bound: AnnouncementLeadBound::Minimum,
+            },
+            maximum_lead: FactId::AnnouncementLead {
+                operation: OPERATION,
+                bound: AnnouncementLeadBound::Maximum,
+            },
+        }
+    }
+
+    /// Fifteen public keys in declaration order: input side, output side, request, leads.
+    #[must_use]
+    pub const fn public_facts() -> [FactId; 15] {
+        let [i_omega, i_live, i_locked, i_q, i_cycle, i_maturity] =
+            state_fields(TransactionSide::Input);
+        let [o_omega, o_live, o_locked, o_q, o_cycle, o_maturity] =
+            state_fields(TransactionSide::Output);
         [
-            omega.predecessor.clone(),
-            y_l.predecessor.clone(),
-            y_t.predecessor.clone(),
-            q.predecessor.clone(),
-            cycle.predecessor.clone(),
-            maturity.predecessor.clone(),
-            FactId::StateField {
+            i_omega,
+            i_live,
+            i_locked,
+            i_q,
+            i_cycle,
+            i_maturity,
+            o_omega,
+            o_live,
+            o_locked,
+            o_q,
+            o_cycle,
+            o_maturity,
+            requested_cycle(),
+            FactId::AnnouncementLead {
                 operation: OPERATION,
-                side: TransactionSide::Output,
-                field: StateField::Omega,
+                bound: AnnouncementLeadBound::Minimum,
             },
-            FactId::StateField {
+            FactId::AnnouncementLead {
                 operation: OPERATION,
-                side: TransactionSide::Output,
-                field: StateField::YL,
+                bound: AnnouncementLeadBound::Maximum,
             },
-            FactId::StateField {
-                operation: OPERATION,
-                side: TransactionSide::Output,
-                field: StateField::YT,
-            },
-            FactId::StateField {
-                operation: OPERATION,
-                side: TransactionSide::Output,
-                field: StateField::Q,
-            },
-            FactId::StateField {
-                operation: OPERATION,
-                side: TransactionSide::Output,
-                field: StateField::Cycle,
-            },
-            FactId::StateField {
-                operation: OPERATION,
-                side: TransactionSide::Output,
-                field: StateField::Maturity,
-            },
-            requirement.requested_cycle,
-            requirement.minimum_lead,
-            requirement.maximum_lead,
         ]
     }
 }
 
-census_enum! {
-    /// STATE endpoint role, without an outpoint or transaction position.
-    pub enum AnnouncementStateRole {
-        /// The consumed STATE family member.
-        InputState,
-        /// The created STATE family member.
-        OutputState,
-    }
-}
-
 /// STATE edge and the declaration policies that constrain it.
+/// An exit names only the sides it has; announcement requires both complete sides.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateSuccessionRequirement {
-    /// Architecture-owned root family.
     pub root: RootId,
-    /// Consumed STATE role.
-    pub predecessor: AnnouncementStateRole,
-    /// Created STATE role.
-    pub successor: AnnouncementStateRole,
-    /// Declaration relation requiring STATE succession and other-root absence.
+    pub input_fields: Option<[FactId; 6]>,
+    pub output_fields: Option<[FactId; 6]>,
     pub root_relation: RelationId,
-    /// Declaration relation requiring the transition certificate.
     pub certificate_relation: RelationId,
 }
 
@@ -231,8 +344,8 @@ impl StateSuccessionRequirement {
     /// Announcement succession; endpoint linkage remains a history obligation.
     pub const REQUIRED: Self = Self {
         root: RootId::State,
-        predecessor: AnnouncementStateRole::InputState,
-        successor: AnnouncementStateRole::OutputState,
+        input_fields: Some(state_fields(TransactionSide::Input)),
+        output_fields: Some(state_fields(TransactionSide::Output)),
         root_relation: policy_relation(RelationKind::RootPolicy),
         certificate_relation: policy_relation(RelationKind::ProjectionPolicy),
     };
@@ -346,7 +459,11 @@ census_enum! {
 pub struct PublicRecoveryRequirement {
     /// Accepted transaction publication role.
     pub publication: AnnouncementPublicationRole,
-    /// Complete public recovery input roles.
+    /// Six input STATE facts and the public requested-cycle fact.
+    pub source_facts: [FactId; 7],
+    /// Six output STATE facts recovered through the typed transition.
+    pub result_facts: [FactId; 6],
+    /// Six ancillary public recovery input roles.
     pub inputs: &'static [AnnouncementRecoveryInputRole],
     /// Ordered reconstruction and comparison duties.
     pub steps: &'static [AnnouncementRecoveryStep],
@@ -356,6 +473,16 @@ impl PublicRecoveryRequirement {
     /// Full public recovery requirement, without fixing a target output position.
     pub const REQUIRED: Self = Self {
         publication: AnnouncementPublicationRole::AcceptedTransactionWitnessAndOutputs,
+        source_facts: [
+            state_fact(TransactionSide::Input, StateField::Omega),
+            state_fact(TransactionSide::Input, StateField::YL),
+            state_fact(TransactionSide::Input, StateField::YT),
+            state_fact(TransactionSide::Input, StateField::Q),
+            state_fact(TransactionSide::Input, StateField::Cycle),
+            state_fact(TransactionSide::Input, StateField::Maturity),
+            requested_cycle(),
+        ],
+        result_facts: state_fields(TransactionSide::Output),
         inputs: AnnouncementRecoveryInputRole::ALL,
         steps: AnnouncementRecoveryStep::ALL,
     };

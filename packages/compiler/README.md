@@ -41,7 +41,7 @@ typed comparison is the boundary.
 
 ## Quickstart
 
-The whole public workflow is two calls, and there is no route between them.
+The analysis workflow below binds input and projects target requirements.
 
 ```rust
 use std::num::NonZeroU64;
@@ -138,8 +138,9 @@ assert!(matches!(
 
 ## Public-API tour
 
-Three public modules, and that narrowness is the design. Everything between
-the input boundary and the target boundary is crate-private.
+The public modules are `error`, `input`, `live_transfer_plan`, `operation_plan`,
+and `target`. Symbolic announcement requirements are also re-exported at the
+crate root; the internal analysis containers remain crate-private.
 
 ### `input` — the validated input boundary (P2-004)
 
@@ -260,15 +261,14 @@ pretend leaf is emitted for an exit that is not implemented.
 
 ## Error handling
 
-`CompileError` is the single error root for the whole crate; every public
-fallible function returns it. It derives `thiserror::Error` (so `Display` and
+`CompileError` is the error root for compilation analysis. It derives
+`thiserror::Error` (so `Display` and
 `std::error::Error`) and is `PartialEq`, so variants can be compared directly.
 It carries **architecture-owned identifiers** — `OperationId`, `ObjectId` —
 rather than compiler-local restatements of them, so an error never duplicates
 an upstream identity or obscures its owner.
 
-Only two public entry points exist, so the practical question is which
-variants each can raise.
+The input-boundary entry points report the following failures.
 
 ### From `CompilationScope::from_operations`
 
@@ -397,3 +397,24 @@ Two notes for a consumer reading this as a manual rather than as prose:
 - No public API returns an analyzed program, so there is currently no way for a
   consumer to inspect *why* a given capability is required. The requirement set
   answers what, not why, by design.
+
+### Symbolic maturity-announcement requirements
+
+`AnnouncementMetadataRequirement::required()` returns six `StateFieldRequirement`
+rows with input/output `FactId` keys and a `StateFieldLaw`. Its `public_facts()`
+returns fifteen keys in realization declaration order. `StateFieldLawKind`
+provides eleven law signatures; `StateLawOperand` names either a fact or a
+realization-owned `StateLawParameter`. `StateFieldRequirement::validate()` checks
+subject sides, matching operation and field, and operand count, returning
+`StateFieldRequirementError` for a structural defect. It executes no transition.
+
+The five copy laws have no operands; the maturity law names the requested cycle.
+The separate checked inclusive window names the input cycle, request, and two
+lead selectors, whose `bound_id()` mappings identify the calibrated architecture
+bounds. Lead bounds are not field-law operands.
+
+`StateSuccessionRequirement` carries optional complete input/output field sets.
+`PublicRecoveryRequirement` carries seven source facts, six result facts, six
+ancillary roles, and six recovery steps. `ConstructorContinuityRequirement` and
+`RootHistoryRequirement` retain constructor and history duties. These are
+requirements for future validation; constructing them claims no validated plan.

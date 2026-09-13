@@ -7,75 +7,106 @@ use realization::{
 };
 
 use crate::{
-    AnnouncementConstructorRole, AnnouncementDuty, AnnouncementFieldEffect,
-    AnnouncementFieldRequirement, AnnouncementMetadataRequirement, AnnouncementPolicyContinuity,
-    AnnouncementPredecessorMaturity, AnnouncementPublicationRole, AnnouncementRecoveryInputRole,
-    AnnouncementRecoveryStep, AnnouncementRequirementBoundary, AnnouncementRootHistoryCheck,
-    AnnouncementStateRole, AnnouncementStaticContinuity, ConstructorContinuityRequirement,
-    PublicRecoveryRequirement, RootHistoryRequirement, StateSuccessionRequirement,
+    AnnouncementConstructorRole, AnnouncementDuty, AnnouncementMetadataRequirement,
+    AnnouncementPolicyContinuity, AnnouncementPredecessorMaturity, AnnouncementPublicationRole,
+    AnnouncementRecoveryInputRole, AnnouncementRecoveryStep, AnnouncementRequirementBoundary,
+    AnnouncementRootHistoryCheck, AnnouncementStaticContinuity, ConstructorContinuityRequirement,
+    PublicRecoveryRequirement, RootHistoryRequirement, StateFieldLaw, StateFieldLawKind,
+    StateFieldRequirement, StateFieldRequirementError, StateLawOperand, StateSuccessionRequirement,
 };
 
 #[test]
 fn metadata_fields_are_exhaustive_and_symbolic() {
-    let AnnouncementMetadataRequirement {
-        fields,
-        predecessor_maturity,
-        requested_cycle,
-        minimum_lead,
-        maximum_lead,
-    } = AnnouncementMetadataRequirement::REQUIRED;
-    let operation = OperationId::AnnounceMaturity;
-    assert_eq!(fields.len(), 6);
+    let requirement = AnnouncementMetadataRequirement::required();
+    assert_eq!(requirement.fields.len(), 6);
     assert_eq!(
-        fields.each_ref().map(|row| row.field).as_slice(),
+        requirement
+            .fields
+            .each_ref()
+            .map(|row| row.field)
+            .as_slice(),
         StateField::ALL
     );
-    for AnnouncementFieldRequirement {
-        field,
-        predecessor,
-        effect,
-    } in fields
-    {
-        let expected = match field {
-            StateField::Omega
-            | StateField::YL
-            | StateField::YT
-            | StateField::Q
-            | StateField::Cycle => AnnouncementFieldEffect::PreservePredecessor,
-            StateField::Maturity => AnnouncementFieldEffect::AnnounceRequestedCycle,
-        };
-        assert_eq!(
-            predecessor,
-            FactId::StateField {
-                operation,
-                side: TransactionSide::Input,
-                field
+    for row in &requirement.fields {
+        assert_eq!(row.input, field_key(TransactionSide::Input, row.field));
+        assert_eq!(row.output, field_key(TransactionSide::Output, row.field));
+        let expected = if row.field == StateField::Maturity {
+            StateFieldLaw {
+                kind: StateFieldLawKind::AnnounceRequestedCycle,
+                operands: vec![StateLawOperand::Fact(requirement.requested_cycle.clone())],
             }
-        );
-        assert_eq!(effect, expected);
+        } else {
+            StateFieldLaw {
+                kind: StateFieldLawKind::Copy,
+                operands: Vec::new(),
+            }
+        };
+        assert_eq!(row.law, expected);
+        row.validate().unwrap();
     }
     assert_eq!(
-        predecessor_maturity,
+        requirement.predecessor_maturity,
         AnnouncementPredecessorMaturity::Unannounced
     );
     assert_eq!(
-        requested_cycle,
-        FactId::RequestedAnnouncementCycle { operation }
+        requirement.input_cycle,
+        field_key(TransactionSide::Input, StateField::Cycle)
     );
     assert_eq!(
-        minimum_lead,
-        FactId::AnnouncementLead {
-            operation,
-            bound: AnnouncementLeadBound::Minimum
+        requirement.requested_cycle,
+        FactId::RequestedAnnouncementCycle {
+            operation: OperationId::AnnounceMaturity,
         }
     );
-    assert_eq!(
-        maximum_lead,
-        FactId::AnnouncementLead {
-            operation,
-            bound: AnnouncementLeadBound::Maximum
-        }
-    );
+}
+
+fn field_key(side: TransactionSide, field: StateField) -> FactId {
+    FactId::StateField {
+        operation: OperationId::AnnounceMaturity,
+        side,
+        field,
+    }
+}
+
+fn assert_side_fields(fields: &[FactId; 6], side: TransactionSide) {
+    let expected = StateField::ALL
+        .iter()
+        .map(|field| field_key(side, *field))
+        .collect::<Vec<_>>();
+    assert_eq!(fields.as_slice(), expected);
+    assert_eq!(fields.iter().collect::<BTreeSet<_>>().len(), 6);
+}
+
+#[test]
+fn announcement_admissibility_names_architecture_leads_outside_field_laws() {
+    let requirement = AnnouncementMetadataRequirement::required();
+    for (fact, selector, id) in [
+        (
+            &requirement.minimum_lead,
+            AnnouncementLeadBound::Minimum,
+            architecture::BoundId::MaturityLeadMin,
+        ),
+        (
+            &requirement.maximum_lead,
+            AnnouncementLeadBound::Maximum,
+            architecture::BoundId::MaturityLeadMax,
+        ),
+    ] {
+        assert_eq!(
+            *fact,
+            FactId::AnnouncementLead {
+                operation: OperationId::AnnounceMaturity,
+                bound: selector
+            }
+        );
+        assert_eq!(selector.bound_id(), id);
+        assert_eq!(id.unit(), architecture::BoundUnit::Cycle);
+        assert!(requirement.fields.iter().all(|row| {
+            !row.law
+                .operands
+                .contains(&StateLawOperand::Fact(fact.clone()))
+        }));
+    }
 }
 
 #[test]
@@ -111,6 +142,8 @@ fn recovery_roles_and_steps_have_no_payloads() {
     use AnnouncementRecoveryStep as Step;
     let PublicRecoveryRequirement {
         publication,
+        source_facts,
+        result_facts,
         inputs,
         steps,
     } = PublicRecoveryRequirement::REQUIRED;
@@ -122,9 +155,6 @@ fn recovery_roles_and_steps_have_no_payloads() {
     assert_eq!(
         inputs,
         &[
-            Input::PredecessorMetadata,
-            Input::RequestedCycle,
-            Input::DerivedSuccessorMetadata,
             Input::SuccessorNonce,
             Input::MetadataSchema,
             Input::StaticConstructorRecipeOrReference,
@@ -133,6 +163,17 @@ fn recovery_roles_and_steps_have_no_payloads() {
             Input::TargetInternalKeyPolicy,
         ]
     );
+    assert_eq!(inputs.len(), 6);
+    assert_eq!(inputs, AnnouncementRecoveryInputRole::ALL);
+    let expected_sources = StateField::ALL
+        .iter()
+        .map(|field| field_key(TransactionSide::Input, *field))
+        .chain([FactId::RequestedAnnouncementCycle {
+            operation: OperationId::AnnounceMaturity,
+        }])
+        .collect::<Vec<_>>();
+    assert_eq!(source_facts.as_slice(), expected_sources);
+    assert_side_fields(&result_facts, TransactionSide::Output);
     assert_eq!(
         steps,
         &[
@@ -150,15 +191,14 @@ fn recovery_roles_and_steps_have_no_payloads() {
 fn succession_names_declared_policies_and_only_state_endpoints() {
     let StateSuccessionRequirement {
         root,
-        predecessor,
-        successor,
+        input_fields,
+        output_fields,
         root_relation,
         certificate_relation,
     } = StateSuccessionRequirement::REQUIRED;
     assert_eq!(root, RootId::State);
-    assert_eq!(predecessor, AnnouncementStateRole::InputState);
-    assert_eq!(successor, AnnouncementStateRole::OutputState);
-    assert_eq!(AnnouncementStateRole::ALL, &[predecessor, successor]);
+    assert_side_fields(&input_fields.unwrap(), TransactionSide::Input);
+    assert_side_fields(&output_fields.unwrap(), TransactionSide::Output);
     let input = super::proof_tests::announcement_input();
     let declaration = input
         .realization()
@@ -314,13 +354,31 @@ fn expected_duties(boundary: AnnouncementRequirementBoundary) -> &'static [Annou
 }
 
 #[test]
-fn field_effect_and_precondition_censuses_are_closed() {
+fn field_law_and_precondition_censuses_are_closed() {
+    use StateFieldLawKind as Kind;
     assert_eq!(
-        AnnouncementFieldEffect::ALL,
+        Kind::ALL,
         &[
-            AnnouncementFieldEffect::PreservePredecessor,
-            AnnouncementFieldEffect::AnnounceRequestedCycle,
+            Kind::Copy,
+            Kind::CheckedAmountAdd,
+            Kind::CheckedAmountSubtract,
+            Kind::ZeroAmount,
+            Kind::NextCycle,
+            Kind::AnnounceRequestedCycle,
+            Kind::CycleLiveSupply,
+            Kind::CycleTimeLockedSupply,
+            Kind::CycleMaturity,
+            Kind::RedemptionBacking,
+            Kind::ClearLiveSupply
         ]
+    );
+    assert_eq!(Kind::ALL.iter().copied().collect::<BTreeSet<_>>().len(), 11);
+    assert_eq!(
+        Kind::ALL
+            .iter()
+            .map(|kind| kind.operand_count())
+            .collect::<Vec<_>>(),
+        [0, 1, 1, 0, 0, 1, 6, 6, 1, 3, 2]
     );
     assert_eq!(
         AnnouncementPredecessorMaturity::ALL,
@@ -330,14 +388,14 @@ fn field_effect_and_precondition_censuses_are_closed() {
 
 #[test]
 fn requirement_values_are_deterministic_and_equal() {
-    assert_repeated(|| AnnouncementMetadataRequirement::REQUIRED);
+    assert_repeated(AnnouncementMetadataRequirement::required);
     assert_repeated(AnnouncementMetadataRequirement::public_facts);
     assert_repeated(|| StateSuccessionRequirement::REQUIRED);
     assert_repeated(|| ConstructorContinuityRequirement::REQUIRED);
     assert_repeated(|| RootHistoryRequirement::REQUIRED);
     assert_repeated(|| PublicRecoveryRequirement::REQUIRED);
     for field in StateField::ALL {
-        assert_repeated(|| AnnouncementFieldRequirement::for_field(*field));
+        assert_repeated(|| StateFieldRequirement::for_field(*field));
     }
     for duty in AnnouncementDuty::ALL {
         assert_repeated(|| duty.boundary());
@@ -384,4 +442,161 @@ fn field_map_agrees_with_the_owned_transition_at_both_window_endpoints() {
         );
         assert_eq!(maturity, Maturity::Announced { cycle: requested });
     }
+}
+
+#[test]
+fn field_laws_reject_swapped_sides_and_mismatched_keys() {
+    let base = StateFieldRequirement::for_field(StateField::Omega);
+    let mut swapped = base.clone();
+    std::mem::swap(&mut swapped.input, &mut swapped.output);
+    assert_eq!(
+        swapped.validate(),
+        Err(StateFieldRequirementError::InvalidInput)
+    );
+    let mut wrong_output_side = base.clone();
+    wrong_output_side.output = base.input.clone();
+    assert_eq!(
+        wrong_output_side.validate(),
+        Err(StateFieldRequirementError::InvalidOutput)
+    );
+    let mut wrong_input_field = base.clone();
+    wrong_input_field.input = field_key(TransactionSide::Input, StateField::Q);
+    assert_eq!(
+        wrong_input_field.validate(),
+        Err(StateFieldRequirementError::InvalidInput)
+    );
+    let mut wrong_output_field = base.clone();
+    wrong_output_field.output = field_key(TransactionSide::Output, StateField::Q);
+    assert_eq!(
+        wrong_output_field.validate(),
+        Err(StateFieldRequirementError::InvalidOutput)
+    );
+    let mut wrong_operation = base;
+    wrong_operation.output = FactId::StateField {
+        operation: OperationId::Cycle,
+        side: TransactionSide::Output,
+        field: StateField::Omega,
+    };
+    assert_eq!(
+        wrong_operation.validate(),
+        Err(StateFieldRequirementError::InvalidOutput)
+    );
+}
+
+#[test]
+fn every_law_checks_its_signature_arity() {
+    for kind in StateFieldLawKind::ALL {
+        let mut row = StateFieldRequirement::for_field(StateField::Omega);
+        row.law.kind = *kind;
+        row.law.operands = vec![StateLawOperand::Fact(row.input.clone()); kind.operand_count()];
+        row.validate().unwrap();
+        row.law.operands.push(StateLawOperand::PublishedParameter(
+            realization::StateLawParameter::Zeta,
+        ));
+        assert_eq!(
+            row.validate(),
+            Err(StateFieldRequirementError::OperandCount)
+        );
+        row.law.operands.pop();
+        if row.law.operands.pop().is_some() {
+            assert_eq!(
+                row.validate(),
+                Err(StateFieldRequirementError::OperandCount)
+            );
+        }
+    }
+}
+
+#[test]
+fn reusable_side_sets_allow_absence_and_keys_allow_every_state_exit() {
+    let mut succession = StateSuccessionRequirement::REQUIRED;
+    succession.input_fields = None;
+    assert_side_fields(
+        &succession.output_fields.clone().unwrap(),
+        TransactionSide::Output,
+    );
+    succession.output_fields = None;
+    assert_eq!(
+        (succession.input_fields, succession.output_fields),
+        (None, None)
+    );
+    for operation in [
+        OperationId::AdmitDeposits,
+        OperationId::Cycle,
+        OperationId::Redeem,
+        OperationId::ReceiptRelabel,
+        OperationId::Clear,
+        OperationId::AnnounceMaturity,
+    ] {
+        for field in StateField::ALL {
+            let row = StateFieldRequirement {
+                field: *field,
+                input: FactId::StateField {
+                    operation,
+                    side: TransactionSide::Input,
+                    field: *field,
+                },
+                output: FactId::StateField {
+                    operation,
+                    side: TransactionSide::Output,
+                    field: *field,
+                },
+                law: StateFieldLaw {
+                    kind: StateFieldLawKind::Copy,
+                    operands: Vec::new(),
+                },
+            };
+            row.validate().unwrap();
+        }
+    }
+}
+
+#[test]
+fn cycle_laws_can_name_other_fields_and_the_published_split_parameter() {
+    let mut row = StateFieldRequirement::for_field(StateField::YL);
+    row.input = FactId::StateField {
+        operation: OperationId::Cycle,
+        side: TransactionSide::Input,
+        field: StateField::YL,
+    };
+    row.output = FactId::StateField {
+        operation: OperationId::Cycle,
+        side: TransactionSide::Output,
+        field: StateField::YL,
+    };
+    let operands = [
+        StateField::Omega,
+        StateField::YT,
+        StateField::Q,
+        StateField::Cycle,
+        StateField::Maturity,
+    ]
+    .map(|field| {
+        StateLawOperand::Fact(FactId::StateField {
+            operation: OperationId::Cycle,
+            side: TransactionSide::Input,
+            field,
+        })
+    })
+    .into_iter()
+    .chain([StateLawOperand::PublishedParameter(
+        realization::StateLawParameter::Zeta,
+    )])
+    .collect::<Vec<_>>();
+    row.law = StateFieldLaw {
+        kind: StateFieldLawKind::CycleLiveSupply,
+        operands: operands.clone(),
+    };
+    row.validate().unwrap();
+    assert_eq!(row.law.operands, operands);
+    assert!(
+        AnnouncementMetadataRequirement::required()
+            .fields
+            .iter()
+            .all(|field| field
+                .law
+                .operands
+                .iter()
+                .all(|operand| !matches!(operand, StateLawOperand::PublishedParameter(_))))
+    );
 }

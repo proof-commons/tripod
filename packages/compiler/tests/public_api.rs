@@ -1055,3 +1055,62 @@ fn no_internal_analysis_container_is_re_exported_by_the_live_transfer_plan() {
         );
     }
 }
+
+#[test]
+fn announcement_requirement_vocabulary_is_public_without_a_validated_plan() {
+    use compiler::{
+        AnnouncementMetadataRequirement, PublicRecoveryRequirement, StateFieldLawKind,
+        StateLawOperand, StateSuccessionRequirement,
+    };
+    use realization::{AnnouncementLeadBound, FactId, StateField, TransactionSide};
+    let metadata = AnnouncementMetadataRequirement::required();
+    let facts = AnnouncementMetadataRequirement::public_facts();
+    assert_eq!(facts.len(), 15);
+    assert_eq!(
+        facts
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        15
+    );
+    let succession = StateSuccessionRequirement::REQUIRED;
+    for (side, keys) in [
+        (TransactionSide::Input, succession.input_fields.unwrap()),
+        (TransactionSide::Output, succession.output_fields.unwrap()),
+    ] {
+        let expected = StateField::ALL
+            .iter()
+            .map(|field| FactId::StateField {
+                operation: OperationId::AnnounceMaturity,
+                side,
+                field: *field,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(keys.as_slice(), expected);
+        assert!(keys.iter().all(|key| facts.contains(key)));
+    }
+    assert_eq!(metadata.fields.len(), 6);
+    for field in &metadata.fields {
+        field.validate().unwrap();
+        if field.field == StateField::Maturity {
+            assert_eq!(field.law.kind, StateFieldLawKind::AnnounceRequestedCycle);
+            assert_eq!(
+                field.law.operands,
+                [StateLawOperand::Fact(metadata.requested_cycle.clone())]
+            );
+        } else {
+            assert_eq!(field.law.kind, StateFieldLawKind::Copy);
+            assert_eq!(field.law.operands, []);
+        }
+    }
+    assert_eq!(
+        AnnouncementLeadBound::Minimum.bound_id(),
+        architecture::BoundId::MaturityLeadMin
+    );
+    assert_eq!(
+        AnnouncementLeadBound::Maximum.bound_id(),
+        architecture::BoundId::MaturityLeadMax
+    );
+    assert_eq!(PublicRecoveryRequirement::REQUIRED.source_facts.len(), 7);
+    assert_eq!(PublicRecoveryRequirement::REQUIRED.result_facts.len(), 6);
+}
