@@ -21,6 +21,8 @@ pub mod observation;
 pub mod operation;
 pub mod relation;
 pub mod scope;
+pub mod state;
+pub mod state_codec;
 pub mod value;
 
 mod declarations;
@@ -50,7 +52,9 @@ pub(crate) use declassification::{
 pub use derive::{
     ScopedRealizationProjection, ScopedRealizationSpec, derive, project_scoped_realization,
 };
-pub use domain::{Count, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RepresentationMode};
+pub use domain::{
+    Count, Cycle, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RepresentationMode,
+};
 pub use error::{ArchitectureMismatchField, RealizationError};
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -96,6 +100,13 @@ pub use relation::{
 #[allow(unused_imports)]
 pub(crate) use relation::{build_relation_graph, project_relation_graph};
 pub use scope::{CompleteRealizationScope, RealizationScope};
+pub use state::{
+    AnnouncementLeadBounds, Maturity, MaturityTransitionRefusal, StateMetadata, announce_maturity,
+};
+pub use state_codec::{
+    EncodedStateMetadata, STATE_METADATA_BYTES, STATE_METADATA_DOMAIN, STATE_METADATA_SCHEMA,
+    StateMetadataRefusal, StateRepresentationNonce, decode_state_metadata, encode_state_metadata,
+};
 #[cfg(test)]
 pub(crate) use validate::constructibility_authorizations;
 pub use value::{OwnerId, SemanticType, SemanticValue};

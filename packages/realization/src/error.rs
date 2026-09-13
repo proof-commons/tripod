@@ -92,6 +92,15 @@ pub enum RealizationError {
     #[error("checked count arithmetic overflowed")]
     CountOverflow,
 
+    /// Checked cycle arithmetic overflowed.
+    #[error("cycle arithmetic overflowed")]
+    CycleOverflow,
+
+    /// Announcement lead bounds do not describe a usable inclusive
+    /// window: a zero minimum, or a minimum above the maximum.
+    #[error("announcement lead bounds are invalid: minimum {minimum}, maximum {maximum}")]
+    InvalidAnnouncementLeadBounds { minimum: u64, maximum: u64 },
+
     /// One expression ID was declared more than once.
     #[error("expression {0:?} is declared more than once")]
     DuplicateExpression(ExprId),

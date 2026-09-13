@@ -88,6 +88,7 @@ model_source_files = files(
   'src/tests/scenario_fixtures.rs',
   'src/tests/serialization_tests.rs',
   'src/tests/settlement_tests.rs',
+  'src/tests/state_metadata_conformance_tests.rs',
   'src/tests/stronger_fee_auction_tests.rs',
   'src/tests/sweepability_tests.rs',
   'src/tests/test_fixtures.rs',
