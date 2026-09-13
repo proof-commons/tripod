@@ -568,6 +568,7 @@ pub fn relation_objects(relation: &Relation) -> BTreeSet<ObjectId> {
         | Relation::OpenFlowPolicy { .. }
         | Relation::Constructibility { .. }
         | Relation::ExpressionPredicate { .. }
+        | Relation::OperatorAuthorization
         | Relation::SubstrateConservation { .. } => BTreeSet::new(),
     }
 }

@@ -84,12 +84,16 @@ fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<Co
     }
 
     match relation {
+        Relation::SubstrateConservation { .. }
+        | Relation::OperatorAuthorization
+        | Relation::Constructibility {
+            class: realization::ConstructibilityClass::Operator,
+        } => BTreeSet::from([Boundary::ExternalEvidence]),
         Relation::Constructibility { .. } => BTreeSet::from([Boundary::CompilerStatic]),
         Relation::PermissionlessAuthorization => BTreeSet::from([Boundary::BackendStructural]),
         Relation::Representation { .. } | Relation::LifecycleExit { .. } => {
             BTreeSet::from([Boundary::CompilerStatic, Boundary::BackendStructural])
         }
-        Relation::SubstrateConservation { .. } => BTreeSet::from([Boundary::ExternalEvidence]),
         Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }
         | Relation::Recognition { .. }
@@ -223,6 +227,22 @@ fn oracle_mutations(
             Mutation::UnexpectedProtocolSecret,
         )]),
 
+        Relation::SubstrateConservation { .. }
+        | Relation::OperatorAuthorization
+        | Relation::Constructibility {
+            class: ConstructibilityClass::Operator,
+        } => BTreeSet::from([
+            (
+                Boundary::ExternalEvidence,
+                Mutation::ExternalEvidenceMissing,
+            ),
+            (Boundary::ExternalEvidence, Mutation::ExternalEvidenceFailed),
+            (
+                Boundary::ExternalEvidence,
+                Mutation::ExternalEvidenceIdentityMismatch,
+            ),
+        ]),
+
         Relation::Constructibility { class } => {
             let mut mutations = BTreeSet::from([(
                 Boundary::CompilerStatic,
@@ -258,18 +278,6 @@ fn oracle_mutations(
             (
                 Boundary::BackendStructural,
                 Mutation::RequiredLifecycleExitMissing,
-            ),
-        ]),
-
-        Relation::SubstrateConservation { .. } => BTreeSet::from([
-            (
-                Boundary::ExternalEvidence,
-                Mutation::ExternalEvidenceMissing,
-            ),
-            (Boundary::ExternalEvidence, Mutation::ExternalEvidenceFailed),
-            (
-                Boundary::ExternalEvidence,
-                Mutation::ExternalEvidenceIdentityMismatch,
             ),
         ]),
     }

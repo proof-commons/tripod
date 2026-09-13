@@ -159,9 +159,9 @@ const fn expected_relation_kind(relation: &Relation) -> crate::RelationKind {
         Relation::AllowedObjectFamilies { .. } => Kind::AllowedObjectFamilies,
         Relation::Recognition { .. } => Kind::Recognition,
         Relation::AmountConservation { .. } => Kind::Conservation,
-        Relation::OwnerAuthorization { .. } | Relation::PermissionlessAuthorization => {
-            Kind::Authorization
-        }
+        Relation::OwnerAuthorization { .. }
+        | Relation::PermissionlessAuthorization
+        | Relation::OperatorAuthorization => Kind::Authorization,
         Relation::SponsorIsolation => Kind::SponsorIsolation,
         Relation::SponsorEnvelopeMultiplicity { .. } => Kind::SponsorEnvelopeMultiplicity,
         Relation::RootPolicy { .. } => Kind::RootPolicy,
@@ -225,6 +225,7 @@ fn expected_relation_subject(relation: &Relation) -> crate::RelationSubject {
         // inventing one for a relation nothing declares yet would be
         // minting identity ahead of need.
         Relation::PermissionlessAuthorization
+        | Relation::OperatorAuthorization
         | Relation::Constructibility { .. }
         | Relation::RootPolicy { .. }
         | Relation::ProjectionPolicy { .. }
@@ -1259,6 +1260,9 @@ fn fact_owner(fact: &FactId) -> Option<OperationId> {
     match fact {
         FactId::FamilyCount { operation, .. }
         | FactId::FamilyAmount { operation, .. }
+        | FactId::StateField { operation, .. }
+        | FactId::RequestedAnnouncementCycle { operation }
+        | FactId::AnnouncementLead { operation, .. }
         | FactId::InputOwners { operation, .. }
         | FactId::Signers { operation }
         | FactId::ProjectionPresent { operation, .. }
@@ -1417,6 +1421,7 @@ fn seed_reason_relations(reason: &crate::DisclosureReason) -> Vec<&crate::Relati
         | crate::DisclosureReason::TargetSafety { relation } => vec![relation],
         crate::DisclosureReason::PublicState
         | crate::DisclosureReason::PublicEvent
+        | crate::DisclosureReason::PublicRequest
         | crate::DisclosureReason::PublicInterface
         | crate::DisclosureReason::DeploymentPolicy { .. } => Vec::new(),
     }

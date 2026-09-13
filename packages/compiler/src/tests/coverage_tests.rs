@@ -191,12 +191,16 @@ fn expected_boundaries(
     }
 
     match relation {
+        Relation::SubstrateConservation { .. }
+        | Relation::OperatorAuthorization
+        | Relation::Constructibility {
+            class: realization::ConstructibilityClass::Operator,
+        } => BTreeSet::from([Boundary::ExternalEvidence]),
         Relation::Constructibility { .. } => BTreeSet::from([Boundary::CompilerStatic]),
         Relation::PermissionlessAuthorization => BTreeSet::from([Boundary::BackendStructural]),
         Relation::Representation { .. } | Relation::LifecycleExit { .. } => {
             BTreeSet::from([Boundary::CompilerStatic, Boundary::BackendStructural])
         }
-        Relation::SubstrateConservation { .. } => BTreeSet::from([Boundary::ExternalEvidence]),
         Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }
         | Relation::Recognition { .. }
@@ -714,6 +718,10 @@ fn every_relation_variant() -> Vec<Relation> {
             object: ObjectId::ReceiptLive,
         },
         Relation::PermissionlessAuthorization,
+        Relation::OperatorAuthorization,
+        Relation::Constructibility {
+            class: ConstructibilityClass::Operator,
+        },
         Relation::SponsorIsolation,
         Relation::SponsorEnvelopeMultiplicity {
             maximum: Count::ONE,
@@ -1893,5 +1901,60 @@ fn the_projection_excludes_the_combined_placement_product() {
             assert_eq!(projection.requirements.len(), coverage.keys().len());
             assert!(projection.requirements.len() < entry.feasible_placements.len());
         }
+    }
+}
+
+#[test]
+fn operator_authorization_requires_the_substrate_evidence_mutations() {
+    for amounts in [
+        ConservedAmountVisibility::Readable,
+        ConservedAmountVisibility::Committed,
+    ] {
+        let actual = relation_mutations(&Relation::OperatorAuthorization, amounts);
+        assert_eq!(
+            actual,
+            relation_mutations(
+                &Relation::SubstrateConservation {
+                    asset: AssetId::Lbtc
+                },
+                amounts
+            )
+        );
+        assert_eq!(actual.len(), 3);
+        assert!(
+            actual
+                .iter()
+                .all(|(boundary, _)| *boundary == CoverageBoundary::ExternalEvidence)
+        );
+    }
+}
+
+#[test]
+fn operator_constructibility_requires_the_substrate_evidence_mutations() {
+    for amounts in [
+        ConservedAmountVisibility::Readable,
+        ConservedAmountVisibility::Committed,
+    ] {
+        let actual = relation_mutations(
+            &Relation::Constructibility {
+                class: ConstructibilityClass::Operator,
+            },
+            amounts,
+        );
+        assert_eq!(
+            actual,
+            relation_mutations(
+                &Relation::SubstrateConservation {
+                    asset: AssetId::Lbtc
+                },
+                amounts
+            )
+        );
+        assert_eq!(actual.len(), 3);
+        assert!(
+            actual
+                .iter()
+                .all(|(boundary, _)| *boundary == CoverageBoundary::ExternalEvidence)
+        );
     }
 }

@@ -33,6 +33,7 @@ realization_source_files = files(
   'src/tests/live_transfer_tests.rs',
   'src/tests/mod.rs',
   'src/tests/open_flow_tests.rs',
+  'src/tests/operator_vocabulary_tests.rs',
   'src/tests/property_graph_tests.rs',
   'src/tests/relation_identity_tests.rs',
   'src/tests/root_policy_tests.rs',

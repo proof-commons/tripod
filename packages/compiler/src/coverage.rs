@@ -801,6 +801,7 @@ fn runtime_mutations(relation: &Relation) -> Vec<RelationMutation> {
         | Relation::Constructibility { .. }
         | Relation::Representation { .. }
         | Relation::LifecycleExit { .. }
+        | Relation::OperatorAuthorization
         | Relation::SubstrateConservation { .. } => Vec::new(),
     }
 }
@@ -843,6 +844,22 @@ fn static_mutations(
             Mutation::UnexpectedProtocolSecret,
         )],
 
+        Relation::SubstrateConservation { .. }
+        | Relation::OperatorAuthorization
+        | Relation::Constructibility {
+            class: realization::ConstructibilityClass::Operator,
+        } => vec![
+            (
+                Boundary::ExternalEvidence,
+                Mutation::ExternalEvidenceMissing,
+            ),
+            (Boundary::ExternalEvidence, Mutation::ExternalEvidenceFailed),
+            (
+                Boundary::ExternalEvidence,
+                Mutation::ExternalEvidenceIdentityMismatch,
+            ),
+        ],
+
         Relation::Constructibility { class } => {
             let mut mutations = vec![(
                 Boundary::CompilerStatic,
@@ -881,18 +898,6 @@ fn static_mutations(
             (
                 Boundary::BackendStructural,
                 Mutation::RequiredLifecycleExitMissing,
-            ),
-        ],
-
-        Relation::SubstrateConservation { .. } => vec![
-            (
-                Boundary::ExternalEvidence,
-                Mutation::ExternalEvidenceMissing,
-            ),
-            (Boundary::ExternalEvidence, Mutation::ExternalEvidenceFailed),
-            (
-                Boundary::ExternalEvidence,
-                Mutation::ExternalEvidenceIdentityMismatch,
             ),
         ],
 
