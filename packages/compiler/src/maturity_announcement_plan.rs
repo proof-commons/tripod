@@ -727,7 +727,6 @@ pub fn plan_maturity_announcement_target_operation(
     let analyzed = analyze_scoped_program(input, placement_limits)?;
     let plan = derive_plan(&analyzed)?;
     validate_analyzed_maturity_announcement_plan(&analyzed, &plan)?;
-    validate_maturity_announcement_plan(&plan, input)?;
     Ok(plan)
 }
 

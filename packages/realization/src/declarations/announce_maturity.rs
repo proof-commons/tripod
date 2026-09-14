@@ -1,7 +1,7 @@
 //! State and sponsor structure for maturity announcements.
 //!
 //! Operator authorization requires external evidence. State admits explicit
-//! and public committed representations, with six lifecycle exits and nine
+//! and public committed representations, with six lifecycle exits and fifteen
 //! public facts. The typed State transition owns the maturity law: this
 //! declaration omits the window predicate and contains no model or target facts.
 
