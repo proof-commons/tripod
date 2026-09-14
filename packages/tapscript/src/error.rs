@@ -211,6 +211,23 @@ pub enum TapscriptError {
     /// a census that quietly deduplicated would report a smaller total
     /// than the plan it claims to answer.
     DuplicateOperationRequirement,
+
+    /// An announcement representation has missing or unexpected verdict rows.
+    MaturityAssessmentCensusMismatch {
+        /// The representation whose census differs.
+        representation:
+            compiler::maturity_announcement_plan::MaturityAnnouncementRepresentationPlan,
+        /// Published requirements without verdicts.
+        missing: Vec<crate::maturity_assessment::MaturityRequirement>,
+        /// Verdicts for requirements the projection did not publish.
+        unexpected: Vec<crate::maturity_assessment::MaturityRequirement>,
+    },
+
+    /// The two announcement representations disagree on a target group.
+    MaturityGroupDisagreement {
+        /// The group with absent or unequal verdicts.
+        group: crate::maturity_assessment::MaturityCapabilityGroup,
+    },
 }
 
 impl fmt::Display for TapscriptError {
@@ -273,6 +290,19 @@ impl fmt::Display for TapscriptError {
                 formatter,
                 "a result may carry at most {maximum} alternatives",
             ),
+            Self::MaturityAssessmentCensusMismatch {
+                representation,
+                missing,
+                unexpected,
+            } => write!(
+                formatter,
+                "maturity {representation:?} census mismatch: {} missing, {} unexpected",
+                missing.len(),
+                unexpected.len(),
+            ),
+            Self::MaturityGroupDisagreement { group } => {
+                write!(formatter, "maturity representations disagree on {group:?}")
+            }
             Self::DuplicateOperationRequirement => write!(
                 formatter,
                 "one operation requirement was assessed more than once",

@@ -12,6 +12,7 @@ pub mod live_pattern;
 pub mod live_plan;
 pub mod live_private;
 pub mod live_shape;
+pub mod maturity_assessment;
 pub mod operation_assessment;
 pub mod pattern;
 pub mod policy;
@@ -96,6 +97,10 @@ pub use live_shape::{
     FeePresence, LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds,
     LiveTransferShapeSet, MINIMUM_TRANSFER_RECEIPT_INPUTS, MINIMUM_TRANSFER_RECEIPT_OUTPUTS,
     demonstration_live_shape_set, dense_live_shape_set, fee_bearing_live_shape_set,
+};
+pub use maturity_assessment::{
+    MaturityAssessmentSet, MaturityCapabilityGroup, MaturityRequirement, MaturityVerdict,
+    assess_maturity_announcement_plan,
 };
 pub use operation_assessment::{
     EmissionRefusal, OperationAssessmentSet, OperationRequirement, OperationVerdict, VerdictGround,
