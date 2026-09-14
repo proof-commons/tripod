@@ -14,6 +14,7 @@ pub mod live_private;
 pub mod live_shape;
 pub mod maturity_assessment;
 pub mod operation_assessment;
+pub mod operator_authorization;
 pub mod pattern;
 pub mod policy;
 pub mod program;
@@ -105,6 +106,13 @@ pub use maturity_assessment::{
 pub use operation_assessment::{
     EmissionRefusal, OperationAssessmentSet, OperationRequirement, OperationVerdict, VerdictGround,
     assess_operation_plan,
+};
+pub use operator_authorization::{
+    EstablishedOperatorProfile, OperatorKey, OperatorKeyCurveValidity, OperatorKeyEncodingClosure,
+    OperatorKeyFaultClass, OperatorKeyNegative, OperatorKeyObligation, OperatorKeyRejection,
+    OperatorProfileDisposition, OperatorSighashProfile, StateProtectedDatum,
+    operator_key_encoding_closure, operator_profile_classifies_every_offered_dimension,
+    operator_profile_coverage_lands_only_on_required_dimensions, selected_operator_profile,
 };
 pub use pattern::{
     AUTHORIZATION_PRIMITIVES, AbiAssumption, BackendPattern, CompactAshSymbols, MutationOutcome,

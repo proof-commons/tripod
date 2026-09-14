@@ -55,6 +55,7 @@ mod mapping_tests;
 mod maturity_assessment_tests;
 mod non_weakening_tests;
 mod operation_assessment_tests;
+mod operator_authorization_tests;
 mod parser_tests;
 mod pattern_tests;
 mod policy_tests;
