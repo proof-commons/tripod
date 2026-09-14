@@ -420,3 +420,54 @@ pub(super) fn receipt_view(
         program,
     )
 }
+
+/// A finalized script-path candidate with one receipt and one self-paid fee.
+///
+/// The announcement's own candidate arrives with the synthetic bite. This live
+/// transfer stands in for one frozen script-path candidate at this boundary.
+pub(super) fn operator_finalized_fixture() -> crate::live_finalize::FinalizedLiveTransfer {
+    use crate::live_construct::{ExplicitDestinationRole, finalize_live_transfer_declaring};
+    use crate::live_request::{
+        LiveReceiptDestination, LiveTransferRequest, ProtocolValue, RequestedForm,
+        SponsorChangeRequest,
+    };
+
+    let abi = fee_bearing_live_abi();
+    let coin = super::outpoint(0xa1, 0);
+    let stated = super::view([receipt_view(
+        &abi,
+        coin,
+        &owner(&FIRST_OWNER),
+        LiveTransferRepresentationPlan::Explicit,
+        ValueField::Explicit(1_000),
+    )]);
+    let destination = |amount| {
+        LiveReceiptDestination::new(
+            owner(&SECOND_OWNER),
+            ProtocolValue::new(amount).expect("positive fixture amount"),
+        )
+    };
+    let request = LiveTransferRequest::new(
+        [coin],
+        [destination(750), destination(250)],
+        LiveTransferRepresentationPlan::Explicit,
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+        None,
+    )
+    .expect("the fixture request validates");
+    finalize_live_transfer_declaring(
+        &reviewed_target(),
+        &abi,
+        &request,
+        &stated,
+        None,
+        None,
+        &[
+            ExplicitDestinationRole::ReceiptOutput,
+            ExplicitDestinationRole::Fee,
+        ],
+    )
+    .expect("the self-paying candidate finalizes")
+    .into_finalized()
+}

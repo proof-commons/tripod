@@ -43,6 +43,7 @@ mod live_handoff_tests;
 mod live_request_tests;
 mod live_signing_tests;
 mod live_support;
+mod operator_signing_tests;
 mod refusal_census_tests;
 mod taproot_tests;
 
