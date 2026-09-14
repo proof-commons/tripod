@@ -16,6 +16,12 @@
 //! projection has no business naming a live-transfer shape, and a module
 //! that published both would let it.
 //!
+//! The operator deployment binding's readers already return the operator key
+//! and established profile. Their vocabulary belongs in this projection too:
+//! the transaction boundary must name those values to check a signing response
+//! against the binding. These exports give the existing values names without
+//! adding another source of operator authority.
+//!
 //! Nothing new is published here. Every item is already reachable
 //! through this crate's public API; this module only gives it a name.
 
@@ -28,4 +34,9 @@ pub use tapscript::{
     LiveFamilyRange, LiveInputFamily, LiveOutputFamily, LiveProgramRole, LiveTransferLeafRole,
     LiveTransferShape, LiveTransferShapeBounds, LiveTransferShapeSet, OwnerKey,
     OwnerProfileDisposition, OwnerSighashProfile, ProtectedDatum, RecognitionResidual,
+};
+
+pub use tapscript::{
+    EstablishedOperatorProfile, OperatorKey, OperatorKeyCurveValidity, OperatorProfileDisposition,
+    OperatorSighashProfile, StateProtectedDatum,
 };
