@@ -127,4 +127,4 @@ The counts below are ownership assignments, so one cross-wave row appears under 
 | 12 | `G14C-03` | 1 |
 | 13 | `G14C-02`, `G14C-15` | 2 |
 
-The register contains 15 OPEN rows and 26 wave-ownership assignments. R-2 additionally feeds `G14C-11` constraints into Waves 7 and 9, and R-TAXONOMY shares `G14C-12` vocabulary with Waves 7 and 9 without changing the primary ownership counts above.
+The register contains 14 OPEN rows and one CLOSED row and 26 wave-ownership assignments. R-2 additionally feeds `G14C-11` constraints into Waves 7 and 9, and R-TAXONOMY shares `G14C-12` vocabulary with Waves 7 and 9 without changing the primary ownership counts above.
