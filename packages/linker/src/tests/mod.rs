@@ -24,6 +24,7 @@ mod guide13_reproductions;
 mod link_tests;
 mod live_link_tests;
 mod live_taptree_tests;
+mod operator_deployment_tests;
 mod public_api_tests;
 mod relocation_tests;
 mod symbol_tests;

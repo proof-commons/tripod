@@ -15,6 +15,7 @@ pub mod live_relocate;
 pub mod live_resource;
 pub mod live_symbol;
 pub mod live_taptree;
+pub mod operator_deployment;
 pub mod relocate;
 pub mod symbol;
 pub mod taptree;
@@ -50,6 +51,9 @@ pub use live_symbol::{
 pub use live_taptree::{
     LIVE_LEAF_WEIGHT, LIVE_OPTIMUM_POLICY, assemble_live, committed_representation,
     control_path_depths, live_taptree_input,
+};
+pub use operator_deployment::{
+    CandidateDeploymentIdentity, OperatorDeploymentBinding, OperatorDeploymentStatus,
 };
 pub use relocate::LinkedLeafProgram;
 pub use symbol::{

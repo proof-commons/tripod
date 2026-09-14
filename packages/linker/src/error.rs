@@ -465,4 +465,49 @@ pub enum LinkRefusal {
     /// The bundle handed in already claims more than a candidate, so it
     /// is not this linker's subject (§1.9).
     BundleIsNotACandidate,
+    /// The candidate network identifier is all zero.
+    ZeroNetworkId {
+        /// The refused network identifier.
+        network_id: [u8; 32],
+    },
+    /// The candidate genesis identifier is all zero.
+    ZeroGenesisId {
+        /// The refused genesis identifier.
+        genesis_id: [u8; 32],
+    },
+    /// The established operator profile cannot be used at the offered revision.
+    InvalidOperatorProfile(tapscript::OperatorProfileDisposition),
+    /// The operator key encoding differs from the target's approved class.
+    OperatorKeyEncodingMismatch {
+        /// The target's approved class.
+        approved: target_elements::EncodingClass,
+        /// The operator key's class.
+        offered: target_elements::EncodingClass,
+    },
+    /// The operator key reuses the deployment's internal key bytes.
+    OperatorKeyIsInternalKey {
+        /// The public operator key whose bytes equal the internal key's.
+        key: tapscript::OperatorKey,
+    },
+    /// The offered operator key differs in encoding or bytes from the commitment.
+    OperatorKeyMismatch {
+        /// The committed public key.
+        bound: tapscript::OperatorKey,
+        /// The offered public key.
+        offered: tapscript::OperatorKey,
+    },
+    /// The offered deployment differs in network or genesis from the commitment.
+    OperatorDeploymentMismatch {
+        /// The committed candidate identity.
+        bound: Box<crate::operator_deployment::CandidateDeploymentIdentity>,
+        /// The offered candidate identity.
+        offered: Box<crate::operator_deployment::CandidateDeploymentIdentity>,
+    },
+    /// The offered established profile differs by value from the commitment.
+    OperatorProfileMismatch {
+        /// The committed established profile.
+        bound: Box<tapscript::EstablishedOperatorProfile>,
+        /// The offered established profile.
+        offered: Box<tapscript::EstablishedOperatorProfile>,
+    },
 }
