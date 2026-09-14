@@ -17,6 +17,7 @@ pub mod live_private;
 pub mod live_request;
 pub mod live_signing;
 pub mod live_taproot;
+pub mod operator_right;
 pub mod operator_signing;
 pub mod request;
 pub mod script_path_signing;
@@ -84,12 +85,17 @@ pub use live_taproot::{
     CommittedLiveTree, LiveCurveCapability, LiveReceiptInstance, TweakedOutputKey,
     commit_live_tree, derive_live_receipt_instance,
 };
+pub use operator_right::{
+    BranchContext, CachedOperatorAuthorization, ConstructionRight, NonEquivocationEntry,
+    NonEquivocationEvent, NonEquivocationRecord, OperatorRightOutcome, OperatorRightRegistry,
+    RightFailure, RightIdentity, RightRefusal, RightScope,
+};
 pub use operator_signing::{
     OPERATOR_CODESEPARATOR_POSITION, OPERATOR_KEY_VERSION_BYTE, OPERATOR_SIGHASH_TYPE_BYTE,
     OPERATOR_SIGNATURE_BYTES, OPERATOR_SPEND_TYPE_BYTE, OperatorAuthorizedCandidate,
     OperatorEvidenceStanding, OperatorSigningInput, OperatorSigningRefusal, OperatorSigningRequest,
     OperatorSigningResponse, ScriptPathSignatureVerifier, ScriptPathVerifierRejection,
-    authorize_operator,
+    authorize_operator, authorize_operator_under_right,
 };
 pub use request::CompactAshRequest;
 pub use script_path_signing::{

@@ -471,3 +471,143 @@ pub(super) fn operator_finalized_fixture() -> crate::live_finalize::FinalizedLiv
     .expect("the self-paying candidate finalizes")
     .into_finalized()
 }
+
+/// Shared operator request and response fixture using a public-data double.
+pub(super) struct OperatorRightFixture {
+    pub finalized: crate::FinalizedLiveTransfer,
+    pub binding: linker::OperatorDeploymentBinding,
+}
+
+impl OperatorRightFixture {
+    pub fn new(network: u8, genesis: Digest32, key: u8) -> Self {
+        use linker::backend::StackItem;
+        use linker::live_backend::{EstablishedOperatorProfile, OperatorKey};
+        use tapscript::{operator_key_encoding_closure, selected_operator_profile};
+        use target_elements::EncodingClass;
+
+        let target = reviewed_target();
+        let closure = operator_key_encoding_closure(target.definition().authorization());
+        let operator = OperatorKey::new(&closure, closure.approved(), vec![key; 32])
+            .expect("public bytes have the selected width");
+        let internal = StackItem::encoded(
+            &target,
+            EncodingClass::XOnlyPublicKey,
+            LIVE_INTERNAL_KEY.to_vec(),
+        )
+        .expect("internal key encoding");
+        let profile = EstablishedOperatorProfile::establish(selected_operator_profile(), &target)
+            .expect("selected profile");
+        let deployment = linker::CandidateDeploymentIdentity::new([network; 32], genesis)
+            .expect("nonzero identity");
+        let binding = linker::OperatorDeploymentBinding::bind(
+            &target, operator, profile, deployment, &internal,
+        )
+        .expect("fixture binding");
+        Self {
+            finalized: operator_finalized_fixture(),
+            binding,
+        }
+    }
+
+    pub fn freeze(&self) -> crate::OperatorSigningRequest<'_> {
+        self.freeze_candidate(self.finalized.protected().clone())
+    }
+
+    pub fn freeze_candidate(
+        &self,
+        candidate: crate::bytes::TargetTransaction,
+    ) -> crate::OperatorSigningRequest<'_> {
+        use crate::script_path_signing::{LiveDeployment, SpentOutputCensusEntry};
+        use target_elements::LeafVersion;
+
+        let record = &self.finalized.receipts()[0];
+        let input = crate::OperatorSigningInput::new(
+            u32::from(record.position()),
+            crate::taproot::leaf_hash(LeafVersion::TAPSCRIPT, record.leaf_script()),
+            LeafVersion::TAPSCRIPT,
+            record.leaf_script().to_vec(),
+            record.control_block().to_vec(),
+        );
+        let spent = self
+            .finalized
+            .receipts()
+            .iter()
+            .map(|record| {
+                SpentOutputCensusEntry::new(
+                    record.asset(),
+                    record.value(),
+                    record.program().to_vec(),
+                )
+            })
+            .collect();
+        crate::OperatorSigningRequest::freeze(
+            &reviewed_target(),
+            &self.binding,
+            candidate,
+            spent,
+            LiveDeployment::new(*self.binding.deployment().genesis_id()),
+            input,
+            &FixtureCurve,
+        )
+        .expect("fixture freezes")
+    }
+
+    pub fn response(
+        &self,
+        request: &crate::OperatorSigningRequest<'_>,
+    ) -> crate::OperatorSigningResponse {
+        crate::OperatorSigningResponse::new(
+            request.input_index(),
+            operator_right_signature(
+                self.binding.key().bytes(),
+                request.message().with_vector_grown(),
+            ),
+            0,
+            request.frozen_bytes().to_vec(),
+            self.binding.key().clone(),
+            self.binding.deployment().clone(),
+            self.binding.capability_revision(),
+        )
+    }
+}
+
+fn operator_right_signature(key: &[u8], message: &Digest32) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    let first = Sha256::new()
+        .chain_update(key)
+        .chain_update(message)
+        .finalize();
+    let second = Sha256::new()
+        .chain_update(message)
+        .chain_update(key)
+        .finalize();
+    first.iter().chain(second.iter()).copied().collect()
+}
+
+/// Deterministic public-data double; neither Schnorr nor native evidence.
+#[derive(Default)]
+pub(super) struct OperatorRightVerifier {
+    pub calls: std::cell::Cell<usize>,
+}
+
+impl crate::ScriptPathSignatureVerifier for OperatorRightVerifier {
+    fn verify(
+        &self,
+        key: &[u8],
+        message: &Digest32,
+        signature: &[u8],
+    ) -> Result<(), crate::ScriptPathVerifierRejection> {
+        self.calls.set(self.calls.get() + 1);
+        if signature == operator_right_signature(key, message) {
+            Ok(())
+        } else {
+            Err(crate::ScriptPathVerifierRejection::new(
+                "public-data double mismatch".to_owned(),
+            ))
+        }
+    }
+
+    fn description(&self) -> &'static str {
+        "deterministic public-data test double; not Schnorr"
+    }
+}

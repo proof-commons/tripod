@@ -204,6 +204,15 @@ impl<'binding> OperatorSigningRequest<'binding> {
         self.signing_input.input_index()
     }
 
+    /// The predecessor version spent by the selected frozen input.
+    #[must_use]
+    pub fn predecessor_outpoint(&self) -> Option<crate::bytes::Outpoint> {
+        self.candidate()
+            .inputs()
+            .get(usize::try_from(self.input_index()).ok()?)
+            .map(crate::bytes::TargetInput::outpoint)
+    }
+
     /// The deployment commitment, without copying its key into the request.
     #[must_use]
     pub const fn binding(&self) -> &OperatorDeploymentBinding {
@@ -537,6 +546,8 @@ impl From<LinkRefusal> for OperatorSigningRefusal {
 
 /// Accepts exactly one answer over the frozen candidate and selected leaf.
 ///
+/// The production route is [`authorize_operator_under_right`].
+///
 /// Count is checked first. A second answer for the frozen index is duplicate;
 /// any other second answer is unexpected. Only a sole answer can be wrong-input.
 /// Binding checks key, deployment, then revision; shape, echo, and verification
@@ -628,4 +639,23 @@ fn check_response_shape(response: &OperatorSigningResponse) -> Result<(), Operat
             offered: response.signature.len(),
         },
     )
+}
+
+/// Authorizes the frozen request under its registry-issued affine right.
+///
+/// # Errors
+/// Returns the original token with the registry or signing refusal.
+pub fn authorize_operator_under_right<'binding>(
+    registry: &mut crate::operator_right::OperatorRightRegistry,
+    right: crate::operator_right::ConstructionRight,
+    request: OperatorSigningRequest<'binding>,
+    responses: impl IntoIterator<Item = OperatorSigningResponse>,
+    verifier: &dyn ScriptPathSignatureVerifier,
+) -> Result<
+    crate::operator_right::OperatorRightOutcome<'binding>,
+    Box<crate::operator_right::RightFailure>,
+> {
+    registry.consume(right, request, |request| {
+        authorize_operator(request, responses, verifier)
+    })
 }
