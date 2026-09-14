@@ -81,14 +81,28 @@ use std::collections::BTreeSet;
 use linker::live_backend::LiveTransferRepresentationPlan;
 use target_elements::{LeafVersion, ReviewedElementsTapscriptDefinition};
 
-use crate::bytes::{AssetField, Outpoint, OutputWitness, TargetTransaction, ValueField};
+use crate::bytes::{Outpoint, OutputWitness, TargetTransaction};
 use crate::live_construct::PrivateLiveFinalization;
 use crate::live_finalize::{FinalizedLiveTransfer, ReceiptInputRecord, protected_preimage};
 use crate::live_materialize::MaterializedConfidentialCandidate;
 use crate::live_taproot::LiveCurveCapability;
-use crate::taproot::{
-    CONTROL_BASE_BYTES, DIGEST_BYTES, Digest32, TAPROOT_LEAF_MASK, TAPROOT_WITNESS_VERSION,
-    branch_hash, leaf_hash, witness_program_script,
+use crate::taproot::{Digest32, leaf_hash};
+
+use crate::script_path_signing::{
+    self, ScriptPathCensusParts, ScriptPathCensusRefusal, ScriptPathInputRequest,
+    ScriptPathProfile, ScriptPathSigningCensus,
+};
+pub use crate::script_path_signing::{
+    AnnexDisposition, IssuanceDisposition, LiveDeployment,
+    ScriptPathSigningInputCensus as OwnerSigningInputCensus, SpentOutputCensusEntry,
+};
+
+pub(crate) const OWNER_PROFILE: ScriptPathProfile = ScriptPathProfile {
+    type_byte: OWNER_SIGHASH_TYPE_BYTE,
+    spend_type_byte: OWNER_SPEND_TYPE_BYTE,
+    signature_bytes: OWNER_SIGNATURE_BYTES,
+    key_version_byte: OWNER_KEY_VERSION_BYTE,
+    codeseparator_position: OWNER_CODESEPARATOR_POSITION,
 };
 
 // --- The profile's constants ------------------------------------------
@@ -141,147 +155,6 @@ pub const OWNER_KEY_VERSION_BYTE: u8 = 0x00;
 /// value against it and refuses any difference.
 pub const OWNER_CODESEPARATOR_POSITION: u32 = 0xffff_ffff;
 
-/// The deepest control path a census admits.
-///
-/// The target's own bound on a taproot merkle path.
-const MAXIMUM_CONTROL_PATH_DEPTH: usize = 128;
-
-// --- Declared dispositions --------------------------------------------
-
-/// Whether a signing input's witness will carry an annex.
-///
-/// Two members and not a boolean, because the profile refuses one of
-/// them and a refusal needs something to refuse. The selected profile
-/// admits [`Self::Absent`] only, which is what fixes
-/// [`OWNER_SPEND_TYPE_BYTE`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AnnexDisposition {
-    /// No annex, which is every witness this arc builds.
-    Absent,
-    /// An annex, which the profile refuses.
-    ///
-    /// A profile permitting one would have to say what it may contain,
-    /// an annex is non-standard for relay, and the spend-type byte would
-    /// stop being a constant.
-    Present,
-}
-
-/// Whether a signing input bears an issuance.
-///
-/// The source review left this question on the census wave's desk by
-/// name (rule:sighash-review:census-consequence). The accepted result
-/// carries the output-witness vector and does *not* carry the
-/// input-witness vector, and that asymmetry rests on a condition rather
-/// than on a symmetry: term 10 of the message is the issuance
-/// rangeproofs of every entry the input-witness vector happens to hold,
-/// and it is length-dependent in exactly the way term 12 is.
-///
-/// While no input bears an issuance, every input-witness entry is
-/// default-constructed, its two issuance rangeproofs serialize to one
-/// zero byte each, and the whole term is a function of the input count —
-/// which the protected bytes already carry. When an input does bear one,
-/// the entries carry real rangeproof bytes the preimage does not contain
-/// in any encoded form, and the term becomes unrecoverable in exactly
-/// the way the proof-bearing lane's output-witness term is.
-///
-/// The selected profile requires the issuance dimension, so an
-/// issuance-bearing candidate is admissible under the profile even
-/// though no shape this arc builds today has one. The review gave the
-/// census two ways out — a field for the input-witness issuance proofs,
-/// or a typed refusal saying the census does not admit the shape — and
-/// this is the second. Declaring [`Self::Bearing`] is
-/// [`OwnerCensusRefusal::IssuanceBearingInputRefused`], so the census's
-/// silence about the input side is a claim with a checked precondition
-/// rather than an omission.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum IssuanceDisposition {
-    /// No issuance, which is the precondition the census's silence about
-    /// the input-witness vector rests on.
-    Absent,
-    /// An issuance, which this census does not carry the field for.
-    Bearing,
-}
-
-// --- The deployment ----------------------------------------------------
-
-/// The deployment a census is bound to.
-///
-/// One field, and it is the one the message cannot do without. The
-/// hasher is seeded at `src/script/interpreter.cpp:2671-2673` with the
-/// tagged hash and then the genesis block hash *twice*, so two
-/// candidates identical to the last byte, signed against two different
-/// regtest chains, have different messages. A result bound to protected
-/// bytes alone would be bound to a value that does not determine the
-/// message.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LiveDeployment {
-    genesis_block_hash: Digest32,
-}
-
-impl LiveDeployment {
-    /// The deployment whose chain starts at this block.
-    #[must_use]
-    pub const fn new(genesis_block_hash: Digest32) -> Self {
-        Self { genesis_block_hash }
-    }
-
-    /// The genesis block hash, in the internal byte order the target
-    /// writes into the message.
-    #[must_use]
-    pub const fn genesis_block_hash(&self) -> &Digest32 {
-        &self.genesis_block_hash
-    }
-}
-
-// --- The spent-output census ------------------------------------------
-
-/// One spent output, as three message terms read it.
-///
-/// The asset and value fields feed term 6 and the script feeds term 7,
-/// both taken at `src/script/interpreter.cpp:2454-2472` over the
-/// *precomputed spent-output set* rather than over the transaction. That
-/// is why a component holding only the transaction cannot form the
-/// message, and why this census entry exists at all.
-///
-/// Observed target data. No opening for the value, whatever form the
-/// value field takes.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SpentOutputCensusEntry {
-    asset: AssetField,
-    value: ValueField,
-    program: Vec<u8>,
-}
-
-impl SpentOutputCensusEntry {
-    /// The spent output carrying these observed fields.
-    #[must_use]
-    pub const fn new(asset: AssetField, value: ValueField, program: Vec<u8>) -> Self {
-        Self {
-            asset,
-            value,
-            program,
-        }
-    }
-
-    /// The asset field, as observed.
-    #[must_use]
-    pub const fn asset(&self) -> AssetField {
-        self.asset
-    }
-
-    /// The value field, as observed.
-    #[must_use]
-    pub const fn value(&self) -> ValueField {
-        self.value
-    }
-
-    /// The script, as observed.
-    #[must_use]
-    pub fn program(&self) -> &[u8] {
-        &self.program
-    }
-}
-
 // --- One signing input -------------------------------------------------
 
 /// What the negative-evidence seam asks the census for, per signing input.
@@ -312,6 +185,18 @@ pub struct OwnerSigningInputRequest {
 }
 
 impl OwnerSigningInputRequest {
+    fn kernel(&self) -> ScriptPathInputRequest<'_> {
+        ScriptPathInputRequest {
+            input_index: self.input_index,
+            tapleaf_hash: &self.tapleaf_hash,
+            leaf_version: self.leaf_version,
+            codeseparator_position: self.codeseparator_position,
+            annex: self.annex,
+            issuance: self.issuance,
+            control_block: &self.control_block,
+        }
+    }
+
     /// The request to authorize one input under one leaf.
     #[must_use]
     pub const fn new(
@@ -479,62 +364,6 @@ impl ProofFinalizedSigningCandidate {
     #[must_use]
     pub const fn materialized(&self) -> &MaterializedConfidentialCandidate {
         &self.materialized
-    }
-}
-
-/// One signing input, as the census retains it.
-///
-/// Exactly the five per-input members the accepted option-B result
-/// names: the input index, the tapleaf hash, the leaf version, the
-/// codeseparator position, and the annex disposition.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OwnerSigningInputCensus {
-    input_index: u32,
-    tapleaf_hash: Digest32,
-    leaf_version: LeafVersion,
-    codeseparator_position: u32,
-    annex: AnnexDisposition,
-}
-
-impl OwnerSigningInputCensus {
-    /// Which input is being authorized — message term 14, written at
-    /// `src/script/interpreter.cpp:2768`.
-    #[must_use]
-    pub const fn input_index(&self) -> u32 {
-        self.input_index
-    }
-
-    /// The executing leaf's hash — message term 16, written at `:2795`,
-    /// and the same value the control-block check already computed at
-    /// `:3287`.
-    #[must_use]
-    pub const fn tapleaf_hash(&self) -> &Digest32 {
-        &self.tapleaf_hash
-    }
-
-    /// The executing leaf's version.
-    ///
-    /// Not itself a message term — term 17 is the *key* version, which
-    /// the target fixes — but the value the tapleaf hash was taken over,
-    /// carried so that a reader can recompute the leaf hash rather than
-    /// trust it.
-    #[must_use]
-    pub const fn leaf_version(&self) -> LeafVersion {
-        self.leaf_version
-    }
-
-    /// Where in the leaf's execution the check occurred — message term
-    /// 18, written at `:2798`.
-    #[must_use]
-    pub const fn codeseparator_position(&self) -> u32 {
-        self.codeseparator_position
-    }
-
-    /// Whether the witness carries an annex, which is what the
-    /// spend-type byte at term 13 reports.
-    #[must_use]
-    pub const fn annex(&self) -> AnnexDisposition {
-        self.annex
     }
 }
 
@@ -793,12 +622,7 @@ pub enum OwnerCensusRefusal {
 /// finalization, and both run the same clause list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OwnerSigningCensus {
-    candidate: TargetTransaction,
-    protected_bytes: Vec<u8>,
-    output_witnesses: Vec<OutputWitness>,
-    spent_outputs: Vec<SpentOutputCensusEntry>,
-    genesis_block_hash: Digest32,
-    signing_inputs: Vec<OwnerSigningInputCensus>,
+    kernel: ScriptPathSigningCensus,
 }
 
 impl OwnerSigningCensus {
@@ -1019,7 +843,7 @@ impl OwnerSigningCensus {
     ///
     /// # What it runs
     ///
-    /// The SAME [`Self::assemble`] clause list the production routes run,
+    /// The SAME `Self::assemble` clause list the production routes run,
     /// not a relaxed one. Several of that list's refusals are
     /// structurally unreachable from a finalized candidate — a frozen
     /// candidate's output-witness vector is one entry per output by the
@@ -1108,111 +932,31 @@ impl OwnerSigningCensus {
         representation: LiveTransferRepresentationPlan,
         curve: &dyn LiveCurveCapability,
     ) -> Result<Self, OwnerCensusRefusal> {
-        let inputs = candidate.inputs().len();
-        let outputs = candidate.outputs().len();
+        let expected = protected_preimage(&candidate, representation);
+        let requests = requests
+            .iter()
+            .map(OwnerSigningInputRequest::kernel)
+            .collect::<Vec<_>>();
+        let kernel = ScriptPathSigningCensus::assemble(
+            target,
+            ScriptPathCensusParts {
+                candidate,
+                protected_bytes,
+                output_witnesses,
+                spent_outputs,
+                deployment,
+                profile: OWNER_PROFILE,
+            },
+            &expected,
+            &requests,
+            curve,
+            |request| check_finalized_selection(request, finalized_receipts),
+        )?;
+        Ok(Self { kernel })
+    }
 
-        if protected_preimage(&candidate, representation) != protected_bytes {
-            return Err(OwnerCensusRefusal::ProtectedBytesAreNotTheCandidates);
-        }
-
-        if spent_outputs.len() != inputs {
-            return Err(OwnerCensusRefusal::SpentOutputCardinalityMismatch {
-                inputs,
-                spent_outputs: spent_outputs.len(),
-            });
-        }
-
-        if output_witnesses.len() != outputs {
-            return Err(OwnerCensusRefusal::OutputWitnessLengthMismatch {
-                outputs,
-                output_witnesses: output_witnesses.len(),
-            });
-        }
-
-        if candidate.output_witnesses() != output_witnesses.as_slice() {
-            return Err(OwnerCensusRefusal::OutputWitnessLengthMismatch {
-                outputs,
-                output_witnesses: output_witnesses.len(),
-            });
-        }
-
-        if requests.is_empty() {
-            return Err(OwnerCensusRefusal::NoSigningInputRequested);
-        }
-
-        let mut seen = BTreeSet::new();
-        let mut signing_inputs = Vec::with_capacity(requests.len());
-
-        for request in requests {
-            let index = request.input_index();
-            let position = usize::try_from(index)
-                .ok()
-                .filter(|position| *position < inputs)
-                .ok_or(OwnerCensusRefusal::SigningInputOutOfRange {
-                    input_index: index,
-                    inputs,
-                })?;
-
-            if !seen.insert(index) {
-                return Err(OwnerCensusRefusal::DuplicateSigningInput { input_index: index });
-            }
-
-            if request.issuance() == IssuanceDisposition::Bearing {
-                return Err(OwnerCensusRefusal::IssuanceBearingInputRefused { input_index: index });
-            }
-
-            if request.codeseparator_position() != OWNER_CODESEPARATOR_POSITION {
-                return Err(
-                    OwnerCensusRefusal::CodeseparatorPositionOutsideOwnerProfile {
-                        input_index: index,
-                        offered: request.codeseparator_position(),
-                    },
-                );
-            }
-
-            let recomputed = spend_type_byte(request.annex());
-            if recomputed != OWNER_SPEND_TYPE_BYTE {
-                return Err(OwnerCensusRefusal::AnnexDisagreement {
-                    input_index: index,
-                    declared: request.annex(),
-                    recomputed_spend_type: recomputed,
-                });
-            }
-
-            check_leaf_commits(target, request, &spent_outputs[position], curve)?;
-
-            if let Some(receipts) = finalized_receipts {
-                let receipt = receipts
-                    .iter()
-                    .find(|receipt| receipt.input_index == index)
-                    .ok_or(OwnerCensusRefusal::SigningInputIsNotAFinalizedReceipt {
-                        input_index: index,
-                    })?;
-                if request.control_block() != receipt.control_block.as_slice() {
-                    return Err(OwnerCensusRefusal::FinalizedSigningInputMismatch {
-                        input_index: index,
-                        field: FinalizedSigningField::ControlBlock,
-                    });
-                }
-            }
-
-            signing_inputs.push(OwnerSigningInputCensus {
-                input_index: index,
-                tapleaf_hash: *request.tapleaf_hash(),
-                leaf_version: request.leaf_version(),
-                codeseparator_position: request.codeseparator_position(),
-                annex: request.annex(),
-            });
-        }
-
-        Ok(Self {
-            candidate,
-            protected_bytes,
-            output_witnesses,
-            spent_outputs,
-            genesis_block_hash: *deployment.genesis_block_hash(),
-            signing_inputs,
-        })
+    pub(crate) const fn kernel(&self) -> &ScriptPathSigningCensus {
+        &self.kernel
     }
 
     /// The candidate the census is about.
@@ -1225,37 +969,37 @@ impl OwnerSigningCensus {
     /// and is not itself a decodable transaction.
     #[must_use]
     pub const fn candidate(&self) -> &TargetTransaction {
-        &self.candidate
+        self.kernel.candidate()
     }
 
     /// The exact protected bytes every owner binds to.
     #[must_use]
     pub fn protected_bytes(&self) -> &[u8] {
-        &self.protected_bytes
+        self.kernel.protected_bytes()
     }
 
     /// The output-witness vector at its consensus length.
     #[must_use]
     pub fn output_witnesses(&self) -> &[OutputWitness] {
-        &self.output_witnesses
+        self.kernel.output_witnesses()
     }
 
     /// The spent-output census, in input order.
     #[must_use]
     pub fn spent_outputs(&self) -> &[SpentOutputCensusEntry] {
-        &self.spent_outputs
+        self.kernel.spent_outputs()
     }
 
     /// The deployment's genesis block hash.
     #[must_use]
     pub const fn genesis_block_hash(&self) -> &Digest32 {
-        &self.genesis_block_hash
+        self.kernel.genesis_block_hash()
     }
 
     /// Every signing input, in request order.
     #[must_use]
     pub fn signing_inputs(&self) -> &[OwnerSigningInputCensus] {
-        &self.signing_inputs
+        self.kernel.signing_inputs()
     }
 
     /// Whether an offered candidate is the one this census is bound to.
@@ -1268,11 +1012,8 @@ impl OwnerSigningCensus {
     /// [`crate::live_finalize::FinalizedLiveTransfer::check_offered`]
     /// sets, rather than trusting that the signer looked.
     pub fn check_offered(&self, offered: &[u8]) -> Result<(), OwnerCensusRefusal> {
-        if offered == self.protected_bytes {
-            Ok(())
-        } else {
-            Err(OwnerCensusRefusal::ProtectedBytesAreNotTheCandidates)
-        }
+        script_path_signing::check_protected_bytes(self.kernel.protected_bytes(), offered)
+            .map_err(OwnerCensusRefusal::from)
     }
 
     /// Whether this census belongs to the deployment a run is against.
@@ -1290,16 +1031,8 @@ impl OwnerSigningCensus {
     /// [`OwnerCensusRefusal::DeploymentMismatch`] when the run's
     /// deployment is not the one the census was built against.
     pub fn check_deployment(&self, run: LiveDeployment) -> Result<(), OwnerCensusRefusal> {
-        let offered = *run.genesis_block_hash();
-
-        if offered == self.genesis_block_hash {
-            Ok(())
-        } else {
-            Err(OwnerCensusRefusal::DeploymentMismatch {
-                expected: self.genesis_block_hash,
-                offered,
-            })
-        }
+        script_path_signing::check_deployment(*self.kernel.genesis_block_hash(), run)
+            .map_err(OwnerCensusRefusal::from)
     }
 }
 
@@ -1471,10 +1204,9 @@ fn check_receipt_positions(
 /// [`OwnerCensusRefusal::TypeByteOutsideProfile`] for any other byte,
 /// including the ones the target itself admits.
 pub const fn check_type_byte(offered: u8) -> Result<(), OwnerCensusRefusal> {
-    if offered == OWNER_SIGHASH_TYPE_BYTE {
-        Ok(())
-    } else {
-        Err(OwnerCensusRefusal::TypeByteOutsideProfile { offered })
+    match script_path_signing::check_type_byte(OWNER_PROFILE, offered) {
+        Ok(()) => Ok(()),
+        Err(_) => Err(OwnerCensusRefusal::TypeByteOutsideProfile { offered }),
     }
 }
 
@@ -1485,10 +1217,9 @@ pub const fn check_type_byte(offered: u8) -> Result<(), OwnerCensusRefusal> {
 /// [`OwnerCensusRefusal::SignatureWidthOutsideProfile`] for any other
 /// width, including the 65 a non-default type byte would carry.
 pub const fn check_signature_width(offered: usize) -> Result<(), OwnerCensusRefusal> {
-    if offered == OWNER_SIGNATURE_BYTES {
-        Ok(())
-    } else {
-        Err(OwnerCensusRefusal::SignatureWidthOutsideProfile { offered })
+    match script_path_signing::check_signature_width(OWNER_PROFILE, offered) {
+        Ok(()) => Ok(()),
+        Err(_) => Err(OwnerCensusRefusal::SignatureWidthOutsideProfile { offered }),
     }
 }
 
@@ -1499,79 +1230,110 @@ pub const fn check_signature_width(offered: usize) -> Result<(), OwnerCensusRefu
 /// profile admits, because the profile is script path only.
 #[must_use]
 pub const fn spend_type_byte(annex: AnnexDisposition) -> u8 {
-    const SCRIPT_PATH_EXTENSION_FLAG: u8 = 1;
-
-    let annex_bit = match annex {
-        AnnexDisposition::Absent => 0,
-        AnnexDisposition::Present => 1,
-    };
-
-    (SCRIPT_PATH_EXTENSION_FLAG << 1_u8) | annex_bit
+    script_path_signing::spend_type_byte(annex)
 }
 
-// --- The control-block check ------------------------------------------
-
-/// `VerifyTaprootCommitment`, recomputed on this side.
-fn check_leaf_commits(
-    target: &ReviewedElementsTapscriptDefinition,
-    request: &OwnerSigningInputRequest,
-    spent: &SpentOutputCensusEntry,
-    curve: &dyn LiveCurveCapability,
+fn check_finalized_selection(
+    request: &ScriptPathInputRequest<'_>,
+    finalized_receipts: Option<&[ProofFinalizedReceiptInput]>,
 ) -> Result<(), OwnerCensusRefusal> {
-    let index = request.input_index();
-    let block = request.control_block();
-
-    if block.len() < CONTROL_BASE_BYTES
-        || !(block.len() - CONTROL_BASE_BYTES).is_multiple_of(DIGEST_BYTES)
-        || (block.len() - CONTROL_BASE_BYTES) / DIGEST_BYTES > MAXIMUM_CONTROL_PATH_DEPTH
-    {
-        return Err(OwnerCensusRefusal::ControlBlockMalformed {
-            input_index: index,
-            offered: block.len(),
-        });
-    }
-
-    let control_byte = block[0];
-    if control_byte & TAPROOT_LEAF_MASK != request.leaf_version().get() & TAPROOT_LEAF_MASK {
-        return Err(
-            OwnerCensusRefusal::LeafVersionDisagreesWithTheControlBlock {
+    if let Some(receipts) = finalized_receipts {
+        let index = request.input_index();
+        let receipt = receipts
+            .iter()
+            .find(|receipt| receipt.input_index == index)
+            .ok_or(OwnerCensusRefusal::SigningInputIsNotAFinalizedReceipt { input_index: index })?;
+        if request.control_block() != receipt.control_block.as_slice() {
+            return Err(OwnerCensusRefusal::FinalizedSigningInputMismatch {
                 input_index: index,
-                declared: request.leaf_version().get(),
+                field: FinalizedSigningField::ControlBlock,
+            });
+        }
+    }
+    Ok(())
+}
+
+impl From<ScriptPathCensusRefusal> for OwnerCensusRefusal {
+    fn from(refusal: ScriptPathCensusRefusal) -> Self {
+        match refusal {
+            ScriptPathCensusRefusal::SpentOutputCardinalityMismatch {
+                inputs,
+                spent_outputs,
+            } => Self::SpentOutputCardinalityMismatch {
+                inputs,
+                spent_outputs,
+            },
+            ScriptPathCensusRefusal::OutputWitnessLengthMismatch {
+                outputs,
+                output_witnesses,
+            } => Self::OutputWitnessLengthMismatch {
+                outputs,
+                output_witnesses,
+            },
+            ScriptPathCensusRefusal::AnnexDisagreement {
+                input_index,
+                declared,
+                recomputed_spend_type,
+            } => Self::AnnexDisagreement {
+                input_index,
+                declared,
+                recomputed_spend_type,
+            },
+            ScriptPathCensusRefusal::CodeseparatorPositionOutsideProfile {
+                input_index,
+                offered,
+            } => Self::CodeseparatorPositionOutsideOwnerProfile {
+                input_index,
+                offered,
+            },
+            ScriptPathCensusRefusal::DeploymentMismatch { expected, offered } => {
+                Self::DeploymentMismatch { expected, offered }
+            }
+            ScriptPathCensusRefusal::LeafHashDoesNotCommit { input_index } => {
+                Self::LeafHashDoesNotCommit { input_index }
+            }
+            ScriptPathCensusRefusal::ControlBlockMalformed {
+                input_index,
+                offered,
+            } => Self::ControlBlockMalformed {
+                input_index,
+                offered,
+            },
+            ScriptPathCensusRefusal::LeafVersionDisagreesWithTheControlBlock {
+                input_index,
+                declared,
+                control_byte,
+            } => Self::LeafVersionDisagreesWithTheControlBlock {
+                input_index,
+                declared,
                 control_byte,
             },
-        );
+            ScriptPathCensusRefusal::ControlBlockInternalKeyIsNotAPoint { input_index } => {
+                Self::ControlBlockInternalKeyIsNotAPoint { input_index }
+            }
+            ScriptPathCensusRefusal::TypeByteOutsideProfile { offered } => {
+                Self::TypeByteOutsideProfile { offered }
+            }
+            ScriptPathCensusRefusal::SignatureWidthOutsideProfile { offered } => {
+                Self::SignatureWidthOutsideProfile { offered }
+            }
+            ScriptPathCensusRefusal::IssuanceBearingInputRefused { input_index } => {
+                Self::IssuanceBearingInputRefused { input_index }
+            }
+            ScriptPathCensusRefusal::SigningInputOutOfRange {
+                input_index,
+                inputs,
+            } => Self::SigningInputOutOfRange {
+                input_index,
+                inputs,
+            },
+            ScriptPathCensusRefusal::DuplicateSigningInput { input_index } => {
+                Self::DuplicateSigningInput { input_index }
+            }
+            ScriptPathCensusRefusal::NoSigningInputRequested => Self::NoSigningInputRequested,
+            ScriptPathCensusRefusal::ProtectedBytesAreNotTheCandidates => {
+                Self::ProtectedBytesAreNotTheCandidates
+            }
+        }
     }
-
-    let internal_key = &block[1..CONTROL_BASE_BYTES];
-
-    // The merkle root, folded from the executing leaf upward through the
-    // path the control block carries. `branch_hash` orders each pair
-    // lexicographically, which is what lets the path be a bare list with
-    // no side bits — the same recursion the committed tree was built by,
-    // run in the other direction.
-    let mut root = *request.tapleaf_hash();
-    for sibling in block[CONTROL_BASE_BYTES..].as_chunks::<DIGEST_BYTES>().0 {
-        root = branch_hash(root, *sibling);
-    }
-
-    let output_key = curve
-        .output_key(internal_key, &root)
-        .ok_or(OwnerCensusRefusal::ControlBlockInternalKeyIsNotAPoint { input_index: index })?;
-
-    if output_key.parity().bit() != control_byte & !TAPROOT_LEAF_MASK {
-        return Err(OwnerCensusRefusal::LeafHashDoesNotCommit { input_index: index });
-    }
-
-    // Rebuilt through the crate's own reviewed witness-program grammar
-    // rather than parsed out of the spent script. Parsing would have
-    // meant a second opinion about which opcode a version-one program
-    // starts with, and the two could come to differ.
-    let expected = witness_program_script(target, TAPROOT_WITNESS_VERSION, output_key.key())
-        .map_err(|_| OwnerCensusRefusal::LeafHashDoesNotCommit { input_index: index })?;
-
-    if expected != spent.program() {
-        return Err(OwnerCensusRefusal::LeafHashDoesNotCommit { input_index: index });
-    }
-
-    Ok(())
 }

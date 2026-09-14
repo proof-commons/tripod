@@ -18,6 +18,7 @@ pub mod live_request;
 pub mod live_signing;
 pub mod live_taproot;
 pub mod request;
+pub mod script_path_signing;
 pub mod sponsor;
 pub mod synthetic;
 pub mod taproot;

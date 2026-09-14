@@ -48,6 +48,7 @@ use target_elements::SighashDimension;
 use crate::bytes::{InputWitness, TargetTransaction};
 use crate::error::TransactionRefusal;
 use crate::live_finalize::{FinalizedLiveTransfer, LiveSigningRequest};
+use crate::script_path_signing::script_path_witness;
 
 /// One protocol owner's answer to one signing request (§12.7).
 ///
@@ -307,11 +308,11 @@ pub fn authorize_live_transfer(
             // authenticates it.
             Ok((
                 *position,
-                InputWitness::new(vec![
+                script_path_witness(
                     response.signature.clone(),
-                    record.leaf_script().to_vec(),
-                    record.control_block().to_vec(),
-                ]),
+                    record.leaf_script(),
+                    record.control_block(),
+                ),
             ))
         })
         .collect::<Result<BTreeMap<_, _>, TransactionRefusal>>()?;

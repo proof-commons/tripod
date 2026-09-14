@@ -21,6 +21,7 @@ transaction_source_files = files(
   'src/live_signing.rs',
   'src/live_taproot.rs',
   'src/request.rs',
+  'src/script_path_signing.rs',
   'src/sponsor.rs',
   'src/synthetic.rs',
   'src/taproot.rs',

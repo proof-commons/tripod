@@ -78,6 +78,10 @@
 
 use std::collections::BTreeMap;
 
+use crate::script_path_signing::{
+    ResponseCoverageRefusal, check_response_duplicate, check_response_index, check_response_present,
+};
+
 use crate::live_census::{
     LiveDeployment, OwnerCensusRefusal, OwnerSigningCensus, check_signature_width, check_type_byte,
 };
@@ -232,17 +236,7 @@ impl AcceptedOwnerAuthorizations {
         for answer in offered {
             let index = answer.input_index();
 
-            if !census
-                .signing_inputs()
-                .iter()
-                .any(|input| input.input_index() == index)
-            {
-                return Err(
-                    AcceptedResultRefusal::AuthorizationForAnInputTheCensusDoesNotHave {
-                        input_index: index,
-                    },
-                );
-            }
+            check_response_index(census.signing_inputs(), index)?;
 
             // Both profile checks, on every answer. The width is checked
             // as well as the byte because the two faults are different
@@ -252,22 +246,19 @@ impl AcceptedOwnerAuthorizations {
             check_type_byte(answer.type_byte())?;
             check_signature_width(answer.authorization().len())?;
 
-            if authorizations
-                .insert(index, answer.authorization().to_vec())
-                .is_some()
-            {
-                return Err(AcceptedResultRefusal::TwoAuthorizationsForOneInput {
-                    input_index: index,
-                });
-            }
+            check_response_duplicate(
+                authorizations
+                    .insert(index, answer.authorization().to_vec())
+                    .is_some(),
+                index,
+            )?;
         }
 
         for input in census.signing_inputs() {
-            if !authorizations.contains_key(&input.input_index()) {
-                return Err(AcceptedResultRefusal::SigningInputWithNoAuthorization {
-                    input_index: input.input_index(),
-                });
-            }
+            check_response_present(
+                authorizations.contains_key(&input.input_index()),
+                input.input_index(),
+            )?;
         }
 
         Ok(Self {
@@ -304,5 +295,21 @@ impl AcceptedOwnerAuthorizations {
     #[must_use]
     pub fn answered(&self) -> usize {
         self.authorizations.len()
+    }
+}
+
+impl From<ResponseCoverageRefusal> for AcceptedResultRefusal {
+    fn from(refusal: ResponseCoverageRefusal) -> Self {
+        match refusal {
+            ResponseCoverageRefusal::Unexpected { input_index } => {
+                Self::AuthorizationForAnInputTheCensusDoesNotHave { input_index }
+            }
+            ResponseCoverageRefusal::Duplicate { input_index } => {
+                Self::TwoAuthorizationsForOneInput { input_index }
+            }
+            ResponseCoverageRefusal::Missing { input_index } => {
+                Self::SigningInputWithNoAuthorization { input_index }
+            }
+        }
     }
 }
