@@ -2213,8 +2213,9 @@ fn scripted_step(operation: ScriptedCeremonyOperation) -> OperationStep {
 }
 
 fn scripted_response(operation: ScriptedCeremonyOperation) -> String {
+    let schema = target_elements_conformance::protocol::NATIVE_PROTOCOL_SCHEMA;
     let common = format!(
-        "\"schema\":7,\"case\":{{\"operation\":\"{}\",\"step\":\"{}\"}}",
+        "\"schema\":{schema},\"case\":{{\"operation\":\"{}\",\"step\":\"{}\"}},\"script_path_witness\":[],\"signer_public_key\":null,\"signed_profile\":null,\"signing_genesis\":null",
         operation.kind.wire(),
         operation.step,
     );
@@ -2300,6 +2301,8 @@ fn scripted_ceremony_operations(ceremony: CeremonyId) -> Vec<ScriptedCeremonyOpe
 }
 
 fn scripted_adapter(capabilities: &[&str], responses: &[String]) -> String {
+    // The current protocol revision keeps scripted exchanges aligned with the harness.
+    let schema = target_elements_conformance::protocol::NATIVE_PROTOCOL_SCHEMA;
     let capabilities = capabilities
         .iter()
         .map(|capability| format!("\"{capability}\""))
@@ -2308,10 +2311,10 @@ fn scripted_adapter(capabilities: &[&str], responses: &[String]) -> String {
     let network = std::iter::repeat_n("17", 32).collect::<Vec<_>>().join(",");
     let genesis = std::iter::repeat_n("34", 32).collect::<Vec<_>>().join(",");
     let handshake = format!(
-        "{{\"protocol_schema\":7,\"adapter_name\":\"capture-adapter\",\"adapter_version\":\"1.2.3\",\"framework_revision\":\"framework-tip\",\"node_name\":\"elementsd\",\"node_version\":\"23.2.1\",\"binary_reported_revision\":\"binary-tip\",\"intended_executed_tip\":\"intended-tip\",\"upstream_base\":\"upstream-base\",\"included_local_topics\":[\"topic-a\",\"topic-b\"],\"supported_domains\":[\"tapscript\"],\"supported_leaf_versions\":[196],\"capabilities\":[{capabilities}],\"confidential_funding\":{{\"representation_profiles\":[\"explicit_asset_confidential_value\"],\"custody_profiles\":[\"central_public_fixtures\"],\"materializer_profiles\":[\"guide_ctf_deterministic_v1\"],\"reproducibility_contracts\":[\"byte_identity\"]}}}}",
+        "{{\"protocol_schema\":{schema},\"adapter_name\":\"capture-adapter\",\"adapter_version\":\"1.2.3\",\"framework_revision\":\"framework-tip\",\"node_name\":\"elementsd\",\"node_version\":\"23.2.1\",\"binary_reported_revision\":\"binary-tip\",\"intended_executed_tip\":\"intended-tip\",\"upstream_base\":\"upstream-base\",\"included_local_topics\":[\"topic-a\",\"topic-b\"],\"supported_domains\":[\"tapscript\"],\"supported_leaf_versions\":[196],\"capabilities\":[{capabilities}],\"confidential_funding\":{{\"representation_profiles\":[\"explicit_asset_confidential_value\"],\"custody_profiles\":[\"central_public_fixtures\"],\"materializer_profiles\":[\"guide_ctf_deterministic_v1\"],\"reproducibility_contracts\":[\"byte_identity\"]}}}}",
     );
     let observed_environment = format!(
-        "{{\"schema\":7,\"environment\":\"development\",\"chain_name\":\"elementsregtest\",\"network_id\":[{network}],\"genesis_id\":[{genesis}],\"active_domains\":[\"tapscript\"],\"active_leaf_versions\":[196]}}",
+        "{{\"schema\":{schema},\"environment\":\"development\",\"chain_name\":\"elementsregtest\",\"network_id\":[{network}],\"genesis_id\":[{genesis}],\"active_domains\":[\"tapscript\"],\"active_leaf_versions\":[196]}}",
     );
     let mut script = format!(
         "#!/bin/sh\nIFS= read -r request\nprintf '%s\\n' '{handshake}'\nprintf '%s\\n' '{observed_environment}'\n",
@@ -2370,13 +2373,15 @@ fn run_scripted_capture(
 #[cfg(unix)]
 fn scripted_capture() -> NativeOperationCapture {
     let refused = concat!(
-        "{\"schema\":7,\"case\":{\"operation\":\"submit\",",
+        "{\"schema\":8,\"case\":{\"operation\":\"submit\",",
         "\"step\":\"empty-signature\"},",
         "\"observed_layer\":\"script_path_rejection\",",
         "\"observed_detail\":\"mutant refused\",",
         "\"issued_asset\":null,\"funded_outputs\":[],",
         "\"confidential_funded_outputs\":[],\"mined_readback\":null,",
         "\"accepted_txid\":null,\"sponsor_witness\":[],",
+        "\"script_path_witness\":[],\"signer_public_key\":null,",
+        "\"signed_profile\":null,\"signing_genesis\":null,",
         "\"signature_bound_to\":null,\"resources\":{",
         "\"script_bytes\":4,\"initial_stack_items\":1,",
         "\"peak_stack_items\":2,\"peak_altstack_items\":0,",
@@ -2687,7 +2692,7 @@ const GOLDEN_CAPTURE_PREFIX: &str = concat!(
     "deployment-network-id 64 31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131\n",
     "deployment-genesis-id 64 32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232\n",
     "deployment-target-contract 21 656c656d656e74732d7461707363726970742d7632\n",
-    "handshake-protocol-schema 7\n",
+    "handshake-protocol-schema 8\n",
     "handshake-adapter-name 15 636170747572652d61646170746572\n",
     "handshake-adapter-version 5 312e322e33\n",
     "handshake-framework-revision 13 6672616d65776f726b2d746970\n",
@@ -2699,7 +2704,7 @@ const GOLDEN_CAPTURE_PREFIX: &str = concat!(
     "handshake-topic-count 2\n",
     "handshake-topic 0 7 746f7069632d61\n",
     "handshake-topic 1 7 746f7069632d62\n",
-    "environment-schema 7\n",
+    "environment-schema 8\n",
     "environment-chain 15 656c656d656e747372656774657374\n",
     "environment-network-id 64 31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131\n",
     "environment-genesis-id 64 32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232\n",
@@ -2802,7 +2807,7 @@ fn the_enhanced_capture_format_matches_exact_golden_bytes() {
     ]
     .concat();
     let expected = format!(
-        "{expected_content}capture-content-sha256 750db245b5d6cacde581c3d4ce90add65ee5ac7b465319a37e09d7c5bcd104cc\nnative-capture-end explicit-witness-negatives\n",
+        "{expected_content}capture-content-sha256 ca478f8b4db5e32a0304e478ce16bf53073cc4a85bdb0e4d690ee81cfc96d538\nnative-capture-end explicit-witness-negatives\n",
     );
     assert_eq!(rendered, expected);
     let mut mismatched = facts;

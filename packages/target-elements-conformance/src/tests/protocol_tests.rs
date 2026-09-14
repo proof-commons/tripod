@@ -32,8 +32,8 @@ fn handshake() -> ExecutorHandshake {
 }
 
 #[test]
-fn the_native_protocol_is_revision_seven() {
-    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 7);
+fn the_native_protocol_is_revision_eight() {
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 8);
 }
 
 /// One response, in whatever shape a test needs.
@@ -100,6 +100,10 @@ fn operation_response(layer: ObservedOutcomeLayer) -> NativeOperationResponse {
         accepted_txid: None,
         sponsor_witness: Vec::new(),
         signature_bound_to: None,
+        script_path_witness: Vec::new(),
+        signer_public_key: None,
+        signed_profile: None,
+        signing_genesis: None,
         resources: NativeResourceObservation::default(),
     }
 }
@@ -446,7 +450,8 @@ fn the_handshake_request_states_this_harnesss_schema() {
 }
 
 #[test]
-fn this_harness_speaks_schema_seven_and_no_earlier_one() {
+fn this_harness_speaks_schema_eight_and_no_earlier_one() {
+    // Schema 8 adds required script-path signing response members.
     // Stated as a value rather than left implicit. Schema 7 tightens the
     // conservation response shapes and makes fixture resource figures
     // required but nullable. Schema 6 widens the observed-layer
@@ -474,7 +479,8 @@ fn this_harness_speaks_schema_seven_and_no_earlier_one() {
     // implementations moving together: the adapter's constant of the
     // same name is what it is compared against in the field, and a bump
     // that reached only one side is the fault G12-R09 recorded.
-    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 7);
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 8);
+    assert_ne!(NATIVE_PROTOCOL_SCHEMA, 7);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 6);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 5);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 4);
@@ -901,8 +907,8 @@ fn a_revision_four_response_no_longer_parses_and_the_sponsor_members_still_defau
         "a record omitting the undefaulted confidential members must be refused",
     );
 
-    let revision_five = r#"{
-        "schema": 5,
+    let revision_eight = r#"{
+        "schema": 8,
         "case": {"operation": "fund", "step": "issue"},
         "observed_layer": "accepted",
         "observed_detail": null,
@@ -911,6 +917,10 @@ fn a_revision_four_response_no_longer_parses_and_the_sponsor_members_still_defau
         "confidential_funded_outputs": [],
         "mined_readback": null,
         "accepted_txid": null,
+        "script_path_witness": [],
+        "signer_public_key": null,
+        "signed_profile": null,
+        "signing_genesis": null,
         "resources": {
             "script_bytes": 0,
             "initial_stack_items": 0,
@@ -921,8 +931,8 @@ fn a_revision_four_response_no_longer_parses_and_the_sponsor_members_still_defau
             "transaction_weight": null
         }
     }"#;
-    let parsed: NativeOperationResponse = serde_json::from_str(revision_five)
-        .expect("a revision-5 record without the sponsor members reads");
+    let parsed: NativeOperationResponse = serde_json::from_str(revision_eight)
+        .expect("a current record without the sponsor members reads");
     assert!(
         parsed.sponsor_witness.is_empty(),
         "the sponsor witness is still defaulted",
@@ -954,6 +964,10 @@ fn only_a_signing_step_may_report_an_authorization() {
         accepted_txid: None,
         sponsor_witness: vec![vec![0x30], vec![0x02]],
         signature_bound_to: Some(vec![0x02]),
+        script_path_witness: Vec::new(),
+        signer_public_key: None,
+        signed_profile: None,
+        signing_genesis: None,
         resources: NativeResourceObservation::default(),
     };
 
@@ -995,6 +1009,10 @@ fn an_accepted_authorization_states_a_stack_and_what_it_was_bound_to() {
         accepted_txid: None,
         sponsor_witness: stack,
         signature_bound_to: bound,
+        script_path_witness: Vec::new(),
+        signer_public_key: None,
+        signed_profile: None,
+        signing_genesis: None,
         resources: NativeResourceObservation::default(),
     };
 
@@ -1411,6 +1429,10 @@ mod operation_response_shapes {
             accepted_txid: None,
             sponsor_witness: Vec::new(),
             signature_bound_to: None,
+            script_path_witness: Vec::new(),
+            signer_public_key: None,
+            signed_profile: None,
+            signing_genesis: None,
             resources: NativeResourceObservation::default(),
         }
     }
@@ -1486,6 +1508,7 @@ mod operation_response_shapes {
                 response.accepted_txid = Some("99".repeat(32));
                 response.mined_readback = Some(readback());
             }
+            OperationStepKind::SignScriptPath => return super::script_path_response(),
             OperationStepKind::SignSponsor => {
                 response.sponsor_witness = vec![vec![0x30; 71], vec![0x02; 33]];
                 response.signature_bound_to = Some(vec![0x02, 0x00]);
@@ -1664,4 +1687,394 @@ mod operation_response_shapes {
             }
         }
     }
+}
+
+pub(super) fn script_path_subject() -> crate::protocol::TargetScriptPathSigningSubject {
+    use crate::protocol::{
+        TargetScriptPathSigningSubject, WireSighashProfile, WireSpentOutput, WireTapleaf,
+    };
+    TargetScriptPathSigningSubject {
+        finalized_transaction: vec![2, 0, 1],
+        input_index: 1,
+        spent_outputs: vec![
+            WireSpentOutput {
+                asset_field: vec![1; 33],
+                value_field: vec![1; 9],
+                program: vec![0x51],
+            },
+            WireSpentOutput {
+                asset_field: vec![10; 33],
+                value_field: vec![8; 33],
+                program: vec![0x52],
+            },
+        ],
+        executing_leaf: WireTapleaf {
+            leaf_version: 0xc4,
+            script: vec![0xac],
+            control_block: vec![0xc4; 33],
+        },
+        sighash_profile: WireSighashProfile::AllInputsAllOutputs,
+        signer: crate::test_material::PublicTestSignerHandle::First,
+    }
+}
+
+pub(super) fn script_path_response() -> NativeOperationResponse {
+    let subject = script_path_subject();
+    NativeOperationResponse {
+        case: OperationCaseId {
+            operation: OperationStepKind::SignScriptPath,
+            step: "sign-leaf".to_owned(),
+        },
+        script_path_witness: vec![vec![0x55; crate::test_material::SIGNATURE_BYTES]],
+        signer_public_key: Some(
+            subject
+                .signer
+                .x_only_public_key()
+                .expect("published key resolves"),
+        ),
+        signed_profile: Some(subject.sighash_profile),
+        signing_genesis: Some(crate::protocol::MOCK_EXECUTOR_GENESIS_ID),
+        signature_bound_to: Some(subject.finalized_transaction),
+        ..operation_response(ObservedOutcomeLayer::Accepted)
+    }
+}
+
+#[test]
+fn public_signer_handles_are_a_closed_position_census() {
+    use crate::test_material::PublicTestSignerHandle;
+    for (handle, spelling) in [
+        (PublicTestSignerHandle::First, "first"),
+        (PublicTestSignerHandle::Third, "third"),
+    ] {
+        assert_eq!(
+            serde_json::to_value(handle).expect("handle serializes"),
+            spelling
+        );
+        assert_eq!(
+            serde_json::from_value::<PublicTestSignerHandle>(serde_json::json!(spelling))
+                .expect("handle reads"),
+            handle
+        );
+    }
+    for value in [
+        serde_json::json!("second"),
+        serde_json::json!("owner"),
+        serde_json::json!({"first": 1}),
+        serde_json::json!([]),
+    ] {
+        assert!(serde_json::from_value::<PublicTestSignerHandle>(value).is_err());
+    }
+}
+
+#[test]
+fn public_handles_resolve_to_the_published_appendix_keys() {
+    use crate::test_material::PublicTestSignerHandle;
+    for (handle, published) in [
+        (
+            PublicTestSignerHandle::First,
+            "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659",
+        ),
+        (
+            PublicTestSignerHandle::Third,
+            "25d1dff95105f5253c4022f628a996ad3a0d95fbf21d468a1b33f8c160d8f517",
+        ),
+    ] {
+        let expected: Vec<_> = published
+            .as_bytes()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| {
+                u8::from_str_radix(std::str::from_utf8(pair).expect("ASCII"), 16)
+                    .expect("published hex")
+            })
+            .collect();
+        let material = handle.material().expect("published material resolves");
+        assert_eq!(material.x_only_public_key().as_slice(), expected);
+        assert_eq!(
+            handle.x_only_public_key().expect("key resolves"),
+            material.x_only_public_key()
+        );
+    }
+}
+
+#[test]
+fn script_path_subject_has_exactly_the_public_context_members() {
+    let subject = script_path_subject();
+    let value = serde_json::to_value(&subject).expect("subject serializes");
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "finalized_transaction": [2, 0, 1], "input_index": 1,
+            "spent_outputs": [
+                {"asset_field": vec![1; 33], "value_field": vec![1; 9], "program": [81]},
+                {"asset_field": vec![10; 33], "value_field": vec![8; 33], "program": [82]}
+            ],
+            "executing_leaf": {"leaf_version": 196, "script": [172], "control_block": vec![196; 33]},
+            "sighash_profile": "all_inputs_all_outputs", "signer": "first"
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::protocol::TargetScriptPathSigningSubject>(value)
+            .expect("subject reads"),
+        subject
+    );
+}
+
+#[test]
+fn script_path_subject_refuses_missing_and_forbidden_members() {
+    use crate::protocol::TargetScriptPathSigningSubject;
+    let original = serde_json::to_value(script_path_subject()).expect("subject serializes");
+    for name in original.as_object().expect("object").keys() {
+        let mut value = original.clone();
+        value.as_object_mut().expect("object").remove(name);
+        assert!(
+            serde_json::from_value::<TargetScriptPathSigningSubject>(value).is_err(),
+            "{name}"
+        );
+    }
+    for name in [
+        "scalar",
+        "private_key",
+        "digest",
+        "genesis",
+        "expected_verdict",
+        "maturity",
+        "state",
+        "operator_key",
+    ] {
+        let mut value = original.clone();
+        value[name] = serde_json::json!([1, 2, 3]);
+        assert!(
+            serde_json::from_value::<TargetScriptPathSigningSubject>(value).is_err(),
+            "{name}"
+        );
+    }
+    for (member, extra) in [
+        ("executing_leaf", "annex"),
+        ("executing_leaf", "codeseparator_pos"),
+    ] {
+        let mut value = original.clone();
+        value[member][extra] = serde_json::json!(0);
+        assert!(serde_json::from_value::<TargetScriptPathSigningSubject>(value).is_err());
+    }
+    let mut value = original;
+    value["spent_outputs"][0]["amount"] = serde_json::json!(1);
+    assert!(serde_json::from_value::<TargetScriptPathSigningSubject>(value).is_err());
+}
+
+#[test]
+fn script_path_untagged_arm_is_disjoint_from_every_existing_subject() {
+    use crate::protocol::{
+        OperationSubject, TargetConfidentialFundingSubject,
+        TargetConfidentialSponsorFundingSubject, TargetFundingSubject,
+        TargetScriptPathSigningSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject,
+        TargetSubmissionSubject,
+    };
+    let value = serde_json::to_value(script_path_subject()).expect("subject serializes");
+    assert!(serde_json::from_value::<TargetFundingSubject>(value.clone()).is_err());
+    assert!(serde_json::from_value::<TargetSubmissionSubject>(value.clone()).is_err());
+    assert!(serde_json::from_value::<TargetSponsorFundingSubject>(value.clone()).is_err());
+    assert!(serde_json::from_value::<TargetSponsorSigningSubject>(value.clone()).is_err());
+    assert!(serde_json::from_value::<TargetConfidentialFundingSubject>(value.clone()).is_err());
+    assert!(
+        serde_json::from_value::<TargetConfidentialSponsorFundingSubject>(value.clone()).is_err()
+    );
+    assert!(matches!(
+        serde_json::from_value::<OperationSubject>(value),
+        Ok(OperationSubject::ScriptPathSigning(_))
+    ));
+    for other in [
+        serde_json::json!({"transaction_bytes": [1]}),
+        serde_json::json!({"sponsor_outputs": 1, "amount_per_sponsor_output": 1}),
+        serde_json::to_value(super::support::confidential_subject())
+            .expect("confidential subject serializes"),
+    ] {
+        assert!(serde_json::from_value::<OperationSubject>(other.clone()).is_ok());
+        assert!(serde_json::from_value::<TargetScriptPathSigningSubject>(other).is_err());
+    }
+}
+
+#[test]
+fn script_path_response_requires_every_new_wire_member_even_on_refusal() {
+    for layer in [
+        ObservedOutcomeLayer::Accepted,
+        ObservedOutcomeLayer::ExecutorInfrastructureFailure,
+    ] {
+        let mut response = script_path_response();
+        response.observed_layer = layer;
+        let original = serde_json::to_value(response).expect("response serializes");
+        for name in [
+            "script_path_witness",
+            "signer_public_key",
+            "signed_profile",
+            "signing_genesis",
+        ] {
+            let mut value = original.clone();
+            value.as_object_mut().expect("object").remove(name);
+            assert!(
+                serde_json::from_value::<NativeOperationResponse>(value).is_err(),
+                "{name}"
+            );
+        }
+    }
+}
+
+#[test]
+fn script_path_acceptance_owes_one_signature_and_all_bindings() {
+    let response = script_path_response();
+    let encoded = serde_json::to_string(&response).expect("response serializes");
+    let decoded: NativeOperationResponse = serde_json::from_str(&encoded).expect("response reads");
+    assert_eq!(decoded, response);
+    assert_eq!(decoded.validate_shape(), Ok(()));
+    for name in [
+        "signer_public_key",
+        "signed_profile",
+        "signing_genesis",
+        "signature_bound_to",
+    ] {
+        let mut value = serde_json::to_value(&response).expect("response serializes");
+        value[name] = serde_json::Value::Null;
+        assert_eq!(
+            serde_json::from_value::<NativeOperationResponse>(value)
+                .expect("nullable member")
+                .validate_shape(),
+            Err(ResponseShapeDefect::AcceptedOperationOmitsObservation)
+        );
+    }
+    for witness in [
+        vec![],
+        vec![vec![]],
+        vec![vec![1; 63]],
+        vec![vec![1; 65]],
+        vec![vec![1; 64]; 2],
+    ] {
+        assert_eq!(
+            NativeOperationResponse {
+                script_path_witness: witness,
+                ..response.clone()
+            }
+            .validate_shape(),
+            Err(ResponseShapeDefect::ScriptPathWitnessMalformed)
+        );
+    }
+}
+
+#[test]
+fn script_path_refusals_carry_no_success_observations() {
+    let signed = serde_json::to_value(script_path_response()).expect("response serializes");
+    for layer in [
+        ObservedOutcomeLayer::ExecutorInfrastructureFailure,
+        ObservedOutcomeLayer::FixtureConstructionFailure,
+        ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+        ObservedOutcomeLayer::ScriptPathRejection,
+        ObservedOutcomeLayer::KeyPathRejection,
+        ObservedOutcomeLayer::RelayPolicyRejection,
+    ] {
+        let mut empty = operation_response(layer);
+        empty.case.operation = OperationStepKind::SignScriptPath;
+        assert_eq!(empty.validate_shape(), Ok(()));
+        for name in [
+            "script_path_witness",
+            "signer_public_key",
+            "signed_profile",
+            "signing_genesis",
+            "signature_bound_to",
+        ] {
+            let mut value = serde_json::to_value(&empty).expect("response serializes");
+            value[name] = signed[name].clone();
+            assert!(
+                serde_json::from_value::<NativeOperationResponse>(value)
+                    .expect("member reads")
+                    .validate_shape()
+                    .is_err(),
+                "{layer:?}: {name}"
+            );
+        }
+    }
+}
+
+#[test]
+fn script_path_acceptance_creates_and_submits_nothing() {
+    let response = script_path_response();
+    for foreign in [
+        NativeOperationResponse {
+            issued_asset: Some("asset".to_owned()),
+            ..response.clone()
+        },
+        NativeOperationResponse {
+            accepted_txid: Some("txid".to_owned()),
+            ..response.clone()
+        },
+        NativeOperationResponse {
+            sponsor_witness: vec![vec![1]],
+            ..response
+        },
+    ] {
+        assert_eq!(
+            foreign.validate_shape(),
+            Err(ResponseShapeDefect::OperationResponseMismatchesStep)
+        );
+    }
+    for kind in [
+        OperationStepKind::Fund,
+        OperationStepKind::Submit,
+        OperationStepKind::FundSponsor,
+        OperationStepKind::SignSponsor,
+        OperationStepKind::FundConfidential,
+        OperationStepKind::FundConfidentialSponsor,
+    ] {
+        let mut foreign = script_path_response();
+        foreign.case.operation = kind;
+        assert_eq!(
+            foreign.validate_shape(),
+            Err(ResponseShapeDefect::OperationResponseMismatchesStep)
+        );
+    }
+}
+
+#[test]
+fn unknown_signing_profiles_fail_deserialization_in_both_carriers() {
+    let mut subject = serde_json::to_value(script_path_subject()).expect("subject serializes");
+    subject["sighash_profile"] = serde_json::json!("single");
+    assert!(
+        serde_json::from_value::<crate::protocol::TargetScriptPathSigningSubject>(subject).is_err()
+    );
+    let mut response = serde_json::to_value(script_path_response()).expect("response serializes");
+    response["signed_profile"] = serde_json::json!("single");
+    assert!(serde_json::from_value::<NativeOperationResponse>(response).is_err());
+}
+
+#[test]
+fn adapter_schema_and_committed_signer_scalars_match_rust() {
+    use crate::test_material::{FIRST_SCALAR, THIRD_SCALAR};
+    let adapter = include_str!("../../../../scripts/elements-native-executor.py");
+    let schema = adapter
+        .lines()
+        .find_map(|line| line.strip_prefix("NATIVE_PROTOCOL_SCHEMA = "))
+        .expect("adapter schema")
+        .parse::<u32>()
+        .expect("integer schema");
+    assert_eq!(schema, NATIVE_PROTOCOL_SCHEMA);
+    for (name, expected) in [
+        ("PUBLIC_TEST_FIRST_SCALAR", FIRST_SCALAR),
+        ("PUBLIC_TEST_THIRD_SCALAR", THIRD_SCALAR),
+    ] {
+        let prefix = format!("{name} = bytes([");
+        let source = adapter
+            .lines()
+            .find_map(|line| line.strip_prefix(&prefix))
+            .and_then(|line| line.strip_suffix("])"))
+            .expect("literal public octets");
+        let actual: Vec<u8> = source
+            .split(',')
+            .map(|octet| octet.trim().parse().expect("octet"))
+            .collect();
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
+fn the_historical_revision_seven_corpus_still_uses_its_own_parser() {
+    vectors::run_of_record().expect("the immutable revision-seven corpus still validates");
 }

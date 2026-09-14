@@ -455,6 +455,7 @@ import ctypes
 from enum import Enum, auto
 import hashlib
 import io
+import inspect
 import json
 import os
 import re
@@ -507,7 +508,21 @@ ADAPTER_VERSION = "2.1.0"
 # writes both names and uses null where no fixture figure exists. Both
 # implementations move in this single change; revision-6 peers fail the
 # exact-equality handshake before receiving requests.
-NATIVE_PROTOCOL_SCHEMA = 7
+# Revision 8 binds public script-path signing answers.
+# Script-path signing carries finalized bytes, the ordered spent-output
+# census, an executing leaf, a profile, and a committed public signer handle.
+# Four new response members carry the witness, signer key, profile, and
+# session genesis. They are not defaulted: an older executor must not answer
+# with silence where this authorization lives. Both implementations move
+# together; earlier peers fail the exact handshake and historical records
+# remain the responsibility of their own parsers.
+NATIVE_PROTOCOL_SCHEMA = 8
+
+
+# Mirrors test_material.rs FIRST_SCALAR and THIRD_SCALAR: published BIP-340
+# appendix material, disposable and secret to nobody. No caller supplies it.
+PUBLIC_TEST_FIRST_SCALAR = bytes([183, 225, 81, 98, 138, 237, 42, 106, 191, 113, 88, 128, 156, 244, 243, 199, 98, 231, 22, 15, 56, 180, 218, 86, 167, 132, 217, 4, 81, 144, 207, 239])
+PUBLIC_TEST_THIRD_SCALAR = bytes([11, 67, 43, 38, 119, 147, 115, 129, 174, 240, 91, 176, 42, 102, 236, 208, 18, 119, 48, 98, 207, 63, 162, 84, 158, 68, 245, 142, 210, 64, 23, 16])
 
 # The reviewed tapscript leaf version.
 TAPSCRIPT_LEAF_VERSION = 0xC4
@@ -1291,6 +1306,7 @@ class DiagnosticOutcome(Enum):
     HANDSHAKE_FIELD_CENSUS_FAILED = auto()
     EXECUTION_REQUEST_FIELD_CENSUS_FAILED = auto()
     PROTOCOL_REVISION_REFUSED = auto()
+    OPERATION_STEP_UNSUPPORTED = auto()
     FRAMING_CLEAN_EOF = auto()
     FRAMING_BLANK_RECORD = auto()
     FRAMING_MALFORMED_RECORD = auto()
@@ -1363,6 +1379,8 @@ def diagnostic_message(outcome: DiagnosticOutcome, record: int | None = None) ->
             "fatal: execution request failed its field census; detail is "
             "elements-output record %d" % record
         )
+    if outcome is DiagnosticOutcome.OPERATION_STEP_UNSUPPORTED:
+        return "operation step unsupported"
     if outcome is DiagnosticOutcome.PROTOCOL_REVISION_REFUSED:
         return "fatal: protocol revision refused"
     if outcome is DiagnosticOutcome.FRAMING_CLEAN_EOF:
@@ -2341,6 +2359,32 @@ def load_framework(framework: str):
     return candidate, messages, script, key_module
 
 
+def supports_script_path_signing(script, key_module) -> bool:
+    """Detects the genesis-aware Elements hash and deterministic BIP-340 API."""
+    # test/functional/test_framework/script.py: TaprootSignatureHash forwards
+    # *args/**kwargs to TaprootSignatureMsg, whose signature names genesis.
+    # test/functional/test_framework/key.py: sign_schnorr accepts explicit aux;
+    # ECKey supplies the corresponding compressed public key.
+    message = getattr(script, "TaprootSignatureMsg", None)
+    digest = getattr(script, "TaprootSignatureHash", None)
+    signer = getattr(key_module, "sign_schnorr", None)
+    key = getattr(key_module, "ECKey", None)
+    if not all(callable(member) for member in (message, digest, signer, key)):
+        return False
+    try:
+        parameters = inspect.signature(message)
+        if "genesis_hash" not in parameters.parameters:
+            return False
+        arguments = dict(input_index=0, scriptpath=True, leaf_script=b"",
+                         codeseparator_pos=-1, annex=None, leaf_ver=0xC4)
+        parameters.bind(None, [], 0, 0, **arguments)
+        inspect.signature(digest).bind(None, [], 0, 0, **arguments)
+        inspect.signature(signer).bind(bytes(32), bytes(32), aux=bytes(32))
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 def txid_to_internal_int(txid_hex: str) -> int:
     """Converts a displayed txid into the integer an outpoint carries."""
     return int.from_bytes(bytes.fromhex(txid_hex), "big")
@@ -2398,6 +2442,8 @@ class CaseExecutor:
         self.messages = messages
         self.script = script
         self.key_module = key_module
+        self.script_path_authorization = supports_script_path_signing(script, key_module)
+        self.signing_genesis = None
         self.internal_key = bytes.fromhex(NUMS_INTERNAL_KEY_HEX)
         self.anyone_can_spend = bytes.fromhex(ANYONE_CAN_SPEND_HEX)
         self.anyone_can_spend_witness = bytes.fromhex(ANYONE_CAN_SPEND_WITNESS_HEX)
@@ -6676,6 +6722,8 @@ def serve(arguments) -> int:
                     "resource_observation",
                     "transaction_context",
                 ]
+                + (["test_script_path_authorization"]
+                   if executor.script_path_authorization else [])
                 + (["tree_materialization"] if executor.tree_materialization else [])
                 + (
                     ["compound_prototype_fixtures"]
@@ -6807,6 +6855,7 @@ def serve(arguments) -> int:
         # binding gives that chain, restated only now that its genesis has
         # been observed.
         genesis = identifier(node.call("getblockhash", "0"), "genesis")
+        executor.signing_genesis = genesis
         write_message(
             {
                 "schema": NATIVE_PROTOCOL_SCHEMA,
@@ -7367,6 +7416,154 @@ def parse_confidential_sponsor_subject(subject: dict) -> dict:
     }
 
 
+def parse_script_path_subject(raw: object) -> dict:
+    """Reads public signing context, resolving the handle before byte decoding."""
+    subject = require_object(raw, "request.subject")
+    require_keys(subject, ("finalized_transaction", "input_index", "spent_outputs",
+                          "executing_leaf", "sighash_profile", "signer"), "request.subject")
+    handle = require_string(subject["signer"], "request.subject.signer")
+    if handle not in ("first", "third"):
+        raise AdapterError("unknown public test signer handle: %s" % handle)
+    profile = check_enumeration(subject["sighash_profile"], ("all_inputs_all_outputs",),
+                                "request.subject.sighash_profile")
+    index = require_int(subject["input_index"], "request.subject.input_index")
+    if not 0 <= index <= 0xFFFF_FFFF:
+        raise AdapterError("request.subject.input_index is not a u32")
+    census = subject["spent_outputs"]
+    if not isinstance(census, list):
+        raise AdapterError("request.subject.spent_outputs is not an array")
+    spent = []
+    for entry in census:
+        entry = require_object(entry, "request.subject.spent_outputs[]")
+        require_keys(entry, ("asset_field", "value_field", "program"),
+                     "request.subject.spent_outputs[]")
+        spent.append({name: require_bytes(entry[name], "request.subject.spent_outputs[]." + name)
+                      for name in ("asset_field", "value_field", "program")})
+    leaf = require_object(subject["executing_leaf"], "request.subject.executing_leaf")
+    require_keys(leaf, ("leaf_version", "script", "control_block"),
+                 "request.subject.executing_leaf")
+    version = require_int(leaf["leaf_version"], "request.subject.executing_leaf.leaf_version")
+    if not 0 <= version <= 255 or version & CONTROL_PARITY_MASK:
+        raise AdapterError("the executing leaf version is not an even byte")
+    return {
+        "signer": handle, "sighash_profile": profile, "input_index": index,
+        "spent_outputs": spent,
+        "finalized_transaction": require_bytes(subject["finalized_transaction"],
+                                                "request.subject.finalized_transaction"),
+        "executing_leaf": {
+            "leaf_version": version,
+            "script": require_bytes(leaf["script"], "request.subject.executing_leaf.script"),
+            "control_block": require_bytes(leaf["control_block"],
+                                           "request.subject.executing_leaf.control_block"),
+        },
+    }
+
+
+def script_path_spent_output(messages, entry: dict):
+    """Rebuilds exactly the public fields hashed for one spent output."""
+    asset, value = entry["asset_field"], entry["value_field"]
+    if len(asset) != 33 or asset[0] not in (1, 10, 11):
+        raise AdapterError("spent-output asset field has an invalid encoding")
+    if not value or len(value) != {1: 9, 8: 33, 9: 33}.get(value[0]):
+        raise AdapterError("spent-output value field has an invalid encoding")
+    output = messages.CTxOut()
+    output.nAsset = messages.CTxOutAsset(asset)
+    output.nValue = messages.CTxOutValue()
+    output.nValue.vchCommitment = value
+    output.scriptPubKey = entry["program"]
+    return output
+
+
+def sign_script_path(executor: CaseExecutor, subject: dict) -> dict:
+    """Recomputes and signs the exact script-path message from public data."""
+    scalar = {"first": PUBLIC_TEST_FIRST_SCALAR, "third": PUBLIC_TEST_THIRD_SCALAR}.get(
+        subject["signer"])
+    if scalar is None:
+        raise AdapterError("unknown public test signer handle: %s" % subject["signer"])
+    raw = subject["finalized_transaction"]
+    stream = io.BytesIO(raw)
+    transaction = executor.messages.CTransaction()
+    try:
+        transaction.deserialize(stream)
+    except Exception:
+        raise AdapterError("the script-path candidate could not be decoded") from None
+    if stream.read(1):
+        raise AdapterError("the script-path candidate carries trailing bytes")
+    index = subject["input_index"]
+    if index >= len(transaction.vin):
+        raise AdapterError("the script-path input index is outside the candidate")
+    if len(subject["spent_outputs"]) != len(transaction.vin):
+        raise AdapterError("the spent-output census does not match the candidate input count")
+    leaf = subject["executing_leaf"]
+    control = leaf["control_block"]
+    if len(control) < 33 or len(control) > 33 + 32 * 128 or (len(control) - 33) % 32:
+        raise AdapterError("the script-path control block has an invalid width")
+    if control[0] & ~CONTROL_PARITY_MASK != leaf["leaf_version"]:
+        raise AdapterError("the control block and executing leaf versions disagree")
+    genesis = executor.signing_genesis
+    if genesis is None or len(genesis) != 32:
+        raise AdapterError("the script-path signer has no observed session genesis")
+    spent = [script_path_spent_output(executor.messages, entry)
+             for entry in subject["spent_outputs"]]
+    # messages.py: CTransaction.deserialize leaves witness vectors empty when
+    # the wire has no witness section. The kernel hashes the consensus census,
+    # including empty issuance/output proofs at every input/output position.
+    # Grow only the framework view; the finalized bytes echoed below stay exact.
+    for count, witnesses, factory in (
+        (len(transaction.vin), transaction.wit.vtxinwit, executor.messages.CTxInWitness),
+        (len(transaction.vout), transaction.wit.vtxoutwit, executor.messages.CTxOutWitness),
+    ):
+        witnesses.extend(factory() for _ in range(count - len(witnesses)))
+    # test/functional/test_framework/script.py: TaprootSignatureMsg serializes
+    # genesis_hash with ser_uint256. Reading our observed octets little-endian
+    # preserves those exact bytes, as transaction/src/script_path_signing.rs
+    # whole_transaction_stream appends them. Hash type zero is the 64-byte default profile.
+    digest = executor.script.TaprootSignatureHash(
+        transaction, spent, 0, int.from_bytes(genesis, "little"), input_index=index,
+        scriptpath=True, leaf_script=leaf["script"], codeseparator_pos=-1,
+        annex=None, leaf_ver=leaf["leaf_version"],
+    )
+    # test/functional/test_framework/key.py: sign_schnorr implements BIP-340;
+    # ECKey.get_pubkey provides the compressed point, whose tail is x-only.
+    # Fixed auxiliary input makes repeated requests byte-identical. Signature
+    # verification is the transaction boundary's and the native target's work.
+    key = executor.key_module.ECKey()
+    key.set(scalar, compressed=True)
+    public_key = key.get_pubkey().get_bytes()[1:]
+    signature = executor.key_module.sign_schnorr(scalar, digest, aux=bytes(32))
+    if signature is None or len(signature) != 64 or len(public_key) != 32:
+        raise AdapterError("the framework produced an invalid script-path signing result")
+    return {"issued_asset": None, "funded_outputs": [], "accepted_txid": None,
+            "script_path_witness": [list(signature)], "signer_public_key": list(public_key),
+            "signed_profile": subject["sighash_profile"], "signing_genesis": list(genesis),
+            "signature_bound_to": list(raw)}
+
+
+def answer_script_path_step(executor: CaseExecutor, request: dict, case: dict) -> None:
+    """Answers a signing step independently of wallet-backed operations."""
+    try:
+        require_keys(request, ("schema", "case", "subject"), "request")
+        require_keys(case, ("operation", "step"), "request.case")
+        require_string(case["step"], "request.case.step")
+        if request["schema"] != NATIVE_PROTOCOL_SCHEMA:
+            raise AdapterError("the request carries an unsupported protocol revision")
+        subject = parse_script_path_subject(request["subject"])
+        if not executor.script_path_authorization:
+            log(DiagnosticOutcome.OPERATION_STEP_UNSUPPORTED)
+            write_operation_failure(case, "operation_step_unsupported: sign_script_path")
+            return
+        body = sign_script_path(executor, subject)
+    except AdapterError as error:
+        log("executor infrastructure failure: %s" % error.note)
+        write_operation_failure(case, error.note)
+        return
+    except Exception:
+        log("executor infrastructure failure: script-path framework failed")
+        write_operation_failure(case, "script-path framework failed")
+        return
+    write_operation_response(case, body)
+
+
 def parse_operation_subject(raw: object, kind: str) -> dict:
     """Reads one operation subject, refusing anything it does not define.
 
@@ -7375,6 +7572,8 @@ def parse_operation_subject(raw: object, kind: str) -> dict:
     another kind's members is a request whose two halves disagree, and
     is refused here rather than answered by whichever half parsed.
     """
+    if kind == "sign_script_path":
+        return parse_script_path_subject(raw)
     subject = require_object(raw, "request.subject")
     if kind == "fund_confidential":
         return parse_confidential_funding_subject(subject)
@@ -7510,6 +7709,9 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
     """
     require_execution_request_fields(request, ("schema", "case", "subject"))
     kind = case.get("operation")
+    if kind == "sign_script_path":
+        answer_script_path_step(executor, request, case)
+        return
     if kind not in (
         "fund",
         "submit",
@@ -7571,6 +7773,11 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
         write_operation_failure(case, str(error))
         return
 
+    write_operation_response(case, body)
+
+
+def write_operation_response(case: dict, body: dict) -> None:
+    """Writes the shared operation carrier with all revision-8 members present."""
     body.setdefault("observed_layer", "accepted")
     body.setdefault("observed_detail", None)
     write_message(
@@ -7597,6 +7804,10 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
             # omitted-and-hoped-for.
             "sponsor_witness": body.get("sponsor_witness", []),
             "signature_bound_to": body.get("signature_bound_to"),
+            "script_path_witness": body.get("script_path_witness", []),
+            "signer_public_key": body.get("signer_public_key"),
+            "signed_profile": body.get("signed_profile"),
+            "signing_genesis": body.get("signing_genesis"),
             # No INTERPRETER observation is made for an operation step:
             # the node exposes no per-script stack, so the peaks, the
             # widest element, and the validation budget stay null, and
@@ -7650,6 +7861,10 @@ def write_operation_failure(case: dict, note: str) -> None:
             "accepted_txid": None,
             "sponsor_witness": [],
             "signature_bound_to": None,
+            "script_path_witness": [],
+            "signer_public_key": None,
+            "signed_profile": None,
+            "signing_genesis": None,
             "resources": {
                 "script_bytes": None,
                 "initial_stack_items": None,

@@ -112,6 +112,10 @@ fn funded(step: &str, txid: &str) -> NativeOperationResponse {
         accepted_txid: None,
         sponsor_witness: Vec::new(),
         signature_bound_to: None,
+        script_path_witness: Vec::new(),
+        signer_public_key: None,
+        signed_profile: None,
+        signing_genesis: None,
         resources: NativeResourceObservation::default(),
     }
 }
@@ -143,6 +147,10 @@ fn submitted(step: &str, txid: &str) -> NativeOperationResponse {
         accepted_txid: Some(txid.to_owned()),
         sponsor_witness: Vec::new(),
         signature_bound_to: None,
+        script_path_witness: Vec::new(),
+        signer_public_key: None,
+        signed_profile: None,
+        signing_genesis: None,
         resources: NativeResourceObservation::default(),
     }
 }
@@ -191,6 +199,10 @@ fn confidentially_funded(step: &str, txid: &str) -> NativeOperationResponse {
         accepted_txid: None,
         sponsor_witness: Vec::new(),
         signature_bound_to: None,
+        script_path_witness: Vec::new(),
+        signer_public_key: None,
+        signed_profile: None,
+        signing_genesis: None,
         resources: NativeResourceObservation::default(),
     }
 }
@@ -333,17 +345,19 @@ fn drive(
 }
 
 #[test]
-fn a_revision_six_operation_record_cannot_enter_the_revision_seven_gate() {
-    let mut stored = funded("stored-revision-six", "aa00");
+fn a_revision_seven_operation_record_cannot_enter_the_revision_eight_gate() {
+    let mut stored = funded("stored-revision-seven", "aa00");
     stored.schema = NATIVE_PROTOCOL_SCHEMA - 1;
     stored.resources.script_bytes = Some(0);
     stored.resources.initial_stack_items = Some(0);
-    let mut planner =
-        ScriptedPlan::new(vec![OperationStep::new("stored-revision-six", funding(1))]);
+    let mut planner = ScriptedPlan::new(vec![OperationStep::new(
+        "stored-revision-seven",
+        funding(1),
+    )]);
 
     let (outcome, _sent) = drive(&mut planner, &operating_handshake(), &[stored]);
     assert!(matches!(
-        outcome.expect_err("a revision-6 record is refused"),
+        outcome.expect_err("a revision-7 record is refused"),
         NativeConformanceError::UnsupportedProtocolSchema { offered }
             if offered == NATIVE_PROTOCOL_SCHEMA - 1,
     ));
@@ -377,6 +391,7 @@ fn a_plan_states_its_second_step_out_of_the_first_answer() {
         OperationSubject::Funding(_)
         | OperationSubject::SponsorFunding(_)
         | OperationSubject::SponsorSigning(_)
+        | OperationSubject::ScriptPathSigning(_)
         | OperationSubject::ConfidentialFunding(_)
         | OperationSubject::ConfidentialSponsorFunding(_) => {
             panic!("the second step is a submission")
@@ -411,6 +426,7 @@ fn the_transcript_retains_the_exact_subject_of_every_step() {
         OperationSubject::Submission(_)
         | OperationSubject::SponsorFunding(_)
         | OperationSubject::SponsorSigning(_)
+        | OperationSubject::ScriptPathSigning(_)
         | OperationSubject::ConfidentialFunding(_)
         | OperationSubject::ConfidentialSponsorFunding(_) => {
             panic!("the step was a funding step")
@@ -594,6 +610,10 @@ fn the_adapters_not_yet_implemented_refusal_is_a_declared_record() {
         "confidential_funded_outputs": [],
         "mined_readback": serde_json::Value::Null,
         "accepted_txid": serde_json::Value::Null,
+        "script_path_witness": [],
+        "signer_public_key": serde_json::Value::Null,
+        "signed_profile": serde_json::Value::Null,
+        "signing_genesis": serde_json::Value::Null,
         "resources": {
             "script_bytes": serde_json::Value::Null,
             "initial_stack_items": serde_json::Value::Null,
@@ -795,6 +815,7 @@ fn a_confidential_step_travels_as_its_own_arm_and_comes_back_as_one() {
         | OperationSubject::Submission(_)
         | OperationSubject::SponsorFunding(_)
         | OperationSubject::SponsorSigning(_)
+        | OperationSubject::ScriptPathSigning(_)
         | OperationSubject::ConfidentialSponsorFunding(_) => {
             panic!("the confidential step was written as some other arm")
         }
@@ -887,6 +908,10 @@ fn the_adapters_confidential_refusal_is_a_declared_record() {
         "accepted_txid": serde_json::Value::Null,
         "sponsor_witness": [],
         "signature_bound_to": serde_json::Value::Null,
+        "script_path_witness": [],
+        "signer_public_key": serde_json::Value::Null,
+        "signed_profile": serde_json::Value::Null,
+        "signing_genesis": serde_json::Value::Null,
         "resources": {
             "script_bytes": serde_json::Value::Null,
             "initial_stack_items": serde_json::Value::Null,
@@ -916,3 +941,191 @@ fn the_adapters_confidential_refusal_is_a_declared_record() {
 const DETAIL: &str = "this adapter reads confidential funding steps and performs none: \
     no deterministic materializer for the explicit-asset confidential-value \
     representation is implemented";
+
+fn signing_handshake() -> ExecutorHandshake {
+    let mut handshake = operating_handshake();
+    handshake
+        .capabilities
+        .insert(ExecutorCapability::TestScriptPathAuthorization);
+    handshake
+}
+
+fn signing_plan() -> ScriptedPlan {
+    ScriptedPlan::new(vec![OperationStep::new(
+        "sign-leaf",
+        OperationSubject::ScriptPathSigning(Box::new(super::protocol_tests::script_path_subject())),
+    )])
+}
+
+fn signing_capture(
+    response: &NativeOperationResponse,
+) -> (
+    Result<crate::executor::ExecutionTranscript, NativeConformanceError>,
+    crate::executor::NativeOperationCapture,
+    ScriptedPlan,
+) {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let configuration = ExecutorConfiguration::new(
+        std::path::Path::new("/nonexistent-executor"),
+        ExecutorTrust::Mock,
+        std::time::Duration::from_secs(1),
+        ExecutorDiagnostics::in_directory(std::path::Path::new("/nonexistent-diagnostics")),
+    );
+    let text = script(&signing_handshake(), std::slice::from_ref(response));
+    let mut reader = std::io::Cursor::new(text.into_bytes());
+    let mut capture = crate::executor::NativeOperationCapture::default();
+    let mut plan = signing_plan();
+    let result = crate::executor::run_protocol_with_capture(
+        &target,
+        &binding,
+        &configuration,
+        NativeWorkload::Operations(&mut plan),
+        Vec::new(),
+        &mut reader,
+        Some(&mut capture),
+    );
+    (result, capture, plan)
+}
+
+fn assert_signing_refusal(
+    response: &NativeOperationResponse,
+    expected: crate::protocol::ResponseShapeDefect,
+) {
+    let (outcome, capture, plan) = signing_capture(response);
+    assert!(
+        matches!(outcome, Err(NativeConformanceError::MalformedOperationResponseShape { defect, .. }) if defect == expected)
+    );
+    assert_eq!(capture.response_defect(), Some(expected));
+    assert_eq!(
+        capture.terminal_state(),
+        Some(crate::executor::CaptureTerminalState::ResponseShapeRefused)
+    );
+    assert_eq!(capture.operations().len(), 1);
+    assert!(capture.operations()[0].response().is_none());
+    assert_eq!(plan.seen, []);
+}
+
+#[test]
+fn script_path_signing_requires_its_advertised_capability() {
+    let mut plan = signing_plan();
+    let (outcome, sent) = drive(&mut plan, &operating_handshake(), &[]);
+    assert!(matches!(
+        outcome,
+        Err(NativeConformanceError::OperationStepUnsupported(
+            OperationStepKind::SignScriptPath
+        ))
+    ));
+    assert_eq!(requests_written(&sent), []);
+    assert_eq!(
+        OperationStepKind::SignScriptPath.to_string(),
+        "sign_script_path"
+    );
+}
+
+#[test]
+fn a_script_path_answer_binds_to_the_observed_session_and_reaches_the_plan() {
+    let response = super::protocol_tests::script_path_response();
+    let (outcome, capture, plan) = signing_capture(&response);
+    let transcript = outcome.expect("public bindings agree");
+    assert_eq!(capture.response_defect(), None);
+    assert_eq!(
+        capture.terminal_state(),
+        Some(crate::executor::CaptureTerminalState::Complete)
+    );
+    assert_eq!(capture.operations()[0].response(), Some(&response));
+    assert_eq!(plan.seen.len(), 1);
+    assert_eq!(
+        transcript.operation_responses().get(&response.case),
+        Some(&response)
+    );
+    assert_eq!(
+        transcript.operation_requests().get(&response.case),
+        Some(&OperationSubject::ScriptPathSigning(Box::new(
+            super::protocol_tests::script_path_subject()
+        )))
+    );
+    // The deliberately synthetic signature proves this boundary binds context
+    // without duplicating the transaction boundary's signature verifier.
+}
+
+#[test]
+fn script_path_genesis_mismatch_is_journaled_before_any_artifact() {
+    let mut response = super::protocol_tests::script_path_response();
+    response.signing_genesis = Some([0x99; 32]);
+    assert_signing_refusal(
+        &response,
+        crate::protocol::ResponseShapeDefect::ScriptPathGenesisMismatch,
+    );
+}
+
+#[test]
+fn script_path_wrong_published_signer_is_journaled_before_any_artifact() {
+    let mut response = super::protocol_tests::script_path_response();
+    response.signer_public_key = Some(
+        crate::test_material::PublicTestSignerHandle::Third
+            .x_only_public_key()
+            .expect("third public key"),
+    );
+    assert_signing_refusal(
+        &response,
+        crate::protocol::ResponseShapeDefect::ScriptPathSignerMismatch,
+    );
+}
+
+#[test]
+fn script_path_echo_mismatch_is_journaled_before_any_artifact() {
+    let mut response = super::protocol_tests::script_path_response();
+    response
+        .signature_bound_to
+        .as_mut()
+        .expect("echo present")
+        .push(0);
+    assert_signing_refusal(
+        &response,
+        crate::protocol::ResponseShapeDefect::ScriptPathTransactionMismatch,
+    );
+}
+
+#[test]
+fn script_path_witness_width_mismatch_is_journaled_before_any_artifact() {
+    let mut response = super::protocol_tests::script_path_response();
+    response.script_path_witness[0].push(0);
+    assert_signing_refusal(
+        &response,
+        crate::protocol::ResponseShapeDefect::ScriptPathWitnessMalformed,
+    );
+}
+
+#[test]
+fn a_revision_seven_handshake_is_refused_before_script_path_work() {
+    let mut handshake = signing_handshake();
+    handshake.protocol_schema = 7;
+    let mut plan = signing_plan();
+    let (outcome, sent) = drive(&mut plan, &handshake, &[]);
+    assert!(matches!(
+        outcome,
+        Err(NativeConformanceError::UnsupportedProtocolSchema { offered: 7 })
+    ));
+    assert_eq!(requests_written(&sent), []);
+}
+
+#[test]
+fn a_script_path_refusal_yields_no_signing_artifact() {
+    let mut response = funded("sign-leaf", "unused");
+    response.case.operation = OperationStepKind::SignScriptPath;
+    response.observed_layer = ObservedOutcomeLayer::ExecutorInfrastructureFailure;
+    response.issued_asset = None;
+    response.funded_outputs.clear();
+    let (outcome, capture, plan) = signing_capture(&response);
+    outcome.expect("an empty refusal is a complete exchange");
+    let recorded = capture.operations()[0]
+        .response()
+        .expect("the refusal is retained");
+    assert_eq!(recorded.script_path_witness, Vec::<Vec<u8>>::new());
+    assert_eq!(recorded.signer_public_key, None);
+    assert_eq!(recorded.signed_profile, None);
+    assert_eq!(recorded.signing_genesis, None);
+    assert_eq!(recorded.signature_bound_to, None);
+    assert_eq!(plan.seen.len(), 1);
+}

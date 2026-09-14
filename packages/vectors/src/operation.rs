@@ -1992,6 +1992,10 @@ mod tests {
                 accepted_txid: None,
                 sponsor_witness: Vec::new(),
                 signature_bound_to: None,
+                script_path_witness: Vec::new(),
+                signer_public_key: None,
+                signed_profile: None,
+                signing_genesis: None,
                 resources: resources(),
             };
             match subject {
@@ -2044,6 +2048,12 @@ mod tests {
                     // is the bytes it was handed.
                     response.sponsor_witness = vec![vec![0x30; 71], vec![0x02; 33]];
                     response.signature_bound_to = Some(signing.finalized_transaction.clone());
+                }
+                OperationSubject::ScriptPathSigning(_) => {
+                    // This fake executor carries no signer; the synthetic evidence bite supplies one.
+                    response.observed_layer = ObservedOutcomeLayer::ExecutorInfrastructureFailure;
+                    response.observed_detail =
+                        Some("this fake target performs no script-path signing".to_owned());
                 }
                 OperationSubject::Submission(submission) => {
                     // A submission is offered to the same decision as

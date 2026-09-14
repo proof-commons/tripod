@@ -99,8 +99,8 @@ use crate::protocol::{
     NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest, NativeExecutionResponse,
     NativeOperationRequest, NativeOperationResponse, NativePrototypeRequest,
     NativePrototypeResponse, NativeVerdict, ObservedOutcomeLayer, OperationCaseId,
-    OperationSubject, ProtocolLimits, ProtocolPhase, WireEnvironment, WireExecutionDomain,
-    maximum_request_bytes, validate_response_shape,
+    OperationSubject, ProtocolLimits, ProtocolPhase, ResponseShapeDefect, WireEnvironment,
+    WireExecutionDomain, maximum_request_bytes, validate_response_shape,
 };
 use crate::prototype::{
     CanonicalPrototypeMatrix, CompoundPrototypeFixture, PrototypeCaseId, PrototypeExecutionSubject,
@@ -618,6 +618,7 @@ pub struct NativeOperationCapture {
     environment: Option<ExecutorEnvironmentObservation>,
     operations: Vec<CapturedOperation>,
     terminal_state: Option<CaptureTerminalState>,
+    response_defect: Option<ResponseShapeDefect>,
 }
 
 impl NativeOperationCapture {
@@ -655,6 +656,12 @@ impl NativeOperationCapture {
     #[must_use]
     pub const fn terminal_state(&self) -> Option<CaptureTerminalState> {
         self.terminal_state
+    }
+
+    /// The response defect that stopped this journal, where one was identified.
+    #[must_use]
+    pub const fn response_defect(&self) -> Option<ResponseShapeDefect> {
+        self.response_defect
     }
 
     fn bind(
@@ -1735,7 +1742,7 @@ fn read_executor_environment(
     Ok(environment)
 }
 
-fn run_protocol_with_capture(
+pub(crate) fn run_protocol_with_capture(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
     configuration: &ExecutorConfiguration,
@@ -1781,6 +1788,7 @@ fn run_protocol_with_capture(
             planner,
             OperationRunContext {
                 handshake: &handshake,
+                environment: &environment,
                 limits,
                 stdin: &mut stdin,
                 reader,
@@ -1963,6 +1971,7 @@ fn run_prototype_cases(
 /// The related mutable carriers for one operation exchange.
 struct OperationRunContext<'a, W, R> {
     handshake: &'a ExecutorHandshake,
+    environment: &'a ExecutorEnvironmentObservation,
     limits: ProtocolLimits,
     stdin: &'a mut W,
     reader: &'a mut R,
@@ -2031,6 +2040,9 @@ fn read_operation_response<W: Write, R: BufRead>(
         );
     }
     if let Err(defect) = response.validate_shape() {
+        if let Some(capture) = context.capture.as_deref_mut() {
+            capture.response_defect = Some(defect);
+        }
         let error = NativeConformanceError::MalformedOperationResponseShape { case, defect };
         return captured_refusal(
             &mut context.capture,
@@ -2108,6 +2120,19 @@ fn run_operation_steps<W: Write, R: BufRead>(
         let write_refused = write_message(context.stdin, &request, ProtocolPhase::Request).is_err();
         let (case, response) = read_operation_response(&mut context, case, write_refused)?;
 
+        if let Err(defect) =
+            bind_script_path_response(&request.subject, &response, context.environment)
+        {
+            if let Some(capture) = context.capture.as_deref_mut() {
+                capture.response_defect = Some(defect);
+            }
+            return captured_refusal(
+                &mut context.capture,
+                CaptureTerminalState::ResponseShapeRefused,
+                NativeConformanceError::MalformedOperationResponseShape { case, defect },
+            );
+        }
+
         // Shape validation happens in `read_operation_response`, so the
         // journal is the first consumer to retain the validated carrier.
         if let Some((capture, ordinal)) = context.capture.as_deref_mut().zip(capture_ordinal) {
@@ -2116,6 +2141,44 @@ fn run_operation_steps<W: Write, R: BufRead>(
         context.responses.insert(case.clone(), response.clone());
         previous = Some((case, response));
     }
+}
+
+/// Bind an accepted script-path answer before any consumer receives it.
+fn bind_script_path_response(
+    subject: &OperationSubject,
+    response: &NativeOperationResponse,
+    environment: &ExecutorEnvironmentObservation,
+) -> Result<(), ResponseShapeDefect> {
+    let OperationSubject::ScriptPathSigning(subject) = subject else {
+        return Ok(());
+    };
+    if response.observed_layer != ObservedOutcomeLayer::Accepted {
+        return Ok(());
+    }
+    // Shape validation has already required exactly one signature of the
+    // protocol width. This boundary binds public context; it does not verify
+    // the signature. The transaction boundary's verifier seam and native
+    // acceptance own that check over the selected input's complete message.
+    if response.signing_genesis != Some(environment.genesis_id) {
+        return Err(ResponseShapeDefect::ScriptPathGenesisMismatch);
+    }
+    let public_key = subject
+        .signer
+        .x_only_public_key()
+        .map_err(|_| ResponseShapeDefect::ScriptPathSignerUnavailable)?;
+    if response.signer_public_key != Some(public_key) {
+        return Err(ResponseShapeDefect::ScriptPathSignerMismatch);
+    }
+    // The current one-variant enum makes this trivially equal after shape
+    // validation. It stays because the enum is non-exhaustive: a later
+    // variant must not silently weaken this comparison.
+    if response.signed_profile != Some(subject.sighash_profile) {
+        return Err(ResponseShapeDefect::ScriptPathProfileMismatch);
+    }
+    if response.signature_bound_to.as_deref() != Some(subject.finalized_transaction.as_slice()) {
+        return Err(ResponseShapeDefect::ScriptPathTransactionMismatch);
+    }
+    Ok(())
 }
 
 /// Whether the executor ran the chain the binding names.
@@ -2555,6 +2618,10 @@ mod tests {
             accepted_txid: accepted.then_some(transaction_id),
             sponsor_witness: Vec::new(),
             signature_bound_to: None,
+            script_path_witness: Vec::new(),
+            signer_public_key: None,
+            signed_profile: None,
+            signing_genesis: None,
             resources: NativeResourceObservation::default(),
         }
     }

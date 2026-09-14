@@ -236,6 +236,10 @@ impl Scenario {
             accepted_txid: None,
             sponsor_witness: Vec::new(),
             signature_bound_to: None,
+            script_path_witness: Vec::new(),
+            signer_public_key: None,
+            signed_profile: None,
+            signing_genesis: None,
             resources: NativeResourceObservation::default(),
         };
         Self {

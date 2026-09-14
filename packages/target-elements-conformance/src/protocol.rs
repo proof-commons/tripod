@@ -85,8 +85,19 @@ use crate::normalization::{
     AuthorizationProfile, ClaimedOutput, NormalizationClaim, NormalizationSubject, ObservedOutput,
 };
 use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutionSubject};
+use crate::test_material::{PublicTestSignerHandle, SIGNATURE_BYTES};
 
 /// The protocol revision this harness speaks.
+///
+/// # Revision 8 binds public script-path signing answers
+///
+/// Script-path signing carries finalized bytes, the ordered spent-output
+/// census, an executing leaf, a profile, and a committed public signer handle.
+/// Four new response members carry the witness, signer key, profile, and
+/// session genesis. They are not defaulted: an older executor must not answer
+/// with silence where this authorization lives. Both implementations move
+/// together; earlier peers fail the exact handshake and historical records
+/// remain the responsibility of their own parsers.
 ///
 /// # Revision 7 makes absence and conservation shapes truthful
 ///
@@ -215,7 +226,7 @@ use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutio
 /// Revision 2 itself added the environment observation, the separated
 /// executor provenance roles, the bounded-record contract, and strict
 /// framing, and was refused for revision 1 on the same ground.
-pub const NATIVE_PROTOCOL_SCHEMA: u32 = 7;
+pub const NATIVE_PROTOCOL_SCHEMA: u32 = 8;
 
 /// Which part of the exchange the harness was in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -590,6 +601,8 @@ pub enum ExecutorCapability {
     /// authorization was sound would be reading a fact about the
     /// candidate as a fact about a party the run never had.
     TestSponsorAuthorization,
+    /// It signs an exact script-path message with committed public test material.
+    TestScriptPathAuthorization,
     /// It materializes and mines outputs carrying an explicit protocol
     /// asset and a confidential value, deterministically, under a
     /// selected fixture, and reads the mined bytes back.
@@ -1068,6 +1081,18 @@ pub enum ResponseShapeDefect {
     /// question, and a consumer reading either member alone gets a
     /// different verdict from the same row.
     RefusedOperationCarriesObservation,
+    /// A script-path acceptance did not carry exactly one 64-byte signature.
+    ScriptPathWitnessMalformed,
+    /// The signer used a genesis other than the observed session genesis.
+    ScriptPathGenesisMismatch,
+    /// The signer key differs from the committed handle key.
+    ScriptPathSignerMismatch,
+    /// The returned signing profile differs from the requested profile.
+    ScriptPathProfileMismatch,
+    /// The signed transaction echo differs from the finalized request bytes.
+    ScriptPathTransactionMismatch,
+    /// The committed signer material could not resolve to a public key.
+    ScriptPathSignerUnavailable,
     /// A lifecycle step reported an outcome only the other role reaches.
     ///
     /// The two roles are not two configurations of one step: Process A
@@ -1135,6 +1160,24 @@ impl std::fmt::Display for ResponseShapeDefect {
             }
             Self::RefusedOperationCarriesObservation => {
                 "a refused operation step reported what only an acceptance produces"
+            }
+            Self::ScriptPathWitnessMalformed => {
+                "a script-path acceptance did not carry exactly one 64-byte signature"
+            }
+            Self::ScriptPathGenesisMismatch => {
+                "the signer used a genesis other than the observed session genesis"
+            }
+            Self::ScriptPathSignerMismatch => {
+                "the signer key differs from the committed handle key"
+            }
+            Self::ScriptPathProfileMismatch => {
+                "the returned signing profile differs from the requested profile"
+            }
+            Self::ScriptPathTransactionMismatch => {
+                "the signed transaction echo differs from the finalized request bytes"
+            }
+            Self::ScriptPathSignerUnavailable => {
+                "the committed signer material could not resolve to a public key"
             }
             Self::LifecycleOutcomeMismatchesRole => {
                 "a lifecycle step reported an outcome only the other role reaches"
@@ -1992,6 +2035,8 @@ pub enum OperationStepKind {
     FundSponsor,
     /// Authorize one input of an already-finalized transaction.
     SignSponsor,
+    /// Authorize one script-path input using a committed public test signer.
+    SignScriptPath,
     /// Materialize and mine outputs carrying an explicit protocol asset
     /// and a confidential value, under a named public fixture.
     ///
@@ -2045,6 +2090,7 @@ impl std::fmt::Display for OperationStepKind {
             Self::Submit => "submit",
             Self::FundSponsor => "fund_sponsor",
             Self::SignSponsor => "sign_sponsor",
+            Self::SignScriptPath => "sign_script_path",
             Self::FundConfidential => "fund_confidential",
             Self::FundConfidentialSponsor => "fund_confidential_sponsor",
         };
@@ -2198,6 +2244,58 @@ pub struct TargetSponsorSigningSubject {
     pub sponsor_outpoint: WireOutpoint,
     /// The profile the authorization must commit under.
     pub sighash_profile: WireSighashProfile,
+}
+
+/// The public fields of one spent output, in candidate input order.
+///
+/// Funding readbacks carry outpoints, amounts, or proofs; none is this census.
+/// These serialized fields preserve explicit and confidential representations.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WireSpentOutput {
+    /// The serialized asset field, including its prefix.
+    pub asset_field: Vec<u8>,
+    /// The serialized value field, including its prefix.
+    pub value_field: Vec<u8>,
+    /// The spent output's script program.
+    pub program: Vec<u8>,
+}
+
+/// The executing leaf and its authentication path.
+///
+/// A construction tree selects and builds leaves; this record carries the
+/// already selected script and control block needed by the signing boundary.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WireTapleaf {
+    /// The executing leaf version, without the parity bit.
+    pub leaf_version: u8,
+    /// The exact executing script.
+    pub script: Vec<u8>,
+    /// The control block authenticating this leaf.
+    pub control_block: Vec<u8>,
+}
+
+/// Public context for authorizing one finalized script-path input.
+///
+/// Every spent output travels because the profile hashes all inputs. Genesis
+/// belongs to the observed executor session, never to this request. The wire
+/// names committed test material rather than accepting a key or a digest.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetScriptPathSigningSubject {
+    /// The exact candidate bytes to authorize and echo.
+    pub finalized_transaction: Vec<u8>,
+    /// Which candidate input executes the stated leaf.
+    pub input_index: u32,
+    /// One spent output per candidate input, in input order.
+    pub spent_outputs: Vec<WireSpentOutput>,
+    /// The selected executing leaf.
+    pub executing_leaf: WireTapleaf,
+    /// The profile the authorization must commit under.
+    pub sighash_profile: WireSighashProfile,
+    /// Which committed public test signer to use.
+    pub signer: PublicTestSignerHandle,
 }
 
 /// Which representation a confidential funding step asks for.
@@ -2502,10 +2600,11 @@ pub struct TargetConfidentialSponsorFundingSubject {
 /// The subject of one operation step.
 ///
 /// Untagged because the kind is already stated in the case identity, and
-/// a second discriminator could disagree with the first. The two variants
-/// refuse unknown members and share none of their own, so the shapes are
-/// distinguishable without one — the same construction
-/// [`LifecycleSubject`] uses, for the same reason.
+/// a second discriminator could disagree with the first. Each variant
+/// refuses unknown members and has a distinct required field set, so
+/// shared fields do not make complete records ambiguous. The signing
+/// arms share finalized bytes and a profile but require different input
+/// context; neither parses the other arm's complete record.
 ///
 /// Both subjects are boxed, so an operation request is not as large as
 /// whichever variant happens to be bigger. The boxes are invisible on the
@@ -2521,6 +2620,8 @@ pub enum OperationSubject {
     SponsorFunding(Box<TargetSponsorFundingSubject>),
     /// A sponsor-signing step's subject.
     SponsorSigning(Box<TargetSponsorSigningSubject>),
+    /// A script-path signing subject, distinguished by its ordered census and leaf.
+    ScriptPathSigning(Box<TargetScriptPathSigningSubject>),
     /// A confidential funding step's subject.
     ///
     /// # Why the distinct arm is a fifth variant here
@@ -2569,6 +2670,7 @@ impl OperationSubject {
             Self::Submission(_) => OperationStepKind::Submit,
             Self::SponsorFunding(_) => OperationStepKind::FundSponsor,
             Self::SponsorSigning(_) => OperationStepKind::SignSponsor,
+            Self::ScriptPathSigning(_) => OperationStepKind::SignScriptPath,
             Self::ConfidentialFunding(_) => OperationStepKind::FundConfidential,
             Self::ConfidentialSponsorFunding(_) => OperationStepKind::FundConfidentialSponsor,
         }
@@ -2589,6 +2691,7 @@ impl OperationSubject {
     #[must_use]
     pub const fn required_capability(&self) -> ExecutorCapability {
         match self {
+            Self::ScriptPathSigning(_) => ExecutorCapability::TestScriptPathAuthorization,
             Self::Funding(_) => ExecutorCapability::TestFundingCeremony,
             Self::Submission(_) => ExecutorCapability::TargetTransactionSubmission,
             Self::SponsorFunding(_) | Self::SponsorSigning(_) => {
@@ -2823,7 +2926,20 @@ pub struct NativeOperationResponse {
     /// nothing an executor already wrote changes shape.
     #[serde(default)]
     pub sponsor_witness: Vec<Vec<u8>>,
-    /// The exact bytes a sponsor-signing step authorized.
+    /// The script-path witness prefix, exactly one 64-byte signature on success.
+    ///
+    /// Required on the wire; empty on refusal and for other step kinds.
+    pub script_path_witness: Vec<Vec<u8>>,
+    /// The signing handle's x-only public key, or null when nothing was signed.
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub signer_public_key: Option<[u8; 32]>,
+    /// The profile signed under, or null when nothing was signed.
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub signed_profile: Option<WireSighashProfile>,
+    /// The observed session genesis used for signing, or null on absence.
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub signing_genesis: Option<[u8; 32]>,
+    /// The exact bytes a signing step authorized.
     ///
     /// # Why the executor echoes what it was handed
     ///
@@ -2886,6 +3002,8 @@ impl NativeOperationResponse {
     /// submit             accepted_txid, mined_readback
     /// fund_sponsor       funded_outputs
     /// sign_sponsor       sponsor_witness, signature_bound_to
+    /// sign_script_path   script_path_witness, signer_public_key,
+    ///                    signed_profile, signing_genesis, signature_bound_to
     /// fund_confidential  issued_asset, confidential_funded_outputs,
     ///                    mined_readback
     /// ```
@@ -2933,6 +3051,7 @@ impl NativeOperationResponse {
                 || creates_coins
                 || submits
                 || authorizes
+                || self.has_script_path_authorization()
                 || creates_confidential_coins
                 || reads_back
                 || self.resources.has_any_observation()
@@ -2946,7 +3065,17 @@ impl NativeOperationResponse {
         // An authorization belongs to the one step that asks for one.
         // Any other kind reporting one would be attaching an
         // authorization to an obligation that never requested it.
-        if !matches!(self.case.operation, OperationStepKind::SignSponsor) && authorizes {
+        if !matches!(
+            self.case.operation,
+            OperationStepKind::SignSponsor | OperationStepKind::SignScriptPath
+        ) && authorizes
+        {
+            return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
+        }
+
+        if !matches!(self.case.operation, OperationStepKind::SignScriptPath)
+            && self.has_script_path_authorization()
+        {
             return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
         }
 
@@ -2987,6 +3116,43 @@ impl NativeOperationResponse {
         self.validate_observation_for_kind()
     }
 
+    const fn has_script_path_authorization(&self) -> bool {
+        !self.script_path_witness.is_empty()
+            || self.signer_public_key.is_some()
+            || self.signed_profile.is_some()
+            || self.signing_genesis.is_some()
+    }
+
+    const fn validate_script_path_shape(&self) -> Result<(), ResponseShapeDefect> {
+        if self.issued_asset.is_some()
+            || !self.funded_outputs.is_empty()
+            || !self.confidential_funded_outputs.is_empty()
+            || self.mined_readback.is_some()
+            || self.accepted_txid.is_some()
+            || !self.sponsor_witness.is_empty()
+        {
+            return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
+        }
+        if !matches!(self.observed_layer, ObservedOutcomeLayer::Accepted) {
+            return if self.has_script_path_authorization() || self.signature_bound_to.is_some() {
+                Err(ResponseShapeDefect::RefusedOperationCarriesObservation)
+            } else {
+                Ok(())
+            };
+        }
+        if self.signer_public_key.is_none()
+            || self.signed_profile.is_none()
+            || self.signing_genesis.is_none()
+            || self.signature_bound_to.is_none()
+        {
+            return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+        }
+        match self.script_path_witness.as_slice() {
+            [signature] if signature.len() == SIGNATURE_BYTES => Ok(()),
+            _ => Err(ResponseShapeDefect::ScriptPathWitnessMalformed),
+        }
+    }
+
     /// The per-kind half of [`Self::validate_shape`]: what each step
     /// owes on acceptance, and what it may not carry on a refusal.
     ///
@@ -3018,6 +3184,7 @@ impl NativeOperationResponse {
         let reads_back = self.mined_readback.is_some();
         let accepted = matches!(self.observed_layer, ObservedOutcomeLayer::Accepted);
         match self.case.operation {
+            OperationStepKind::SignScriptPath => return self.validate_script_path_shape(),
             OperationStepKind::Fund => {
                 if submits {
                     return Err(ResponseShapeDefect::OperationResponseMismatchesStep);

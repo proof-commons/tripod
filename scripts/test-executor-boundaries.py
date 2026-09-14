@@ -704,6 +704,7 @@ def test_the_diagnostic_outcome_inventory_is_closed(failures) -> int:
             "elements-output record 7"
         ),
         outcome.PROTOCOL_REVISION_REFUSED: "fatal: protocol revision refused",
+        outcome.OPERATION_STEP_UNSUPPORTED: "operation step unsupported",
         outcome.FRAMING_CLEAN_EOF: "fatal: request framing failure clean_eof",
         outcome.FRAMING_BLANK_RECORD: "fatal: request framing failure blank_record",
         outcome.FRAMING_MALFORMED_RECORD: (
@@ -807,14 +808,14 @@ def test_a_wrong_revision_is_refused_before_any_node(failures) -> int:
 # --------------------------------------------------------------------------
 
 
-def test_the_schema_constants_agree_at_revision_seven(failures) -> int:
+def test_the_schema_constants_agree_at_revision_eight(failures) -> int:
     """Both implementations move in one revision and no other number."""
     failures.equal(
         harness_schema(),
         SCHEMA,
         "the adapter and typed harness declare different protocol revisions",
     )
-    failures.equal(SCHEMA, 7, "the native protocol did not move to revision 7")
+    failures.equal(SCHEMA, 8, "the native protocol did not move to revision 8")
     return 2
 
 
@@ -823,7 +824,7 @@ def test_revision_seven_producer_shapes_are_stated_at_the_boundary(failures) -> 
     guard = executor_function("validate_conservation_body")
     answer = executor_function("answer_conservation_row")
     resources = executor_function("resources_for")
-    operation = executor_function("answer_operation_step")
+    operation = executor_function("write_operation_response")
     operation_failure = executor_function("write_operation_failure")
 
     failures.check(
@@ -944,7 +945,213 @@ def test_one_file_for_two_roles_is_refused(failures) -> int:
         fixture.close()
 
 
+# These framework stand-ins exercise argument plumbing, never cryptography.
+SIGNING_GENESIS = bytes(range(32))
+SIGNING_EMPTY = {"script_path_witness": [], "signer_public_key": None,
+                 "signed_profile": None, "signing_genesis": None, "signature_bound_to": None}
+
+
+def signing_fixture(available=True):
+    genesis = SIGNING_GENESIS.hex()
+    block = json.dumps({"tx": [{"txid": "11" * 32, "vout": [{"n": 0, "value": 1,
+                        "asset": "22" * 32, "scriptPubKey": {"hex": "51"}}]}]})
+    replies = {"getblockchaininfo": '{"mediantime": 1}',
+               "getdescriptorinfo": '{"descriptor": "raw(51)"}',
+               "getblockhash": json.dumps(genesis), "getblock": block,
+               "generateblock": '{}', "gettxout": '{}', "stop": 'null'}
+    body = 'for arg in "$@"; do\ncase "$arg" in\n'
+    for method, response in replies.items():
+        body += "%s) printf '%%s\\n' '%s'; exit 0;;\n" % (method, response)
+    body += 'esac\ndone\nexit 1\n'
+    fixture = Fixture(body, node_seconds=2.0)
+    framework = os.path.join(fixture.framework, "test_framework")
+    with open(os.path.join(framework, "messages.py"), "w", encoding="utf-8") as out:
+        out.write('''class CTransaction:
+    def deserialize(self, stream):
+        if stream.read() != bytes([2, 0, 1]):
+            raise ValueError("stub candidate")
+        self.vin = [None, None]
+        self.vout = [None]
+        self.wit = Witness()
+class Witness:
+    def __init__(self):
+        self.vtxinwit = []
+        self.vtxoutwit = []
+class CTxInWitness:
+    pass
+class CTxOutWitness:
+    pass
+class CTxOut:
+    pass
+class CTxOutAsset:
+    def __init__(self, raw):
+        self.vchCommitment = raw
+class CTxOutValue:
+    pass
+''')
+    with open(os.path.join(framework, "key.py"), "w", encoding="utf-8") as out:
+        out.write('''class ECKey:
+    def set(self, scalar, compressed):
+        assert compressed
+        self.scalar = scalar
+    def get_pubkey(self):
+        return self
+    def get_bytes(self):
+        return bytes([2]) + bytes([7]) * 32
+def sign_schnorr(key, msg, aux=None):
+    assert aux == bytes(32)
+    return msg + key
+''')
+    with open(os.path.join(framework, "script.py"), "w", encoding="utf-8") as out:
+        if available:
+            out.write('''def TaprootSignatureMsg(tx, spent, hash_type, genesis_hash, input_index=0,
+                        scriptpath=False, leaf_script=None, codeseparator_pos=-1,
+                        annex=None, leaf_ver=196):
+    assert hash_type == 0 and input_index == 1 and len(spent) == len(tx.vin) == 2
+    assert len(tx.wit.vtxinwit) == 2 and len(tx.wit.vtxoutwit) == len(tx.vout) == 1
+    assert scriptpath and leaf_script == bytes([172]) and leaf_ver == 196
+    assert codeseparator_pos == -1 and annex is None
+    assert spent[0].scriptPubKey == bytes([81]) and spent[1].scriptPubKey == bytes([82])
+    assert spent[0].nAsset.vchCommitment == bytes([1]) * 33
+    assert spent[1].nValue.vchCommitment == bytes([8]) * 33
+    return genesis_hash.to_bytes(32, "little")
+def TaprootSignatureHash(*args, **kwargs):
+    return TaprootSignatureMsg(*args, **kwargs)
+''')
+        else:
+            out.write('''def TaprootSignatureMsg(tx, spent, hash_type, input_index=0):
+    raise AssertionError("old framework must never sign")
+def TaprootSignatureHash(*args, **kwargs):
+    return TaprootSignatureMsg(*args, **kwargs)
+''')
+    return fixture
+
+
+def signing_subject():
+    return {"finalized_transaction": [2, 0, 1], "input_index": 1,
+            "spent_outputs": [
+                {"asset_field": [1] * 33, "value_field": [1] * 9, "program": [81]},
+                {"asset_field": [10] * 33, "value_field": [8] * 33, "program": [82]}],
+            "executing_leaf": {"leaf_version": 196, "script": [172], "control_block": [196] * 33},
+            "sighash_profile": "all_inputs_all_outputs", "signer": "first"}
+
+
+def signing_run(subject, available=True):
+    fixture = signing_fixture(available)
+    request = {"schema": SCHEMA, "case": {"operation": "sign_script_path", "step": "sign-leaf"},
+               "subject": subject}
+    run = drive(fixture, handshake() + (json.dumps(request) + "\n").encode())
+    records = [json.loads(line) for line in run.stdout.splitlines()]
+    return fixture, run, records
+
+
+def check_signing_refusal(failures, subject, expected, available=True):
+    fixture, run, records = signing_run(subject, available)
+    try:
+        failures.equal(run.status, 0, "a typed signing refusal completes the exchange")
+        failures.equal(run.stderr, b"", "signing refusal writes no stderr")
+        failures.equal(len(records), 3, "handshake, environment, and refusal")
+        if len(records) == 3:
+            response = records[2]
+            failures.equal(response["observed_layer"], "executor_infrastructure_failure", "typed refusal layer")
+            failures.check(expected in response["observed_detail"], "refusal names its cause")
+            for member, empty in SIGNING_EMPTY.items():
+                failures.equal(response[member], empty, "refusal has no success observation: " + member)
+        if not available:
+            failures.check("operation step unsupported" in fixture.diagnostics(), "typed unsupported-step outcome")
+        return 10
+    finally:
+        fixture.close()
+
+
+def test_script_path_capability_requires_genesis_aware_framework(failures):
+    fixture, run, records = signing_run(signing_subject())
+    try:
+        failures.equal(run.status, 0, "capable stub completes")
+        failures.equal(run.stderr, b"", "capable stub emits no stderr")
+        failures.equal(len(records), 3, "three protocol records")
+        if len(records) == 3:
+            failures.equal(records[0]["protocol_schema"], 8, "handshake states revision eight")
+            failures.check("test_script_path_authorization" in records[0]["capabilities"], "capability advertised without a wallet")
+            failures.equal(records[2]["signing_genesis"], records[1]["genesis_id"], "session genesis echoed")
+            failures.equal(records[2]["script_path_witness"][0][:32], list(SIGNING_GENESIS), "hash receives genesis bytes in kernel order")
+            failures.equal(records[2]["signature_bound_to"], [2, 0, 1], "exact candidate echo")
+            failures.equal(records[2]["signed_profile"], "all_inputs_all_outputs", "profile returned")
+        return 9
+    finally:
+        fixture.close()
+
+
+def test_old_framework_refuses_script_path_step(failures):
+    fixture, run, records = signing_run(signing_subject(), available=False)
+    try:
+        failures.equal(run.status, 0, "old framework completes typed refusal")
+        if records:
+            failures.check("test_script_path_authorization" not in records[0]["capabilities"], "old framework does not advertise")
+    finally:
+        fixture.close()
+    return 2 + check_signing_refusal(failures, signing_subject(), "operation_step_unsupported", available=False)
+
+
+def test_script_path_secret_and_digest_members_are_framing_refusals(failures):
+    for member in ("scalar", "private_key", "digest", "genesis", "expected_verdict"):
+        subject = signing_subject()
+        subject[member] = [99] * 32
+        check_signing_refusal(failures, subject, "unknown field: request.subject." + member)
+    return 50
+
+
+def test_script_path_unknown_handle_precedes_byte_decoding(failures):
+    subject = signing_subject()
+    subject["signer"] = "unregistered"
+    subject["finalized_transaction"] = "not bytes"
+    return check_signing_refusal(failures, subject, "unknown public test signer handle: unregistered")
+
+
+def test_script_path_unknown_profile_is_a_framing_refusal(failures):
+    subject = signing_subject()
+    subject["sighash_profile"] = "single"
+    return check_signing_refusal(failures, subject, "unknown value at request.subject.sighash_profile")
+
+
+def test_script_path_input_census_and_leaf_refusals(failures):
+    subjects = []
+    subject = signing_subject()
+    subject["input_index"] = 2
+    subjects.append((subject, "input index is outside"))
+    subject = signing_subject()
+    subject["spent_outputs"].pop()
+    subjects.append((subject, "census does not match"))
+    subject = signing_subject()
+    subject["executing_leaf"]["control_block"][0] = 192
+    subjects.append((subject, "versions disagree"))
+    for subject, expected in subjects:
+        check_signing_refusal(failures, subject, expected)
+    return 30
+
+
+def test_script_path_signing_is_deterministic_at_the_framework_seam(failures):
+    replies = []
+    for _ in range(2):
+        fixture, run, records = signing_run(signing_subject())
+        try:
+            failures.equal(run.status, 0, "signing completes")
+            replies.append(records[-1])
+        finally:
+            fixture.close()
+    failures.equal(replies[0], replies[1], "fixed auxiliary input and context reproduce bytes")
+    return 3
+
+
 TESTS = (
+    ("script path capability requires genesis aware framework", test_script_path_capability_requires_genesis_aware_framework),
+    ("old framework refuses script path step", test_old_framework_refuses_script_path_step),
+    ("script path secret and digest members are framing refusals", test_script_path_secret_and_digest_members_are_framing_refusals),
+    ("script path unknown handle precedes byte decoding", test_script_path_unknown_handle_precedes_byte_decoding),
+    ("script path unknown profile is a framing refusal", test_script_path_unknown_profile_is_a_framing_refusal),
+    ("script path input census and leaf refusals", test_script_path_input_census_and_leaf_refusals),
+    ("script path signing is deterministic at the framework seam", test_script_path_signing_is_deterministic_at_the_framework_seam),
+
     ("child stderr reaches only the quarantine", test_child_stderr_reaches_only_the_quarantine),
     ("no configuration path reaches either file", test_no_configuration_path_reaches_either_file),
     ("a stream that ends before the handshake", test_a_stream_that_ends_before_the_handshake),
@@ -968,7 +1175,7 @@ TESTS = (
         test_zk_paths_and_loader_exceptions_reach_neither_file,
     ),
     ("the previous revision is refused before any node", test_a_wrong_revision_is_refused_before_any_node),
-    ("schema constants agree at revision seven", test_the_schema_constants_agree_at_revision_seven),
+    ("schema constants agree at revision eight", test_the_schema_constants_agree_at_revision_eight),
     ("revision seven producer shapes are static", test_revision_seven_producer_shapes_are_stated_at_the_boundary),
     ("the request bounds agree across implementations", test_the_request_bounds_agree_across_the_two_implementations),
     ("both destinations are mandatory", test_both_destinations_are_mandatory),
@@ -994,7 +1201,7 @@ def main() -> int:
             print("ok   %s (%d assertions)" % (name, checked))
     elapsed = time.monotonic() - started
     print(
-        "%d tests %s in %.1fs"
+        "test result: %d tests %s in %.1fs"
         % (len(TESTS), "passed" if failed == 0 else "FAILED", elapsed)
     )
     return 1 if failed else 0
