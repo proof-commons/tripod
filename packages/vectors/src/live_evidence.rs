@@ -681,7 +681,7 @@ pub enum LiveRowStanding {
     /// crate's opinion that they agreed.
     ///
     /// This member is minted ONLY where
-    /// [`crate::observed_boundary::observed_boundary`] maps the observed
+    /// `crate::observed_boundary::observed_boundary` maps the observed
     /// layer to EXACTLY the declared boundary. Every other refusal is
     /// [`Self::NativeRefusalAtUnexpectedBoundary`], which is not answered.
     NativeRefusalObserved {

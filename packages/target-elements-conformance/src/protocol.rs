@@ -2914,7 +2914,7 @@ impl NativeOperationResponse {
     /// This half asks which members belong to a kind at all. What a kind
     /// OWES on an acceptance, and what it may not carry on a refusal, is
     /// the other half and lives in
-    /// [`Self::validate_observation_for_kind`].
+    /// `Self::validate_observation_for_kind`.
     ///
     /// # Errors
     ///

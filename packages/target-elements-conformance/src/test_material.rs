@@ -71,13 +71,86 @@
 //! auxiliary values, which is a comparison against an artifact nothing
 //! in this repository produced.
 
+//! # Fixed public signer handles
+//!
+//! [`PublicTestSignerHandle`] names only the first and third published
+//! BIP-340 appendix scalars: disposable material, secret to nobody.
+//! This closed handle API accepts no key files, wallet seeds, production
+//! credentials, arbitrary scalars, or arbitrary digest-signing requests.
+//! It resolves committed material rather than accepting signing inputs.
+//! The existing local material API remains available to fixture builders;
+//! neither its scalar constructor nor its message signer is a wire API.
+//!
 use num_bigint::BigUint;
 use num_traits::Zero as _;
+use serde::{Deserialize, Serialize};
 
 use crate::constructor::curve::{
     CurvePoint, FIELD_ELEMENT_BYTES, generator, group_order, multiply_point,
 };
 use crate::constructor::tagged::{Digest32, tagged_hash};
+
+/// The first published BIP-340 signing scalar.
+pub const FIRST_SCALAR: [u8; FIELD_ELEMENT_BYTES] = [
+    0xB7, 0xE1, 0x51, 0x62, 0x8A, 0xED, 0x2A, 0x6A, 0xBF, 0x71, 0x58, 0x80, 0x9C, 0xF4, 0xF3, 0xC7,
+    0x62, 0xE7, 0x16, 0x0F, 0x38, 0xB4, 0xDA, 0x56, 0xA7, 0x84, 0xD9, 0x04, 0x51, 0x90, 0xCF, 0xEF,
+];
+
+/// The second published BIP-340 signing scalar.
+pub const SECOND_SCALAR: [u8; FIELD_ELEMENT_BYTES] = [
+    0xC9, 0x0F, 0xDA, 0xA2, 0x21, 0x68, 0xC2, 0x34, 0xC4, 0xC6, 0x62, 0x8B, 0x80, 0xDC, 0x1C, 0xD1,
+    0x29, 0x02, 0x4E, 0x08, 0x8A, 0x67, 0xCC, 0x74, 0x02, 0x0B, 0xBE, 0xA6, 0x3B, 0x14, 0xE5, 0xC9,
+];
+
+/// The third published BIP-340 signing scalar.
+///
+/// Beside the two above and published on the same footing — BIP-340's
+/// own appendix vector, a value with no secrecy to lose
+/// `(´[ADR015-rule:security:test-material]´)`. It differs from them in
+/// PURPOSE rather than in kind: nothing is linked for this owner in the
+/// demonstration deployment, and that is exactly what it is for. A
+/// discharge asking what happens to a receipt whose owner metadata
+/// names somebody the constructor never built for needs an owner the
+/// constructor never built for, and reusing a linked one would stage a
+/// candidate the recognition accepts.
+pub const THIRD_SCALAR: [u8; FIELD_ELEMENT_BYTES] = [
+    0x0B, 0x43, 0x2B, 0x26, 0x77, 0x93, 0x73, 0x81, 0xAE, 0xF0, 0x5B, 0xB0, 0x2A, 0x66, 0xEC, 0xD0,
+    0x12, 0x77, 0x30, 0x62, 0xCF, 0x3F, 0xA2, 0x54, 0x9E, 0x44, 0xF5, 0x8E, 0xD2, 0x40, 0x17, 0x10,
+];
+
+/// One position in the committed public signing-material census.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum PublicTestSignerHandle {
+    /// The first published scalar.
+    First,
+    /// The third published scalar.
+    Third,
+}
+
+impl PublicTestSignerHandle {
+    /// Resolve this handle to its committed disposable material.
+    ///
+    /// # Errors
+    ///
+    /// [`TestSigningDefect`] if the committed scalar cannot produce a key.
+    pub fn material(self) -> Result<OwnerSigningMaterial, TestSigningDefect> {
+        let scalar = match self {
+            Self::First => &FIRST_SCALAR,
+            Self::Third => &THIRD_SCALAR,
+        };
+        OwnerSigningMaterial::from_published_scalar(scalar)
+    }
+
+    /// Read the x-only public key of this committed signer.
+    ///
+    /// # Errors
+    ///
+    /// [`TestSigningDefect`] if the committed scalar cannot produce a key.
+    pub fn x_only_public_key(self) -> Result<[u8; FIELD_ELEMENT_BYTES], TestSigningDefect> {
+        self.material().map(|material| material.x_only_public_key())
+    }
+}
 
 /// The tag the signature scheme derives its nonce under.
 ///

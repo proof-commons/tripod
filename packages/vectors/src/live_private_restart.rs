@@ -61,7 +61,7 @@
 //! # The native carrier binds this record exactly
 //!
 //! The ignored private-restart tests write their fresh artifacts first and
-//! then assert every stable field against [`run_of_record`]: exact accepted
+//! then assert every stable field against [`crate::run_of_record`]: exact accepted
 //! layer and identity, fixture digests, receipt parity, byte and proof
 //! counts, and unconditional readback reverification. A changed honest
 //! result therefore remains recorded while the reproduction gate fails.
