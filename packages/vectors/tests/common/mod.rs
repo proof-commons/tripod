@@ -1562,6 +1562,7 @@ pub(crate) const fn executor_capability(capability: ExecutorCapability) -> &'sta
         ExecutorCapability::TestFundingCeremony => "test-funding-ceremony",
         ExecutorCapability::TargetTransactionSubmission => "target-transaction-submission",
         ExecutorCapability::TestSponsorAuthorization => "test-sponsor-authorization",
+        ExecutorCapability::TestScriptPathAuthorization => "test-script-path-authorization",
         ExecutorCapability::ConfidentialValueTestFunding => "confidential-value-test-funding",
         ExecutorCapability::ConfidentialValueSponsorAuthorization => {
             "confidential-value-sponsor-authorization"
