@@ -492,6 +492,14 @@ missing. A case that reaches past this constructor carries the residual
 that a complete target transaction and an observed verdict are required,
 because nothing here may claim what a target would say.
 
+### Operator authorization (Guide-14 Wave 3)
+
+`operator_key_encoding_closure` derives the operator-specific key rule from the reviewed target authorization contract: the approved form is the unique canonical 32-byte `XOnlyPublicKey`, and because the target permits an unknown nonempty key type to succeed without verification, `OperatorKeyObligation::AuthenticateEncodingIndependently` remains mandatory. `OperatorKey::new` checks emptiness, key domain, exact class, canonicality, fixed width, and byte count in order; it deliberately leaves curve membership unverified, offers no conversion to an owner key, and leaves deployment identity and signature semantics to later boundaries.
+
+`selected_operator_profile` is the all-inputs/all-outputs, default-type script-path selection. Six target dimensions are required (`AllOutputs`, `AllInputs`, `Version`, `LockTime`, `TapleafHash`, and `SpentOutputs`), three narrowing or issuance dimensions are refused, and `InternalKey` is protected outside the message through the spent program and control-block check; every one of the ten `StateProtectedDatum` members lands on a required carrier. `EstablishedOperatorProfile::establish` derives the `Established` disposition only from the reviewed target, retains those six dimensions, and pins `TargetContractVersion::V2`, so neither a caller-authored profile nor a stale revision can stand in for review.
+
+The downstream native run establishes the target-facing half without expanding this crate's static claim: the operator positive was accepted and read back byte-identically, its returned signature independently verified over the recomputed message, and wrong key, wrong candidate, wrong leaf, signature width, signature type, and protected term were refused at the script-path layer; unknown-key admission and duplicate authorization remain first-party facts (`0.6.169-dev`). Operator membership is still external evidence because realization exposes no decision over an observed authorization, and the synthetic candidate leaves twelve STATE facts unconstructed.
+
 ## What this package deliberately does not do
 
 Not implemented:

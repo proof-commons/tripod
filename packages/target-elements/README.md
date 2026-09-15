@@ -266,6 +266,10 @@ checked when a definition is validated, so a body cannot travel under a number
 this crate cannot check it against. Implementing V1 would mean per-revision
 censuses and a versioned algebra, not returning the constant to the list.
 
+V2's authorization contract fixes the signature public-key encoding to `EncodingClass::XOnlyPublicKey`: one unique canonical 32-byte key shape paired with `EncodingClass::SchnorrSignature`. Its `UnknownPublicKeyTypeRule::SucceedsWithoutVerification` means a signature result cannot authenticate that encoding by itself, so the operator-key closure requires an independent encoding check; shape admission still proves neither curve membership nor deployment identity.
+
+The target's profile-specific assessment establishes `AllOutputs`, `AllInputs`, `Version`, `LockTime`, `TapleafHash`, and `SpentOutputs` from source citations, independent recomputation, and an observed acceptance. `SingleOutput`, `InputExtensionPermitted`, and `Issuance` remain deliberately unreviewed under the selected profile's refusals, while `InternalKey` is outside the message and is composed through the spent program's control-block check. The generic `OutputCommittingSighash` and `InputCommitmentControl` capability entries remain `Incomplete`; the downstream tapscript crate owns the narrower operator selection and its revision-bound establishment witness.
+
 `TargetProjection` is the stable comparison form, reached by `projection()` on
 either trust state. It carries no provenance and no digest, and its accessors
 mirror `TargetDefinition`'s except that the four registries become **slices**

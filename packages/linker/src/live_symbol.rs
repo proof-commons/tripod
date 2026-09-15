@@ -519,9 +519,10 @@ impl SelectedSighashProfile {
 
     /// Whether the review establishes every dimension the profile needs.
     ///
-    /// False for this candidate, and a consumer reading a verified
-    /// signature as authorization over §1.7's protected data while this
-    /// is false is reading past the residual rather than through it.
+    /// True for the current reviewed owner profile; the distinct operator profile
+    /// also has a revision-bound establishment witness. A false value here still
+    /// means the owner-profile review is residual, and a verified signature cannot
+    /// be read past it as authorization over §1.7's protected data.
     #[must_use]
     pub const fn is_established(&self) -> bool {
         matches!(self.disposition, OwnerProfileDisposition::Established)

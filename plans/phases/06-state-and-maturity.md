@@ -1,15 +1,6 @@
 # Phase 6 — STATE Constructor and Maturity Announcement · `phase:roadmap:state-maturity`
 
-> **Status:** Active — opened by the owner 2026-08-27 as the roadmap's
-> current phase when Phase 5 exited; both entry conditions hold — the
-> amended phase-5 exit gate is met on its countersigned assessment, and
-> the STATE-constructor research decision is accepted. The owner
-> supplied Guide 14, archived verbatim (`T6-001`); its Wave 0 — the
-> tenth-review disposition and the Phase-5 handoff revalidation — ran
-> and closed out (`T6-002`, `T6-031`); the owner-issued conceptual
-> preflight register binds Waves 1–13 (`T8-001`). Wave 1's deliverables
-> are landed including the architecture-owned lead-bound adapter, landed in `0.6.152-dev`;
-> Wave 2 closed under its recorded bite rows (`T11-013` through `T11-020`); Wave 3 is open under `T11-024` through `T11-032`, with its six questions discharged by rulings 16–21 at (`rule:phase6:wave3-rulings`).
+> **Status:** Active — opened 2026-08-27 as the roadmap's current phase when Phase 5 exited; both entry conditions hold through the countersigned Phase-5 exit assessment and the accepted STATE-constructor research decision. Guide 14 is archived verbatim (`T6-001`); Wave 0 closed the tenth-review disposition and Phase-5 handoff revalidation (`T6-002`, `T6-031`); the conceptual preflight register binds Waves 1–13 (`T8-001`); Wave 1's deliverables and architecture-owned lead-bound adapter landed through `0.6.152-dev`; Wave 2 closed under `T11-013` through `T11-020`; and Wave 3 closed under `T11-024` through `T11-032`, with its six questions discharged by rulings 16–21 at (`rule:phase6:wave3-rulings`) and R-4 adopted in `plans/guides/guide_fourteen_conceptual_register.md`.
 > **Entry:** (`gate:phase5:exit`) and accepted STATE-constructor decision
 > **Packages:** tapscript, linker, transaction, vectors
 > **Operation:** `announce-maturity`
@@ -258,6 +249,14 @@ The nine planned bites are exact assessment (`T11-024`), operator encoding and p
 
 21. The realization crate leaves operator authorization external in `packages/realization/src/evaluate.rs`, while `packages/realization/src/observation.rs` carries no expected operator identity and exposes no decision over an observed authorization; the admitted record therefore answers ten of eleven operator-evidence rows but leaves membership as the external evidence requirement with twelve STATE facts unconstructed in `packages/vectors/src/maturity_operator.rs`. `T11-032` owns naming the evaluation that decides membership before that row can move from external evidence.
 
+Wave 3 closed in its planned nine-bite order: exact assessment (`T11-024`, `0.6.158-dev`); operator encoding and profile (`T11-025`, `0.6.160-dev`); candidate deployment binding (`T11-026`, `0.6.161-dev`); generic census and operator handoff (`T11-027`, `0.6.162-dev`, with three commits under the tag); atomic native protocol and public signer (`T11-028`, `0.6.164-dev`); adversarial response boundary (`T11-029`, `0.6.165-dev`); affine right and non-equivocation (`T11-030`, `0.6.163-dev`); synthetic operator and native evidence (`T11-031`, `0.6.166-dev`, `0.6.167-dev`, `0.6.168-dev`, `0.6.169-dev`); and closure and handoff (`T11-032`, `0.6.170-dev`, `0.6.171-dev`).
+
+The native verdict is one target-accepted operator positive whose mined readback is byte-identical, with wrong key, wrong candidate, wrong leaf, signature width, signature type, and protected term all refused at the script-path layer with the node's detail; unknown-key admission, duplicate authorization before any signing request, and signature verification are first-party facts. Operator membership remains the one external evidence requirement, and its twelve input/output STATE facts remain unconstructed because realization exposes no decision over an observed authorization (`0.6.169-dev`).
+
+Findings 14–19 are disposed on their evidence: 14 is closed by the warnings-as-errors workspace rustdoc lane (`0.6.170-dev`); 15's grown witness census and target message agreement are confirmed by the accepted native run; 16's genesis order and the failed-positive diagnosis recorded in 17 are repaired by the three-site byte-order rule and the subsequent accepted run (`0.6.167-dev`); 18 is recorded here as a namespace distinction, because `r8` in `scripts/live-native-v2-r8-capture.sh` names capture revision 8 while that preserved corpus still uses native protocol revision 7, whereas the operator corpus uses native protocol revision 8; and 19's writer capability and suite-provenance families are repaired in `0.6.168-dev` and `0.6.169-dev`.
+
+Findings 20 and 21 pass to Wave 4 as explicit constructor and evaluation obligations: the shared writer must retain funding request bytes and give a new carrier its own ceremony and Rust test identity, and realization must expose an operator-membership decision over observed authorization before that evidence row can move. The constructor and ABI waves inherit that membership decision, construction of the twelve STATE facts, and exact carriage of the writer's funding request bytes and ceremony identity; selected-profile closure does not promote the generic `Incomplete` capability entries, and the Wave-7 ABI remains responsible for binding the finalized target bytes and witness roles.
+
 ### Handed up for a ruling, Wave 3 · `rem:phase6:wave3-questions`
 
 1. Ruling 16 at (`rule:phase6:wave3-rulings`) assigns the operator profile and deployment binding while keeping semantic requests free of deployment identity; this item is discharged.
@@ -268,7 +267,7 @@ The nine planned bites are exact assessment (`T11-024`), operator encoding and p
 
 4. Ruling 19 at (`rule:phase6:wave3-rulings`) assigns the target-generic script-path capability and its joint protocol revision; this item is discharged.
 
-5. Ruling 20 at (`rule:phase6:wave3-rulings`) bounds the affine-right guarantee to the scoped registry, while the conceptual register's adoption remains open pending `T11-031`; this item is discharged.
+5. Ruling 20 at (`rule:phase6:wave3-rulings`) bounds the affine-right guarantee to the scoped registry; that registry and the admitted native record meet the conceptual register's evidence trigger (`0.6.163-dev`, `0.6.169-dev`), so this item is discharged.
 
 6. Ruling 21 at (`rule:phase6:wave3-rulings`) fixes the minimal synthetic candidate and preserves the later constructor, ABI and generic-capability obligations; this item is discharged.
 

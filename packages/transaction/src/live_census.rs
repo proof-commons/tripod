@@ -1,12 +1,13 @@
-//! The owner signing-input census, and the profile constants it is
-//! checked against.
+//! The owner adapter over the shared script-path signing census, and the profile
+//! constants it is checked against.
 //!
 //! # What this module is for
 //!
 //! The owner-sighash concept's accepted result is option B: an owner is
 //! handed protected bytes, a census of signing inputs, and takes back
 //! opaque authorization bytes plus the hash-type byte used, bound to one
-//! candidate identity. This module is the census half.
+//! candidate identity. This module is the owner specialization of the census half;
+//! [`crate::script_path_signing`] owns the role-neutral assembly and message kernel.
 //!
 //! The census exists because the target's message is not a function of
 //! the candidate alone. The source review read the message term by term
@@ -16,11 +17,12 @@
 //! spent outputs' asset, value and script fields, which three separate
 //! terms cover; the output-witness vector at its consensus length, which
 //! one term covers; and the executing leaf's hash, key version and
-//! codeseparator position, which the script path adds. A component
-//! handed only [`crate::live_finalize::FinalizedLiveTransfer::protected_bytes`]
-//! cannot form the message for any input, and the concept's own
-//! correction to the consuming guide's §4.1 says so in five named
-//! places.
+//! codeseparator position, which the script path adds. The shared kernel validates
+//! those terms and forms the message; this adapter derives its owner-specific inputs
+//! from finalized values. A component handed only
+//! [`crate::live_finalize::FinalizedLiveTransfer::protected_bytes`] still cannot form
+//! the message for any input, and the concept's own correction to the consuming
+//! guide's §4.1 says so in five named places.
 //!
 //! # What the census excludes, as a rule and not an omission
 //!
@@ -70,11 +72,10 @@
 //!
 //! # What this module does not do
 //!
-//! It computes no digest, and it asserts none. Forming a candidate
-//! message from a census is [`crate::live_message`]'s, observing what a
-//! target does with one is a later wave's, and neither
-//! `SighashProfileUnreviewed` nor `OwnerSighashNotComputable` is
-//! affected by anything here. A capability existing moves no standing.
+//! The owner adapter computes no separate digest and asserts no target verdict.
+//! [`crate::script_path_signing`] owns the shared census validation and message
+//! construction; native observation remains downstream, and a capability existing
+//! by itself moves no standing.
 
 use std::collections::BTreeSet;
 

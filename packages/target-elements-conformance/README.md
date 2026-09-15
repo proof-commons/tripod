@@ -364,7 +364,7 @@ the transaction-context types `PrimitiveExecutionContext`, `FixtureInput`,
 ### `protocol` — the secretless wire
 
 ```text
-NATIVE_PROTOCOL_SCHEMA: u32 = 6
+NATIVE_PROTOCOL_SCHEMA: u32 = 8
 MOCK_EXECUTOR_NETWORK_ID: [u8; 32] = [0x11; 32]
 MOCK_EXECUTOR_GENESIS_ID: [u8; 32] = [0x22; 32]
 
@@ -380,46 +380,21 @@ rather than filling with something plausible. `runs_prototype_fixtures()`,
 `runs_normalization_rows()`, and `runs_operation_step()` read the capability
 set.
 
-`ExecutorCapability` has 11 variants; `ObservedFailureClass` has **34**,
-enumerated in `src/protocol.rs`. Representative: `StackUnderflow`,
-`InvalidOperandWidth`, `DivisionByZero`, `EvaluatedFalse`,
-`NonSingletonFinalStack`.
+`ExecutorCapability` has 16 variants; `ObservedFailureClass` has **34**, enumerated in `src/protocol.rs`. Representative failure classes are `StackUnderflow`, `InvalidOperandWidth`, `DivisionByZero`, `EvaluatedFalse`, and `NonSingletonFinalStack`.
 
-`ResponseShapeDefect` has 9 variants and exists so that an executor cannot
-report more than it advertised or less than it promised — for example
-`StackWithoutAdvertisedReporting` and `AdvertisedStackOmitted` are both defects.
+`ResponseShapeDefect` has 22 variants and exists so that an executor cannot report more than it advertised or less than it promised — for example `StackWithoutAdvertisedReporting` and `AdvertisedStackOmitted` are both defects. Its six script-path-specific defects are `ScriptPathWitnessMalformed`, `ScriptPathGenesisMismatch`, `ScriptPathSignerMismatch`, `ScriptPathProfileMismatch`, `ScriptPathTransactionMismatch`, and `ScriptPathSignerUnavailable`.
 
-Revision 4 carries a typed record pair for each of the four workloads
-Guide-12 §16.3 names: `NativeConservationRequest`/`Response`,
-`NativeNormalizationRequest`/`Response`, `NativeLifecycleRequest`/`Response`,
-and `NativeOperationRequest`/`Response`. Every one of them refuses unknown
-fields and every response has a `validate_shape` that refuses an observation
-beside a layer saying the run never happened.
+Revision 8 carries a typed record pair for each of the four workloads Guide-12 §16.3 names: `NativeConservationRequest`/`Response`, `NativeNormalizationRequest`/`Response`, `NativeLifecycleRequest`/`Response`, and `NativeOperationRequest`/`Response`. Every one of them refuses unknown fields and every response has a `validate_shape` that refuses an observation beside a layer saying the run never happened.
 
-The operation records are the §16.2 target-generic boundary on the wire. An
-`OperationCaseId` is an `OperationStepKind` (`Fund` or `Submit`) and the
-caller's own name for the step; an `OperationSubject` is a
-`TargetFundingSubject` (issue an asset, pay `outputs` outputs of
-`amount_per_output` to `output_program`) or a `TargetSubmissionSubject`
-(`transaction_bytes`), untagged and told apart by disjoint members. A
-`NativeOperationResponse` answers with an `ObservedOutcomeLayer`, the
-`FundedOutput` rows a funding step created, and the `accepted_txid` a
-submission earned. Nothing in that vocabulary names an operation's meaning,
-which is what lets this package supervise a compact-ASH run without owning
-one.
+The operation records are the §16.2 target-generic boundary on the wire. `OperationCaseId` pairs the caller's step name with one of the seven `OperationStepKind` variants: `Fund`, `Submit`, `FundSponsor`, `SignSponsor`, `SignScriptPath`, `FundConfidential`, or `FundConfidentialSponsor`. The original `Fund` and `Submit` kinds carry `TargetFundingSubject` and `TargetSubmissionSubject`; `SignScriptPath` carries `TargetScriptPathSigningSubject`, whose public context is the finalized transaction bytes, input index, complete ordered spent-output census, executing leaf and control block, selected profile, and fixed signer handle, while genesis remains an observed-session fact rather than a request member. Nothing in this vocabulary names an operation's meaning.
 
-One advertised capability has one first-party caller, and it is a test rather
-than an evidence lane. `TestSponsorAuthorization` is declared here and
-implemented by the native executor — a fixed regtest sponsor key, deterministic
-signing, and a response bound to the exact finalized transaction it was given —
-and the vectors package's sponsor-signing integration test reaches it: an
-explicit sponsored control finalized, its exact sponsor request sent, the
-returned witness replayed, and the binding checked against a mutated-byte
-control. No evidence lane reaches it. The distinction is worth keeping precise
-in both directions: a reader of the Guide-13 evidence plan should not conclude
-that no adapter signer exists, and a reader here should not conclude that a
-returned byte stack is sponsor authorization. It becomes that when a target
-accepts a control carrying it, and no such control has been submitted.
+A `SignScriptPath` acceptance must populate the four nullable binding members `signer_public_key`, `signed_profile`, `signing_genesis`, and `signature_bound_to`, and must carry exactly one 64-byte item in `script_path_witness`; a refusal must leave all five observations absent. The key, profile, and genesis members are required on the wire even when null, while the transaction echo remains defaulted for compatibility and becomes mandatory at acceptance validation. Before journaling an accepted result, the executor binds the observed session genesis, the committed handle's public key, the requested profile, and the byte-identical finalized transaction echo, in that order; target acceptance and the transaction boundary's independent verifier establish the signature rather than the echo doing so.
+
+`PublicTestSignerHandle` is a closed two-position census: `First` and `Third`, resolving the first and third published BIP-340 appendix scalars. The wire accepts a handle rather than key files, wallet seeds, production credentials, arbitrary scalars, or caller-supplied digests.
+
+`TestSponsorAuthorization` remains a first-party integration capability rather than an evidence lane: the native executor uses a fixed regtest sponsor key, signs deterministically, and binds the response to the finalized transaction, while no target-accepted sponsor control has promoted that returned byte stack to sponsor-authorization evidence.
+
+`TestScriptPathAuthorization` does reach an evidence lane. The revision-8 operator run signs from a fixed public handle, independently verifies the returned signature over the recomputed message, submits the resulting script-path witness, and records target acceptance with byte-identical readback; its wrong-key, wrong-candidate, wrong-leaf, signature-width, signature-type, and protected-term controls are target refusals at the script-path layer (`0.6.169-dev`).
 
 `ProtocolLimits` bounds each phase of what this side READS;
 `ProtocolLimits::DEFAULT` is the standard set, and `for_phase` reads the bound
@@ -706,7 +681,7 @@ both directions:
 ```text
 opcode_name / opcode_from_name                          (55 entries)
 capability_name / capability_from_name                  (45 entries)
-evidence_requirement_name / evidence_requirement_from_name  (24 entries)
+evidence_requirement_name / evidence_requirement_from_name  (27 entries)
 ```
 
 The spellings are explicit rather than derived, so a rename upstream cannot
@@ -714,11 +689,7 @@ silently change a wire format.
 
 ## Error handling
 
-`NativeConformanceError` is the crate's single error root, has **88**
-`#[non_exhaustive]` variants declared in `src/error.rs`, and derives
-`thiserror::Error`. Every variant is a branch that runs — there is no catch-all
-— and none carries child-process detail that could leak an executor's
-environment.
+`NativeConformanceError` is the crate's single error root, has **96** `#[non_exhaustive]` variants declared in `src/error.rs`, and derives `thiserror::Error`. Every variant is a branch that runs — there is no catch-all — and none carries child-process detail that could leak an executor's environment.
 
 By stage:
 

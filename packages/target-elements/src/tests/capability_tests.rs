@@ -50,8 +50,8 @@ fn the_statuses_are_the_independently_expected_ones() {
     // of having three states, so a silent promotion of any of them
     // must fail this test.
     let not_reviewed: BTreeMap<ElementsCapability, StaticCapabilityStatus> = [
-        // The signature primitives were reviewed; the sighash
-        // construction was not, so these cannot claim more.
+        // The selected operator profile now has six reviewed sighash dimensions,
+        // but that profile-specific witness does not promote these generic entries.
         (
             ElementsCapability::OutputCommittingSighash,
             StaticCapabilityStatus::Incomplete,
