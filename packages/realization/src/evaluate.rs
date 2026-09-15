@@ -103,6 +103,72 @@ impl ExternalEvidenceRequirement {
     }
 }
 
+/// Whether verified authorization maps to the model's abstract operator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OperatorMembershipDisposition {
+    Member,
+    NonMember,
+}
+
+/// A supplied operator-membership decision for one operation.
+///
+/// The producer verifies deployment authorization and its mapping to the model's
+/// abstract operator. This value consumes that decision; construction authenticates
+/// neither it nor its association with observation bytes. Provenance names the
+/// deciding component and run, never a key, digest, identity, or profile.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ObservedOperatorMembership {
+    operation: architecture::OperationId,
+    disposition: OperatorMembershipDisposition,
+    provenance: String,
+}
+
+/// The membership decision has no provenance description.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("operator membership provenance must not be empty")]
+pub struct EmptyOperatorMembershipProvenance;
+
+impl ObservedOperatorMembership {
+    /// Record a decision and its deciding component and run.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EmptyOperatorMembershipProvenance`] for empty or whitespace-only text.
+    pub fn new(
+        operation: architecture::OperationId,
+        disposition: OperatorMembershipDisposition,
+        provenance: impl Into<String>,
+    ) -> Result<Self, EmptyOperatorMembershipProvenance> {
+        let provenance = provenance.into();
+        if provenance.trim().is_empty() {
+            return Err(EmptyOperatorMembershipProvenance);
+        }
+        Ok(Self {
+            operation,
+            disposition,
+            provenance,
+        })
+    }
+
+    /// The operation attested by this decision.
+    #[must_use]
+    pub const fn operation(&self) -> architecture::OperationId {
+        self.operation
+    }
+
+    /// The producer's membership decision.
+    #[must_use]
+    pub const fn disposition(&self) -> OperatorMembershipDisposition {
+        self.disposition
+    }
+
+    /// The description of the deciding component and run.
+    #[must_use]
+    pub fn provenance(&self) -> &str {
+        &self.provenance
+    }
+}
+
 /// Result class for one realization relation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RelationStatus {
@@ -130,6 +196,8 @@ pub enum RelationFailure {
     ObjectRecognition,
     AmountConservation,
     MissingOwnerAuthorization,
+    /// A supplied decision rejects membership or attests a different operation.
+    OperatorMembership,
     UnexpectedProtocolAuthorization,
     SponsorIsolation,
     SponsorEnvelopeMultiplicity,
@@ -231,6 +299,7 @@ pub(crate) fn evaluate_operation(
     expression_node_by_id: &BTreeMap<ExprId, NodeIndex<u32>>,
     expression_evaluation_order: &[ExprId],
     observation: &OperationObservation,
+    operator_membership: Option<&ObservedOperatorMembership>,
 ) -> Result<ConformanceReport, RealizationError> {
     let observation = observation.clone().validate_and_normalize()?;
     let evaluated = evaluate_operation_expressions(
@@ -277,6 +346,7 @@ pub(crate) fn evaluate_operation(
                 &declaration.relation,
                 &observation,
                 evaluated.as_ref(),
+                operator_membership,
             )?
         } else {
             RelationStatus::Blocked {
@@ -304,13 +374,10 @@ fn evaluate_relation(
     relation: &Relation,
     observation: &OperationObservation,
     evaluated: Option<&EvaluatedExpressions>,
+    operator_membership: Option<&ObservedOperatorMembership>,
 ) -> Result<RelationStatus, RealizationError> {
     match relation {
-        Relation::OperatorAuthorization => Ok(RelationStatus::EvidenceRequired {
-            requirement: ExternalEvidenceRequirement::OperatorAuthorization {
-                operation: id.operation(),
-            },
-        }),
+        Relation::OperatorAuthorization => Ok(operator_membership_status(id, operator_membership)),
         Relation::SubstrateConservation { asset } => Ok(RelationStatus::EvidenceRequired {
             requirement: ExternalEvidenceRequirement::SubstrateConservation {
                 operation: id.operation(),
@@ -426,11 +493,7 @@ fn evaluate_relation(
             RelationFailure::OpenFlowPolicy,
         ),
         Relation::Constructibility { class } => match class {
-            ConstructibilityClass::Operator => Ok(RelationStatus::EvidenceRequired {
-                requirement: ExternalEvidenceRequirement::OperatorAuthorization {
-                    operation: id.operation(),
-                },
-            }),
+            ConstructibilityClass::Operator => Ok(operator_membership_status(id, operator_membership)),
             ConstructibilityClass::PublicPermissionless => status(
                 observation.protocol_signers.is_empty(),
                 RelationFailure::Constructibility,
@@ -605,6 +668,30 @@ const fn observed_side(side: TransactionSide) -> ObservedSide {
         TransactionSide::Input => ObservedSide::Input,
         TransactionSide::Output => ObservedSide::Output,
     }
+}
+
+fn operator_membership_status(
+    id: &RelationId,
+    witness: Option<&ObservedOperatorMembership>,
+) -> RelationStatus {
+    witness.map_or_else(
+        || RelationStatus::EvidenceRequired {
+            requirement: ExternalEvidenceRequirement::OperatorAuthorization {
+                operation: id.operation(),
+            },
+        },
+        |witness| {
+            if witness.operation() == id.operation()
+                && witness.disposition() == OperatorMembershipDisposition::Member
+            {
+                RelationStatus::Passed
+            } else {
+                RelationStatus::Failed {
+                    reason: RelationFailure::OperatorMembership,
+                }
+            }
+        },
+    )
 }
 
 #[allow(clippy::unnecessary_wraps)]

@@ -57,10 +57,29 @@ pub use domain::{
 };
 pub use error::{ArchitectureMismatchField, RealizationError};
 #[cfg(test)]
-#[allow(unused_imports)]
-pub(crate) use evaluate::evaluate_operation;
+pub(crate) fn evaluate_operation(
+    relation_graph: &petgraph::graph::DiGraph<RelationDeclaration, RelationEdge, u32>,
+    relation_node_by_id: &std::collections::BTreeMap<RelationId, petgraph::graph::NodeIndex<u32>>,
+    relation_evaluation_order: &[RelationId],
+    expression_graph: &petgraph::graph::DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+    expression_node_by_id: &std::collections::BTreeMap<ExprId, petgraph::graph::NodeIndex<u32>>,
+    expression_evaluation_order: &[ExprId],
+    observation: &OperationObservation,
+) -> Result<ConformanceReport, RealizationError> {
+    evaluate::evaluate_operation(
+        relation_graph,
+        relation_node_by_id,
+        relation_evaluation_order,
+        expression_graph,
+        expression_node_by_id,
+        expression_evaluation_order,
+        observation,
+        None,
+    )
+}
 pub use evaluate::{
-    ConformanceReport, ExternalEvidenceRequirement, RelationFailure, RelationStatus,
+    ConformanceReport, EmptyOperatorMembershipProvenance, ExternalEvidenceRequirement,
+    ObservedOperatorMembership, OperatorMembershipDisposition, RelationFailure, RelationStatus,
     RelationVerdict,
 };
 pub use expression::{

@@ -1,4 +1,4 @@
-//! Operator authorization remains an explicit external premise.
+//! Operator authorization requires an explicit membership decision.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -7,8 +7,9 @@ use petgraph::graph::DiGraph;
 
 use crate::{
     ConstructibilityClass, ExternalEvidenceRequirement, ObservedCanonicalPartition,
-    OperationObservation, OwnerId, RealizationError, Relation, RelationDeclaration, RelationId,
-    RelationKind, RelationStatus, RelationSubject, TransactionSide,
+    ObservedOperatorMembership, OperationObservation, OperatorMembershipDisposition, OwnerId,
+    RealizationError, Relation, RelationDeclaration, RelationId, RelationKind, RelationStatus,
+    RelationSubject, TransactionSide,
 };
 
 fn declaration(kind: RelationKind, relation: Relation) -> RelationDeclaration {
@@ -23,11 +24,8 @@ fn declaration(kind: RelationKind, relation: Relation) -> RelationDeclaration {
     }
 }
 
-fn assert_operator_evidence(relation: Relation, kind: RelationKind, signed: bool) {
-    let declaration = declaration(kind, relation);
-    let id = declaration.id.clone();
-    let (graph, nodes, order) = crate::relation::build_relation_graph([declaration], []).unwrap();
-    let observation = OperationObservation {
+fn operator_observation(signed: bool) -> OperationObservation {
+    OperationObservation {
         operation: OperationId::AnnounceMaturity,
         objects: Vec::new(),
         protocol_signers: if signed {
@@ -44,7 +42,14 @@ fn assert_operator_evidence(relation: Relation, kind: RelationKind, signed: bool
         root_effects: Vec::new(),
         projections: BTreeSet::new(),
         bounds: BTreeMap::new(),
-    };
+    }
+}
+
+fn assert_operator_evidence(relation: Relation, kind: RelationKind, signed: bool) {
+    let declaration = declaration(kind, relation);
+    let id = declaration.id.clone();
+    let (graph, nodes, order) = crate::relation::build_relation_graph([declaration], []).unwrap();
+    let observation = operator_observation(signed);
     let report = crate::evaluate::evaluate_operation(
         &graph,
         &nodes,
@@ -53,6 +58,7 @@ fn assert_operator_evidence(relation: Relation, kind: RelationKind, signed: bool
         &BTreeMap::new(),
         &[],
         &observation,
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -104,6 +110,165 @@ fn operator_constructibility_with_signers_requires_evidence() {
         RelationKind::Constructibility,
         true,
     );
+}
+
+fn operator_realization() -> crate::ScopedRealizationSpec {
+    let mut realization = super::announce_maturity_tests::realization();
+    let relations = [
+        declaration(RelationKind::Authorization, Relation::OperatorAuthorization),
+        declaration(
+            RelationKind::Constructibility,
+            Relation::Constructibility {
+                class: ConstructibilityClass::Operator,
+            },
+        ),
+    ];
+    (
+        realization.relation_graph,
+        realization.relation_node_by_id,
+        realization.relation_evaluation_order,
+    ) = crate::relation::build_relation_graph(relations, []).unwrap();
+    realization
+}
+
+fn membership(
+    operation: OperationId,
+    disposition: OperatorMembershipDisposition,
+) -> ObservedOperatorMembership {
+    ObservedOperatorMembership::new(operation, disposition, "conformance adapter run 7").unwrap()
+}
+
+fn assert_operator_status(report: &crate::ConformanceReport, status: &RelationStatus) {
+    assert_eq!(report.verdicts.len(), 2);
+    for kind in [RelationKind::Authorization, RelationKind::Constructibility] {
+        let id = RelationId::new(
+            OperationId::AnnounceMaturity,
+            kind,
+            RelationSubject::Operation,
+        );
+        assert_eq!(&report.verdict(&id).unwrap().status, status);
+    }
+}
+
+#[test]
+fn member_witness_completes_both_operator_relations() {
+    let witness = membership(
+        OperationId::AnnounceMaturity,
+        OperatorMembershipDisposition::Member,
+    );
+    for signed in [false, true] {
+        let report = operator_realization()
+            .evaluate_operation_with_operator_membership(&operator_observation(signed), &witness)
+            .unwrap();
+        assert_operator_status(&report, &RelationStatus::Passed);
+        assert!(report.is_conformant());
+        assert!(report.is_evidence_complete());
+        assert!(!report.has_semantic_failure());
+        assert!(report.required_external_evidence().next().is_none());
+    }
+}
+
+fn assert_membership_failure(witness: &ObservedOperatorMembership) {
+    for signed in [false, true] {
+        let report = operator_realization()
+            .evaluate_operation_with_operator_membership(&operator_observation(signed), witness)
+            .unwrap();
+        assert_operator_status(
+            &report,
+            &RelationStatus::Failed {
+                reason: crate::RelationFailure::OperatorMembership,
+            },
+        );
+        assert!(!report.is_conformant());
+        assert!(report.has_semantic_failure());
+        assert!(report.is_evidence_complete());
+        assert!(report.required_external_evidence().next().is_none());
+    }
+}
+
+#[test]
+fn non_member_witness_fails_both_operator_relations() {
+    assert_membership_failure(&membership(
+        OperationId::AnnounceMaturity,
+        OperatorMembershipDisposition::NonMember,
+    ));
+}
+
+#[test]
+fn other_operation_witness_fails_for_both_dispositions() {
+    for disposition in [
+        OperatorMembershipDisposition::Member,
+        OperatorMembershipDisposition::NonMember,
+    ] {
+        assert_membership_failure(&membership(OperationId::Cycle, disposition));
+    }
+}
+
+#[test]
+fn empty_membership_provenance_is_refused() {
+    assert_eq!(
+        ObservedOperatorMembership::new(
+            OperationId::AnnounceMaturity,
+            OperatorMembershipDisposition::Member,
+            "",
+        ),
+        Err(crate::EmptyOperatorMembershipProvenance),
+    );
+}
+
+#[test]
+fn whitespace_membership_provenance_is_refused() {
+    assert_eq!(
+        ObservedOperatorMembership::new(
+            OperationId::AnnounceMaturity,
+            OperatorMembershipDisposition::NonMember,
+            " \t\n",
+        ),
+        Err(crate::EmptyOperatorMembershipProvenance),
+    );
+}
+
+#[test]
+fn membership_accessors_preserve_the_supplied_decision() {
+    for disposition in [
+        OperatorMembershipDisposition::Member,
+        OperatorMembershipDisposition::NonMember,
+    ] {
+        let witness = membership(OperationId::AnnounceMaturity, disposition);
+        assert_eq!(witness.operation(), OperationId::AnnounceMaturity);
+        assert_eq!(witness.disposition(), disposition);
+        assert_eq!(witness.provenance(), "conformance adapter run 7");
+        assert_eq!(witness.clone(), witness);
+    }
+}
+
+#[test]
+fn witness_free_public_evaluation_keeps_both_external_requirements() {
+    let realization = operator_realization();
+    let observation = operator_observation(true);
+    let witness = membership(
+        OperationId::AnnounceMaturity,
+        OperatorMembershipDisposition::Member,
+    );
+    assert!(
+        realization
+            .evaluate_operation_with_operator_membership(&observation, &witness)
+            .unwrap()
+            .is_evidence_complete()
+    );
+    let report = realization.evaluate_operation(&observation).unwrap();
+    assert_operator_status(
+        &report,
+        &RelationStatus::EvidenceRequired {
+            requirement: ExternalEvidenceRequirement::OperatorAuthorization {
+                operation: OperationId::AnnounceMaturity,
+            },
+        },
+    );
+    assert!(report.is_conformant());
+    assert!(!report.is_evidence_complete());
+    assert!(!report.has_semantic_failure());
+    assert_eq!(report.required_external_evidence().count(), 2);
 }
 
 #[test]

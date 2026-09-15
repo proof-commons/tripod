@@ -193,6 +193,35 @@ impl ScopedRealizationSpec {
             &self.expression_node_by_id,
             &self.expression_evaluation_order,
             observation,
+            None,
+        )
+    }
+
+    /// Evaluate an observation with a supplied operator-membership decision.
+    ///
+    /// The authorization producer owns verification and mapping to the model's
+    /// abstract operator; the observation adapter owns binding to finalized bytes.
+    /// This evaluator consumes their outcome without operator identity or key
+    /// material. Constructing a witness does not establish either upstream claim.
+    /// Without a witness, [`Self::evaluate_operation`] retains external evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same observation or evaluation errors as [`Self::evaluate_operation`].
+    pub fn evaluate_operation_with_operator_membership(
+        &self,
+        observation: &OperationObservation,
+        operator_membership: &crate::ObservedOperatorMembership,
+    ) -> Result<crate::ConformanceReport, RealizationError> {
+        crate::evaluate::evaluate_operation(
+            &self.relation_graph,
+            &self.relation_node_by_id,
+            &self.relation_evaluation_order,
+            &self.expression_graph,
+            &self.expression_node_by_id,
+            &self.expression_evaluation_order,
+            observation,
+            Some(operator_membership),
         )
     }
 
