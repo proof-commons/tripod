@@ -50,6 +50,7 @@ vectors_source_files = files(
   'src/live_sponsored_private.rs',
   'src/materialize.rs',
   'src/matrix.rs',
+  'src/maturity_operator.rs',
   'src/mutation.rs',
   'src/observed_boundary.rs',
   'src/operation.rs',
@@ -240,6 +241,8 @@ vectors_fixture_files = files(
 # subjects. The census audit accepts the exclusion only because it is
 # declared here.
 vectors_excluded_files = vectors_fixture_files + files(
+  'tests/common/legacy.rs',
+  'tests/common/mod.rs',
   'tests/compact_ash_operation.rs',
   'tests/ctf_materializer.rs',
   'tests/guide13_live_native.rs',
@@ -247,5 +250,6 @@ vectors_excluded_files = vectors_fixture_files + files(
   'tests/guide13_live_transfer.rs',
   'tests/guide13_preflight.rs',
   'tests/guide13_sponsor_signing.rs',
+  'tests/maturity_operator.rs',
   'tests/sighash_verdict.rs',
 )

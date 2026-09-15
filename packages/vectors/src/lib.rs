@@ -47,6 +47,7 @@ pub mod live_sponsored_owner_signing_negatives;
 pub mod live_sponsored_private;
 pub mod materialize;
 pub mod matrix;
+pub mod maturity_operator;
 pub mod mutation;
 mod observed_boundary;
 pub mod operation;
