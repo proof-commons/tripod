@@ -50,6 +50,7 @@ Allowed direct dependencies:
 
 ```text
 compiler
+realization
 target-elements
 ```
 
@@ -67,6 +68,8 @@ artifacts
 
 Use compiler-carried architecture/realization IDs rather than bypassing
 analysis through new direct dependencies.
+
+The candidate STATE constructor commits the canonical STATE metadata bytes that only realization's codec produces and no compiler projection carries, so the constructor consumes `EncodedStateMetadata` directly, while the assessment path keeps consuming compiler-carried architecture and realization identifiers and the reach-around prohibition above stands for it (ruling 22 at (`rule:phase6:wave4-rulings`)).
 
 ## Typed inputs · `sec:tapscript:inputs`
 
