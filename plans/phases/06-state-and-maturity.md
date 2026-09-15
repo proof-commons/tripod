@@ -242,6 +242,12 @@ The model remains the semantic ground truth: its abstract operator membership ch
 
 The nine planned bites are exact assessment (`T11-024`), operator encoding and profile (`T11-025`), candidate deployment binding (`T11-026`), generic census and operator handoff (`T11-027`), atomic native protocol and public signer (`T11-028`), adversarial response boundary (`T11-029`), affine right and non-equivocation (`T11-030`), synthetic operator/native evidence (`T11-031`), and closure and handoff (`T11-032`); only `T11-024` needed no decision at the opening boundary.
 
+14. The gate of record in `scripts/ci.sh` has no rustdoc lane, so private and unresolved intra-doc links survived green gates until warnings-as-errors documentation gates exposed and repaired three in `packages/target-elements-conformance/src/protocol.rs`, `packages/vectors/src/live_evidence.rs`, and `packages/vectors/src/live_private_restart.rs`; adding a workspace rustdoc lane under warnings as errors belongs to the closure sweep (`T11-032`).
+
+15. The Elements functional-test framework's transaction decoder leaves witness vectors empty when finalized bytes omit the witness section, while the consensus message hashes the witness census at every input and output position; `scripts/elements-native-executor.py` completes the in-memory census before hashing and echoes the original bytes, so confirming that message equals the target's belongs to the native evidence sweep (`T11-031`).
+
+16. The genesis that `scripts/elements-native-executor.py` hashes is the observed session genesis read little-endian into the framework's integer serializer, preserving the octets that `packages/transaction/src/script_path_signing.rs` appends; equality is asserted only against a stub framework, so the native capture must confirm it together with the grown-vector member selected by `packages/transaction/src/operator_signing.rs` (`T11-031`).
+
 ### Handed up for a ruling, Wave 3 · `rem:phase6:wave3-questions`
 
 1. Ruling 16 at (`rule:phase6:wave3-rulings`) assigns the operator profile and deployment binding while keeping semantic requests free of deployment identity; this item is discharged.
