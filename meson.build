@@ -838,6 +838,28 @@ test(
   timeout: 60,
 )
 
+# Workspace API documentation must resolve its links without warnings; the
+# package test lanes exercise doctests but do not build these pages.
+# Budget: 1:10.57 first run on the shared server cache, tolerance 1.5x.
+# Measured 2026-09-15; the warm repeat took 0:00.26. A fully cold cache
+# has not been measured.
+# The test warm-up does not build documentation. Run this lane alone so
+# cargo's shared target-directory lock does not turn its wall into queueing.
+# Meson measures the complete invocation, including any documentation build.
+cargo_doc_gate = find_program('scripts/cargo-doc-gate.sh')
+test(
+  'cargo-doc-workspace',
+  cargo_doc_gate,
+  args: [
+    cargo.full_path(),
+    cargo_manifest,
+    'debug',
+  ],
+  suite: 'documentation',
+  timeout: 1800,
+  is_parallel: false,
+)
+
 # Budget: 0:05, tolerance 0:20. The label graph is the largest census slice.
 test(
   'labels-check',
