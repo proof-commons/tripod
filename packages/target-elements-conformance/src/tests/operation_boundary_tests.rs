@@ -1003,6 +1003,10 @@ fn assert_signing_refusal(
     );
     assert_eq!(capture.operations().len(), 1);
     assert!(capture.operations()[0].response().is_none());
+    assert_eq!(
+        capture.operations()[0].request().subject,
+        OperationSubject::ScriptPathSigning(Box::new(super::protocol_tests::script_path_subject()))
+    );
     assert_eq!(plan.seen, []);
 }
 
@@ -1128,4 +1132,130 @@ fn a_script_path_refusal_yields_no_signing_artifact() {
     assert_eq!(recorded.signing_genesis, None);
     assert_eq!(recorded.signature_bound_to, None);
     assert_eq!(plan.seen.len(), 1);
+}
+
+#[test]
+fn script_path_binding_sweep_journals_every_mutated_byte() {
+    let other_key = crate::test_material::PublicTestSignerHandle::Third
+        .x_only_public_key()
+        .expect("published key");
+    let mut extended_echo = super::protocol_tests::script_path_subject().finalized_transaction;
+    extended_echo.push(0);
+    for (response, defect) in super::protocol_tests::script_path_binding_mutations() {
+        // Dedicated tests already pin these two executor mutations.
+        if response.signer_public_key == Some(other_key)
+            || response.signature_bound_to.as_ref() == Some(&extended_echo)
+        {
+            continue;
+        }
+        if let Some(expected) = defect {
+            assert_signing_refusal(&response, expected);
+        } else {
+            let (outcome, capture, plan) = signing_capture(&response);
+            assert!(outcome.is_ok());
+            assert_eq!(capture.response_defect(), None);
+            assert_eq!(plan.seen.len(), 1);
+        }
+    }
+}
+
+#[test]
+fn script_path_binding_order_keeps_the_first_representable_mismatch() {
+    use crate::protocol::ResponseShapeDefect;
+    for (first, second, expected) in [
+        (
+            "signing_genesis",
+            "signer_public_key",
+            ResponseShapeDefect::ScriptPathGenesisMismatch,
+        ),
+        (
+            "signer_public_key",
+            "signature_bound_to",
+            ResponseShapeDefect::ScriptPathSignerMismatch,
+        ),
+    ] {
+        let mut value =
+            serde_json::to_value(super::protocol_tests::script_path_response()).expect("response");
+        value[first] = serde_json::json!(vec![0; 32]);
+        value[second] = serde_json::json!(vec![0; 32]);
+        let response = serde_json::from_value(value).expect("same-width bindings");
+        assert_signing_refusal(&response, expected);
+    }
+}
+
+#[test]
+fn script_path_shape_defects_precede_genesis_binding_and_leave_no_answer() {
+    use crate::protocol::ResponseShapeDefect;
+    let mut positive = super::protocol_tests::script_path_response();
+    positive.signing_genesis = Some([0; 32]);
+    for witness in [
+        vec![],
+        vec![vec![]],
+        vec![vec![1]],
+        vec![vec![1; 63]],
+        vec![vec![1; 64]; 2],
+        vec![vec![1; 64], vec![]],
+    ] {
+        let response = NativeOperationResponse {
+            script_path_witness: witness,
+            ..positive.clone()
+        };
+        assert_signing_refusal(&response, ResponseShapeDefect::ScriptPathWitnessMalformed);
+    }
+    for member in [
+        "signer_public_key",
+        "signed_profile",
+        "signature_bound_to",
+        "signing_genesis",
+    ] {
+        let mut value = serde_json::to_value(&positive).expect("response");
+        value[member] = serde_json::Value::Null;
+        assert_signing_refusal(
+            &serde_json::from_value(value).expect("nullable member"),
+            ResponseShapeDefect::AcceptedOperationOmitsObservation,
+        );
+    }
+    let response = NativeOperationResponse {
+        issued_asset: Some("asset".to_owned()),
+        ..positive
+    };
+    assert_signing_refusal(
+        &response,
+        ResponseShapeDefect::OperationResponseMismatchesStep,
+    );
+}
+
+#[test]
+fn script_path_refusal_with_signing_data_is_a_journaled_shape_defect() {
+    use crate::protocol::ResponseShapeDefect;
+    let signed = super::protocol_tests::script_path_response();
+    for layer in [
+        ObservedOutcomeLayer::ScriptPathRejection,
+        ObservedOutcomeLayer::ExecutorInfrastructureFailure,
+    ] {
+        let mut empty = signed.clone();
+        empty.observed_layer = layer;
+        empty.script_path_witness.clear();
+        empty.signer_public_key = None;
+        empty.signed_profile = None;
+        empty.signing_genesis = None;
+        empty.signature_bound_to = None;
+        let source = serde_json::to_value(&signed).expect("response");
+        for member in [
+            "script_path_witness",
+            "signer_public_key",
+            "signed_profile",
+            "signing_genesis",
+            "signature_bound_to",
+        ] {
+            let mut value = serde_json::to_value(&empty).expect("response");
+            value[member] = source[member].clone();
+            let expected = if layer == ObservedOutcomeLayer::ScriptPathRejection {
+                ResponseShapeDefect::RefusedOperationCarriesObservation
+            } else {
+                ResponseShapeDefect::InfrastructureResponseCarriesObservation
+            };
+            assert_signing_refusal(&serde_json::from_value(value).expect("member"), expected);
+        }
+    }
 }

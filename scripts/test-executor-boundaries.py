@@ -1011,7 +1011,7 @@ def sign_schnorr(key, msg, aux=None):
     assert len(tx.wit.vtxinwit) == 2 and len(tx.wit.vtxoutwit) == len(tx.vout) == 1
     assert scriptpath and leaf_script == bytes([172]) and leaf_ver == 196
     assert codeseparator_pos == -1 and annex is None
-    assert spent[0].scriptPubKey == bytes([81]) and spent[1].scriptPubKey == bytes([82])
+    assert spent[0].scriptPubKey in (bytes([81]), b"") and spent[1].scriptPubKey == bytes([82])
     assert spent[0].nAsset.vchCommitment == bytes([1]) * 33
     assert spent[1].nValue.vchCommitment == bytes([8]) * 33
     return genesis_hash.to_bytes(32, "little")
@@ -1036,8 +1036,20 @@ def signing_subject():
             "sighash_profile": "all_inputs_all_outputs", "signer": "first"}
 
 
-def signing_run(subject, available=True):
+def signing_run(subject, available=True, signer_mutation=None):
     fixture = signing_fixture(available)
+    if signer_mutation:
+        path = os.path.join(fixture.framework, "test_framework", "key.py")
+        with open(path, encoding="utf-8") as source:
+            stub = source.read()
+        before, after = {
+            "short_signature": ("return msg + key", "return (msg + key)[:63]"),
+            "long_signature": ("return msg + key", "return msg + key + bytes(1)"),
+            "short_key": ("bytes([7]) * 32", "bytes([7]) * 31"),
+        }[signer_mutation]
+        assert before in stub
+        with open(path, "w", encoding="utf-8") as output:
+            output.write(stub.replace(before, after))
     request = {"schema": SCHEMA, "case": {"operation": "sign_script_path", "step": "sign-leaf"},
                "subject": subject}
     run = drive(fixture, handshake() + (json.dumps(request) + "\n").encode())
@@ -1045,8 +1057,8 @@ def signing_run(subject, available=True):
     return fixture, run, records
 
 
-def check_signing_refusal(failures, subject, expected, available=True):
-    fixture, run, records = signing_run(subject, available)
+def check_signing_refusal(failures, subject, expected, available=True, signer_mutation=None):
+    fixture, run, records = signing_run(subject, available, signer_mutation)
     try:
         failures.equal(run.status, 0, "a typed signing refusal completes the exchange")
         failures.equal(run.stderr, b"", "signing refusal writes no stderr")
@@ -1143,7 +1155,141 @@ def test_script_path_signing_is_deterministic_at_the_framework_seam(failures):
     return 3
 
 
+def test_signing_asset_and_value_encodings(failures):
+    count = 0
+    for member, widths in (("asset_field", (0, 32, 34)), ("value_field", (0, 8, 10))):
+        for width in widths:
+            subject = signing_subject()
+            subject["spent_outputs"][0][member] = [1] * width
+            count += check_signing_refusal(failures, subject,
+                                          "spent-output " + member.split("_")[0] + " field has an invalid encoding")
+    for member in ("asset_field", "value_field"):
+        subject = signing_subject()
+        subject["spent_outputs"][0][member][0] = 2
+        count += check_signing_refusal(failures, subject,
+                                      "spent-output " + member.split("_")[0] + " field has an invalid encoding")
+    return count
+
+
+def test_signing_control_block_widths(failures):
+    count = 0
+    for width in (0, 32, 34, 33 + 32 * 129):
+        subject = signing_subject()
+        subject["executing_leaf"]["control_block"] = [196] * width
+        count += check_signing_refusal(failures, subject, "control block has an invalid width")
+    return count
+
+
+def test_signing_leaf_version_edges(failures):
+    count = 0
+    for version in (-1, 197, 256):
+        subject = signing_subject()
+        subject["executing_leaf"]["leaf_version"] = version
+        count += check_signing_refusal(failures, subject, "executing leaf version is not an even byte")
+    return count
+
+
+def test_signing_input_integer_edges(failures):
+    count = 0
+    for index in (-1, 0x100000000):
+        subject = signing_subject()
+        subject["input_index"] = index
+        count += check_signing_refusal(failures, subject, "request.subject.input_index is not a u32")
+    return count
+
+
+def test_signing_nested_extra_members(failures):
+    count = 0
+    for path, expected in (
+        (("spent_outputs", 0), "unknown field: request.subject.spent_outputs[].extra"),
+        (("executing_leaf",), "unknown field: request.subject.executing_leaf.extra"),
+    ):
+        subject = signing_subject()
+        nested = subject
+        for member in path:
+            nested = nested[member]
+        nested["extra"] = 1
+        count += check_signing_refusal(failures, subject, expected)
+    return count
+
+
+def test_signing_missing_members_one_at_a_time(failures):
+    count = 0
+    for path, prefix in (
+        ((), "request.subject"),
+        (("spent_outputs", 0), "request.subject.spent_outputs[]"),
+        (("executing_leaf",), "request.subject.executing_leaf"),
+    ):
+        original = signing_subject()
+        nested = original
+        for member in path:
+            nested = nested[member]
+        for missing in nested:
+            subject = signing_subject()
+            changed = subject
+            for member in path:
+                changed = changed[member]
+            del changed[missing]
+            count += check_signing_refusal(failures, subject, "missing field: " + prefix + "." + missing)
+    return count
+
+
+def test_signing_wrong_member_kinds(failures):
+    count = 0
+    for path in (
+        ("finalized_transaction",), ("input_index",), ("spent_outputs",),
+        ("executing_leaf",), ("sighash_profile",), ("signer",),
+        ("spent_outputs", 0, "asset_field"), ("spent_outputs", 0, "value_field"),
+        ("spent_outputs", 0, "program"), ("executing_leaf", "leaf_version"),
+        ("executing_leaf", "script"), ("executing_leaf", "control_block"),
+    ):
+        subject = signing_subject()
+        nested = subject
+        for member in path[:-1]:
+            nested = nested[member]
+        nested[path[-1]] = False
+        field = "request.subject." + ".".join(str(member) for member in path)
+        field = field.replace(".0.", "[].")
+        count += check_signing_refusal(failures, subject, field)
+    return count
+
+
+def test_signing_empty_program_remains_admissible(failures):
+    subject = signing_subject()
+    subject["spent_outputs"][0]["program"] = []
+    fixture, run, records = signing_run(subject)
+    try:
+        failures.equal(run.status, 0, "empty spent program is a valid census field")
+        failures.equal(run.stderr, b"", "acceptance writes no stderr")
+        failures.equal(len(records), 3, "handshake, environment, acceptance")
+        if len(records) == 3:
+            failures.equal(records[2]["observed_layer"], "accepted", "empty program is admissible")
+            failures.equal(len(records[2]["script_path_witness"][0]), 64, "acceptance has a signature")
+            failures.equal(records[2]["signature_bound_to"], subject["finalized_transaction"], "exact echo")
+        return 6
+    finally:
+        fixture.close()
+
+
+def test_signing_malformed_framework_results(failures):
+    count = 0
+    for mutation in ("short_signature", "long_signature", "short_key"):
+        count += check_signing_refusal(failures, signing_subject(),
+                                      "framework produced an invalid script-path signing result",
+                                      signer_mutation=mutation)
+    return count
+
+
 TESTS = (
+    ("signing asset and value encodings", test_signing_asset_and_value_encodings),
+    ("signing control block widths", test_signing_control_block_widths),
+    ("signing leaf version edges", test_signing_leaf_version_edges),
+    ("signing input integer edges", test_signing_input_integer_edges),
+    ("signing nested extra members", test_signing_nested_extra_members),
+    ("signing missing members one at a time", test_signing_missing_members_one_at_a_time),
+    ("signing wrong member kinds", test_signing_wrong_member_kinds),
+    ("signing empty program remains admissible", test_signing_empty_program_remains_admissible),
+    ("signing malformed framework results", test_signing_malformed_framework_results),
     ("script path capability requires genesis aware framework", test_script_path_capability_requires_genesis_aware_framework),
     ("old framework refuses script path step", test_old_framework_refuses_script_path_step),
     ("script path secret and digest members are framing refusals", test_script_path_secret_and_digest_members_are_framing_refusals),

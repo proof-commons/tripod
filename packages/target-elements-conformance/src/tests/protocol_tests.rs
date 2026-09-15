@@ -1983,11 +1983,16 @@ fn script_path_refusals_carry_no_success_observations() {
         ] {
             let mut value = serde_json::to_value(&empty).expect("response serializes");
             value[name] = signed[name].clone();
-            assert!(
+            let expected = if layer.is_target_verdict() {
+                ResponseShapeDefect::RefusedOperationCarriesObservation
+            } else {
+                ResponseShapeDefect::InfrastructureResponseCarriesObservation
+            };
+            assert_eq!(
                 serde_json::from_value::<NativeOperationResponse>(value)
                     .expect("member reads")
-                    .validate_shape()
-                    .is_err(),
+                    .validate_shape(),
+                Err(expected),
                 "{layer:?}: {name}"
             );
         }
@@ -2077,4 +2082,341 @@ fn adapter_schema_and_committed_signer_scalars_match_rust() {
 #[test]
 fn the_historical_revision_seven_corpus_still_uses_its_own_parser() {
     vectors::run_of_record().expect("the immutable revision-seven corpus still validates");
+}
+
+pub(super) fn script_path_binding_mutations()
+-> Vec<(NativeOperationResponse, Option<ResponseShapeDefect>)> {
+    let positive = script_path_response();
+    let mut rows = vec![(positive.clone(), None)];
+    for member in ["key", "genesis"] {
+        for mutation in ["zero", "first", "middle", "last", "other"] {
+            let mut response = positive.clone();
+            let bytes = if member == "key" {
+                response.signer_public_key.as_mut().expect("key")
+            } else {
+                response.signing_genesis.as_mut().expect("genesis")
+            };
+            match mutation {
+                "zero" => *bytes = [0; 32],
+                "first" => bytes[0] ^= 1,
+                "middle" => bytes[16] ^= 1,
+                "last" => bytes[31] ^= 1,
+                _ => {
+                    *bytes = crate::test_material::PublicTestSignerHandle::Third
+                        .x_only_public_key()
+                        .expect("other published key");
+                }
+            }
+            rows.push((
+                response,
+                Some(if member == "key" {
+                    ResponseShapeDefect::ScriptPathSignerMismatch
+                } else {
+                    ResponseShapeDefect::ScriptPathGenesisMismatch
+                }),
+            ));
+        }
+    }
+    for mutation in ["empty", "long", "short", "first", "middle", "last"] {
+        let mut response = positive.clone();
+        let echo = response.signature_bound_to.as_mut().expect("echo");
+        match mutation {
+            "empty" => echo.clear(),
+            "long" => echo.push(0),
+            "short" => {
+                echo.pop();
+            }
+            "first" => echo[0] ^= 1,
+            "middle" => echo[1] ^= 1,
+            _ => echo[2] ^= 1,
+        }
+        rows.push((
+            response,
+            Some(ResponseShapeDefect::ScriptPathTransactionMismatch),
+        ));
+    }
+    rows
+}
+
+#[test]
+fn signing_binding_bytes_are_shape_valid_but_not_interchangeable() {
+    let rows = script_path_binding_mutations();
+    assert_eq!(rows.len(), 17);
+    for (response, _) in rows {
+        assert_eq!(response.validate_shape(), Ok(()));
+    }
+}
+
+#[test]
+fn signing_witness_sweep_extends_the_existing_width_census() {
+    let positive = script_path_response();
+    for (witness, verdict) in [
+        (positive.script_path_witness.clone(), Ok(())),
+        (
+            vec![vec![1]],
+            Err(ResponseShapeDefect::ScriptPathWitnessMalformed),
+        ),
+        (
+            vec![vec![1; 64], vec![]],
+            Err(ResponseShapeDefect::ScriptPathWitnessMalformed),
+        ),
+    ] {
+        assert_eq!(
+            NativeOperationResponse {
+                script_path_witness: witness,
+                ..positive.clone()
+            }
+            .validate_shape(),
+            verdict
+        );
+    }
+    for position in [0, 32, 63] {
+        let mut response = positive.clone();
+        response.script_path_witness[0][position] ^= 1;
+        assert_eq!(response.validate_shape(), Ok(()));
+    }
+}
+
+#[test]
+fn signing_fixed_width_members_fail_at_deserialization() {
+    for member in ["signer_public_key", "signing_genesis"] {
+        for width in [0, 31, 33] {
+            let mut value = serde_json::to_value(script_path_response()).expect("response");
+            value[member] = serde_json::json!(vec![1; width]);
+            assert!(
+                serde_json::from_value::<NativeOperationResponse>(value).is_err(),
+                "{member}/{width}"
+            );
+        }
+    }
+}
+
+fn foreign_signing_observations() -> Vec<(&'static str, serde_json::Value)> {
+    vec![
+        ("issued_asset", serde_json::json!("asset")),
+        (
+            "funded_outputs",
+            serde_json::json!([{
+                "outpoint": {"txid": "coin", "vout": 0},
+                "asset": "asset", "amount_satoshis": 1, "script": "51"
+            }]),
+        ),
+        ("accepted_txid", serde_json::json!("txid")),
+        (
+            "mined_readback",
+            serde_json::json!({
+                "transaction_id": "txid", "witness_transaction_id": "wtxid",
+                "block_hash": "block", "block_height": 1, "raw_transaction": [2]
+            }),
+        ),
+        ("sponsor_witness", serde_json::json!([[1]])),
+        (
+            "confidential_funded_outputs",
+            serde_json::json!([{
+                "outpoint": {"txid": "coin", "vout": 0}, "explicit_asset": "asset",
+                "value_commitment": [8], "nonce": [2], "script": "51",
+                "output_witness_index": 0, "surjection_proof": [], "rangeproof": [1]
+            }]),
+        ),
+    ]
+}
+
+#[test]
+fn every_script_path_refusal_layer_rejects_foreign_success_data() {
+    let mut rows = 0;
+    for layer in [
+        ObservedOutcomeLayer::ExecutorInfrastructureFailure,
+        ObservedOutcomeLayer::FixtureConstructionFailure,
+        ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+        ObservedOutcomeLayer::ScriptPathRejection,
+        ObservedOutcomeLayer::KeyPathRejection,
+        ObservedOutcomeLayer::RelayPolicyRejection,
+    ] {
+        let mut empty = operation_response(layer);
+        empty.case.operation = OperationStepKind::SignScriptPath;
+        for (member, data) in foreign_signing_observations() {
+            let mut value = serde_json::to_value(&empty).expect("response");
+            value[member] = data;
+            let response: NativeOperationResponse = serde_json::from_value(value).expect("member");
+            let expected = if layer.is_target_verdict() {
+                ResponseShapeDefect::OperationResponseMismatchesStep
+            } else {
+                ResponseShapeDefect::InfrastructureResponseCarriesObservation
+            };
+            assert_eq!(
+                response.validate_shape(),
+                Err(expected),
+                "{layer:?}/{member}"
+            );
+            rows += 1;
+        }
+    }
+    assert_eq!(rows, 36);
+}
+
+#[test]
+fn signing_acceptance_rejects_funding_and_readback_data() {
+    for (member, data) in foreign_signing_observations() {
+        if ![
+            "funded_outputs",
+            "mined_readback",
+            "confidential_funded_outputs",
+        ]
+        .contains(&member)
+        {
+            continue;
+        }
+        let mut value = serde_json::to_value(script_path_response()).expect("response");
+        value[member] = data;
+        let response: NativeOperationResponse = serde_json::from_value(value).expect("member");
+        assert_eq!(
+            response.validate_shape(),
+            Err(ResponseShapeDefect::OperationResponseMismatchesStep),
+            "{member}"
+        );
+    }
+}
+
+#[test]
+fn signing_subject_wrong_kinds_and_integer_edges_fail_deserialization() {
+    let original = serde_json::to_value(script_path_subject()).expect("subject");
+    for pointer in [
+        "/finalized_transaction",
+        "/input_index",
+        "/spent_outputs",
+        "/executing_leaf",
+        "/sighash_profile",
+        "/signer",
+        "/spent_outputs/0/asset_field",
+        "/spent_outputs/0/value_field",
+        "/spent_outputs/0/program",
+        "/executing_leaf/leaf_version",
+        "/executing_leaf/script",
+        "/executing_leaf/control_block",
+    ] {
+        let mut value = original.clone();
+        *value.pointer_mut(pointer).expect("member") = serde_json::json!(false);
+        assert!(
+            serde_json::from_value::<crate::protocol::TargetScriptPathSigningSubject>(value)
+                .is_err(),
+            "{pointer}"
+        );
+    }
+    for index in [
+        serde_json::json!(-1),
+        serde_json::json!(u64::from(u32::MAX) + 1),
+    ] {
+        let mut value = original.clone();
+        value["input_index"] = index;
+        assert!(
+            serde_json::from_value::<crate::protocol::TargetScriptPathSigningSubject>(value)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn signing_response_cannot_claim_its_own_evidence_standing() {
+    let positive = script_path_response();
+    assert_eq!(positive.validate_shape(), Ok(()));
+    let mut value = serde_json::to_value(positive).expect("response");
+    value["evidence_standing"] = serde_json::json!("native_verified");
+    let error = serde_json::from_value::<NativeOperationResponse>(value)
+        .expect_err("standing is derived by the consumer");
+    assert!(
+        error
+            .to_string()
+            .contains("unknown field `evidence_standing`")
+    );
+}
+
+#[test]
+fn canonical_report_refuses_caller_authored_wall_time() {
+    use super::support::{
+        development_binding, nonmock_handshake, observed_environment, reviewed_target, subjects_of,
+    };
+    use crate::executor::{ExecutionTranscript, ExecutorTrust, TranscriptParts};
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let fixtures = crate::fixture::canonical_fixture_set(&target, &binding).expect("fixtures");
+    let responses = (&fixtures)
+        .into_iter()
+        .map(|fixture| {
+            let answer = NativeExecutionResponse {
+                case: fixture.case(),
+                ..response(NativeVerdict::InfrastructureError, None, None)
+            };
+            (answer.case, answer)
+        })
+        .collect();
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::Mock,
+        requests: subjects_of(&fixtures),
+        responses,
+    });
+    let report = crate::validate::evaluate(
+        &target,
+        &binding,
+        &fixtures,
+        &transcript,
+        &crate::validate::guide_nine_evidence_plan().expect("plan"),
+        &crate::claim::claim_registry().expect("claims"),
+    )
+    .expect("infrastructure-only report");
+    let original = serde_json::to_value(report).expect("report");
+    assert!(
+        serde_json::from_value::<crate::report::NativeConformanceReport>(original.clone()).is_ok()
+    );
+    let mut value = original;
+    value["wall_time"] = serde_json::json!(1);
+    let error = serde_json::from_value::<crate::report::NativeConformanceReport>(value)
+        .expect_err("wall time is not canonical evidence");
+    assert!(error.to_string().contains("unknown field `wall_time`"));
+}
+
+#[test]
+fn conservation_ingestion_compares_observed_and_expected_layers() {
+    use crate::conservation::{ExpectedOutcomeLayer, canonical_conservation_matrix};
+    use crate::conservation_report::{RowVerdict, ingest_conservation_response};
+    let row = canonical_conservation_matrix()
+        .into_iter()
+        .find(|row| row.expected_layer == ExpectedOutcomeLayer::Accepted)
+        .expect("an accepted control row");
+    for (layer, verdict) in [
+        (ObservedOutcomeLayer::Accepted, RowVerdict::Agrees),
+        (
+            ObservedOutcomeLayer::ScriptPathRejection,
+            RowVerdict::Disagrees,
+        ),
+        (
+            ObservedOutcomeLayer::KeyPathRejection,
+            RowVerdict::Disagrees,
+        ),
+        (
+            ObservedOutcomeLayer::RelayPolicyRejection,
+            RowVerdict::Disagrees,
+        ),
+        (
+            ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+            RowVerdict::Disagrees,
+        ),
+        (
+            ObservedOutcomeLayer::FixtureConstructionFailure,
+            RowVerdict::NotTargetEvidence,
+        ),
+        (
+            ObservedOutcomeLayer::ExecutorInfrastructureFailure,
+            RowVerdict::NotTargetEvidence,
+        ),
+    ] {
+        let mut response = conservation_response(layer);
+        response.case = row.id.clone();
+        let outcome = ingest_conservation_response(&row, response).expect("valid response shape");
+        assert_eq!(outcome.verdict, verdict, "{layer:?}");
+        assert_eq!(outcome.observed_layer, Some(layer));
+    }
 }

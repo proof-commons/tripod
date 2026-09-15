@@ -32,9 +32,13 @@ const GENESIS: Digest32 = [0x21; 32];
 const VERIFIER_NAME: &str = "deterministic public-data test double; not Schnorr";
 
 fn operator_key(byte: u8) -> OperatorKey {
+    key_from_bytes(vec![byte; 32])
+}
+
+fn key_from_bytes(bytes: Vec<u8>) -> OperatorKey {
     let target = reviewed_target();
     let closure = operator_key_encoding_closure(target.definition().authorization());
-    OperatorKey::new(&closure, closure.approved(), vec![byte; 32])
+    OperatorKey::new(&closure, closure.approved(), bytes)
         .expect("public fixture bytes have the approved encoding")
 }
 
@@ -49,6 +53,10 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_operator(operator_key(0x33))
+    }
+
+    fn with_operator(operator: OperatorKey) -> Self {
         let target = reviewed_target();
         let internal = StackItem::encoded(
             &target,
@@ -60,7 +68,7 @@ impl Fixture {
             .expect("the selected profile is established");
         let binding = OperatorDeploymentBinding::bind(
             &target,
-            operator_key(0x33),
+            operator,
             profile,
             identity(0x11, GENESIS),
             &internal,
@@ -712,5 +720,350 @@ fn signature_under_another_key_does_not_pass_the_committed_identity_check() {
     assert_eq!(
         ScriptPathVerifierRejection::new("reason".to_owned()).reason(),
         "reason"
+    );
+}
+
+fn verify_refusal(request: &OperatorSigningRequest<'_>) -> OperatorSigningRefusal {
+    OperatorSigningRefusal::SignatureDoesNotVerifyForFrozenMessage {
+        input_index: request.input_index(),
+        message: *request.message().with_vector_grown(),
+        rejection: ScriptPathVerifierRejection::new("test function mismatch".to_owned()),
+    }
+}
+
+#[test]
+fn response_byte_mutations_reach_echo_or_verification() {
+    let fixture = Fixture::new();
+    let mut rows = 0;
+    for member in ["positive", "signature", "echo"] {
+        for mutation in ["empty", "short", "long", "first", "middle", "last"] {
+            // Empty and adjacent signature widths already have dedicated tests.
+            if (member == "positive" && mutation != "empty")
+                || (member == "signature" && ["empty", "short", "long"].contains(&mutation))
+            {
+                continue;
+            }
+            let request = fixture.freeze();
+            let mut parts = fixture.parts(&request);
+            let expected = match member {
+                "signature" => Some(verify_refusal(&request)),
+                "echo" => Some(OperatorSigningRefusal::BoundToOtherBytes { input_index: 0 }),
+                _ => None,
+            };
+            if member != "positive" {
+                let bytes = if member == "signature" {
+                    &mut parts.signature
+                } else {
+                    &mut parts.echo
+                };
+                let last = bytes.len() - 1;
+                let middle = bytes.len() / 2;
+                match mutation {
+                    "empty" => bytes.clear(),
+                    "short" => {
+                        bytes.pop();
+                    }
+                    "long" => bytes.push(0),
+                    "first" => bytes[0] ^= 1,
+                    "middle" => bytes[middle] ^= 1,
+                    "last" => bytes[last] ^= 1,
+                    _ => unreachable!(),
+                }
+            }
+            let verifier = TestVerifier::default();
+            let result = authorize_operator(request, [parts.response()], &verifier);
+            assert_eq!(result.err(), expected, "{member}/{mutation}");
+            assert_eq!(verifier.calls.get(), usize::from(member != "echo"));
+            rows += 1;
+        }
+    }
+    assert_eq!(rows, 10);
+}
+
+#[test]
+fn response_fixed_width_bindings_refuse_each_flipped_position() {
+    for position in [0, 16, 31] {
+        for member in ["key", "network", "genesis"] {
+            let mut bytes = match member {
+                "key" => [0x33; 32],
+                "network" => [0x11; 32],
+                _ => GENESIS,
+            };
+            bytes[position] ^= 1;
+            let offered_key = key_from_bytes(bytes.to_vec());
+            let offered_identity = CandidateDeploymentIdentity::new(
+                if member == "network" {
+                    bytes
+                } else {
+                    [0x11; 32]
+                },
+                if member == "genesis" { bytes } else { GENESIS },
+            )
+            .expect("nonzero identifiers");
+            let expected = if member == "key" {
+                OperatorSigningRefusal::WrongOperator {
+                    bound: operator_key(0x33),
+                    offered: offered_key.clone(),
+                }
+            } else {
+                OperatorSigningRefusal::WrongDeployment {
+                    bound: Box::new(identity(0x11, GENESIS)),
+                    offered: Box::new(offered_identity.clone()),
+                }
+            };
+            assert_eq!(
+                refused(|parts| {
+                    if member == "key" {
+                        parts.operator = offered_key;
+                    } else {
+                        parts.deployment = offered_identity;
+                    }
+                }),
+                expected,
+                "{member}/{position}"
+            );
+        }
+    }
+}
+
+#[test]
+fn response_scalar_edges_reach_their_own_checks() {
+    assert_eq!(
+        refused(|parts| parts.operator = operator_key(0)),
+        OperatorSigningRefusal::WrongOperator {
+            bound: operator_key(0x33),
+            offered: operator_key(0)
+        }
+    );
+    for index in [1, u32::MAX] {
+        assert_eq!(
+            refused(|parts| parts.index = index),
+            OperatorSigningRefusal::WrongInput {
+                expected: 0,
+                offered: index
+            }
+        );
+    }
+    for type_byte in [1, 0x80, u8::MAX] {
+        assert_eq!(
+            refused(|parts| parts.type_byte = type_byte),
+            OperatorSigningRefusal::WrongTypeByte { offered: type_byte }
+        );
+    }
+}
+
+#[test]
+fn adjacent_response_checks_keep_their_precedence() {
+    for earlier in ["input", "key", "revision", "empty", "width", "echo"] {
+        let expected = match earlier {
+            "input" => OperatorSigningRefusal::WrongInput {
+                expected: 0,
+                offered: 1,
+            },
+            "key" => OperatorSigningRefusal::WrongOperator {
+                bound: operator_key(0x33),
+                offered: operator_key(0x44),
+            },
+            "revision" => {
+                OperatorSigningRefusal::WrongProfile(OperatorProfileDisposition::StaleRevision {
+                    pinned: TargetContractVersion::V2,
+                    offered: TargetContractVersion::V1,
+                })
+            }
+            "empty" => OperatorSigningRefusal::EmptySignature { input_index: 0 },
+            "width" => OperatorSigningRefusal::MalformedSignature { offered: 1 },
+            _ => OperatorSigningRefusal::BoundToOtherBytes { input_index: 0 },
+        };
+        assert_eq!(
+            refused(|parts| match earlier {
+                "input" => {
+                    parts.index = 1;
+                    parts.operator = operator_key(0x44);
+                }
+                "key" => {
+                    parts.operator = operator_key(0x44);
+                    parts.deployment = identity(0x22, GENESIS);
+                }
+                "revision" => {
+                    parts.revision = TargetContractVersion::V1;
+                    parts.type_byte = 1;
+                }
+                // Empty necessarily violates width too; the same signature cannot
+                // simultaneously be empty and have a second, nonzero width.
+                "empty" => {
+                    parts.signature.clear();
+                    parts.echo.clear();
+                }
+                "width" => {
+                    parts.signature.truncate(1);
+                    parts.echo.clear();
+                }
+                _ => {
+                    parts.echo.clear();
+                    parts.signature[0] ^= 1;
+                }
+            }),
+            expected,
+            "{earlier}"
+        );
+    }
+}
+
+#[test]
+fn three_responses_report_the_second_answer_before_binding() {
+    let fixture = Fixture::new();
+    for indices in [[0, 0, 7], [0, 7, 0], [7, 0, 0]] {
+        let request = fixture.freeze();
+        let responses = indices.map(|index| {
+            let mut parts = fixture.parts(&request);
+            parts.index = index;
+            parts.operator = operator_key(0x44);
+            parts.response()
+        });
+        let expected = if indices[1] == 0 {
+            OperatorSigningRefusal::DuplicateResponse { input_index: 0 }
+        } else {
+            OperatorSigningRefusal::UnexpectedResponse { input_index: 7 }
+        };
+        let verifier = TestVerifier::default();
+        assert_eq!(
+            authorize_operator(request, responses, &verifier).err(),
+            Some(expected)
+        );
+        assert_eq!(verifier.calls.get(), 0);
+    }
+}
+
+#[test]
+fn another_input_message_is_not_authorization_for_the_selected_input() {
+    let fixture = Fixture::new();
+    let original = fixture.finalized.protected();
+    let candidate = TargetTransaction::with_output_witnesses(
+        original.version(),
+        vec![
+            original.inputs()[0].clone(),
+            TargetInput::new(outpoint(0xe1, 0), 0xffff_fffe),
+        ],
+        original.outputs().to_vec(),
+        original.lock_time(),
+        vec![original.witnesses()[0].clone(); 2],
+        original.output_witnesses().to_vec(),
+    )
+    .expect("two input cardinalities");
+    let freeze = |index| {
+        let input = fixture.input();
+        OperatorSigningRequest::freeze(
+            &reviewed_target(),
+            &fixture.binding,
+            candidate.clone(),
+            vec![fixture.spent()[0].clone(); 2],
+            LiveDeployment::new(GENESIS),
+            OperatorSigningInput::new(
+                index,
+                *input.tapleaf_hash(),
+                input.leaf_version(),
+                input.leaf_script().to_vec(),
+                input.control_block().to_vec(),
+            ),
+            &FixtureCurve,
+        )
+        .expect("each input commits the same fixture leaf")
+    };
+    let request = freeze(0);
+    let other = freeze(1);
+    assert_ne!(request.message(), other.message());
+    let mut parts = fixture.parts(&request);
+    parts.echo = candidate.encode();
+    parts.signature = signature(
+        fixture.binding.key().bytes(),
+        other.message().with_vector_grown(),
+    );
+    let verifier = TestVerifier::default();
+    assert!(
+        verifier
+            .verify(
+                fixture.binding.key().bytes(),
+                other.message().with_vector_grown(),
+                &parts.signature
+            )
+            .is_ok()
+    );
+    verifier.calls.set(0);
+    let expected = verify_refusal(&request);
+    assert_eq!(
+        authorize_operator(request, [parts.response()], &verifier).err(),
+        Some(expected)
+    );
+    assert_eq!(verifier.calls.get(), 1);
+}
+
+#[test]
+fn a_signature_under_the_other_published_key_reaches_verification_only() {
+    let decode = |hex: &str| {
+        hex.as_bytes()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| {
+                u8::from_str_radix(std::str::from_utf8(pair).expect("ASCII"), 16).expect("hex")
+            })
+            .collect::<Vec<_>>()
+    };
+    let first = decode("dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659");
+    let other = decode("25d1dff95105f5253c4022f628a996ad3a0d95fbf21d468a1b33f8c160d8f517");
+    let fixture = Fixture::with_operator(key_from_bytes(first));
+    let request = fixture.freeze();
+    let mut parts = fixture.parts(&request);
+    parts.operator = fixture.binding.key().clone();
+    parts.signature = signature(&other, request.message().with_vector_grown());
+    let verifier = TestVerifier::default();
+    assert!(
+        verifier
+            .verify(
+                &other,
+                request.message().with_vector_grown(),
+                &parts.signature
+            )
+            .is_ok()
+    );
+    verifier.calls.set(0);
+    let expected = verify_refusal(&request);
+    assert_eq!(
+        authorize_operator(request, [parts.response()], &verifier).err(),
+        Some(expected)
+    );
+    assert_eq!(verifier.calls.get(), 1);
+}
+
+#[test]
+fn echo_with_another_owners_committed_metadata_is_refused() {
+    use super::live_support::{FIRST_OWNER, fee_bearing_live_abi, owner};
+    let fixture = Fixture::new();
+    let candidate = fixture.finalized.protected();
+    let abi = fee_bearing_live_abi();
+    let replacement = abi
+        .destinations()
+        .get(
+            &owner(&FIRST_OWNER),
+            linker::live_backend::LiveTransferRepresentationPlan::Explicit,
+        )
+        .expect("the other owner's constructor commits its metadata");
+    let mut outputs = candidate.outputs().to_vec();
+    let position = outputs
+        .iter()
+        .position(|output| !output.is_fee())
+        .expect("successor");
+    let output = &outputs[position];
+    assert_ne!(output.program(), replacement.instance().program());
+    outputs[position] = TargetOutput::new(
+        output.asset(),
+        output.value(),
+        output.nonce(),
+        replacement.instance().program().to_vec(),
+    );
+    let echo = with_outputs(candidate, outputs).encode();
+    assert_eq!(
+        refused(|parts| parts.echo = echo),
+        OperatorSigningRefusal::BoundToOtherBytes { input_index: 0 }
     );
 }
