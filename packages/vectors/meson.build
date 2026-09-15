@@ -17,6 +17,7 @@ vectors_source_files = files(
   'src/live_capability.rs',
   'src/live_comparison.rs',
   'src/live_conservation_negatives.rs',
+  'src/live_corpus_native_operator.rs',
   'src/live_corpus_native_v2_r7.rs',
   'src/live_corpus_rerun_day.rs',
   'src/live_disclosure.rs',
@@ -73,6 +74,11 @@ vectors_doc_files = files('README.md')
 # `include_bytes!`; timing sidecars and the predecessor setup transcript
 # remain audit-only bytes.
 vectors_fixture_files = files(
+  'fixtures/native-operator-run-of-record/353e698f.report.capture',
+  'fixtures/native-operator-run-of-record/353e698f.report.capture.timing',
+  'fixtures/native-operator-run-of-record/MANIFEST.sha256',
+  'fixtures/native-operator-run-of-record/RUN-REPORT',
+) + files(
   'fixtures/rerun-day/rerun-0.6.52-dev.confidential-predecessor',
   'fixtures/rerun-day/rerun-0.6.52-dev.conservation-negatives',
   'fixtures/rerun-day/rerun-0.6.52-dev.conservation-negatives.timing',

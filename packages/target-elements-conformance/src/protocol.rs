@@ -2961,6 +2961,14 @@ pub struct NativeOperationResponse {
 }
 
 impl NativeOperationResponse {
+    /// Decodes a recorded response using the protocol's closed wire schema.
+    ///
+    /// # Errors
+    /// Returns the JSON decoding error for malformed or surplus wire fields.
+    pub fn from_recorded_json(bytes: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_json::from_slice(bytes)
+    }
+
     /// Whether this response contradicts itself.
     ///
     /// Four rules, and each one closes a way for a report to state a

@@ -14,6 +14,7 @@ pub mod fixture;
 pub mod live_capability;
 pub mod live_comparison;
 pub mod live_conservation_negatives;
+pub mod live_corpus_native_operator;
 pub mod live_corpus_native_v2_r7;
 pub mod live_corpus_rerun_day;
 pub mod live_disclosure;
@@ -79,6 +80,11 @@ pub use live_capability::{OracleFixtureValues, OracleLiveCurve};
 pub use live_comparison::{
     ComparisonStanding, PlanResourceComparison, ResourcePlannerFailure, UnobservedReason,
     compare_run, run_agreements, run_failures,
+};
+pub use live_corpus_native_operator::{
+    NATIVE_OPERATOR_MANIFEST_SHA256, NATIVE_OPERATOR_RUN_ADDRESS, NativeOperatorImportRefusal,
+    NativeOperatorReportFacts, ValidatedNativeOperatorCorpus,
+    run_of_record as native_operator_run_of_record,
 };
 pub use live_corpus_native_v2_r7::{
     NATIVE_V2_R7_CEREMONY_ROSTER, NATIVE_V2_R7_INPUT_SET_ADDRESS, NATIVE_V2_R7_MANIFEST_SHA256,

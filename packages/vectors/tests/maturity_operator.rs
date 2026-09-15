@@ -697,3 +697,249 @@ fn the_live_transfer_candidate_runs_against_a_real_target() {
     );
     assert_evidence(&evidence, true);
 }
+
+fn admitted_operator() -> &'static vectors::ValidatedNativeOperatorCorpus {
+    vectors::native_operator_run_of_record().expect("reviewed operator corpus admits")
+}
+
+fn admitted_row(name: &str) -> &vectors::maturity_operator::OperatorEvidenceRow {
+    admitted_operator()
+        .evidence()
+        .rows
+        .iter()
+        .find(|row| row.subject == name)
+        .expect("row")
+}
+
+fn native_control(name: &str, detail: &str) {
+    use vectors::live_evidence::{LiveRowStanding, NativeObservedAcceptance};
+    let LiveRowStanding::NativeRunObserved {
+        acceptance: NativeObservedAcceptance::Single(identity),
+    } = admitted_row("operator-positive").standing
+    else {
+        panic!("native positive")
+    };
+    assert_eq!(
+        admitted_row(name).standing,
+        LiveRowStanding::NativeRefusalObserved {
+            declared_boundary: vectors::EvidenceBoundary::ScriptPathRejection,
+            observed_layer: ObservedOutcomeLayer::ScriptPathRejection,
+            control_identity: identity,
+            refusal_detail: detail.to_owned(),
+        }
+    );
+}
+
+#[test]
+fn admitted_positive_identity_equals_readback_and_recomputed_txid() {
+    use target_elements_conformance::constructor::tagged;
+    use vectors::live_evidence::{LiveRowStanding, NativeObservedAcceptance};
+    let readback = admitted_operator().exchanges()[10]
+        .1
+        .mined_readback
+        .as_ref()
+        .expect("readback");
+    let transaction =
+        transaction::TargetTransaction::decode(&readback.raw_transaction).expect("transaction");
+    let first = tagged::sha256(&transaction.encode_without_witness());
+    let identity = transaction::Txid::from_internal(tagged::sha256(&first));
+    assert_eq!(identity.to_target_display(), readback.transaction_id);
+    assert_eq!(
+        admitted_operator().exchanges()[10]
+            .1
+            .accepted_txid
+            .as_deref(),
+        Some(readback.transaction_id.as_str())
+    );
+    assert_eq!(
+        admitted_row("operator-positive").standing,
+        LiveRowStanding::NativeRunObserved {
+            acceptance: NativeObservedAcceptance::Single(identity)
+        }
+    );
+    assert!(admitted_operator().evidence().byte_identical_readback);
+}
+
+#[test]
+fn admitted_wrong_key_is_native_script_refusal() {
+    native_control(
+        "wrong-key",
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
+    );
+}
+
+#[test]
+fn admitted_wrong_candidate_is_native_script_refusal() {
+    native_control(
+        "wrong-candidate",
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
+    );
+}
+
+#[test]
+fn admitted_wrong_leaf_is_native_script_refusal() {
+    native_control(
+        "wrong-leaf",
+        "mandatory-script-verify-flag-failed (Witness program hash mismatch)",
+    );
+}
+
+#[test]
+fn admitted_signature_width_is_native_script_refusal() {
+    native_control(
+        "signature-width",
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature size)",
+    );
+}
+
+#[test]
+fn admitted_signature_type_is_native_script_refusal() {
+    native_control(
+        "signature-type",
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
+    );
+}
+
+#[test]
+fn admitted_protected_term_is_native_script_refusal() {
+    native_control(
+        "protected-term",
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
+    );
+}
+
+fn admitted_first_party(name: &str, fact: &'static str) {
+    assert_eq!(
+        admitted_row(name).standing,
+        vectors::LiveRowStanding::FirstPartyFactObserved {
+            fact,
+            observed_by: "OperatorEvidence::from_transcript",
+        }
+    );
+}
+
+#[test]
+fn admitted_unknown_key_admission_is_first_party() {
+    admitted_first_party(
+        "unknown-key-admission",
+        "deployment binding refused an unbound operator key",
+    );
+}
+
+#[test]
+fn admitted_duplicate_authorization_is_first_party() {
+    admitted_first_party(
+        "duplicate-authorization",
+        "affine registry refused a second outstanding right before signing",
+    );
+}
+
+#[test]
+fn admitted_signature_verification_is_first_party() {
+    admitted_first_party(
+        "signature-verification",
+        "public-data Schnorr verification bound the signature to the recomputed message",
+    );
+    assert!(admitted_operator().evidence().signature_verified);
+    assert!(admitted_operator().evidence().public_context_verified);
+}
+
+#[test]
+fn admitted_membership_and_twelve_state_facts_remain_external() {
+    let evidence = admitted_operator().evidence();
+    assert_eq!(
+        evidence.membership_requirement,
+        OperatorEvidence::incomplete().membership_requirement
+    );
+    assert_eq!(
+        evidence.unconstructed_state,
+        OperatorEvidence::incomplete().unconstructed_state
+    );
+    assert_eq!(evidence.unconstructed_state.len(), 12);
+    assert_eq!(
+        admitted_row("operator-membership").standing,
+        vectors::LiveRowStanding::NativeRunRequired(None)
+    );
+    assert_eq!(
+        evidence
+            .rows
+            .iter()
+            .map(|row| row.subject)
+            .collect::<Vec<_>>(),
+        EVIDENCE_ROWS
+    );
+}
+
+#[test]
+fn admitted_message_equals_independent_recomputation() {
+    assert_eq!(
+        admitted_operator().evidence().message.as_deref(),
+        Some(admitted_operator().recorded_message())
+    );
+}
+
+#[test]
+fn admitted_signing_keys_match_first_and_third_handles() {
+    for (index, handle) in [
+        (2, PublicTestSignerHandle::First),
+        (3, PublicTestSignerHandle::Third),
+    ] {
+        assert_eq!(
+            admitted_operator().exchanges()[index].1.signer_public_key,
+            Some(handle.x_only_public_key().expect("public key"))
+        );
+    }
+}
+
+#[test]
+fn admitted_environment_has_fourteen_capabilities_including_script_signing() {
+    let capabilities = admitted_operator().capabilities();
+    assert_eq!(capabilities.len(), 14);
+    assert_eq!(capabilities[11], "test-script-path-authorization");
+}
+
+#[test]
+fn admitted_suite_and_deployment_bindings_agree() {
+    let corpus = admitted_operator();
+    assert_eq!(
+        corpus.report().suite_commit(),
+        corpus.capture_suite_commit()
+    );
+    assert_eq!(corpus.report().suite_tree(), corpus.capture_suite_tree());
+    for identity in [corpus.report().suite_commit(), corpus.report().suite_tree()] {
+        assert_eq!(identity.len(), 40);
+        assert!(
+            identity
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        );
+    }
+    let prior = vectors::live_corpus_native_v2_r7::run_of_record().expect("revision seven corpus");
+    assert_ne!(prior.runs(), []);
+    for run in prior.runs() {
+        assert_eq!(
+            run.deployment().network_id(),
+            &common::identifier(corpus.report().network_id())
+        );
+        assert_eq!(
+            run.deployment().genesis_id(),
+            &common::identifier(corpus.report().genesis_id())
+        );
+    }
+}
+
+#[test]
+fn admitted_content_address_is_stable_and_report_bound() {
+    let first = vectors::native_operator_run_of_record().expect("first admission");
+    let second = vectors::native_operator_run_of_record().expect("second admission");
+    assert_eq!(first.content_address(), second.content_address());
+    assert_eq!(
+        first.content_address(),
+        vectors::NATIVE_OPERATOR_RUN_ADDRESS
+    );
+    assert_eq!(
+        first.report().manifest_digest(),
+        vectors::NATIVE_OPERATOR_MANIFEST_SHA256
+    );
+    assert_eq!(first.report().protocol_revision(), 8);
+}

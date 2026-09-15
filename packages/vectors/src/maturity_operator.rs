@@ -118,6 +118,39 @@ pub struct OperatorEvidence {
 }
 
 impl OperatorEvidence {
+    /// Replays admitted subjects through the planner's existing settlement.
+    pub(crate) fn replay_recorded(
+        identity: CandidateDeploymentIdentity,
+        exchanges: &[(OperationSubject, NativeOperationResponse)],
+    ) -> Result<Self, crate::live_corpus_native_operator::NativeOperatorImportRefusal> {
+        use crate::live_corpus_native_operator::NativeOperatorImportRefusal as Refusal;
+        use target_elements_conformance::executor::ExecutorTrust;
+        if exchanges.len() != NATIVE_STEPS.len() {
+            return Err(Refusal::ReplaySettlement { step: "census" });
+        }
+        let mut planner = OperatorPlanner::new(identity);
+        let mut next = planner
+            .next_step(None)
+            .map_err(|_| Refusal::ReplaySettlement {
+                step: NATIVE_STEPS[0],
+            })?;
+        for ((subject, response), name) in exchanges.iter().zip(NATIVE_STEPS) {
+            let current = next.ok_or(Refusal::ReplaySubject { step: name })?;
+            if current.subject() != subject || current.case() != &response.case {
+                return Err(Refusal::ReplaySubject { step: name });
+            }
+            next = planner
+                .next_step(Some((current.case(), response)))
+                .map_err(|_| Refusal::ReplaySettlement { step: name })?;
+        }
+        if next.is_some() {
+            return Err(Refusal::ReplaySettlement { step: "surplus" });
+        }
+        planner
+            .completed_evidence(ExecutorTrust::ReviewedNonMock)
+            .map_err(|_| Refusal::ReplaySettlement { step: "completion" })
+    }
+
     /// An unanswered record for an absent or interrupted exchange.
     #[must_use]
     pub fn incomplete() -> Self {
