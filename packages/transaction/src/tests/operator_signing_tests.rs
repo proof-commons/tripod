@@ -251,6 +251,64 @@ fn freeze_records_one_input_and_the_discharged_curve_obligation() {
 }
 
 #[test]
+fn printed_identity_requires_internal_order_at_freeze() {
+    let mut fixture = Fixture::new();
+    let target = reviewed_target();
+    let mut printed = GENESIS;
+    printed[0] = 0x01;
+    printed[31] = 0xfe;
+    let mut internal = printed;
+    internal.reverse();
+    let internal_key = StackItem::encoded(
+        &target,
+        EncodingClass::XOnlyPublicKey,
+        LIVE_INTERNAL_KEY.to_vec(),
+    )
+    .expect("internal key");
+    fixture.binding = OperatorDeploymentBinding::bind(
+        &target,
+        fixture.binding.key().clone(),
+        fixture.binding.profile().clone(),
+        identity(0x11, printed),
+        &internal_key,
+    )
+    .expect("printed identity binding");
+    let request = OperatorSigningRequest::freeze(
+        &target,
+        &fixture.binding,
+        fixture.finalized.protected().clone(),
+        fixture.spent(),
+        LiveDeployment::new(internal),
+        fixture.input(),
+        &FixtureCurve,
+    )
+    .expect("internal-order genesis matches the printed identity");
+    assert_eq!(request.binding().deployment().genesis_id(), &printed);
+    assert_eq!(request.census().genesis_block_hash(), &internal);
+    let mut unrelated = internal;
+    unrelated[1] ^= 1;
+    for offered in [printed, unrelated] {
+        let refusal = OperatorSigningRequest::freeze(
+            &target,
+            &fixture.binding,
+            fixture.finalized.protected().clone(),
+            Vec::new(),
+            LiveDeployment::new(offered),
+            fixture.input(),
+            &RefusingCurve,
+        )
+        .expect_err("genesis mismatch precedes curve and census checks");
+        assert_eq!(
+            refusal,
+            OperatorSigningRefusal::GenesisMismatch {
+                bound: printed,
+                offered,
+            }
+        );
+    }
+}
+
+#[test]
 fn wrong_genesis_precedes_curve_and_census_checks() {
     let fixture = Fixture::new();
     let result = OperatorSigningRequest::freeze(

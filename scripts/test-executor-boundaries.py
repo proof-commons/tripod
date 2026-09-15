@@ -1086,7 +1086,7 @@ def test_script_path_capability_requires_genesis_aware_framework(failures):
             failures.equal(records[0]["protocol_schema"], 8, "handshake states revision eight")
             failures.check("test_script_path_authorization" in records[0]["capabilities"], "capability advertised without a wallet")
             failures.equal(records[2]["signing_genesis"], records[1]["genesis_id"], "session genesis echoed")
-            failures.equal(records[2]["script_path_witness"][0][:32], list(SIGNING_GENESIS), "hash receives genesis bytes in kernel order")
+            failures.equal(records[2]["script_path_witness"][0][:32], list(reversed(SIGNING_GENESIS)), "hash receives reversed printed genesis bytes in target internal order")
             failures.equal(records[2]["signature_bound_to"], [2, 0, 1], "exact candidate echo")
             failures.equal(records[2]["signed_profile"], "all_inputs_all_outputs", "profile returned")
         return 9

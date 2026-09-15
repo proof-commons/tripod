@@ -46,7 +46,7 @@ use transaction::operator_right::{
 };
 use transaction::operator_signing::{OperatorSigningResponse, authorize_operator_under_right};
 
-use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
+use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of, printed_order};
 
 /// The exact native step order, with the consuming acceptance last.
 pub const NATIVE_STEPS: [&str; 11] = [
@@ -741,7 +741,7 @@ impl OperatorFixture {
             &self.binding,
             self.candidate.clone(),
             self.spent.clone(),
-            LiveDeployment::new(*self.binding.deployment().genesis_id()),
+            LiveDeployment::new(printed_order(*self.binding.deployment().genesis_id())),
             self.input.clone(),
             &OracleLiveCurve::new(target.clone()),
         ))
@@ -1065,6 +1065,40 @@ mod tests {
             fixture.freeze().expect("freeze").message(),
             other.freeze().expect("freeze").message()
         );
+    }
+
+    #[test]
+    fn frozen_deployment_reverses_the_printed_identity_before_hashing() {
+        let base = fixture();
+        let mut printed_genesis = [0x22; 32];
+        printed_genesis[0] = 0x01;
+        printed_genesis[31] = 0xfe;
+        let mut internal_genesis = printed_genesis;
+        internal_genesis.reverse();
+        let fixtures = [printed_genesis, internal_genesis].map(|genesis| {
+            OperatorFixture::new(
+                CandidateDeploymentIdentity::new([0x11; 32], genesis).expect("identity"),
+                base.candidate.inputs()[0].outpoint(),
+                AssetId::from_internal(crate::live_plan::PROTOCOL_ASSET),
+            )
+            .expect("deployment")
+        });
+        let [correct, other] = &fixtures;
+        let request = correct.freeze().expect("internal-order request");
+        let unreversed = other.freeze().expect("opposite deployment request");
+        assert_eq!(
+            request.binding().deployment().genesis_id(),
+            &printed_genesis
+        );
+        assert_eq!(request.census().genesis_block_hash(), &internal_genesis);
+        assert_eq!(unreversed.census().genesis_block_hash(), &printed_genesis);
+        assert_eq!(request.candidate(), unreversed.candidate());
+        assert_eq!(
+            request.census().spent_outputs(),
+            unreversed.census().spent_outputs()
+        );
+        assert_eq!(correct.input, other.input);
+        assert_ne!(request.message(), unreversed.message());
     }
 
     #[test]

@@ -8,7 +8,8 @@
 //! TRIPOD_LIVE_SUITE_TREE=SUITE_TREE_ID \
 //! cargo test -p tripod-vectors --test maturity_operator -- --ignored --test-threads=1
 //! ```
-//! Network and genesis are 32-byte hex; suite commit and tree are 40-digit hex.
+//! Network and genesis are printed-order 32-byte hex; suite commit and tree are 40-digit hex.
+//! The fixture converts the genesis to internal order only at the signing boundary.
 //! The report directory must exist and its derived capture destination must be new.
 //! The adapter must implement revision 8 funding, script-path signing and submission.
 //! The shared writer uses its generic `Report` ceremony and required Rust test name.

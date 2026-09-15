@@ -7515,11 +7515,12 @@ def sign_script_path(executor: CaseExecutor, subject: dict) -> dict:
     ):
         witnesses.extend(factory() for _ in range(count - len(witnesses)))
     # test/functional/test_framework/script.py: TaprootSignatureMsg serializes
-    # genesis_hash with ser_uint256. Reading our observed octets little-endian
-    # preserves those exact bytes, as transaction/src/script_path_signing.rs
-    # whole_transaction_stream appends them. Hash type zero is the 64-byte default profile.
+    # genesis_hash with ser_uint256. Read the observed printed-order octets
+    # big-endian so its serializer emits the target's internal byte order.
+    # The kernel's whole_transaction_stream appends that same internal order.
+    # Hash type zero is the 64-byte default profile.
     digest = executor.script.TaprootSignatureHash(
-        transaction, spent, 0, int.from_bytes(genesis, "little"), input_index=index,
+        transaction, spent, 0, int.from_bytes(genesis, "big"), input_index=index,
         scriptpath=True, leaf_script=leaf["script"], codeseparator_pos=-1,
         annex=None, leaf_ver=leaf["leaf_version"],
     )

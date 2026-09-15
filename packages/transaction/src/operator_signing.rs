@@ -239,12 +239,19 @@ fn check_freeze_binding(
             current,
         });
     }
-    script_path_signing::check_deployment(*binding.deployment().genesis_id(), deployment).map_err(
-        |_| OperatorSigningRefusal::GenesisMismatch {
-            bound: *binding.deployment().genesis_id(),
+    // The binding retains the printed identity; the message uses internal order.
+    // Compare in that order without changing either caller-owned value.
+    let bound = binding.deployment().genesis_id();
+    if !bound
+        .iter()
+        .rev()
+        .eq(deployment.genesis_block_hash().iter())
+    {
+        return Err(OperatorSigningRefusal::GenesisMismatch {
+            bound: *bound,
             offered: *deployment.genesis_block_hash(),
-        },
-    )?;
+        });
+    }
     if !curve.owner_key_is_a_curve_point(binding.key().bytes()) {
         return Err(OperatorSigningRefusal::OperatorKeyIsNotACurvePoint {
             key: binding.key().bytes().to_vec(),
