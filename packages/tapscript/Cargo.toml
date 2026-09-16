@@ -12,38 +12,21 @@ version.workspace = true
 [lib]
 name = "tapscript"
 
-# Exactly the two first-party packages the adapter joins, and nothing
-# else. `architecture`, `realization`, and `model` are deliberately
-# absent: an assessment names compiler-owned abstract capabilities and
-# target-owned primitives, and the compiler already projects the
-# architecture-owned facts it is willing to publish, so citing those
-# packages directly here would reach around that projection rather than
-# consume it. `linker`, `transaction`, `vectors`, `release`, and
-# `artifacts` are absent because no target program, bundle, or
-# publication exists to hand them. No third-party dependency has a
-# consumer: the crate serializes nothing, hashes nothing, parses
-# nothing, and its error root is hand-written, which keeps even
-# `thiserror` out.
+# Assessment consumes compiler-carried identifiers. The STATE constructor
+# instead commits canonical bytes that only realization's codec produces;
+# sha2 hashes those bytes with the target's domain-separated tags.
+# Curve arithmetic remains a downstream capability, not a dependency.
+# thiserror derives the constructor's closed refusal vocabulary.
 [dependencies]
 compiler = { workspace = true }
+realization = { workspace = true }
+sha2 = { workspace = true }
 target-elements = { workspace = true }
+thiserror = { workspace = true }
 
-# Test-only, and only to build a plan fixture. Guide-12 §8.1 assesses
-# against the compiler's validated operation plan, and the only way to
-# obtain one is the compiler's own public constructor, which takes a
-# bound input built from the architecture body and a derived
-# realization. A test that hand-assembled a plan instead would be
-# assessing something no compiler produced.
-#
-# The production boundary above is unchanged and the reason for it
-# still holds: no module under `src/` names either package, the
-# assessment takes the plan by type, and every architecture-owned fact
-# it reads arrives through the compiler's projection. A dependency that
-# leaked into the library would let the adapter reach around that
-# projection, which is exactly what the comment above refuses.
+# Architecture is needed only to construct compiler-owned test fixtures.
 [dev-dependencies]
 architecture = { workspace = true }
-realization = { workspace = true }
 
 [lints]
 workspace = true

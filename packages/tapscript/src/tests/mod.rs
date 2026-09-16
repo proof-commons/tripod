@@ -64,6 +64,7 @@ mod push_census_tests;
 mod schedule_tests;
 mod shape_tests;
 mod stack_tests;
+mod state_constructor_tests;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;

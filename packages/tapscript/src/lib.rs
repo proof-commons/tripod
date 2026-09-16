@@ -20,6 +20,7 @@ pub mod policy;
 pub mod program;
 pub mod shape;
 pub mod stack;
+pub mod state_constructor;
 pub mod upstream;
 
 pub use authorization::{
@@ -132,6 +133,16 @@ pub use shape::{
 pub use stack::{
     AbstractExecutionResult, AbstractLimits, AbstractStackState, ProgramStackProfile,
     SignatureSuccessForm, program_stack_profile, resource_projection, validate_program,
+};
+
+pub use state_constructor::{
+    CandidateStateConstructor, STATE_GENERATOR_X, STATE_GENERATOR_Y, STATE_NUMS_KEY,
+    StateBranchSide, StateConstructorGeneration, StateConstructorReference,
+    StateConstructorRefusal, StateControlRecipe, StateCurveCapability, StateFieldCommitment,
+    StateInternalKeyPolicy, StateLeafRole, StateMetadataPattern, StateNonceBudget,
+    StateNonceEvidence, StateReferenceCensus, StateReferenceDeclaration, StateStaticLeaf,
+    StateStaticLeafEntry, StateStaticNode, StateStaticSubtree, StateTweakOutcome,
+    predecessor_recipe, state_metadata_leaf_program, successor_recipe,
 };
 
 #[cfg(test)]
