@@ -105,8 +105,11 @@ pub use live_shape::{
     demonstration_live_shape_set, dense_live_shape_set, fee_bearing_live_shape_set,
 };
 pub use maturity_assessment::{
-    MaturityAssessmentSet, MaturityCapabilityGroup, MaturityRequirement, MaturityVerdict,
-    assess_maturity_announcement_plan,
+    MaturityAssessmentSet, MaturityCapabilityGroup, MaturityCarrier, MaturityCarrierProjection,
+    MaturityCarrierRefusal, MaturityCarrierRefusalReason, MaturityRecordCensus,
+    MaturityRequirement, MaturityVerdict, assess_maturity_announcement_plan,
+    assess_maturity_announcement_program, maturity_announcement_record_census,
+    project_maturity_carriers,
 };
 pub use operation_assessment::{
     EmissionRefusal, OperationAssessmentSet, OperationRequirement, OperationVerdict, VerdictGround,
