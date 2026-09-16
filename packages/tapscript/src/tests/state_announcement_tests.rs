@@ -488,7 +488,7 @@ impl Point {
     }
 }
 
-fn output_key(tweak: [u8; 32]) -> Vec<u8> {
+pub(super) fn output_key(tweak: [u8; 32]) -> Vec<u8> {
     let generator_x = Field::from_bytes(STATE_GENERATOR_X);
     let generator_y = Field::from_bytes(STATE_GENERATOR_Y);
     let mut point = Point {
@@ -528,7 +528,7 @@ fn output_key(tweak: [u8; 32]) -> Vec<u8> {
     point.add_affine(internal_x, internal_y).compressed()
 }
 
-fn tagged(tag: &[u8], payload: &[u8]) -> [u8; 32] {
+pub(super) fn tagged(tag: &[u8], payload: &[u8]) -> [u8; 32] {
     let tag = Sha256::digest(tag);
     let mut hash = Sha256::new();
     hash.update(tag);
@@ -1042,4 +1042,257 @@ fn every_boolean_is_immediately_verified_and_aborts_are_named() {
             .aborts()
             .contains(&FailureCause::SliceOutOfRange)
     );
+}
+
+#[test]
+fn every_semantic_fragment_refuses_missing_items_and_exposes_extra_item_residue() {
+    use super::state_program_tests::assert_witness_changes_success;
+    use target_elements::StackValueType;
+    for &id in StateAnnouncementId::ALL {
+        let record = record(id);
+        for index in 0..record.precondition().main().len() {
+            let mut witness = record.precondition().main().to_vec();
+            witness.remove(index);
+            assert_witness_changes_success(record.fragment(), witness, record.success());
+        }
+        for index in 0..=record.precondition().main().len() {
+            let mut witness = record.precondition().main().to_vec();
+            witness.insert(
+                index,
+                StackValueType::Bytes {
+                    minimum: 0,
+                    maximum: 0,
+                },
+            );
+            assert_witness_changes_success(record.fragment(), witness, record.success());
+        }
+    }
+}
+
+#[test]
+fn retained_metadata_and_window_witness_width_mutations_change_declared_success() {
+    use super::state_program_tests::assert_witness_changes_success;
+    use target_elements::StackValueType;
+    for id in [
+        StateAnnouncementId::MaturityPredecessor,
+        StateAnnouncementId::LeadWindow,
+    ] {
+        let record = record(id);
+        for (index, item) in record.precondition().main().iter().enumerate() {
+            let StackValueType::Bytes { minimum, maximum } = item else {
+                panic!("fixed byte witness")
+            };
+            assert_eq!(minimum, maximum);
+            for width in [minimum - 1, maximum + 1] {
+                let mut witness = record.precondition().main().to_vec();
+                witness[index] = StackValueType::Bytes {
+                    minimum: width,
+                    maximum: width,
+                };
+                assert_witness_changes_success(record.fragment(), witness, record.success());
+            }
+        }
+        for index in 1..record.precondition().main().len() {
+            let mut witness = record.precondition().main().to_vec();
+            witness.swap(index - 1, index);
+            assert_witness_changes_success(record.fragment(), witness, record.success());
+        }
+    }
+}
+
+#[test]
+fn omitted_final_window_verify_leaves_a_boolean_and_cannot_inherit_identity() {
+    let target = reviewed_target();
+    let record = record(StateAnnouncementId::LeadWindow);
+    let mut instructions = record.fragment().instructions().to_vec();
+    assert_eq!(instructions.pop(), Some(op(OpcodeId::Verify)));
+    let changed = TapscriptProgram::new(instructions).unwrap();
+    let walk = validate_program(
+        &target,
+        &changed,
+        record.precondition(),
+        AbstractLimits::for_target(&target),
+    )
+    .unwrap();
+    let mut expected = record.precondition().main().to_vec();
+    expected.push(target_elements::StackValueType::Bool);
+    assert_eq!(
+        walk.success(),
+        &BTreeSet::from([crate::AbstractStackState::from_main(expected)])
+    );
+    assert_eq!(
+        build_state_announcement_pattern(
+            &target,
+            &bindings(2, 4),
+            StateAnnouncementId::LeadWindow,
+            changed
+        ),
+        Err(StateAnnouncementRefusal::FragmentMismatch)
+    );
+}
+
+#[test]
+fn semantic_refusal_declaration_has_exact_exercised_and_unreachable_census() {
+    super::state_program_tests::assert_refusal_census(
+        include_str!("../state_announcement.rs"),
+        "StateAnnouncementRefusal",
+        &[
+            (
+                "ConsumerCensus",
+                binding_census_rejects_missing_width_domain_and_bound_order,
+            ),
+            (
+                "InvalidBinding",
+                binding_census_rejects_missing_width_domain_and_bound_order,
+            ),
+            (
+                "FragmentMismatch",
+                mutated_fragments_and_incompatible_recipes_cannot_inherit_identity,
+            ),
+            (
+                "ComponentRecipe",
+                mutated_fragments_and_incompatible_recipes_cannot_inherit_identity,
+            ),
+        ],
+        &[
+            (
+                "Program",
+                "Fixed checked bindings and canonical emission expose no failing walk; needs an internal walk seam.",
+            ),
+            (
+                "InvalidContract",
+                "Exact recipe matching rejects corruption first; needs an internal contract checker.",
+            ),
+        ],
+    );
+}
+
+#[test]
+fn lead_cross_product_checks_both_endpoints_and_unsigned_overflow() {
+    let cycles = [
+        0,
+        1,
+        1 << 32,
+        (1 << 63) - 1,
+        1 << 63,
+        u64::MAX - 1,
+        u64::MAX,
+    ];
+    let leads = [1, (1 << 63) - 1, 1 << 63, u64::MAX];
+    for current in cycles {
+        for minimum in leads {
+            for maximum in leads.into_iter().filter(|maximum| *maximum >= minimum) {
+                let lower = current.checked_add(minimum);
+                let upper = current.checked_add(maximum);
+                for requested in [lower.unwrap_or(u64::MAX), upper.unwrap_or(u64::MAX)] {
+                    check_window(current, requested, minimum, maximum);
+                }
+                if let Some(below) = lower.and_then(|value| value.checked_sub(1)) {
+                    check_window(current, below, minimum, maximum);
+                }
+                if let Some(above) = upper.and_then(|value| value.checked_add(1)) {
+                    check_window(current, above, minimum, maximum);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn every_reversed_extreme_lead_pair_is_a_named_binding_refusal() {
+    let target = reviewed_target();
+    for minimum in [1, (1 << 63) - 1, 1 << 63, u64::MAX] {
+        for maximum in [0, 1, (1 << 63) - 1, 1 << 63, u64::MAX] {
+            if minimum > maximum {
+                assert_eq!(
+                    StateAnnouncementBindings::new(&target, values(minimum, maximum)),
+                    Err(StateAnnouncementRefusal::InvalidBinding(
+                        StateAnnouncementSymbol::MaturityLeadMin
+                    ))
+                );
+            }
+        }
+    }
+}
+
+fn copied_successor(previous: Vec<u8>, requested: u64, nonce: u32) -> Vec<u8> {
+    let mut oracle = Oracle::new(vec![
+        nonce.to_be_bytes().to_vec(),
+        vec![0xff; 32],
+        requested.to_be_bytes().to_vec(),
+        previous,
+    ]);
+    oracle
+        .execute(record(StateAnnouncementId::CopyThrough).fragment())
+        .unwrap();
+    assert_eq!(oracle.stack.len(), 2);
+    assert_eq!(oracle.stack[0], vec![0xff; 32]);
+    oracle.stack.pop().unwrap()
+}
+
+fn assert_successor_refused(bytes: Vec<u8>, base: &Oracle) {
+    let mut oracle = Oracle::new(vec![base.stack[0].clone(), bytes, base.stack[2].clone()]);
+    oracle.program.clone_from(&base.program);
+    oracle.relation.clone_from(&base.relation);
+    assert_eq!(
+        oracle.execute(record(StateAnnouncementId::SuccessorReconstruction).fragment()),
+        Err("curve relation")
+    );
+}
+
+#[test]
+fn every_copied_predecessor_byte_changes_successor_and_breaks_reconstruction() {
+    let previous = metadata(5, Maturity::Unannounced, 23);
+    let expected = metadata(
+        5,
+        Maturity::Announced {
+            cycle: Cycle::new(7),
+        },
+        1,
+    );
+    let base = authenticated_oracle(expected.clone());
+    assert_eq!(copied_successor(previous.clone(), 7, 1), expected);
+    // The codec's first differing byte locates the maturity discriminant independently.
+    let maturity_start = previous
+        .iter()
+        .zip(&expected)
+        .position(|(a, b)| a != b)
+        .unwrap();
+    assert_eq!(expected[maturity_start], 1);
+    for position in 0..maturity_start {
+        let mut changed = previous.clone();
+        changed[position] ^= 1;
+        let successor = copied_successor(changed, 7, 1);
+        assert_ne!(successor, expected, "predecessor byte {position}");
+        assert_eq!(successor[maturity_start], 1);
+        assert_successor_refused(successor, &base);
+    }
+}
+
+#[test]
+fn every_announced_maturity_byte_and_requested_cycle_is_bound_by_reconstruction() {
+    let unannounced = metadata(5, Maturity::Unannounced, 1);
+    let expected = metadata(
+        5,
+        Maturity::Announced {
+            cycle: Cycle::new(7),
+        },
+        1,
+    );
+    let start = unannounced
+        .iter()
+        .zip(&expected)
+        .position(|(a, b)| a != b)
+        .unwrap();
+    let base = authenticated_oracle(expected.clone());
+    for position in start..start + 9 {
+        let mut changed = expected.clone();
+        changed[position] ^= 1;
+        assert_successor_refused(changed, &base);
+    }
+    for requested in [0, 6, 8, 1 << 63, u64::MAX] {
+        let changed = copied_successor(unannounced.clone(), requested, 1);
+        assert_ne!(changed, expected);
+        assert_successor_refused(changed, &base);
+    }
 }

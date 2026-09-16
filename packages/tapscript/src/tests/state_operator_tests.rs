@@ -331,3 +331,56 @@ fn metadata_keeps_deployment_native_and_observation_evidence_outstanding() {
         ]
     );
 }
+
+#[test]
+fn signature_widths_outside_the_target_encoding_cannot_succeed() {
+    let record = pattern();
+    let target = reviewed_target();
+    let target_elements::PayloadWidth::Exact(width) =
+        target.definition().encodings()[&EncodingClass::SchnorrSignature].payload()
+    else {
+        panic!("fixed signature encoding")
+    };
+    for width in [width.get() - 1, width.get() + 1] {
+        super::state_program_tests::assert_witness_changes_success(
+            record.fragment(),
+            vec![StackValueType::Bytes {
+                minimum: width,
+                maximum: width,
+            }],
+            record.execution().success(),
+        );
+    }
+}
+
+#[test]
+fn operator_refusal_declaration_has_exact_exercised_and_unreachable_census() {
+    super::state_program_tests::assert_refusal_census(
+        include_str!("../state_operator.rs"),
+        "StateOperatorRefusal",
+        &[
+            (
+                "ConsumerCensus",
+                consumer_census_names_the_committed_program_push_only,
+            ),
+            (
+                "KeyEncoding",
+                empty_and_malformed_keys_are_refused_before_emission,
+            ),
+            (
+                "FragmentMismatch",
+                witness_selected_key_is_walkable_but_cannot_inherit_identity,
+            ),
+        ],
+        &[
+            (
+                "InvalidContract",
+                "Checked key and exact recipe make the malformed contract inaccessible; needs a contract checker seam.",
+            ),
+            (
+                "Program",
+                "The two fixed instructions and checked key do not supply a failing walk; needs a walk failure seam.",
+            ),
+        ],
+    );
+}

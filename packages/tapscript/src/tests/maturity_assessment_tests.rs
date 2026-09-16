@@ -1174,3 +1174,91 @@ fn unplaceable_relations_and_ambiguous_external_sets_are_named_refusals() {
     assert_eq!(error.relation, row.relation);
     assert_eq!(error.reason, Refusal::MultipleExternalRequirements);
 }
+
+#[test]
+fn paired_carrier_omissions_name_only_relations_of_the_removed_components() {
+    let expected = expected_emitted_relations();
+    let all = components();
+    for first in &all {
+        for second in all.iter().filter(|second| *second > first) {
+            let mut available = all.clone();
+            available.remove(first);
+            available.remove(second);
+            for mode in Mode::ALL {
+                for row in PLAN.projection(*mode).unwrap().relations() {
+                    let result = maturity_relation_carrier(&PLAN, row, &available);
+                    if let Some(component) = expected
+                        .get(&row.relation)
+                        .filter(|component| *component == first || *component == second)
+                    {
+                        let error = result.unwrap_err();
+                        assert_eq!(error.relation, row.relation);
+                        assert_eq!(error.reason, Refusal::MissingComponent(*component));
+                    } else {
+                        assert_eq!(result, maturity_relation_carrier(&PLAN, row, &all));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn carrier_refusal_declaration_has_exact_exercised_and_unreachable_census() {
+    super::state_program_tests::assert_refusal_census(
+        include_str!("../maturity_assessment.rs"),
+        "MaturityCarrierRefusalReason",
+        &[
+            (
+                "Unmapped",
+                unplaceable_relations_and_ambiguous_external_sets_are_named_refusals,
+            ),
+            (
+                "MissingComponent",
+                removing_each_component_refuses_exactly_its_literal_relations_by_name,
+            ),
+            (
+                "MultipleExternalRequirements",
+                unplaceable_relations_and_ambiguous_external_sets_are_named_refusals,
+            ),
+        ],
+        &[(
+            "RepresentationDisagreement",
+            "Compiler corruption accessors are private and unavailable in dependent-crate tests; needs a projection-over-rows seam.",
+        )],
+    );
+}
+
+#[test]
+fn assessment_error_declarations_match_the_exercised_corruptions() {
+    let declared = super::state_program_tests::declared_variants(
+        include_str!("../error.rs"),
+        "TapscriptError",
+    );
+    let relevant: BTreeSet<_> = declared
+        .into_iter()
+        .filter(|name| name.starts_with("Maturity") || *name == "DuplicateOperationRequirement")
+        .collect();
+    let cases: [(&str, fn()); 3] = [
+        (
+            "DuplicateOperationRequirement",
+            duplicate_rows_of_every_family_are_refused_in_each_representation,
+        ),
+        (
+            "MaturityAssessmentCensusMismatch",
+            every_missing_row_is_refused_with_its_exact_identity,
+        ),
+        (
+            "MaturityGroupDisagreement",
+            corrupted_group_agreement_has_a_typed_error,
+        ),
+    ];
+    let reached = cases
+        .into_iter()
+        .map(|(name, test)| {
+            test();
+            name
+        })
+        .collect();
+    assert_eq!(relevant, reached);
+}

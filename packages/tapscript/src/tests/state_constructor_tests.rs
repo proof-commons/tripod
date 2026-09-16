@@ -1038,3 +1038,101 @@ fn last_reviewed_candidate_can_succeed_with_complete_leastness_evidence() {
     );
     assert_eq!(exhausted.calls.get(), 3516);
 }
+
+fn closure_metadata_leaf(nonce: StateRepresentationNonce) -> [u8; 32] {
+    let bytes = encode_state_metadata(&metadata(), nonce);
+    let mut preimage = vec![0xc4, 90, 0x4c, 86];
+    preimage.extend(bytes);
+    preimage.extend([0, 0x69]);
+    super::state_announcement_tests::tagged(b"TapLeaf/elements", &preimage)
+}
+
+struct PublicArithmeticCurve;
+
+impl StateCurveCapability for PublicArithmeticCurve {
+    fn internal_key_is_a_point(&self, key: &[u8; 32]) -> bool {
+        assert_eq!(key, &STATE_NUMS_KEY);
+        // A zero tweak reconstructs the even lift and checks its curve equation.
+        let lifted = super::state_announcement_tests::output_key([0; 32]);
+        lifted[0] == 2 && lifted[1..] == key[..]
+    }
+
+    fn output_key(&self, key: &[u8; 32], root: &[u8; 32]) -> StateTweakOutcome {
+        assert_eq!(key, &STATE_NUMS_KEY);
+        let tweak = super::state_announcement_tests::tagged(
+            b"TapTweak/elements",
+            &[key.as_slice(), root.as_slice()].concat(),
+        );
+        let compressed = super::state_announcement_tests::output_key(tweak);
+        StateTweakOutcome::OutputKey {
+            key: compressed[1..].try_into().unwrap(),
+            parity: compressed[0] == 3,
+        }
+    }
+}
+
+#[test]
+fn closure_recomputes_leaf_branch_and_real_tweak_output_with_public_arithmetic() {
+    let expected = independent_golden();
+    let leaf = closure_metadata_leaf(expected.nonce);
+    assert_eq!(hex(&leaf), GOLDEN_LEAF);
+    assert_eq!(leaf, expected.leaf);
+    let root = super::state_announcement_tests::tagged(
+        b"TapBranch/elements",
+        &[leaf, expected.static_root].concat(),
+    );
+    assert_eq!(root, expected.root);
+    assert_eq!(hex(&root), GOLDEN_ROOT);
+    let tweak = super::state_announcement_tests::tagged(
+        b"TapTweak/elements",
+        &[STATE_NUMS_KEY, root].concat(),
+    );
+    assert_eq!(hex(&tweak), GOLDEN_TWEAK);
+    let compressed = super::state_announcement_tests::output_key(tweak);
+    let curve = PublicArithmeticCurve;
+    let built = CandidateStateConstructor::derive(
+        &reviewed_target(),
+        &metadata(),
+        &production_tree(),
+        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &curve).unwrap(),
+        StateNonceBudget::default(),
+        &curve,
+    )
+    .unwrap();
+    assert_eq!(built.nonce(), expected.nonce);
+    assert_eq!(built.merkle_root(), &root);
+    assert_eq!(built.tweak_hash(), tweak);
+    assert_eq!(built.output_key().as_slice(), &compressed[1..]);
+    assert_eq!(built.parity(), compressed[0] == 3);
+    assert_ne!(built.output_key(), &[0x42; 32]);
+    let mut expected_program = vec![0x51, 0x20];
+    expected_program.extend(&compressed[1..]);
+    assert_eq!(built.output_program(), expected_program);
+}
+
+#[test]
+fn every_nonce_below_the_production_golden_fails_the_independent_branch_order() {
+    let expected = independent_golden();
+    let built = candidate();
+    assert!(expected.nonce.get() > 0);
+    assert_eq!(built.nonce(), expected.nonce);
+    assert_eq!(
+        built.evidence().rejected.len(),
+        usize::try_from(expected.nonce.get()).unwrap()
+    );
+    for attempt in 0..expected.nonce.get() {
+        let nonce = StateRepresentationNonce::new(attempt);
+        assert!(
+            closure_metadata_leaf(nonce) > expected.static_root,
+            "nonce {attempt}"
+        );
+        assert_eq!(
+            built.evidence().rejected[usize::try_from(attempt).unwrap()],
+            (
+                nonce,
+                StateConstructorRefusal::CanonicalBranchSideNotSatisfied
+            )
+        );
+    }
+    assert!(closure_metadata_leaf(expected.nonce) <= expected.static_root);
+}

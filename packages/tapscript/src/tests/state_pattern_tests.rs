@@ -1034,3 +1034,231 @@ fn reserve_asset_equality_does_not_discharge_family_role_authentication() {
             .contains(&StatePatternResidual::SuccessorConstructorAuthentication)
     );
 }
+
+#[test]
+fn every_structural_fragment_preserves_extra_witness_as_forbidden_residue() {
+    for shape in [plain(), sponsored()] {
+        let recipe = state_structural_patterns(&reviewed_target(), &bindings(shape)).unwrap();
+        for record in recipe.components() {
+            assert_eq!(record.precondition().main(), []);
+            for width in [0, 1, 31, 32, 33, 85, 86, 87] {
+                super::state_program_tests::assert_witness_changes_success(
+                    record.fragment(),
+                    vec![target_elements::StackValueType::Bytes {
+                        minimum: width,
+                        maximum: width,
+                    }],
+                    record.success(),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn removing_comparison_verify_leaves_boolean_residue_and_refuses_structural_identity() {
+    let target = reviewed_target();
+    for &id in StatePatternId::ALL {
+        let record = pattern(id);
+        let Some(index) = record
+            .fragment()
+            .instructions()
+            .iter()
+            .position(|instruction| *instruction == op(OpcodeId::LessThanOrEqual64))
+        else {
+            continue;
+        };
+        let mut instructions = record.fragment().instructions().to_vec();
+        assert_eq!(instructions.remove(index + 1), op(OpcodeId::Verify));
+        let changed = TapscriptProgram::new(instructions).unwrap();
+        let result = walk(&changed);
+        assert_eq!(
+            result.success(),
+            &BTreeSet::from([AbstractStackState::from_main(vec![
+                target_elements::StackValueType::Bool
+            ])])
+        );
+        assert_eq!(
+            build_state_pattern(&target, &bindings(sponsored()), id, changed),
+            Err(StatePatternRefusal::FragmentMismatch)
+        );
+    }
+}
+
+#[test]
+fn structural_refusal_declaration_has_exact_exercised_and_unreachable_census() {
+    super::state_program_tests::assert_refusal_census(
+        include_str!("../state_pattern.rs"),
+        "StatePatternRefusal",
+        &[
+            (
+                "Program",
+                fee_bound_encoding_does_not_override_the_abstract_work_limit,
+            ),
+            ("ConsumerCensus", missing_and_unused_bindings_are_refused),
+            ("InvalidBinding", malformed_symbol_domains_are_refused),
+            (
+                "AssetFamiliesOverlap",
+                overlapping_assets_and_exceeded_fee_bounds_are_refused,
+            ),
+            (
+                "SponsorValueRead",
+                emitter_refuses_sponsor_value_reads_even_when_the_results_are_dropped,
+            ),
+            (
+                "FragmentMismatch",
+                omitted_issuance_checks_cannot_inherit_the_record,
+            ),
+            (
+                "ComponentRecipe",
+                recipes_refuse_missing_duplicate_reordered_and_incompatible_components,
+            ),
+        ],
+        &[(
+            "InvalidContract",
+            "Exact canonical emission precedes the walk; needs an internal contract checker accepting a walked mutation.",
+        )],
+    );
+}
+
+fn composed_for_shape(shape: StateAnnouncementShape) -> crate::StateAnnouncementProgram {
+    let target = reviewed_target();
+    let structural = state_structural_patterns(&target, &bindings(shape)).unwrap();
+    let fixture = super::state_program_tests::fixtures();
+    let program = crate::state_announcement_program(
+        &target,
+        &structural,
+        &fixture.semantic,
+        &fixture.operator,
+    )
+    .unwrap();
+    crate::build_state_announcement_program(
+        &target,
+        &structural,
+        &fixture.semantic,
+        &fixture.operator,
+        program,
+    )
+    .unwrap()
+}
+
+fn assert_value_positions(program: &TapscriptProgram) {
+    let target = reviewed_target();
+    let mut count = 0;
+    for (index, instruction) in program.instructions().iter().enumerate() {
+        if matches!(
+            instruction,
+            TapscriptInstruction::Opcode(
+                OpcodeId::InspectInputValue | OpcodeId::InspectOutputValue
+            )
+        ) {
+            let Some(TapscriptInstruction::Push(position)) = index
+                .checked_sub(1)
+                .and_then(|index| program.instructions().get(index))
+            else {
+                panic!("value read without a literal position")
+            };
+            assert_eq!(
+                position.script_number_value(&target),
+                Some(0),
+                "value inspection at instruction {index}"
+            );
+            count += 1;
+        }
+    }
+    assert!(count <= 2);
+}
+
+#[test]
+fn value_inspection_census_reads_only_state_zero_in_both_transaction_shapes() {
+    for shape in [plain(), sponsored()] {
+        let recipe = state_structural_patterns(&reviewed_target(), &bindings(shape)).unwrap();
+        for record in recipe.components() {
+            assert_value_positions(record.fragment());
+            assert_eq!(
+                opcode_count(record.fragment(), OpcodeId::InspectInputValue),
+                usize::from(record.id() == StatePatternId::StateInputRecognitionV1)
+            );
+            assert_eq!(
+                opcode_count(record.fragment(), OpcodeId::InspectOutputValue),
+                0
+            );
+        }
+        let composed = composed_for_shape(shape);
+        assert_value_positions(composed.program());
+        assert_eq!(
+            opcode_count(composed.program(), OpcodeId::InspectInputValue),
+            1
+        );
+        assert_eq!(
+            opcode_count(composed.program(), OpcodeId::InspectOutputValue),
+            1
+        );
+    }
+}
+
+#[test]
+fn issuance_at_each_input_aborts_both_shapes_and_their_composed_programs() {
+    let target = reviewed_target();
+    for shape in [plain(), sponsored()] {
+        let recipe = state_structural_patterns(&target, &bindings(shape)).unwrap();
+        let absence = recipe
+            .components()
+            .iter()
+            .find(|record| record.id() == StatePatternId::StateIssuanceAbsenceV1)
+            .unwrap();
+        let composed = composed_for_shape(shape);
+        assert_eq!(
+            absence.metadata().structural(),
+            &StateStructuralEvidence::ALL.iter().copied().collect()
+        );
+        assert_eq!(
+            &composed.metadata().structural,
+            absence.metadata().structural()
+        );
+        for position in 0..usize::from(shape.inputs()) {
+            let issued =
+                vec![
+                    TapscriptInstruction::Push(StackItem::new(&target, vec![0x77; 32]).unwrap());
+                    6
+                ];
+            let changed = observed(
+                composed.program(),
+                OpcodeId::InspectInputIssuance,
+                position,
+                issued.clone(),
+            );
+            let result = validate_program(
+                &target,
+                &changed,
+                composed.precondition(),
+                AbstractLimits::for_target(&target),
+            )
+            .unwrap();
+            assert!(result.always_aborts(), "input {position} in {shape:?}");
+            if shape == plain() {
+                let changed = observed(
+                    absence.fragment(),
+                    OpcodeId::InspectInputIssuance,
+                    position,
+                    issued,
+                );
+                assert!(walk(&changed).always_aborts());
+            }
+            let absent = observed(
+                composed.program(),
+                OpcodeId::InspectInputIssuance,
+                position,
+                vec![TapscriptInstruction::Push(StackItem::empty())],
+            );
+            let result = validate_program(
+                &target,
+                &absent,
+                composed.precondition(),
+                AbstractLimits::for_target(&target),
+            )
+            .unwrap();
+            assert_eq!(result.success(), composed.execution().success());
+        }
+    }
+}

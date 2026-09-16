@@ -555,3 +555,283 @@ fn production_subtree_is_exactly_the_complete_announcement_leaf() {
     assert_eq!(entry.hash, hash);
     assert_eq!(tree.root(), &hash);
 }
+
+#[test]
+fn deleting_each_instruction_refuses_the_composed_identity() {
+    let instructions = fixtures().program.program().instructions();
+    for index in 0..instructions.len() {
+        let mut changed = instructions.to_vec();
+        changed.remove(index);
+        assert_eq!(
+            admit(changed),
+            Err(StateProgramRefusal::ComponentRecipe),
+            "instruction {index}"
+        );
+    }
+}
+
+pub(super) fn assert_witness_changes_success(
+    program: &TapscriptProgram,
+    witness: Vec<StackValueType>,
+    success: &BTreeSet<AbstractStackState>,
+) {
+    let target = reviewed_target();
+    if let Ok(walk) = validate_program(
+        &target,
+        program,
+        &AbstractStackState::from_main(witness),
+        AbstractLimits::for_target(&target),
+    ) {
+        assert!(
+            walk.success().is_disjoint(success),
+            "wrong witness inherited success: {walk:?}"
+        );
+    }
+}
+
+#[test]
+fn missing_or_extra_composed_witness_items_never_leave_canonical_success() {
+    let record = &fixtures().program;
+    for index in 0..record.witness().len() {
+        let mut witness = record.precondition().main().to_vec();
+        witness.remove(index);
+        assert_witness_changes_success(record.program(), witness, record.execution().success());
+    }
+    for index in 0..=record.witness().len() {
+        let mut witness = record.precondition().main().to_vec();
+        witness.insert(
+            index,
+            StackValueType::Bytes {
+                minimum: 0,
+                maximum: 0,
+            },
+        );
+        assert_witness_changes_success(record.program(), witness, record.execution().success());
+    }
+}
+
+#[test]
+fn closing_adapter_deletion_and_extra_items_break_final_contract() {
+    let target = reviewed_target();
+    let record = &fixtures().program;
+    let closing = record.components()
+        [&StateProgramComponent::Adapter(StateProgramAdapter::FinalTruth)]
+        .clone();
+    let mut absent = record.program().instructions().to_vec();
+    absent.drain(closing);
+    let mut extra = record.program().instructions().to_vec();
+    extra.push(number(&target, 1).unwrap());
+    for instructions in [absent, extra] {
+        let changed = TapscriptProgram::new(instructions.clone()).unwrap();
+        let walk = validate_program(
+            &target,
+            &changed,
+            record.precondition(),
+            AbstractLimits::for_target(&target),
+        )
+        .unwrap();
+        assert!(!walk.success().is_empty());
+        assert!(walk.success().is_disjoint(record.execution().success()));
+        assert_eq!(
+            admit(instructions),
+            Err(StateProgramRefusal::ComponentRecipe)
+        );
+    }
+}
+
+#[test]
+fn alternate_witness_residue_cannot_inherit_the_final_stack() {
+    let target = reviewed_target();
+    let record = &fixtures().program;
+    let witness = AbstractStackState::new(
+        record.precondition().main().to_vec(),
+        vec![StackValueType::Bool],
+    );
+    let result = validate_program(
+        &target,
+        record.program(),
+        &witness,
+        AbstractLimits::for_target(&target),
+    )
+    .unwrap();
+    assert!(!result.success().is_empty());
+    assert!(result.success().is_disjoint(record.execution().success()));
+    assert!(
+        result
+            .success()
+            .iter()
+            .all(|state| state.alternate() == [StackValueType::Bool])
+    );
+}
+
+#[test]
+fn every_composed_boolean_producer_is_followed_by_verification() {
+    let instructions = fixtures().program.program().instructions();
+    for (index, instruction) in instructions.iter().enumerate() {
+        if matches!(
+            instruction,
+            TapscriptInstruction::Opcode(
+                OpcodeId::Add64
+                    | OpcodeId::Sub64
+                    | OpcodeId::Mul64
+                    | OpcodeId::Div64
+                    | OpcodeId::Neg64
+                    | OpcodeId::LessThan64
+                    | OpcodeId::LessThanOrEqual64
+                    | OpcodeId::GreaterThan64
+                    | OpcodeId::GreaterThanOrEqual64
+            )
+        ) {
+            assert_eq!(instructions.get(index + 1), Some(&op(OpcodeId::Verify)));
+        }
+        assert!(!matches!(
+            instruction,
+            TapscriptInstruction::Opcode(
+                OpcodeId::Equal | OpcodeId::CheckSig | OpcodeId::CheckSigFromStack
+            )
+        ));
+    }
+}
+
+#[test]
+fn deleting_last_comparison_verify_is_refused_and_exposes_a_boolean_at_its_site() {
+    let target = reviewed_target();
+    let record = &fixtures().program;
+    let instructions = record.program().instructions();
+    let index = instructions
+        .iter()
+        .rposition(|item| *item == op(OpcodeId::GreaterThanOrEqual64))
+        .unwrap();
+    assert_eq!(instructions[index + 1], op(OpcodeId::Verify));
+    let prefix = TapscriptProgram::new(instructions[..=index].to_vec()).unwrap();
+    let before_verify = validate_program(
+        &target,
+        &prefix,
+        record.precondition(),
+        AbstractLimits::for_target(&target),
+    )
+    .unwrap();
+    assert!(!before_verify.success().is_empty());
+    assert!(
+        before_verify
+            .success()
+            .iter()
+            .all(|state| state.main().last() == Some(&StackValueType::Bool))
+    );
+    let mut changed = instructions.to_vec();
+    changed.remove(index + 1);
+    assert_eq!(admit(changed), Err(StateProgramRefusal::ComponentRecipe));
+}
+
+#[test]
+fn appended_pushes_exceed_stack_bound_but_recipe_guard_precedes_resource_check() {
+    let target = reviewed_target();
+    let maximum = target.definition().resources().consensus().bounds()
+        [&ResourceDimension::PeakStackItems]
+        .maximum()
+        .unwrap();
+    let record = &fixtures().program;
+    let mut instructions = record.program().instructions().to_vec();
+    // Canonical success already has one item; these pushes reach maximum + 1.
+    instructions.extend((0..maximum).map(|_| number(&target, 1).unwrap()));
+    let changed = TapscriptProgram::new(instructions.clone()).unwrap();
+    assert_eq!(
+        validate_program(
+            &target,
+            &changed,
+            record.precondition(),
+            AbstractLimits::for_target(&target)
+        ),
+        Err(crate::TapscriptError::StackLimitExceeded { maximum })
+    );
+    assert_eq!(
+        admit(instructions),
+        Err(StateProgramRefusal::ComponentRecipe)
+    );
+}
+
+// Read declarations instead of maintaining a second enum that could silently drift.
+pub(super) fn declared_variants<'a>(source: &'a str, name: &str) -> BTreeSet<&'a str> {
+    let marker = format!("pub enum {name} {{");
+    let body = source
+        .split_once(&marker)
+        .unwrap()
+        .1
+        .split_once("\n}")
+        .unwrap()
+        .0;
+    body.lines()
+        .filter_map(|line| {
+            let tail = line.strip_prefix("    ")?;
+            if !tail.starts_with(|c: char| c.is_ascii_uppercase()) {
+                return None;
+            }
+            Some(tail.split(['(', '{', ',']).next().unwrap().trim())
+        })
+        .collect()
+}
+
+pub(super) fn assert_refusal_census(
+    source: &str,
+    name: &str,
+    exercised: &[(&str, fn())],
+    unavailable: &[(&str, &str)],
+) {
+    let reached: BTreeSet<_> = exercised
+        .iter()
+        .map(|(variant, test)| {
+            test();
+            *variant
+        })
+        .collect();
+    let gaps: BTreeSet<_> = unavailable
+        .iter()
+        .map(|(variant, reason)| {
+            assert_ne!(*reason, "");
+            *variant
+        })
+        .collect();
+    assert!(reached.is_disjoint(&gaps));
+    assert_eq!(
+        reached.union(&gaps).copied().collect::<BTreeSet<_>>(),
+        declared_variants(source, name)
+    );
+    assert_eq!(exercised.len(), reached.len());
+    assert_eq!(unavailable.len(), gaps.len());
+}
+
+#[test]
+fn program_refusal_declaration_has_exact_exercised_and_unreachable_census() {
+    assert_refusal_census(
+        include_str!("../state_program.rs"),
+        "StateProgramRefusal",
+        &[
+            (
+                "ComponentRecipe",
+                deleting_each_instruction_refuses_the_composed_identity,
+            ),
+            (
+                "ConsumerCensus",
+                either_mismatched_shared_binding_is_refused,
+            ),
+        ],
+        &[
+            (
+                "InvalidContract",
+                "Exact assembly and fixed witness precede the contract check; needs an internal contract validation seam.",
+            ),
+            (
+                "ResourceLimit",
+                "All three projected dimensions are unbounded; needs bounded projections and an internal resource validation seam.",
+            ),
+            (
+                "Program",
+                "Checked complete recipes supply no failing emission or walk input; needs a fallible assembly test seam.",
+            ),
+            (
+                "Subtree",
+                "The fixed single valid announcement leaf supplies no malformed subtree; needs a subtree construction seam.",
+            ),
+        ],
+    );
+}
