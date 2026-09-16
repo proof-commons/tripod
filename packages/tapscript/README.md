@@ -35,9 +35,10 @@ uses `thiserror` for its closed refusal sum. `linker`, `transaction`, `vectors`,
 
 ### How the neighbors relate
 
-The assessment path is the join between exactly two vocabularies. The STATE
-constructor adds realization's canonical metadata as a construction input
-without changing that assessment boundary.
+The general assessment path is the join between exactly two vocabularies. The
+STATE constructor adds realization's canonical metadata as a construction
+input, and the maturity-announcement entry point adds the complete Wave-5
+record as a scoped proof input; neither changes the general adapter's boundary.
 
 - **`compiler`** supplies the abstract side. `compiler::target::RequiredCapability`
   names what an approved analysis requires of *some* target;
@@ -356,9 +357,11 @@ and the transaction ABI owe; its complete census is
 something a target opcode can establish.
 
 `BackendPatternId` is **uninhabited** — `pub enum BackendPatternId {}`. No
-approved complete backend pattern exists, and that fact is enforced by the type
-system rather than by convention: the `CompleteBackendPattern` variant cannot be
-constructed, so no assessment can claim a capability is finished.
+approved complete generic backend pattern exists, and that fact is enforced by
+the type system rather than by convention: the general adapter's
+`CompleteBackendPattern` variant cannot be constructed. The separate
+maturity-announcement assessment can complete one of its own rows only from the
+complete record, its prerequisite census, and the reviewed registry.
 
 ### `error` — the general instruction and assessment error root
 
@@ -381,6 +384,36 @@ Work exhaustion is worth calling out: the four budget variants return a typed
 error and **no partial result**. A truncated state set would be
 indistinguishable from a complete one and would understate what the program can
 produce.
+
+### `maturity_assessment` — plan and record-backed announcement assessment
+
+The crate root re-exports this module in four groups matching `lib.rs`:
+
+- verdicts: `MaturityAssessmentSet`, `MaturityCapabilityGroup`,
+  `MaturityRequirement`, and `MaturityVerdict`;
+- carriers: `MaturityCarrier`, `MaturityCarrierProjection`,
+  `MaturityCarrierRefusal`, and `MaturityCarrierRefusalReason`;
+- record census: `MaturityRecordCensus`;
+- entry points: `assess_maturity_announcement_plan`,
+  `assess_maturity_announcement_program`,
+  `maturity_announcement_record_census`, and
+  `project_maturity_carriers`.
+
+The plan-only entry point retains the standing incomplete result. The
+record-backed entry point completes only rows whose carrying components and
+reviewed prerequisites are present, while the projection gives every relation
+one emitted component or realization's named external requirement.
+
+### `state_announcement` — five semantic fragments
+
+The re-exported record and census items are `StateAnnouncementBindings`,
+`StateAnnouncementConsumer`, `StateAnnouncementId`,
+`StateAnnouncementMetadata`, `StateAnnouncementOwner`,
+`StateAnnouncementPattern`, `StateAnnouncementRecipe`,
+`StateAnnouncementRefusal`, `StateAnnouncementResidual`,
+`StateAnnouncementSymbol`, and `StateAnnouncementWitness`. Construction uses
+`state_announcement_fragment`, `build_state_announcement_pattern`, and
+`state_announcement_patterns`.
 
 ### `state_constructor` — candidate STATE construction and evidence
 
@@ -407,6 +440,35 @@ in the same order as `lib.rs`:
 point admission and output-key derivation. The constructor owns the canonical
 metadata and tree recipes, while the curve implementation remains independently
 replaceable for cross-checking.
+
+### `state_operator` — committed-key authorization
+
+The crate root exports `StateOperatorBindings`, `StateOperatorDisclosure`,
+`StateOperatorOwner`, `StateOperatorPattern`, `StateOperatorPatternId`,
+`StateOperatorRefusal`, `StateOperatorResidual`, `StateOperatorSymbol`, and
+`StateOperatorWitness`, followed by `build_state_operator_pattern` and
+`state_operator_fragment`. The witness contains one signature; the recognized
+operator key remains a typed unresolved consumer pushed by the program.
+
+### `state_pattern` — structural records and their recipe
+
+The record group is `StateAnnouncementShape`, `StateConsumerRequirement`,
+`StateDisclosure`, `StateExternalEvidenceRole`, `StatePattern`,
+`StatePatternBindings`, `StatePatternConstructibility`, `StatePatternId`,
+`StatePatternMetadata`, `StatePatternOwner`, `StatePatternRecipe`,
+`StatePatternRefusal`, `StatePatternResidual`, `StatePatternSymbol`,
+`StatePatternWitness`, and `StateStructuralEvidence`. The construction entries
+are `build_state_pattern`, `state_structural_fragment`, and
+`state_structural_patterns`.
+
+### `state_program` — the composed announcement leaf
+
+The composed record exports `StateAnnouncementProgram`, `StateProgramAdapter`,
+`StateProgramComponent`, `StateProgramConsumer`, `StateProgramDisclosure`,
+`StateProgramMetadata`, `StateProgramRefusal`, `StateProgramResidual`,
+`StateProgramSymbol`, and `StateProgramWitness`. Its construction entries are
+`build_state_announcement_program`, `production_static_subtree`, and
+`state_announcement_program`.
 
 ## Tapscript program bytes have exactly one way in
 
@@ -498,6 +560,8 @@ static ASH constructor and candidate relocatable bundle
 static live-receipt constructor and its transfer leaf schema
 live coordinator and member patterns and their candidate bundle
 candidate STATE constructor and its reconstruction evidence
+STATE structural, semantic, operator, and composed announcement records
+record-backed maturity assessment and relation-to-carrier projection
 ```
 
 ### The candidate STATE constructor (Guide-14 Wave 4)
@@ -526,6 +590,34 @@ success or non-aborting-failure path for empty, true, false, arbitrary, and
 depth-edge initial stacks. The two target-native rows—no accepted spend through
 the leaf and rejection of every attempted spend—remain outstanding for Wave 8
 and are not implied by that abstract result (`0.6.178-dev`).
+
+### The maturity-announcement records (Guide-14 Wave 5)
+
+`state_pattern` builds five structural records after abstractly walking their
+contracts: coordinator role, exact cardinality, predecessor recognition,
+sponsor isolation, and issuance-and-absence closure. `state_announcement`
+builds metadata authentication, the unannounced-maturity check, the full-width
+lead window, schema-derived copy-through, and successor reconstruction.
+`state_operator` builds the committed-key verifying fragment, and
+`state_program` composes those families into the production announcement leaf
+and one-leaf static subtree (`0.6.180-dev` through `0.6.183-dev`).
+
+The composed leaf declares seven witness items, deepest first: successor
+output-key prefix, successor nonce, requested cycle, static-subtree root,
+predecessor metadata, predecessor output-key prefix, and operator signature.
+The root is witnessed rather than pushed by the leaf that it roots. Three
+one-instruction adapters align the lead-window, copy-through, and successor
+stacks; the closing adapter drops derived metadata and pushes canonical true.
+The complete census is twelve unresolved symbols over 46 push sites, with the
+shared asset and amount represented once (`0.6.183-dev`).
+
+The record-backed assessment completes 63 of 87 rows per representation and
+leaves 24 pending. It projects all 26 relations to 24 emitted components and
+two external requirements. It does not claim transaction-header inspection,
+streaming-hash and root effects, selected sighash semantics, operator
+authorization in the unreviewed registry, authenticated transition
+certificates, link resolution, deployment binding, finalized-byte observation,
+or target-native execution (`0.6.184-dev`, `0.6.185-dev`).
 
 ### The live-receipt constructor (Guide-13 §7, §10)
 
@@ -561,7 +653,7 @@ because nothing here may claim what a target would say.
 
 `selected_operator_profile` is the all-inputs/all-outputs, default-type script-path selection. Six target dimensions are required (`AllOutputs`, `AllInputs`, `Version`, `LockTime`, `TapleafHash`, and `SpentOutputs`), three narrowing or issuance dimensions are refused, and `InternalKey` is protected outside the message through the spent program and control-block check; every one of the ten `StateProtectedDatum` members lands on a required carrier. `EstablishedOperatorProfile::establish` derives the `Established` disposition only from the reviewed target, retains those six dimensions, and pins `TargetContractVersion::V2`, so neither a caller-authored profile nor a stale revision can stand in for review.
 
-The downstream native run establishes the target-facing half without expanding this crate's static claim: the operator positive was accepted and read back byte-identically, its returned signature independently verified over the recomputed message, and wrong key, wrong candidate, wrong leaf, signature width, signature type, and protected term were refused at the script-path layer; unknown-key admission and duplicate authorization remain first-party facts (`0.6.169-dev`). Operator membership is still external evidence because realization exposes no decision over an observed authorization, and the synthetic candidate leaves twelve STATE facts unconstructed.
+The downstream native run establishes the target-facing half without expanding this crate's static claim: the operator positive was accepted and read back byte-identically, its returned signature independently verified over the recomputed message, and wrong key, wrong candidate, wrong leaf, signature width, signature type, and protected term were refused at the script-path layer; unknown-key admission and duplicate authorization remain first-party facts (`0.6.169-dev`). Transaction now produces realization's observed-membership witness after checking the frozen request, deployment and affine right, while finalized-byte observation remains Wave 7's boundary (`0.6.181-dev`).
 
 ## What this package deliberately does not do
 
@@ -587,11 +679,12 @@ Beyond those, and by design rather than by omission:
   reviewed target's tagged-hash domains, opens no file, and mints no deployment
   identity;
 - it accepts no deployment binding and reads no network identity;
-- its assessment path names no attestation-contract operation, object,
+- its general assessment path names no attestation-contract operation, object,
   relation, or protocol quantity — the compiler owns that abstract side of the
-  join. The STATE constructor's narrow exception consumes realization's
-  canonical metadata and names construction roles, without reaching into
-  `architecture` or `model`.
+  join. The STATE-specific exceptions consume realization's canonical metadata
+  and the compiler's validated maturity-announcement plan to name construction
+  roles and relation carriers, without reaching into `architecture` or `model`
+  or evaluating the semantic transition again.
 
 ## Nothing here is claimed to work against a node
 

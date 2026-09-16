@@ -141,4 +141,6 @@ The counts below are ownership assignments, so one cross-wave row appears under 
 | 12 | `G14C-03` | 1 |
 | 13 | `G14C-02`, `G14C-15` | 2 |
 
+Wave 5 closed with no owned register row and no candidate adoption: its complete pattern record and carrier projection consume already-bound semantic and constructor obligations, while `R-5 RECOVERY` retains its Wave-10 trigger (`0.6.186-dev`).
+
 The register contains 12 OPEN rows and three CLOSED rows and 26 wave-ownership assignments. R-2 additionally feeds `G14C-11` constraints into Waves 7 and 9, and R-TAXONOMY shares `G14C-12` vocabulary with Waves 7 and 9 without changing the primary ownership counts above.

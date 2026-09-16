@@ -69,3 +69,30 @@ A positive result makes no genesis or global-origin claim. In particular, a
 synthetic origin is not protocol genesis, trusted setup, earlier history, or
 production STATE; accepted continuity and history evidence remain for Waves
 9 and 10.
+
+## Authenticated operator membership (Guide-14 Wave 5)
+
+`produce_operator_membership` consumes an explicit
+`OperatorMembershipMapping`, a frozen `OperatorMembershipRequest`, the verified
+`OperatorAuthorizedCandidate`, the affine `OperatorRightRegistry`, the reviewed
+target revision, and a nonempty run description. The mapping states one
+deployment binding, one established operator profile, and exactly one
+realization operation; the request carries the matching frozen signing request,
+operation assignment, and still-live construction right (`0.6.181-dev`).
+
+The producer first checks that the operation, authorization, revision, right
+scope, and run agree, then consumes the right. A deployment, key, profile, or
+revision mapping disagreement produces a checked non-member decision only after
+that authenticated consumption; it never turns a bad or stale authorization
+into evidence. `OperatorMembershipRefusal` names operation scope or mismatch,
+authorization mismatch or revision, right scope or registry failure, empty run,
+and provenance failure, while `OperatorMappingRefusal` names the four checked
+non-membership grounds.
+
+The emitted `ObservedOperatorMembership` names
+`transaction::produce_operator_membership` and the supplied run in its
+provenance. Its operation assignment remains a caller assertion until Wave 7's
+observation boundary binds it to finalized bytes. The transaction package card
+admits the direct realization dependency for this vocabulary without admitting
+a parallel semantic table: the producer compares authenticated identities and
+evaluates no realization formula.

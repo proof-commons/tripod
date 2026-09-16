@@ -1,6 +1,6 @@
 # Phase 6 — STATE Constructor and Maturity Announcement · `phase:roadmap:state-maturity`
 
-> **Status:** Active — opened 2026-08-27 as the roadmap's current phase when Phase 5 exited; both entry conditions hold through the countersigned Phase-5 exit assessment and the accepted STATE-constructor research decision. Guide 14 is archived verbatim (`T6-001`); Wave 0 closed the tenth-review disposition and Phase-5 handoff revalidation (`T6-002`, `T6-031`); the conceptual preflight register binds Waves 1–13 (`T8-001`); Wave 1's deliverables and architecture-owned lead-bound adapter landed through `0.6.152-dev`; Wave 2 closed under `T11-013` through `T11-020`; Wave 3 closed under `T11-024` through `T11-032`, with its six questions discharged by rulings 16–21 at (`rule:phase6:wave3-rulings`) and R-4 adopted in `plans/guides/guide_fourteen_conceptual_register.md`; Wave 4 closed under `T11-033` through `T11-040`, with its twelve decisions ruled at (`rule:phase6:wave4-rulings`) and R-1 and R-3 adopted in `plans/guides/guide_fourteen_conceptual_register.md`; and Wave 5 is open under `T11-041` through `T11-048`, with its six decisions ruled at (`rule:phase6:wave5-rulings`).
+> **Status:** Active — opened 2026-08-27 as the roadmap's current phase when Phase 5 exited; both entry conditions hold through the countersigned Phase-5 exit assessment and the accepted STATE-constructor research decision. Guide 14 is archived verbatim (`T6-001`); Wave 0 closed the tenth-review disposition and Phase-5 handoff revalidation (`T6-002`, `T6-031`); the conceptual preflight register binds Waves 1–13 (`T8-001`); Wave 1's deliverables and architecture-owned lead-bound adapter landed through `0.6.152-dev`; Wave 2 closed under `T11-013` through `T11-020`; Wave 3 closed under `T11-024` through `T11-032`, with its six questions discharged by rulings 16–21 at (`rule:phase6:wave3-rulings`) and R-4 adopted in `plans/guides/guide_fourteen_conceptual_register.md`; Wave 4 closed under `T11-033` through `T11-040`, with its twelve decisions ruled at (`rule:phase6:wave4-rulings`) and R-1 and R-3 adopted in `plans/guides/guide_fourteen_conceptual_register.md`; and Wave 5 closed under `T11-041` through `T11-048` in `0.6.186-dev`, with its six decisions ruled at (`rule:phase6:wave5-rulings`).
 > **Entry:** (`gate:phase5:exit`) and accepted STATE-constructor decision
 > **Packages:** tapscript, linker, transaction, vectors
 > **Operation:** `announce-maturity`
@@ -410,6 +410,64 @@ The ground truth is 26 relations, 23 dependency edges and 15 public facts (`pack
 30. The maturity assessment's standing result is that no approved maturity pattern exists, with tapleaf/tapbranch hashing, x-only-key encoding and fee-role recognition still mapped to empty primitive capability slices; ruling 38 preserves that result until complete Wave-5 records replace it group by group (`packages/tapscript/src/maturity_assessment.rs:70-114,285-311`).
 
 The eight Wave-5 bites are the opening record (`T11-041`), which rules the decisions and discharges no implementation deliverable; the STATE record and structural fragments (`T11-042`), which discharge deliverables 1, 2, 3, 10 and 11 and the record half of 13; semantic fragments (`T11-043`), which discharge deliverables 4–8; the operator fragment and membership producer (`T11-044`), which discharge deliverable 9 and the operator relation of exit 2; the composed program, production subtree and constructor re-run (`T11-045`), which discharge deliverables 12–14 and exits 1, 3 and 4; assessment and carrier projection (`T11-046`), which complete exit 2; adversarial closure tests (`T11-047`), which reconfirm all fourteen deliverables and four exits; and closure and handoff (`T11-048`), which records the Wave-6 unresolved-symbol handoff, Wave-7 membership-byte handoff and deferred Wave-8 and Wave-12 evidence. `T11-042` can start after this record lands, and `T11-044`'s producer can start after `T11-042`'s record type exists; nothing is handed up because every decision was decidable on the merits.
+
+31. The announcement leaf cannot push its own static-subtree root as a consumer because the production subtree is that one leaf. The root is therefore a witness item bound to the introspected program by the tweak relation and retained for the successor; because the reviewed registry's stack primitives reach only three items deep, copy-through carries the retained root (`0.6.182-dev`).
+
+32. The tapscript prerequisite adapter omits the streaming-hash opcodes and the non-opcode execution and resource capabilities, while the composed record carries no transaction-header or outpoint inspection. Transaction-header inspection, streaming hash and root effects therefore remain pattern-required in the record-backed assessment until a later bite extends the adapter (`0.6.184-dev`).
+
+33. The constructibility relation carries operator evidence in the plan and therefore maps to realization's external requirement, while authorization is emitted by the operator fragment. The complete projection consequently has 24 emitted carriers and two external carriers (`0.6.184-dev`).
+
+34. The reviewed target charges no operation cost, so the resource projection's operation dimension is zero by construction; the composed record's bound checks bite on its 2,243 script bytes and 150 validation units (`0.6.183-dev`).
+
+35. Selected sighash semantics and the operator-authorization capability remain missing while their registry entries are unreviewed, whatever components the record carries (`0.6.184-dev`).
+
+36. The closure tests record what the public tree does not expose rather than claiming it away: authentication and copy-through slice their inputs, so the abstract walk's declared precondition establishes full item widths rather than a run-time check on every item; recipe constructors refuse missing components before producing metadata, so subset unions are not observable; the compiler's corruption accessors are private to it, so duplicate-relation corruption is unreachable from tapscript; ten refusal variants — structural and composed invalid-contract, the program and contract variants of the semantic and operator records, the composed program, resource-limit and subtree variants, and the carrier projection's representation disagreement — are unreachable through admitted inputs and need internal contract, assembly, subtree and projection seams; every projected resource dimension is unbounded on this target, so the builder's resource refusal cannot be shown to bite while the independent stack bound can; and the constructor fixture's scripted curve injects a fixed output key, so the real curve result is verified beside it. Each gap is typed evidence for Wave 6 to open as a follow-up row or decline on the merits (`0.6.185-dev`).
+
+37. The maintained plans weight stands at 1024799 bytes against the 1,062,912-byte soft target after this wave, so a plans-weight decision — raising the target or splitting the backlog — is due before the Wave-6 opening.
+
+Wave 5 closed in its planned eight-bite order: the untagged opening record (`T11-041`) established the ground truth, rulings, findings and plan at (`rule:phase6:wave5-rulings`) and (`sec:phase6:wave5-findings`); the STATE record and structural fragments landed in `0.6.180-dev` (`T11-042`); the operator fragment and authenticated membership producer landed in `0.6.181-dev` (`T11-044`); the semantic fragments landed in `0.6.182-dev` (`T11-043`); the composed program, production subtree and constructor golden re-run landed in `0.6.183-dev` (`T11-045`); the assessment and carrier projection landed in `0.6.184-dev` (`T11-046`); the adversarial closure tests landed in `0.6.185-dev` (`T11-047`); and this closure and handoff lands in `0.6.186-dev` (`T11-048`).
+
+Deliverable 1, coordinator role — MET by the walked structural record in `0.6.180-dev`.
+
+Deliverable 2, exact cardinality — MET by the walked structural record in `0.6.180-dev`.
+
+Deliverable 3, predecessor recognition — MET by the asset, amount and constructor consumer checks in `0.6.180-dev`.
+
+Deliverable 4, metadata authentication — MET by the tweak-bound predecessor authentication fragment in `0.6.182-dev`.
+
+Deliverable 5, maturity predecessor — MET by the unannounced-maturity fragment in `0.6.182-dev`.
+
+Deliverable 6, lead-window checks — MET over the inclusive full-width unsigned domain by `0.6.182-dev`.
+
+Deliverable 7, copy-through — MET from the codec's field order with the retained root in `0.6.182-dev`.
+
+Deliverable 8, successor reconstruction — MET by output-zero reconstruction and authentication in `0.6.182-dev`.
+
+Deliverable 9, operator authorization — MET by the committed-key verifying fragment and authenticated membership producer in `0.6.181-dev`.
+
+Deliverable 10, sponsor isolation — MET by the structural partition and value-read prohibition in `0.6.180-dev`.
+
+Deliverable 11, issuance and absence closure — MET by the structural issuance and classified-position record in `0.6.180-dev`.
+
+Deliverable 12, complete composed program — MET by the exact component recipe and production leaf in `0.6.183-dev`.
+
+Deliverable 13, component-derived evidence, source, disclosure and residual metadata — MET by the structural, semantic and operator recipe unions completed in `0.6.183-dev`.
+
+Deliverable 14, final-stack and resource checks — MET by the composed walk and resource projection in `0.6.183-dev`.
+
+Exit 1, every program schedules from its declared witness — MET by the fragment walks and seven-item composed witness in `0.6.183-dev`.
+
+Exit 2, every relation has a carrier or named external role — MET at the record level in `0.6.184-dev`: every relation carries an emitted component or realization's external requirement, while linked and ABI closure belong to Wave 6.
+
+Exit 3, no composed pattern under-reports dependencies — MET by the component, prerequisite, consumer and metadata unions in `0.6.183-dev`.
+
+Exit 4, no unchecked Boolean or signature form survives — MET by the composed walk in `0.6.183-dev` and its mutation census in `0.6.185-dev`.
+
+Finding 26's guide candidate name is superseded by the tree's `OperatorSighashProfile`, as recorded at (`rule:phase6:wave5-rulings`). Finding 27's stale vectors comment was corrected in the untagged opening record. Finding 28 passes the frozen graph's seven constructor references to Wave 6 unchanged and now adds the composed record's typed census: twelve distinct unresolved symbols over 46 fixture push sites, consisting of eight structural symbols over 33 sites, the semantic family's twelve sites with asset and amount shared into the structural identities and three additional symbols, and one operator-key site. Finding 29 is superseded by the STATE-specific record in `0.6.180-dev`. Finding 30's standing no-approved-pattern result is replaced group by group only where the complete record and reviewed registry permit it in `0.6.184-dev`.
+
+Wave 6 receives the unresolved-symbol handoff: structural consumers for the STATE asset, STATE amount, predecessor program, fee-sponsor bound, reserve asset, sponsor-change program and version, and fee-program digest; semantic consumers for the internal key and both maturity-lead bounds, with asset and amount shared; the committed operator key; the constructor's seven frozen references; the typed refusal gaps in finding 36; and the carrier projection's 24 emitted components as the backend-emitted carriers of Guide 14 §11.5's comparison. It owns definitions, binding, relocation, cuts, canonical ordering, the residual-DAG proof and link integration without treating checked fixtures as resolution.
+
+Wave 7 receives the membership-byte handoff: the producer's operation assignment remains a caller assertion until the observation boundary binds it to finalized bytes, and the witness provenance names `transaction::produce_operator_membership` and its run. Wave 8 receives the deferred target-native evidence for the composed leaf, the schema-2 driver and the constructor carrier ceremony. Wave 12 receives the report-class carriers — current-root freshness, root-history edge sequence and public reconstruction — that no emitted component claims.
 
 ### Handed up for a ruling, Wave 3 · `rem:phase6:wave3-questions`
 
