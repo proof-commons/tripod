@@ -64,6 +64,7 @@ mod push_census_tests;
 mod schedule_tests;
 mod shape_tests;
 mod stack_tests;
+mod state_announcement_tests;
 mod state_constructor_tests;
 mod state_operator_tests;
 mod state_pattern_tests;

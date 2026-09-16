@@ -20,6 +20,7 @@ pub mod policy;
 pub mod program;
 pub mod shape;
 pub mod stack;
+pub mod state_announcement;
 pub mod state_constructor;
 pub mod state_operator;
 pub mod state_pattern;
@@ -135,6 +136,14 @@ pub use shape::{
 pub use stack::{
     AbstractExecutionResult, AbstractLimits, AbstractStackState, ProgramStackProfile,
     SignatureSuccessForm, program_stack_profile, resource_projection, validate_program,
+};
+
+pub use state_announcement::{
+    StateAnnouncementBindings, StateAnnouncementConsumer, StateAnnouncementId,
+    StateAnnouncementMetadata, StateAnnouncementOwner, StateAnnouncementPattern,
+    StateAnnouncementRecipe, StateAnnouncementRefusal, StateAnnouncementResidual,
+    StateAnnouncementSymbol, StateAnnouncementWitness, build_state_announcement_pattern,
+    state_announcement_fragment, state_announcement_patterns,
 };
 
 pub use state_constructor::{
