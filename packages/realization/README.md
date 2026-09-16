@@ -197,6 +197,9 @@ Everything below is re-exported at the crate root.
   - `validate_against(&Architecture) -> Result<(), RealizationError>` — the
     binding must still match
   - `evaluate_operation(&OperationObservation) -> Result<ConformanceReport, RealizationError>`
+  - `evaluate_operation_with_operator_membership(&OperationObservation, &ObservedOperatorMembership) -> Result<ConformanceReport, RealizationError>`
+    — supplies the operator-membership decision that the witness-free form
+    leaves external
   - `project() -> ScopedRealizationProjection`
 - `project_scoped_realization(&ScopedRealizationSpec) -> ScopedRealizationProjection`
   — the free-function form of `project`.
@@ -316,18 +319,34 @@ projections are what a consumer compares.
     can discharge it; it never becomes `Passed` at this boundary;
   - `Blocked { prerequisites }` — a prerequisite relation did not pass;
   - `Failed { reason }` — carries a `RelationFailure`.
+- `ObservedOperatorMembership` — carries the attested operation, a two-valued
+  `OperatorMembershipDisposition` (`Member` or `NonMember`), and provenance text
+  naming the deciding component and run. Its fields are private;
+  `new(OperationId, OperatorMembershipDisposition, impl Into<String>) -> Result<Self, EmptyOperatorMembershipProvenance>`
+  refuses empty or whitespace-only provenance, and its accessors are
+  `operation() -> OperationId`,
+  `disposition() -> OperatorMembershipDisposition`, and
+  `provenance() -> &str`. Construction authenticates neither the decision nor
+  its association with observation bytes, and no key, digest, identity, or
+  profile enters the realization. The producer that verifies a deployment
+  authorization and maps it to the model's abstract operator, and the binding
+  to finalized bytes, live in later waves.
 - `RelationFailure` — the focused runtime failure classes:
   `CardinalityBelowMinimum`, `CardinalityAboveMaximum`,
   `UndeclaredObjectFamily`, `ObjectRecognition`, `AmountConservation`,
-  `MissingOwnerAuthorization`, `UnexpectedProtocolAuthorization`,
+  `MissingOwnerAuthorization`, `OperatorMembership`,
+  `UnexpectedProtocolAuthorization`,
   `SponsorIsolation`, `SponsorEnvelopeMultiplicity`, `RootPolicy`,
   `ProjectionPolicy`, `Constructibility`, `Representation`,
   `CanonicalDeltaPolicy`, `OpenFlowPolicy`, `ExpressionPredicate`.
-- `ExternalEvidenceRequirement::SubstrateConservation { operation, asset }` —
-  the one premise the evaluator cannot establish itself. A runtime pass over
-  the sponsor-erased observation is not evidence that the substrate accepted
-  whole-transaction value conservation, so the requirement stays visible in the
-  report for the model kernel or the target to discharge.
+- `ExternalEvidenceRequirement` records the two premises the evaluator cannot
+  establish itself: `SubstrateConservation { operation, asset }` and
+  `OperatorAuthorization { operation }`. A runtime pass over the sponsor-erased
+  observation is not evidence that the substrate accepted whole-transaction
+  value conservation, so the substrate requirement stays visible in the report
+  for the model kernel or the target to discharge. The operator requirement is
+  discharged only by a witness supplied through the new entry point, which
+  fails both operator relations closed on a rejecting or mismatched witness.
 
 ## Error handling
 

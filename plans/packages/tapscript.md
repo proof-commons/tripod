@@ -12,8 +12,8 @@
 > **Package:** `tripod-tapscript`
 > **Library:** `tapscript`
 > **Direct dependencies:** `compiler`, `target-elements`
-> (`architecture` and `realization` are test-only, to build a plan
-> through the compiler's own constructor)
+> (`architecture` remains test-only; `realization` is a production dependency
+> for the STATE constructor)
 > **Decisions:** [D003](../decisions/003-tapscript-first.md),
 > [D004](../decisions/004-translation-validation.md),
 > [D005](../decisions/005-value-representation.md),
