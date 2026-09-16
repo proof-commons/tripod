@@ -21,6 +21,7 @@ pub mod program;
 pub mod shape;
 pub mod stack;
 pub mod state_constructor;
+pub mod state_operator;
 pub mod state_pattern;
 pub mod upstream;
 
@@ -144,6 +145,12 @@ pub use state_constructor::{
     StateNonceEvidence, StateReferenceCensus, StateReferenceDeclaration, StateStaticLeaf,
     StateStaticLeafEntry, StateStaticNode, StateStaticSubtree, StateTweakOutcome,
     predecessor_recipe, state_metadata_leaf_program, successor_recipe,
+};
+
+pub use state_operator::{
+    StateOperatorBindings, StateOperatorDisclosure, StateOperatorOwner, StateOperatorPattern,
+    StateOperatorPatternId, StateOperatorRefusal, StateOperatorResidual, StateOperatorSymbol,
+    StateOperatorWitness, build_state_operator_pattern, state_operator_fragment,
 };
 
 pub use state_pattern::{

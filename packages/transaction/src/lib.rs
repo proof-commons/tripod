@@ -17,6 +17,7 @@ pub mod live_private;
 pub mod live_request;
 pub mod live_signing;
 pub mod live_taproot;
+pub mod operator_membership;
 pub mod operator_right;
 pub mod operator_signing;
 pub mod request;
@@ -85,6 +86,11 @@ pub use live_taproot::{
     CommittedLiveTree, LiveCurveCapability, LiveReceiptInstance, TweakedOutputKey,
     commit_live_tree, derive_live_receipt_instance,
 };
+pub use operator_membership::{
+    OperatorMappingRefusal, OperatorMembershipMapping, OperatorMembershipRefusal,
+    OperatorMembershipRequest, produce_operator_membership,
+};
+
 pub use operator_right::{
     BranchContext, CachedOperatorAuthorization, ConstructionRight, NonEquivocationEntry,
     NonEquivocationEvent, NonEquivocationRecord, OperatorRightOutcome, OperatorRightRegistry,

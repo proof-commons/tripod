@@ -1317,3 +1317,75 @@ fn architecture_validator_reports_the_missing_operation() {
         Err(RealizationError::MissingArchitectureOperation(OP))
     );
 }
+
+// Realization cannot depend on transaction. These seam fixtures reconstruct the
+// operation, disposition and exact producer/run provenance shape it emits.
+fn produced_membership(
+    operation: OperationId,
+    disposition: crate::OperatorMembershipDisposition,
+) -> crate::ObservedOperatorMembership {
+    crate::ObservedOperatorMembership::new(
+        operation,
+        disposition,
+        "transaction::produce_operator_membership run fixture-7",
+    )
+    .unwrap()
+}
+
+fn assert_produced_membership_status(
+    witness: &crate::ObservedOperatorMembership,
+    expected: &RelationStatus,
+) {
+    let report = realization()
+        .evaluate_operation_with_operator_membership(&observation(), witness)
+        .unwrap();
+    let authorization = id(RelationKind::Authorization, RelationSubject::Operation);
+    let construction = id(RelationKind::Constructibility, RelationSubject::Operation);
+    assert_eq!(&report.verdict(&authorization).unwrap().status, expected);
+    // The full announcement graph refuses construction through its failed
+    // authorization prerequisite before evaluating the second operator relation.
+    let construction_status = if *expected == RelationStatus::Passed {
+        RelationStatus::Passed
+    } else {
+        RelationStatus::Blocked {
+            prerequisites: vec![authorization],
+        }
+    };
+    assert_eq!(
+        report.verdict(&construction).unwrap().status,
+        construction_status
+    );
+}
+
+#[test]
+fn produced_member_shape_passes_both_announcement_operator_relations() {
+    assert_produced_membership_status(
+        &produced_membership(OP, crate::OperatorMembershipDisposition::Member),
+        &RelationStatus::Passed,
+    );
+}
+
+#[test]
+fn produced_non_member_shape_fails_both_announcement_operator_relations() {
+    assert_produced_membership_status(
+        &produced_membership(OP, crate::OperatorMembershipDisposition::NonMember),
+        &RelationStatus::Failed {
+            reason: crate::RelationFailure::OperatorMembership,
+        },
+    );
+}
+
+#[test]
+fn produced_shape_for_another_operation_fails_closed() {
+    for disposition in [
+        crate::OperatorMembershipDisposition::Member,
+        crate::OperatorMembershipDisposition::NonMember,
+    ] {
+        assert_produced_membership_status(
+            &produced_membership(OperationId::Cycle, disposition),
+            &RelationStatus::Failed {
+                reason: crate::RelationFailure::OperatorMembership,
+            },
+        );
+    }
+}

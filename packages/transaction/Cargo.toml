@@ -38,6 +38,8 @@ name = "transaction"
 # this crate could state a witness layout but not a witness.
 [dependencies]
 linker = { workspace = true }
+# Realization owns the membership witness emitted after deployment authorization.
+realization = { workspace = true }
 sha2 = { workspace = true }
 tapscript = { workspace = true }
 target-elements = { workspace = true }
@@ -49,7 +51,6 @@ target-elements = { workspace = true }
 [dev-dependencies]
 architecture = { workspace = true }
 compiler = { workspace = true }
-realization = { workspace = true }
 
 [lints]
 workspace = true

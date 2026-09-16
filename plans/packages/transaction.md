@@ -35,6 +35,7 @@ Allowed direct dependencies:
 
 ```text
 linker
+realization
 tapscript
 target-elements
 ```
@@ -53,6 +54,8 @@ A direct `realization` dependency is added only if linked construction recipes
 cannot provide formula evaluation without creating a parallel semantic table.
 
 The direct `tapscript` dependency lets `StateThreadAnchor` name constructor generation by `tapscript::StateConstructorGeneration`, so provenance cannot drift from the constructor's typed recipe identity; the direction transaction → linker → tapscript already holds, so this admission adds no crate to the dependency closure and leaves linked construction recipes authoritative, as required by ruling 27 at (`rule:phase6:wave4-rulings`).
+
+The direct `realization` dependency supplies the membership witness in realization's vocabulary: transaction is the boundary that verifies the frozen message and the deployment before producing it. The direction realization → tapscript → linker → transaction already holds in the dependency closure, and this admission leaves the parallel-semantic-table clause untouched because the producer evaluates no formula, as required by ruling 35 at (`rule:phase6:wave5-rulings`).
 
 ## Typed inputs · `sec:transaction:inputs`
 
