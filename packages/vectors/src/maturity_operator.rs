@@ -96,8 +96,8 @@ pub struct OperatorEvidenceRow {
 /// Mock exchanges exercise verification but cannot establish target acceptance.
 /// The protocol returns a signature and public context, not a digest echo:
 /// independent verification binds that signature to the recomputed message.
-/// Realization's operator relation requires external evidence and exposes no
-/// observed-operator membership decision. Complete STATE construction remains
+/// Realization's operator relations stay external evidence until a witness is supplied through its observed-operator-membership seam, which fails them closed on a rejecting or mismatched witness.
+/// This receipt candidate supplies no such witness. Complete STATE construction remains
 /// open; no metadata or nonce claim is inferred from this receipt candidate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperatorEvidence {
