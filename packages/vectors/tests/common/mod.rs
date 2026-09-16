@@ -942,7 +942,7 @@ pub(crate) fn render_run_identity(
     }
     let suite_commit = &destination.suite_commit;
     let suite_tree = &destination.suite_tree;
-    let _ = writeln!(out, "native-capture-schema 1");
+    let _ = writeln!(out, "native-capture-schema 2");
     let _ = writeln!(out, "ceremony-id {}", ceremony.as_str());
     write_text_field(out, "rust-test-name", ceremony.rust_test_name());
     let _ = writeln!(out, "suite-commit {suite_commit}");
@@ -1076,6 +1076,9 @@ pub(crate) fn render_operations(
             request_bytes.len(),
             hex_bytes(request_bytes),
         );
+        let request_subject = render_request_subject(&operation.request().subject)
+            .map_err(|error| format!("request subject serialization failed: {error}"))?;
+        write_bytes_field(out, "request-subject", &request_subject);
         write_optional_text_field(out, "response-id", operation.response_id());
         write_optional_text_field(out, "response-request-id", operation.response_request_id());
         write_optional_text_field(
@@ -1129,6 +1132,51 @@ pub(crate) fn render_operations(
         let _ = writeln!(out, "operation {ordinal} end");
     }
     Ok(())
+}
+
+/// Serializes the exact subject retained beside each operation request.
+///
+/// The line preserves funding evidence that `request-bytes` cannot carry.
+/// Capture schema two announces the added field before an older positional
+/// importer reaches the operation block and encounters unfamiliar grammar.
+pub(crate) fn render_request_subject(
+    subject: &OperationSubject,
+) -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec(subject)
+}
+
+pub(crate) fn decode_request_subject_line(line: &str) -> Result<OperationSubject, String> {
+    let mut fields = line.splitn(3, ' ');
+    if fields.next() != Some("request-subject") {
+        return Err("the line is not a request-subject field".to_owned());
+    }
+    let declared = fields
+        .next()
+        .ok_or_else(|| "the request-subject length is absent".to_owned())?
+        .parse::<usize>()
+        .map_err(|_| "the request-subject length is invalid".to_owned())?;
+    let hexadecimal = fields
+        .next()
+        .ok_or_else(|| "the request-subject payload is absent".to_owned())?;
+    if hexadecimal.len() != declared.saturating_mul(2) {
+        return Err("the request-subject length disagrees with its payload".to_owned());
+    }
+    let nibble = |byte| match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        _ => None,
+    };
+    let (pairs, remainder) = hexadecimal.as_bytes().as_chunks::<2>();
+    if !remainder.is_empty() {
+        return Err("the request-subject payload has a partial byte".to_owned());
+    }
+    let bytes = pairs
+        .iter()
+        .map(|[high, low]| Some(nibble(*high)?.checked_shl(4)? | nibble(*low)?))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| "the request-subject payload is not lower-case hexadecimal".to_owned())?;
+    serde_json::from_slice(&bytes)
+        .map_err(|error| format!("the request-subject payload is invalid: {error}"))
 }
 
 pub(crate) fn validate_capture_facts(

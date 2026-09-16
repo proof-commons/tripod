@@ -122,5 +122,8 @@ target-elements = { workspace = true }
 target-elements-conformance = { workspace = true }
 transaction = { workspace = true }
 
+[dev-dependencies]
+serde_json = { workspace = true }
+
 [lints]
 workspace = true

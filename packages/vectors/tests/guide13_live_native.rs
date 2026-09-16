@@ -663,7 +663,7 @@ fn the_sha256_implementation_matches_the_published_empty_and_abc_vectors() {
 }
 
 const GOLDEN_CAPTURE_PREFIX: &str = concat!(
-    "native-capture-schema 1\n",
+    "native-capture-schema 2\n",
     "ceremony-id explicit-witness-negatives\n",
     "rust-test-name 62 7468655f7769746e6573735f636f6e74656e745f6e65676174697665735f6172655f6f6666657265645f6265736964655f74686569725f636f6e74726f6c\n",
     "suite-commit 1111111111111111111111111111111111111111\n",
@@ -706,6 +706,13 @@ const GOLDEN_CAPTURE_PREFIX: &str = concat!(
     "digest 0 successor forward-v2 3333333333333333333333333333333333333333333333333333333333333333\n",
 );
 
+fn request_subject_lines_decode(rendered: &str) -> bool {
+    rendered
+        .lines()
+        .filter(|line| line.starts_with("request-subject "))
+        .all(|line| decode_request_subject_line(line).is_ok())
+}
+
 #[cfg(unix)]
 #[test]
 fn the_enhanced_capture_format_matches_exact_golden_bytes() {
@@ -741,6 +748,7 @@ fn the_enhanced_capture_format_matches_exact_golden_bytes() {
         "request-id 9 726571756573742d30\n",
         "request-role refusal\n",
         "request-bytes 4 000180ff\n",
+        "request-subject 35 7b227472616e73616374696f6e5f6279746573223a5b302c312c3132382c3235355d7d\n",
         "response-id 10 726573706f6e73652d30\n",
         "response-request-id 9 726571756573742d30\n",
         "response-operation-id 11 6f7065726174696f6e2d30\n",
@@ -759,6 +767,7 @@ fn the_enhanced_capture_format_matches_exact_golden_bytes() {
         "request-id 9 726571756573742d31\n",
         "request-role paired-explicit\n",
         "request-bytes 2 0203\n",
+        "request-subject 27 7b227472616e73616374696f6e5f6279746573223a5b322c335d7d\n",
         "response-id 10 726573706f6e73652d31\n",
         "response-request-id 9 726571756573742d31\n",
         "response-operation-id 11 6f7065726174696f6e2d31\n",
@@ -789,9 +798,10 @@ fn the_enhanced_capture_format_matches_exact_golden_bytes() {
     ]
     .concat();
     let expected = format!(
-        "{expected_content}capture-content-sha256 ca478f8b4db5e32a0304e478ce16bf53073cc4a85bdb0e4d690ee81cfc96d538\nnative-capture-end explicit-witness-negatives\n",
+        "{expected_content}capture-content-sha256 3249c758227f99a26a1b5cf5325c2a3ee2e1ae0d7083d3e52e4aabad4a51dc98\nnative-capture-end explicit-witness-negatives\n",
     );
     assert_eq!(rendered, expected);
+    assert!(request_subject_lines_decode(&rendered));
     let mut mismatched = facts;
     mismatched.operations[0].role = RequestRole::Acceptance;
     assert!(

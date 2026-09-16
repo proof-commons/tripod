@@ -25,15 +25,21 @@ use std::time::Duration;
 use linker::CandidateDeploymentIdentity;
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
-    reviewed_elements_tapscript, validate_reviewed_development_binding,
+    ReproducibilityContract, reviewed_elements_tapscript, validate_reviewed_development_binding,
 };
 use target_elements_conformance::executor::{
     ExecutionTranscript, ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust,
-    NativeOperationCapture, OperationStep, TargetOperationPlanner, execute_operations_captured,
+    NativeOperationCapture, OperationStep, PlanRefused, TargetOperationPlanner,
+    execute_operations_captured,
 };
 use target_elements_conformance::protocol::{
-    FundedOutput, MinedFundingReadback, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse,
-    NativeResourceObservation, ObservedOutcomeLayer, OperationSubject, WireOutpoint,
+    ConfidentialFixtureDigest, ConfidentialFixtureHandle, ConfidentialFundingBinding,
+    ConfidentialFundingDestination, ConfidentialFundingProfiles, FundedOutput,
+    FundingCustodyProfile, FundingMaterializerProfile, FundingRepresentationProfile,
+    MinedFundingReadback, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse,
+    NativeResourceObservation, ObservedOutcomeLayer, OperationCaseId, OperationSubject,
+    TargetConfidentialFundingSubject, TargetConfidentialSponsorFundingSubject,
+    TargetFundingSubject, TargetSponsorFundingSubject, TargetSubmissionSubject, WireOutpoint,
     WireSighashProfile,
 };
 use target_elements_conformance::test_material::PublicTestSignerHandle;
@@ -222,7 +228,7 @@ fn execute(
     directory: &Path,
     deployment: &CandidateDeploymentIdentity,
     trust: ExecutorTrust,
-    planner: &mut OperatorPlanner,
+    planner: &mut dyn TargetOperationPlanner,
     capture: &mut NativeOperationCapture,
 ) -> Result<ExecutionTranscript, target_elements_conformance::error::NativeConformanceError> {
     let target = reviewed_elements_tapscript().expect("reviewed target");
@@ -245,6 +251,200 @@ fn execute(
         ExecutorDiagnostics::in_directory(&directory.join("diagnostics")),
     );
     execute_operations_captured(&target, &binding, &configuration, planner, capture)
+}
+
+#[derive(Clone)]
+struct RetainedSubjectPlan {
+    steps: Vec<OperationStep>,
+    next: usize,
+}
+
+impl TargetOperationPlanner for RetainedSubjectPlan {
+    fn next_step(
+        &mut self,
+        previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+    ) -> Result<Option<OperationStep>, PlanRefused> {
+        if previous.is_some() {
+            self.next += 1;
+        }
+        Ok(self.steps.get(self.next).cloned())
+    }
+}
+
+fn retained_subjects() -> Vec<OperationSubject> {
+    let binding = ConfidentialFundingBinding {
+        fixture_handle: ConfidentialFixtureHandle::new("request-subject-fixture".to_owned()),
+        fixture_digest: ConfidentialFixtureDigest::new([0x44; 32]),
+        profiles: ConfidentialFundingProfiles {
+            representation: FundingRepresentationProfile::ExplicitAssetConfidentialValue,
+            custody: FundingCustodyProfile::CentralPublicFixtures,
+            materializer: FundingMaterializerProfile::GuideCtfDeterministicV1,
+            reproducibility_contract: ReproducibilityContract::ByteIdentity,
+        },
+    };
+    vec![
+        OperationSubject::Funding(Box::new(TargetFundingSubject {
+            issue_asset: true,
+            asset: None,
+            output_program: vec![0x51],
+            outputs: 1,
+            amount_per_output: 7,
+        })),
+        OperationSubject::SponsorFunding(Box::new(TargetSponsorFundingSubject {
+            sponsor_outputs: 1,
+            amount_per_sponsor_output: 11,
+        })),
+        OperationSubject::ConfidentialFunding(Box::new(TargetConfidentialFundingSubject {
+            issue_asset: false,
+            asset: Some("11".repeat(32)),
+            destinations: vec![ConfidentialFundingDestination {
+                output_program: vec![0x51, 0x20],
+            }],
+            binding: binding.clone(),
+        })),
+        OperationSubject::ConfidentialSponsorFunding(Box::new(
+            TargetConfidentialSponsorFundingSubject {
+                destinations: vec![ConfidentialFundingDestination {
+                    output_program: vec![0x51, 0x21],
+                }],
+                binding,
+            },
+        )),
+        OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+            transaction_bytes: vec![0x02, 0x00, 0x01, 0xff],
+        })),
+    ]
+}
+
+#[cfg(unix)]
+fn rendered_request_subject_capture() -> (NativeOperationCapture, String) {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let directory = common::test_directory("request-subject");
+    let adapter = directory.join("adapter.sh");
+    let steps = retained_subjects()
+        .into_iter()
+        .enumerate()
+        .map(|(index, subject)| OperationStep::new(&format!("subject-{index}"), subject))
+        .collect::<Vec<_>>();
+    let responses = steps
+        .iter()
+        .map(|step| {
+            let mut response = blank_response(step);
+            response.observed_layer = ObservedOutcomeLayer::ScriptPathRejection;
+            response.observed_detail = Some("scripted subject refusal".to_owned());
+            response_json(&response)
+        })
+        .collect::<Vec<_>>();
+    std::fs::write(
+        &adapter,
+        common::scripted_adapter(
+            &[
+                "test_funding_ceremony",
+                "target_transaction_submission",
+                "test_sponsor_authorization",
+                "confidential_value_test_funding",
+                "confidential_value_sponsor_authorization",
+            ],
+            &responses,
+        ),
+    )
+    .expect("scripted subject adapter");
+    std::fs::set_permissions(&adapter, std::fs::Permissions::from_mode(0o755))
+        .expect("subject adapter permissions");
+    let mut planner = RetainedSubjectPlan { steps, next: 0 };
+    let mut capture = NativeOperationCapture::default();
+    execute(
+        &adapter,
+        &directory,
+        &identity(),
+        ExecutorTrust::Mock,
+        &mut planner,
+        &mut capture,
+    )
+    .expect("scripted subject exchange");
+    let facts = common::CeremonyCaptureFacts::from_capture(common::CeremonyId::Report, &capture);
+    let mut rendered = String::new();
+    common::render_operations(&mut rendered, &capture, &facts).expect("operation block");
+    std::fs::remove_dir_all(directory).expect("subject directory removed");
+    (capture, rendered)
+}
+
+#[cfg(unix)]
+#[test]
+fn every_supported_funding_and_submission_subject_round_trips_through_the_writer() {
+    let (capture, rendered) = rendered_request_subject_capture();
+    let subject_lines = rendered
+        .lines()
+        .filter(|line| line.starts_with("request-subject "));
+    assert_eq!(capture.operations().len(), 5);
+    for (operation, line) in capture.operations().iter().zip(subject_lines) {
+        assert_eq!(
+            common::decode_request_subject_line(line).expect("retained subject decodes"),
+            operation.request().subject,
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn every_operation_block_has_one_request_subject_in_protocol_order() {
+    let (capture, rendered) = rendered_request_subject_capture();
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let ordered = lines
+        .windows(3)
+        .filter(|window| window[0].starts_with("request-bytes "))
+        .inspect(|window| {
+            assert!(window[1].starts_with("request-subject "));
+            assert!(window[2].starts_with("response-id "));
+        })
+        .count();
+    assert_eq!(ordered, capture.operations().len());
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("request-subject "))
+            .count(),
+        capture.operations().len(),
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn submission_subject_and_request_bytes_retain_the_same_transaction() {
+    let (capture, rendered) = rendered_request_subject_capture();
+    let (index, operation) = capture
+        .operations()
+        .iter()
+        .enumerate()
+        .find(|(_, operation)| {
+            matches!(operation.request().subject, OperationSubject::Submission(_))
+        })
+        .expect("submission operation");
+    let line = rendered
+        .lines()
+        .filter(|line| line.starts_with("request-subject "))
+        .nth(index)
+        .expect("submission subject line");
+    let OperationSubject::Submission(subject) =
+        common::decode_request_subject_line(line).expect("submission subject decodes")
+    else {
+        panic!("retained subject is not a submission");
+    };
+    let transaction_bytes = operation.transaction_bytes().expect("submission bytes");
+    assert_eq!(subject.transaction_bytes, transaction_bytes);
+    assert_eq!(
+        rendered
+            .lines()
+            .filter(|line| line.starts_with("request-bytes "))
+            .nth(index)
+            .expect("submission request bytes line"),
+        format!(
+            "request-bytes {} {}",
+            transaction_bytes.len(),
+            common::hex_bytes(transaction_bytes),
+        ),
+    );
 }
 
 #[cfg(unix)]
