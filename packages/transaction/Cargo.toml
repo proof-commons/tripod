@@ -13,16 +13,11 @@ version.workspace = true
 name = "transaction"
 
 # Guide-12 §15.1 names `linker` and `target-elements` as this package's
-# direct dependencies, and the package contract forbids `model`,
+# original direct dependencies, and the package contract forbids `model`,
 # `compiler`, `vectors`, `release`, and `artifacts`. Both named packages
 # are present and no forbidden one is.
 #
-# `tapscript` is not named directly and is not listed: every backend
-# type this crate reads — shapes, layouts, witness roles, leaf roles —
-# reaches it through the linked bundle's own public surface, which is
-# the only bundle it is allowed to build against. Naming the backend
-# directly would let a caller hand this crate a layout that no link
-# produced.
+# `tapscript` supplies the anchor's typed constructor generation on the existing transaction-to-linker-to-tapscript dependency path.
 #
 # `target-elements-conformance` is deliberately absent, and its absence
 # is load-bearing rather than incidental. That package is the
@@ -39,6 +34,7 @@ name = "transaction"
 [dependencies]
 linker = { workspace = true }
 sha2 = { workspace = true }
+tapscript = { workspace = true }
 target-elements = { workspace = true }
 
 # Test-only. Exact bytes need a real linked bundle, and the only way to
@@ -49,7 +45,6 @@ target-elements = { workspace = true }
 architecture = { workspace = true }
 compiler = { workspace = true }
 realization = { workspace = true }
-tapscript = { workspace = true }
 
 [lints]
 workspace = true

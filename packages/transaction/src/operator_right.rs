@@ -6,12 +6,14 @@
 //! The conceptual register's equivocation candidate remains a candidate:
 //! implementing these evidence obligations does not adopt it.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use linker::CandidateDeploymentIdentity;
+use tapscript::StateConstructorGeneration;
 use target_elements::TargetContractVersion;
 
-use crate::bytes::{InputWitness, Outpoint};
+use crate::bytes::{AssetId, InputWitness, Outpoint};
 use crate::operator_signing::{
     OperatorAuthorizedCandidate, OperatorEvidenceStanding, OperatorSigningRefusal,
     OperatorSigningRequest,
@@ -52,6 +54,242 @@ impl BranchContext {
     #[must_use]
     pub const fn checkpoint(&self) -> u64 {
         self.checkpoint
+    }
+}
+
+/// The asset identity or issuance input from which a thread starts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateThreadProvenance {
+    /// An existing asset, without a claim about its earlier history.
+    ExistingAsset(AssetId),
+    /// The outpoint whose spend carries issuance and supplies its entropy input.
+    Issuance(Outpoint),
+}
+
+/// Which branches may carry continuations of an anchor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateCheckpointPolicy {
+    /// Only the anchor's exact branch identifier, at any checkpoint ordinal.
+    ExactBranch,
+    /// Any branch at or beyond this checkpoint ordinal, including reorganizations.
+    AtOrBeyond(u64),
+}
+
+/// The accepted continuity evidence still owed by a thread.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum StateContinuityEvidence {
+    /// Accepted continuity and history evidence have not yet been attached.
+    Outstanding,
+}
+
+/// Whether the starting point is a fixture or an observation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateThreadOrigin {
+    /// A fixture: not genesis, trusted setup, earlier history, or production STATE.
+    Synthetic,
+    /// An observed starting point, with continuity evidence still outstanding.
+    Observed,
+}
+
+/// Caller-supplied target acceptance of a continuation transaction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateContinuationStanding {
+    /// The caller states that the target accepted this continuation transaction.
+    Accepted,
+    /// No target acceptance is asserted.
+    NotAccepted,
+}
+
+/// One offered continuation and its caller-supplied acceptance fact.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StateContinuation {
+    /// The branch and checkpoint where the continuation is offered.
+    pub branch: BranchContext,
+    /// The successor output of the continuation transaction.
+    pub successor: Outpoint,
+    /// Acceptance is a supplied fact, not evidence verified by this record.
+    pub standing: StateContinuationStanding,
+}
+
+/// A shape or conditional-uniqueness refusal for a state thread.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateThreadRefusal {
+    /// The anchor's branch identifier was all zero.
+    ZeroBranchIdentifier {
+        /// The offered checkpoint ordinal.
+        checkpoint: u64,
+    },
+    /// An offered continuation's branch or ordinal was outside the policy.
+    OutsideCheckpointPolicy(BranchContext),
+    /// Two accepted continuations named the same branch identifier.
+    Equivocation(Digest32),
+}
+
+/// Typed provenance for one caller-anchored predecessor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateThreadAnchor {
+    deployment: CandidateDeploymentIdentity,
+    branch: BranchContext,
+    starting_outpoint: Outpoint,
+    provenance: StateThreadProvenance,
+    generation: StateConstructorGeneration,
+    checkpoint_policy: StateCheckpointPolicy,
+    continuity_evidence: StateContinuityEvidence,
+    origin: StateThreadOrigin,
+}
+
+impl StateThreadAnchor {
+    /// Checks anchor shape without establishing provenance or continuity.
+    ///
+    /// `branch` supplies the identifier and checkpoint ordinal checked by
+    /// [`BranchContext::new`]. The typed [`Outpoint`] already excludes reserved
+    /// index bits, including the maximum integer index. Both origins are
+    /// admissible with outstanding evidence; deployment identity is not a
+    /// proof that this thread began at genesis.
+    ///
+    /// # Errors
+    /// Refuses a zero branch identifier.
+    pub fn new(
+        deployment: CandidateDeploymentIdentity,
+        branch: (Digest32, u64),
+        starting_outpoint: Outpoint,
+        provenance: StateThreadProvenance,
+        generation: StateConstructorGeneration,
+        checkpoint_policy: StateCheckpointPolicy,
+        origin: StateThreadOrigin,
+    ) -> Result<Self, StateThreadRefusal> {
+        let branch = BranchContext::new(branch.0, branch.1).map_err(|_| {
+            StateThreadRefusal::ZeroBranchIdentifier {
+                checkpoint: branch.1,
+            }
+        })?;
+        Ok(Self {
+            deployment,
+            branch,
+            starting_outpoint,
+            provenance,
+            generation,
+            checkpoint_policy,
+            continuity_evidence: StateContinuityEvidence::Outstanding,
+            origin,
+        })
+    }
+
+    /// The named network and genesis identity.
+    #[must_use]
+    pub const fn deployment(&self) -> &CandidateDeploymentIdentity {
+        &self.deployment
+    }
+    /// The checked starting branch context.
+    #[must_use]
+    pub const fn branch(&self) -> &BranchContext {
+        &self.branch
+    }
+    /// The predecessor where this thread starts.
+    #[must_use]
+    pub const fn starting_outpoint(&self) -> Outpoint {
+        self.starting_outpoint
+    }
+    /// The asset or issuance provenance supplied by the caller.
+    #[must_use]
+    pub const fn provenance(&self) -> StateThreadProvenance {
+        self.provenance
+    }
+    /// The constructor recipe's typed generation.
+    #[must_use]
+    pub const fn generation(&self) -> StateConstructorGeneration {
+        self.generation
+    }
+    /// The policy selecting eligible branches.
+    #[must_use]
+    pub const fn checkpoint_policy(&self) -> StateCheckpointPolicy {
+        self.checkpoint_policy
+    }
+    /// The standing of accepted continuity evidence.
+    #[must_use]
+    pub const fn continuity_evidence(&self) -> StateContinuityEvidence {
+        self.continuity_evidence
+    }
+    /// The starting point's synthetic or observed origin.
+    #[must_use]
+    pub const fn origin(&self) -> StateThreadOrigin {
+        self.origin
+    }
+
+    /// Checks conditional at-most-one accepted continuation per selected branch.
+    ///
+    /// Uniqueness of the anchor is a hypothesis supplied by the caller's
+    /// provenance, never proved here. The caller also supplies target acceptance
+    /// and the fact that each candidate continues this anchored predecessor.
+    /// Under [`StateCheckpointPolicy::ExactBranch`], the selected branch is the
+    /// anchor's identifier, regardless of checkpoint ordinal. Under
+    /// [`StateCheckpointPolicy::AtOrBeyond`], selected branches are the offered
+    /// identifiers whose checkpoint ordinals meet the floor. Branch identity,
+    /// not checkpoint ordinal, groups continuations: a second accepted entry
+    /// for the same identifier refuses, even with the same successor.
+    /// Success returns at most one accepted continuation for each selected
+    /// branch, sorted by identifier; unaccepted entries are omitted.
+    /// For a synthetic origin, a positive result makes no genesis claim and
+    /// proves no global origin uniqueness; see [`StateThreadContinuations::RESIDUAL`].
+    ///
+    /// # Errors
+    /// Refuses every out-of-policy candidate, including unaccepted ones, or
+    /// two accepted continuations sharing a branch identifier.
+    pub fn check_continuations(
+        &self,
+        candidates: &[StateContinuation],
+    ) -> Result<StateThreadContinuations, StateThreadRefusal> {
+        let mut accepted = BTreeMap::new();
+        for candidate in candidates {
+            let selected = match self.checkpoint_policy {
+                StateCheckpointPolicy::ExactBranch => {
+                    candidate.branch.identifier() == self.branch.identifier()
+                }
+                StateCheckpointPolicy::AtOrBeyond(floor) => candidate.branch.checkpoint() >= floor,
+            };
+            if !selected {
+                return Err(StateThreadRefusal::OutsideCheckpointPolicy(
+                    candidate.branch,
+                ));
+            }
+            if candidate.standing == StateContinuationStanding::Accepted
+                && accepted
+                    .insert(*candidate.branch.identifier(), *candidate)
+                    .is_some()
+            {
+                return Err(StateThreadRefusal::Equivocation(
+                    *candidate.branch.identifier(),
+                ));
+            }
+        }
+        Ok(StateThreadContinuations {
+            accepted: accepted.into_values().collect(),
+            origin: self.origin,
+        })
+    }
+}
+
+/// Accepted continuations under the caller's unique-anchor hypothesis.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateThreadContinuations {
+    accepted: Vec<StateContinuation>,
+    origin: StateThreadOrigin,
+}
+
+impl StateThreadContinuations {
+    /// A positive check supplies neither genesis nor global origin uniqueness.
+    pub const RESIDUAL: &'static str = "conditional on a uniquely anchored predecessor; no genesis claim or global origin uniqueness; synthetic origin is not protocol genesis, trusted setup, earlier root history, or production STATE and authorizes nothing of value";
+
+    /// At most one accepted continuation per selected branch identifier.
+    #[must_use]
+    pub fn accepted(&self) -> &[StateContinuation] {
+        &self.accepted
+    }
+    /// The anchor's origin, preserved without promotion by a positive check.
+    #[must_use]
+    pub const fn origin(&self) -> StateThreadOrigin {
+        self.origin
     }
 }
 

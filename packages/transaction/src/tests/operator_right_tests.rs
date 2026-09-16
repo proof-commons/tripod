@@ -2,12 +2,17 @@
 
 use std::cell::Cell;
 
+use linker::CandidateDeploymentIdentity;
+use tapscript::StateConstructorGeneration;
+
 use super::live_support::{OperatorRightFixture, OperatorRightVerifier};
 use super::outpoint;
-use crate::bytes::{TargetInput, TargetTransaction};
+use crate::bytes::{AssetId, OUTPOINT_INDEX_MASK, Outpoint, TargetInput, TargetTransaction};
 use crate::operator_right::{
     BranchContext, ConstructionRight, NonEquivocationEvent, OperatorRightOutcome,
-    OperatorRightRegistry, RightRefusal, RightScope,
+    OperatorRightRegistry, RightRefusal, RightScope, StateCheckpointPolicy, StateContinuation,
+    StateContinuationStanding, StateContinuityEvidence, StateThreadAnchor,
+    StateThreadContinuations, StateThreadOrigin, StateThreadProvenance, StateThreadRefusal,
 };
 use crate::operator_signing::{
     OperatorSigningRefusal, OperatorSigningRequest, authorize_operator,
@@ -615,4 +620,349 @@ fn record_contains_one_signature_free_entry_per_observed_action() {
         assert_eq!(*bytes_len, bytes.len());
         assert_eq!(*digest, tagged_hash("operator-right/candidate", &bytes));
     }
+}
+
+fn anchor_identity(
+    context: ([u8; 32], u64),
+    deployment: (u8, u8),
+    starting: Outpoint,
+    provenance: StateThreadProvenance,
+) -> StateThreadAnchor {
+    StateThreadAnchor::new(
+        CandidateDeploymentIdentity::new([deployment.0; 32], [deployment.1; 32])
+            .expect("nonzero deployment"),
+        context,
+        starting,
+        provenance,
+        StateConstructorGeneration::CanonicalMetadataV1,
+        StateCheckpointPolicy::ExactBranch,
+        StateThreadOrigin::Synthetic,
+    )
+    .expect("nonzero branch")
+}
+fn anchor() -> StateThreadAnchor {
+    anchor_identity(
+        ([0x41; 32], 7),
+        (0x11, 0x22),
+        outpoint(0x31, 0),
+        StateThreadProvenance::ExistingAsset(AssetId::from_internal([0x51; 32])),
+    )
+}
+fn anchor_policy(policy: StateCheckpointPolicy, origin: StateThreadOrigin) -> StateThreadAnchor {
+    let base = anchor();
+    StateThreadAnchor::new(
+        base.deployment().clone(),
+        (*base.branch().identifier(), base.branch().checkpoint()),
+        base.starting_outpoint(),
+        base.provenance(),
+        base.generation(),
+        policy,
+        origin,
+    )
+    .expect("checked anchor shape")
+}
+fn continuation(identifier: u8, checkpoint: u64, output: u8) -> StateContinuation {
+    StateContinuation {
+        branch: BranchContext::new([identifier; 32], checkpoint).expect("nonzero branch"),
+        successor: outpoint(output, 0),
+        standing: StateContinuationStanding::Accepted,
+    }
+}
+
+#[test]
+fn anchor_refuses_zero_branch_through_the_existing_context_check() {
+    let base = anchor();
+    assert_eq!(
+        StateThreadAnchor::new(
+            base.deployment().clone(),
+            ([0; 32], 7),
+            base.starting_outpoint(),
+            base.provenance(),
+            base.generation(),
+            base.checkpoint_policy(),
+            base.origin(),
+        ),
+        Err(StateThreadRefusal::ZeroBranchIdentifier { checkpoint: 7 })
+    );
+}
+
+#[test]
+fn anchor_outpoint_type_refuses_maximum_integer_but_has_no_separate_null_sentinel() {
+    let base = anchor();
+    assert_eq!(
+        Outpoint::new(base.starting_outpoint().txid(), u32::MAX),
+        Err(crate::error::TransactionRefusal::OutpointIndexOutOfRange { offered: u32::MAX })
+    );
+    let boundary = outpoint(0x31, OUTPOINT_INDEX_MASK);
+    let checked = anchor_identity(([0x41; 32], 7), (0x11, 0x22), boundary, base.provenance());
+    assert_eq!(checked.starting_outpoint(), boundary);
+}
+
+#[test]
+fn anchor_branch_identifier_and_checkpoint_are_distinct_and_visible() {
+    let base = anchor();
+    for context in [([0x42; 32], 7), ([0x41; 32], 8)] {
+        let other = anchor_identity(
+            context,
+            (0x11, 0x22),
+            base.starting_outpoint(),
+            base.provenance(),
+        );
+        assert_ne!(base, other);
+        assert_eq!(other.branch().identifier(), &context.0);
+        assert_eq!(other.branch().checkpoint(), context.1);
+    }
+}
+
+#[test]
+fn anchor_network_and_genesis_identity_are_separately_distinct_and_visible() {
+    let base = anchor();
+    for deployment in [(0x12, 0x22), (0x11, 0x23)] {
+        let other = anchor_identity(
+            ([0x41; 32], 7),
+            deployment,
+            base.starting_outpoint(),
+            base.provenance(),
+        );
+        assert_ne!(base, other);
+        assert_eq!(other.deployment().network_id(), &[deployment.0; 32]);
+        assert_eq!(other.deployment().genesis_id(), &[deployment.1; 32]);
+    }
+}
+
+#[test]
+fn anchor_starting_transaction_and_index_are_separately_distinct_and_visible() {
+    let base = anchor();
+    for starting in [outpoint(0x32, 0), outpoint(0x31, 1)] {
+        let other = anchor_identity(([0x41; 32], 7), (0x11, 0x22), starting, base.provenance());
+        assert_ne!(base, other);
+        assert_eq!(other.starting_outpoint(), starting);
+    }
+}
+
+#[test]
+fn anchor_asset_and_issuance_provenances_are_pairwise_distinct_and_visible() {
+    let base = anchor();
+    let provenances = [
+        base.provenance(),
+        StateThreadProvenance::ExistingAsset(AssetId::from_internal([0x52; 32])),
+        StateThreadProvenance::Issuance(outpoint(0x61, 0)),
+        StateThreadProvenance::Issuance(outpoint(0x61, 1)),
+    ];
+    for provenance in provenances {
+        let checked = anchor_identity(
+            ([0x41; 32], 7),
+            (0x11, 0x22),
+            base.starting_outpoint(),
+            provenance,
+        );
+        assert_eq!(checked.provenance(), provenance);
+        for other in provenances.into_iter().filter(|other| *other != provenance) {
+            assert_ne!(
+                checked,
+                anchor_identity(
+                    ([0x41; 32], 7),
+                    (0x11, 0x22),
+                    base.starting_outpoint(),
+                    other
+                )
+            );
+        }
+    }
+}
+
+#[test]
+fn anchor_generation_has_one_constructible_variant_so_only_accessor_is_testable() {
+    assert_eq!(
+        anchor().generation(),
+        StateConstructorGeneration::CanonicalMetadataV1
+    );
+}
+
+#[test]
+fn observed_origin_is_admitted_with_outstanding_continuity_evidence() {
+    let observed = anchor_policy(
+        StateCheckpointPolicy::ExactBranch,
+        StateThreadOrigin::Observed,
+    );
+    assert_ne!(observed, anchor());
+    assert_eq!(observed.origin(), StateThreadOrigin::Observed);
+    assert_eq!(
+        observed.continuity_evidence(),
+        StateContinuityEvidence::Outstanding
+    );
+    assert_eq!(
+        observed.check_continuations(&[]).expect("empty").origin(),
+        StateThreadOrigin::Observed
+    );
+}
+
+#[test]
+fn checkpoint_policy_is_distinct_and_visible() {
+    let changed = anchor_policy(
+        StateCheckpointPolicy::AtOrBeyond(7),
+        StateThreadOrigin::Synthetic,
+    );
+    assert_ne!(changed, anchor());
+    assert_eq!(
+        changed.checkpoint_policy(),
+        StateCheckpointPolicy::AtOrBeyond(7)
+    );
+    assert_eq!(
+        anchor().checkpoint_policy(),
+        StateCheckpointPolicy::ExactBranch
+    );
+}
+
+#[test]
+fn one_accepted_continuation_is_returned_under_the_anchor_hypothesis() {
+    let offered = continuation(0x41, 7, 0x71);
+    assert_eq!(
+        anchor()
+            .check_continuations(&[offered])
+            .expect("unique")
+            .accepted(),
+        &[offered]
+    );
+}
+
+#[test]
+fn two_accepted_continuations_on_one_identifier_refuse_even_at_different_checkpoints() {
+    let first = continuation(0x41, 7, 0x71);
+    for second in [
+        continuation(0x41, 7, 0x72),
+        continuation(0x41, 8, 0x72),
+        first,
+    ] {
+        assert_eq!(
+            anchor().check_continuations(&[first, second]),
+            Err(StateThreadRefusal::Equivocation([0x41; 32]))
+        );
+    }
+}
+
+#[test]
+fn accepted_continuations_on_two_selected_branches_are_returned_in_branch_order() {
+    let checked = anchor_policy(
+        StateCheckpointPolicy::AtOrBeyond(7),
+        StateThreadOrigin::Synthetic,
+    );
+    let first = continuation(0x41, 7, 0x71);
+    let second = continuation(0x42, 8, 0x72);
+    for candidates in [[first, second], [second, first]] {
+        assert_eq!(
+            checked
+                .check_continuations(&candidates)
+                .expect("one per branch")
+                .accepted(),
+            &[first, second]
+        );
+    }
+    assert_eq!(
+        checked.check_continuations(&[first, continuation(0x41, 8, 0x72)]),
+        Err(StateThreadRefusal::Equivocation([0x41; 32]))
+    );
+}
+
+#[test]
+fn nonaccepted_competitor_does_not_equivocate_or_appear_in_results() {
+    let accepted = continuation(0x41, 7, 0x71);
+    let rejected = StateContinuation {
+        standing: StateContinuationStanding::NotAccepted,
+        ..continuation(0x41, 7, 0x72)
+    };
+    for candidates in [[accepted, rejected], [rejected, accepted]] {
+        assert_eq!(
+            anchor()
+                .check_continuations(&candidates)
+                .expect("one accepted")
+                .accepted(),
+            &[accepted]
+        );
+    }
+    assert_eq!(
+        anchor()
+            .check_continuations(&[rejected])
+            .expect("none accepted")
+            .accepted(),
+        []
+    );
+    assert_eq!(
+        anchor().check_continuations(&[]).expect("empty").accepted(),
+        []
+    );
+}
+
+#[test]
+fn exact_branch_policy_refuses_foreign_branches_regardless_of_standing() {
+    for standing in [
+        StateContinuationStanding::Accepted,
+        StateContinuationStanding::NotAccepted,
+    ] {
+        let offered = StateContinuation {
+            standing,
+            ..continuation(0x42, 99, 0x71)
+        };
+        assert_eq!(
+            anchor().check_continuations(&[offered]),
+            Err(StateThreadRefusal::OutsideCheckpointPolicy(offered.branch))
+        );
+    }
+    let earlier = continuation(0x41, 0, 0x71);
+    assert_eq!(
+        anchor()
+            .check_continuations(&[earlier])
+            .expect("same identifier")
+            .accepted(),
+        &[earlier]
+    );
+}
+
+#[test]
+fn checkpoint_floor_selects_reorganized_branches_by_inclusive_ordinal() {
+    let checked = anchor_policy(
+        StateCheckpointPolicy::AtOrBeyond(7),
+        StateThreadOrigin::Synthetic,
+    );
+    for ordinal in [7, 8, u64::MAX] {
+        let offered = continuation(0x42, ordinal, 0x71);
+        assert_eq!(
+            checked
+                .check_continuations(&[offered])
+                .expect("at or beyond")
+                .accepted(),
+            &[offered]
+        );
+    }
+    for standing in [
+        StateContinuationStanding::Accepted,
+        StateContinuationStanding::NotAccepted,
+    ] {
+        let offered = StateContinuation {
+            standing,
+            ..continuation(0x42, 6, 0x71)
+        };
+        assert_eq!(
+            checked.check_continuations(&[offered]),
+            Err(StateThreadRefusal::OutsideCheckpointPolicy(offered.branch))
+        );
+    }
+}
+
+#[test]
+fn synthetic_anchor_and_positive_result_make_no_genesis_claim() {
+    let synthetic = anchor();
+    assert_eq!(synthetic.origin(), StateThreadOrigin::Synthetic);
+    assert_eq!(
+        synthetic.continuity_evidence(),
+        StateContinuityEvidence::Outstanding
+    );
+    let result = synthetic
+        .check_continuations(&[continuation(0x41, 7, 0x71)])
+        .expect("conditional uniqueness");
+    assert_eq!(result.origin(), StateThreadOrigin::Synthetic);
+    assert_eq!(
+        StateThreadContinuations::RESIDUAL,
+        "conditional on a uniquely anchored predecessor; no genesis claim or global origin uniqueness; synthetic origin is not protocol genesis, trusted setup, earlier root history, or production STATE and authorizes nothing of value"
+    );
 }

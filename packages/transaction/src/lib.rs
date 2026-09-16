@@ -88,7 +88,9 @@ pub use live_taproot::{
 pub use operator_right::{
     BranchContext, CachedOperatorAuthorization, ConstructionRight, NonEquivocationEntry,
     NonEquivocationEvent, NonEquivocationRecord, OperatorRightOutcome, OperatorRightRegistry,
-    RightFailure, RightIdentity, RightRefusal, RightScope,
+    RightFailure, RightIdentity, RightRefusal, RightScope, StateCheckpointPolicy,
+    StateContinuation, StateContinuationStanding, StateContinuityEvidence, StateThreadAnchor,
+    StateThreadContinuations, StateThreadOrigin, StateThreadProvenance, StateThreadRefusal,
 };
 pub use operator_signing::{
     OPERATOR_CODESEPARATOR_POSITION, OPERATOR_KEY_VERSION_BYTE, OPERATOR_SIGHASH_TYPE_BYTE,
