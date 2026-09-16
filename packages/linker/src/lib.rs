@@ -17,6 +17,7 @@ pub mod live_symbol;
 pub mod live_taptree;
 pub mod operator_deployment;
 pub mod relocate;
+pub mod state_constructor_graph;
 pub mod symbol;
 pub mod taptree;
 
@@ -56,6 +57,10 @@ pub use operator_deployment::{
     CandidateDeploymentIdentity, OperatorDeploymentBinding, OperatorDeploymentStatus,
 };
 pub use relocate::LinkedLeafProgram;
+pub use state_constructor_graph::{
+    FrozenStateReferenceGraph, STATE_REFERENCE_LIMIT, StateReferenceComponent, StateReferenceEdge,
+    StateReferenceGraphRefusal,
+};
 pub use symbol::{
     DefinitionCensus, DefinitionOrigin, SymbolDefinition, SymbolType, SymbolValue, declared_type,
 };

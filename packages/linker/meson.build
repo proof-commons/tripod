@@ -20,6 +20,7 @@ linker_source_files = files(
   'src/live_taptree.rs',
   'src/operator_deployment.rs',
   'src/relocate.rs',
+  'src/state_constructor_graph.rs',
   'src/symbol.rs',
   'src/taptree.rs',
   'src/tests/carrier_tests.rs',
@@ -32,6 +33,7 @@ linker_source_files = files(
   'src/tests/operator_deployment_tests.rs',
   'src/tests/public_api_tests.rs',
   'src/tests/relocation_tests.rs',
+  'src/tests/state_constructor_graph_tests.rs',
   'src/tests/symbol_tests.rs',
   'src/tests/taptree_tests.rs',
 )
