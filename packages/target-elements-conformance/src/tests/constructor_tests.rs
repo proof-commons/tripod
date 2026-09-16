@@ -31,13 +31,28 @@
 //! which is the case where the tweak preimage omits the merkle root
 //! rather than zeroing it.
 
+use realization::{
+    Cycle, EncodedStateMetadata, Maturity, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount,
+    StateMetadata, StateRepresentationNonce, encode_state_metadata,
+};
+use tapscript::instruction::{StackItem, TapscriptInstruction};
 use tapscript::program::TapscriptProgram;
 use tapscript::stack::{AbstractLimits, AbstractStackState, validate_program};
-use target_elements::{FailureCause, LeafVersion, StackValueType};
+use tapscript::{
+    CandidateStateConstructor, STATE_GENERATOR_X, STATE_GENERATOR_Y, STATE_NUMS_KEY,
+    StateCurveCapability, StateInternalKeyPolicy, StateLeafRole, StateNonceBudget, StateStaticLeaf,
+    StateStaticNode, StateStaticSubtree, StateTweakOutcome, state_metadata_leaf_program,
+};
+use target_elements::{
+    FailureCause, LeafVersion, OpcodeId, ReviewedElementsTapscriptDefinition, StackValueType,
+};
 
 use crate::constructor::metadata_leaf::{metadata_leaf_program, metadata_leaf_script};
 
-use crate::constructor::curve::{FIELD_ELEMENT_BYTES, PointDecodingDefect, lift_x};
+use crate::constructor::curve::{
+    CurvePoint, FIELD_ELEMENT_BYTES, PointDecodingDefect, add, generator, is_valid_scalar, lift_x,
+    multiply_point,
+};
 use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
 use crate::constructor::metadata::{
     METADATA_BYTES, MetadataDefect, PrototypeMetadata, TransitionDefect,
@@ -45,9 +60,9 @@ use crate::constructor::metadata::{
 use crate::constructor::tagged::{Digest32, sha256, tagged_hash};
 use crate::constructor::totality::{TotalityDefect, TweakTotalityPolicy, construct_under_policy};
 use crate::constructor::tree::{
-    ConstructionDefect, FixtureTapTree, TreeDefect, TweakDefect, branch_hash, construct,
-    control_block, leaf_hash, leaf_hash_of_version_byte, output_program, tweak, tweak_without_tree,
-    tweaked_key,
+    ConstructedOutput, ConstructionDefect, FixtureTapTree, TreeDefect, TweakDefect, branch_hash,
+    construct, control_block, leaf_hash, leaf_hash_of_version_byte, output_program, retryable,
+    tweak, tweak_without_tree, tweaked_key,
 };
 
 /// Reads one transcribed vector field.
@@ -84,6 +99,242 @@ fn shown(value: &[u8]) -> String {
         let _ = write!(text, "{byte:02x}");
         text
     })
+}
+
+/// Real curve arithmetic for the production constructor cross-checks.
+struct PrototypeCurve;
+
+impl StateCurveCapability for PrototypeCurve {
+    fn internal_key_is_a_point(&self, x_only: &[u8; 32]) -> bool {
+        lift_x(x_only).is_ok()
+    }
+
+    fn output_key(&self, internal_key: &[u8; 32], merkle_root: &[u8; 32]) -> StateTweakOutcome {
+        let Ok(internal) = lift_x(internal_key) else {
+            return StateTweakOutcome::InternalKeyNotAPoint;
+        };
+        let scalar = tweak(internal_key, merkle_root);
+        if !is_valid_scalar(&scalar) {
+            return StateTweakOutcome::TweakAboveGroupOrder;
+        }
+        let offset = multiply_point(&scalar, &generator());
+        match add(&CurvePoint::Affine(internal), &offset) {
+            CurvePoint::Identity => StateTweakOutcome::TweakedPointIsIdentity,
+            CurvePoint::Affine(point) => StateTweakOutcome::OutputKey {
+                key: point.x_only_bytes(),
+                parity: point.parity_bit() == 1,
+            },
+        }
+    }
+}
+
+fn amount(value: u64) -> ProtocolAmount {
+    ProtocolAmount::new(value).expect("the fixture amount is in range")
+}
+
+fn fixed_state_metadata() -> StateMetadata {
+    StateMetadata {
+        omega: amount(1_000_003),
+        y_l: amount(144_233),
+        y_t: amount(89_021),
+        q: amount(12_345),
+        cycle: Cycle::new(377),
+        maturity: Maturity::Announced {
+            cycle: Cycle::new(610),
+        },
+    }
+}
+
+fn announcement_program(target: &ReviewedElementsTapscriptDefinition) -> TapscriptProgram {
+    let item = StackItem::new(target, b"state-announcement".to_vec())
+        .expect("the announcement fixture fits one push");
+    TapscriptProgram::new(vec![
+        TapscriptInstruction::Push(item),
+        TapscriptInstruction::Opcode(OpcodeId::Verify),
+    ])
+    .expect("the announcement fixture is within the instruction limit")
+}
+
+fn production_subtree(
+    target: &ReviewedElementsTapscriptDefinition,
+    program: TapscriptProgram,
+) -> StateStaticSubtree {
+    StateStaticSubtree::new(
+        target,
+        Some(StateStaticNode::Leaf {
+            identity: 7,
+            leaf: StateStaticLeaf {
+                role: StateLeafRole::Announcement,
+                program,
+                version: LeafVersion::TAPSCRIPT.get(),
+            },
+        }),
+    )
+    .expect("the fixture is a complete one-leaf static subtree")
+}
+
+struct PrototypeStateConstruction {
+    attempts: u32,
+    written: EncodedStateMetadata,
+    commitment_leaf: FixtureTapTree,
+    complete_tree: FixtureTapTree,
+    commitment_result: ConstructedOutput,
+    operation_result: ConstructedOutput,
+}
+
+fn construct_state_with_prototype(
+    target: &ReviewedElementsTapscriptDefinition,
+    metadata: &StateMetadata,
+    operation_leaf: &FixtureTapTree,
+    maximum_attempts: u32,
+) -> PrototypeStateConstruction {
+    for attempt in 0..maximum_attempts {
+        let written = EncodedStateMetadata {
+            semantic: *metadata,
+            representation: StateRepresentationNonce::new(attempt),
+        };
+        let canonical = encode_state_metadata(&written.semantic, written.representation);
+        let script = metadata_leaf_script(target, &canonical)
+            .expect("canonical STATE metadata fits the prototype leaf");
+        let commitment_leaf = FixtureTapTree::leaf(script);
+        if commitment_leaf.node_hash() > operation_leaf.node_hash() {
+            continue;
+        }
+        let complete_tree = FixtureTapTree::branch(commitment_leaf.clone(), operation_leaf.clone());
+        match construct(&UNSPENDABLE_INTERNAL_KEY, &complete_tree, &commitment_leaf) {
+            Ok(commitment_result) => {
+                let operation_result =
+                    construct(&UNSPENDABLE_INTERNAL_KEY, &complete_tree, operation_leaf)
+                        .expect("the same complete tree authenticates its operation leaf");
+                return PrototypeStateConstruction {
+                    attempts: attempt.saturating_add(1),
+                    written,
+                    commitment_leaf,
+                    complete_tree,
+                    commitment_result,
+                    operation_result,
+                };
+            }
+            Err(defect) if retryable(defect) => {}
+            Err(defect) => panic!("a nonce cannot repair this prototype defect: {defect:?}"),
+        }
+    }
+    panic!("the prototype did not find a canonical STATE representation")
+}
+
+struct StateCrossCheck {
+    target: ReviewedElementsTapscriptDefinition,
+    candidate: CandidateStateConstructor,
+    operation_leaf: FixtureTapTree,
+    prototype: PrototypeStateConstruction,
+}
+
+fn state_cross_check(metadata: &StateMetadata) -> StateCrossCheck {
+    let target = crate::tests::support::reviewed_target();
+    let program = announcement_program(&target);
+    let operation_leaf = FixtureTapTree::leaf(program.encode(&target));
+    let subtree = production_subtree(&target, program);
+    let policy = StateInternalKeyPolicy::new(STATE_NUMS_KEY, &PrototypeCurve)
+        .expect("the prototype lifts the production NUMS key");
+    let candidate = CandidateStateConstructor::derive(
+        &target,
+        metadata,
+        &subtree,
+        policy,
+        StateNonceBudget::default(),
+        &PrototypeCurve,
+    )
+    .expect("the production constructor finds a canonical representation");
+    let prototype = construct_state_with_prototype(
+        &target,
+        metadata,
+        &operation_leaf,
+        StateNonceBudget::default().attempts(),
+    );
+    StateCrossCheck {
+        target,
+        candidate,
+        operation_leaf,
+        prototype,
+    }
+}
+
+fn production_leaf_hash(
+    target: &ReviewedElementsTapscriptDefinition,
+    program: TapscriptProgram,
+) -> Digest32 {
+    *production_subtree(target, program).root()
+}
+
+struct DeterministicMetadataGenerator {
+    state: u64,
+}
+
+impl DeterministicMetadataGenerator {
+    const fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
+
+    const fn next(&mut self) -> u64 {
+        self.state = self
+            .state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        self.state
+    }
+
+    fn metadata(&mut self) -> StateMetadata {
+        let limit = PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE;
+        let announced = Cycle::new(self.next());
+        let maturity = match self.next() % 3 {
+            0 => Maturity::Unannounced,
+            1 => Maturity::Announced { cycle: announced },
+            _ => Maturity::Complete,
+        };
+        StateMetadata {
+            omega: amount(self.next() % limit),
+            y_l: amount(self.next() % limit),
+            y_t: amount(self.next() % limit),
+            q: amount(self.next() % limit),
+            cycle: Cycle::new(self.next()),
+            maturity,
+        }
+    }
+
+    fn nonce(&mut self) -> StateRepresentationNonce {
+        let domain = u64::from(u32::MAX) + 1;
+        let value = u32::try_from(self.next() % domain).expect("the reduction fits u32");
+        StateRepresentationNonce::new(value)
+    }
+}
+
+fn assert_no_output_is_a_metadata_range(candidate: &CandidateStateConstructor) {
+    let tweak_digest = candidate.tweak_hash();
+    let commitment_control = candidate
+        .control_recipe(StateLeafRole::MetadataCommitment)
+        .expect("the commitment leaf has one path")
+        .control_bytes()
+        .expect("the one-node path fits a control block");
+    let operation_control = candidate
+        .control_recipe(StateLeafRole::Announcement)
+        .expect("the announcement leaf has one path")
+        .control_bytes()
+        .expect("the one-node path fits a control block");
+    for (name, value) in [
+        ("root", candidate.merkle_root().as_slice()),
+        ("tweak", tweak_digest.as_slice()),
+        ("output key", candidate.output_key().as_slice()),
+        ("commitment control block", commitment_control.as_slice()),
+        ("operation control block", operation_control.as_slice()),
+    ] {
+        assert!(
+            !candidate
+                .metadata_bytes()
+                .windows(value.len())
+                .any(|window| window == value),
+            "{name} is a contiguous range of the metadata"
+        );
+    }
 }
 
 // -- The published vectors ----------------------------------------
@@ -319,15 +570,18 @@ fn a_tag_separates_domains() {
 }
 
 #[test]
-fn the_internal_key_is_the_published_derivation() {
+fn the_state_nums_keys_share_the_published_derivation() {
     // The constant is recomputed rather than trusted: it is the digest
     // of the generator's uncompressed encoding
     // (´[PLAN-rule:guide10:internal-key]´).
-    let generator = crate::constructor::curve::generator();
-    assert_eq!(
-        sha256(&generator.uncompressed_bytes()),
-        UNSPENDABLE_INTERNAL_KEY
-    );
+    let generator = generator();
+    let uncompressed = generator.uncompressed_bytes();
+    assert_eq!(uncompressed[0], 0x04);
+    assert_eq!(&uncompressed[1..33], &STATE_GENERATOR_X);
+    assert_eq!(&uncompressed[33..], &STATE_GENERATOR_Y);
+    let derived = sha256(&uncompressed);
+    assert_eq!(derived, STATE_NUMS_KEY);
+    assert_eq!(derived, UNSPENDABLE_INTERNAL_KEY);
 
     // And not of the compressed one, which is a different point
     // entirely and the easy mistake to make here.
@@ -338,7 +592,7 @@ fn the_internal_key_is_the_published_derivation() {
 
     // And it is a point, which a nothing-up-my-sleeve x coordinate is
     // not guaranteed to be: roughly half of all field elements are not.
-    assert!(lift_x(&UNSPENDABLE_INTERNAL_KEY).is_ok());
+    assert!(lift_x(&derived).is_ok());
 }
 
 #[test]
@@ -848,4 +1102,139 @@ fn a_metadata_transition_changes_the_leaf_and_therefore_the_output() {
         predecessor.executing_leaf_hash(),
         successor.executing_leaf_hash()
     );
+}
+
+// -- Production STATE cross-checks -------------------------------
+
+#[test]
+fn production_state_leaf_bytes_and_hash_match_the_prototype() {
+    let fixture = state_cross_check(&fixed_state_metadata());
+    let production_script = fixture.candidate.leaf_program().encode(&fixture.target);
+    let prototype_script =
+        metadata_leaf_script(&fixture.target, fixture.candidate.metadata_bytes())
+            .expect("production canonical bytes fit the prototype leaf form");
+    assert_eq!(production_script, prototype_script);
+
+    let production_hash = fixture
+        .candidate
+        .control_recipe(StateLeafRole::MetadataCommitment)
+        .expect("the production commitment leaf has one path")
+        .executing_leaf_hash;
+    assert_eq!(
+        production_hash,
+        leaf_hash(LeafVersion::TAPSCRIPT, &prototype_script)
+    );
+    assert_eq!(
+        production_hash,
+        fixture.prototype.commitment_leaf.node_hash()
+    );
+}
+
+#[test]
+fn production_state_root_output_and_controls_match_the_prototype() {
+    let fixture = state_cross_check(&fixed_state_metadata());
+    let candidate = &fixture.candidate;
+    let expected = &fixture.prototype;
+    assert_eq!(candidate.encoded_metadata(), &expected.written);
+    assert_eq!(
+        candidate.nonce().get(),
+        expected
+            .attempts
+            .checked_sub(1)
+            .expect("one attempt succeeded")
+    );
+    assert_eq!(
+        candidate.static_subtree().root(),
+        &fixture.operation_leaf.node_hash()
+    );
+    assert_eq!(candidate.merkle_root(), &expected.complete_tree.node_hash());
+    assert_eq!(
+        candidate.merkle_root(),
+        expected.commitment_result.merkle_root()
+    );
+    assert_eq!(candidate.tweak_hash(), *expected.commitment_result.tweak());
+    assert_eq!(
+        candidate.output_key(),
+        expected.commitment_result.output_key()
+    );
+    assert_eq!(candidate.parity(), expected.commitment_result.parity() == 1);
+    assert_eq!(
+        candidate.output_program(),
+        expected.commitment_result.output_program()
+    );
+
+    let commitment_control = candidate
+        .control_recipe(StateLeafRole::MetadataCommitment)
+        .expect("the production commitment leaf has one path")
+        .control_bytes()
+        .expect("the one-node path fits a control block");
+    let operation_control = candidate
+        .control_recipe(StateLeafRole::Announcement)
+        .expect("the production announcement leaf has one path")
+        .control_bytes()
+        .expect("the one-node path fits a control block");
+    assert_eq!(
+        commitment_control,
+        expected.commitment_result.control_block()
+    );
+    assert_eq!(operation_control, expected.operation_result.control_block());
+    assert_eq!(
+        expected.commitment_result.output_key(),
+        expected.operation_result.output_key()
+    );
+}
+
+#[test]
+fn state_root_and_output_commit_without_carrying_metadata_ranges() {
+    let before = fixed_state_metadata();
+    let after = StateMetadata {
+        q: amount(before.q.get() + 1),
+        ..before
+    };
+    assert_eq!(before.omega, after.omega);
+    assert_eq!(before.y_l, after.y_l);
+    assert_eq!(before.y_t, after.y_t);
+    assert_ne!(before.q, after.q);
+    assert_eq!(before.cycle, after.cycle);
+    assert_eq!(before.maturity, after.maturity);
+
+    let predecessor = state_cross_check(&before).candidate;
+    let successor = state_cross_check(&after).candidate;
+    let predecessor_leaf = predecessor
+        .control_recipe(StateLeafRole::MetadataCommitment)
+        .expect("the predecessor commitment leaf has one path")
+        .executing_leaf_hash;
+    let successor_leaf = successor
+        .control_recipe(StateLeafRole::MetadataCommitment)
+        .expect("the successor commitment leaf has one path")
+        .executing_leaf_hash;
+    assert_ne!(predecessor_leaf, successor_leaf);
+    assert_ne!(predecessor.merkle_root(), successor.merkle_root());
+    assert_ne!(predecessor.tweak_hash(), successor.tweak_hash());
+    assert_ne!(predecessor.output_key(), successor.output_key());
+    assert_no_output_is_a_metadata_range(&predecessor);
+    assert_no_output_is_a_metadata_range(&successor);
+}
+
+#[test]
+fn generated_canonical_state_bytes_and_hashes_match_the_prototype() {
+    let target = crate::tests::support::reviewed_target();
+    let mut generator = DeterministicMetadataGenerator::new(0x5eed_0350_0ace_7711);
+    for case_index in 0..64 {
+        let written = EncodedStateMetadata {
+            semantic: generator.metadata(),
+            representation: generator.nonce(),
+        };
+        let canonical = encode_state_metadata(&written.semantic, written.representation);
+        let production_program = state_metadata_leaf_program(&target, &written)
+            .expect("generated canonical metadata fits the production leaf");
+        let production_script = production_program.encode(&target);
+        let prototype_script = metadata_leaf_script(&target, &canonical)
+            .expect("generated canonical metadata fits the prototype leaf");
+        assert_eq!(production_script, prototype_script, "case {case_index}");
+
+        let production_hash = production_leaf_hash(&target, production_program);
+        let prototype_hash = leaf_hash(LeafVersion::TAPSCRIPT, &prototype_script);
+        assert_eq!(production_hash, prototype_hash, "case {case_index}");
+    }
 }

@@ -12,13 +12,13 @@ version.workspace = true
 [lib]
 name = "target_elements_conformance"
 
-# Exactly the three first-party packages the harness joins. The target
+# Exactly the three first-party packages the harness joins in its library graph. The target
 # package owns the reviewed semantics the fixtures are stated against,
 # the tapscript package owns the typed program whose exact bytes a
 # fixture carries, and `cli-common` owns the ADR-010 command contract the
 # checker binary follows. `compiler`, `architecture`, `realization`,
 # `model`, `linker`, `transaction`, `vectors`, `release`, `artifacts`,
-# and `labels` are absent: this package owns execution protocol and
+# and `labels` are absent from `[dependencies]`: this package owns execution protocol and
 # evidence mechanics, and naming any of those would either restate
 # target semantics it does not own or import a publication boundary it
 # has no asset for.
@@ -96,7 +96,9 @@ tracing = { workspace = true }
 #
 # The reference cross-checks compare a first-party computation against
 # the reference implementation of the same object, so the test lane has
-# to hold the first-party object itself. `vectors` owns the nine
+# to hold the first-party object itself. `realization` supplies the
+# production canonical STATE bytes without promoting the prototype schema.
+# `vectors` owns the nine
 # byte-stable sponsorless fixture transactions and the one linked
 # bundle they are materialized from; `transaction` owns the encoder,
 # the weight and virtual-size rules, and the committed-tree hashing
@@ -118,6 +120,7 @@ tracing = { workspace = true }
 # creates that edge, and nothing here may be promoted to
 # `[dependencies]` without revisiting it.
 [dev-dependencies]
+realization = { workspace = true }
 tempfile = { workspace = true }
 transaction = { workspace = true }
 vectors = { workspace = true }

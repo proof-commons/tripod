@@ -14,11 +14,15 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 
+use realization::{
+    Cycle, EncodedStateMetadata, Maturity, ProtocolAmount, StateMetadata, StateRepresentationNonce,
+};
 use target_elements::{ByteOrder, EncodingClass, FailureCause, OpcodeId, StackValueType};
 
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::program::TapscriptProgram;
-use crate::stack::{AbstractLimits, AbstractStackState, validate_program};
+use crate::stack::{AbstractExecutionResult, AbstractLimits, AbstractStackState, validate_program};
+use crate::state_constructor::state_metadata_leaf_program;
 
 use super::reviewed_target;
 
@@ -251,6 +255,25 @@ fn signature_oracle(signature: &StackValueType, public_key: &StackValueType) -> 
     }
 }
 
+/// The independently expected contract of Boolean verification.
+fn verification_oracle(operand: &StackValueType) -> OracleContract {
+    let false_is_settled = matches!(operand, StackValueType::Empty);
+    OracleContract {
+        operands: 1,
+        cases: if false_is_settled {
+            Vec::new()
+        } else {
+            vec![case(1, Vec::new())]
+        },
+        consume_and_push_false: false,
+        retain_and_push_false: false,
+        aborts: vec![
+            FailureCause::UnsupportedExecutionDomain,
+            FailureCause::FalseVerification,
+        ],
+    }
+}
+
 /// The outcome sets the reference transfer produces.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Expected {
@@ -264,8 +287,8 @@ struct Expected {
 /// Written independently of the production validator: it carries live
 /// stacks as plain vectors, applies every alternative, and records
 /// whether a path passed through a non-aborting failure.
-fn reference(instructions: &[TapscriptInstruction]) -> Expected {
-    let mut live: Vec<(Vec<StackValueType>, bool)> = vec![(Vec::new(), false)];
+fn reference(instructions: &[TapscriptInstruction], initial: &[StackValueType]) -> Expected {
+    let mut live: Vec<(Vec<StackValueType>, bool)> = vec![(initial.to_vec(), false)];
     let mut aborts: BTreeSet<FailureCause> = BTreeSet::new();
 
     for instruction in instructions {
@@ -285,11 +308,17 @@ fn reference(instructions: &[TapscriptInstruction]) -> Expected {
                     next.push((grown, *failed));
                 }
                 TapscriptInstruction::Opcode(id) => {
-                    let contract = if *id == OpcodeId::CheckSig {
-                        let top = stack.len();
-                        signature_oracle(&stack[top - 2], &stack[top - 1])
-                    } else {
-                        oracle(*id)
+                    let contract = match *id {
+                        OpcodeId::CheckSig => {
+                            let top = stack.len();
+                            signature_oracle(&stack[top - 2], &stack[top - 1])
+                        }
+                        OpcodeId::Verify => verification_oracle(
+                            stack
+                                .last()
+                                .expect("the verification fixture has an operand"),
+                        ),
+                        other => oracle(other),
                     };
                     assert!(stack.len() >= contract.operands, "the fixture underflows");
                     aborts.extend(contract.aborts.iter().copied());
@@ -345,14 +374,17 @@ fn op(id: OpcodeId) -> TapscriptInstruction {
 }
 
 /// Compares the production validator against the reference, exactly.
-fn agree(instructions: Vec<TapscriptInstruction>) {
+fn agree_from(
+    instructions: Vec<TapscriptInstruction>,
+    initial: Vec<StackValueType>,
+) -> AbstractExecutionResult {
     let target = reviewed_target();
-    let expected = reference(&instructions);
+    let expected = reference(&instructions, &initial);
     let program = TapscriptProgram::new(instructions).expect("the fixture is within the limit");
     let produced = validate_program(
         &target,
         &program,
-        &AbstractStackState::from_main(Vec::new()),
+        &AbstractStackState::from_main(initial),
         AbstractLimits::for_target(&target),
     )
     .expect("the fixture validates");
@@ -381,6 +413,12 @@ fn agree(instructions: Vec<TapscriptInstruction>) {
             .all(|state| state.alternate().is_empty()),
         "no reviewed primitive touches the alternate stack",
     );
+    produced
+}
+
+/// Compares one empty-initial-stack fixture.
+fn agree(instructions: Vec<TapscriptInstruction>) {
+    let _produced = agree_from(instructions, Vec::new());
 }
 
 #[test]
@@ -438,4 +476,65 @@ fn alternatives_and_failures_agree_when_they_compound() {
         push(1),
         op(OpcodeId::InspectOutputValue),
     ]);
+}
+
+#[test]
+fn the_production_metadata_leaf_agrees_for_every_named_initial_stack() {
+    let target = reviewed_target();
+    let cycle = Cycle::new(13);
+    let metadata = EncodedStateMetadata {
+        semantic: StateMetadata {
+            omega: ProtocolAmount::new(101).expect("the amount is in range"),
+            y_l: ProtocolAmount::new(34).expect("the amount is in range"),
+            y_t: ProtocolAmount::new(55).expect("the amount is in range"),
+            q: ProtocolAmount::new(12).expect("the amount is in range"),
+            cycle,
+            maturity: Maturity::Announced { cycle },
+        },
+        representation: StateRepresentationNonce::ZERO,
+    };
+    let instructions = state_metadata_leaf_program(&target, &metadata)
+        .expect("canonical metadata fits the production leaf")
+        .instructions()
+        .to_vec();
+    let limits = AbstractLimits::for_target(&target);
+    let maximum_depth =
+        usize::try_from(limits.maximum_stack_depth()).expect("the target stack limit fits usize");
+    let limit_edge = vec![StackValueType::Empty; maximum_depth.saturating_sub(2)];
+    let cases = [
+        ("empty", Vec::new()),
+        (
+            "single true item",
+            vec![StackValueType::Bytes {
+                minimum: 1,
+                maximum: 1,
+            }],
+        ),
+        ("single false item", vec![StackValueType::Empty]),
+        (
+            "arbitrary admitted stack",
+            vec![
+                StackValueType::ScriptNumber,
+                StackValueType::Bool,
+                StackValueType::Bytes {
+                    minimum: 0,
+                    maximum: 17,
+                },
+            ],
+        ),
+        ("target depth edge", limit_edge),
+    ];
+
+    for (name, initial) in cases {
+        let produced = agree_from(instructions.clone(), initial);
+        assert!(produced.success().is_empty(), "{name}: success survived");
+        assert!(
+            produced.nonaborting_failure().is_empty(),
+            "{name}: non-aborting failure survived"
+        );
+        assert!(
+            produced.aborts().contains(&FailureCause::FalseVerification),
+            "{name}: false verification was not recorded"
+        );
+    }
 }
