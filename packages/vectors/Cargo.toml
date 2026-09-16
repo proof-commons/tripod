@@ -123,6 +123,7 @@ target-elements-conformance = { workspace = true }
 transaction = { workspace = true }
 
 [dev-dependencies]
+# Protocol serializer used by the shared capture writer to retain each request's subject.
 serde_json = { workspace = true }
 
 [lints]

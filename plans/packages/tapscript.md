@@ -69,7 +69,7 @@ artifacts
 Use compiler-carried architecture/realization IDs rather than bypassing
 analysis through new direct dependencies.
 
-The candidate STATE constructor commits the canonical STATE metadata bytes that only realization's codec produces and no compiler projection carries, so the constructor consumes `EncodedStateMetadata` directly, while the assessment path keeps consuming compiler-carried architecture and realization identifiers and the reach-around prohibition above stands for it (ruling 22 at (`rule:phase6:wave4-rulings`)).
+The candidate STATE constructor commits the canonical STATE metadata bytes that only realization's codec produces and no compiler projection carries, so the constructor consumes `EncodedStateMetadata` directly, while the assessment path keeps consuming compiler-carried architecture and realization identifiers and the reach-around prohibition above stands for it (ruling 22 at (`rule:phase6:wave4-rulings`)). The constructor also takes the workspace's `sha2` for the target's tagged hashes, as ruling 22 states at (`rule:phase6:wave4-rulings`), and `thiserror` to derive the closed refusal sum's error form as the realization does.
 
 ## Typed inputs · `sec:tapscript:inputs`
 

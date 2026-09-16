@@ -17,7 +17,12 @@ name = "transaction"
 # `compiler`, `vectors`, `release`, and `artifacts`. Both named packages
 # are present and no forbidden one is.
 #
-# `tapscript` supplies the anchor's typed constructor generation on the existing transaction-to-linker-to-tapscript dependency path.
+# `tapscript` supplies the anchor's typed constructor generation on the
+# existing transaction-to-linker-to-tapscript dependency path. The only
+# backend item this crate names directly is the constructor's recipe-identity
+# enum. Shapes, layouts, witness roles, and leaf roles still reach this crate
+# only through the linked bundle's public surface, so no caller can hand it a
+# layout that no link produced.
 #
 # `target-elements-conformance` is deliberately absent, and its absence
 # is load-bearing rather than incidental. That package is the

@@ -50,3 +50,22 @@ The private form is central public-fixture construction and records that
 in its own model. It consumes randomness the caller has already
 published, generates none, stores none, and offers no interface a
 production secret could arrive through.
+
+## The state-thread anchor (Guide-14 Wave 4)
+
+`StateThreadAnchor` is typed provenance for one caller-anchored
+predecessor: deployment and branch context, starting outpoint, asset or
+issuance provenance, tapscript constructor generation, checkpoint policy,
+continuity-evidence standing, and an explicit synthetic or observed origin.
+Its fields are private and construction checks their shape (`0.6.177-dev`).
+
+`check_continuations` states and tests the conditional theorem: given one
+uniquely anchored predecessor, each selected branch has at most one accepted
+continuation, and two accepted continuations on the same branch are refused
+as equivocation. Acceptance remains caller-supplied evidence rather than a
+target observation verified here.
+
+A positive result makes no genesis or global-origin claim. In particular, a
+synthetic origin is not protocol genesis, trusted setup, earlier history, or
+production STATE; accepted continuity and history evidence remain for Waves
+9 and 10.

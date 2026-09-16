@@ -33,3 +33,17 @@ it is not a constructor digest and not a replacement identity.
 A candidate carrying one representation is a link rather than a defect,
 and the bundle reports which plans it actually carries so that a consumer
 can tell an absent plan from a broken one.
+
+## The frozen STATE reference graph (Guide-14 Wave 4)
+
+`FrozenStateReferenceGraph` consumes the constructor's typed declarations
+and freezes canonical nodes, dependent-to-dependency edges, and strongly
+connected components. Its limit of 64 distinct references matches the
+constructor-local census, so the constructor and linker admit the same
+reference inputs. A cycle is retained for inspection and then refused
+without selecting or accepting a cut (`0.6.176-dev`).
+
+Wave 6 owns binding-time resolution, authenticated cuts, the proof that the
+residual graph is acyclic, canonical ordering after cuts, and integration
+into the link pipeline. This Wave-4 graph is the frozen handoff artifact,
+not a claim that any of those later obligations has been discharged.

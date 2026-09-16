@@ -14,25 +14,30 @@ enough to use the public API correctly on its own.
 
 ## Dependencies
 
-Two first-party packages and no third-party ones:
+Three first-party packages and two general-purpose third-party crates:
 
 ```text
 compiler
+realization
 target-elements
+sha2
+thiserror
 ```
 
-`architecture`, `realization`, and `model` are deliberately absent. An
-assessment names compiler-owned abstract capabilities and target-owned
-primitives; the compiler already publishes the architecture-owned facts it is
-willing to project, and citing those packages here would reach around that
-projection rather than consume it. `linker`, `transaction`, `vectors`,
-`release`, and `artifacts` are absent because no target program, bundle, or
-publication exists to hand them.
+`architecture` and `model` are deliberately absent. An assessment names
+compiler-owned abstract capabilities and target-owned primitives; the compiler
+already publishes the architecture-owned facts it is willing to project, and
+citing those packages here would reach around that projection rather than
+consume it. The STATE constructor separately consumes the canonical metadata
+encoding owned by `realization`, uses `sha2` for the target's tagged hashes, and
+uses `thiserror` for its closed refusal sum. `linker`, `transaction`, `vectors`,
+`release`, and `artifacts` remain downstream rather than dependencies.
 
 ### How the neighbors relate
 
-The crate is the join between exactly two vocabularies, and it is the only
-package whose contract admits both.
+The assessment path is the join between exactly two vocabularies. The STATE
+constructor adds realization's canonical metadata as a construction input
+without changing that assessment boundary.
 
 - **`compiler`** supplies the abstract side. `compiler::target::RequiredCapability`
   names what an approved analysis requires of *some* target;
@@ -52,8 +57,9 @@ package whose contract admits both.
 
 ## Getting the target contract
 
-Every public entry point in this crate takes the same first argument: the
-reviewed static contract.
+Every public entry point that reads target rules takes the same target value:
+the reviewed static contract. Pure accessors over an already checked program or
+constructor record do not need to take it again.
 
 ```text
 target_elements::reviewed_elements_tapscript()
@@ -155,9 +161,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Public-API tour
 
-Five public modules. Everything named below is re-exported at the crate root, so
-`tapscript::TapscriptProgram` and `tapscript::program::TapscriptProgram` are the
-same path.
+The public modules covered below re-export their principal items at the crate
+root, so `tapscript::TapscriptProgram` and
+`tapscript::program::TapscriptProgram` are the same path.
 
 ### `instruction` — the typed instruction and its literals
 
@@ -354,10 +360,12 @@ approved complete backend pattern exists, and that fact is enforced by the type
 system rather than by convention: the `CompleteBackendPattern` variant cannot be
 constructed, so no assessment can claim a capability is finished.
 
-### `error` — the single error root
+### `error` — the general instruction and assessment error root
 
-`TapscriptError` is the crate's one error type and implements
-`std::error::Error`. It has 17 variants in four families:
+`TapscriptError` implements `std::error::Error` and has 17 variants in four
+families. The candidate STATE constructor has its own closed
+`StateConstructorRefusal` sum because those construction refusals are not
+instruction, parser, abstract-validation, or assessment failures.
 
 | Family | Variants | Returned by |
 |---|---|---|
@@ -374,14 +382,41 @@ error and **no partial result**. A truncated state set would be
 indistinguishable from a complete one and would understate what the program can
 produce.
 
-## Raw bytes have exactly one way in
+### `state_constructor` — candidate STATE construction and evidence
 
-The safe construction API offers no raw opcode, no raw instruction, and no raw
-program. A program is built from reviewed primitive identities and checked
-literals; untrusted bytes reach it only through the parser, which either
-produces typed instructions or fails with a focused reason. Every opcode byte
-and every push form the serializer emits is resolved from the reviewed target
-contract, so no target number is restated in this crate.
+The crate root re-exports all 26 public items from `state_constructor`, grouped
+in the same order as `lib.rs`:
+
+- candidate and fixed public constants: `CandidateStateConstructor`,
+  `STATE_GENERATOR_X`, `STATE_GENERATOR_Y`, and `STATE_NUMS_KEY`;
+- branch and constructor identities: `StateBranchSide`,
+  `StateConstructorGeneration`, and `StateConstructorReference`;
+- refusal, control, curve, and field evidence: `StateConstructorRefusal`,
+  `StateControlRecipe`, `StateCurveCapability`, and `StateFieldCommitment`;
+- internal-key, leaf, metadata, and budget policy:
+  `StateInternalKeyPolicy`, `StateLeafRole`, `StateMetadataPattern`, and
+  `StateNonceBudget`;
+- nonce and reference evidence: `StateNonceEvidence`, `StateReferenceCensus`,
+  `StateReferenceDeclaration`, and `StateStaticLeaf`;
+- static-tree and curve outcomes: `StateStaticLeafEntry`, `StateStaticNode`,
+  `StateStaticSubtree`, and `StateTweakOutcome`;
+- construction entry points: `predecessor_recipe`,
+  `state_metadata_leaf_program`, and `successor_recipe`.
+
+`StateCurveCapability` is the seam a downstream implementation supplies for
+point admission and output-key derivation. The constructor owns the canonical
+metadata and tree recipes, while the curve implementation remains independently
+replaceable for cross-checking.
+
+## Tapscript program bytes have exactly one way in
+
+The safe program-construction API offers no raw opcode, no raw instruction, and
+no raw program. Program bytes reach it only through the parser, which either
+produces typed instructions or fails with a focused reason; canonical STATE
+metadata bytes have their separate strict realization decoder at the
+constructor boundary. Every opcode byte and every push form the serializer
+emits is resolved from the reviewed target contract, so no target number is
+restated in this crate.
 
 The parser refuses a nonminimal push always, which is stricter than the target's
 own validity rules: the target enforces minimality only under the standardness
@@ -462,7 +497,35 @@ candidate shape set, backend policy, and typed proof patterns
 static ASH constructor and candidate relocatable bundle
 static live-receipt constructor and its transfer leaf schema
 live coordinator and member patterns and their candidate bundle
+candidate STATE constructor and its reconstruction evidence
 ```
+
+### The candidate STATE constructor (Guide-14 Wave 4)
+
+The `state_constructor` module builds the canonical metadata commitment leaf,
+the typed static subtree, the bounded representation-nonce search, the admitted
+NUMS internal-key policy, typed control recipes, six field commitments per
+transaction side, and seven typed reference declarations. It emits predecessor
+and successor recipes whose bytes and reconstruction evidence remain available
+to the linker and transaction layers (`0.6.174-dev`).
+
+Curve arithmetic enters through `StateCurveCapability`, which a downstream
+implementation supplies. That seam lets the production constructor and the
+prototype's independent field arithmetic agree on the exact nonce, leaf, root,
+output, control blocks, generated cases, and NUMS derivation without making the
+prototype a production dependency (`0.6.178-dev`).
+
+`StateConstructorRefusal` is a closed sum of eighteen refusals. Only
+`TweakAboveGroupOrder`, `TweakedPointIsIdentity`, and
+`CanonicalBranchSideNotSatisfied` are retryable; every refused lower nonce is
+retained in `StateNonceEvidence`, while zero budget and exhaustion have their
+own non-retryable forms (`0.6.174-dev`).
+
+The abstract oracle establishes that the production metadata leaf has no
+success or non-aborting-failure path for empty, true, false, arbitrary, and
+depth-edge initial stacks. The two target-native rows—no accepted spend through
+the leaf and rejection of every attempted spend—remain outstanding for Wave 8
+and are not implied by that abstract result (`0.6.178-dev`).
 
 ### The live-receipt constructor (Guide-13 §7, §10)
 
@@ -505,28 +568,30 @@ The downstream native run establishes the target-facing half without expanding t
 Not implemented:
 
 ```text
-linked bundle and taptree
+linked deployment bundle
 transaction ABI
 target execution
 ```
 
 Beyond those, and by design rather than by omission:
 
-- the programs it emits are relocatable and unresolved: every link-time literal
-  is a symbol a later layer settles, and the bundle is a candidate whose clear
+- its relocatable backend programs remain unresolved: every link-time literal
+  is a symbol a later layer settles, and each bundle is a candidate whose clear
   lifecycle is outstanding — the type refuses to exist for a plan whose
   lifecycle is complete;
 - it executes nothing — `validate_program` is a statement about the reviewed
   contracts, not about a node;
 - it restates no target number: every opcode byte, push form, encoding width,
   byte order, and resource bound is read from `target-elements`;
-- it serializes nothing to disk, hashes nothing, opens no file, and mints no
+- it serializes nothing to disk, hashes only constructor bytes under the
+  reviewed target's tagged-hash domains, opens no file, and mints no deployment
   identity;
 - it accepts no deployment binding and reads no network identity;
-- it names no attestation-contract operation, object, relation, or protocol
-  quantity — the compiler owns the abstract side of the join, and reaching past
-  its projection into `architecture`, `realization`, or `model` is precisely
-  what the dependency list forbids.
+- its assessment path names no attestation-contract operation, object,
+  relation, or protocol quantity — the compiler owns that abstract side of the
+  join. The STATE constructor's narrow exception consumes realization's
+  canonical metadata and names construction roles, without reaching into
+  `architecture` or `model`.
 
 ## Nothing here is claimed to work against a node
 
