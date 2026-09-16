@@ -17,14 +17,15 @@ use crate::{
 };
 
 use super::reviewed_target;
+use super::state_program_tests::{fixtures, independent_leaf_hash, production_tree, tagged_hash};
 
-const GOLDEN_PROGRAM: &str = "4c56747269706f642f73746174652d6d6574616461746100000001000000000000000100000000000000020000000000000003000000000000000400000000000000050000000000000000000000000100000000000000000069";
-const GOLDEN_LEAF: &str = "1dd35257bddfbf0c1c9e0eb4751e91e440cdb2e618c5b02863ffeb21987ae6a6";
-const GOLDEN_STATIC: &str = "a81c7f30802409528d2d0ac880b8072c97e96c303f4759707394af544fc3df40";
-const GOLDEN_ROOT: &str = "e917cc4c1e583cf8c84b89caa01c40a9dfba3675b310aecc988b4d7c48c46e53";
-const GOLDEN_TWEAK: &str = "6a75ee379e412bf18e6bd4d5e6d312e23378ad0b6c09cd0a6d662b45fe2a3e2d";
-const GOLDEN_METADATA_CONTROL: &str = "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0a81c7f30802409528d2d0ac880b8072c97e96c303f4759707394af544fc3df40";
-const GOLDEN_STATIC_CONTROL: &str = "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac01dd35257bddfbf0c1c9e0eb4751e91e440cdb2e618c5b02863ffeb21987ae6a6";
+const GOLDEN_PROGRAM: &str = "4c56747269706f642f73746174652d6d6574616461746100000001000000000000000100000000000000020000000000000003000000000000000400000000000000050000000000000000000000001600000000000000000069";
+const GOLDEN_LEAF: &str = "0023e94b586ad1d12023263bbc5bda8ac75ef41f709ad383b6c87cac37115046";
+const GOLDEN_STATIC: &str = "16886b852d0fef2771d6ee1c2de7c0c705ccb2977554db36d0527d0aa339f6ee";
+const GOLDEN_ROOT: &str = "bdaf3bcdf7c2807470ebd955cef577bc2c466497b28aa08f27c8cb518608d5af";
+const GOLDEN_TWEAK: &str = "032d9ed6b257f9485b349770a992685756db69c9dab55a683b41afa374ff22ab";
+const GOLDEN_METADATA_CONTROL: &str = "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac016886b852d0fef2771d6ee1c2de7c0c705ccb2977554db36d0527d0aa339f6ee";
+const GOLDEN_STATIC_CONTROL: &str = "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac00023e94b586ad1d12023263bbc5bda8ac75ef41f709ad383b6c87cac37115046";
 
 struct ScriptedCurve {
     valid: bool,
@@ -123,7 +124,16 @@ fn derive(
 }
 
 fn candidate() -> CandidateStateConstructor {
-    derive(1, 4096, &ScriptedCurve::new([])).unwrap()
+    let curve = ScriptedCurve::new([]);
+    CandidateStateConstructor::derive(
+        &reviewed_target(),
+        &metadata(),
+        &production_tree(),
+        policy(&curve),
+        StateNonceBudget::default(),
+        &curve,
+    )
+    .unwrap()
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -134,42 +144,169 @@ fn hex(bytes: &[u8]) -> String {
     text
 }
 
+struct IndependentGolden {
+    nonce: StateRepresentationNonce,
+    program: Vec<u8>,
+    leaf: [u8; 32],
+    static_root: [u8; 32],
+    root: [u8; 32],
+    tweak: [u8; 32],
+    metadata_control: Vec<u8>,
+    static_control: Vec<u8>,
+}
+
+fn independent_golden() -> IndependentGolden {
+    let bytes = fixtures().program.program().encode(&reviewed_target());
+    let static_root = independent_leaf_hash(&bytes);
+    let curve = ScriptedCurve::new([]);
+    for attempt in 0..4096 {
+        let nonce = StateRepresentationNonce::new(attempt);
+        let metadata = encode_state_metadata(&metadata(), nonce);
+        let mut program = vec![0x4c, u8::try_from(metadata.len()).unwrap()];
+        program.extend(metadata);
+        program.extend([0x00, 0x69]);
+        let leaf = independent_leaf_hash(&program);
+        if leaf > static_root {
+            continue;
+        }
+        let root = tagged_hash(b"TapBranch/elements", &[leaf, static_root].concat());
+        let StateTweakOutcome::OutputKey { key, parity } = curve.output_key(&STATE_NUMS_KEY, &root)
+        else {
+            continue;
+        };
+        assert_eq!(key, [0x42; 32]);
+        let tweak = tagged_hash(b"TapTweak/elements", &[STATE_NUMS_KEY, root].concat());
+        let mut control = vec![0xc4 | u8::from(parity)];
+        control.extend(STATE_NUMS_KEY);
+        let mut metadata_control = control.clone();
+        metadata_control.extend(static_root);
+        control.extend(leaf);
+        return IndependentGolden {
+            nonce,
+            program,
+            leaf,
+            static_root,
+            root,
+            tweak,
+            metadata_control,
+            static_control: control,
+        };
+    }
+    panic!("independent production fixture search exhausted");
+}
+
 #[test]
 fn golden_canonical_bytes_and_target_hashes() {
+    let expected = independent_golden();
     let built = candidate();
-    assert_eq!(built.nonce(), StateRepresentationNonce::new(1));
+    assert_eq!(built.nonce(), expected.nonce);
     assert_eq!(
-        hex(&built.leaf_program().encode(&reviewed_target())),
-        GOLDEN_PROGRAM
+        built.leaf_program().encode(&reviewed_target()),
+        expected.program
     );
     assert_eq!(
-        hex(&built
+        built
             .control_recipe(StateLeafRole::MetadataCommitment)
             .unwrap()
-            .executing_leaf_hash),
-        GOLDEN_LEAF
+            .executing_leaf_hash,
+        expected.leaf
     );
-    assert_eq!(hex(built.static_subtree().root()), GOLDEN_STATIC);
-    assert_eq!(hex(built.merkle_root()), GOLDEN_ROOT);
-    assert_eq!(hex(&built.tweak_hash()), GOLDEN_TWEAK);
+    assert_eq!(built.static_subtree().root(), &expected.static_root);
+    assert_eq!(built.merkle_root(), &expected.root);
+    assert_eq!(built.tweak_hash(), expected.tweak);
     assert_eq!(built.metadata_bytes().len(), 86);
-    assert_eq!(&built.metadata_bytes()[74..78], &1_u32.to_be_bytes());
+    assert_eq!(
+        &built.metadata_bytes()[74..78],
+        &expected.nonce.get().to_be_bytes()
+    );
+    let actual = [
+        hex(&expected.program),
+        hex(&expected.leaf),
+        hex(&expected.static_root),
+        hex(&expected.root),
+        hex(&expected.tweak),
+        hex(&expected.metadata_control),
+        hex(&expected.static_control),
+    ];
+    assert_eq!(
+        actual,
+        [
+            GOLDEN_PROGRAM,
+            GOLDEN_LEAF,
+            GOLDEN_STATIC,
+            GOLDEN_ROOT,
+            GOLDEN_TWEAK,
+            GOLDEN_METADATA_CONTROL,
+            GOLDEN_STATIC_CONTROL
+        ],
+        "recomputed nonce={}\ncomponent map={:?}\nconsumers={:?}\nresources={:?}\naborts={:?}",
+        expected.nonce.get(),
+        fixtures().program.components(),
+        fixtures().program.consumers(),
+        fixtures().program.resources(),
+        fixtures().program.execution().aborts()
+    );
 }
 
 #[test]
 fn golden_control_blocks_are_derived_for_both_direct_leaves() {
+    let expected = independent_golden();
     let built = candidate();
-    for (role, expected) in [
-        (StateLeafRole::MetadataCommitment, GOLDEN_METADATA_CONTROL),
-        (StateLeafRole::Announcement, GOLDEN_STATIC_CONTROL),
+    for (role, expected, golden) in [
+        (
+            StateLeafRole::MetadataCommitment,
+            expected.metadata_control,
+            GOLDEN_METADATA_CONTROL,
+        ),
+        (
+            StateLeafRole::Announcement,
+            expected.static_control,
+            GOLDEN_STATIC_CONTROL,
+        ),
     ] {
         let recipe = built.control_recipe(role).unwrap();
         let bytes = recipe.control_bytes().unwrap();
         assert_eq!(bytes.len(), 65);
-        assert_eq!(hex(&bytes), expected);
+        assert_eq!(bytes, expected);
+        assert_eq!(hex(&bytes), golden);
         assert_eq!(recipe.role, role);
         assert_eq!(recipe.siblings.len(), 1);
     }
+}
+
+#[test]
+fn predecessor_and_successor_recipes_preserve_the_production_subtree() {
+    let curve = ScriptedCurve::new([]);
+    let target = reviewed_target();
+    let tree = production_tree();
+    let input = metadata();
+    let output = announce_maturity(
+        &input,
+        Cycle::new(7),
+        AnnouncementLeadBounds::new(Cycle::new(2), Cycle::new(4)).unwrap(),
+    )
+    .unwrap();
+    let before = predecessor_recipe(
+        &target,
+        &input,
+        &tree,
+        policy(&curve),
+        StateNonceBudget::default(),
+        &curve,
+    )
+    .unwrap();
+    let after = successor_recipe(
+        &target,
+        &output,
+        &tree,
+        policy(&curve),
+        StateNonceBudget::default(),
+        &curve,
+    )
+    .unwrap();
+    before.continuity(&after).unwrap();
+    assert_eq!(before.static_subtree(), after.static_subtree());
+    assert_ne!(before.metadata_bytes(), after.metadata_bytes());
 }
 
 #[test]

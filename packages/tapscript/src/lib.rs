@@ -24,6 +24,7 @@ pub mod state_announcement;
 pub mod state_constructor;
 pub mod state_operator;
 pub mod state_pattern;
+pub mod state_program;
 pub mod upstream;
 
 pub use authorization::{
@@ -168,6 +169,13 @@ pub use state_pattern::{
     StatePatternMetadata, StatePatternOwner, StatePatternRecipe, StatePatternRefusal,
     StatePatternResidual, StatePatternSymbol, StatePatternWitness, StateStructuralEvidence,
     build_state_pattern, state_structural_fragment, state_structural_patterns,
+};
+
+pub use state_program::{
+    StateAnnouncementProgram, StateProgramAdapter, StateProgramComponent, StateProgramConsumer,
+    StateProgramDisclosure, StateProgramMetadata, StateProgramRefusal, StateProgramResidual,
+    StateProgramSymbol, StateProgramWitness, build_state_announcement_program,
+    production_static_subtree, state_announcement_program,
 };
 
 #[cfg(test)]

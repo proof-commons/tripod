@@ -27,6 +27,7 @@ tapscript_source_files = files(
   'src/state_constructor.rs',
   'src/state_operator.rs',
   'src/state_pattern.rs',
+  'src/state_program.rs',
   'src/tests/abstract_oracle_tests.rs',
   'src/tests/authorization_tests.rs',
   'src/tests/bundle_tests.rs',
@@ -59,6 +60,7 @@ tapscript_source_files = files(
   'src/tests/state_constructor_tests.rs',
   'src/tests/state_operator_tests.rs',
   'src/tests/state_pattern_tests.rs',
+  'src/tests/state_program_tests.rs',
   'src/upstream.rs',
 )
 

@@ -68,6 +68,7 @@ mod state_announcement_tests;
 mod state_constructor_tests;
 mod state_operator_tests;
 mod state_pattern_tests;
+mod state_program_tests;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
