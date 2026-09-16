@@ -21,6 +21,7 @@ pub mod program;
 pub mod shape;
 pub mod stack;
 pub mod state_constructor;
+pub mod state_pattern;
 pub mod upstream;
 
 pub use authorization::{
@@ -143,6 +144,14 @@ pub use state_constructor::{
     StateNonceEvidence, StateReferenceCensus, StateReferenceDeclaration, StateStaticLeaf,
     StateStaticLeafEntry, StateStaticNode, StateStaticSubtree, StateTweakOutcome,
     predecessor_recipe, state_metadata_leaf_program, successor_recipe,
+};
+
+pub use state_pattern::{
+    StateAnnouncementShape, StateConsumerRequirement, StateDisclosure, StateExternalEvidenceRole,
+    StatePattern, StatePatternBindings, StatePatternConstructibility, StatePatternId,
+    StatePatternMetadata, StatePatternOwner, StatePatternRecipe, StatePatternRefusal,
+    StatePatternResidual, StatePatternSymbol, StatePatternWitness, StateStructuralEvidence,
+    build_state_pattern, state_structural_fragment, state_structural_patterns,
 };
 
 #[cfg(test)]
