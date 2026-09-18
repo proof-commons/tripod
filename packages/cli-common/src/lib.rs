@@ -60,7 +60,6 @@ impl CommandExit {
     }
 
     /// Return this class as a standard library [`ExitCode`].
-    #[must_use]
     pub fn exit_code(self) -> ExitCode {
         ExitCode::from(self.code())
     }
@@ -279,7 +278,6 @@ impl CliExit {
     }
 
     /// Return this exit class as a standard library [`ExitCode`].
-    #[must_use]
     pub fn exit_code(&self) -> ExitCode {
         self.exit.exit_code()
     }
