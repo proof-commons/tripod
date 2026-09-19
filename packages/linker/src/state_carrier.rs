@@ -434,8 +434,9 @@ impl StateCarrierClosure {
 /// # Errors
 ///
 /// [`StateLinkRefusal::EmittedProjection`] wrapping whatever the record's
-/// own carrier projection refuses, and then every refusal
-/// [`close_state_carrier_parts`] raises over the result.
+/// own carrier projection refuses, and then every refusal the
+/// crate-private `close_state_carrier_parts` entry raises over the
+/// result.
 pub fn close_state_carriers(
     record: &StateAnnouncementProgram,
     deployment: &StateLinkDeploymentParameters,
