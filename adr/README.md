@@ -34,6 +34,7 @@ repository itself.
 | [ADR-021](021-identity-adjudication.md) | Decided and adopted; implemented for current identity policy, with evidence and release surfaces activating with their consumers | The normative identity adjudication procedure, with this repository's local recipe convention, current identities, separation migration, and implementation standing. |
 | [ADR-022](022-interchange-conventions.md) | Decided and adopted; normative now and unimplemented by design until an externally consumed document exists | The normative wire-format discipline for externally consumed documents, with the ADR-010 boundary, executor-protocol stop, alignment records, and consumer-triggered implementation rule. |
 | [ADR-023](023-script-tree-label-carrier.md) | Decided and implemented | The script tree joins the label carrier: two amended ADR-019 entries putting `scripts/*.py` under `DOC` and scanning Python comments, strings excluded. |
+| [ADR-024](024-closure-exact-linking.md) | Decided and adopted for the STATE generation; implementation lands with the Wave-6 reduction bite; earlier generations under audit | Emission and linking carry exactly the checks the contract's closure requires; a surplus check is a defect; closure is compositional over locally sound family leaves and consensus conservation. |
 
 ## Numbering · `rule:adr:numbering`
 
