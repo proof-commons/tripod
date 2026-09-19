@@ -120,7 +120,8 @@ pub use relation::{
 pub(crate) use relation::{build_relation_graph, project_relation_graph};
 pub use scope::{CompleteRealizationScope, RealizationScope};
 pub use state::{
-    AnnouncementLeadBounds, Maturity, MaturityTransitionRefusal, StateMetadata, announce_maturity,
+    AnnouncementLeadBounds, Maturity, MaturityTransitionRefusal, StateMetadata,
+    StateSingletonDeclaration, announce_maturity,
 };
 pub use state_codec::{
     EncodedStateMetadata, STATE_METADATA_BYTES, STATE_METADATA_DOMAIN, STATE_METADATA_SCHEMA,

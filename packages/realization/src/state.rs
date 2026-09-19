@@ -21,6 +21,7 @@
 //! with the model's own pool state is a conformance obligation proved
 //! against the model, not an import.
 
+use architecture::{AssetId, AssetSpec};
 use thiserror::Error;
 
 use crate::{Cycle, ProtocolAmount, RealizationError};
@@ -167,6 +168,79 @@ impl AnnouncementLeadBounds {
             .map_err(|_| MaturityTransitionRefusal::CycleArithmeticOverflow)?;
 
         Ok((earliest, latest))
+    }
+}
+
+/// One asset's declared singleton issuance, resolved from its
+/// declaration.
+///
+/// The amount an announcement compares against input zero is not a
+/// deployment choice. The asset declaration fixes the whole issuance at
+/// one unit and forbids reissuance, so the number is a fact about the
+/// declared asset rather than a parameter of the deployment that spends
+/// it, and the type that resolved the declaration is what carries it.
+///
+/// The distinction is not bookkeeping. The announcement leaf compares
+/// input zero's explicit amount against this number for equality, so a
+/// link that took the amount from deployment data could push a value the
+/// chain can never carry into a program that then refuses every spend —
+/// and nothing downstream would recover the difference, because the
+/// program is correct about a quantity that does not exist.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct StateSingletonDeclaration {
+    asset: AssetId,
+    fixed_amount: ProtocolAmount,
+}
+
+impl StateSingletonDeclaration {
+    /// Resolve one asset declaration into its singleton declaration.
+    ///
+    /// Three declarations are refused, and they are the three ways a
+    /// declaration fails to describe a singleton: it fixes no amount, it
+    /// fixes zero, or it admits reissuance. A declaration admitting
+    /// reissuance describes an asset whose supply can still change, so
+    /// there is no whole issuance to name; a zero or absent fixed amount
+    /// names no quantity at all.
+    ///
+    /// # Errors
+    ///
+    /// [`RealizationError::InvalidSingletonDeclaration`], carrying the
+    /// offending declaration, for each of those three; and
+    /// [`RealizationError::AmountOutOfDomain`] when the declared
+    /// magnitude lies outside the protocol-amount domain, which is
+    /// [`ProtocolAmount`]'s own refusal rather than a second copy of it
+    /// written here.
+    pub fn from_architecture_asset(spec: &AssetSpec) -> Result<Self, RealizationError> {
+        let refusal = || RealizationError::InvalidSingletonDeclaration {
+            asset: spec.id,
+            fixed_amount: spec.fixed_amount,
+            reissuable: spec.reissuable,
+        };
+
+        let Some(magnitude) = spec.fixed_amount else {
+            return Err(refusal());
+        };
+
+        if magnitude == 0 || spec.reissuable {
+            return Err(refusal());
+        }
+
+        Ok(Self {
+            asset: spec.id,
+            fixed_amount: ProtocolAmount::new(magnitude)?,
+        })
+    }
+
+    /// The asset whose declaration this is.
+    #[must_use]
+    pub const fn asset(&self) -> AssetId {
+        self.asset
+    }
+
+    /// The whole declared issuance.
+    #[must_use]
+    pub const fn fixed_amount(&self) -> ProtocolAmount {
+        self.fixed_amount
     }
 }
 

@@ -19,6 +19,7 @@ use target_elements::{LeafVersion, ResourceDimension};
 
 use crate::graph::{ReferenceEdgeId, ReferenceNode, SccId};
 use crate::live_symbol::{LiveLinkRole, LiveLinkSymbol, LiveSymbolType};
+use crate::state_error::StateLinkRefusal;
 use crate::symbol::SymbolType;
 
 /// One relation-case identity, as the linker reports it.
@@ -571,6 +572,16 @@ pub enum LinkRefusal {
         representation: LiveTransferRepresentationPlan,
     },
 
+    // --- STATE link (Guide-14 Wave 6) ---------------------------------
+    /// A STATE maturity link refused inside its own closed root.
+    ///
+    /// The maturity census keeps a closed refusal root so that a test can
+    /// enumerate it, and this variant is how those refusals reach the
+    /// root a shared pipeline returns. Wrapping rather than flattening is
+    /// what keeps the shared root's vocabulary from becoming a function
+    /// of one generation's census.
+    StateLink(StateLinkRefusal),
+
     // --- Status -------------------------------------------------------
     /// The bundle handed in already claims more than a candidate, so it
     /// is not this linker's subject (§1.9).
@@ -620,4 +631,10 @@ pub enum LinkRefusal {
         /// The offered established profile.
         offered: Box<tapscript::EstablishedOperatorProfile>,
     },
+}
+
+impl From<StateLinkRefusal> for LinkRefusal {
+    fn from(refusal: StateLinkRefusal) -> Self {
+        Self::StateLink(refusal)
+    }
 }

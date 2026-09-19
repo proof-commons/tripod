@@ -50,6 +50,12 @@
 //! down for the same reason — the window's accessors return it, and a
 //! consumer that cannot write down a cycle cannot write down what the
 //! window handed it.
+//!
+//! [`StateSingletonDeclaration`] is named for the third: the maturity
+//! link takes the singleton's declared amount as the type that validated
+//! it, resolved from the asset declaration that fixes the whole issuance
+//! and forbids reissuance, rather than as an integer a deployment
+//! supplies.
 
 pub use compiler::live_transfer_plan::{
     LiveTransferComposition, LiveTransferRepresentationPlan, LiveTransferRepresentationProjection,
@@ -63,4 +69,4 @@ pub use compiler::operation_plan::{
     ValidatedTargetOperationPlan,
 };
 pub use compiler::target::{ExternalEvidenceRole, RequiredCapability as TargetRequiredCapability};
-pub use realization::{AnnouncementLeadBounds, Cycle};
+pub use realization::{AnnouncementLeadBounds, Cycle, StateSingletonDeclaration};

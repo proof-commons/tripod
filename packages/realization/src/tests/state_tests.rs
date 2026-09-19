@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
 
+use architecture::{ARCHITECTURE, AssetClass, AssetId, AssetRole, AssetSpec};
 use proptest::prelude::*;
 
 use crate::{
-    AnnouncementLeadBounds, Cycle, Maturity, MaturityTransitionRefusal, ProtocolAmount,
-    RealizationError, StateMetadata, announce_maturity,
+    AnnouncementLeadBounds, Cycle, Maturity, MaturityTransitionRefusal,
+    PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RealizationError, StateMetadata,
+    StateSingletonDeclaration, announce_maturity,
 };
 
 fn amount(value: u64) -> ProtocolAmount {
@@ -249,6 +251,75 @@ fn refusal_names_are_distinct() {
 
         assert!(kebab, "name is not kebab-case: {name}");
     }
+}
+
+// The architecture's own declaration rather than a literal standing for
+// it: the singleton's amount is a fact about that declaration, and a test
+// that wrote the number down again would be asserting its own copy of the
+// thing under test.
+#[test]
+fn the_declared_identity_singleton_resolves_to_one_unit_of_its_own_asset() {
+    let spec = ARCHITECTURE
+        .asset(AssetId::Pid)
+        .expect("the identity asset is declared");
+    let declaration = StateSingletonDeclaration::from_architecture_asset(spec).unwrap();
+
+    assert_eq!(declaration.asset(), AssetId::Pid);
+    assert_eq!(declaration.fixed_amount(), ProtocolAmount::ONE);
+    assert_eq!(declaration.fixed_amount(), amount(1));
+    assert_eq!(spec.fixed_amount, Some(1));
+    assert!(!spec.reissuable);
+}
+
+// A declaration the architecture does not carry, because each refusal
+// ground has to be isolated and no declared asset fails on exactly one of
+// them.
+fn singleton_spec(fixed_amount: Option<u64>, reissuable: bool) -> AssetSpec {
+    AssetSpec {
+        id: AssetId::Pid,
+        class: AssetClass::Closed,
+        role: AssetRole::Identity,
+        fixed_amount,
+        reissuable,
+        authority: None,
+        issue_operation: None,
+        destruction_operations: &[],
+    }
+}
+
+// The three ways a declaration fails to describe a singleton: it fixes no
+// amount, it fixes zero, and it admits reissuance. Each refusal carries
+// the offending declaration, so the assertion is on the fields and not
+// merely on the variant.
+#[test]
+fn a_declaration_describing_no_singleton_refuses_with_its_own_fields() {
+    for (fixed_amount, reissuable) in [(None, false), (Some(0), false), (Some(1), true)] {
+        let spec = singleton_spec(fixed_amount, reissuable);
+
+        assert_eq!(
+            StateSingletonDeclaration::from_architecture_asset(&spec),
+            Err(RealizationError::InvalidSingletonDeclaration {
+                asset: AssetId::Pid,
+                fixed_amount,
+                reissuable,
+            })
+        );
+    }
+}
+
+// The domain refusal stays the amount type's own. A second bound written
+// into the resolution would be a second authority on one question, free
+// to drift from the first with no way to tell which had drifted.
+#[test]
+fn a_magnitude_outside_the_amount_domain_refuses_as_the_amount_type_does() {
+    let spec = singleton_spec(Some(PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE), false);
+
+    assert_eq!(
+        StateSingletonDeclaration::from_architecture_asset(&spec),
+        Err(RealizationError::AmountOutOfDomain {
+            value: PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE
+        })
+    );
 }
 
 // Bounds and an announced cycle drawn together, so the cycle always

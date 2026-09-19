@@ -1,17 +1,16 @@
 use std::collections::BTreeSet;
 
-use realization::{Cycle, Maturity, ProtocolAmount, StateMetadata};
 use tapscript::{
     CandidateStateConstructor, STATE_NUMS_KEY, StackItem, StateConstructorReference as Reference,
-    StateCurveCapability, StateInternalKeyPolicy, StateLeafRole, StateNonceBudget,
-    StateReferenceCensus, StateReferenceDeclaration, StateStaticLeaf, StateStaticNode,
-    StateStaticSubtree, StateTweakOutcome, TapscriptInstruction, TapscriptProgram,
+    StateInternalKeyPolicy, StateLeafRole, StateNonceBudget, StateReferenceCensus,
+    StateReferenceDeclaration, StateStaticLeaf, StateStaticNode, StateStaticSubtree,
+    TapscriptInstruction, TapscriptProgram,
 };
 use target_elements::LeafVersion;
 
 use crate::{FrozenStateReferenceGraph, STATE_REFERENCE_LIMIT, StateReferenceGraphRefusal};
 
-use super::reviewed_target;
+use super::{ScriptedCurve, reviewed_target, state_metadata};
 
 fn declaration(value: u32, dependencies: &[u32]) -> StateReferenceDeclaration {
     StateReferenceDeclaration {
@@ -245,33 +244,13 @@ fn dependency_only_references_also_count_toward_the_bound() {
     );
 }
 
-struct ScriptedCurve;
-
-impl StateCurveCapability for ScriptedCurve {
-    fn internal_key_is_a_point(&self, key: &[u8; 32]) -> bool {
-        assert_eq!(key, &STATE_NUMS_KEY);
-        true
-    }
-
-    fn output_key(&self, key: &[u8; 32], _: &[u8; 32]) -> StateTweakOutcome {
-        assert_eq!(key, &STATE_NUMS_KEY);
-        StateTweakOutcome::OutputKey {
-            key: [0x42; 32],
-            parity: true,
-        }
-    }
-}
-
+// A one-leaf subtree standing for any static subtree: what this file
+// tests is the reference graph over the constructor's declarations, and
+// those declarations carry the subtree's root without depending on which
+// program produced it.
 fn candidate() -> CandidateStateConstructor {
     let target = reviewed_target();
-    let metadata = StateMetadata {
-        omega: ProtocolAmount::new(1).unwrap(),
-        y_l: ProtocolAmount::new(2).unwrap(),
-        y_t: ProtocolAmount::new(3).unwrap(),
-        q: ProtocolAmount::new(4).unwrap(),
-        cycle: Cycle::new(5),
-        maturity: Maturity::Unannounced,
-    };
+    let metadata = state_metadata();
     let program = TapscriptProgram::new(vec![TapscriptInstruction::Push(
         StackItem::script_number(&target, 1).unwrap(),
     )])

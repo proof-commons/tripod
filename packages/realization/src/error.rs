@@ -1,4 +1,4 @@
-use architecture::{BoundId, ManifestError, ObjectId, OperationId, RootId};
+use architecture::{AssetId, BoundId, ManifestError, ObjectId, OperationId, RootId};
 use thiserror::Error;
 
 use crate::{
@@ -111,6 +111,22 @@ pub enum RealizationError {
     /// A cycle bound appeared where a cardinality magnitude is required.
     #[error("cycle bound {0} cannot supply a count")]
     CycleBoundUsedAsCount(BoundId),
+
+    /// An asset declaration does not declare a singleton: it fixes no
+    /// amount, fixes zero, or admits reissuance.
+    ///
+    /// The offending declaration travels with the refusal, because the
+    /// caller's next question is which asset and which field, and a
+    /// sentence naming neither would send it back to the manifest to
+    /// find out.
+    #[error(
+        "asset {asset} does not declare a singleton: fixed amount {fixed_amount:?}, reissuable {reissuable}"
+    )]
+    InvalidSingletonDeclaration {
+        asset: AssetId,
+        fixed_amount: Option<u64>,
+        reissuable: bool,
+    },
 
     /// One expression ID was declared more than once.
     #[error("expression {0:?} is declared more than once")]

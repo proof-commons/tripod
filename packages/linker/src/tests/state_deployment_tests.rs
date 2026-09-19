@@ -1,23 +1,10 @@
 //! The maturity link's sources, bound from typed fixtures.
 //!
-//! # The sources are real ones
-//!
-//! The plan below is the compiler's own validated announcement plan,
-//! reached through its public planning entry over a derived realization,
-//! and the record is the composed announcement program built through
-//! tapscript's public structural, semantic and operator entries. Nothing
-//! here hand-assembles either one, because a hand-assembled source would
-//! let the bridge bind something no compiler planned and no backend
-//! composed, which is the one thing binding by type exists to prevent.
-//!
-//! # The fixture values say they are fixtures
-//!
-//! The asset, amount, operator key and identity bytes below are public,
-//! meaningless test material `(´[ADR015-rule:security:test-material]´)`:
-//! they carry no secret and stand for no deployed object. The lead
-//! magnitudes 2 and 4 are the same kind of thing, and the binding says so
-//! in the type rather than in a comment, which is what
-//! [`StateLeadBoundOrigin::Fixture`] is for.
+//! The plan, the record, the operator binding and the fixture lead window
+//! are the shared maturity fixtures in [`crate::tests`], which is also
+//! where the argument that they are real artifacts and that their bytes
+//! are test material lives. This file is about what binding them
+//! establishes.
 //!
 //! # Raw bytes are refused by the compiler, not by a test
 //!
@@ -39,179 +26,17 @@
 //! operator-deployment tests offers the earlier revision to
 //! [`crate::OperatorDeploymentBinding::check`] directly.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::num::{NonZeroU32, NonZeroU64};
-use std::sync::LazyLock;
+use std::collections::BTreeSet;
 
-use architecture::{ARCHITECTURE, OperationId};
-use compiler::input::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
-use compiler::maturity_announcement_plan::{
-    ValidatedMaturityAnnouncementOperationPlan, plan_maturity_announcement_target_operation,
+use architecture::OperationId;
+use tapscript::StateExternalEvidenceRole;
+use tapscript::upstream::Cycle;
+use target_elements::TargetContractVersion;
+
+use crate::tests::{
+    binding, bridge, depth, fixture_lead_bounds, identity, plan, record, reviewed_target,
 };
-use compiler::operation_plan::PlacementSearchLimits;
-use realization::{RealizationScope, derive};
-use tapscript::upstream::{AnnouncementLeadBounds, Cycle};
-use tapscript::{
-    EstablishedOperatorProfile, OperatorKey, STATE_NUMS_KEY, StackItem, StateAnnouncementBindings,
-    StateAnnouncementProgram, StateAnnouncementSymbol, StateExternalEvidenceRole,
-    StateOperatorBindings, StateOperatorSymbol, StatePatternBindings, StatePatternSymbol,
-    build_state_announcement_program, build_state_operator_pattern, operator_key_encoding_closure,
-    selected_operator_profile, state_announcement_patterns, state_announcement_program,
-    state_operator_fragment, state_structural_patterns,
-};
-use target_elements::{EncodingClass, TargetContractVersion};
-
-use crate::tests::reviewed_target;
-use crate::{
-    CandidateDeploymentIdentity, LinkRefusal, OperatorDeploymentBinding, StateLeadBoundOrigin,
-    StateLeadBounds, StateLinkDeploymentParameters,
-};
-
-/// The validated announcement plan, derived once and handed out by clone.
-fn plan() -> ValidatedMaturityAnnouncementOperationPlan {
-    static PLAN: LazyLock<ValidatedMaturityAnnouncementOperationPlan> = LazyLock::new(|| {
-        let limit = |value: u64| NonZeroU64::new(value).expect("the fixture limits are nonzero");
-        let operations = [
-            OperationId::AnnounceMaturity,
-            OperationId::CompactAsh,
-            OperationId::TransferLive,
-        ];
-        let scope = RealizationScope::from_operations(operations).expect("a three-operation scope");
-        let realization = derive(&ARCHITECTURE, scope).expect("the operations derive");
-        let scope = CompilationScope::from_operations([OperationId::AnnounceMaturity])
-            .expect("a one-operation scope");
-        let policy =
-            AnalysisPolicy::strict(ProofSearchLimits::new(limit(1_000_000), limit(10_000)));
-        let input = bind_input(&ARCHITECTURE, realization, scope, policy).expect("the input binds");
-
-        plan_maturity_announcement_target_operation(
-            &input,
-            PlacementSearchLimits::new(limit(10_000_000), limit(1_000_000)),
-        )
-        .expect("the plan validates")
-    });
-    PLAN.clone()
-}
-
-/// The composed announcement record, built once and handed out by clone.
-fn record() -> StateAnnouncementProgram {
-    static RECORD: LazyLock<StateAnnouncementProgram> = LazyLock::new(|| {
-        let target = reviewed_target();
-        let item = |bytes| StackItem::new(&target, bytes).expect("fixture bytes are a stack item");
-
-        let structural = StatePatternBindings::new(
-            &target,
-            BTreeMap::from([
-                (StatePatternSymbol::StateAsset, item(vec![0x11; 32])),
-                (
-                    StatePatternSymbol::StateAmount,
-                    StackItem::signed_le64(&target, 1),
-                ),
-            ]),
-        )
-        .expect("the structural census is complete");
-        let structural =
-            state_structural_patterns(&target, &structural).expect("the structural recipe builds");
-
-        let semantic = StateAnnouncementBindings::new(
-            &target,
-            BTreeMap::from([
-                (
-                    StateAnnouncementSymbol::InternalKey,
-                    item(STATE_NUMS_KEY.to_vec()),
-                ),
-                (
-                    StateAnnouncementSymbol::MaturityLeadMin,
-                    StackItem::unsigned_le64(&target, 2),
-                ),
-                (
-                    StateAnnouncementSymbol::MaturityLeadMax,
-                    StackItem::unsigned_le64(&target, 4),
-                ),
-                (StateAnnouncementSymbol::StateAsset, item(vec![0x11; 32])),
-                (
-                    StateAnnouncementSymbol::StateAmount,
-                    StackItem::signed_le64(&target, 1),
-                ),
-            ]),
-        )
-        .expect("the semantic census is complete");
-        let semantic =
-            state_announcement_patterns(&target, &semantic).expect("the semantic recipe builds");
-
-        let operator = StateOperatorBindings::new(
-            &target,
-            &BTreeMap::from([(
-                StateOperatorSymbol::CommittedOperatorKey,
-                StackItem::encoded(&target, EncodingClass::XOnlyPublicKey, vec![0x33; 32])
-                    .expect("the fixture key has the reviewed width"),
-            )]),
-        )
-        .expect("the operator census is complete");
-        let fragment = state_operator_fragment(&operator).expect("the operator fragment builds");
-        let operator = build_state_operator_pattern(&target, &operator, fragment)
-            .expect("the operator pattern builds");
-
-        let raw = state_announcement_program(&target, &structural, &semantic, &operator)
-            .expect("the composed program assembles");
-        build_state_announcement_program(&target, &structural, &semantic, &operator, raw)
-            .expect("the composed record is admitted")
-    });
-    RECORD.clone()
-}
-
-/// The fixture lead window: test material standing for no deployment.
-fn fixture_lead_bounds() -> StateLeadBounds {
-    let bounds = AnnouncementLeadBounds::new(Cycle::new(2), Cycle::new(4))
-        .expect("the fixture window is nonzero and ordered");
-    StateLeadBounds::new(bounds, StateLeadBoundOrigin::Fixture)
-}
-
-// Public, meaningless fixture bytes: no party, real deployment, or secret.
-fn operator_key(byte: u8) -> OperatorKey {
-    let target = reviewed_target();
-    let closure = operator_key_encoding_closure(target.definition().authorization());
-    OperatorKey::new(&closure, closure.approved(), vec![byte; 32])
-        .expect("fixture public bytes have the approved shape")
-}
-
-fn identity(network: u8, genesis: u8) -> CandidateDeploymentIdentity {
-    CandidateDeploymentIdentity::new([network; 32], [genesis; 32])
-        .expect("fixture identifiers are nonzero")
-}
-
-fn binding() -> OperatorDeploymentBinding {
-    let target = reviewed_target();
-    let internal_key = StackItem::encoded(&target, EncodingClass::XOnlyPublicKey, vec![0xb6; 32])
-        .expect("fixture internal key has the reviewed width");
-    let profile = EstablishedOperatorProfile::establish(selected_operator_profile(), &target)
-        .expect("the reviewed target establishes the source selection");
-    OperatorDeploymentBinding::bind(
-        &target,
-        operator_key(0x33),
-        profile,
-        identity(0x11, 0x22),
-        &internal_key,
-    )
-    .expect("the candidate deployment binds")
-}
-
-fn depth() -> NonZeroU32 {
-    NonZeroU32::new(8).expect("the fixture depth is nonzero")
-}
-
-fn bridge() -> StateLinkDeploymentParameters {
-    StateLinkDeploymentParameters::bind(
-        &reviewed_target(),
-        plan(),
-        fixture_lead_bounds(),
-        identity(0x11, 0x22),
-        binding(),
-        depth(),
-        &record(),
-    )
-    .expect("the demonstration sources bind")
-}
+use crate::{LinkRefusal, StateLeadBoundOrigin, StateLinkDeploymentParameters};
 
 #[test]
 fn binding_returns_every_supplied_source_and_the_reviewed_revision() {

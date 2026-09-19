@@ -19,6 +19,8 @@ pub mod operator_deployment;
 pub mod relocate;
 pub mod state_constructor_graph;
 pub mod state_deployment;
+pub mod state_error;
+pub mod state_symbol;
 pub mod state_taptree;
 pub mod symbol;
 pub mod taptree;
@@ -64,6 +66,13 @@ pub use state_constructor_graph::{
     StateReferenceGraphRefusal,
 };
 pub use state_deployment::{StateLeadBoundOrigin, StateLeadBounds, StateLinkDeploymentParameters};
+pub use state_error::StateLinkRefusal;
+pub use state_symbol::{
+    StateConsumerCensus, StateConsumerSites, StateDefinitionCensus, StateDefinitionOrigin,
+    StateLinkSymbol, StateResolvedCensus, StateResolvedEntry, StateSingletonAsset,
+    StateSymbolDefinition, StateSymbolType, StateSymbolValue, collect_state_definitions,
+    resolve_state_census, state_declared_type,
+};
 pub use state_taptree::{
     STATE_LEAF_WEIGHT, STATE_OPTIMUM_POLICY, StateLinkedTaptree, StateTreeCost,
     assemble_state_static, state_static_taptree_input,
