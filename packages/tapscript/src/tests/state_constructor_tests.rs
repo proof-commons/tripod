@@ -1110,6 +1110,50 @@ fn closure_recomputes_leaf_branch_and_real_tweak_output_with_public_arithmetic()
     assert_eq!(built.output_program(), expected_program);
 }
 
+// The fixed-nonce commitment and the scan have to agree where they meet:
+// at the nonce the scan settled on, the committed program is the selected
+// constructor's own. Away from that nonce it is another program or no
+// program at all, and that sensitivity is what makes a comparison against
+// it a check — a commitment that ignored the nonce would confirm whatever
+// pair a caller offered.
+#[test]
+fn the_program_at_a_nonce_is_the_selected_constructors_and_differs_at_every_other_nonce() {
+    let curve = PublicArithmeticCurve;
+    let policy = StateInternalKeyPolicy::new(STATE_NUMS_KEY, &curve).unwrap();
+    let built = CandidateStateConstructor::derive(
+        &reviewed_target(),
+        &metadata(),
+        &production_tree(),
+        policy,
+        StateNonceBudget::default(),
+        &curve,
+    )
+    .unwrap();
+    let at = |representation| {
+        state_output_program_at_nonce(
+            &reviewed_target(),
+            &EncodedStateMetadata {
+                semantic: metadata(),
+                representation,
+            },
+            &production_tree(),
+            policy,
+            &curve,
+        )
+    };
+    assert_eq!(at(built.nonce()).unwrap(), built.output_program());
+    for attempt in 0..16 {
+        let nonce = StateRepresentationNonce::new(attempt);
+        if nonce == built.nonce() {
+            continue;
+        }
+        match at(nonce) {
+            Ok(program) => assert_ne!(program, built.output_program(), "nonce {attempt}"),
+            Err(refusal) => assert!(refusal.retryable(), "nonce {attempt}: {refusal}"),
+        }
+    }
+}
+
 // The golden nonce is the least one satisfying the canonical branch order:
 // every nonce below it is rejected for that reason and it is accepted. How
 // many lie below is a fact about this leaf's hash rather than a property of

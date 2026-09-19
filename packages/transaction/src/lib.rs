@@ -24,6 +24,7 @@ pub mod request;
 pub mod script_path_signing;
 pub mod sponsor;
 pub mod state_request;
+pub mod state_view;
 pub mod synthetic;
 pub mod taproot;
 pub mod view;
@@ -116,6 +117,10 @@ pub use sponsor::{
 };
 pub use state_request::{
     MaturityAnnouncementRequest, SelectableMaturityRequestFacet, UnselectableMaturityRequestFacet,
+};
+pub use state_view::{
+    MaturityViewEntry, MaturityViewResidual, MaturityViewStatement, PublicMaturityStateView,
+    ValidatedMaturityStateView,
 };
 pub use synthetic::{FundingCeremonyStep, SyntheticDisclaimer};
 pub use taproot::{

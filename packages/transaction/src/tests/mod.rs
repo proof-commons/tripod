@@ -48,6 +48,7 @@ mod operator_right_tests;
 mod operator_signing_tests;
 mod refusal_census_tests;
 mod state_request_tests;
+mod state_view_tests;
 mod taproot_tests;
 
 use std::num::{NonZeroU8, NonZeroU32, NonZeroU64};

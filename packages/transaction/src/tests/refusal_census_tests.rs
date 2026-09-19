@@ -167,7 +167,11 @@ fn every_transaction_refusal_is_censused(refusal: &Refusal) {
         | Refusal::ResponseBoundToDifferentBytes { .. }
         | Refusal::OutputMutatedAfterSigning { .. }
         | Refusal::InputExtendedAfterSigning { .. }
-        | Refusal::OutputOmittedAfterSigning { .. } => (),
+        | Refusal::OutputOmittedAfterSigning { .. }
+        | Refusal::DuplicateMaturityViewEntry(..)
+        | Refusal::MissingMaturityViewEntry(..)
+        | Refusal::MaturityViewCommitmentRefused { .. }
+        | Refusal::MaturityViewProgramNotReconstructed { .. } => (),
     }
 }
 

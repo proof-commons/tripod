@@ -157,7 +157,8 @@ pub use state_constructor::{
     StateInternalKeyPolicy, StateLeafRole, StateMetadataPattern, StateNonceBudget,
     StateNonceEvidence, StateReferenceCensus, StateReferenceDeclaration, StateStaticLeaf,
     StateStaticLeafEntry, StateStaticNode, StateStaticSubtree, StateTweakOutcome,
-    predecessor_recipe, state_metadata_leaf_program, successor_recipe,
+    predecessor_recipe, state_metadata_leaf_program, state_output_program_at_nonce,
+    successor_recipe,
 };
 
 pub use state_operator::{

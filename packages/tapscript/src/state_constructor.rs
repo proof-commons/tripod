@@ -785,6 +785,61 @@ impl StateNonceEvidence {
         "host leastness only; a later admissible nonce may exist beyond the search budget";
 }
 
+/// One metadata encoding's commitment over one static subtree.
+///
+/// Committing an exact encoding and searching for an encoding answer two
+/// different questions, so they are two functions: this one is the
+/// algebra — the metadata leaf, the fixed outer side, the outer root and
+/// the tweak — while leastness is a property of a scan over it. Both
+/// callers below run this function, so a nonce a scan settled on and a
+/// nonce a caller names are committed by the same bytes rather than by
+/// two copies of them that could drift.
+struct StateCommitment {
+    program: TapscriptProgram,
+    metadata_hash: [u8; 32],
+    merkle_root: [u8; 32],
+    output_key: [u8; 32],
+    parity: bool,
+}
+
+fn commit_state_metadata(
+    target: &ReviewedElementsTapscriptDefinition,
+    encoded: &EncodedStateMetadata,
+    static_subtree: &StateStaticSubtree,
+    policy: StateInternalKeyPolicy,
+    curve: &impl StateCurveCapability,
+) -> Result<StateCommitment, StateConstructorRefusal> {
+    let program = state_metadata_leaf_program(target, encoded)?;
+    let metadata_hash = leaf_hash(target.definition().leaf_version(), &program.encode(target));
+    StateBranchSide::MetadataLeftStaticRight.check(&metadata_hash, static_subtree.root())?;
+    let merkle_root = branch_hash(&metadata_hash, static_subtree.root());
+    match curve.output_key(policy.key(), &merkle_root) {
+        StateTweakOutcome::OutputKey { key, parity } => Ok(StateCommitment {
+            program,
+            metadata_hash,
+            merkle_root,
+            output_key: key,
+            parity,
+        }),
+        StateTweakOutcome::TweakAboveGroupOrder => {
+            Err(StateConstructorRefusal::TweakAboveGroupOrder)
+        }
+        StateTweakOutcome::TweakedPointIsIdentity => {
+            Err(StateConstructorRefusal::TweakedPointIsIdentity)
+        }
+        StateTweakOutcome::InternalKeyNotAPoint => {
+            Err(StateConstructorRefusal::InternalKeyNotAPoint)
+        }
+    }
+}
+
+/// The witness-version-one output program over one output key.
+fn witness_program(output_key: &[u8; 32]) -> Vec<u8> {
+    let mut bytes = vec![0x51, 0x20];
+    bytes.extend(output_key);
+    bytes
+}
+
 /// A fallibly derived candidate STATE output and its reconstruction evidence.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CandidateStateConstructor {
@@ -824,39 +879,24 @@ impl CandidateStateConstructor {
                 semantic: *metadata,
                 representation,
             };
-            let program = state_metadata_leaf_program(target, &encoded)?;
-            let hash = leaf_hash(target.definition().leaf_version(), &program.encode(target));
-            let result = StateBranchSide::MetadataLeftStaticRight
-                .check(&hash, static_subtree.root())
-                .and_then(|()| {
-                    let root = branch_hash(&hash, static_subtree.root());
-                    match curve.output_key(policy.key(), &root) {
-                        StateTweakOutcome::OutputKey { key, parity } => Ok((root, key, parity)),
-                        StateTweakOutcome::TweakAboveGroupOrder => {
-                            Err(StateConstructorRefusal::TweakAboveGroupOrder)
-                        }
-                        StateTweakOutcome::TweakedPointIsIdentity => {
-                            Err(StateConstructorRefusal::TweakedPointIsIdentity)
-                        }
-                        StateTweakOutcome::InternalKeyNotAPoint => {
-                            Err(StateConstructorRefusal::InternalKeyNotAPoint)
-                        }
-                    }
-                });
-            match result {
-                Ok((merkle_root, output_key, parity)) => {
+            match commit_state_metadata(target, &encoded, static_subtree, policy, curve) {
+                Ok(commitment) => {
                     return Ok(Self {
                         metadata: encoded,
-                        pattern: StateMetadataPattern::validate(target, &encoded, &program)?,
+                        pattern: StateMetadataPattern::validate(
+                            target,
+                            &encoded,
+                            &commitment.program,
+                        )?,
                         static_subtree: static_subtree.clone(),
                         internal_key: policy,
                         leaf_version: target.definition().leaf_version(),
                         target_policy: target.definition().version(),
                         budget,
-                        metadata_hash: hash,
-                        merkle_root,
-                        output_key,
-                        parity,
+                        metadata_hash: commitment.metadata_hash,
+                        merkle_root: commitment.merkle_root,
+                        output_key: commitment.output_key,
+                        parity: commitment.parity,
                         evidence: StateNonceEvidence {
                             rejected,
                             selected: representation,
@@ -923,9 +963,7 @@ impl CandidateStateConstructor {
     /// Witness-version-one output program over the output key.
     #[must_use]
     pub fn output_program(&self) -> Vec<u8> {
-        let mut bytes = vec![0x51, 0x20];
-        bytes.extend(self.output_key);
-        bytes
+        witness_program(&self.output_key)
     }
     /// The host's rejected lower candidates and selected nonce.
     #[must_use]
@@ -1082,4 +1120,33 @@ pub fn successor_recipe(
     curve: &impl StateCurveCapability,
 ) -> Result<CandidateStateConstructor, StateConstructorRefusal> {
     CandidateStateConstructor::derive(target, metadata, static_subtree, policy, budget, curve)
+}
+
+/// Commit one exact metadata encoding to its output program.
+///
+/// The representation nonce is the caller's, committed as named instead
+/// of searched for, which is what lets a party holding a published
+/// program check the program against the metadata and nonce it was given:
+/// commit them and compare. No leastness is claimed or claimable here —
+/// leastness is a property of a scan, and the scan has one owner in
+/// [`CandidateStateConstructor::derive`] — which is why the result is the
+/// program bytes rather than a constructor, a constructor being obliged
+/// to carry a [`StateNonceEvidence`] that no search produced.
+///
+/// # Errors
+/// Returns the refusal of the one attempt: a refused encoding, the fixed
+/// outer branch side unsatisfied at this nonce, or a curve that refuses
+/// the tweak. Either way the refusal is about this nonce and says nothing
+/// about any other.
+pub fn state_output_program_at_nonce(
+    target: &ReviewedElementsTapscriptDefinition,
+    metadata: &EncodedStateMetadata,
+    static_subtree: &StateStaticSubtree,
+    policy: StateInternalKeyPolicy,
+    curve: &impl StateCurveCapability,
+) -> Result<Vec<u8>, StateConstructorRefusal> {
+    StateInternalKeyPolicy::new(*policy.key(), curve)?;
+    validate_static_paths(static_subtree)?;
+    let commitment = commit_state_metadata(target, metadata, static_subtree, policy, curve)?;
+    Ok(witness_program(&commitment.output_key))
 }

@@ -22,10 +22,12 @@ use linker::backend::{CompactAshShape, InputRole, LeafRole, OutputRole};
 use linker::live_backend::{
     LiveFamily, LiveTransferLeafRole, LiveTransferRepresentationPlan, LiveTransferShape,
 };
+use tapscript::StateConstructorRefusal;
 use target_elements::ResourceDimension;
 
 use crate::bytes::Outpoint;
 use crate::live_materialize::{ConfidentialInputRegion, ConfidentialOutputRole};
+use crate::state_view::MaturityViewEntry;
 
 /// Why the transaction layer refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -730,5 +732,51 @@ pub enum TransactionRefusal {
     OutputOmittedAfterSigning {
         /// The output position that disappeared.
         position: u16,
+    },
+
+    // --- The public current-STATE view (§12.4) -------------------------
+    /// One entry of the current-STATE view was stated more than once.
+    ///
+    /// The compact view's law over a census of entries rather than of
+    /// outpoints, and refused for its reason: a second statement is
+    /// refused whether it agrees with the first or contradicts it. A
+    /// contradictory pair has no resolution this layer could justify,
+    /// because believing either statement is believing the order the
+    /// caller listed them in; an agreeing pair is a caller who has lost
+    /// count of a boundary whose exactness everything downstream reads.
+    DuplicateMaturityViewEntry(MaturityViewEntry),
+    /// One entry of the current-STATE view was never stated.
+    ///
+    /// A view is complete or it is not a view. An entry defaulted or
+    /// inferred would be a fact this layer invented on a caller's behalf
+    /// and then read back as though the caller had supplied it.
+    MissingMaturityViewEntry(MaturityViewEntry),
+    /// The supplied metadata and nonce commit to no program at all.
+    ///
+    /// Separate from a program that differs, because the two are
+    /// different findings: this one says the pair cannot be committed
+    /// under the bundle's policy at that nonce — the fixed outer branch
+    /// side unsatisfied there, or a curve refusing the tweak — and the
+    /// constructor's own refusal travels rather than being flattened,
+    /// because the layer that owns the commitment has the precise word
+    /// for what it refused.
+    MaturityViewCommitmentRefused {
+        /// What the commitment refused, in the constructor's vocabulary.
+        refusal: StateConstructorRefusal,
+    },
+    /// The supplied metadata and nonce commit to a program other than the
+    /// supplied predecessor program.
+    ///
+    /// The one thing a first party can check without observing a chain,
+    /// and so the one place three of a caller's entries can be caught
+    /// disagreeing with each other. Lengths alone are reported: the
+    /// recomputed program is a witness program over an output key, and a
+    /// refusal is a diagnostic rather than a place to publish key
+    /// material.
+    MaturityViewProgramNotReconstructed {
+        /// How many bytes the supplied predecessor program occupies.
+        supplied: usize,
+        /// How many bytes the program recomputed from the pair occupies.
+        recomputed: usize,
     },
 }
