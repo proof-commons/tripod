@@ -29,12 +29,13 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 
 use tapscript::upstream::{
-    DischargeBoundary, ExecutionCaseId, ExternalEvidenceRequirement,
+    DischargeBoundary, EncodedStateMetadata, ExecutionCaseId, ExternalEvidenceRequirement,
     MaturityAnnouncementRepresentationPlan as Representation, RelationId,
 };
 use tapscript::{
-    FinalStackDefect, MaturityCarrierRefusal, StateAnnouncementId, StateExternalEvidenceRole,
-    StateLeafRole, StateProgramComponent, StateProgramWitness, TapscriptError,
+    FinalStackDefect, MaturityCarrierRefusal, StateAnnouncementId, StateConstructorRefusal,
+    StateExternalEvidenceRole, StateLeafRole, StateProgramComponent, StateProgramWitness,
+    TapscriptError,
 };
 use target_elements::{ResourceDimension, TargetContractVersion};
 
@@ -631,5 +632,99 @@ pub enum StateLinkRefusal {
         case: ExecutionCaseId,
         /// Which side differs.
         side: StateDischargeSide,
+    },
+
+    // --- The candidate bundle ---
+    /// The supplied constructor commits a program other than the
+    /// record's.
+    ///
+    /// The census is collected against that constructor, so a
+    /// constructor whose subtree commits some other program would resolve
+    /// this record's keys against a recipe built for different bytes. The
+    /// refusal carries no payload: both programs are typed values this
+    /// root would have to render to name, and a rendering of a program is
+    /// not the program.
+    SuppliedConstructorCommitsAnotherProgram,
+
+    /// Applying the constructor over the linked subtree refused.
+    ///
+    /// Wrapped rather than restated, for the reason the emitted
+    /// projection is: the construction's reasons are about metadata, a
+    /// nonce budget and a curve, and this root's are about the link. A
+    /// refusal renamed here would lose which of the two layers found the
+    /// defect.
+    ConstructorApplication(StateConstructorRefusal),
+
+    /// One metadata-independent reference did not survive the
+    /// application.
+    ///
+    /// The reference half of the fixed point. The static root must be the
+    /// linked subtree's, because that is the subtree the application was
+    /// handed; the metadata schema and the branch side must be the
+    /// supplied constructor's, because they are constants of the recipe
+    /// rather than functions of a subtree. A reference that moved would
+    /// mean the applied constructor is not the supplied one over new
+    /// bytes but a different recipe.
+    AppliedReferenceDisagreement {
+        /// The reference kind that did not agree.
+        symbol: StateLinkSymbol,
+    },
+
+    /// A pushed key's resolved entry moved when the constructor was
+    /// applied.
+    ///
+    /// The census half of the fixed point, and the whole reason the
+    /// application can be run after substitution. The linked leaf was
+    /// built from the census collected against the supplied constructor;
+    /// if re-collecting it against the applied one moved a key some
+    /// instruction pushes, the leaf those bytes belong to is not the leaf
+    /// the subtree commits, and there would be no order in which the two
+    /// could be run.
+    CensusMovedUnderApplication {
+        /// The pushed key whose resolved entry differs.
+        symbol: StateLinkSymbol,
+    },
+
+    /// A predecessor and a successor static subtree differ.
+    ///
+    /// The bundle's continuity equality, refused rather than migrated:
+    /// no migration between static subtrees is implemented, so the two
+    /// roots travel and nothing is reconciled. Two subtrees whose roots
+    /// read alike here differ in something the root does not commit, the
+    /// caller-supplied leaf identity among it.
+    StaticSubtreeDiscontinuity {
+        /// The predecessor subtree's root.
+        predecessor: [u8; 32],
+        /// The successor subtree's root.
+        successor: [u8; 32],
+    },
+
+    /// One semantic metadata already has a retained instance.
+    ///
+    /// Retention is keyed by the semantic metadata, because the same
+    /// metadata over one subtree under one policy is one constructor and
+    /// a second copy of it would be the same artifact carried twice. The
+    /// refusal names the instance already held rather than the metadata
+    /// just offered, which the caller has: a nonce would not identify it,
+    /// since two different metadata values may both select the first
+    /// nonce the budget admits.
+    InstanceAlreadyRetained {
+        /// The exact metadata, nonce included, of the instance held.
+        metadata: EncodedStateMetadata,
+    },
+
+    /// The constructor states no value for one of its policy kinds.
+    ///
+    /// The constructor exposes its metadata-independent policy only
+    /// through its reference declarations, so the policy is read from
+    /// there rather than from accessors that do not exist. No test
+    /// reaches this, and the reason is recomputed rather than assumed:
+    /// those declarations are a fixed array with one entry per reference
+    /// kind, built by the constructor from its own fields, so no kind can
+    /// be absent — this variant is what would name it on the day that
+    /// array stopped being total.
+    ConstructorPolicyIncomplete {
+        /// The policy kind the declarations did not carry.
+        missing: StateLinkSymbol,
     },
 }

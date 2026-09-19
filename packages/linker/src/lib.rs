@@ -17,6 +17,7 @@ pub mod live_symbol;
 pub mod live_taptree;
 pub mod operator_deployment;
 pub mod relocate;
+pub mod state_bundle;
 pub mod state_carrier;
 pub mod state_constructor_graph;
 pub mod state_deployment;
@@ -65,6 +66,11 @@ pub use operator_deployment::{
     CandidateDeploymentIdentity, OperatorDeploymentBinding, OperatorDeploymentStatus,
 };
 pub use relocate::LinkedLeafProgram;
+pub use state_bundle::{
+    CandidateLinkedMaturityBundle, OutstandingStateLinkObligations, StateConstructorPolicy,
+    StateLinkObligation, StateLinkSources, StateRetainedConstructor, link_state_candidate,
+    state_application_fixed_point, state_applied_references_agree, state_bundle_continuity,
+};
 pub use state_carrier::{
     StateAbiObligation, StateAbiRequirement, StateCarrierClosure, StateCarrierRow,
     StateDischargeClass, StateDischargeSide, StateLinkedCarrier, close_state_carriers,

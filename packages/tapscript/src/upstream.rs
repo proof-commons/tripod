@@ -57,6 +57,17 @@
 //! and forbids reissuance, rather than as an integer a deployment
 //! supplies.
 //!
+//! [`StateMetadata`] is the semantic metadata
+//! [`crate::CandidateStateConstructor::derive`] takes, so a consumer
+//! that applies a constructor cannot write down what it must supply
+//! without the name. [`EncodedStateMetadata`] is what
+//! [`crate::CandidateStateConstructor::encoded_metadata`] hands back,
+//! and a consumer retaining a concrete constructor beside its exact
+//! metadata and nonce stores one. [`MaturityAnnouncementLifecycleClosure`]
+//! is what [`ValidatedMaturityAnnouncementOperationPlan::lifecycle`]
+//! returns, and a consumer that could not name it could not state the
+//! exit obligations the plan leaves outstanding.
+//!
 //! # The carrier comparison's half
 //!
 //! A consumer comparing the plan with what a backend emitted writes down
@@ -86,8 +97,8 @@ pub use compiler::live_transfer_plan::{
     ValidatedLiveTransferOperationPlan,
 };
 pub use compiler::maturity_announcement_plan::{
-    MaturityAnnouncementRepresentationPlan, MaturityAnnouncementRepresentationProjection,
-    ValidatedMaturityAnnouncementOperationPlan,
+    MaturityAnnouncementLifecycleClosure, MaturityAnnouncementRepresentationPlan,
+    MaturityAnnouncementRepresentationProjection, ValidatedMaturityAnnouncementOperationPlan,
 };
 pub use compiler::operation_plan::{
     AbstractCarrierRequirement, CarrierAssignmentAlternative, CarrierQuantification, CarrierRole,
@@ -98,6 +109,6 @@ pub use compiler::operation_plan::{
 };
 pub use compiler::target::{ExternalEvidenceRole, RequiredCapability as TargetRequiredCapability};
 pub use realization::{
-    AnnouncementLeadBounds, Cycle, ExternalEvidenceRequirement, RelationId,
-    StateSingletonDeclaration,
+    AnnouncementLeadBounds, Cycle, EncodedStateMetadata, ExternalEvidenceRequirement, RelationId,
+    StateMetadata, StateSingletonDeclaration,
 };

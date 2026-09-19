@@ -48,6 +48,7 @@ mod live_taptree_tests;
 mod operator_deployment_tests;
 mod public_api_tests;
 mod relocation_tests;
+mod state_bundle_tests;
 mod state_carrier_tests;
 mod state_constructor_graph_tests;
 mod state_deployment_tests;
@@ -102,8 +103,9 @@ use crate::state_deployment::{
     StateLeadBoundOrigin, StateLeadBounds, StateLinkDeploymentParameters,
 };
 use crate::{
-    LinkedStateLeafProgram, StateConsumerCensus, StateLinkedTaptree, StateResolvedCensus,
-    StateSingletonAsset, assemble_state_static, collect_state_definitions, resolve_state_census,
+    CandidateLinkedMaturityBundle, LinkedStateLeafProgram, StateConsumerCensus, StateLinkSources,
+    StateLinkedTaptree, StateResolvedCensus, StateSingletonAsset, assemble_state_static,
+    collect_state_definitions, link_state_candidate, resolve_state_census,
     state_static_taptree_input, substitute_state,
 };
 
@@ -625,6 +627,29 @@ fn linked_taptree(leaf: &LinkedStateLeafProgram) -> StateLinkedTaptree {
 
     StateLinkedTaptree::bind(&target, tree, &constructor, depth())
         .expect("the singleton tree binds to the linked leaf's constructor")
+}
+
+/// The candidate linked bundle over the demonstration sources.
+///
+/// One artifact rather than one per test file, for the reason the
+/// resolved census and the linked leaf are one: a bundle the aggregate's
+/// own tests assert about and a bundle a later bite reads have to be the
+/// same bundle, and two copies could drift by a fixture byte with
+/// neither able to notice.
+fn linked_bundle() -> CandidateLinkedMaturityBundle {
+    link_state_candidate(
+        &reviewed_target(),
+        &StateLinkSources::new(
+            &record(),
+            &bridge(),
+            &state_constructor(),
+            &singleton(),
+            &declaration(),
+            &state_metadata(),
+            &ScriptedCurve,
+        ),
+    )
+    .expect("the demonstration sources link")
 }
 
 /// The candidate constructor over the production static subtree.

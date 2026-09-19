@@ -533,6 +533,15 @@ fn reachability(refusal: &StateLinkRefusal) -> &'static str {
         | StateLinkRefusal::RepresentationDisagreement { .. } => {
             crate::tests::state_carrier_tests::carrier_reachability(refusal)
         }
+        StateLinkRefusal::SuppliedConstructorCommitsAnotherProgram
+        | StateLinkRefusal::ConstructorApplication(_)
+        | StateLinkRefusal::AppliedReferenceDisagreement { .. }
+        | StateLinkRefusal::CensusMovedUnderApplication { .. }
+        | StateLinkRefusal::StaticSubtreeDiscontinuity { .. }
+        | StateLinkRefusal::InstanceAlreadyRetained { .. }
+        | StateLinkRefusal::ConstructorPolicyIncomplete { .. } => {
+            crate::tests::state_bundle_tests::bundle_reachability(refusal)
+        }
     }
 }
 
