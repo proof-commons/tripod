@@ -26,12 +26,19 @@
 //! census but a different claim about which keys exist.
 
 use std::collections::BTreeSet;
+use std::ops::Range;
 
+use tapscript::upstream::{
+    DischargeBoundary, ExecutionCaseId, ExternalEvidenceRequirement,
+    MaturityAnnouncementRepresentationPlan as Representation, RelationId,
+};
 use tapscript::{
-    FinalStackDefect, StateAnnouncementId, StateLeafRole, StateProgramWitness, TapscriptError,
+    FinalStackDefect, MaturityCarrierRefusal, StateAnnouncementId, StateExternalEvidenceRole,
+    StateLeafRole, StateProgramComponent, StateProgramWitness, TapscriptError,
 };
 use target_elements::{ResourceDimension, TargetContractVersion};
 
+use crate::state_carrier::{StateDischargeClass, StateDischargeSide};
 use crate::state_constructor_graph::StateReferenceGraphRefusal;
 use crate::state_graph::{StateBindingTime, StateGraphNode, StateResidualComponent};
 use crate::state_symbol::{StateLinkSymbol, StateSymbolType};
@@ -358,5 +365,271 @@ pub enum StateLinkRefusal {
         diagnostic: u64,
         /// What the checked arithmetic yields.
         checked: u64,
+    },
+
+    // --- Carrier closure ---
+    /// The composed record's own carrier projection refused.
+    ///
+    /// Wrapped rather than restated, because the projection's reasons
+    /// are about the record and this root's are about the comparison: a
+    /// refusal renamed here would lose which of the two layers found the
+    /// defect. No test reaches it through the public entry, and the
+    /// reason is recomputed rather than assumed: the only admitted
+    /// record is one exact recipe equality produced, so its component
+    /// set is the complete recipe and every relation the table maps to a
+    /// component finds it there, while the plan is constructible only
+    /// through the entry that validates its census.
+    EmittedProjection(MaturityCarrierRefusal),
+
+    /// A relation carries no requirement in a case the plan declares.
+    ///
+    /// The condition a row's optional case would have represented,
+    /// refused instead of represented: a row whose case were absent
+    /// could state no boundaries and no activity, so it would compare
+    /// nothing. No test reaches it, because the plan's own relation-case
+    /// census crosses every in-scope relation with every applicable case
+    /// exactly once and refuses a relation that disappears for being
+    /// vacuous, structural or externally evidenced.
+    MissingCompilerRelation {
+        /// The relation whose case is absent.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+        /// The declared case it carries no requirement in.
+        case: ExecutionCaseId,
+    },
+
+    /// A relation the plan requires has no emitted carrier.
+    ///
+    /// The compiler-to-emitted direction of the census. A relation the
+    /// analysis raised and the record answers for nowhere is a relation
+    /// whose discharge nobody stated, which is the gap the table exists
+    /// to make impossible.
+    MissingEmittedRow {
+        /// The relation the plan requires.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+    },
+
+    /// An emitted carrier names a relation the plan does not carry.
+    ///
+    /// The other direction, and the one that matters for the leaf: a
+    /// discharge claimed for a relation this operation's analysis never
+    /// raised is a claim about something else, and admitting it would
+    /// let a table grow rows the plan could never check.
+    ExtraEmittedRow {
+        /// The relation the emitted table names.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+    },
+
+    /// One relation, representation and case key two rows.
+    ///
+    /// The census's single-valuedness, refused rather than assumed. No
+    /// test reaches it: both censuses are maps keyed by relation and the
+    /// case census is a map keyed by case, so the key is unique by
+    /// construction — which is a property of the containers the
+    /// comparison is built from, and this variant is what would name it
+    /// if one of them stopped being a map.
+    DuplicateCarrierRow {
+        /// The relation keyed twice.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+        /// The case keyed twice.
+        case: ExecutionCaseId,
+    },
+
+    /// The emitted class is not admissible at the boundaries the plan
+    /// discharges the relation at.
+    ///
+    /// Both sides travel, because either may be the one that moved: a
+    /// class naming a component where the analysis discharges nothing at
+    /// runtime or structurally, and a boundary set that no longer admits
+    /// the class the record publishes, are different defects and a
+    /// single name could not tell them apart.
+    DischargeBoundaryDisagreement {
+        /// The relation whose sides disagree.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+        /// The case the boundaries were read from.
+        case: ExecutionCaseId,
+        /// Every boundary the plan discharges the relation at.
+        boundaries: BTreeSet<DischargeBoundary>,
+        /// The class the record publishes.
+        emitted: StateDischargeClass,
+    },
+
+    /// A premise the plan leaves open is visible on no side afterwards.
+    ///
+    /// An open premise that disappears into a comparison has been
+    /// converted into a result, which is the one thing a closure over
+    /// external evidence must not do. It survives as the emitted
+    /// carrier, as the linked one, or as an obligation on the side that
+    /// does not exist yet; anything else is this refusal.
+    ExternalRequirementDropped {
+        /// The relation that left the premise open.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+        /// The case that carries it.
+        case: ExecutionCaseId,
+        /// The premise itself, exactly as the plan states it.
+        requirement: ExternalEvidenceRequirement,
+    },
+
+    /// An emitted component claims to enforce a relation with no content
+    /// in this case.
+    ///
+    /// Vacuity is a disposition the plan states, not an omission, and a
+    /// row reporting such a relation carried would claim enforcement
+    /// nothing provides in the case it is claimed for.
+    VacuityDisagreement {
+        /// The relation the record claims to carry.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+        /// The case it is vacuous in.
+        case: ExecutionCaseId,
+    },
+
+    /// The record rests a relation on a deployment fact the link's
+    /// bridge did not record.
+    ///
+    /// The linked side of such a row says a named deployment record
+    /// exists to go to. Publishing that without the bridge having
+    /// recorded the role would be the unchecked claim this comparison
+    /// exists to prevent, and the fact is not one this process can
+    /// observe for itself.
+    DeploymentFactUnrecorded {
+        /// The relation resting on the fact.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+        /// The role the record named.
+        role: StateExternalEvidenceRole,
+    },
+
+    /// An emitted component occupies no range in the composed program.
+    ///
+    /// A component with no range cannot be located in the linked leaf at
+    /// all, so a row naming one would assert a discharge nobody could
+    /// point at.
+    MissingComponentRange {
+        /// The relation the component carries.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+        /// The component with no range.
+        component: StateProgramComponent,
+    },
+
+    /// A component's range runs past the end of the linked program.
+    ///
+    /// The range is the composition's statement about where the
+    /// component sits, and the linked program is what a spend runs. A
+    /// range outside it describes a program this link did not produce.
+    ComponentRangeOutsideLeaf {
+        /// The relation the component carries.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+        /// The component whose range it is.
+        component: StateProgramComponent,
+        /// The range the composition recorded.
+        range: Range<usize>,
+        /// The linked program's instruction count.
+        length: usize,
+    },
+
+    /// The committed tree does not commit the linked leaf.
+    ///
+    /// A deployment publishes the tree that commits the bytes a spend
+    /// runs. A tree committing some other program at this role commits a
+    /// program nobody spends, so a component located in the linked leaf
+    /// would be located in a leaf no control path reaches.
+    CarrierLeafUncommitted {
+        /// The relation whose component is in that leaf.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+        /// The leaf the link produced.
+        leaf: StateLeafRole,
+    },
+
+    /// An instruction inside a component's range moved without a
+    /// relocation.
+    ///
+    /// The link declares what it substitutes, and the tie back to the
+    /// record is that everything else inside a component's range is the
+    /// composition's own. An instruction that moved elsewhere means the
+    /// component in the linked leaf is not the component the emitted
+    /// table named.
+    ComponentRangeMoved {
+        /// The relation the component carries.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+        /// The component whose range it is.
+        component: StateProgramComponent,
+        /// The instruction index that moved.
+        site: usize,
+    },
+
+    /// No alternative the compiler offered is discharged by the
+    /// announcement leaf.
+    ///
+    /// The placement question, kept inside the discharge table: where
+    /// the analysis does raise a runtime carrier obligation and the
+    /// record claims the leaf carries it, one of the alternatives the
+    /// analysis accepted must be a role this leaf actually plays. No
+    /// test reaches it, and the reason is a property of this operation's
+    /// plan rather than an assumption: every candidate set for an active
+    /// runtime relation-case of this announcement includes the
+    /// operation's global coordinator anchored in the singleton family,
+    /// and that role is the announcement leaf.
+    SelectedAlternativeUnmatched {
+        /// The relation whose carrier obligation it is.
+        relation: RelationId,
+        /// The representation being compared.
+        representation: Representation,
+        /// The case the obligation is active in.
+        case: ExecutionCaseId,
+    },
+
+    /// One relation resolves to two classes.
+    ///
+    /// The census counts relations rather than rows, which is only
+    /// meaningful if a relation has one class across every case and
+    /// every representation. Two classes for one relation would make the
+    /// published figures a sum over something nobody stated.
+    CensusNotTotal {
+        /// The relation with two classes.
+        relation: RelationId,
+        /// The class first seen.
+        first: StateDischargeClass,
+        /// The class seen afterwards.
+        second: StateDischargeClass,
+    },
+
+    /// The representations do not read the same.
+    ///
+    /// The side travels with the finding, because the three have
+    /// different owners: a compiler-side difference belongs to the plan,
+    /// an emitted one to the composed record, and a linked one to this
+    /// link, and a reader told only that they disagree would have to
+    /// re-derive which to go and look at.
+    RepresentationDisagreement {
+        /// The relation that reads differently.
+        relation: RelationId,
+        /// The representation whose row differs from the first.
+        representation: Representation,
+        /// The case it differs in.
+        case: ExecutionCaseId,
+        /// Which side differs.
+        side: StateDischargeSide,
     },
 }

@@ -515,6 +515,24 @@ fn reachability(refusal: &StateLinkRefusal) -> &'static str {
         | StateLinkRefusal::ResourceProjectionDisagreement { .. } => {
             crate::tests::state_resource_tests::resource_reachability(refusal)
         }
+        StateLinkRefusal::EmittedProjection(_)
+        | StateLinkRefusal::MissingCompilerRelation { .. }
+        | StateLinkRefusal::MissingEmittedRow { .. }
+        | StateLinkRefusal::ExtraEmittedRow { .. }
+        | StateLinkRefusal::DuplicateCarrierRow { .. }
+        | StateLinkRefusal::DischargeBoundaryDisagreement { .. }
+        | StateLinkRefusal::ExternalRequirementDropped { .. }
+        | StateLinkRefusal::VacuityDisagreement { .. }
+        | StateLinkRefusal::DeploymentFactUnrecorded { .. }
+        | StateLinkRefusal::MissingComponentRange { .. }
+        | StateLinkRefusal::ComponentRangeOutsideLeaf { .. }
+        | StateLinkRefusal::CarrierLeafUncommitted { .. }
+        | StateLinkRefusal::ComponentRangeMoved { .. }
+        | StateLinkRefusal::SelectedAlternativeUnmatched { .. }
+        | StateLinkRefusal::CensusNotTotal { .. }
+        | StateLinkRefusal::RepresentationDisagreement { .. } => {
+            crate::tests::state_carrier_tests::carrier_reachability(refusal)
+        }
     }
 }
 

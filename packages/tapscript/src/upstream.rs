@@ -56,17 +56,48 @@
 //! it, resolved from the asset declaration that fixes the whole issuance
 //! and forbids reissuance, rather than as an integer a deployment
 //! supplies.
+//!
+//! # The carrier comparison's half
+//!
+//! A consumer comparing the plan with what a backend emitted writes down
+//! one row per relation, per representation and per execution case, so
+//! it needs the names of the five things such a row is made of.
+//! [`MaturityAnnouncementRepresentationPlan`] keys the row, because the
+//! comparison is per representation and a consumer that could not name a
+//! mode would have to compare the union of both.
+//! [`MaturityAnnouncementRepresentationProjection`] is what one of those
+//! keys resolves to, and a function taking one as a parameter cannot be
+//! written without its name. [`RelationId`] is the row's subject:
+//! Guide-12 §1.3 requires the plan's relation census to be exactly equal
+//! to the emitted one, and an equality between censuses whose members
+//! cannot be named is not one anyone can check.
+//! [`TargetRelationCase`] carries the per-case half of a relation's
+//! discharge, [`RelationActivity`] is that case's vacuity disposition,
+//! and [`DischargeBoundary`] is where the requirement is discharged — a
+//! consumer that cannot write down a boundary cannot say which side of
+//! one a relation was discharged on, which is the whole content of the
+//! comparison. [`ExternalEvidenceRequirement`] is the exact premise an
+//! external relation leaves open, named rather than projected to its
+//! role, because a comparison that dropped the operation and asset it
+//! carries could not tell two open premises apart.
 
 pub use compiler::live_transfer_plan::{
     LiveTransferComposition, LiveTransferRepresentationPlan, LiveTransferRepresentationProjection,
     ValidatedLiveTransferOperationPlan,
 };
-pub use compiler::maturity_announcement_plan::ValidatedMaturityAnnouncementOperationPlan;
+pub use compiler::maturity_announcement_plan::{
+    MaturityAnnouncementRepresentationPlan, MaturityAnnouncementRepresentationProjection,
+    ValidatedMaturityAnnouncementOperationPlan,
+};
 pub use compiler::operation_plan::{
     AbstractCarrierRequirement, CarrierAssignmentAlternative, CarrierQuantification, CarrierRole,
-    ExecutionCaseId, LifecycleRequirement, PlacedCarrier, RelationCaseKey, RequiredCapability,
-    RequiredSourceKind, TargetExecutionCase, TargetLifecycleStatus, TargetRelationRequirement,
+    DischargeBoundary, ExecutionCaseId, LifecycleRequirement, PlacedCarrier, RelationActivity,
+    RelationCaseKey, RequiredCapability, RequiredSourceKind, TargetExecutionCase,
+    TargetLifecycleStatus, TargetRelationCase, TargetRelationRequirement,
     ValidatedTargetOperationPlan,
 };
 pub use compiler::target::{ExternalEvidenceRole, RequiredCapability as TargetRequiredCapability};
-pub use realization::{AnnouncementLeadBounds, Cycle, StateSingletonDeclaration};
+pub use realization::{
+    AnnouncementLeadBounds, Cycle, ExternalEvidenceRequirement, RelationId,
+    StateSingletonDeclaration,
+};

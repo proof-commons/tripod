@@ -48,6 +48,7 @@ mod live_taptree_tests;
 mod operator_deployment_tests;
 mod public_api_tests;
 mod relocation_tests;
+mod state_carrier_tests;
 mod state_constructor_graph_tests;
 mod state_deployment_tests;
 mod state_graph_tests;
@@ -82,15 +83,16 @@ use tapscript::{
     OperatorKey, OwnerKey, STATE_NUMS_KEY, StackItem, StateAnnouncementBindings,
     StateAnnouncementProgram, StateAnnouncementSymbol, StateCurveCapability,
     StateInternalKeyPolicy, StateNonceBudget, StateOperatorBindings, StateOperatorSymbol,
-    StatePatternBindings, StatePatternSymbol, StateTweakOutcome, build_state_announcement_program,
-    build_state_operator_pattern, demonstration_live_shape_set, demonstration_policy,
-    derive_live_receipt_constructor, emit_candidate_bundle, emit_candidate_live_bundle,
-    operator_key_encoding_closure, owner_key_encoding_closure, production_static_subtree,
-    selected_operator_profile, state_announcement_patterns, state_announcement_program,
-    state_operator_fragment, state_structural_patterns, static_transfer_leaf_set,
+    StatePatternBindings, StatePatternSymbol, StateStaticLeaf, StateStaticNode, StateStaticSubtree,
+    StateTweakOutcome, build_state_announcement_program, build_state_operator_pattern,
+    demonstration_live_shape_set, demonstration_policy, derive_live_receipt_constructor,
+    emit_candidate_bundle, emit_candidate_live_bundle, operator_key_encoding_closure,
+    owner_key_encoding_closure, production_static_subtree, selected_operator_profile,
+    state_announcement_patterns, state_announcement_program, state_operator_fragment,
+    state_structural_patterns, static_transfer_leaf_set,
 };
 use target_elements::{
-    EncodingClass, ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript,
+    EncodingClass, LeafVersion, ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript,
 };
 
 use crate::deployment::{LinkDeploymentParameters, SelfCommitmentStrategy};
@@ -100,8 +102,9 @@ use crate::state_deployment::{
     StateLeadBoundOrigin, StateLeadBounds, StateLinkDeploymentParameters,
 };
 use crate::{
-    StateConsumerCensus, StateResolvedCensus, StateSingletonAsset, collect_state_definitions,
-    resolve_state_census,
+    LinkedStateLeafProgram, StateConsumerCensus, StateLinkedTaptree, StateResolvedCensus,
+    StateSingletonAsset, assemble_state_static, collect_state_definitions, resolve_state_census,
+    state_static_taptree_input, substitute_state,
 };
 
 /// The reviewed contract, unmodified.
@@ -566,6 +569,62 @@ fn resolved_census() -> StateResolvedCensus {
         &StateConsumerCensus::from_sources(&record(), &state_constructor()),
     )
     .expect("the demonstration census resolves")
+}
+
+/// The demonstration deployment's linked announcement leaf.
+///
+/// One artifact rather than one per test file, for the reason the
+/// resolved census is one: the leaf the tree is bound over, the leaf the
+/// resources are measured on and the leaf the carriers are located in
+/// have to be the same leaf, and three copies could drift by a fixture
+/// byte with no test able to notice.
+fn linked_leaf() -> LinkedStateLeafProgram {
+    substitute_state(&reviewed_target(), &record(), &resolved_census())
+        .expect("the demonstration deployment links")
+}
+
+/// The committed tree of a constructor derived over one linked leaf.
+///
+/// Derived over the leaf's own subtree rather than over the composed
+/// record's, because what a deployment publishes commits the bytes a
+/// spend runs: a tree bound over the pre-link program would commit a
+/// program nobody spends.
+fn linked_taptree(leaf: &LinkedStateLeafProgram) -> StateLinkedTaptree {
+    let target = reviewed_target();
+    let subtree = StateStaticSubtree::new(
+        &target,
+        Some(StateStaticNode::Leaf {
+            identity: 0,
+            leaf: StateStaticLeaf {
+                role: leaf.leaf(),
+                program: leaf.program().clone(),
+                version: LeafVersion::TAPSCRIPT.get(),
+            },
+        }),
+    )
+    .expect("one linked leaf is a complete static subtree");
+
+    let constructor = CandidateStateConstructor::derive(
+        &target,
+        &state_metadata(),
+        &subtree,
+        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &ScriptedCurve)
+            .expect("the reviewed internal key is the derived one"),
+        StateNonceBudget::default(),
+        &ScriptedCurve,
+    )
+    .expect("the constructor derives over the linked subtree");
+
+    let input = state_static_taptree_input(
+        [leaf.leaf()],
+        LeafVersion::TAPSCRIPT,
+        NonZeroU32::new(7).expect("the fixture static cap is nonzero"),
+    )
+    .expect("the singleton declaration is admitted");
+    let tree = assemble_state_static(&input).expect("the singleton tree assembles");
+
+    StateLinkedTaptree::bind(&target, tree, &constructor, depth())
+        .expect("the singleton tree binds to the linked leaf's constructor")
 }
 
 /// The candidate constructor over the production static subtree.
