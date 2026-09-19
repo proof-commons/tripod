@@ -70,6 +70,10 @@ synthetic origin is not protocol genesis, trusted setup, earlier history, or
 production STATE; accepted continuity and history evidence remain for Waves
 9 and 10.
 
+## The typed maturity-announcement request (Guide-14 §12.3)
+
+`MaturityAnnouncementRequest` is three closed fields — the announced cycle, the requested transaction form, and the inherited sponsor-change choice — and two walkable censuses that are its contract: three selectable facets, and fifteen unselectable ones drawn from the union of the execution and semantic request sections, each naming where its value is actually settled, whether that is the public view, the linked bundle, the deployment, the constructor search, or the target's own verdict. Those fifteen are absent structurally rather than present and refused, so no caller can name a successor program, an internal key, a control block, or a root cursor; both transaction forms stay representable, because a request that could not ask for a sponsor region could not be refused for asking, while the one pair that contradicts itself — a sponsorless form taking sponsor change — is refused by the request itself.
+
 ## Authenticated operator membership (Guide-14 Wave 5)
 
 `produce_operator_membership` consumes an explicit

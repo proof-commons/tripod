@@ -26,6 +26,7 @@ transaction_source_files = files(
   'src/request.rs',
   'src/script_path_signing.rs',
   'src/sponsor.rs',
+  'src/state_request.rs',
   'src/synthetic.rs',
   'src/taproot.rs',
   'src/tests/abi_tests.rs',
@@ -48,6 +49,7 @@ transaction_source_files = files(
   'src/tests/operator_right_tests.rs',
   'src/tests/operator_signing_tests.rs',
   'src/tests/refusal_census_tests.rs',
+  'src/tests/state_request_tests.rs',
   'src/tests/taproot_tests.rs',
   'src/view.rs',
 )

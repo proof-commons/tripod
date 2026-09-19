@@ -455,6 +455,11 @@ pub enum TransactionRefusal {
     /// A live transfer was requested creating no destination.
     EmptyDestinationCensus,
     /// A sponsorless request asks for the sponsor-change role (§12.5).
+    ///
+    /// Stated of any request rather than of one generation, because a
+    /// form carrying no sponsor region has no residual for a change
+    /// output to take, which is why the maturity-announcement request of
+    /// §12.3 refuses the same pair.
     SponsorChangeWithoutSponsoredForm,
     /// The explicit lane's declared destination roles are neither empty
     /// nor one role per destination entry.

@@ -23,6 +23,7 @@ pub mod operator_signing;
 pub mod request;
 pub mod script_path_signing;
 pub mod sponsor;
+pub mod state_request;
 pub mod synthetic;
 pub mod taproot;
 pub mod view;
@@ -112,6 +113,9 @@ pub use script_path_signing::{
 pub use sponsor::{
     SighashProfile, SignerRole, SponsorCapability, SponsorOffer, SponsorSignature,
     SponsorSigningRequest,
+};
+pub use state_request::{
+    MaturityAnnouncementRequest, SelectableMaturityRequestFacet, UnselectableMaturityRequestFacet,
 };
 pub use synthetic::{FundingCeremonyStep, SyntheticDisclaimer};
 pub use taproot::{
