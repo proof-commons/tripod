@@ -48,6 +48,7 @@ pub mod live_sponsored_owner_signing_negatives;
 pub mod live_sponsored_private;
 pub mod materialize;
 pub mod matrix;
+pub mod maturity_closure;
 pub mod maturity_operator;
 pub mod mutation;
 mod observed_boundary;
@@ -181,6 +182,16 @@ pub use materialize::{
 pub use matrix::{
     EvidenceBoundary, MutationLayer, VectorClass, VectorFamily, VectorPolarity, all_classes,
     class_count, family_census,
+};
+pub use maturity_closure::{
+    AdoptionCase, AdoptionVector, CheckCensus, DecodedAnnouncementLeaf, ForbiddenLiterals,
+    GoldenEvidence, GoldenFigure, KeptCheck, LeafLiterals, LeafObservation, LocatedDischarges,
+    LocatedRow, MaturityClosureRefusal, MaturityDeployment, MaturitySources, MovedSites,
+    ObservedField, OracleStateCurve, Verdict, adoption_transaction, closure_target,
+    decode_announcement_leaf, decoded_deployment, forbidden_program_literals,
+    internal_key_from_bytes, kept_check_site, leaf_literals, linked_announcement_bytes,
+    linked_maturity_bundle, locate_discharges, maturity_sources, moved_sites, recompute_golden,
+    recovered_values, removed_and_kept_checks, verdict,
 };
 pub use plan::{
     CompactAshEvidencePlan, NegativeObservability, PlanCensus, RequiredTargetWork,

@@ -51,6 +51,7 @@ vectors_source_files = files(
   'src/live_sponsored_private.rs',
   'src/materialize.rs',
   'src/matrix.rs',
+  'src/maturity_closure.rs',
   'src/maturity_operator.rs',
   'src/mutation.rs',
   'src/observed_boundary.rs',
@@ -256,6 +257,7 @@ vectors_excluded_files = vectors_fixture_files + files(
   'tests/guide13_live_transfer.rs',
   'tests/guide13_preflight.rs',
   'tests/guide13_sponsor_signing.rs',
+  'tests/maturity_closure.rs',
   'tests/maturity_operator.rs',
   'tests/sighash_verdict.rs',
 )
