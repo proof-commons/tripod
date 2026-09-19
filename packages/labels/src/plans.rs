@@ -94,8 +94,21 @@ pub const PLANS_REPORT_SCHEMA: u32 = 3;
 /// 787489 bytes against the 768 KiB cap on 2026-08-25 — over it, reached
 /// while recording one routine gate paragraph.
 const HARD_CAP_BYTES: u64 = 1536 * 1024;
-/// Advisory target for the maintained-prose budget (1038 KiB).
+/// Advisory target for the maintained-prose budget (1200 KiB).
 ///
+/// 1200 KiB is 1228800 bytes, a whole number of KiB like every other
+/// constant in this budget. It is not scaled from the hard cap the way
+/// the earlier targets were: the hard cap is unchanged at 1536 KiB, so
+/// there is no new proportion to take. The figure comes from measured
+/// headroom instead. With the closed Phase-6 task rows moved to the
+/// archive the maintained tree measured 883525 bytes, leaving 345275
+/// bytes under this target for the waves Phase 6 has still to record. A
+/// target the maintained tree would re-approach inside the same phase
+/// turns the warning into a recurring interruption rather than a signal,
+/// and a warning that fires on ordinary work stops being read; runaway
+/// growth is still caught by the hard cap, which this raise leaves alone.
+///
+/// The previous raises, kept as provenance.
 /// The old 798 KiB scaled by the same ratio the hard cap took is
 /// 798 * 1536 / 1180 = 1038.7525 KiB. That is rounded DOWN to 1038 KiB,
 /// 1062912 bytes — the nearest whole KiB below it — because every
@@ -108,7 +121,7 @@ const HARD_CAP_BYTES: u64 = 1536 * 1024;
 /// Exceeding this is a warning and never a failure: it is the tree
 /// saying it is getting heavy, which is a thing an author should know
 /// and not a thing that should stop a commit.
-const SOFT_TARGET_BYTES: u64 = 1038 * 1024;
+const SOFT_TARGET_BYTES: u64 = 1200 * 1024;
 
 /// Ceiling for the root-ADR budget (2 MiB).
 ///
@@ -1193,7 +1206,7 @@ mod tests {
 
     #[test]
     fn weight_class_caps_match_the_budget_rule() {
-        assert_eq!(SOFT_TARGET_BYTES, 1038 * 1024);
+        assert_eq!(SOFT_TARGET_BYTES, 1200 * 1024);
         assert_eq!(HARD_CAP_BYTES, 1536 * 1024);
         assert_eq!(ADR_HARD_CAP_BYTES, 2 * 1024 * 1024);
         assert_eq!(ARCHIVE_HARD_CAP_BYTES, 8 * 1024 * 1024);
