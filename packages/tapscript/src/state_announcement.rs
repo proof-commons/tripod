@@ -41,7 +41,11 @@ census_enum! {
         /// commits to it rather than to a constant. Support for an object
         /// built under a different constructor recipe would therefore have to
         /// enter here, as an authentication against that recipe, because no
-        /// other component reads the predecessor's construction at all.
+        /// other component reads the predecessor's construction at all. No
+        /// such object can be reached today, because §17.3 admits no
+        /// migration between static subtrees and the guide's own status
+        /// leaves that migration outstanding, which is where such an object
+        /// would first come from.
         MetadataAuthentication,
         /// Require the unannounced maturity state.
         MaturityPredecessor,

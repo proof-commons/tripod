@@ -85,6 +85,20 @@ impl SccId {
 /// The classification the package contract fixes. A cyclic edge must
 /// carry one that is not [`Self::UnsupportedDependency`], and the
 /// linker refuses rather than guessing which one applies.
+///
+/// A reference to a previously linked bundle would be a backward,
+/// acyclic edge — a resolution class and not a cut — because a bundle
+/// that has already been linked is finished before this link starts and
+/// nothing in it can depend on what this link produces. It is named
+/// here so that [`Self::AuthenticatedWitnessedRootContinuity`] is not
+/// mistaken for it: that class settles a value inside this link by a
+/// separately authenticated ceremony, where a backward edge would carry
+/// a value an earlier link already settled. The census carries no
+/// variant for it, because nothing produces one and a variant nothing
+/// produces is a census entry nothing consumes. The guide records
+/// migration between static subtrees as outstanding (§17.3), so a
+/// second generation is where such an edge would first appear, and
+/// nothing about how such a generation would be shaped is decided here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum ReferenceClass {
