@@ -29,6 +29,7 @@ mod public_api_tests;
 mod relocation_tests;
 mod state_constructor_graph_tests;
 mod state_deployment_tests;
+mod state_taptree_tests;
 mod symbol_tests;
 mod taptree_tests;
 

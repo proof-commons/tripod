@@ -57,3 +57,13 @@ The three external evidence roles that are facts about a deployment — what the
 The lead magnitudes travel with a `StateLeadBoundOrigin`, because the architecture declares both lead bounds with no default and requires deployment calibration: the numbers the fixtures use are test material, and a type that could not say so would let them be read as the contract's own.
 
 Symbol resolution, the authenticated graph, relocation, the tree, the carrier comparison and the candidate bundle are later steps of the same wave. This bridge resolves no symbol, carries no internal key and builds no graph.
+
+## The maturity constructor's tree (Guide-14 Wave 6)
+
+`state_static_taptree_input` and `assemble_state_static` build the static subtree through the shared deterministic construction rather than a second one, with unit weights because no execution-frequency data exists, and the outer pair above it is fixed: the metadata leaf left, the static root right. The admitted recipe carries one static leaf, so the subtree has no topology to choose at all and the only decisions left here are policy, duplicate semantics, depth and binding.
+
+The policy is the strict one, `SubsetOracleOnly`: every static leaf set this vocabulary expresses sits far inside the exhaustive oracle's budget, so the route that ranges over the whole tree space always answers and nothing weaker is admitted.
+
+The costs are therefore two figures established two ways. The static cost is what the construction chose and the oracle checked — zero for the singleton tree, which has no topology. The complete cost is arithmetic over a pair nobody selected, one unit of depth for every static leaf plus one for the metadata leaf, which is two for the singleton tree; the closed-form and enumerated figures the tests compare against are a second opinion recorded beside the proof, never the route to it.
+
+`StateLinkedTaptree::bind` binds the construction to one constructor's exact leaf bytes: the leaf sets and versions must agree, every committed path must be the depth the construction chose, the announcement's path must end at the metadata leaf, and the deployment's depth cap is enforced over the complete tree rather than assumed. The evidence retains the constructor's own hashes, so two trees whose declared roles agree and whose programs differ by one instruction are two different roots here.

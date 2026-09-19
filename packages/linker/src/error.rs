@@ -12,9 +12,10 @@ use std::collections::BTreeSet;
 use tapscript::upstream::{ExternalEvidenceRole, LiveTransferRepresentationPlan};
 use tapscript::{
     BundleSymbol, FinalStackDefect, LeafRole, LiveBundleSymbol, LiveProgramRefusal,
-    LiveTransferLeafRole, OwnerProfileDisposition, TapscriptError,
+    LiveTransferLeafRole, OwnerProfileDisposition, StateConstructorRefusal, StateLeafRole,
+    TapscriptError,
 };
-use target_elements::ResourceDimension;
+use target_elements::{LeafVersion, ResourceDimension};
 
 use crate::graph::{ReferenceEdgeId, ReferenceNode, SccId};
 use crate::live_symbol::{LiveLinkRole, LiveLinkSymbol, LiveSymbolType};
@@ -391,6 +392,115 @@ pub enum LinkRefusal {
         /// Every representation the declarations named.
         representations: BTreeSet<LiveTransferRepresentationPlan>,
     },
+
+    // --- Maturity taptree (Guide-14 Wave 6) ---------------------------
+    /// One STATE leaf identity was declared more than once, or committed
+    /// more than once inside the static subtree.
+    ///
+    /// Both sides of the binding state a census, and neither is allowed
+    /// to state one twice: a declaration sequence that repeats a leaf
+    /// does not know its own size and lets declaration order decide
+    /// which statement survived, and a committed subtree carrying one
+    /// role at two identities makes every figure derived from it — a
+    /// depth, a cost, a control path — a figure about a tree nobody
+    /// stated.
+    DuplicateStateTreeLeaf(StateLeafRole),
+    /// A STATE control path is deeper than the declared maximum.
+    ///
+    /// Raised by the static construction against the static cap, and by
+    /// the binding against the deployment's cap on the complete tree.
+    /// The depth reported is the one measured in the tree that refused,
+    /// and the binding names the deepest static leaf.
+    StateTreeDepthExceeded {
+        /// The deepest leaf.
+        leaf: StateLeafRole,
+        /// The depth it reached.
+        depth: u32,
+        /// The declared maximum.
+        maximum: u32,
+    },
+    /// The metadata leaf was declared as a static leaf.
+    ///
+    /// It is the outer pair's left child and never a member of the
+    /// static subtree: the constructor commits it from the canonical
+    /// metadata, and a declaration that placed it inside the subtree
+    /// would be committing a second leaf with the same role at a depth
+    /// the pair does not admit.
+    MetadataLeafDeclaredStatic,
+    /// No announcement leaf was declared for the static subtree.
+    ///
+    /// The announcement is the leaf the operation is spent through, so a
+    /// static subtree without one commits a tree nothing can execute.
+    /// This answers an empty declaration sequence too, because carrying
+    /// no announcement is what is wrong with it whether or not it
+    /// carries anything else.
+    StaticTreeWithoutAnnouncement,
+    /// The declared leaf set and the constructor's committed leaf set
+    /// are not the same set.
+    ///
+    /// The deterministic tree and the committed subtree are two
+    /// independent statements about which leaves the output admits, and
+    /// a link that published a cost or a depth census over declarations
+    /// the constructor never committed would be describing a tree that
+    /// does not exist.
+    StateStaticLeafSetMismatch {
+        /// The roles the deterministic tree carries.
+        declared: BTreeSet<StateLeafRole>,
+        /// The roles the constructor committed.
+        committed: BTreeSet<StateLeafRole>,
+    },
+    /// A committed leaf's version, or the declared tree's, is not the
+    /// reviewed contract's.
+    ///
+    /// The version is part of what a leaf hash commits to, so a tree
+    /// declared at one version and committed at another is two trees.
+    /// The constructor's own validation refuses a wrong committed
+    /// version before a link sees it; this is the link's independent
+    /// statement of the same rule, which is what keeps it true when a
+    /// subtree arrives by another route.
+    StateLeafVersionMismatch {
+        /// The leaf the comparison was made for.
+        leaf: StateLeafRole,
+        /// The version byte offered.
+        offered: u8,
+        /// The version the reviewed contract fixes.
+        reviewed: LeafVersion,
+    },
+    /// A committed control path is not the depth the construction chose.
+    ///
+    /// The construction settles which leaf sits where; the constructor's
+    /// committed path is where a spender's control block actually walks.
+    /// A disagreement means the published depth census belongs to a
+    /// different tree from the one the output commits.
+    StateStaticTopologyMismatch {
+        /// The leaf whose depths disagree.
+        leaf: StateLeafRole,
+        /// The depth the deterministic construction chose.
+        constructed: u32,
+        /// The depth the committed subtree holds.
+        committed: u32,
+    },
+    /// The committed outer pair is not the metadata leaf beside the
+    /// static root.
+    ///
+    /// The pair is fixed — metadata left, static right — so an
+    /// announcement path that does not end at the metadata leaf is a
+    /// path through some other tree, and the evidence would be binding
+    /// to a root no leaf of this subtree reaches.
+    StateOuterPairMismatch {
+        /// The metadata leaf's committed hash.
+        metadata_hash: [u8; 32],
+        /// The static subtree's committed root.
+        static_root: [u8; 32],
+    },
+    /// The constructor refused while stating a control recipe or the
+    /// fixed pair's side.
+    ///
+    /// Carried rather than reinterpreted: the constructor owns what its
+    /// committed tree says about itself, and a link that translated one
+    /// of its refusals into a refusal of its own would be publishing a
+    /// second account of a fact it did not establish.
+    StateConstructor(StateConstructorRefusal),
 
     // --- Carrier closure ----------------------------------------------
     /// A relation-case the compiler requires has no placement (§14.6).
