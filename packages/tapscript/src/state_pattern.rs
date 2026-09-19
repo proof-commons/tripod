@@ -1,10 +1,10 @@
 //! Walked STATE structural fragments and their unresolved consumers.
 //!
 //! A fragment authenticates positions before deriving structural absence.
-//! Constructor-program equality does not establish current-root freshness or
-//! semantic metadata. Those obligations remain separate residuals. The metadata
-//! commitment leaf can be adapted by a later composing recipe; it is not an
-//! executing authentication fragment and is not embedded here.
+//! Recognizing the consumed asset and amount does not establish current-root
+//! freshness or semantic metadata. Those obligations remain separate residuals.
+//! The metadata commitment leaf can be adapted by a later composing recipe; it
+//! is not an executing authentication fragment and is not embedded here.
 //!
 //! The partition consumes an authenticated family census. Reserve-asset equality
 //! alone cannot distinguish plain sponsors from RESV, which also carries L-BTC.
@@ -40,7 +40,7 @@ census_enum! {
         StateCoordinatorRoleV1,
         /// Exactly one STATE position occurs on each side.
         StateCardinalityV1,
-        /// The predecessor matches the exact asset, amount and constructor.
+        /// The predecessor matches the exact asset, amount and script version.
         StateInputRecognitionV1,
         /// The sponsor suffix never supplies a value operand.
         StateSponsorIsolationV1,
@@ -76,8 +76,6 @@ census_enum! {
         StateAsset,
         /// Exact explicit singleton amount payload.
         StateAmount,
-        /// Exact predecessor taproot output-program payload.
-        PredecessorProgram,
         /// Inclusive fee-sponsor input bound, encoded as a script number.
         FeeSponsorInputMax,
         /// Reserve asset distinct from the STATE asset.
@@ -98,7 +96,7 @@ census_enum! {
         PositionCensus,
         /// Asset identities checked at positions.
         AssetIdentities,
-        /// Exact predecessor amount and program.
+        /// Exact predecessor asset and amount.
         PredecessorCommitment,
         /// Sponsor-change and target fee programs.
         SponsorPrograms,
@@ -116,10 +114,8 @@ census_enum! {
         TargetNativeEvidence,
         /// Report-layer chain context must establish the current STATE root.
         CurrentStateRootFreshness,
-        /// Constructor equality does not authenticate semantic metadata.
+        /// An asset and amount check does not authenticate semantic metadata.
         SemanticMetadataAuthentication,
-        /// The constructor program must be supplied without assuming a fixed point.
-        PredecessorConstructorBinding,
         /// The required source census must authenticate family roles, not just assets.
         AuthenticatedFamilyRoles,
         /// Output zero still needs semantic successor reconstruction.
@@ -208,12 +204,7 @@ impl StateAnnouncementShape {
 
     fn symbols(self) -> BTreeSet<StatePatternSymbol> {
         use StatePatternSymbol as S;
-        let mut symbols = BTreeSet::from([
-            S::StateAsset,
-            S::StateAmount,
-            S::PredecessorProgram,
-            S::FeeSponsorInputMax,
-        ]);
+        let mut symbols = BTreeSet::from([S::StateAsset, S::StateAmount, S::FeeSponsorInputMax]);
         if self.sponsor_inputs > 0 || self.has_change() || self.has_fee() {
             symbols.insert(S::ReserveAsset);
         }
@@ -307,9 +298,7 @@ fn validate_binding(
 ) -> Result<(), StatePatternRefusal> {
     use StatePatternSymbol as S;
     let valid = match symbol {
-        S::StateAsset | S::ReserveAsset | S::PredecessorProgram | S::FeeProgramDigest => {
-            item.len() == 32
-        }
+        S::StateAsset | S::ReserveAsset | S::FeeProgramDigest => item.len() == 32,
         S::StateAmount => item
             .signed_le64_value(target)
             .is_some_and(|value| value > 0),
@@ -576,14 +565,20 @@ impl StructuralEmitter<'_> {
             .extend(require_explicit(self.target, EncodingClass::ExplicitValue)?);
         self.symbol(StatePatternSymbol::StateAmount)?;
         self.instructions.push(op(OpcodeId::EqualVerify));
+        // Introspection returns the consumed program beneath its witness
+        // version. The version is checked here and the program is dropped: a
+        // literal equal to it cannot be linked, because its bytes would have to
+        // occur inside the tree that commits to them, and comparing bytes to a
+        // constant is in any case weaker than what the semantic authentication
+        // component already does, which is to verify the tweak over the
+        // internal key and the authenticated metadata for this same program.
         self.instructions.extend([
             number(self.target, 0)?,
             op(OpcodeId::InspectInputScriptPubKey),
             number(self.target, 1)?,
             op(OpcodeId::EqualVerify),
+            op(OpcodeId::Drop),
         ]);
-        self.symbol(StatePatternSymbol::PredecessorProgram)?;
-        self.instructions.push(op(OpcodeId::EqualVerify));
         Ok(())
     }
 
@@ -772,7 +767,6 @@ fn structural_metadata(
         metadata.residuals.extend([
             Residual::CurrentStateRootFreshness,
             Residual::SemanticMetadataAuthentication,
-            Residual::PredecessorConstructorBinding,
         ]);
     } else {
         metadata.sources.insert(Source::RuntimeArchitectureBound);

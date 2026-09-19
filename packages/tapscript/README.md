@@ -607,9 +607,9 @@ output-key prefix, successor nonce, requested cycle, static-subtree root,
 predecessor metadata, predecessor output-key prefix, and operator signature.
 The root is witnessed rather than pushed by the leaf that it roots. Three
 one-instruction adapters align the lead-window, copy-through, and successor
-stacks; the closing adapter drops derived metadata and pushes canonical true.
-The complete census is twelve unresolved symbols over 46 push sites, with the
-shared asset and amount represented once (`0.6.183-dev`).
+stacks; the closing adapter drops derived metadata and pushes canonical true
+(`0.6.183-dev`). The complete census is eleven unresolved symbols over 45 push
+sites, with the shared asset and amount represented once.
 
 The record-backed assessment completes 63 of 87 rows per representation and
 leaves 24 pending. It projects all 26 relations to 24 emitted components and

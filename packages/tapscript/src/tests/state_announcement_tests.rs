@@ -795,6 +795,29 @@ fn changed_nonmaturity_bytes_and_wrong_nonce_cannot_reconstruct_output() {
     }
 }
 
+// Structural recognition admits any consumed program, so this component is
+// where a wrong predecessor is refused: the introspected program is half of
+// the compressed point that tweak verification checks against the internal key
+// and the authenticated metadata. That equation binds the program to what
+// commits to it, where an equality against a literal would compare bytes only.
+#[test]
+fn a_wrong_predecessor_program_fails_the_authenticated_equation() {
+    let bytes = metadata(5, Maturity::Unannounced, 1);
+    let fragment = record(StateAnnouncementId::MetadataAuthentication);
+    let base = authenticated_oracle(bytes);
+    let mut exact = Oracle::new(base.stack.clone());
+    exact.program.clone_from(&base.program);
+    exact.relation.clone_from(&base.relation);
+    assert_eq!(exact.execute(fragment.fragment()), Ok(()));
+    for position in [0, 7, 31] {
+        let mut oracle = Oracle::new(base.stack.clone());
+        oracle.program.clone_from(&base.program);
+        oracle.program[position] ^= 1;
+        oracle.relation.clone_from(&base.relation);
+        assert_eq!(oracle.execute(fragment.fragment()), Err("curve relation"));
+    }
+}
+
 #[test]
 fn copy_through_nonce_mutation_is_bound_by_successor_authentication() {
     let successor = metadata(

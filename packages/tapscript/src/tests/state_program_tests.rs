@@ -36,7 +36,6 @@ fn structural_values() -> BTreeMap<StatePatternSymbol, StackItem> {
     BTreeMap::from([
         (S::StateAsset, item(0x11)),
         (S::StateAmount, StackItem::signed_le64(&target, 1)),
-        (S::PredecessorProgram, item(0x33)),
         (
             S::FeeSponsorInputMax,
             StackItem::script_number(&target, 3).unwrap(),
@@ -406,6 +405,51 @@ fn every_consumer_is_the_fixture_push_at_the_reindexed_component_site() {
             );
         }
     }
+}
+
+// The published census is checked here rather than asserted in prose, so a
+// change to what the leaf pushes has to move this figure with it.
+#[test]
+fn the_composed_consumer_census_is_exactly_eleven_symbols_over_forty_five_sites() {
+    let f = fixtures();
+    assert_eq!(f.program.consumers().len(), 11);
+    assert_eq!(
+        f.program
+            .consumers()
+            .values()
+            .map(|consumer| consumer.sites.len())
+            .sum::<usize>(),
+        45
+    );
+}
+
+// The consumed program is bound by semantic authentication, never pushed:
+// inside recognition the only wide literal left is the singleton asset.
+#[test]
+fn the_complete_record_carries_no_predecessor_program_literal() {
+    use StateProgramComponent as C;
+    use StateProgramSymbol as S;
+    let f = fixtures();
+    let range =
+        f.program.components()[&C::Structural(StatePatternId::StateInputRecognitionV1)].clone();
+    let wide = f.program.program().instructions()[range.clone()]
+        .iter()
+        .enumerate()
+        .filter_map(|(offset, instruction)| match instruction {
+            TapscriptInstruction::Push(item) if item.len() == 32 => Some(range.start + offset),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        wide,
+        f.program.consumers()[&S::Structural(StatePatternSymbol::StateAsset)]
+            .sites
+            .iter()
+            .copied()
+            .filter(|site| range.contains(site))
+            .collect()
+    );
+    assert_eq!(wide.len(), 1);
 }
 
 #[test]

@@ -46,7 +46,6 @@ fn values(shape: StateAnnouncementShape) -> BTreeMap<StatePatternSymbol, StackIt
     let mut result = BTreeMap::from([
         (S::StateAsset, item(0x11)),
         (S::StateAmount, StackItem::signed_le64(&target, 1)),
-        (S::PredecessorProgram, item(0x33)),
         (
             S::FeeSponsorInputMax,
             StackItem::script_number(&target, 3).unwrap(),
@@ -202,7 +201,7 @@ fn cardinality_contract_owns_exact_counts_and_singleton_partition() {
 }
 
 #[test]
-fn predecessor_contract_owns_exact_asset_amount_and_program() {
+fn predecessor_contract_owns_exact_asset_amount_and_script_version() {
     use ElementsCapability as C;
     assert_contract(
         StatePatternId::StateInputRecognitionV1,
@@ -212,6 +211,8 @@ fn predecessor_contract_owns_exact_asset_amount_and_program() {
             C::InputValueInspection,
             C::InputProgramInspection,
             C::ByteStringEquality,
+            // Discarding the introspected program is a rearrangement.
+            C::StackRearrangement,
         ]),
     );
     let record = pattern(StatePatternId::StateInputRecognitionV1);
@@ -371,21 +372,59 @@ fn predecessor_rejects_wrong_asset_and_amount() {
     assert!(walk(&fragment).always_aborts());
 }
 
+// Recognition checks the consumed script version and nothing about the program
+// bytes: any program observed at input zero walks to the same empty success
+// stack. Binding that program is the semantic authentication component's work,
+// which verifies the tweak over the internal key and the authenticated
+// metadata rather than comparing the bytes against a literal.
 #[test]
-fn predecessor_rejects_wrong_program_and_version() {
+fn predecessor_rejects_a_wrong_script_version_and_admits_any_program() {
     let record = pattern(StatePatternId::StateInputRecognitionV1);
-    for (byte, version) in [(0x99, 1), (0x33, 0)] {
-        let replacement = vec![
-            TapscriptInstruction::Push(StackItem::new(&reviewed_target(), vec![byte; 32]).unwrap()),
-            number(&reviewed_target(), version).unwrap(),
-        ];
-        let fragment = observed(
+    let wrong_version = observed(
+        record.fragment(),
+        OpcodeId::InspectInputScriptPubKey,
+        0,
+        vec![
+            TapscriptInstruction::Push(StackItem::new(&reviewed_target(), vec![0x33; 32]).unwrap()),
+            number(&reviewed_target(), 0).unwrap(),
+        ],
+    );
+    assert!(walk(&wrong_version).always_aborts());
+    for byte in [0x33, 0x99] {
+        let admitted = observed(
             record.fragment(),
             OpcodeId::InspectInputScriptPubKey,
             0,
-            replacement,
+            vec![
+                TapscriptInstruction::Push(
+                    StackItem::new(&reviewed_target(), vec![byte; 32]).unwrap(),
+                ),
+                number(&reviewed_target(), 1).unwrap(),
+            ],
         );
-        assert!(walk(&fragment).always_aborts());
+        assert!(!walk(&admitted).always_aborts());
+    }
+}
+
+// No instruction of the recipe pushes the consumed program, at any shape.
+#[test]
+fn no_structural_fragment_pushes_a_predecessor_program_literal() {
+    let target = reviewed_target();
+    for shape in [sponsored(), plain()] {
+        let recipe = state_structural_patterns(&target, &bindings(shape)).unwrap();
+        let literal = StackItem::new(&target, vec![0x33; 32]).unwrap();
+        for record in recipe.components() {
+            assert!(
+                !record
+                    .fragment()
+                    .instructions()
+                    .contains(&TapscriptInstruction::Push(literal.clone()))
+            );
+        }
+        assert_eq!(
+            recipe.consumers().keys().copied().collect::<BTreeSet<_>>(),
+            values(shape).keys().copied().collect()
+        );
     }
 }
 
@@ -530,6 +569,11 @@ fn omitted_issuance_checks_cannot_inherit_the_record() {
 fn unconsumed_boolean_is_refused_for_every_identity() {
     for &id in StatePatternId::ALL {
         let mut instructions = pattern(id).fragment().instructions().to_vec();
+        // Recognition ends by discarding the introspected program, so the
+        // verifying comparison it must not lose is the one before that.
+        if id == StatePatternId::StateInputRecognitionV1 {
+            assert_eq!(instructions.pop(), Some(op(OpcodeId::Drop)));
+        }
         assert_eq!(instructions.pop(), Some(op(OpcodeId::EqualVerify)));
         instructions.push(op(OpcodeId::Equal));
         let weakened = TapscriptProgram::new(instructions.clone()).unwrap();
@@ -626,11 +670,10 @@ fn every_opcode_evidence_dependency_survives_the_recipe_union() {
 }
 
 #[test]
-fn constructor_binding_root_freshness_and_semantic_metadata_remain_distinct() {
+fn root_freshness_and_semantic_metadata_remain_distinct_residuals() {
     let record = pattern(StatePatternId::StateInputRecognitionV1);
     let residuals = record.metadata().residuals();
     for residual in [
-        StatePatternResidual::PredecessorConstructorBinding,
         StatePatternResidual::CurrentStateRootFreshness,
         StatePatternResidual::SemanticMetadataAuthentication,
     ] {
@@ -677,7 +720,7 @@ fn identity_and_owner_censuses_are_deterministic_and_distinct() {
 fn consumers_are_unique_nonempty_exact_push_sites_and_still_unresolved() {
     let recipe = state_structural_patterns(&reviewed_target(), &bindings(sponsored())).unwrap();
     let substitutions = values(sponsored());
-    assert_eq!(recipe.consumers().len(), 8);
+    assert_eq!(recipe.consumers().len(), 7);
     assert_eq!(
         recipe.consumers().keys().copied().collect::<Vec<_>>(),
         StatePatternSymbol::ALL
@@ -734,15 +777,15 @@ fn symbol_requirements_do_not_depend_on_fixture_byte_uniqueness() {
     let shape = sponsored();
     let mut substitutions = values(shape);
     substitutions.insert(
-        StatePatternSymbol::PredecessorProgram,
+        StatePatternSymbol::FeeProgramDigest,
         substitutions[&StatePatternSymbol::StateAsset].clone(),
     );
     let supplied = StatePatternBindings::new(&reviewed_target(), shape, substitutions).unwrap();
     let recipe = state_structural_patterns(&reviewed_target(), &supplied).unwrap();
-    assert_eq!(recipe.consumers().len(), 8);
+    assert_eq!(recipe.consumers().len(), 7);
     assert_ne!(
         recipe.consumers()[&StatePatternSymbol::StateAsset].sites,
-        recipe.consumers()[&StatePatternSymbol::PredecessorProgram].sites
+        recipe.consumers()[&StatePatternSymbol::FeeProgramDigest].sites
     );
 }
 
@@ -754,7 +797,6 @@ fn sponsorless_recipe_omits_every_unused_sponsor_consumer() {
         BTreeSet::from([
             StatePatternSymbol::StateAsset,
             StatePatternSymbol::StateAmount,
-            StatePatternSymbol::PredecessorProgram,
             StatePatternSymbol::FeeSponsorInputMax,
         ])
     );
