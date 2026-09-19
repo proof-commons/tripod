@@ -13,41 +13,33 @@
 //! `the_closed_refusal_root_is_covered_by_test_or_by_reason` walks
 //! [`StateLinkRefusal`] through an exhaustive match, so a variant added
 //! to it fails to compile here until this file says which test reaches it
-//! or why nothing can. Two are declared unreachable: the revision
-//! disagreement, because one reviewed contract revision is constructible
-//! and both operands are read from it, and the invalid item, because
-//! every value the census builds is eight or thirty-two bytes and the
-//! reviewed literal bound is far above both.
+//! or why nothing can. The graph's refusals are walked here too, because
+//! the root is one census and a second walk beside it would be a second
+//! authority on which variants exist. Three are declared unreachable:
+//! the revision disagreement, because one reviewed contract revision is
+//! constructible and both operands are read from it; the invalid item,
+//! because every value the census builds is eight or thirty-two bytes
+//! and the reviewed literal bound is far above both; and the frozen
+//! graph, because the constructor states seven references against a
+//! bound of sixty-four.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{ARCHITECTURE, AssetId};
 use tapscript::upstream::{Cycle, StateSingletonDeclaration};
-use tapscript::{StackItem, StateConstructorReference, TapscriptInstruction};
+use tapscript::{
+    StackItem, StateConstructorReference, StateLeafRole, StateProgramWitness, TapscriptInstruction,
+};
 use target_elements::{ReviewedElementsTapscriptDefinition, TargetContractVersion};
 
-use crate::tests::{bridge, record, reviewed_target, state_constructor};
+use crate::tests::state_graph_tests::residual_cycle_refusal;
+use crate::tests::{bridge, declaration, record, reviewed_target, singleton, state_constructor};
 use crate::{
-    StateConsumerCensus, StateDefinitionCensus, StateDefinitionOrigin as Origin, StateLinkRefusal,
-    StateLinkSymbol as Key, StateSingletonAsset, StateSymbolType, StateSymbolValue,
-    collect_state_definitions, resolve_state_census, state_declared_type,
+    STATE_REFERENCE_LIMIT, StateBindingTime, StateConsumerCensus, StateDefinitionCensus,
+    StateDefinitionOrigin as Origin, StateGraphNode, StateLinkRefusal, StateLinkSymbol as Key,
+    StateReferenceGraphRefusal, StateSymbolType, StateSymbolValue, collect_state_definitions,
+    resolve_state_census, state_declared_type,
 };
-
-/// The issued identifier: public, meaningless material standing for no
-/// issued asset, and the same bytes the record's fixture asset carries so
-/// that a site comparison is a comparison.
-fn singleton() -> StateSingletonAsset {
-    StateSingletonAsset::new([0x11; 32])
-}
-
-/// The architecture's own declaration of the identity singleton.
-fn declaration() -> StateSingletonDeclaration {
-    let spec = ARCHITECTURE
-        .asset(AssetId::Pid)
-        .expect("the identity asset is declared");
-    StateSingletonDeclaration::from_architecture_asset(spec)
-        .expect("the declaration is a singleton")
-}
 
 /// Pass one over the demonstration sources.
 fn definitions(target: &ReviewedElementsTapscriptDefinition) -> StateDefinitionCensus {
@@ -484,6 +476,22 @@ fn reachability(refusal: &StateLinkRefusal) -> &'static str {
         StateLinkRefusal::InvalidDefinitionItem { .. } => {
             "unreachable: every value is eight or thirty-two bytes, under the reviewed bound"
         }
+        StateLinkRefusal::FrozenGraph(_) => {
+            "unreachable: the constructor states seven references against a bound of sixty-four"
+        }
+        StateLinkRefusal::GraphReferenceLimitExceeded { .. } => {
+            "the_shared_reference_bound_admits_sixty_four_nodes_and_no_more"
+        }
+        StateLinkRefusal::LiteralStaticRootBeneathItself { .. } => {
+            "a_link_time_static_root_under_its_own_program_is_refused"
+        }
+        StateLinkRefusal::ConstructorProjectionMismatch { .. } => {
+            "a_constructor_kind_missing_from_the_graph_is_a_projection_mismatch"
+        }
+        StateLinkRefusal::UnvalidatedCut { .. } => {
+            "a_witnessed_root_without_the_root_witness_is_not_a_cut"
+        }
+        StateLinkRefusal::ResidualCycle { .. } => "one_cut_leaves_the_other_edge_disjoint_cycle",
     }
 }
 
@@ -516,16 +524,40 @@ fn the_closed_refusal_root_is_covered_by_test_or_by_reason() {
             symbol: Key::InternalKey,
             cause,
         },
+        StateLinkRefusal::FrozenGraph(StateReferenceGraphRefusal::ResourceBoundExceeded {
+            limit: STATE_REFERENCE_LIMIT,
+        }),
+        StateLinkRefusal::GraphReferenceLimitExceeded {
+            limit: STATE_REFERENCE_LIMIT,
+        },
+        StateLinkRefusal::LiteralStaticRootBeneathItself {
+            program: StateLeafRole::Announcement,
+        },
+        StateLinkRefusal::ConstructorProjectionMismatch {
+            frozen: BTreeSet::from([Key::TargetPolicy]),
+            graph: BTreeSet::new(),
+        },
+        StateLinkRefusal::UnvalidatedCut {
+            referrer: StateGraphNode::Program(StateLeafRole::Announcement),
+            referent: StateGraphNode::Definition(Key::StaticSubtreeRoot),
+            binding: StateBindingTime::WitnessedThenAuthenticated,
+            missing_witnesses: vec![StateProgramWitness::StaticSubtreeRoot],
+            missing_components: BTreeSet::new(),
+        },
+        // The residual cycle is the refusal the linker built, because a
+        // component has no constructor outside the analysis and an
+        // invented one would stand for nothing.
+        residual_cycle_refusal(),
     ];
 
     let accounts: BTreeSet<&str> = refusals.iter().map(reachability).collect();
-    assert_eq!(refusals.len(), 7);
-    assert_eq!(accounts.len(), 7);
+    assert_eq!(refusals.len(), 13);
+    assert_eq!(accounts.len(), 13);
     assert_eq!(
         refusals
             .iter()
             .filter(|refusal| reachability(refusal).starts_with("unreachable"))
             .count(),
-        2
+        3
     );
 }

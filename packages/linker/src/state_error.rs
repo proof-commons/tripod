@@ -25,9 +25,13 @@
 //! no definitions, because a census missing one key is not a smaller
 //! census but a different claim about which keys exist.
 
-use tapscript::TapscriptError;
+use std::collections::BTreeSet;
+
+use tapscript::{StateAnnouncementId, StateLeafRole, StateProgramWitness, TapscriptError};
 use target_elements::TargetContractVersion;
 
+use crate::state_constructor_graph::StateReferenceGraphRefusal;
+use crate::state_graph::{StateBindingTime, StateGraphNode, StateResidualComponent};
 use crate::state_symbol::{StateLinkSymbol, StateSymbolType};
 
 /// Why a STATE maturity link refused.
@@ -110,5 +114,86 @@ pub enum StateLinkRefusal {
         symbol: StateLinkSymbol,
         /// What the item constructor refused.
         cause: TapscriptError,
+    },
+
+    // --- The authenticated graph ---------------------------------------
+    /// The constructor's own declarations could not be frozen.
+    ///
+    /// The bound on distinct references belongs to the frozen graph
+    /// rather than to this module, so the refusal travels exactly as
+    /// that graph stated it instead of as a figure restated here and
+    /// free to drift from the one actually enforced.
+    FrozenGraph(StateReferenceGraphRefusal),
+
+    /// The offered graph carries more distinct nodes than the bound.
+    ///
+    /// The figure is the constructor's local census bound applied to the
+    /// whole typed graph, because a graph the constructor could not have
+    /// declared is not one this link can resolve, and a bound enforced
+    /// on one side only would be a bound on nothing.
+    GraphReferenceLimitExceeded {
+        /// The maximum number of distinct nodes.
+        limit: usize,
+    },
+
+    /// A program would carry the root of the tree committing to it.
+    ///
+    /// Not a cycle that better evidence could cut. The root is a
+    /// function of the program's bytes, so a literal for it inside those
+    /// bytes is a fixed point, and the only way to reach for one is to
+    /// hash until the bytes stop changing. Witnessing the root and
+    /// authenticating it against the program is the resolution, and it
+    /// is a different binding time rather than the same edge with a
+    /// stronger claim attached to it.
+    LiteralStaticRootBeneathItself {
+        /// The leaf whose bytes would have to contain their own root.
+        program: StateLeafRole,
+    },
+
+    /// The constructor-kind nodes are not the frozen graph's own.
+    ///
+    /// Both sets travel, because either side may be the one that moved:
+    /// a kind the constructor declares and this graph omits, and a kind
+    /// this graph carries that the constructor never declared, are
+    /// different defects, and a single missing name could not tell them
+    /// apart.
+    ConstructorProjectionMismatch {
+        /// The kinds the constructor's frozen graph declares.
+        frozen: BTreeSet<StateLinkSymbol>,
+        /// The kinds the offered graph carries.
+        graph: BTreeSet<StateLinkSymbol>,
+    },
+
+    /// A binding time's required evidence is not in the record.
+    ///
+    /// The edge travels with the gap. A cut is a claim about one
+    /// dependency, so a refusal naming only the absent role would leave
+    /// a reader to guess which of the edges bound that way the record
+    /// could not support.
+    UnvalidatedCut {
+        /// The dependent node of the edge that was not validated.
+        referrer: StateGraphNode,
+        /// The node it depends on.
+        referent: StateGraphNode,
+        /// The binding time whose evidence was demanded.
+        binding: StateBindingTime,
+        /// Required witness roles the record does not declare.
+        missing_witnesses: Vec<StateProgramWitness>,
+        /// Required components the record does not walk.
+        missing_components: BTreeSet<StateAnnouncementId>,
+    },
+
+    /// A cycle survives every validated cut.
+    ///
+    /// The removed cuts travel with the component, because the finding
+    /// is about what they did not reach: a component still cyclic after
+    /// every authenticated removal is a cycle all of whose edges are
+    /// settled before the leaf runs, and naming the removals is what
+    /// shows the cut to have been insufficient rather than absent.
+    ResidualCycle {
+        /// The component still carrying a cycle.
+        component: StateResidualComponent,
+        /// Every cut edge removed before the residual was computed.
+        cuts_removed: BTreeSet<usize>,
     },
 }

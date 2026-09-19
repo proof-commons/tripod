@@ -79,3 +79,13 @@ The structural and semantic families name one asset and one amount between them,
 The census keeps a closed refusal root of its own, which is what lets a test enumerate it and hold every variant to being either exercised or declared unreachable with its reason; the shared root stays open, because it is the vocabulary of the engines every generation shares.
 
 The authenticated graph, relocation, the tree, the carrier comparison and the candidate bundle are later steps of the same wave. This census resolves no program bytes, rewrites no leaf and builds no graph.
+
+## The maturity link's authenticated graph (Guide-14 Wave 6)
+
+`state_graph_from_sources` makes every reference the maturity link resolves a typed node — the thirteen census keys, the leaf programs the constructor commits, and the constructor's output as one node because its merkle root and output key are one commitment — and carries every dependency as an edge whose binding time says where the referent comes from: written into the leaf's bytes at link time, fixed by the constructor's recipe, introspected at spend time, witnessed and then authenticated, or reconstructed in the program from what it has already authenticated.
+
+Only the three binding times that survive the commitment can cut a cycle, and a cut is validated and removed rather than flagged. Each is checked first against the record's own declared witness schedule and components, through a table that names, for each of them, the witness roles it needs and the components that read them — every witness a row names is read by a component the row names. The residual graph is then proved acyclic as a whole and reduced to a canonical dependency order, because accepting a component as soon as one of its edges could break a cycle leaves that component's other cycles unexamined: a component carrying two edge-disjoint cycles with one cut between them is refused, by the name of the cycle that is left.
+
+The static root is never a link-time constant beneath a program that commits to it. A leaf cannot contain the root of the tree that commits to it, so the root arrives as a witness and the tweak equation against the internal key and the authenticated metadata is what binds it; the literal form is refused outright rather than handed to the cycle analysis, because it is not a cycle a better cut could resolve. The frozen constructor graph is retained beside all of this as a projection that must agree, because it is the constructor's own statement of the inputs it consumed.
+
+Relocation, the linked resource figures, the carrier comparison and the candidate bundle are later steps of the same wave. This graph relocates nothing, rewrites no leaf and measures no resource.

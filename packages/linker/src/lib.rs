@@ -20,6 +20,7 @@ pub mod relocate;
 pub mod state_constructor_graph;
 pub mod state_deployment;
 pub mod state_error;
+pub mod state_graph;
 pub mod state_symbol;
 pub mod state_taptree;
 pub mod symbol;
@@ -67,6 +68,11 @@ pub use state_constructor_graph::{
 };
 pub use state_deployment::{StateLeadBoundOrigin, StateLeadBounds, StateLinkDeploymentParameters};
 pub use state_error::StateLinkRefusal;
+pub use state_graph::{
+    StateAuthenticatedGraph, StateBindingTime, StateCutEvidence, StateGraphEdge,
+    StateGraphEdgeDeclaration, StateGraphNode, StateResidualComponent, assemble_state_graph,
+    state_graph_from_sources, state_required_evidence,
+};
 pub use state_symbol::{
     StateConsumerCensus, StateConsumerSites, StateDefinitionCensus, StateDefinitionOrigin,
     StateLinkSymbol, StateResolvedCensus, StateResolvedEntry, StateSingletonAsset,

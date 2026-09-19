@@ -50,6 +50,7 @@ mod public_api_tests;
 mod relocation_tests;
 mod state_constructor_graph_tests;
 mod state_deployment_tests;
+mod state_graph_tests;
 mod state_symbol_tests;
 mod state_taptree_tests;
 mod symbol_tests;
@@ -59,7 +60,7 @@ use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::LazyLock;
 
-use architecture::{ARCHITECTURE, OperationId};
+use architecture::{ARCHITECTURE, AssetId, OperationId};
 use compiler::input::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
 use compiler::live_transfer_plan::{
     LiveTransferRepresentationPlan, ValidatedLiveTransferOperationPlan,
@@ -72,7 +73,7 @@ use compiler::operation_plan::{
     PlacementSearchLimits, ValidatedTargetOperationPlan, plan_compact_ash_target_operation,
 };
 use realization::{Cycle, Maturity, ProtocolAmount, RealizationScope, StateMetadata, derive};
-use tapscript::upstream::AnnouncementLeadBounds;
+use tapscript::upstream::{AnnouncementLeadBounds, StateSingletonDeclaration};
 use tapscript::{
     CandidateRelocatableLiveTransferBundle, CandidateRelocatableTapscriptBundle,
     CandidateStateConstructor, CompactAshSymbols, EstablishedOperatorProfile, LiveTransferSymbols,
@@ -95,6 +96,10 @@ use crate::live_deployment::LiveLinkDeploymentParameters;
 use crate::operator_deployment::{CandidateDeploymentIdentity, OperatorDeploymentBinding};
 use crate::state_deployment::{
     StateLeadBoundOrigin, StateLeadBounds, StateLinkDeploymentParameters,
+};
+use crate::{
+    StateConsumerCensus, StateResolvedCensus, StateSingletonAsset, collect_state_definitions,
+    resolve_state_census,
 };
 
 /// The reviewed contract, unmodified.
@@ -519,6 +524,46 @@ fn state_metadata() -> StateMetadata {
         cycle: Cycle::new(5),
         maturity: Maturity::Unannounced,
     }
+}
+
+/// The issued identifier: public, meaningless material standing for no
+/// issued asset, and the same bytes the record's fixture asset carries
+/// so that a site comparison is a comparison.
+fn singleton() -> StateSingletonAsset {
+    StateSingletonAsset::new([0x11; 32])
+}
+
+/// The architecture's own declaration of the identity singleton.
+fn declaration() -> StateSingletonDeclaration {
+    let spec = ARCHITECTURE
+        .asset(AssetId::Pid)
+        .expect("the identity asset is declared");
+    StateSingletonDeclaration::from_architecture_asset(spec)
+        .expect("the declaration is a singleton")
+}
+
+/// The resolved symbol census over the demonstration sources.
+///
+/// One artifact rather than one per test file: the census the graph is
+/// built over and the census the symbol tests assert about are the same
+/// census, and two copies could drift by a fixture byte with neither
+/// test able to notice.
+fn resolved_census() -> StateResolvedCensus {
+    let target = reviewed_target();
+    let definitions = collect_state_definitions(
+        &target,
+        &bridge(),
+        &state_constructor(),
+        &singleton(),
+        &declaration(),
+    )
+    .expect("the demonstration sources define every key");
+
+    resolve_state_census(
+        &definitions,
+        &StateConsumerCensus::from_sources(&record(), &state_constructor()),
+    )
+    .expect("the demonstration census resolves")
 }
 
 /// The candidate constructor over the production static subtree.
