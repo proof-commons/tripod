@@ -18,6 +18,7 @@ pub mod live_taptree;
 pub mod operator_deployment;
 pub mod relocate;
 pub mod state_constructor_graph;
+pub mod state_deployment;
 pub mod symbol;
 pub mod taptree;
 
@@ -61,6 +62,7 @@ pub use state_constructor_graph::{
     FrozenStateReferenceGraph, STATE_REFERENCE_LIMIT, StateReferenceComponent, StateReferenceEdge,
     StateReferenceGraphRefusal,
 };
+pub use state_deployment::{StateLeadBoundOrigin, StateLeadBounds, StateLinkDeploymentParameters};
 pub use symbol::{
     DefinitionCensus, DefinitionOrigin, SymbolDefinition, SymbolType, SymbolValue, declared_type,
 };

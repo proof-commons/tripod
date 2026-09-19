@@ -31,11 +31,31 @@
 //! *per plan*: a consumer that could not write down the type of one
 //! representation's projection would have to compare the union, which is
 //! precisely the comparison §11.5 forbids.
+//!
+//! # Guide 14's maturity half
+//!
+//! The maturity link binds two upstream values, and each of them
+//! arrives as the type that validated it.
+//! [`ValidatedMaturityAnnouncementOperationPlan`] is already a
+//! parameter of this crate's own
+//! [`crate::assess_maturity_announcement_program`] and
+//! [`crate::project_maturity_carriers`], so a consumer of those
+//! entries needs its name for the reason the compact half needed
+//! [`ValidatedTargetOperationPlan`]. [`AnnouncementLeadBounds`] is the
+//! realization's validated lead window: its constructor refuses a zero
+//! minimum and an inverted pair, and its architecture-keyed resolution
+//! refuses a magnitude the architecture does not carry, so a consumer
+//! that restated the window as two integers would be discarding those
+//! checks and keeping only their result. [`Cycle`] is named one step
+//! down for the same reason — the window's accessors return it, and a
+//! consumer that cannot write down a cycle cannot write down what the
+//! window handed it.
 
 pub use compiler::live_transfer_plan::{
     LiveTransferComposition, LiveTransferRepresentationPlan, LiveTransferRepresentationProjection,
     ValidatedLiveTransferOperationPlan,
 };
+pub use compiler::maturity_announcement_plan::ValidatedMaturityAnnouncementOperationPlan;
 pub use compiler::operation_plan::{
     AbstractCarrierRequirement, CarrierAssignmentAlternative, CarrierQuantification, CarrierRole,
     ExecutionCaseId, LifecycleRequirement, PlacedCarrier, RelationCaseKey, RequiredCapability,
@@ -43,3 +63,4 @@ pub use compiler::operation_plan::{
     ValidatedTargetOperationPlan,
 };
 pub use compiler::target::{ExternalEvidenceRole, RequiredCapability as TargetRequiredCapability};
+pub use realization::{AnnouncementLeadBounds, Cycle};
