@@ -29,8 +29,8 @@ use std::time::Duration;
 
 use linker::{CandidateDeploymentIdentity, StateDischargeClass, StateLinkedCarrier};
 use tapscript::{
-    StackItem, StateAnnouncementSymbol, StateLeafRole, StateProgramComponent, StateProgramSymbol,
-    TapscriptInstruction, TapscriptProgram,
+    StackItem, StateAnnouncementSymbol, StateLeafRole, StateOperatorSymbol, StateProgramComponent,
+    StateProgramSymbol, TapscriptInstruction, TapscriptProgram,
 };
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
@@ -46,6 +46,7 @@ use target_elements_conformance::protocol::{
     TargetFundingSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject,
     TargetSubmissionSubject, WireOutpoint, WireSighashProfile,
 };
+use target_elements_conformance::test_material::PublicTestSignerHandle;
 use transaction::bytes::{
     AssetField, AssetId as TargetAssetId, InputWitness, Outpoint, TargetInput, TargetOutput,
     TargetTransaction, Txid, ValueField,
@@ -61,19 +62,22 @@ use vectors::maturity_closure::{
 /// The golden roots this lane publishes, recomputed and carried alike.
 ///
 /// The demonstration deployment's static root, outer root and output
-/// key, then the second deployment's three.
+/// key, then the second deployment's three, then the third's.
 ///
 /// A pinned constant is what makes a golden a golden: it is checked
 /// against the recomputation AND against what the bundle carries in one
 /// comparison, so a pin that drifted from either fails here rather than
 /// quietly tracking whichever side moved.
-const GOLDEN: [&str; 6] = [
+const GOLDEN: [&str; 9] = [
     "cf54a9f68d066ca669c447045d01dfc15d2c6c1c33a13a2a11e8d1a52a50eb92",
     "3ddf7410676048756dc1f5750474eafc14f7c2b9e7d1c846da7f29d4cbcd72bf",
     "fa127d5e1bf8f124f66ac48403378ab56a61d95a00ef973566cc01c270c9c2e1",
     "06051be38b1f852856cb4280489fb4246a60d00507a88e8324e873e50819ca09",
     "12b5b81e34fdd1e69429efe53ef44be8be22a1dc2432f3f7097cfd72f18723d6",
     "71f65e4be1eae5842deca56de6c09ca452638ccf2fc02f880bb10057c6c53fa7",
+    "b46e22832bc98707d8ac73408b13f8c4a689aea73a0ce593c9ecad104a43cd42",
+    "d3b0e63ccb5b636ccede25c0d0942f0e9c969df1e5af887bbed1265855dcbd7f",
+    "c96dd597d1e3f3cf3bca218b32e4f9ba4392218d50578e71f26b4b765ef822e9",
 ];
 
 type Linked = (
@@ -89,9 +93,14 @@ fn linked(deployment: MaturityDeployment) -> Linked {
     });
     static SECOND: LazyLock<Linked> =
         LazyLock::new(|| decoded_deployment(MaturityDeployment::Second).expect("the second links"));
+    static PUBLISHED_SIGNER_HELD: LazyLock<Linked> = LazyLock::new(|| {
+        decoded_deployment(MaturityDeployment::PublishedSignerHeld)
+            .expect("the published signer's deployment links")
+    });
     match deployment {
         MaturityDeployment::Demonstration => DEMONSTRATION.clone(),
         MaturityDeployment::Second => SECOND.clone(),
+        MaturityDeployment::PublishedSignerHeld => PUBLISHED_SIGNER_HELD.clone(),
     }
 }
 
@@ -497,6 +506,74 @@ fn a_second_deployment_moves_only_the_sites_whose_values_moved() {
     );
 }
 
+#[test]
+fn the_third_deployment_moves_the_same_sites_and_the_operator_key_is_one_of_them() {
+    let reviewed = target();
+    let (first_bundle, first) = linked(MaturityDeployment::Demonstration);
+    let (_, second) = linked(MaturityDeployment::Second);
+    let (third_bundle, third) = linked(MaturityDeployment::PublishedSignerHeld);
+
+    let moved = moved_sites(&first, &third, &reviewed).expect("the two links are comparable");
+    let second_moved =
+        moved_sites(&first, &second, &reviewed).expect("the two links are comparable");
+    assert_eq!(moved.count(), 9);
+    // A deployment whose committed key is a signer's rather than a fill
+    // moves the sites another fill moves, so what the third establishes
+    // is about the value at those sites rather than about how far a
+    // substitution reaches.
+    assert_eq!(moved.sites(), second_moved.sites());
+
+    // The operator key's site, taken from the bytes at the check that
+    // consumes it rather than from the relocation census.
+    let operator = kept_check_site(&first, &reviewed, KeptCheck::OperatorAuthorization)
+        .expect("the operator authorization is in the bytes");
+    assert!(moved.sites().contains(&operator));
+
+    assert_ne!(
+        first_bundle.taptree().merkle_root(),
+        third_bundle.taptree().merkle_root()
+    );
+}
+
+#[test]
+fn the_third_deployments_committed_operator_key_is_the_published_signers_own() {
+    let reviewed = target();
+    let (bundle, leaf) = linked(MaturityDeployment::PublishedSignerHeld);
+    let published = PublicTestSignerHandle::Third
+        .x_only_public_key()
+        .expect("the published signer resolves to a key");
+
+    let values = recovered_values(&leaf, bundle.record()).expect("the linked values are recovered");
+    let committed = values
+        .get(&StateProgramSymbol::Operator(
+            StateOperatorSymbol::CommittedOperatorKey,
+        ))
+        .expect("the record names a committed operator key");
+    assert_eq!(committed.bytes(), published.as_slice());
+
+    // The operand the verification itself consumes is that same key,
+    // read at the site the leaf runs it at rather than at a site a
+    // census named.
+    let site = kept_check_site(&leaf, &reviewed, KeptCheck::OperatorAuthorization)
+        .expect("the operator authorization is in the bytes");
+    let TapscriptInstruction::Push(operand) = &leaf.program().instructions()[site] else {
+        panic!("the verification's operand is a push");
+    };
+    assert_eq!(operand.bytes(), published.as_slice());
+
+    // The demonstration commits a fill of the same width there, so the
+    // substitution moved the value and not the shape.
+    let (_, demonstration) = linked(MaturityDeployment::Demonstration);
+    let fill_site = kept_check_site(&demonstration, &reviewed, KeptCheck::OperatorAuthorization)
+        .expect("the operator authorization is in the bytes");
+    let TapscriptInstruction::Push(fill) = &demonstration.program().instructions()[fill_site]
+    else {
+        panic!("the verification's operand is a push");
+    };
+    assert_eq!(fill.bytes().len(), published.len());
+    assert_ne!(fill.bytes(), published.as_slice());
+}
+
 // --- (e) The adoption gate ---------------------------------------------
 
 fn expected_verdicts() -> BTreeMap<AdoptionCase, Verdict> {
@@ -536,25 +613,37 @@ fn expected_verdicts() -> BTreeMap<AdoptionCase, Verdict> {
 #[test]
 fn the_four_adoption_vectors_are_decided_by_the_leafs_own_bytes() {
     let reviewed = target();
-    let (bundle, leaf) = linked(MaturityDeployment::Demonstration);
-    let literals = leaf_literals(&leaf, &reviewed).expect("the leaf states its own literals");
-    assert_eq!(literals.pinned_input_index(), 0);
-    assert_eq!(literals.input_script_version(), 1);
-    assert_eq!(literals.output_script_version(), 1);
-    assert_eq!(literals.input_asset(), literals.output_asset());
-    assert_eq!(literals.input_amount(), literals.output_amount());
-
     let expected = expected_verdicts();
-    for case in AdoptionCase::ALL {
-        let vector =
-            adoption_transaction(case, &bundle, &reviewed).expect("the vector is buildable");
-        assert_eq!(vector.expected(), &expected[&case], "{}", case.name());
-        assert_eq!(
-            TargetTransaction::decode(vector.bytes()).as_ref(),
-            Ok(vector.transaction())
-        );
-        assert_eq!(vector.spent().len(), vector.transaction().inputs().len());
-        assert_eq!(vector.subject().case().step, case.name());
+    // Over every deployment, because the vectors are built from the
+    // literals each leaf carries: a deployment whose asset, key and lead
+    // window are other values decides the same four cases the same way,
+    // or the verdict was reading something other than those bytes.
+    for deployment in MaturityDeployment::ALL {
+        let (bundle, leaf) = linked(deployment);
+        let literals = leaf_literals(&leaf, &reviewed).expect("the leaf states its own literals");
+        assert_eq!(literals.pinned_input_index(), 0);
+        assert_eq!(literals.input_script_version(), 1);
+        assert_eq!(literals.output_script_version(), 1);
+        assert_eq!(literals.input_asset(), literals.output_asset());
+        assert_eq!(literals.input_amount(), literals.output_amount());
+
+        for case in AdoptionCase::ALL {
+            let vector =
+                adoption_transaction(case, &bundle, &reviewed).expect("the vector is buildable");
+            assert_eq!(
+                vector.expected(),
+                &expected[&case],
+                "{} over {}",
+                case.name(),
+                deployment.name()
+            );
+            assert_eq!(
+                TargetTransaction::decode(vector.bytes()).as_ref(),
+                Ok(vector.transaction())
+            );
+            assert_eq!(vector.spent().len(), vector.transaction().inputs().len());
+            assert_eq!(vector.subject().case().step, case.name());
+        }
     }
 }
 

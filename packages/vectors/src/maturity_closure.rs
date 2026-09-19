@@ -97,6 +97,7 @@ use target_elements_conformance::constructor::tree::{
 };
 use target_elements_conformance::executor::OperationStep;
 use target_elements_conformance::protocol::{OperationSubject, TargetSubmissionSubject};
+use target_elements_conformance::test_material::PublicTestSignerHandle;
 use transaction::TransactionRefusal;
 use transaction::bytes::{
     AssetField, AssetId as TargetAssetId, InputWitness, NonceField, Outpoint, TargetInput,
@@ -277,27 +278,84 @@ impl StateCurveCapability for OracleStateCurve {
     }
 }
 
-// --- The two deployments ------------------------------------------------
+// --- The deployments and their values -----------------------------------
+
+/// The three values one deployment fixes: its issued singleton, the
+/// operator key it commits, and its lead window.
+///
+/// Supplied rather than written into the deployment census, because
+/// these three are what a deployment is free in and a link over them is
+/// the same link either way. Nothing here constrains them. An asset
+/// identity is whatever issued it, and a node derives one from its own
+/// issuing outpoint, so a check shaped to a fixture fill would refuse a
+/// really issued asset for being real; a committed operator key is
+/// public x-only material, and the encoding closure the link binds it
+/// through is what decides whether a value is one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaturityDeploymentParameters {
+    singleton: [u8; 32],
+    operator_key: [u8; 32],
+    lead: (u64, u64),
+}
+
+impl MaturityDeploymentParameters {
+    /// Take one deployment's three values as they are.
+    #[must_use]
+    pub const fn new(singleton: [u8; 32], operator_key: [u8; 32], lead: (u64, u64)) -> Self {
+        Self {
+            singleton,
+            operator_key,
+            lead,
+        }
+    }
+
+    /// The issued singleton's identifier.
+    #[must_use]
+    pub const fn singleton(&self) -> &[u8; 32] {
+        &self.singleton
+    }
+
+    /// The committed operator key.
+    #[must_use]
+    pub const fn operator_key(&self) -> &[u8; 32] {
+        &self.operator_key
+    }
+
+    /// The lead window, as its two magnitudes.
+    #[must_use]
+    pub const fn lead(&self) -> (u64, u64) {
+        self.lead
+    }
+}
 
 /// Which fixture deployment a link is taken over.
 ///
-/// Two, because a link whose resolved values are the ones the record was
-/// composed against is the identity on bytes and cannot tell a
-/// substitution from a copy. The second differs in the issued asset, the
+/// Three, and each carries a reason the others do not. A link whose
+/// resolved values are the ones the record was composed against is the
+/// identity on bytes and cannot tell a substitution from a copy, which
+/// is what the second is for: it differs in the issued asset, the
 /// operator key and both lead magnitudes, and agrees in the internal key
 /// and the amount, which the key policy and the architecture's
-/// declaration fix for every deployment.
+/// declaration fix for every deployment. The third commits the x-only
+/// key of a published test signer. A key of meaningless fill is one
+/// nobody holds a scalar for, so the signature the leaf's first
+/// instruction pair verifies cannot be produced at all, and a committed
+/// key somebody can sign under is what makes that verification reachable
+/// rather than refused by construction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MaturityDeployment {
     /// The deployment the composed record was itself composed against.
     Demonstration,
     /// A second deployment, differing in every value a deployment fixes.
     Second,
+    /// A third, whose committed operator key a published test signer
+    /// holds.
+    PublishedSignerHeld,
 }
 
 impl MaturityDeployment {
-    /// Both deployments, in declaration order.
-    pub const ALL: [Self; 2] = [Self::Demonstration, Self::Second];
+    /// Every deployment, in declaration order.
+    pub const ALL: [Self; 3] = [Self::Demonstration, Self::Second, Self::PublishedSignerHeld];
 
     /// The stable diagnostic name.
     #[must_use]
@@ -305,34 +363,46 @@ impl MaturityDeployment {
         match self {
             Self::Demonstration => "demonstration",
             Self::Second => "second",
+            Self::PublishedSignerHeld => "published-signer-held",
         }
     }
 
-    /// The issued singleton's identifier byte.
+    /// The values this deployment fixes.
     ///
-    /// Public, meaningless material standing for no issued asset.
-    const fn singleton_byte(self) -> u8 {
-        match self {
-            Self::Demonstration => 0x11,
-            Self::Second => 0xa1,
-        }
+    /// The first two are fixture material throughout: public,
+    /// meaningless fills beside lead windows standing for no calibrated
+    /// deployment. The third's key is the published signer's own, read
+    /// from the layer that owns that material rather than restated here,
+    /// while its singleton and its window remain fixture values like the
+    /// others.
+    ///
+    /// # Errors
+    ///
+    /// [`MaturityClosureRefusal::SourcesUnavailable`] when the published
+    /// signer's committed material produces no key.
+    pub fn parameters(self) -> Result<MaturityDeploymentParameters, MaturityClosureRefusal> {
+        Ok(match self {
+            Self::Demonstration => {
+                MaturityDeploymentParameters::new([0x11; 32], [0x33; 32], (2, 4))
+            }
+            Self::Second => MaturityDeploymentParameters::new([0xa1; 32], [0xa3; 32], (3, 5)),
+            Self::PublishedSignerHeld => MaturityDeploymentParameters::new(
+                [0xd1; 32],
+                published_signer_key().ok_or(MaturityClosureRefusal::SourcesUnavailable)?,
+                (4, 6),
+            ),
+        })
     }
+}
 
-    /// The committed operator key's byte, of the same kind.
-    const fn operator_byte(self) -> u8 {
-        match self {
-            Self::Demonstration => 0x33,
-            Self::Second => 0xa3,
-        }
-    }
-
-    /// The fixture lead window, standing for no calibrated deployment.
-    const fn lead(self) -> (u64, u64) {
-        match self {
-            Self::Demonstration => (2, 4),
-            Self::Second => (3, 5),
-        }
-    }
+/// The published signer's x-only key, resolved once.
+///
+/// Read through the handle census that owns the disposable material,
+/// which answers with a public key and never with the scalar behind it.
+fn published_signer_key() -> Option<[u8; 32]> {
+    static KEY: LazyLock<Option<[u8; 32]>> =
+        LazyLock::new(|| PublicTestSignerHandle::Third.x_only_public_key().ok());
+    *KEY
 }
 
 // --- The sources --------------------------------------------------------
@@ -564,7 +634,11 @@ fn fixture_metadata() -> Result<StateMetadata, MaturityClosureRefusal> {
     })
 }
 
-/// One deployment's sources, each reached through a public entry.
+/// The sources over supplied values, each reached through a public
+/// entry.
+///
+/// The entry a caller with values of its own uses, a deployment of the
+/// census being one such caller and not the only admissible one.
 ///
 /// # Errors
 ///
@@ -573,15 +647,15 @@ fn fixture_metadata() -> Result<StateMetadata, MaturityClosureRefusal> {
 /// [`MaturityClosureRefusal::RecordUnavailable`] or
 /// [`MaturityClosureRefusal::SourcesUnavailable`], naming the layer that
 /// refused.
-pub fn maturity_sources(
-    deployment: MaturityDeployment,
+pub fn maturity_sources_with(
+    parameters: MaturityDeploymentParameters,
 ) -> Result<MaturitySources, MaturityClosureRefusal> {
     let target = closure_target()?;
     let record = composed_record()?;
     let constructor = fixture_constructor()?;
     let refused = || MaturityClosureRefusal::SourcesUnavailable;
 
-    let (minimum, maximum) = deployment.lead();
+    let (minimum, maximum) = parameters.lead();
     let window = AnnouncementLeadBounds::new(Cycle::new(minimum), Cycle::new(maximum))
         .map_err(|_| refused())?;
     let identity =
@@ -592,7 +666,7 @@ pub fn maturity_sources(
     let key = OperatorKey::new(
         &closure,
         closure.approved(),
-        vec![deployment.operator_byte(); 32],
+        parameters.operator_key().to_vec(),
     )
     .map_err(|_| refused())?;
     let profile = EstablishedOperatorProfile::establish(selected_operator_profile(), &target)
@@ -618,11 +692,24 @@ pub fn maturity_sources(
         record,
         bridge,
         constructor,
-        singleton: StateSingletonAsset::new([deployment.singleton_byte(); 32]),
+        singleton: StateSingletonAsset::new(*parameters.singleton()),
         declaration: StateSingletonDeclaration::from_architecture_asset(specification)
             .map_err(|_| refused())?,
         metadata: fixture_metadata()?,
     })
+}
+
+/// One deployment's sources, over the values that deployment fixes.
+///
+/// # Errors
+///
+/// Everything [`maturity_sources_with`] refuses, plus
+/// [`MaturityClosureRefusal::SourcesUnavailable`] where the deployment's
+/// own values do not resolve.
+pub fn maturity_sources(
+    deployment: MaturityDeployment,
+) -> Result<MaturitySources, MaturityClosureRefusal> {
+    maturity_sources_with(deployment.parameters()?)
 }
 
 /// One deployment's linked candidate bundle, through the real curve.
