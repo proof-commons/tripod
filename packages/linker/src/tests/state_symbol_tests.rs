@@ -492,6 +492,29 @@ fn reachability(refusal: &StateLinkRefusal) -> &'static str {
             "a_witnessed_root_without_the_root_witness_is_not_a_cut"
         }
         StateLinkRefusal::ResidualCycle { .. } => "one_cut_leaves_the_other_edge_disjoint_cycle",
+        // The relocation and resource halves account for their own
+        // variants beside the tests that reach them. Each is named here
+        // rather than swept up by a wildcard, so a variant added to the
+        // closed root still fails to compile until somebody accounts
+        // for it.
+        StateLinkRefusal::UnresolvedRelocation(_)
+        | StateLinkRefusal::SiteIsNotAPush { .. }
+        | StateLinkRefusal::SiteOutsideEveryComponent { .. }
+        | StateLinkRefusal::LiteralStaticRootRelocation
+        | StateLinkRefusal::RelocationCensusDisagreement { .. }
+        | StateLinkRefusal::RelocationNotApplied { .. }
+        | StateLinkRefusal::UntrackedProgramMutation { .. }
+        | StateLinkRefusal::RoundTripMismatch
+        | StateLinkRefusal::LinkedProgramDoesNotSchedule { .. }
+        | StateLinkRefusal::AbstractExecutionMoved
+        | StateLinkRefusal::ResourceDeltaOverflow { .. } => {
+            crate::tests::state_relocate_tests::relocation_reachability(refusal)
+        }
+        StateLinkRefusal::ResourceTotalOverflow { .. }
+        | StateLinkRefusal::LinkedProgramFailsTheFinalStackRule { .. }
+        | StateLinkRefusal::ResourceProjectionDisagreement { .. } => {
+            crate::tests::state_resource_tests::resource_reachability(refusal)
+        }
     }
 }
 

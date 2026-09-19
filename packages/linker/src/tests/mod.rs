@@ -51,6 +51,8 @@ mod relocation_tests;
 mod state_constructor_graph_tests;
 mod state_deployment_tests;
 mod state_graph_tests;
+mod state_relocate_tests;
+mod state_resource_tests;
 mod state_symbol_tests;
 mod state_taptree_tests;
 mod symbol_tests;

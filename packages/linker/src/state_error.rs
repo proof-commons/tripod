@@ -27,8 +27,10 @@
 
 use std::collections::BTreeSet;
 
-use tapscript::{StateAnnouncementId, StateLeafRole, StateProgramWitness, TapscriptError};
-use target_elements::TargetContractVersion;
+use tapscript::{
+    FinalStackDefect, StateAnnouncementId, StateLeafRole, StateProgramWitness, TapscriptError,
+};
+use target_elements::{ResourceDimension, TargetContractVersion};
 
 use crate::state_constructor_graph::StateReferenceGraphRefusal;
 use crate::state_graph::{StateBindingTime, StateGraphNode, StateResidualComponent};
@@ -195,5 +197,166 @@ pub enum StateLinkRefusal {
         component: StateResidualComponent,
         /// Every cut edge removed before the residual was computed.
         cuts_removed: BTreeSet<usize>,
+    },
+
+    // --- Relocation ---
+    /// A key some instruction pushes resolves to no pushable item.
+    ///
+    /// The census says an instruction carries this key and the
+    /// definition has no literal form, so there is nothing to place.
+    /// Refusing beats skipping the site: a skipped site would leave the
+    /// composition's fixture in the linked program with nothing saying
+    /// so.
+    UnresolvedRelocation(StateLinkSymbol),
+
+    /// A recorded site is not a push in the pristine program.
+    ///
+    /// Sites are absolute instruction indices, so a site naming a
+    /// primitive or naming nothing at all is a census that does not
+    /// describe this program. Substituting there would overwrite an
+    /// instruction the composition chose.
+    SiteIsNotAPush {
+        /// The key whose site it is.
+        symbol: StateLinkSymbol,
+        /// The instruction index.
+        site: usize,
+    },
+
+    /// A recorded site lies in no component range.
+    ///
+    /// Every relocation is attributed to the component that emitted it,
+    /// because a record naming no component could not be checked against
+    /// the component census the carrier comparison closes over. An index
+    /// inside the program and outside every range means the composition
+    /// lost track of instructions it emitted.
+    SiteOutsideEveryComponent {
+        /// The key whose site it is.
+        symbol: StateLinkSymbol,
+        /// The instruction index.
+        site: usize,
+    },
+
+    /// The witnessed static root resolved to a pushable literal.
+    ///
+    /// The root is bound at spend time by the tweak equation, and a
+    /// literal beneath the program committing to it would be a
+    /// self-commitment with no authenticated cut. A relocation for it is
+    /// therefore refused rather than placed.
+    LiteralStaticRootRelocation,
+
+    /// One key's sites and the instructions its substitution moves
+    /// disagree.
+    ///
+    /// The cross-check that keeps discovery honest: the census is read
+    /// off the record's consumers, and rebuilding the program with one
+    /// key's value alone must move exactly the instructions the census
+    /// claims and no others. A census pointing a key at a push that
+    /// carries something else is caught here, where a byte search would
+    /// have called the coincidence a site.
+    RelocationCensusDisagreement {
+        /// The key whose sites were checked.
+        symbol: StateLinkSymbol,
+        /// The indices the census claims move.
+        expected: BTreeSet<usize>,
+        /// The indices the rebuild actually moves.
+        observed: BTreeSet<usize>,
+    },
+
+    /// A relocated site does not carry its linked value.
+    ///
+    /// Checked by exact typed comparison against the record rather than
+    /// by observing that something changed, because a site that happens
+    /// to differ from its fixture is not thereby the value the link
+    /// resolved.
+    RelocationNotApplied {
+        /// The key whose site it is.
+        symbol: StateLinkSymbol,
+        /// The instruction index.
+        site: usize,
+    },
+
+    /// An instruction no relocation covers changed.
+    ///
+    /// The link declares what it moves, and everything else in the
+    /// linked program must be the composition's own. A differing
+    /// instruction count is reported the same way, against the first
+    /// index at which the two programs can no longer be compared.
+    UntrackedProgramMutation {
+        /// The instruction index.
+        site: usize,
+    },
+
+    /// The linked program does not decode back to itself.
+    ///
+    /// Substitution changes the bytes a program serializes to, so the
+    /// round trip is a property of the linked artifact rather than one
+    /// inherited from the pristine one.
+    RoundTripMismatch,
+
+    /// The linked program no longer schedules from the record's own
+    /// precondition.
+    ///
+    /// The declared witness is the composition's, unchanged by a link
+    /// that moves only pushed payloads, so the walk runs against the
+    /// record's precondition rather than one this module invents.
+    LinkedProgramDoesNotSchedule {
+        /// What the walk refused.
+        cause: TapscriptError,
+    },
+
+    /// The linked program's abstract execution is not the record's.
+    ///
+    /// Every substitution preserves width and the abstract walk types a
+    /// literal by its width alone, so an execution that moved means the
+    /// program's shape moved — which is a defect in the substitution and
+    /// not a property of the deployment.
+    AbstractExecutionMoved,
+
+    /// One relocation's width difference is not representable.
+    ///
+    /// The delta is the linked push's exact encoded width minus the
+    /// pristine one's, and it is computed rather than assumed so that a
+    /// link which changed a width could be seen to have done so.
+    ResourceDeltaOverflow {
+        /// The key whose site it is.
+        symbol: StateLinkSymbol,
+        /// The instruction index.
+        site: usize,
+    },
+
+    // --- Resources ---
+    /// One dimension's checked total does not fit its unit.
+    ///
+    /// Checked rather than saturating: a saturated total is visibly
+    /// pinned but establishes nothing, because a program whose cost
+    /// overflowed reports the same pinned figure as one that did not.
+    ResourceTotalOverflow {
+        /// The dimension whose sum overflowed.
+        dimension: ResourceDimension,
+    },
+
+    /// The linked program leaves the final stack in a state the rule
+    /// refuses.
+    ///
+    /// The walk is run over the linked program rather than inherited
+    /// from the composition, because the obligation is about the artifact
+    /// a deployment would publish.
+    LinkedProgramFailsTheFinalStackRule {
+        /// Every defect the walk found, in canonical order.
+        defects: Vec<FinalStackDefect>,
+    },
+
+    /// A checked total and the record's diagnostic projection disagree.
+    ///
+    /// The projection saturates by design, so a pinned figure is admitted
+    /// beside a checked one; any other difference means the two are
+    /// measuring different programs.
+    ResourceProjectionDisagreement {
+        /// The dimension they disagree on.
+        dimension: ResourceDimension,
+        /// What the record's projection carries.
+        diagnostic: u64,
+        /// What the checked arithmetic yields.
+        checked: u64,
     },
 }
