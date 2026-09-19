@@ -775,6 +775,37 @@ fn successor_authenticates_exact_asset_amount_program_and_retains_metadata() {
     }
 }
 
+// Moving the singleton to output one and leaving output zero short is refused
+// here, by the explicit-amount equality at output zero, and by nothing else:
+// no count is consulted and no other output position is read. The leaf pins
+// the amount output zero must carry, and conservation does the rest — with one
+// unit consumed and that unit landing at output zero, no other output of the
+// transaction can carry any of it.
+#[test]
+fn a_short_output_zero_is_refused_by_the_explicit_amount_equality() {
+    let bytes = metadata(
+        5,
+        Maturity::Announced {
+            cycle: Cycle::new(7),
+        },
+        1,
+    );
+    let fragment = record(StateAnnouncementId::SuccessorReconstruction);
+    let base = authenticated_oracle(bytes.clone());
+    for short in [0_i64, -1] {
+        let mut oracle = Oracle::new(base.stack.clone());
+        oracle.program.clone_from(&base.program);
+        oracle.relation.clone_from(&base.relation);
+        oracle.amount = short.to_le_bytes().to_vec();
+        assert_eq!(oracle.execute(fragment.fragment()), Err("equality"));
+    }
+    let mut exact = Oracle::new(base.stack.clone());
+    exact.program.clone_from(&base.program);
+    exact.relation.clone_from(&base.relation);
+    assert_eq!(exact.execute(fragment.fragment()), Ok(()));
+    assert_eq!(exact.stack, vec![bytes]);
+}
+
 #[test]
 fn changed_nonmaturity_bytes_and_wrong_nonce_cannot_reconstruct_output() {
     let bytes = metadata(

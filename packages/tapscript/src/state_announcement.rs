@@ -30,6 +30,18 @@ census_enum! {
     /// Identities admitted after walking their witness schedules.
     pub enum StateAnnouncementId {
         /// Authenticate the predecessor metadata commitment.
+        ///
+        /// This is the only place the consumed object's identity is
+        /// established. Structural recognition names no predecessor program:
+        /// it reads the asset, the explicit amount and the script version, and
+        /// discards the program itself. Identity comes from this component's
+        /// equation instead, which introspects that program and verifies the
+        /// tweak against the internal key and the root derived from the
+        /// authenticated metadata, so the program is bound to the recipe that
+        /// commits to it rather than to a constant. Support for an object
+        /// built under a different constructor recipe would therefore have to
+        /// enter here, as an authentication against that recipe, because no
+        /// other component reads the predecessor's construction at all.
         MetadataAuthentication,
         /// Require the unannounced maturity state.
         MaturityPredecessor,

@@ -606,6 +606,16 @@ impl StateInternalKeyPolicy {
 }
 
 /// Identity of this constructor recipe, independent of any repository revision.
+///
+/// A generation names a recipe, not a version of some datum inside one. Two
+/// generations differ in how the tree is shaped and what its leaves commit to,
+/// so an object built under one is not an object built under another with a
+/// field changed; that is why this is an identity here rather than a number in
+/// the metadata. The census holds a single member because §17.3 admits no
+/// constructor migration and none is implemented, so no second recipe can be
+/// reached from an object built under this one. The guide's own status lists
+/// migration among the outstanding items, which is where a second member would
+/// come from if it ever came.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StateConstructorGeneration {
     /// Canonical metadata under a fixed-side depth-one outer tree.

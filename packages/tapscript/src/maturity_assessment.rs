@@ -487,7 +487,7 @@ fn group_disposition(
 
 use crate::state_announcement::StateAnnouncementId as Semantic;
 use crate::state_operator::StateOperatorPatternId;
-use crate::state_pattern::StatePatternId as Structural;
+use crate::state_pattern::{StateExternalEvidenceRole, StatePatternId as Structural};
 use crate::state_program::{
     StateAnnouncementProgram, StateProgramComponent as Component, StateProgramMetadata,
 };
@@ -495,10 +495,6 @@ use crate::state_program::{
 const AUTHENTICATION: &[Component] = &[
     Component::Semantic(Semantic::MetadataAuthentication),
     Component::Semantic(Semantic::SuccessorReconstruction),
-];
-const PARTITION: &[Component] = &[
-    Component::Structural(Structural::StateCardinalityV1),
-    Component::Structural(Structural::StateSponsorIsolationV1),
 ];
 const OPERATOR: Component = Component::Operator(StateOperatorPatternId::OperatorAuthorizationV1);
 
@@ -511,8 +507,6 @@ pub(crate) const fn group_components(group: MaturityCapabilityGroup) -> &'static
     match group {
         // The coordinator verifies the introspected current input is zero.
         G::CurrentInputIndex => &[Component::Structural(Structural::StateCoordinatorRoleV1)],
-        // The complete partition checks counts and isolates the fee role.
-        G::InputAndOutputCount | G::FeeRoleRecognition => PARTITION,
         // Predecessor recognition checks the singleton asset and amount.
         G::InputAssetAndValueInspection => {
             &[Component::Structural(Structural::StateInputRecognitionV1)]
@@ -537,8 +531,11 @@ pub(crate) const fn group_components(group: MaturityCapabilityGroup) -> &'static
         }
         // The operator checks the signature; unreviewed sighash entries still block.
         G::SignatureVerification | G::SelectedSighashSemantics => &[OPERATOR],
-        // No component can replace the substrate's external consensus claim.
-        G::TargetTransactionConservation => &[],
+        // Nothing left in the leaf inspects a count or recognizes a fee role,
+        // and no component can replace the substrate's external consensus
+        // claim. Each of these keeps its standing result rather than being
+        // credited to a fragment that no longer exists.
+        G::InputAndOutputCount | G::FeeRoleRecognition | G::TargetTransactionConservation => &[],
     }
 }
 
@@ -551,10 +548,6 @@ pub(crate) const fn capability_components(capability: RequiredCapability) -> &'s
             Component::Structural(Structural::StateInputRecognitionV1),
             Component::Semantic(Semantic::SuccessorReconstruction),
         ],
-        // The partition establishes family counts and canonical/open-flow regions.
-        C::AuthenticatedFamilyCardinality
-        | C::AuthenticatedCanonicalPartition
-        | C::AuthenticatedOpenFlowPartition => PARTITION,
         // Authentication binds both constructors; any absent registry prerequisite
         // still prevents this broader root-effects capability from completing.
         C::AuthenticatedRootEffects | C::PublicConstructibility => AUTHENTICATION,
@@ -564,8 +557,14 @@ pub(crate) const fn capability_components(capability: RequiredCapability) -> &'s
         C::ExactPublicAmountArithmetic => &[Component::Semantic(Semantic::LeadWindow)],
         // The committed operator fragment supplies the in-script signature check.
         C::OperatorAuthorization => &[OPERATOR],
-        // Announcement has no owner/refund gate or script conservation proof.
-        C::OwnerAuthorization
+        // A family count and the canonical and open-flow regions are statements
+        // about a whole transaction side, which no emitted component
+        // establishes once the leaf claims only position zero; and announcement
+        // has no owner or refund gate and no script conservation proof.
+        C::AuthenticatedFamilyCardinality
+        | C::AuthenticatedCanonicalPartition
+        | C::AuthenticatedOpenFlowPartition
+        | C::OwnerAuthorization
         | C::RefundAuthorization
         | C::ConfidentialValueConservation
         | C::WholeTransactionValueConservation => &[],
@@ -575,22 +574,21 @@ pub(crate) const fn capability_components(capability: RequiredCapability) -> &'s
 /// Total layout mapping; source routing is separately checked against metadata.
 pub(crate) const fn layout_components(layout: &LayoutRequirement) -> &'static [Component] {
     match layout {
-        // Counts and disjointness are established by the structural partition.
-        LayoutRequirement::AuthenticateFamilyCensus { .. }
-        | LayoutRequirement::CompleteAndDisjointFamilies { .. } => PARTITION,
-        // The sponsor partition recognizes every sponsor and fee position.
-        LayoutRequirement::IsolateSponsorRegion { .. } => {
-            &[Component::Structural(Structural::StateSponsorIsolationV1)]
-        }
         // Representation is authenticated on both constructor endpoints.
         LayoutRequirement::EnforceRepresentation { .. } => AUTHENTICATION,
         // A coordinator remains a compiler/ABI obligation in the standing result.
         LayoutRequirement::CanonicalCoordinator { .. } => {
             &[Component::Structural(Structural::StateCoordinatorRoleV1)]
         }
-        // Source availability follows the record's source census, not a guessed fragment.
-        // An operator-gated announcement cannot establish a secret-free path.
-        LayoutRequirement::MakeSourceAvailable { .. }
+        // A family census, its disjointness and a sponsor region are properties
+        // of the whole observed transaction and the leaf establishes none of
+        // them; source availability follows the record's source census rather
+        // than a guessed fragment; and an operator-gated announcement cannot
+        // establish a secret-free path.
+        LayoutRequirement::AuthenticateFamilyCensus { .. }
+        | LayoutRequirement::CompleteAndDisjointFamilies { .. }
+        | LayoutRequirement::IsolateSponsorRegion { .. }
+        | LayoutRequirement::MakeSourceAvailable { .. }
         | LayoutRequirement::SecretFreeOperationPath { .. } => &[],
     }
 }
@@ -728,13 +726,37 @@ use realization::{
     ExternalEvidenceRequirement, RelationId, RelationKind, RelationSubject, TransactionSide,
 };
 
-/// Emitted code or a named external obligation, never a target-acceptance claim.
+/// What discharges one relation, never a target-acceptance claim.
+///
+/// Four classes exhaust the announcement. Two of them are new because the
+/// reduced leaf stopped pretending to carry work it never did: a relation may
+/// rest on a fact about the deployment, and a relation may be evaluated over
+/// the whole observed transaction while no leaf enforces it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MaturityCarrier {
     /// This component occurs in the admitted announcement recipe.
     Emitted(Component),
     /// Realization's exact outstanding requirement, including operation and asset.
     External(ExternalEvidenceRequirement),
+    /// A named fact about the deployment, checked by no instruction.
+    ///
+    /// The singleton's declaration and its issuance are settled before any
+    /// announcement is built, so the relations that rest on them are
+    /// discharged by evidence a reader can verify against deployment records
+    /// rather than by bytes in a leaf.
+    Deployment(StateExternalEvidenceRole),
+    /// The realization evaluates this relation over the whole observed
+    /// transaction, and no leaf enforces it.
+    ///
+    /// A leaf is locally sound: it constrains its own input, its own successor
+    /// and its own asset. Once several operations may share one transaction, a
+    /// relation quantified over everything observed refuses transactions the
+    /// covenant accepts, so such a transaction is accepted on-chain and
+    /// outside the model. Re-scoping these relations to the region an
+    /// operation claims is the realization's region-scoping refit, recorded on
+    /// the Phase-6 card; this class makes the gap visible on every published
+    /// closure until that refit lands.
+    ModelScope,
 }
 
 /// A relation that could not be assigned a present, unambiguous carrier.
@@ -778,7 +800,12 @@ impl MaturityCarrierProjection {
     }
 }
 
-/// Project every relation to an emitted component or realization's external claim.
+/// Publish the discharge table for every relation of this announcement.
+///
+/// Each relation resolves to exactly one carrier: an emitted component, a
+/// deployment fact, realization's own external claim, or the model-scope class
+/// for a relation the realization evaluates over the whole observed
+/// transaction while no leaf enforces it.
 ///
 /// Operator authorization is emitted because the fragment verifies the signature
 /// in-script; the transaction membership producer supplies its separate membership
@@ -846,50 +873,85 @@ pub(crate) fn maturity_relation_carrier(
     {
         return Ok(MaturityCarrier::External(external.clone()));
     }
-    let component = relation_component(plan, &row.relation)
+    let carrier = relation_carrier(plan, &row.relation)
         .ok_or_else(|| refuse(MaturityCarrierRefusalReason::Unmapped))?;
-    if !components.contains(&component) {
+    if let MaturityCarrier::Emitted(component) = &carrier
+        && !components.contains(component)
+    {
         return Err(refuse(MaturityCarrierRefusalReason::MissingComponent(
-            component,
+            *component,
         )));
     }
-    Ok(MaturityCarrier::Emitted(component))
+    Ok(carrier)
 }
 
-/// Total kind/subject decision: unknown combinations refuse instead of guessing.
-/// Structural arms are coordinator structure; semantic/operator arms are announcement
-/// leaf work. Authentication implements constructor checks inside that leaf, without
-/// asserting the separate linked-constructor carrier class is closed.
-fn relation_component(
+/// The discharge table: one carrier per relation of this announcement.
+///
+/// Every row names what makes the relation hold — an emitted component, a fact
+/// about the deployment, or nothing in this system's enforcement at all — and
+/// an unknown kind and subject refuses instead of guessing. The direction that
+/// matters for the leaf is the other one: a check in the emitted bytes that
+/// appears in no row here is surplus and comes out.
+///
+/// Two relations never reach this table in a published projection, because the
+/// plan row carries realization's own outstanding requirement and that wins
+/// first: the substrate's conservation of L-BTC, and operator constructibility.
+/// The constructibility arm below is what would carry it absent that
+/// requirement, and it is kept so the table stays total.
+fn relation_carrier(
     plan: &ValidatedMaturityAnnouncementOperationPlan,
     relation: &RelationId,
-) -> Option<Component> {
+) -> Option<MaturityCarrier> {
+    use MaturityCarrier as Carrier;
     use RelationKind as K;
     use RelationSubject as S;
     if relation.operation() != plan.operation() {
         return None;
     }
     match (relation.kind(), relation.subject()) {
-        // Both STATE counts use the complete structural partition.
-        (K::Cardinality, S::ObjectFamily { object, .. }) if object == plan.state().object() => {
-            Some(Component::Structural(Structural::StateCardinalityV1))
-        }
-        // Sponsor counts and recognition use the isolated suffix, never STATE values.
+        // No second object of this family can be spent: the pin refuses to run
+        // anywhere but position zero, and every unit has been under this
+        // covenant since issuance, so there is no unit elsewhere to spend.
+        (
+            K::Cardinality,
+            S::ObjectFamily {
+                side: TransactionSide::Input,
+                object,
+            },
+        ) if object == plan.state().object() => Some(Carrier::Emitted(Component::Structural(
+            Structural::StateCoordinatorRoleV1,
+        ))),
+        // One unit is consumed and output zero takes its exact explicit amount,
+        // so conservation leaves none of it for any other output. The asset
+        // cannot be minted either, which is why the equation has no issuance
+        // term; that companion fact is a role of its own.
+        (
+            K::Cardinality,
+            S::ObjectFamily {
+                side: TransactionSide::Output,
+                object,
+            },
+        ) if object == plan.state().object() => Some(Carrier::Deployment(
+            StateExternalEvidenceRole::SubstrateConservation,
+        )),
+        // Sponsor counts and sponsor recognition range over a whole side, so
+        // they lose their carrier with the fragment that claimed every
+        // position, and no leaf replaces it.
         (K::Cardinality | K::Recognition, S::ObjectFamily { object, .. })
             if *object == plan.sponsor().object() =>
         {
-            Some(Component::Structural(Structural::StateSponsorIsolationV1))
+            Some(Carrier::ModelScope)
         }
-        // Input recognition binds the consumed singleton's asset, amount and program.
+        // Input recognition binds the consumed singleton's asset, amount and version.
         (
             K::Recognition,
             S::ObjectFamily {
                 side: TransactionSide::Input,
                 object,
             },
-        ) if object == plan.state().object() => {
-            Some(Component::Structural(Structural::StateInputRecognitionV1))
-        }
+        ) if object == plan.state().object() => Some(Carrier::Emitted(Component::Structural(
+            Structural::StateInputRecognitionV1,
+        ))),
         // Output recognition and representation authenticate the successor constructor.
         (
             K::Recognition,
@@ -901,32 +963,35 @@ fn relation_component(
         | (K::Representation, S::Representation { object })
             if object == plan.state().object() =>
         {
-            Some(Component::Semantic(Semantic::SuccessorReconstruction))
+            Some(Carrier::Emitted(Component::Semantic(
+                Semantic::SuccessorReconstruction,
+            )))
         }
-        // Family closure and empty canonical deltas exclude foreign families and issuance.
+        // Each of these reads the observation entire: which families a side
+        // may carry, whether the transaction's canonical partition is empty,
+        // which open flows it carries, and how many sponsor envelopes it has.
+        // The singleton content of the canonical-delta policy is covered by
+        // the non-reissuable declaration, but the relation as declared is
+        // about the whole transaction, so its honest class is this one.
         (K::AllowedObjectFamilies, S::TransactionSide { .. })
-        | (K::CanonicalDeltaPolicy, S::Operation) => {
-            Some(Component::Structural(Structural::StateIssuanceAbsenceV1))
-        }
-        // Sponsor envelope and open-flow policies share the isolated partition.
-        (K::SponsorIsolation | K::SponsorEnvelopeMultiplicity, S::Sponsor)
-        | (K::OpenFlowPolicy, S::Operation) => {
-            Some(Component::Structural(Structural::StateSponsorIsolationV1))
-        }
+        | (K::SponsorIsolation | K::SponsorEnvelopeMultiplicity, S::Sponsor)
+        | (K::CanonicalDeltaPolicy | K::OpenFlowPolicy, S::Operation) => Some(Carrier::ModelScope),
         // Authorization verifies the committed operator key in the announcement leaf.
-        (K::Authorization, S::Operation) => Some(OPERATOR),
+        (K::Authorization, S::Operation) => Some(Carrier::Emitted(OPERATOR)),
         // Root continuity authenticates the predecessor; constructibility without
         // external evidence uses the same authentication endpoint.
-        (K::RootPolicy | K::Constructibility, S::Operation) => {
-            Some(Component::Semantic(Semantic::MetadataAuthentication))
-        }
+        (K::RootPolicy | K::Constructibility, S::Operation) => Some(Carrier::Emitted(
+            Component::Semantic(Semantic::MetadataAuthentication),
+        )),
         // The certificate binds the copied fields and requested successor maturity.
-        (K::ProjectionPolicy, S::Operation) => Some(Component::Semantic(Semantic::CopyThrough)),
+        (K::ProjectionPolicy, S::Operation) => {
+            Some(Carrier::Emitted(Component::Semantic(Semantic::CopyThrough)))
+        }
         // This operation's exit is checked against the inclusive announcement window.
         (K::Lifecycle, S::LifecycleExit { object, exit })
             if object == plan.state().object() && *exit == plan.operation() =>
         {
-            Some(Component::Semantic(Semantic::LeadWindow))
+            Some(Carrier::Emitted(Component::Semantic(Semantic::LeadWindow)))
         }
         // Other declared exits retain the predecessor maturity eligibility check;
         // this carrier assignment does not claim implementations of those exits.
@@ -937,7 +1002,9 @@ fn relation_component(
                     .outstanding()
                     .any(|candidate| candidate == *exit) =>
         {
-            Some(Component::Semantic(Semantic::MaturityPredecessor))
+            Some(Carrier::Emitted(Component::Semantic(
+                Semantic::MaturityPredecessor,
+            )))
         }
         // Unsupported kinds or subjects have no announcement carrier.
         _ => None,

@@ -19,13 +19,13 @@ use crate::{
 use super::reviewed_target;
 use super::state_program_tests::{fixtures, independent_leaf_hash, production_tree, tagged_hash};
 
-const GOLDEN_PROGRAM: &str = "4c56747269706f642f73746174652d6d6574616461746100000001000000000000000100000000000000020000000000000003000000000000000400000000000000050000000000000000000000000100000000000000000069";
-const GOLDEN_LEAF: &str = "1dd35257bddfbf0c1c9e0eb4751e91e440cdb2e618c5b02863ffeb21987ae6a6";
-const GOLDEN_STATIC: &str = "58a38d98026e1a3a592df40f11f32e503fdaa0a6c0c69effcbed5eb9d2780688";
-const GOLDEN_ROOT: &str = "d1eaf25684834d51216c2ca8486662f38aa193bd4e43fb3c8495c28546938d98";
-const GOLDEN_TWEAK: &str = "b40f1fbc52d420ebd6d589f1ee1900cb246ca84e584db0ade442bde886fcd365";
-const GOLDEN_METADATA_CONTROL: &str = "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac058a38d98026e1a3a592df40f11f32e503fdaa0a6c0c69effcbed5eb9d2780688";
-const GOLDEN_STATIC_CONTROL: &str = "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac01dd35257bddfbf0c1c9e0eb4751e91e440cdb2e618c5b02863ffeb21987ae6a6";
+const GOLDEN_PROGRAM: &str = "4c56747269706f642f73746174652d6d6574616461746100000001000000000000000100000000000000020000000000000003000000000000000400000000000000050000000000000000000000000000000000000000000069";
+const GOLDEN_LEAF: &str = "b4c768ef06438b3d328b54591651ce9d19e56f6cf608daa592ba3259a319b599";
+const GOLDEN_STATIC: &str = "cf54a9f68d066ca669c447045d01dfc15d2c6c1c33a13a2a11e8d1a52a50eb92";
+const GOLDEN_ROOT: &str = "3ddf7410676048756dc1f5750474eafc14f7c2b9e7d1c846da7f29d4cbcd72bf";
+const GOLDEN_TWEAK: &str = "58e1a2aac2e984477073c3d510308b4089aac9d39ee88c60da2b3f99d08bfe7e";
+const GOLDEN_METADATA_CONTROL: &str = "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0cf54a9f68d066ca669c447045d01dfc15d2c6c1c33a13a2a11e8d1a52a50eb92";
+const GOLDEN_STATIC_CONTROL: &str = "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0b4c768ef06438b3d328b54591651ce9d19e56f6cf608daa592ba3259a319b599";
 
 struct ScriptedCurve {
     valid: bool,
@@ -1110,11 +1110,15 @@ fn closure_recomputes_leaf_branch_and_real_tweak_output_with_public_arithmetic()
     assert_eq!(built.output_program(), expected_program);
 }
 
+// The golden nonce is the least one satisfying the canonical branch order:
+// every nonce below it is rejected for that reason and it is accepted. How
+// many lie below is a fact about this leaf's hash rather than a property of
+// the construction, and the reduced leaf is admitted at the first attempt, so
+// the loop below is empty and the builder rejected nothing.
 #[test]
-fn every_nonce_below_the_production_golden_fails_the_independent_branch_order() {
+fn the_production_golden_is_the_least_nonce_satisfying_the_branch_order() {
     let expected = independent_golden();
     let built = candidate();
-    assert!(expected.nonce.get() > 0);
     assert_eq!(built.nonce(), expected.nonce);
     assert_eq!(
         built.evidence().rejected.len(),

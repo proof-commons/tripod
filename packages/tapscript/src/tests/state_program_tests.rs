@@ -9,9 +9,7 @@ use target_elements::{
 };
 
 use super::reviewed_target;
-use crate::live_shape::FeePresence;
 use crate::pattern::{fragment_prerequisites, number, op};
-use crate::shape::SponsorChangePresence;
 use crate::state_announcement::*;
 use crate::state_constructor::{STATE_NUMS_KEY, StateLeafRole, StateStaticSubtree};
 use crate::state_operator::*;
@@ -32,24 +30,12 @@ pub(super) struct Fixtures {
 fn structural_values() -> BTreeMap<StatePatternSymbol, StackItem> {
     use StatePatternSymbol as S;
     let target = reviewed_target();
-    let item = |byte| StackItem::new(&target, vec![byte; 32]).unwrap();
     BTreeMap::from([
-        (S::StateAsset, item(0x11)),
+        (
+            S::StateAsset,
+            StackItem::new(&target, vec![0x11; 32]).unwrap(),
+        ),
         (S::StateAmount, StackItem::signed_le64(&target, 1)),
-        (
-            S::FeeSponsorInputMax,
-            StackItem::script_number(&target, 3).unwrap(),
-        ),
-        (S::ReserveAsset, item(0x22)),
-        (
-            S::SponsorChangeProgram,
-            StackItem::new(&target, vec![0x44; 20]).unwrap(),
-        ),
-        (
-            S::SponsorChangeVersion,
-            StackItem::script_number(&target, 0).unwrap(),
-        ),
-        (S::FeeProgramDigest, item(0x55)),
     ])
 }
 
@@ -70,12 +56,7 @@ pub(super) fn fixtures() -> &'static Fixtures {
     static FIXTURES: OnceLock<Fixtures> = OnceLock::new();
     FIXTURES.get_or_init(|| {
         let target = reviewed_target();
-        let bindings = StatePatternBindings::new(
-            &target,
-            StateAnnouncementShape::new(2, SponsorChangePresence::Present, FeePresence::Present),
-            structural_values(),
-        )
-        .unwrap();
+        let bindings = StatePatternBindings::new(&target, structural_values()).unwrap();
         let structural = state_structural_patterns(&target, &bindings).unwrap();
         let bindings = StateAnnouncementBindings::new(&target, semantic_values()).unwrap();
         let semantic = state_announcement_patterns(&target, &bindings).unwrap();
@@ -225,12 +206,12 @@ fn witness_uses_component_types_in_declared_deepest_first_order() {
 }
 
 #[test]
-fn component_ranges_cover_instructions_once_except_the_named_partition_alias() {
+fn component_ranges_cover_every_instruction_exactly_once() {
     use StateProgramComponent as C;
     let f = fixtures();
     let instructions = f.program.program().instructions();
     let map = f.program.components();
-    assert_eq!(map.len(), 15);
+    assert_eq!(map.len(), 12);
     assert_eq!(
         &instructions[map[&C::Operator(f.operator.id())].clone()],
         f.operator.fragment().instructions()
@@ -247,20 +228,15 @@ fn component_ranges_cover_instructions_once_except_the_named_partition_alias() {
             component.fragment().instructions()
         );
     }
+    // No range is shared any more: the alias existed only because two
+    // fragments emitted the same partition bytes, and both are gone.
     let mut covered = BTreeSet::new();
-    for (id, range) in map {
-        if *id == C::Structural(StatePatternId::StateSponsorIsolationV1) {
-            continue;
-        }
+    for range in map.values() {
         for index in range.clone() {
             assert!(covered.insert(index));
         }
     }
     assert_eq!(covered, (0..instructions.len()).collect());
-    assert_eq!(
-        map[&C::Structural(StatePatternId::StateCardinalityV1)],
-        map[&C::Structural(StatePatternId::StateSponsorIsolationV1)]
-    );
     for (adapter, expected) in [
         (StateProgramAdapter::LeadWindow, vec![op(OpcodeId::Rotate)]),
         (StateProgramAdapter::CopyThrough, vec![op(OpcodeId::Swap)]),
@@ -410,17 +386,119 @@ fn every_consumer_is_the_fixture_push_at_the_reindexed_component_site() {
 // The published census is checked here rather than asserted in prose, so a
 // change to what the leaf pushes has to move this figure with it.
 #[test]
-fn the_composed_consumer_census_is_exactly_eleven_symbols_over_forty_five_sites() {
+fn the_composed_consumer_census_is_exactly_six_symbols_over_fifteen_sites() {
     let f = fixtures();
-    assert_eq!(f.program.consumers().len(), 11);
+    assert_eq!(f.program.consumers().len(), 6);
     assert_eq!(
         f.program
             .consumers()
             .values()
             .map(|consumer| consumer.sites.len())
             .sum::<usize>(),
-        45
+        15
     );
+}
+
+// A strange sponsor is not a threat class. The composed leaf introspects the
+// executing index and then only position zero on either side, and the
+// primitives that could read a count, an issuance or another position are
+// absent from its bytes. Any transaction that carries further inputs and
+// outputs of any asset other than the singleton — a sponsor suffix of any
+// length, no sponsor at all, a fee output that is not last, several change
+// outputs — presents this leaf with exactly the same observations, so the leaf
+// accepts it or refuses it for reasons that have nothing to do with the extra
+// positions. What keeps the singleton itself exclusive is the pin, the
+// non-reissuable declaration and conservation, not a count.
+#[test]
+fn the_composed_leaf_observes_only_position_zero_so_other_positions_are_free() {
+    let target = reviewed_target();
+    let instructions = fixtures().program.program().instructions();
+    let mut introspections = 0;
+    for (index, instruction) in instructions.iter().enumerate() {
+        let TapscriptInstruction::Opcode(opcode) = instruction else {
+            continue;
+        };
+        if !matches!(
+            opcode,
+            OpcodeId::InspectInputAsset
+                | OpcodeId::InspectInputValue
+                | OpcodeId::InspectInputScriptPubKey
+                | OpcodeId::InspectOutputAsset
+                | OpcodeId::InspectOutputValue
+                | OpcodeId::InspectOutputScriptPubKey
+        ) {
+            continue;
+        }
+        let Some(TapscriptInstruction::Push(position)) = index
+            .checked_sub(1)
+            .and_then(|index| instructions.get(index))
+        else {
+            panic!("introspection without a literal position")
+        };
+        assert_eq!(position.script_number_value(&target), Some(0));
+        introspections += 1;
+    }
+    assert!(introspections > 0);
+    for absent in [
+        OpcodeId::InspectNumInputs,
+        OpcodeId::InspectNumOutputs,
+        OpcodeId::InspectInputIssuance,
+    ] {
+        assert_eq!(
+            instructions
+                .iter()
+                .filter(|instruction| **instruction == op(absent))
+                .count(),
+            0
+        );
+    }
+}
+
+// Nothing the reduction removed survives anywhere in the admitted record: not
+// as a component range, not as a consumer, not as a disclosure.
+#[test]
+fn the_complete_record_carries_no_removed_fragment_symbol_or_disclosure() {
+    let f = fixtures();
+    let structural: BTreeSet<_> = f
+        .program
+        .components()
+        .keys()
+        .filter_map(|component| match component {
+            StateProgramComponent::Structural(id) => Some(*id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        structural,
+        StatePatternId::ALL.iter().copied().collect::<BTreeSet<_>>()
+    );
+    assert_eq!(structural.len(), 2);
+    let symbols: BTreeSet<_> = f
+        .program
+        .consumers()
+        .keys()
+        .filter_map(|symbol| match symbol {
+            StateProgramSymbol::Structural(symbol) => Some(*symbol),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        symbols,
+        StatePatternSymbol::ALL
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>()
+    );
+    assert_eq!(symbols.len(), 2);
+    for disclosure in &f.program.metadata().disclosure {
+        if let StateProgramDisclosure::Structural(disclosure) = disclosure {
+            assert!(matches!(
+                disclosure,
+                StateDisclosure::AssetIdentities | StateDisclosure::PredecessorCommitment
+            ));
+        }
+    }
+    assert_eq!(StateDisclosure::ALL.len(), 2);
 }
 
 // The consumed program is bound by semantic authentication, never pushed:

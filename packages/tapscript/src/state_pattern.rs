@@ -1,16 +1,19 @@
 //! Walked STATE structural fragments and their unresolved consumers.
 //!
-//! A fragment authenticates positions before deriving structural absence.
-//! Recognizing the consumed asset and amount does not establish current-root
-//! freshness or semantic metadata. Those obligations remain separate residuals.
-//! The metadata commitment leaf can be adapted by a later composing recipe; it
-//! is not an executing authentication fragment and is not embedded here.
+//! Two fragments carry the whole structural side: the executing input is
+//! pinned to position zero, and the object consumed there is recognized by its
+//! asset, its explicit amount and its script version. Recognizing that asset
+//! and amount does not establish current-root freshness or semantic metadata,
+//! and those obligations remain separate residuals. The metadata commitment
+//! leaf can be adapted by a later composing recipe; it is not an executing
+//! authentication fragment and is not embedded here.
 //!
-//! The partition consumes an authenticated family census. Reserve-asset equality
-//! alone cannot distinguish plain sponsors from RESV, which also carries L-BTC.
-//! Structural evidence rules out additional positions under that source
-//! requirement; it is not a byte-level classification of arbitrary L-BTC inputs.
-//! Successor authentication and family-role authentication remain obligations.
+//! Nothing here constrains a position other than input zero. A transaction may
+//! carry any number of further inputs and outputs of any other asset, and this
+//! leaf neither observes nor refuses them. What keeps the singleton exclusive
+//! to input zero and output zero is the position pin together with two facts
+//! about the deployment and one about the substrate, named as external evidence
+//! roles rather than checked here.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -24,11 +27,8 @@ use thiserror::Error;
 use crate::capability::census_enum;
 use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
-use crate::live_plan::reads_a_value_field;
-use crate::live_shape::FeePresence;
 use crate::pattern::{fragment_prerequisites, number, op, require_explicit};
 use crate::program::TapscriptProgram;
-use crate::shape::SponsorChangePresence;
 use crate::stack::{
     AbstractLimits, AbstractStackState, SignatureSuccessForm, resource_projection, validate_program,
 };
@@ -36,16 +36,10 @@ use crate::stack::{
 census_enum! {
     /// Identities admitted only through a successful structural walk.
     pub enum StatePatternId {
-        /// Input zero coordinates the authenticated partition.
+        /// The executing input is the singleton's own position zero.
         StateCoordinatorRoleV1,
-        /// Exactly one STATE position occurs on each side.
-        StateCardinalityV1,
         /// The predecessor matches the exact asset, amount and script version.
         StateInputRecognitionV1,
-        /// The sponsor suffix never supplies a value operand.
-        StateSponsorIsolationV1,
-        /// Every input is issuance-free and every position is classified.
-        StateIssuanceAbsenceV1,
     }
 }
 
@@ -54,54 +48,32 @@ census_enum! {
     pub enum StatePatternOwner {
         /// Coordinator participation at input zero.
         CoordinatorRole,
-        /// STATE and sponsor family counts.
-        FamilyCardinality,
-        /// Exact predecessor constructor recognition.
+        /// Exact predecessor asset, amount and script version.
         PredecessorRecognition,
-        /// Reserve-asset isolation and sponsor roles.
-        SponsorIsolation,
-        /// Issuance and structurally excluded families.
-        AbsenceRelations,
     }
 }
 
 census_enum! {
     /// Typed consumers awaiting linker definitions and resolution.
     ///
-    /// None is one of the constructor's seven reference declarations: these
-    /// name assets, values, programs or a fee bound, not constructor policy.
-    /// Each therefore requires a corresponding future linker reference type.
+    /// Neither is one of the constructor's seven reference declarations: they
+    /// name an asset and a value, not constructor policy. Each therefore
+    /// requires a corresponding future linker reference type.
     pub enum StatePatternSymbol {
         /// Exact PID singleton asset payload.
         StateAsset,
         /// Exact explicit singleton amount payload.
         StateAmount,
-        /// Inclusive fee-sponsor input bound, encoded as a script number.
-        FeeSponsorInputMax,
-        /// Reserve asset distinct from the STATE asset.
-        ReserveAsset,
-        /// Exact sponsor-change witness program.
-        SponsorChangeProgram,
-        /// Witness version of the sponsor-change program.
-        SponsorChangeVersion,
-        /// Digest identifying the target's empty fee program.
-        FeeProgramDigest,
     }
 }
 
 census_enum! {
     /// What a structural fragment publishes.
     pub enum StateDisclosure {
-        /// Exact input and output counts and their assigned roles.
-        PositionCensus,
         /// Asset identities checked at positions.
         AssetIdentities,
         /// Exact predecessor asset and amount.
         PredecessorCommitment,
-        /// Sponsor-change and target fee programs.
-        SponsorPrograms,
-        /// Absence of issuance on every input.
-        IssuanceAbsence,
     }
 }
 
@@ -116,11 +88,7 @@ census_enum! {
         CurrentStateRootFreshness,
         /// An asset and amount check does not authenticate semantic metadata.
         SemanticMetadataAuthentication,
-        /// The required source census must authenticate family roles, not just assets.
-        AuthenticatedFamilyRoles,
-        /// Output zero still needs semantic successor reconstruction.
-        SuccessorConstructorAuthentication,
-        /// The substrate, not sponsor-value reads, establishes reserve conservation.
+        /// The substrate, not this walk, conserves the singleton across the transaction.
         SubstrateConservation,
     }
 }
@@ -130,91 +98,45 @@ census_enum! {
     pub enum StateExternalEvidenceRole {
         /// Report-layer chain context establishes freshness of the current STATE root.
         CurrentStateRootFreshness,
-        /// Target consensus establishes reserve conservation without sponsor-value reads.
+        /// Target consensus conserves every asset across a transaction.
         SubstrateConservation,
+        /// The asset declaration fixes the singleton as non-reissuable.
+        ///
+        /// No input of any transaction can mint it, so the conservation
+        /// equation for this asset carries no issuance term. This is a fact
+        /// about the deployed declaration, not a check the leaf performs.
+        SingletonNonReissuable,
+        /// The singleton's issuance placed its whole amount under the constructor.
+        ///
+        /// This is the induction base for output closure: every unit has been
+        /// under the covenant since issuance, and the covenant refuses to
+        /// execute anywhere but position zero, so no second input can hold a
+        /// unit to spend. It is a fact about a past transaction, established
+        /// by deployment records rather than by these instructions.
+        SingletonIssuedUnderConstructor,
     }
 }
 
 census_enum! {
-    /// Conditional absence evidence from a complete authenticated family census.
+    /// The one absence this recipe still claims, and what discharges it.
     ///
-    /// The inspected counts and asset partition leave no additional position.
-    /// These facts require authenticated family roles and successor recognition;
-    /// the corresponding residuals prevent treating asset equality as either.
+    /// Three things establish it together, and only one of them is in these
+    /// bytes. The leaf pins the executing input to position zero, so a second
+    /// object of this family cannot be spent elsewhere: its own covenant
+    /// refuses to run there. The deployed asset declaration makes the singleton
+    /// non-reissuable, so no input can mint another unit. The substrate
+    /// conserves every asset across a transaction, so with one unit consumed
+    /// and output zero receiving its exact amount, every other output carries
+    /// none of it. The external evidence roles name the two facts this walk
+    /// does not check.
+    ///
+    /// The absences this census used to carry about other object families were
+    /// true only because the emitter had claimed every position. They are not
+    /// facts about this operation once a transaction may compose several, and
+    /// the recipe no longer asserts them.
     pub enum StateStructuralEvidence {
-        /// Only input zero and output zero carry the singleton asset.
-        NoSecondState,
-        /// No position remains for RESV, PACE, authority, receipt or ASH objects.
-        NoOtherObjectFamily,
-        /// No output remains for entitlement, vault or control objects.
-        NoOtherOutputFamily,
-        /// No position remains for destruction or specialized event roles.
-        NoDestructionOrSpecializedEvent,
-    }
-}
-
-/// An exact candidate partition, with fee outputs separate from sponsor change.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct StateAnnouncementShape {
-    sponsor_inputs: u8,
-    change: SponsorChangePresence,
-    fee: FeePresence,
-}
-
-impl StateAnnouncementShape {
-    /// Select the bounded suffix and the two optional output roles.
-    #[must_use]
-    pub const fn new(sponsor_inputs: u8, change: SponsorChangePresence, fee: FeePresence) -> Self {
-        Self {
-            sponsor_inputs,
-            change,
-            fee,
-        }
-    }
-
-    /// Number of sponsor inputs following input zero.
-    #[must_use]
-    pub const fn sponsor_inputs(self) -> u8 {
-        self.sponsor_inputs
-    }
-
-    /// Exact input count, including the singleton.
-    #[must_use]
-    pub const fn inputs(self) -> u16 {
-        1 + self.sponsor_inputs as u16
-    }
-
-    /// Exact output count, including the singleton and optional fee.
-    #[must_use]
-    pub const fn outputs(self) -> u16 {
-        1 + self.has_change() as u16 + self.has_fee() as u16
-    }
-
-    /// Whether output one is sponsor change.
-    #[must_use]
-    pub const fn has_change(self) -> bool {
-        matches!(self.change, SponsorChangePresence::Present)
-    }
-
-    /// Whether the last output is the fee role.
-    #[must_use]
-    pub const fn has_fee(self) -> bool {
-        matches!(self.fee, FeePresence::Present)
-    }
-
-    fn symbols(self) -> BTreeSet<StatePatternSymbol> {
-        use StatePatternSymbol as S;
-        let mut symbols = BTreeSet::from([S::StateAsset, S::StateAmount, S::FeeSponsorInputMax]);
-        if self.sponsor_inputs > 0 || self.has_change() || self.has_fee() {
-            symbols.insert(S::ReserveAsset);
-        }
-        if self.has_change() {
-            symbols.extend([S::SponsorChangeProgram, S::SponsorChangeVersion]);
-        }
-        if self.has_fee() {
-            symbols.insert(S::FeeProgramDigest);
-        }
-        symbols
+        /// The singleton occurs only at input zero and output zero.
+        SingletonExclusiveToPositionZero,
     }
 }
 
@@ -230,19 +152,13 @@ pub enum StatePatternRefusal {
     /// A binding has the wrong encoding or semantic domain.
     #[error("invalid STATE consumer binding: {0:?}")]
     InvalidBinding(StatePatternSymbol),
-    /// The two asset families must be disjoint.
-    #[error("STATE and reserve assets coincide")]
-    AssetFamiliesOverlap,
-    /// A value-field primitive violates sponsor isolation.
-    #[error("sponsor isolation reads a value field")]
-    SponsorValueRead,
     /// A changed program cannot inherit the canonical pattern's identity.
     #[error("fragment differs from its authenticated structural recipe")]
     FragmentMismatch,
     /// The walk must preserve its empty stack on every successful path.
     #[error("structural walk leaves residue, failure or an unverified signature")]
     InvalidContract,
-    /// A recipe must contain all five distinct compatible components in order.
+    /// A recipe must contain both distinct compatible components in order.
     #[error("structural component recipe is incomplete or incompatible")]
     ComponentRecipe,
 }
@@ -253,41 +169,30 @@ pub enum StatePatternRefusal {
 /// method turns them into deployment bindings or establishes link closure.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StatePatternBindings {
-    shape: StateAnnouncementShape,
     values: BTreeMap<StatePatternSymbol, StackItem>,
 }
 
 impl StatePatternBindings {
-    /// Check exact consumer coverage, encodings, the bound and disjoint assets.
+    /// Check exact consumer coverage and each binding's encoding.
+    ///
+    /// No shape selects these bindings. The emitted fragments read position
+    /// zero and nothing else, so there is no count, suffix or output role for a
+    /// shape to choose, and one recipe serves every transaction the contract
+    /// permits.
     ///
     /// # Errors
-    /// Returns a typed refusal for missing, unused, malformed or overlapping bindings.
+    /// Returns a typed refusal for missing, unused or malformed bindings.
     pub fn new(
         target: &ReviewedElementsTapscriptDefinition,
-        shape: StateAnnouncementShape,
         values: BTreeMap<StatePatternSymbol, StackItem>,
     ) -> Result<Self, StatePatternRefusal> {
-        use StatePatternSymbol as S;
-        if values.keys().copied().collect::<BTreeSet<_>>() != shape.symbols() {
+        if values.keys().copied().collect::<Vec<_>>() != StatePatternSymbol::ALL {
             return Err(StatePatternRefusal::ConsumerCensus);
         }
         for (&symbol, value) in &values {
             validate_binding(target, symbol, value)?;
         }
-        if values.get(&S::ReserveAsset) == values.get(&S::StateAsset) {
-            return Err(StatePatternRefusal::AssetFamiliesOverlap);
-        }
-        let maximum = values[&S::FeeSponsorInputMax].script_number_value(target);
-        if maximum.is_none_or(|bound| bound < i64::from(shape.sponsor_inputs)) {
-            return Err(StatePatternRefusal::InvalidBinding(S::FeeSponsorInputMax));
-        }
-        Ok(Self { shape, values })
-    }
-
-    /// The shape these exact substitutions were checked against.
-    #[must_use]
-    pub const fn shape(&self) -> StateAnnouncementShape {
-        self.shape
+        Ok(Self { values })
     }
 }
 
@@ -298,19 +203,10 @@ fn validate_binding(
 ) -> Result<(), StatePatternRefusal> {
     use StatePatternSymbol as S;
     let valid = match symbol {
-        S::StateAsset | S::ReserveAsset | S::FeeProgramDigest => item.len() == 32,
+        S::StateAsset => item.len() == 32,
         S::StateAmount => item
             .signed_le64_value(target)
             .is_some_and(|value| value > 0),
-        S::FeeSponsorInputMax => item
-            .script_number_value(target)
-            .is_some_and(|value| (0..=255).contains(&value)),
-        S::SponsorChangeProgram => {
-            StackItem::encoded(target, EncodingClass::WitnessProgram, item.bytes().to_vec()).is_ok()
-        }
-        S::SponsorChangeVersion => item
-            .script_number_value(target)
-            .is_some_and(|value| (0..=16).contains(&value)),
     };
     if valid {
         Ok(())
@@ -381,10 +277,7 @@ impl StatePattern {
     pub const fn owner(&self) -> StatePatternOwner {
         match self.id {
             StatePatternId::StateCoordinatorRoleV1 => StatePatternOwner::CoordinatorRole,
-            StatePatternId::StateCardinalityV1 => StatePatternOwner::FamilyCardinality,
             StatePatternId::StateInputRecognitionV1 => StatePatternOwner::PredecessorRecognition,
-            StatePatternId::StateSponsorIsolationV1 => StatePatternOwner::SponsorIsolation,
-            StatePatternId::StateIssuanceAbsenceV1 => StatePatternOwner::AbsenceRelations,
         }
     }
 
@@ -409,7 +302,7 @@ impl StatePattern {
     }
 }
 
-/// The five-component structural recipe, without a composed program.
+/// The two-component structural recipe, without a composed program.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StatePatternRecipe {
     components: Vec<StatePattern>,
@@ -418,7 +311,7 @@ pub struct StatePatternRecipe {
 }
 
 impl StatePatternRecipe {
-    /// Derive all aggregate metadata from exactly the five compatible components.
+    /// Derive all aggregate metadata from exactly both compatible components.
     ///
     /// # Errors
     /// Returns `ComponentRecipe` for missing, duplicate, reordered or incompatible records.
@@ -497,62 +390,6 @@ impl StructuralEmitter<'_> {
         Ok(())
     }
 
-    fn counts(&mut self) -> Result<(), StatePatternRefusal> {
-        let shape = self.bindings.shape;
-        self.instructions.extend([
-            op(OpcodeId::InspectNumInputs),
-            number(self.target, i64::from(shape.inputs()))?,
-            op(OpcodeId::EqualVerify),
-            op(OpcodeId::InspectNumOutputs),
-            number(self.target, i64::from(shape.outputs()))?,
-            op(OpcodeId::EqualVerify),
-            number(self.target, i64::from(shape.sponsor_inputs))?,
-            op(OpcodeId::ScriptNumToLe64),
-        ]);
-        self.symbol(StatePatternSymbol::FeeSponsorInputMax)?;
-        self.instructions.extend([
-            op(OpcodeId::ScriptNumToLe64),
-            op(OpcodeId::LessThanOrEqual64),
-            op(OpcodeId::Verify),
-        ]);
-        Ok(())
-    }
-
-    fn partition(&mut self) -> Result<(), StatePatternRefusal> {
-        use StatePatternSymbol as S;
-        self.counts()?;
-        self.asset(OpcodeId::InspectInputAsset, 0, S::StateAsset)?;
-        self.asset(OpcodeId::InspectOutputAsset, 0, S::StateAsset)?;
-        let shape = self.bindings.shape;
-        for position in 1..shape.inputs() {
-            self.asset(OpcodeId::InspectInputAsset, position, S::ReserveAsset)?;
-        }
-        if shape.has_change() {
-            self.asset(OpcodeId::InspectOutputAsset, 1, S::ReserveAsset)?;
-            self.instructions.extend([
-                number(self.target, 1)?,
-                op(OpcodeId::InspectOutputScriptPubKey),
-            ]);
-            self.symbol(S::SponsorChangeVersion)?;
-            self.instructions.push(op(OpcodeId::EqualVerify));
-            self.symbol(S::SponsorChangeProgram)?;
-            self.instructions.push(op(OpcodeId::EqualVerify));
-        }
-        if shape.has_fee() {
-            let position = shape.outputs() - 1;
-            self.asset(OpcodeId::InspectOutputAsset, position, S::ReserveAsset)?;
-            self.instructions.extend([
-                number(self.target, i64::from(position))?,
-                op(OpcodeId::InspectOutputScriptPubKey),
-                number(self.target, -1)?,
-                op(OpcodeId::EqualVerify),
-            ]);
-            self.symbol(S::FeeProgramDigest)?;
-            self.instructions.push(op(OpcodeId::EqualVerify));
-        }
-        Ok(())
-    }
-
     fn recognition(&mut self) -> Result<(), StatePatternRefusal> {
         self.asset(
             OpcodeId::InspectInputAsset,
@@ -581,18 +418,6 @@ impl StructuralEmitter<'_> {
         ]);
         Ok(())
     }
-
-    fn issuance(&mut self) -> Result<(), StatePatternRefusal> {
-        for position in 0..self.bindings.shape.inputs() {
-            self.instructions.extend([
-                number(self.target, i64::from(position))?,
-                op(OpcodeId::InspectInputIssuance),
-                TapscriptInstruction::Push(StackItem::empty()),
-                op(OpcodeId::EqualVerify),
-            ]);
-        }
-        Ok(())
-    }
 }
 
 fn emit_structure<'a>(
@@ -606,19 +431,17 @@ fn emit_structure<'a>(
         instructions: Vec::new(),
         sites: BTreeMap::new(),
     };
-    if id == StatePatternId::StateInputRecognitionV1 {
-        emitter.recognition()?;
-    } else {
-        emitter.partition()?;
-    }
     match id {
+        // Three instructions are the whole coordinator: the executing index is
+        // introspected and verified equal to zero. A second object of this
+        // family therefore cannot be spent at any other position, because the
+        // covenant it carries refuses to run there.
         StatePatternId::StateCoordinatorRoleV1 => emitter.instructions.extend([
             op(OpcodeId::PushCurrentInputIndex),
             number(target, 0)?,
             op(OpcodeId::EqualVerify),
         ]),
-        StatePatternId::StateIssuanceAbsenceV1 => emitter.issuance()?,
-        _ => (),
+        StatePatternId::StateInputRecognitionV1 => emitter.recognition()?,
     }
     Ok(emitter)
 }
@@ -641,19 +464,15 @@ pub fn state_structural_fragment(
 ///
 /// No stack contract or metadata claim is accepted from the caller. Comparing
 /// against the emitting recipe prevents a mutation from inheriting its identity.
-/// The sponsor check uses the existing value-field census before that comparison.
 ///
 /// # Errors
-/// Returns a typed refusal for changed bytes, sponsor-value reads or an invalid walk.
+/// Returns a typed refusal for changed bytes or an invalid walk.
 pub fn build_state_pattern(
     target: &ReviewedElementsTapscriptDefinition,
     bindings: &StatePatternBindings,
     id: StatePatternId,
     fragment: TapscriptProgram,
 ) -> Result<StatePattern, StatePatternRefusal> {
-    if id == StatePatternId::StateSponsorIsolationV1 && reads_a_value_field(&fragment) {
-        return Err(StatePatternRefusal::SponsorValueRead);
-    }
     let emitted = emit_structure(target, bindings, id)?;
     if fragment.instructions() != emitted.instructions {
         return Err(StatePatternRefusal::FragmentMismatch);
@@ -699,13 +518,13 @@ pub fn build_state_pattern(
         signature_forms: execution.signature_forms().clone(),
         prerequisites: fragment_prerequisites(&fragment),
         resources: resource_projection(target, &fragment),
-        metadata: structural_metadata(target, bindings.shape, id, &fragment),
+        metadata: structural_metadata(target, id, &fragment),
         consumers,
         fragment,
     })
 }
 
-/// Walk each of the five components and derive their shared recipe metadata.
+/// Walk both components and derive their shared recipe metadata.
 ///
 /// # Errors
 /// Propagates the first emission, walk or recipe refusal.
@@ -725,7 +544,6 @@ pub fn state_structural_patterns(
 
 fn structural_metadata(
     target: &ReviewedElementsTapscriptDefinition,
-    shape: StateAnnouncementShape,
     id: StatePatternId,
     fragment: &TapscriptProgram,
 ) -> StatePatternMetadata {
@@ -755,53 +573,36 @@ fn structural_metadata(
         Source::AuthenticatedInputObject,
         Source::PublicConstructionData,
     ]);
-    metadata.disclosure.insert(StateDisclosure::AssetIdentities);
-    if id == StatePatternId::StateInputRecognitionV1 {
-        metadata
-            .external
-            .insert(StateExternalEvidenceRole::CurrentStateRootFreshness);
-        metadata.sources.insert(Source::ExternalEvidence);
-        metadata
-            .disclosure
-            .insert(StateDisclosure::PredecessorCommitment);
-        metadata.residuals.extend([
-            Residual::CurrentStateRootFreshness,
-            Residual::SemanticMetadataAuthentication,
-        ]);
-    } else {
-        metadata.sources.insert(Source::RuntimeArchitectureBound);
-        metadata.sources.extend([
-            Source::AuthenticatedFamilyCensus,
-            Source::AuthenticatedOutputObject,
-        ]);
-        metadata.disclosure.insert(StateDisclosure::PositionCensus);
-        metadata.structural.extend(StateStructuralEvidence::ALL);
-        metadata
-            .residuals
-            .insert(Residual::AuthenticatedFamilyRoles);
-        metadata
-            .residuals
-            .insert(Residual::SuccessorConstructorAuthentication);
-        if shape.has_change() || shape.has_fee() {
-            metadata.disclosure.insert(StateDisclosure::SponsorPrograms);
-        }
-        if shape.sponsor_inputs > 0 || shape.has_change() || shape.has_fee() {
-            metadata.residuals.insert(Residual::SubstrateConservation);
+    metadata.sources.insert(Source::ExternalEvidence);
+    match id {
+        StatePatternId::StateInputRecognitionV1 => {
             metadata
                 .external
-                .insert(StateExternalEvidenceRole::SubstrateConservation);
-            metadata.sources.insert(Source::ExternalEvidence);
+                .insert(StateExternalEvidenceRole::CurrentStateRootFreshness);
+            metadata.disclosure.extend([
+                StateDisclosure::AssetIdentities,
+                StateDisclosure::PredecessorCommitment,
+            ]);
+            metadata.residuals.extend([
+                Residual::CurrentStateRootFreshness,
+                Residual::SemanticMetadataAuthentication,
+            ]);
         }
-        if shape.has_fee() {
-            metadata.evidence.insert(Evidence::FeeOutputForm);
-        } else {
+        // The pin is the leaf's whole contribution to singleton exclusivity.
+        // The other two facts it rests on are about the deployment and the
+        // substrate, so they are published as external roles and as the
+        // conservation residual, never as something these bytes established.
+        StatePatternId::StateCoordinatorRoleV1 => {
             metadata
-                .evidence
-                .insert(Evidence::FeelessTransactionAdmission);
+                .structural
+                .insert(StateStructuralEvidence::SingletonExclusiveToPositionZero);
+            metadata.external.extend([
+                StateExternalEvidenceRole::SubstrateConservation,
+                StateExternalEvidenceRole::SingletonNonReissuable,
+                StateExternalEvidenceRole::SingletonIssuedUnderConstructor,
+            ]);
+            metadata.residuals.insert(Residual::SubstrateConservation);
         }
-    }
-    if id == StatePatternId::StateIssuanceAbsenceV1 {
-        metadata.disclosure.insert(StateDisclosure::IssuanceAbsence);
     }
     metadata
 }

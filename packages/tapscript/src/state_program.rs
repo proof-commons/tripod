@@ -52,7 +52,7 @@ pub enum StateProgramAdapter {
 pub enum StateProgramComponent {
     /// Committed operator authorization.
     Operator(StateOperatorPatternId),
-    /// Structural authentication; identical partitions share one range.
+    /// Structural authentication; each fragment owns a distinct range.
     Structural(StatePatternId),
     /// Semantic authentication or transition.
     Semantic(StateAnnouncementId),
@@ -263,16 +263,7 @@ fn assemble(
     }
     for component in structural.components() {
         let id = C::Structural(component.id());
-        if component.id() == StatePatternId::StateSponsorIsolationV1 {
-            let shared =
-                assembly.components[&C::Structural(StatePatternId::StateCardinalityV1)].clone();
-            if assembly.instructions[shared.clone()] != *component.fragment().instructions() {
-                return Err(StateProgramRefusal::ComponentRecipe);
-            }
-            assembly.components.insert(id, shared);
-        } else {
-            assembly.append(id, component.fragment().instructions());
-        }
+        assembly.append(id, component.fragment().instructions());
         for (&symbol, consumer) in component.consumers() {
             for sites in consumer.sites.values() {
                 assembly.consumer(id, StateProgramSymbol::Structural(symbol), sites)?;
@@ -433,7 +424,7 @@ fn metadata(
     result
 }
 
-/// Emit the exact complete recipe, coalescing its identical structural partition.
+/// Emit the exact complete recipe in component order.
 ///
 /// # Errors
 /// Refuses incompatible shared consumers or invalid typed instructions.
@@ -588,7 +579,7 @@ impl StateAnnouncementProgram {
     pub const fn consumers(&self) -> &BTreeMap<StateProgramSymbol, StateProgramConsumer> {
         &self.consumers
     }
-    /// Component and adapter ranges; the partition range is shared.
+    /// Component and adapter ranges; every range is disjoint.
     #[must_use]
     pub const fn components(&self) -> &BTreeMap<StateProgramComponent, Range<usize>> {
         &self.components

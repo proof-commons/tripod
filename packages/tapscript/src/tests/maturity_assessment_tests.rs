@@ -472,9 +472,9 @@ use crate::maturity_assessment::{
 };
 use crate::{
     MaturityCarrier as Carrier, MaturityCarrierRefusalReason as Refusal, StateAnnouncementId as A,
-    StateOperatorPatternId, StatePatternId as B, StateProgramComponent as Component,
-    assess_maturity_announcement_program, maturity_announcement_record_census,
-    project_maturity_carriers,
+    StateExternalEvidenceRole as Role, StateOperatorPatternId, StatePatternId as B,
+    StateProgramComponent as Component, assess_maturity_announcement_program,
+    maturity_announcement_record_census, project_maturity_carriers,
 };
 use architecture::ObjectId;
 use compiler::operation_plan::RequiredSourceKind as Source;
@@ -492,10 +492,11 @@ const RECORD_GROUPS: [(G, D, Ground); 18] = [
         D::CompleteBackendPattern,
         Ground::ApprovedPattern,
     ),
+    // Nothing inspects a count any more, so this group keeps its standing result.
     (
         G::InputAndOutputCount,
-        D::CompleteBackendPattern,
-        Ground::ApprovedPattern,
+        D::BackendPatternRequired,
+        Ground::NoApprovedPattern,
     ),
     (
         G::InputAssetAndValueInspection,
@@ -567,10 +568,14 @@ const RECORD_GROUPS: [(G, D, Ground); 18] = [
         D::ExternalEvidenceRequired,
         Ground::ExternalTargetClaim,
     ),
+    // The leaf no longer recognizes a fee output at any position, so this
+    // group falls back to its standing target-wide result: the registry has no
+    // fee-role entry, so it was missing primitives all along and only the
+    // retired partition was hiding that.
     (
         G::FeeRoleRecognition,
-        D::CompleteBackendPattern,
-        Ground::ApprovedPattern,
+        D::MissingTargetPrimitives,
+        Ground::TargetWideAssessment,
     ),
     (
         G::ResourceLimits,
@@ -584,30 +589,36 @@ const RECORD_CAPABILITIES: [(C, D, Ground); 8] = [
         D::CompleteBackendPattern,
         Ground::ApprovedPattern,
     ),
+    // A family count and the canonical and open-flow regions are properties of
+    // a whole transaction side; no emitted component establishes one.
     (
         C::AuthenticatedFamilyCardinality,
-        D::CompleteBackendPattern,
-        Ground::ApprovedPattern,
+        D::BackendPatternRequired,
+        Ground::NoApprovedPattern,
     ),
     (
         C::AuthenticatedCanonicalPartition,
-        D::CompleteBackendPattern,
-        Ground::ApprovedPattern,
+        D::BackendPatternRequired,
+        Ground::NoApprovedPattern,
     ),
     (
         C::AuthenticatedOpenFlowPartition,
-        D::CompleteBackendPattern,
-        Ground::ApprovedPattern,
+        D::BackendPatternRequired,
+        Ground::NoApprovedPattern,
     ),
     (
         C::AuthenticatedRootEffects,
         D::BackendPatternRequired,
         Ground::NoApprovedPattern,
     ),
+    // Copy-through still carries this capability, but promotion also requires
+    // every primitive the capability names to be in the record's prerequisite
+    // census, and the reduced leaf no longer emits the count, output-asset and
+    // script-number primitives the retired partition contributed.
     (
         C::AuthenticatedProjectionSet,
-        D::CompleteBackendPattern,
-        Ground::ApprovedPattern,
+        D::BackendPatternRequired,
+        Ground::NoApprovedPattern,
     ),
     (
         C::OperatorAuthorization,
@@ -640,14 +651,10 @@ fn assess_parts(available: &BTreeSet<Component>) -> MaturityAssessmentSet {
 fn expected_layout(layout: &L) -> (D, Ground) {
     match layout {
         L::CanonicalCoordinator { .. } => (D::BackendStructural, Ground::CompilerOrAbiObligation),
-        L::AuthenticateFamilyCensus { .. }
-        | L::CompleteAndDisjointFamilies { .. }
-        | L::IsolateSponsorRegion { .. }
-        | L::EnforceRepresentation { .. } => (D::CompleteBackendPattern, Ground::ApprovedPattern),
+        L::EnforceRepresentation { .. } => (D::CompleteBackendPattern, Ground::ApprovedPattern),
         L::MakeSourceAvailable { source, .. } => match source.source {
             Source::AuthenticatedInputObject
             | Source::AuthenticatedOutputObject
-            | Source::AuthenticatedFamilyCensus
             | Source::RuntimeArchitectureBound
             | Source::OperatorWitness
             | Source::PublicConstructionData => {
@@ -656,7 +663,15 @@ fn expected_layout(layout: &L) -> (D, Ground) {
             Source::ExternalEvidence => (D::ExternalEvidenceRequired, Ground::ExternalTargetClaim),
             _ => (D::BackendPatternRequired, Ground::NoApprovedPattern),
         },
-        L::SecretFreeOperationPath { .. } => (D::BackendPatternRequired, Ground::NoApprovedPattern),
+        // A family census, its disjointness and a sponsor region range over a
+        // whole observed transaction, and an operator-gated announcement
+        // establishes no secret-free path: none of these has a carrier.
+        L::AuthenticateFamilyCensus { .. }
+        | L::CompleteAndDisjointFamilies { .. }
+        | L::IsolateSponsorRegion { .. }
+        | L::SecretFreeOperationPath { .. } => {
+            (D::BackendPatternRequired, Ground::NoApprovedPattern)
+        }
     }
 }
 
@@ -923,85 +938,82 @@ fn record_census_sets_are_exact_disjoint_and_cover_every_requirement() {
             census[mode].completed.len() + census[mode].remaining.len(),
             87
         );
+        // The reduction moved rows back to their standing results rather than
+        // leaving them credited to fragments that no longer exist, so the
+        // recounted figure is published here instead of in prose.
+        assert_eq!(census[mode].completed.len(), 27);
+        assert_eq!(census[mode].remaining.len(), 60);
     }
 }
 
-fn expected_emitted_relations() -> BTreeMap<RelationId, Component> {
+// The discharge table as this lane lands it: one carrier per relation, and the
+// reason each carrier is the honest one. The two relations absent from this map
+// are the ones whose plan row carries realization's own outstanding
+// requirement, so the projection publishes that instead.
+fn expected_carriers() -> BTreeMap<RelationId, Carrier> {
     let mut rows = BTreeMap::new();
-    let mut insert = |kind, subject, component| {
+    let mut insert = |kind, subject, carrier| {
         rows.insert(
             RelationId::new(OperationId::AnnounceMaturity, kind, subject),
-            component,
+            carrier,
         );
     };
+    let state = |side| Subject::ObjectFamily {
+        side,
+        object: ObjectId::State,
+    };
+    // A second object of this family cannot be spent anywhere else, because
+    // the pin refuses to execute at any index but zero.
+    insert(
+        K::Cardinality,
+        state(Side::Input),
+        Carrier::Emitted(Component::Structural(B::StateCoordinatorRoleV1)),
+    );
+    // One unit is consumed and output zero takes its exact amount, so
+    // conservation leaves none of it for any other output.
+    insert(
+        K::Cardinality,
+        state(Side::Output),
+        Carrier::Deployment(Role::SubstrateConservation),
+    );
+    insert(
+        K::Recognition,
+        state(Side::Input),
+        Carrier::Emitted(Component::Structural(B::StateInputRecognitionV1)),
+    );
+    insert(
+        K::Recognition,
+        state(Side::Output),
+        Carrier::Emitted(Component::Semantic(A::SuccessorReconstruction)),
+    );
+    // Sponsor counts, sponsor recognition and family closure all range over a
+    // whole transaction side, so no leaf carries them once the operation
+    // claims only its own positions.
     for side in [Side::Input, Side::Output] {
-        insert(
-            K::Cardinality,
-            Subject::ObjectFamily {
-                side,
-                object: ObjectId::State,
-            },
-            Component::Structural(B::StateCardinalityV1),
-        );
-        insert(
-            K::Cardinality,
-            Subject::ObjectFamily {
-                side,
-                object: ObjectId::PlainLbtc,
-            },
-            Component::Structural(B::StateSponsorIsolationV1),
-        );
-        insert(
-            K::Recognition,
-            Subject::ObjectFamily {
-                side,
-                object: ObjectId::PlainLbtc,
-            },
-            Component::Structural(B::StateSponsorIsolationV1),
-        );
+        for kind in [K::Cardinality, K::Recognition] {
+            insert(
+                kind,
+                Subject::ObjectFamily {
+                    side,
+                    object: ObjectId::PlainLbtc,
+                },
+                Carrier::ModelScope,
+            );
+        }
         insert(
             K::AllowedObjectFamilies,
             Subject::TransactionSide { side },
-            Component::Structural(B::StateIssuanceAbsenceV1),
+            Carrier::ModelScope,
         );
     }
-    for (side, component) in [
-        (
-            Side::Input,
-            Component::Structural(B::StateInputRecognitionV1),
-        ),
-        (
-            Side::Output,
-            Component::Semantic(A::SuccessorReconstruction),
-        ),
-    ] {
-        insert(
-            K::Recognition,
-            Subject::ObjectFamily {
-                side,
-                object: ObjectId::State,
-            },
-            component,
-        );
-    }
-    rows.extend(expected_policy_relations());
-    rows
-}
-
-fn expected_policy_relations() -> BTreeMap<RelationId, Component> {
-    let mut rows = BTreeMap::new();
-    let mut insert = |kind, subject, component| {
-        rows.insert(
-            RelationId::new(OperationId::AnnounceMaturity, kind, subject),
-            component,
-        );
-    };
     for kind in [K::SponsorIsolation, K::SponsorEnvelopeMultiplicity] {
-        insert(
-            kind,
-            Subject::Sponsor,
-            Component::Structural(B::StateSponsorIsolationV1),
-        );
+        insert(kind, Subject::Sponsor, Carrier::ModelScope);
+    }
+    // The canonical-delta policy's singleton content is covered by the
+    // non-reissuable declaration, but the relation as declared compares the
+    // whole transaction's canonical partition, so it classes with the rest.
+    for kind in [K::OpenFlowPolicy, K::CanonicalDeltaPolicy] {
+        insert(kind, Subject::Operation, Carrier::ModelScope);
     }
     for (kind, component) in [
         (
@@ -1009,27 +1021,19 @@ fn expected_policy_relations() -> BTreeMap<RelationId, Component> {
             Component::Operator(StateOperatorPatternId::OperatorAuthorizationV1),
         ),
         (
-            K::OpenFlowPolicy,
-            Component::Structural(B::StateSponsorIsolationV1),
-        ),
-        (
-            K::CanonicalDeltaPolicy,
-            Component::Structural(B::StateIssuanceAbsenceV1),
-        ),
-        (
             K::RootPolicy,
             Component::Semantic(A::MetadataAuthentication),
         ),
         (K::ProjectionPolicy, Component::Semantic(A::CopyThrough)),
     ] {
-        insert(kind, Subject::Operation, component);
+        insert(kind, Subject::Operation, Carrier::Emitted(component));
     }
     insert(
         K::Representation,
         Subject::Representation {
             object: ObjectId::State,
         },
-        Component::Semantic(A::SuccessorReconstruction),
+        Carrier::Emitted(Component::Semantic(A::SuccessorReconstruction)),
     );
     for exit in [
         OperationId::AdmitDeposits,
@@ -1045,20 +1049,34 @@ fn expected_policy_relations() -> BTreeMap<RelationId, Component> {
                 object: ObjectId::State,
                 exit,
             },
-            Component::Semantic(if exit == OperationId::AnnounceMaturity {
-                A::LeadWindow
-            } else {
-                A::MaturityPredecessor
-            }),
+            Carrier::Emitted(Component::Semantic(
+                if exit == OperationId::AnnounceMaturity {
+                    A::LeadWindow
+                } else {
+                    A::MaturityPredecessor
+                },
+            )),
         );
     }
     rows
 }
 
+// Just the emitted rows of the table, for the tests that ask which relations
+// a missing component takes with it.
+fn emitted_rows() -> BTreeMap<RelationId, Component> {
+    expected_carriers()
+        .into_iter()
+        .filter_map(|(relation, carrier)| match carrier {
+            Carrier::Emitted(component) => Some((relation, component)),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
-fn carriers_cover_the_literal_twenty_six_relations_and_each_emitted_component_exists() {
+fn the_discharge_table_is_total_and_single_valued_over_every_relation() {
     let projection = project_maturity_carriers(&PLAN, &fixtures().program).unwrap();
-    let expected = expected_emitted_relations();
+    let expected = expected_carriers();
     assert_eq!(expected.len(), 24);
     for mode in Mode::ALL {
         let rows = projection.projection(*mode).unwrap();
@@ -1071,18 +1089,61 @@ fn carriers_cover_the_literal_twenty_six_relations_and_each_emitted_component_ex
                 .map(|row| &row.relation)
                 .collect()
         );
-        let emitted = rows
-            .iter()
-            .filter_map(|(relation, carrier)| match carrier {
-                Carrier::Emitted(component) => {
-                    assert!(fixtures().program.components().contains_key(component));
-                    Some((relation.clone(), *component))
-                }
-                Carrier::External(_) => None,
-            })
-            .collect::<BTreeMap<_, _>>();
-        assert_eq!(emitted, expected);
+        for (relation, carrier) in rows {
+            match expected.get(relation) {
+                Some(expected) => assert_eq!(carrier, expected),
+                None => assert!(matches!(carrier, Carrier::External(_))),
+            }
+            if let Carrier::Emitted(component) = carrier {
+                assert!(fixtures().program.components().contains_key(component));
+            }
+        }
+        let count = |wanted: fn(&Carrier) -> bool| rows.values().filter(|row| wanted(row)).count();
+        assert_eq!(count(|row| matches!(row, Carrier::Emitted(_))), 13);
+        assert_eq!(count(|row| matches!(row, Carrier::Deployment(_))), 1);
+        assert_eq!(count(|row| matches!(row, Carrier::ModelScope)), 10);
+        assert_eq!(count(|row| matches!(row, Carrier::External(_))), 2);
     }
+}
+
+// A model-scope row is a published gap, so the class has to say what closes it
+// and where that work is recorded, or a reader has no way to check the claim.
+#[test]
+fn the_model_scope_class_names_the_refit_that_retires_it() {
+    let source = include_str!("../maturity_assessment.rs");
+    let (before, _) = source
+        .split_once("    ModelScope,")
+        .expect("the class is declared");
+    let (_, doc) = before
+        .rsplit_once("/// The realization evaluates this relation over the whole observed")
+        .expect("the class documents its scope");
+    assert!(doc.contains("region-scoping refit"));
+    assert!(doc.contains("Phase-6 card"));
+    assert!(doc.contains("accepted on-chain and"));
+}
+
+// Both deployment facts are named roles of the record, not prose: the
+// conservation role carries a relation, and the two facts it leans on are
+// published beside it so the argument can be checked.
+#[test]
+fn the_deployment_facts_the_table_leans_on_are_named_roles_of_the_record() {
+    let external = &fixtures().program.metadata().external;
+    for role in [
+        Role::SubstrateConservation,
+        Role::SingletonNonReissuable,
+        Role::SingletonIssuedUnderConstructor,
+    ] {
+        assert!(external.contains(&role));
+    }
+    let carried: BTreeSet<_> = expected_carriers()
+        .into_values()
+        .filter_map(|carrier| match carrier {
+            Carrier::Deployment(role) => Some(role),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(carried, BTreeSet::from([Role::SubstrateConservation]));
+    assert!(carried.iter().all(|role| external.contains(role)));
 }
 
 #[test]
@@ -1106,7 +1167,11 @@ fn external_carriers_are_exact_realization_requirements_except_verified_authoriz
                 assert_eq!(carrier, &Carrier::External(external.clone()));
                 assert_eq!(row.external_evidence.len(), 1);
             } else {
-                assert!(matches!(carrier, Carrier::Emitted(_)));
+                // Only a plan row carrying realization's own requirement may
+                // publish the external class; the discharge table decides the
+                // rest, and after the reduction that decision is no longer
+                // always an emitted component.
+                assert!(!matches!(carrier, Carrier::External(_)));
             }
         }
     }
@@ -1114,7 +1179,7 @@ fn external_carriers_are_exact_realization_requirements_except_verified_authoriz
 
 #[test]
 fn removing_each_component_refuses_exactly_its_literal_relations_by_name() {
-    let expected = expected_emitted_relations();
+    let expected = emitted_rows();
     for removed in components() {
         let mut available = components();
         available.remove(&removed);
@@ -1177,7 +1242,7 @@ fn unplaceable_relations_and_ambiguous_external_sets_are_named_refusals() {
 
 #[test]
 fn paired_carrier_omissions_name_only_relations_of_the_removed_components() {
-    let expected = expected_emitted_relations();
+    let expected = emitted_rows();
     let all = components();
     for first in &all {
         for second in all.iter().filter(|second| *second > first) {

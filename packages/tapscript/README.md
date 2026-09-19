@@ -401,8 +401,20 @@ The crate root re-exports this module in four groups matching `lib.rs`:
 
 The plan-only entry point retains the standing incomplete result. The
 record-backed entry point completes only rows whose carrying components and
-reviewed prerequisites are present, while the projection gives every relation
-one emitted component or realization's named external requirement.
+reviewed prerequisites are present, while the projection publishes a discharge
+table giving every relation exactly one carrier.
+
+`MaturityCarrier` has four classes. `Emitted` names a component of the admitted
+recipe. `External` is realization's own outstanding requirement, carried
+verbatim. `Deployment` names a fact about the deployment that no instruction
+checks, so that a relation resting on one can be verified against deployment
+records instead of against bytes. `ModelScope` is a relation the realization
+evaluates over the whole observed transaction while no leaf enforces it: a leaf
+is locally sound, so once several operations may share one transaction such a
+relation refuses transactions the covenant accepts, and that transaction is
+accepted on-chain and outside the model until the realization's region-scoping
+refit lands. Publishing the class is what keeps the gap visible rather than
+implicit.
 
 ### `state_announcement` — five semantic fragments
 
@@ -452,14 +464,32 @@ operator key remains a typed unresolved consumer pushed by the program.
 
 ### `state_pattern` — structural records and their recipe
 
-The record group is `StateAnnouncementShape`, `StateConsumerRequirement`,
-`StateDisclosure`, `StateExternalEvidenceRole`, `StatePattern`,
-`StatePatternBindings`, `StatePatternConstructibility`, `StatePatternId`,
-`StatePatternMetadata`, `StatePatternOwner`, `StatePatternRecipe`,
-`StatePatternRefusal`, `StatePatternResidual`, `StatePatternSymbol`,
-`StatePatternWitness`, and `StateStructuralEvidence`. The construction entries
-are `build_state_pattern`, `state_structural_fragment`, and
-`state_structural_patterns`.
+The record group is `StateConsumerRequirement`, `StateDisclosure`,
+`StateExternalEvidenceRole`, `StatePattern`, `StatePatternBindings`,
+`StatePatternConstructibility`, `StatePatternId`, `StatePatternMetadata`,
+`StatePatternOwner`, `StatePatternRecipe`, `StatePatternRefusal`,
+`StatePatternResidual`, `StatePatternSymbol`, `StatePatternWitness`, and
+`StateStructuralEvidence`. The construction entries are `build_state_pattern`,
+`state_structural_fragment`, and `state_structural_patterns`.
+
+Two fragments make up the structural side. `StateCoordinatorRoleV1` is three
+instructions that verify the executing input index is zero, and
+`StateInputRecognitionV1` checks input zero's asset, its explicit amount and
+its script version, discarding the introspected program. Two symbols remain,
+`StateAsset` and `StateAmount`, and no shape selects them: the fragments read
+position zero and nothing else, so there is no count, suffix or output role for
+a shape to choose, and one recipe serves every transaction the contract
+permits.
+
+`StateStructuralEvidence` carries one fact, that the singleton occurs only at
+input zero and output zero, and three things discharge it together. The pin is
+in the emitted bytes. The other two are named in `StateExternalEvidenceRole`:
+the deployed asset declaration makes the singleton non-reissuable, so no input
+can mint a unit, and the singleton's issuance placed its whole amount under the
+constructor, which is the induction base for output closure. Substrate
+conservation is the third, and it was already a role. The absences this census
+used to carry about other object families were true only because the emitter
+had claimed every position, and the recipe no longer asserts them.
 
 ### `state_program` — the composed announcement leaf
 
@@ -593,14 +623,21 @@ and are not implied by that abstract result (`0.6.178-dev`).
 
 ### The maturity-announcement records (Guide-14 Wave 5)
 
-`state_pattern` builds five structural records after abstractly walking their
-contracts: coordinator role, exact cardinality, predecessor recognition,
-sponsor isolation, and issuance-and-absence closure. `state_announcement`
-builds metadata authentication, the unannounced-maturity check, the full-width
-lead window, schema-derived copy-through, and successor reconstruction.
-`state_operator` builds the committed-key verifying fragment, and
-`state_program` composes those families into the production announcement leaf
-and one-leaf static subtree (`0.6.180-dev` through `0.6.183-dev`).
+`state_pattern` builds two structural records after abstractly walking their
+contracts: the coordinator's position pin and predecessor recognition.
+`state_announcement` builds metadata authentication, the unannounced-maturity
+check, the full-width lead window, schema-derived copy-through, and successor
+reconstruction. `state_operator` builds the committed-key verifying fragment,
+and `state_program` composes those families into the production announcement
+leaf and one-leaf static subtree (`0.6.180-dev` through `0.6.183-dev`).
+
+The leaf introspects the executing input index and then only position zero on
+either side. It reads no count, no issuance and no other position, so a
+transaction carrying further inputs and outputs of any asset other than the
+singleton — a sponsor suffix of any length, no sponsor at all, a fee output
+that is not last — presents it with the same observations. What keeps the
+singleton exclusive to input zero and output zero is the pin, the
+non-reissuable declaration and consensus conservation, not a count.
 
 The composed leaf declares seven witness items, deepest first: successor
 output-key prefix, successor nonce, requested cycle, static-subtree root,
@@ -608,12 +645,19 @@ predecessor metadata, predecessor output-key prefix, and operator signature.
 The root is witnessed rather than pushed by the leaf that it roots. Three
 one-instruction adapters align the lead-window, copy-through, and successor
 stacks; the closing adapter drops derived metadata and pushes canonical true
-(`0.6.183-dev`). The complete census is eleven unresolved symbols over 45 push
+(`0.6.183-dev`). The complete census is six unresolved symbols over 15 push
 sites, with the shared asset and amount represented once.
 
-The record-backed assessment completes 63 of 87 rows per representation and
-leaves 24 pending. It projects all 26 relations to 24 emitted components and
-two external requirements. It does not claim transaction-header inspection,
+The record-backed assessment completes 27 of 87 rows per representation and
+leaves 60 pending, down from 63 complete before the reduction. The groups,
+capabilities and layout rows that the retired fragments used to carry now keep
+their standing result rather than being credited to work the leaf no longer
+does, and the rows that lost promotion did so because the leaf no longer emits
+the count, output-asset and script-number primitives the partition contributed,
+or no longer makes the authenticated family census available as a source. It
+publishes the discharge table over all 26 relations: thirteen emitted
+components, one deployment fact, ten model-scope rows and two external
+requirements. It does not claim transaction-header inspection,
 streaming-hash and root effects, selected sighash semantics, operator
 authorization in the unreviewed registry, authenticated transition
 certificates, link resolution, deployment binding, finalized-byte observation,

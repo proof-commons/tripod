@@ -167,11 +167,11 @@ pub use state_operator::{
 };
 
 pub use state_pattern::{
-    StateAnnouncementShape, StateConsumerRequirement, StateDisclosure, StateExternalEvidenceRole,
-    StatePattern, StatePatternBindings, StatePatternConstructibility, StatePatternId,
-    StatePatternMetadata, StatePatternOwner, StatePatternRecipe, StatePatternRefusal,
-    StatePatternResidual, StatePatternSymbol, StatePatternWitness, StateStructuralEvidence,
-    build_state_pattern, state_structural_fragment, state_structural_patterns,
+    StateConsumerRequirement, StateDisclosure, StateExternalEvidenceRole, StatePattern,
+    StatePatternBindings, StatePatternConstructibility, StatePatternId, StatePatternMetadata,
+    StatePatternOwner, StatePatternRecipe, StatePatternRefusal, StatePatternResidual,
+    StatePatternSymbol, StatePatternWitness, StateStructuralEvidence, build_state_pattern,
+    state_structural_fragment, state_structural_patterns,
 };
 
 pub use state_program::{
