@@ -86,6 +86,16 @@ Adoption trigger: the ORCHESTRATOR adopts R-5 when Wave 10's evidence confirms i
 
 Ruling 14 confirms that `StateMetadata` is a realization-owned projection of the model's canonical `PoolState`, with its projection law proved in model conformance and no second semantic field owner (`rule:phase6:wave2-rulings`).
 
+### R-7 CLOSURE-EXACT
+
+**STATUS: ADOPTED.**
+
+An emitted and linked program carries exactly the checks the contract's closure requires and nothing more: a check beyond closure is a defect of the same kind as a missing one, because the covenant's accepted set must equal the contract's permitted set and a surplus check narrows it, refusing transactions the contract permits while charging symbols, push sites, leaf bytes and resource weight and turning an encoding choice into a deployment constraint (`[ADR024-dec:closure:exact-linking]`). Closure is compositional: every family's leaf is locally sound, constraining only its own input, its own successor and its own asset, and consensus conserves assets per transaction, so any transaction satisfying every involved leaf satisfies every involved family's invariant, and composing several operations in one transaction is permitted rather than excluded. Local soundness is therefore the stated obligation of every later family's leaf, and a family whose leaf is not locally sound is the defect rather than the transaction that composes with it.
+
+For the STATE generation this supersedes the census entries `StateCardinalityV1`, `StateSponsorIsolationV1` and `StateIssuanceAbsenceV1` at (`tab:guide14-exec:pattern-census`) and the exact-input-count, exact-output-count, sponsor-suffix, sponsor-change-role, fee-role and no-unclassified-position clauses at (`rule:guide14-exec:coordinator`). The guide text stays archived verbatim and is not edited; this entry and ruling 40 at (`rule:phase6:wave6-rulings`) are where the supersession is recorded, and the guide's §9.7 prohibition on searching for a fixed point by repeated hashing and §17.3 refusal of constructor migration are untouched. What those clauses claimed is discharged instead by facts already in the tree: the four absence facts of `StateStructuralEvidence` collapse to the one that no second STATE object occurs, which the self-position pin at input zero, the singleton's non-reissuable declaration and consensus conservation establish together, the last two entering as named external evidence roles beside substrate conservation rather than as silent assumptions.
+
+The discharge argument is published as a table, one row per realization relation of the announcement — 26 rows — each naming what discharges it: a positional check in the leaf, the self-position pin, consensus conservation, a named external evidence role, a semantic component, or MODEL-SCOPE. The MODEL-SCOPE class names the five relations the realization evaluates over the whole observed transaction rather than over the positions the operation claims — `AllowedObjectFamilies` on each side, `SponsorIsolation`, `CanonicalDeltaPolicy`, `OpenFlowPolicy` and `SponsorEnvelopeMultiplicity` — which the staged region-scoping refit of ruling 52 re-scopes to the operation's own region or retires. Until that refit lands those relations are enforced by no leaf, a composed transaction is accepted on-chain and outside the model, and every published closure record says so rather than implying that the model already covers it.
+
 ## 3. Conceptual preflight register
 
 Severity is the highest rank among the cited reviews. `OWNER-BLOCKING` marks an additional owner-mandated row with no ranked-review severity.
@@ -142,5 +152,7 @@ The counts below are ownership assignments, so one cross-wave row appears under 
 | 13 | `G14C-02`, `G14C-15` | 2 |
 
 Wave 5 closed with no owned register row and no candidate adoption: its complete pattern record and carrier projection consume already-bound semantic and constructor obligations, while `R-5 RECOVERY` retains its Wave-10 trigger (`0.6.186-dev`).
+
+Wave 6 owns `G14C-08`, `G14C-09` and `G14C-10`, and opens with one adopted ruling and no candidate adoption: `R-7 CLOSURE-EXACT` records the closure-exact principle and the STATE-generation supersession of §10.1's three census entries and §10.2's six coordinator clauses, ruling 45 at (`rule:phase6:wave6-rulings`) binds the graph rows to typed binding times, validated cuts and a residual acyclic graph, and ruling 50 fixes the adversarial criterion each of the three rows closes on, so none of them closes on a broad success suite. `R-5 RECOVERY` remains the register's sole CANDIDATE, its trigger belonging to Wave 10 and unchanged by this record.
 
 The register contains 12 OPEN rows and three CLOSED rows and 26 wave-ownership assignments. R-2 additionally feeds `G14C-11` constraints into Waves 7 and 9, and R-TAXONOMY shares `G14C-12` vocabulary with Waves 7 and 9 without changing the primary ownership counts above.
