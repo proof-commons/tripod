@@ -6,32 +6,56 @@
 //! spend would run rather than evidence that the linker agrees with
 //! itself.
 //!
-//! The native half is one ignored test. Run it with the adapter and the
-//! capture environment set in the invoking shell:
+//! The native half is one ignored test. It submits the four retained
+//! shapes to a real target and observes where that target's interpreter
+//! refuses them. Run it with the adapter and the deployment identities
+//! set in the invoking shell:
 //! ```sh
-//! TRIPOD_LIVE_EXECUTOR=/path/to/adapter \
+//! TRIPOD_LIVE_EXECUTOR=/path/to/adapter TRIPOD_LIVE_NETWORK_ID=NETWORK_HEX \
+//! TRIPOD_LIVE_GENESIS_ID=GENESIS_HEX \
 //! cargo test -p tripod-vectors --test maturity_closure -- --ignored --test-threads=1
 //! ```
+//! Network and genesis are 64 lower-case hex digits. No capture is
+//! written, so no suite provenance is read; `TRIPOD_LIVE_REPORT_DIR`
+//! is honoured where it is set, as the directory the adapter's own
+//! diagnostics are written under.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
+use std::time::Duration;
 
-use linker::{StateDischargeClass, StateLinkedCarrier};
+use linker::{CandidateDeploymentIdentity, StateDischargeClass, StateLinkedCarrier};
 use tapscript::{
-    StackItem, StateAnnouncementSymbol, StateProgramComponent, StateProgramSymbol,
+    StackItem, StateAnnouncementSymbol, StateLeafRole, StateProgramComponent, StateProgramSymbol,
     TapscriptInstruction, TapscriptProgram,
 };
-use target_elements::{OpcodeId, ReviewedElementsTapscriptDefinition};
-use target_elements_conformance::executor::OperationStep;
-use target_elements_conformance::protocol::OperationSubject;
-use transaction::bytes::TargetTransaction;
+use target_elements::{
+    ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
+    OpcodeId, PayloadWidth, ReviewedElementsTapscriptDefinition, StackValueType,
+    reviewed_elements_tapscript, validate_reviewed_development_binding,
+};
+use target_elements_conformance::executor::{
+    ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust, NativeOperationCapture,
+    OperationStep, PlanRefused, TargetOperationPlanner, execute_operations_captured,
+};
+use target_elements_conformance::protocol::{
+    NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationSubject,
+    TargetFundingSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject,
+    TargetSubmissionSubject, WireOutpoint, WireSighashProfile,
+};
+use transaction::bytes::{
+    AssetField, AssetId as TargetAssetId, InputWitness, Outpoint, TargetInput, TargetOutput,
+    TargetTransaction, Txid, ValueField,
+};
 use vectors::maturity_closure::{
-    AdoptionCase, DecodedAnnouncementLeaf, KeptCheck, LocatedRow, MaturityClosureRefusal,
-    MaturityDeployment, ObservedField, OracleStateCurve, Verdict, adoption_transaction,
-    closure_target, decode_announcement_leaf, decoded_deployment, forbidden_program_literals,
-    kept_check_site, leaf_literals, locate_discharges, moved_sites, recompute_golden,
-    recovered_values, removed_and_kept_checks,
+    AdoptionCase, AdoptionVector, DecodedAnnouncementLeaf, KeptCheck, LocatedRow,
+    MaturityClosureRefusal, MaturityDeployment, ObservedField, OracleStateCurve, Verdict,
+    adoption_transaction, closure_target, decode_announcement_leaf, decoded_deployment,
+    forbidden_program_literals, kept_check_site, leaf_literals, locate_discharges, moved_sites,
+    recompute_golden, recovered_values, removed_and_kept_checks,
 };
 
 /// The golden roots this lane publishes, recomputed and carried alike.
@@ -594,36 +618,735 @@ fn the_outstanding_contract_is_read_from_the_bundle() {
     assert!(!bundle.evidence().is_empty());
 }
 
-// --- (g) The native half, outstanding ----------------------------------
+// --- (g) The native half: where a real interpreter refuses -------------
 
-/// The four retained subjects, submitted to a real target.
+/// What the target prefixes a script-execution failure with.
 ///
-/// The node-free half decides what the leaf's own bytes decide, and
-/// stops there. Whether a target accepts the first vector and refuses
-/// the other three is a run, and a run needs the toolchain no pod
-/// carries today. This test names the submission and leaves it to the
-/// capture of record: it reads the adapter the run would use, builds
-/// exactly the subjects that run would send, and asserts nothing about
-/// any node.
-#[test]
-#[ignore = "requires the native adapter and capture environment"]
-fn the_four_adoption_vectors_are_submitted_to_a_real_target() {
-    let executor = std::env::var("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR is required");
-    assert_ne!(executor, "");
+/// The adapter decides the layer by this prefix: a relay reason carrying
+/// it names a script the interpreter actually ran, and any other reason
+/// names a consensus or policy refusal that never reached one.
+const SCRIPT_FAILURE: &str = "mandatory-script-verify-flag-failed (";
 
-    let reviewed = target();
-    let (bundle, _) = linked(MaturityDeployment::Demonstration);
-    let steps: Vec<OperationStep> = AdoptionCase::ALL
-        .into_iter()
-        .map(|case| {
-            adoption_transaction(case, &bundle, &reviewed)
-                .expect("the vector is buildable")
-                .subject()
-                .clone()
+/// The check this run expects the interpreter to stop at.
+const SIGNATURE_FAILURE: &str = "Schnorr signature";
+
+/// What the target says where a revealed leaf is not the committed one.
+const COMMITMENT_FAILURE: &str = "Witness program";
+
+/// What the target says where its amount verification refuses.
+const AMOUNT_FAILURE: &str = "bad-txns-in-ne-out";
+
+/// The widest stack item the target's relay policy admits in a
+/// tapscript spend.
+///
+/// A policy constant of the target rather than a choice of this
+/// workspace, and the reason one placeholder below is not at the width
+/// its role declares: the announcement's predecessor-metadata role is
+/// wider than this, a mempool refuses a tapscript spend carrying a
+/// wider stack item before it runs any script, and a refusal there is
+/// the target declining to state a verdict about the leaf at all. What
+/// this run observes is the first instruction pair of that leaf, which
+/// no stack item's width reaches, so capping the placeholder costs the
+/// observation nothing and is what makes it possible. A spend carrying
+/// real metadata would meet the same limit; that is the target's
+/// standing answer about this leaf and not this run's difficulty.
+const RELAY_STACK_ITEM_LIMIT: usize = 80;
+
+/// The checks the leaf's own comparisons decide a vector by.
+///
+/// Every one of them sits after the committed operator key's
+/// verification, which is what makes "no compared field was reached" a
+/// statement about these bytes rather than about the run.
+const COMPARED_CHECKS: [KeptCheck; 7] = [
+    KeptCheck::SelfPositionPin,
+    KeptCheck::InputZeroAsset,
+    KeptCheck::InputZeroExplicitAmount,
+    KeptCheck::InputZeroScriptVersion,
+    KeptCheck::OutputZeroAsset,
+    KeptCheck::OutputZeroExplicitAmount,
+    KeptCheck::OutputZeroScriptVersion,
+];
+
+/// One funded coin an input of one case spends.
+#[derive(Clone, Copy, Debug)]
+enum CoinSlot {
+    /// The coin of the issued singleton asset funded for this case.
+    Singleton(usize),
+    /// A coin of the target's own reserve asset, by funding position.
+    Foreign(usize),
+}
+
+/// One environment read, with the variable named where it is absent.
+fn required_environment(name: &str) -> String {
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| panic!("{name} is required"))
+}
+
+/// The bytes one hexadecimal spelling carries.
+fn decode_hex(text: &str) -> Vec<u8> {
+    assert_eq!(
+        text.len() % 2,
+        0,
+        "a hexadecimal spelling carries whole bytes"
+    );
+    let (pairs, _) = text.as_bytes().as_chunks::<2>();
+    pairs
+        .iter()
+        .map(|pair| {
+            let digits = std::str::from_utf8(pair).expect("the spelling is ascii");
+            u8::from_str_radix(digits, 16).expect("the spelling is hexadecimal")
         })
-        .collect();
+        .collect()
+}
 
-    assert_eq!(steps.len(), 4);
-    let names: BTreeSet<&str> = steps.iter().map(|step| step.case().step.as_str()).collect();
-    assert_eq!(names.len(), 4);
+/// One identity, in the order the invoking run states it.
+fn identity_bytes(text: &str) -> [u8; 32] {
+    <[u8; 32]>::try_from(decode_hex(text).as_slice()).expect("a thirty-two byte identity")
+}
+
+/// One identity in internal order, from the order the target prints.
+fn printed_identity(text: &str) -> [u8; 32] {
+    let mut raw = decode_hex(text);
+    raw.reverse();
+    <[u8; 32]>::try_from(raw.as_slice()).expect("a thirty-two byte identity")
+}
+
+/// One outpoint, from the wire form the adapter answers with.
+fn outpoint_of(wire: &WireOutpoint) -> Outpoint {
+    Outpoint::new(Txid::from_internal(printed_identity(&wire.txid)), wire.vout)
+        .expect("the funded outpoint is well formed")
+}
+
+/// The deployment this run is bound to.
+fn native_identity() -> CandidateDeploymentIdentity {
+    CandidateDeploymentIdentity::new(
+        identity_bytes(&required_environment("TRIPOD_LIVE_NETWORK_ID")),
+        identity_bytes(&required_environment("TRIPOD_LIVE_GENESIS_ID")),
+    )
+    .expect("nonzero deployment identities")
+}
+
+/// Where the adapter writes its own diagnostics.
+///
+/// The directory the invoking round names when it names one, so the
+/// diagnostics sit beside the round that produced them, and a directory
+/// under this run's temporary root otherwise. No capture is written
+/// here, so the suite provenance variables are not read at all.
+fn diagnostics_directory() -> PathBuf {
+    let reported = std::env::var("TRIPOD_LIVE_REPORT_DIR").unwrap_or_default();
+    if !reported.is_empty() {
+        return PathBuf::from(reported);
+    }
+    let directory =
+        std::env::temp_dir().join(format!("maturity-closure-native-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("the diagnostics directory is created");
+    directory
+}
+
+/// The stable name of one observed outcome layer.
+const fn layer_name(layer: ObservedOutcomeLayer) -> &'static str {
+    match layer {
+        ObservedOutcomeLayer::Accepted => "accepted",
+        ObservedOutcomeLayer::ScriptPathRejection => "script-path-rejection",
+        ObservedOutcomeLayer::KeyPathRejection => "key-path-rejection",
+        ObservedOutcomeLayer::ConsensusRejectionBeforeScript => "consensus-rejection-before-script",
+        ObservedOutcomeLayer::RelayPolicyRejection => "relay-policy-rejection",
+        ObservedOutcomeLayer::FixtureConstructionFailure => "fixture-construction-failure",
+        ObservedOutcomeLayer::ExecutorInfrastructureFailure => "executor-infrastructure-failure",
+        _ => "unknown",
+    }
+}
+
+/// One observation, written where the invoking round's log keeps it.
+///
+/// Written to this process's own error stream rather than through the
+/// print macros, which the test harness captures and discards on a pass.
+fn observation_line(case: &str, layer: ObservedOutcomeLayer, detail: &str) {
+    let mut stream = std::io::stderr();
+    writeln!(stream, "{case} --> {} {detail}", layer_name(layer))
+        .expect("the observation reaches the run's error stream");
+}
+
+/// Whether one asset field is the explicit asset a leaf literal names.
+fn names_literal(field: AssetField, literal: &[u8]) -> bool {
+    matches!(field, AssetField::Explicit(asset) if asset.internal().as_slice() == literal)
+}
+
+/// The explicit amount one retained coin or output carries.
+const fn explicit_amount(field: ValueField) -> u64 {
+    match field {
+        ValueField::Explicit(amount) => amount,
+        _ => panic!("a retained vector carries explicit amounts"),
+    }
+}
+
+/// The width the record's own witness declaration fixes for one item.
+const fn declared_width(value: &StackValueType) -> usize {
+    match value {
+        StackValueType::Bytes { minimum, .. } => *minimum,
+        StackValueType::Encoded(class) => match class.v1_shape().payload() {
+            PayloadWidth::Exact(width) => width.get(),
+            PayloadWidth::Bounded { minimum, .. } => minimum,
+            PayloadWidth::Absent => 0,
+        },
+        _ => panic!("the announcement witness declares byte and encoded items only"),
+    }
+}
+
+/// Which funded coin every input of every case spends, and what the
+/// foreign coins must hold.
+fn coin_slots(vectors: &[AdoptionVector], literal: &[u8]) -> (Vec<Vec<CoinSlot>>, Vec<u64>) {
+    let mut slots = Vec::new();
+    let mut amounts = Vec::new();
+    for (case, vector) in vectors.iter().enumerate() {
+        let mut spent = Vec::new();
+        for entry in vector.spent() {
+            if names_literal(entry.asset(), literal) {
+                spent.push(CoinSlot::Singleton(case));
+            } else {
+                amounts.push(explicit_amount(entry.value()));
+                spent.push(CoinSlot::Foreign(amounts.len() - 1));
+            }
+        }
+        slots.push(spent);
+    }
+    (slots, amounts)
+}
+
+/// Whether one retained shape carries an output of explicit value zero.
+///
+/// The target's amount verification refuses such a transaction before
+/// it examines any witness, so no shape carrying one reaches the leaf.
+/// The node-free half is untouched by that: zero is the only value
+/// below the amount the leaf pins, so an output short of it has no
+/// other value to carry there.
+fn carries_a_zero_output(vector: &AdoptionVector) -> bool {
+    vector
+        .transaction()
+        .outputs()
+        .iter()
+        .any(|output| explicit_amount(output.value()) == 0)
+}
+
+/// The whole step plan, fixed before the first step is sent.
+fn plan_steps(slots: &[Vec<CoinSlot>], reserve_coins: usize) -> Vec<RunStep> {
+    let mut steps = vec![RunStep::Singleton];
+    steps.extend((0..reserve_coins).map(RunStep::Reserve));
+    for (case, inputs) in slots.iter().enumerate() {
+        for (input, slot) in inputs.iter().enumerate() {
+            if matches!(slot, CoinSlot::Foreign(_)) {
+                steps.push(RunStep::Authorize(case, input));
+            }
+        }
+        steps.push(RunStep::Submit(case));
+    }
+    steps
+}
+
+/// The amount every case's singleton coin holds, which the leaf pins.
+fn singleton_amount(vectors: &[AdoptionVector], literal: &[u8]) -> u64 {
+    let amounts: BTreeSet<u64> = vectors
+        .iter()
+        .flat_map(AdoptionVector::spent)
+        .filter(|entry| names_literal(entry.asset(), literal))
+        .map(|entry| explicit_amount(entry.value()))
+        .collect();
+    let mut found = amounts.into_iter();
+    let amount = found.next().expect("every case spends the singleton");
+    assert_eq!(found.next(), None, "the cases pin one singleton amount");
+    amount
+}
+
+/// The issued asset one funding answer names.
+fn issued_asset(response: &NativeOperationResponse) -> Result<TargetAssetId, PlanRefused> {
+    let printed = response.issued_asset.as_deref().ok_or(PlanRefused)?;
+    Ok(TargetAssetId::from_internal(printed_identity(printed)))
+}
+
+/// The coins one funding answer created, where it created as many as the
+/// step asked for.
+fn funded_coins(
+    response: &NativeOperationResponse,
+    wanted: usize,
+) -> Result<Vec<Outpoint>, PlanRefused> {
+    if response.funded_outputs.len() != wanted {
+        return Err(PlanRefused);
+    }
+    Ok(response
+        .funded_outputs
+        .iter()
+        .map(|coin| outpoint_of(&coin.outpoint))
+        .collect())
+}
+
+/// One step this run sends, in the order its plan fixes.
+#[derive(Clone, Copy, Debug)]
+enum RunStep {
+    /// Issue the singleton asset and fund one coin of it per case.
+    Singleton,
+    /// Fund one coin of the target's own reserve asset.
+    Reserve(usize),
+    /// Authorize one case's spend of one reserve coin.
+    Authorize(usize, usize),
+    /// Submit one case.
+    Submit(usize),
+}
+
+/// One native run of the four retained adoption shapes.
+///
+/// The funding steps come first because every later step names coins
+/// they created, each case's authorizations come immediately before its
+/// own submission, and the submissions follow the retained cases' own
+/// order, each named by its case.
+struct AdoptionRun {
+    vectors: Vec<AdoptionVector>,
+    slots: Vec<Vec<CoinSlot>>,
+    steps: Vec<RunStep>,
+    foreign_amounts: Vec<u64>,
+    singleton_literal: Vec<u8>,
+    singleton_amount: u64,
+    singleton_program: Vec<u8>,
+    witness_widths: Vec<usize>,
+    leaf_bytes: Vec<u8>,
+    control_block: Vec<u8>,
+    position: usize,
+    pending: Option<OperationStep>,
+    singleton_asset: Option<TargetAssetId>,
+    singleton_coins: Vec<Outpoint>,
+    reserve_asset: Option<TargetAssetId>,
+    foreign_wires: Vec<WireOutpoint>,
+    foreign_coins: Vec<Outpoint>,
+    authorizations: BTreeMap<(usize, usize), Vec<Vec<u8>>>,
+    observations: Vec<(String, ObservedOutcomeLayer, String)>,
+}
+
+impl AdoptionRun {
+    /// Everything the run needs from the link, read once.
+    fn prepare() -> Self {
+        let reviewed = target();
+        let (bundle, leaf) = linked(MaturityDeployment::Demonstration);
+        let literals = leaf_literals(&leaf, &reviewed).expect("the leaf states its own literals");
+        let constructor = bundle
+            .instances()
+            .first()
+            .expect("the link retains its application")
+            .constructor();
+        let control_block = constructor
+            .control_recipe(StateLeafRole::Announcement)
+            .expect("the announcement leaf has a control path")
+            .control_bytes()
+            .expect("the control path encodes");
+        let vectors: Vec<AdoptionVector> = AdoptionCase::ALL
+            .into_iter()
+            .map(|case| {
+                adoption_transaction(case, &bundle, &reviewed).expect("the vector is buildable")
+            })
+            .collect();
+        let (slots, foreign_amounts) = coin_slots(&vectors, literals.input_asset());
+        Self {
+            singleton_amount: singleton_amount(&vectors, literals.input_asset()),
+            singleton_literal: literals.input_asset().to_vec(),
+            singleton_program: constructor.output_program(),
+            witness_widths: bundle
+                .record()
+                .witness()
+                .iter()
+                .map(|(_, value)| declared_width(value))
+                .collect(),
+            leaf_bytes: leaf.bytes().to_vec(),
+            control_block,
+            steps: plan_steps(&slots, foreign_amounts.len()),
+            vectors,
+            slots,
+            foreign_amounts,
+            position: 0,
+            pending: None,
+            singleton_asset: None,
+            singleton_coins: Vec::new(),
+            reserve_asset: None,
+            foreign_wires: Vec::new(),
+            foreign_coins: Vec::new(),
+            authorizations: BTreeMap::new(),
+            observations: Vec::new(),
+        }
+    }
+
+    /// The stack that spends the singleton coin.
+    ///
+    /// The six announcement roles at the widths the composed record
+    /// declares, in the order it declares them, then the operator
+    /// signature, then the leaf and its control block. The order is the
+    /// record's own: its declared starting stack is deepest-first, and
+    /// the signature is declared last because the committed operator
+    /// key's verification is the first instruction pair the leaf runs.
+    /// The six roles and the signature are placeholders of the declared
+    /// widths, because no layer of this workspace populates them yet,
+    /// except where a declared width is wider than the target relays.
+    fn announcement_stack(&self) -> Vec<Vec<u8>> {
+        let mut stack: Vec<Vec<u8>> = self
+            .witness_widths
+            .iter()
+            .map(|width| vec![0_u8; (*width).min(RELAY_STACK_ITEM_LIMIT)])
+            .collect();
+        stack.push(self.leaf_bytes.clone());
+        stack.push(self.control_block.clone());
+        stack
+    }
+
+    /// Where one slot's coin was funded.
+    fn coin(&self, slot: CoinSlot) -> Outpoint {
+        match slot {
+            CoinSlot::Singleton(case) => self.singleton_coins[case],
+            CoinSlot::Foreign(index) => self.foreign_coins[index],
+        }
+    }
+
+    /// One retained output over the assets this run has.
+    fn retarget(&self, output: &TargetOutput) -> TargetOutput {
+        let asset = if names_literal(output.asset(), &self.singleton_literal) {
+            self.singleton_asset.expect("the singleton asset is issued")
+        } else {
+            self.reserve_asset.expect("the reserve asset is funded")
+        };
+        TargetOutput::new(
+            AssetField::Explicit(asset),
+            output.value(),
+            output.nonce(),
+            output.program().to_vec(),
+        )
+    }
+
+    /// The stack one input of one case carries.
+    fn input_witness(&self, case: usize, index: usize, authorized: bool) -> Vec<Vec<u8>> {
+        if index == self.vectors[case].observed().executing_input_index() {
+            return self.announcement_stack();
+        }
+        if !authorized {
+            return Vec::new();
+        }
+        self.authorizations
+            .get(&(case, index))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// One case, in the retained shape, over the coins this run holds.
+    ///
+    /// Positions, amounts, programs and the successor's own output are
+    /// the vector's; the outpoints, the two assets and the witnesses are
+    /// the run's, because those are what a node requires to be real. The
+    /// unauthorized form is what a signing step is handed: a signature
+    /// over this input commits to the prevouts, the outputs and this
+    /// input's own coin, and to no other input's stack, so the two forms
+    /// have one signature between them.
+    fn candidate(&self, case: usize, authorized: bool) -> TargetTransaction {
+        let vector = &self.vectors[case];
+        let source = vector.transaction();
+        let inputs: Vec<TargetInput> = source
+            .inputs()
+            .iter()
+            .zip(&self.slots[case])
+            .map(|(input, slot)| TargetInput::new(self.coin(*slot), input.sequence()))
+            .collect();
+        let outputs: Vec<TargetOutput> = source
+            .outputs()
+            .iter()
+            .map(|output| self.retarget(output))
+            .collect();
+        let witnesses: Vec<InputWitness> = (0..inputs.len())
+            .map(|index| InputWitness::new(self.input_witness(case, index, authorized)))
+            .collect();
+        TargetTransaction::new(
+            source.version(),
+            inputs,
+            outputs,
+            source.lock_time(),
+            witnesses,
+        )
+        .expect("the funded case is a transaction")
+    }
+
+    /// The step that issues the singleton asset and funds it per case.
+    fn singleton_subject(&self) -> Result<OperationSubject, PlanRefused> {
+        let subject = TargetFundingSubject {
+            issue_asset: true,
+            asset: None,
+            output_program: self.singleton_program.clone(),
+            outputs: u8::try_from(self.vectors.len()).map_err(|_| PlanRefused)?,
+            amount_per_output: self.singleton_amount,
+        };
+        Ok(OperationSubject::Funding(Box::new(subject)))
+    }
+
+    /// The step that funds one coin of the target's own reserve asset.
+    ///
+    /// The retained shape's foreign coins are of some asset that is not
+    /// the singleton, and the reserve asset is the one such asset a run
+    /// can have coins of: a funding step issues an asset once per run,
+    /// and the step that pays out an already-issued one pays out that
+    /// same issuance. The reserve asset is also the one the target
+    /// weighs a fee in, which the accepted shape's third output is.
+    ///
+    /// The amount is exactly what the retained shape spends, because a
+    /// coin holding more would leave that asset unbalanced and the
+    /// tally, rather than the leaf, would be what refused the case.
+    fn reserve_subject(&self, index: usize) -> Result<OperationSubject, PlanRefused> {
+        let subject = TargetSponsorFundingSubject {
+            sponsor_outputs: 1,
+            amount_per_sponsor_output: *self.foreign_amounts.get(index).ok_or(PlanRefused)?,
+        };
+        Ok(OperationSubject::SponsorFunding(Box::new(subject)))
+    }
+
+    /// The step that authorizes one case's spend of one reserve coin.
+    fn authorize_subject(
+        &self,
+        case: usize,
+        input: usize,
+    ) -> Result<OperationSubject, PlanRefused> {
+        let CoinSlot::Foreign(index) = self.slots[case][input] else {
+            return Err(PlanRefused);
+        };
+        let subject = TargetSponsorSigningSubject {
+            finalized_transaction: self.candidate(case, false).encode(),
+            sponsor_input_index: u16::try_from(input).map_err(|_| PlanRefused)?,
+            sponsor_outpoint: self.foreign_wires.get(index).ok_or(PlanRefused)?.clone(),
+            sighash_profile: WireSighashProfile::AllInputsAllOutputs,
+        };
+        Ok(OperationSubject::SponsorSigning(Box::new(subject)))
+    }
+
+    /// The step this run sends next.
+    fn make_step(&self) -> Result<Option<OperationStep>, PlanRefused> {
+        let Some(step) = self.steps.get(self.position).copied() else {
+            return Ok(None);
+        };
+        let (name, subject) = match step {
+            RunStep::Singleton => ("fund-singleton".to_owned(), self.singleton_subject()?),
+            RunStep::Reserve(index) => (
+                format!("fund-reserve-{index}"),
+                self.reserve_subject(index)?,
+            ),
+            RunStep::Authorize(case, input) => (
+                format!(
+                    "authorize-{}-input-{input}",
+                    self.vectors[case].case().name()
+                ),
+                self.authorize_subject(case, input)?,
+            ),
+            RunStep::Submit(case) => (
+                self.vectors[case].case().name().to_owned(),
+                OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                    transaction_bytes: self.candidate(case, true).encode(),
+                })),
+            ),
+        };
+        Ok(Some(OperationStep::new(&name, subject)))
+    }
+
+    /// What one answer settles.
+    ///
+    /// Every step before a submission must have been accepted, because
+    /// a later step names what it produced. A submission's verdict is
+    /// the datum this run is for and settles nothing.
+    fn settle(&mut self, response: &NativeOperationResponse) -> Result<(), PlanRefused> {
+        let step = self.steps.get(self.position).copied().ok_or(PlanRefused)?;
+        if let RunStep::Submit(case) = step {
+            self.observations.push((
+                self.vectors[case].case().name().to_owned(),
+                response.observed_layer,
+                response.observed_detail.clone().unwrap_or_default(),
+            ));
+            return Ok(());
+        }
+        if response.observed_layer != ObservedOutcomeLayer::Accepted {
+            return Err(PlanRefused);
+        }
+        match step {
+            RunStep::Singleton => {
+                self.singleton_asset = Some(issued_asset(response)?);
+                self.singleton_coins = funded_coins(response, self.vectors.len())?;
+            }
+            RunStep::Reserve(_) => self.settle_reserve(response)?,
+            RunStep::Authorize(case, input) => {
+                if response.sponsor_witness.is_empty() {
+                    return Err(PlanRefused);
+                }
+                self.authorizations
+                    .insert((case, input), response.sponsor_witness.clone());
+            }
+            RunStep::Submit(_) => {}
+        }
+        Ok(())
+    }
+
+    /// The coin one reserve funding step created, and the asset it is
+    /// of, which the target names rather than this run.
+    fn settle_reserve(&mut self, response: &NativeOperationResponse) -> Result<(), PlanRefused> {
+        let [coin] = response.funded_outputs.as_slice() else {
+            return Err(PlanRefused);
+        };
+        let asset = TargetAssetId::from_internal(printed_identity(&coin.asset));
+        if self
+            .reserve_asset
+            .as_ref()
+            .is_some_and(|held| *held != asset)
+        {
+            return Err(PlanRefused);
+        }
+        self.reserve_asset = Some(asset);
+        self.foreign_wires.push(coin.outpoint.clone());
+        self.foreign_coins.push(outpoint_of(&coin.outpoint));
+        Ok(())
+    }
+}
+
+impl TargetOperationPlanner for AdoptionRun {
+    fn next_step(
+        &mut self,
+        previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+    ) -> Result<Option<OperationStep>, PlanRefused> {
+        match (self.pending.take(), previous) {
+            (Some(step), Some((case, response)))
+                if step.case() == case && &response.case == case =>
+            {
+                response.validate_shape().map_err(|_| PlanRefused)?;
+                self.settle(response)?;
+                self.position += 1;
+            }
+            (None, None) if self.position == 0 => {}
+            _ => return Err(PlanRefused),
+        }
+        let step = self.make_step()?;
+        self.pending.clone_from(&step);
+        Ok(step)
+    }
+}
+
+/// Run the planned operations against the adapter the run names.
+fn execute(
+    adapter: &Path,
+    diagnostics: &Path,
+    deployment: &CandidateDeploymentIdentity,
+    planner: &mut dyn TargetOperationPlanner,
+    capture: &mut NativeOperationCapture,
+) -> Result<(), target_elements_conformance::error::NativeConformanceError> {
+    let reviewed = reviewed_elements_tapscript().expect("reviewed target");
+    let binding = validate_reviewed_development_binding(
+        &reviewed,
+        DevelopmentDeploymentBinding::new(
+            reviewed.definition().version(),
+            DeploymentEnvironment::Development,
+            *deployment.network_id(),
+            *deployment.genesis_id(),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("development binding");
+    let configuration = ExecutorConfiguration::new(
+        adapter,
+        ExecutorTrust::ReviewedNonMock,
+        Duration::from_secs(300),
+        ExecutorDiagnostics::in_directory(&diagnostics.join("diagnostics")),
+    );
+    execute_operations_captured(&reviewed, &binding, &configuration, planner, capture).map(drop)
+}
+
+/// Hold every compared check to sitting after the operator's.
+fn compared_checks_follow_the_operator_check(
+    leaf: &DecodedAnnouncementLeaf,
+    reviewed: &ReviewedElementsTapscriptDefinition,
+) {
+    let operator = kept_check_site(leaf, reviewed, KeptCheck::OperatorAuthorization)
+        .expect("the operator authorization is in the bytes");
+    assert_eq!(operator, 0, "the leaf runs another check first");
+    for check in COMPARED_CHECKS {
+        let site =
+            kept_check_site(leaf, reviewed, check).expect("the compared check is in the bytes");
+        assert!(site > operator, "{} precedes the signature", check.name());
+    }
+}
+
+/// The four retained shapes, submitted to a real target.
+///
+/// What the run establishes: a node's own interpreter accepts the whole
+/// chain from the linked leaf's bytes through the static subtree, the
+/// output key and the control block — it reveals the leaf at a funded
+/// output of the constructor's own program and reaches that leaf's first
+/// instruction pair — and then refuses at the committed operator key's
+/// verification. The node-free half recomputed that chain; this is a
+/// target agreeing with the recomputation by running it.
+///
+/// What the run cannot establish is the gate's accepted case. Three
+/// facts of the tree stand in the way, and each is a fact of the
+/// deployment rather than of the run. The committed operator key is
+/// thirty-two bytes of public, meaningless material whose scalar nobody
+/// holds, and the leaf verifies a signature under it, so no witness
+/// satisfies it. The pinned singleton asset is a fixture constant, and a
+/// node derives an asset identity from its own issuing outpoint, so a
+/// really funded coin never carries the identity the leaf compares
+/// against. Output zero's program is authenticated against
+/// witness-supplied successor metadata, and the linked bundle's own
+/// outstanding set records that nothing here populates a witness or
+/// searches a successor's representation nonce. The announcement's
+/// witness roles are therefore placeholders: the run submits what it
+/// can build, and every case is refused before any compared field is
+/// read.
+///
+/// Two rules of the target's own decide where each case stops, and
+/// both are the target's rather than this run's. Its relay policy
+/// admits no tapscript stack item as wide as the predecessor-metadata
+/// role declares, so a spend carrying that role at its declared width
+/// is refused before any script runs at all; the placeholder is capped
+/// at the limit, which is what lets the leaf be reached. Its amount
+/// verification refuses an output of explicit value zero before it
+/// examines any witness, and one retained shape carries one, so that
+/// case is refused before the leaf while the other three are refused
+/// inside it.
+#[test]
+#[ignore = "requires the native adapter and a target node"]
+fn the_four_adoption_vectors_are_submitted_to_a_real_target() {
+    let executor = required_environment("TRIPOD_LIVE_EXECUTOR");
+    let deployment = native_identity();
+    let diagnostics = diagnostics_directory();
+    let reviewed = target();
+    let (_, leaf) = linked(MaturityDeployment::Demonstration);
+    compared_checks_follow_the_operator_check(&leaf, &reviewed);
+
+    let mut run = AdoptionRun::prepare();
+    let mut capture = NativeOperationCapture::default();
+    let outcome = execute(
+        Path::new(&executor),
+        &diagnostics,
+        &deployment,
+        &mut run,
+        &mut capture,
+    );
+    for (case, layer, detail) in &run.observations {
+        observation_line(case, *layer, detail);
+    }
+    outcome.expect("the native exchange completed");
+
+    assert_eq!(run.observations.len(), AdoptionCase::ALL.len());
+    assert_eq!(capture.operations().len(), run.steps.len());
+    for (observed, vector) in run.observations.iter().zip(&run.vectors) {
+        let (case, layer, detail) = observed;
+        assert_eq!(case.as_str(), vector.case().name());
+        if carries_a_zero_output(vector) {
+            assert_eq!(
+                *layer,
+                ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+                "{case}"
+            );
+            assert!(detail.contains(AMOUNT_FAILURE), "{case}: {detail}");
+            continue;
+        }
+        assert_eq!(*layer, ObservedOutcomeLayer::ScriptPathRejection, "{case}");
+        assert!(detail.starts_with(SCRIPT_FAILURE), "{case}: {detail}");
+        assert!(detail.contains(SIGNATURE_FAILURE), "{case}: {detail}");
+        assert!(!detail.contains(COMMITMENT_FAILURE), "{case}: {detail}");
+    }
 }
