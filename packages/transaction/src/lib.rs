@@ -27,6 +27,7 @@ pub mod state_abi;
 pub mod state_construct;
 pub mod state_finalize;
 pub mod state_request;
+pub mod state_signing;
 pub mod state_view;
 pub mod synthetic;
 pub mod taproot;
@@ -134,6 +135,11 @@ pub use state_finalize::{
 };
 pub use state_request::{
     MaturityAnnouncementRequest, SelectableMaturityRequestFacet, UnselectableMaturityRequestFacet,
+};
+pub use state_signing::{
+    MaturityAuthorizationFailure, MaturityProtectedRegion, MaturitySubmissionStatus,
+    OperatorAuthorizedMaturityAnnouncement, OperatorSigningStarted,
+    SubmitReadyMaturityAnnouncement,
 };
 pub use state_view::{
     MaturityViewEntry, MaturityViewResidual, MaturityViewStatement, PublicMaturityStateView,

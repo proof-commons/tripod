@@ -51,6 +51,7 @@ mod state_abi_tests;
 mod state_construct_tests;
 mod state_finalize_tests;
 mod state_request_tests;
+mod state_signing_tests;
 mod state_support;
 mod state_view_tests;
 mod taproot_tests;

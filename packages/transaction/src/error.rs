@@ -28,7 +28,9 @@ use target_elements::{ResourceDimension, TransactionForm};
 
 use crate::bytes::Outpoint;
 use crate::live_materialize::{ConfidentialInputRegion, ConfidentialOutputRole};
+use crate::operator_right::RightRefusal;
 use crate::operator_signing::OperatorSigningRefusal;
+use crate::state_signing::MaturityProtectedRegion;
 use crate::state_view::MaturityViewEntry;
 
 /// Why the transaction layer refused.
@@ -947,5 +949,110 @@ pub enum TransactionRefusal {
         /// Where the offered encoding first departs from the finalized
         /// one.
         at: usize,
+    },
+
+    // --- Maturity-announcement signing (§12.7, §13.3, §13.4) -----------
+    /// A protected region would have moved after signing started.
+    ///
+    /// From the started state onward every protected operation is a
+    /// refusal rather than an operation, and the refusal names the
+    /// region so that a caller learns what it reached for and the
+    /// twelve-member census can be walked by a test rather than
+    /// believed. §12.7 asks for exactly this where protected mutation is
+    /// representable: a mutation that is unrepresentable cannot be shown
+    /// to reject, and one that is representable and silently succeeds is
+    /// the fault the census exists to prevent.
+    MaturityMutationAfterSigningStarted {
+        /// The region the operation would have touched.
+        region: MaturityProtectedRegion,
+    },
+    /// The operator boundary refused to authorize the frozen candidate.
+    ///
+    /// Distinct from the freeze's refusal and never folded into it. The
+    /// freeze answers whether a request can be formed over this
+    /// candidate at all; this answers whether a returned response
+    /// authorizes it, which is a different question asked of a different
+    /// party at a different moment, and thirteen of §13.4's faults are
+    /// answers to the second.
+    ///
+    /// Carried whole rather than flattened: a missing response, a
+    /// duplicate, a surplus, another input, another operator, another
+    /// deployment, another profile, a type byte outside the selection,
+    /// an empty or misshapen signature, an echo of other bytes and a
+    /// signature that does not verify for the frozen message are
+    /// distinct findings, and the boundary that checks them has the
+    /// words for all of them. Boxed because that vocabulary is wide and
+    /// every result this crate returns would otherwise carry its width.
+    MaturityOperatorAuthorizationRefused {
+        /// What the boundary refused, in its own vocabulary.
+        refusal: Box<OperatorSigningRefusal>,
+    },
+    /// The construction-right registry refused the authorization.
+    ///
+    /// Everything the registry itself says about the token, the scope or
+    /// the bytes it was issued over — a stale branch, a scope it never
+    /// issued, a token from another registry or issuance, a consumed or
+    /// indeterminate right, a request naming another scope, or bytes
+    /// other than the ones bound at issuance. None of them is a
+    /// statement about the operator's answer, which is why they do not
+    /// share a variant with one.
+    ///
+    /// The refusal travels whole and the token does not travel with it:
+    /// an affine token cannot be duplicated or compared, so a refusal
+    /// value carrying one could be neither. The token is returned
+    /// beside this refusal instead, which is what lets a scope refused
+    /// once be consumed again.
+    MaturityConstructionRightRefused {
+        /// What the registry refused, in its own vocabulary.
+        refusal: Box<RightRefusal>,
+    },
+    /// The offered successor metadata is not the one that was signed.
+    ///
+    /// §13.4's first post-signing mutation, and checked before the
+    /// program comparison because a moved metadata also moves the
+    /// program the constructor commits it into: reporting that as a
+    /// program change would name the symptom and leave the cause
+    /// unnamed.
+    ///
+    /// No fields, and the omission is the finding's own shape. The
+    /// metadata is six quantities and a maturity state; a caller
+    /// offering a candidate holds both values already, so carrying two
+    /// copies of one of them would widen every result this crate returns
+    /// to tell a caller what it just supplied.
+    MaturitySuccessorMetadataChangedAfterSigning,
+    /// The offered successor output's program is not the one that was
+    /// signed.
+    ///
+    /// §13.4's second post-signing mutation. Named for the successor
+    /// rather than reported as a mutated output at a position, because
+    /// the successor's program is the commitment the whole transition
+    /// turns on and a position alone would not say so.
+    MaturitySuccessorProgramChangedAfterSigning {
+        /// Where the successor output sits.
+        position: u16,
+    },
+    /// The offered candidate carries an input the signed one did not.
+    ///
+    /// §13.4's third post-signing mutation. The sponsorless form has
+    /// exactly the one STATE input, and §12.7 censuses the sponsor
+    /// region as a region of its own, so a second input is that region
+    /// being opened rather than an input census that happens to be
+    /// longer.
+    MaturitySponsorInputAddedAfterSigning {
+        /// How many inputs were signed over.
+        finalized: usize,
+        /// How many the offering carries.
+        offered: usize,
+    },
+    /// The offered candidate carries an output beyond the successor.
+    ///
+    /// §13.4's fourth post-signing mutation. The finalized form fixes
+    /// the fee role as absent — the spent output and the successor carry
+    /// the same asset and amount, so the balance has no difference for a
+    /// fee to make up — and absent is a settled state rather than a
+    /// vacancy, so an output beyond the census is the fee role changing.
+    MaturityFeeRoleChangedAfterSigning {
+        /// The first position beyond the signed output census.
+        position: u16,
     },
 }

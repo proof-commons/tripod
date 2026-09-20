@@ -76,6 +76,7 @@ use super::{outpoint, reviewed_target};
 use crate::bytes::{AssetField, AssetId, ValueField};
 use crate::live_taproot::{LiveCurveCapability, TweakedOutputKey};
 use crate::operator_right::BranchContext;
+use crate::operator_signing::{ScriptPathSignatureVerifier, ScriptPathVerifierRejection};
 use crate::state_view::{
     MaturityViewStatement, PublicMaturityStateView, ValidatedMaturityStateView,
 };
@@ -482,4 +483,70 @@ pub(super) fn validated_view() -> ValidatedMaturityStateView {
     demonstration_view()
         .validate(&reviewed_target(), &FixtureStateCurve)
         .expect("the stated pair reproduces the stated program")
+}
+
+/// What the fixture verifier calls itself.
+///
+/// Named once so that a test can read the standing back and compare it
+/// with the implementation that produced it, rather than restating the
+/// string on both sides.
+pub(super) const FIXTURE_VERIFIER: &str =
+    "deterministic public-data test double; not Schnorr and not native evidence";
+
+/// A deterministic test function over public material.
+///
+/// Not Schnorr, not cryptography and not signature evidence. Two digests
+/// over the same two values in both orders, which gives the sixty-four
+/// bytes the operator profile selects and which answers differently for
+/// a different key or a different message — the second property being
+/// the one a negative needs, since a function answering alike for every
+/// message would let a signature over another candidate verify.
+///
+/// The material is public and meaningless. No scalar exists here, and
+/// nothing this produces says anything about any curve.
+pub(super) fn fixture_sign(key: &[u8], message: &Digest32) -> [u8; 64] {
+    let first: [u8; 32] = Sha256::new()
+        .chain_update(key)
+        .chain_update(message)
+        .finalize()
+        .into();
+    let second: [u8; 32] = Sha256::new()
+        .chain_update(message)
+        .chain_update(key)
+        .finalize()
+        .into();
+    let mut signature = [0_u8; 64];
+    signature[..32].copy_from_slice(&first);
+    signature[32..].copy_from_slice(&second);
+    signature
+}
+
+/// A test-only double accepting exactly [`fixture_sign`]'s output.
+///
+/// In-process evidence and explicitly not native evidence: it decides
+/// nothing about any curve, and it stands in the place production fills
+/// with an independently implemented verifier. It is deliberately the
+/// only thing it accepts, so a signature this file did not produce over
+/// this message fails here rather than being waved through.
+pub(super) struct FixtureScriptPathVerifier;
+
+impl ScriptPathSignatureVerifier for FixtureScriptPathVerifier {
+    fn verify(
+        &self,
+        key: &[u8],
+        message: &Digest32,
+        signature: &[u8],
+    ) -> Result<(), ScriptPathVerifierRejection> {
+        if signature == fixture_sign(key, message).as_slice() {
+            Ok(())
+        } else {
+            Err(ScriptPathVerifierRejection::new(
+                "the fixture function does not produce these bytes".to_owned(),
+            ))
+        }
+    }
+
+    fn description(&self) -> &str {
+        FIXTURE_VERIFIER
+    }
 }

@@ -182,7 +182,14 @@ fn every_transaction_refusal_is_censused(refusal: &Refusal) {
         | Refusal::MaturityAnnouncementSigningRequestRefused { .. }
         | Refusal::MaturityVersionChangedAfterFinalization { .. }
         | Refusal::MaturityLockTimeChangedAfterFinalization { .. }
-        | Refusal::MaturityBytesDifferAfterFinalization { .. } => (),
+        | Refusal::MaturityBytesDifferAfterFinalization { .. }
+        | Refusal::MaturityMutationAfterSigningStarted { .. }
+        | Refusal::MaturityOperatorAuthorizationRefused { .. }
+        | Refusal::MaturityConstructionRightRefused { .. }
+        | Refusal::MaturitySuccessorMetadataChangedAfterSigning
+        | Refusal::MaturitySuccessorProgramChangedAfterSigning { .. }
+        | Refusal::MaturitySponsorInputAddedAfterSigning { .. }
+        | Refusal::MaturityFeeRoleChangedAfterSigning { .. } => (),
     }
 }
 
