@@ -54,6 +54,7 @@ vectors_source_files = files(
   'src/maturity_closure.rs',
   'src/maturity_fixture.rs',
   'src/maturity_operator.rs',
+  'src/maturity_safety.rs',
   'src/mutation.rs',
   'src/observed_boundary.rs',
   'src/operation.rs',

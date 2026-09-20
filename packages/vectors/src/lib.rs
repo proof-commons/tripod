@@ -51,6 +51,7 @@ pub mod matrix;
 pub mod maturity_closure;
 pub mod maturity_fixture;
 pub mod maturity_operator;
+pub mod maturity_safety;
 pub mod mutation;
 mod observed_boundary;
 pub mod operation;
