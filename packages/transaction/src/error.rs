@@ -28,6 +28,7 @@ use target_elements::{ResourceDimension, TransactionForm};
 
 use crate::bytes::Outpoint;
 use crate::live_materialize::{ConfidentialInputRegion, ConfidentialOutputRole};
+use crate::operator_signing::OperatorSigningRefusal;
 use crate::state_view::MaturityViewEntry;
 
 /// Why the transaction layer refused.
@@ -880,4 +881,71 @@ pub enum TransactionRefusal {
     /// neither is reachable through a linked bundle, so all three are
     /// one name for the same reason the asset's is.
     MaturityDeploymentAmountDisagreesWithView,
+
+    // --- Maturity-announcement finalization (§12.7, §13.1, §13.2) ------
+    /// The operator signing boundary refused to freeze the finalized
+    /// candidate.
+    ///
+    /// Carried whole and never flattened. A binding pinning another
+    /// reviewed revision, a deployment genesis the binding does not
+    /// commit to, a curve refusing the committed operator key, a census
+    /// clause over the candidate and its spent outputs, and a leaf that
+    /// does not hash to the selection are five findings about five
+    /// different things, and the boundary that performs the freeze is
+    /// the only layer with words for all of them.
+    ///
+    /// Boxed because the operator vocabulary is large and every result
+    /// this crate returns would otherwise carry its width; the refusal
+    /// is carried entire, and the box says nothing about its content.
+    MaturityAnnouncementSigningRequestRefused {
+        /// What the freeze refused, in the operator boundary's
+        /// vocabulary.
+        refusal: Box<OperatorSigningRefusal>,
+    },
+    /// The transaction version was changed after finalization.
+    ///
+    /// Its own name because §12.7 censuses the version as a protected
+    /// region of its own. A report naming an output position for it
+    /// would name a region that did not move, which is a worse answer
+    /// than a wider one: a reader checking the refusal against the
+    /// census would look at an output that is exactly as it was fixed.
+    MaturityVersionChangedAfterFinalization {
+        /// The version the finalized form fixed.
+        finalized: u32,
+        /// The version offered afterwards.
+        offered: u32,
+    },
+    /// The lock time was changed after finalization.
+    ///
+    /// A region of its own for the version's reason. The field is inert
+    /// in the target's own evaluation of this form — no announcement
+    /// leaf reads it, and the final sequence is on every input — which
+    /// is why it is fixed at the value imposing no constraint and why a
+    /// change to it is a change nobody asked for rather than a
+    /// different policy.
+    MaturityLockTimeChangedAfterFinalization {
+        /// The lock time the finalized form fixed.
+        finalized: u32,
+        /// The lock time offered afterwards.
+        offered: u32,
+    },
+    /// An offered candidate's protected encoding is not the finalized
+    /// one.
+    ///
+    /// The close over what the region-naming comparisons do not reach.
+    /// Inputs are compared by outpoint, so an input's sequence can move
+    /// without the census changing size or any output, version or lock
+    /// time differing; this is that case, and in the sponsorless
+    /// announcement form it is the only one left.
+    ///
+    /// The offset is where the two encodings first disagree, or the
+    /// common prefix's length when one is a prefix of the other. An
+    /// offset rather than the bytes: the finding is that they differ,
+    /// and a caller offering a candidate already holds every byte of
+    /// it.
+    MaturityBytesDifferAfterFinalization {
+        /// Where the offered encoding first departs from the finalized
+        /// one.
+        at: usize,
+    },
 }

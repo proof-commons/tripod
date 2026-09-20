@@ -178,7 +178,11 @@ fn every_transaction_refusal_is_censused(refusal: &Refusal) {
         | Refusal::MaturitySuccessorSearchRefused { .. }
         | Refusal::MaturitySuccessorContinuityRefused { .. }
         | Refusal::MaturityDeploymentAssetDisagreesWithView
-        | Refusal::MaturityDeploymentAmountDisagreesWithView => (),
+        | Refusal::MaturityDeploymentAmountDisagreesWithView
+        | Refusal::MaturityAnnouncementSigningRequestRefused { .. }
+        | Refusal::MaturityVersionChangedAfterFinalization { .. }
+        | Refusal::MaturityLockTimeChangedAfterFinalization { .. }
+        | Refusal::MaturityBytesDifferAfterFinalization { .. } => (),
     }
 }
 

@@ -29,6 +29,15 @@
 //!
 //! The material is public and meaningless — it proves nothing about any
 //! curve and holds no scalar.
+//!
+//! Two traits ask that question now, and one formula answers both. The
+//! operator freeze recomputes an output key from a control block's
+//! internal key and folded root through the *live* capability and
+//! compares the program it builds with the spent output's, which the
+//! *STATE* capability produced. A second formula would turn that
+//! comparison into a test of whether this file agrees with itself, and
+//! it would fail for a reason that says nothing about the code under
+//! test.
 
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
@@ -65,16 +74,31 @@ use target_elements::{EncodingClass, LeafVersion};
 
 use super::{outpoint, reviewed_target};
 use crate::bytes::{AssetField, AssetId, ValueField};
+use crate::live_taproot::{LiveCurveCapability, TweakedOutputKey};
 use crate::operator_right::BranchContext;
 use crate::state_view::{
     MaturityViewStatement, PublicMaturityStateView, ValidatedMaturityStateView,
 };
+use crate::taproot::{Digest32, OutputKeyParity};
+
+/// The one tweak both curve vocabularies answer with.
+///
+/// The digest over the root is what makes a wrong nonce produce a
+/// different program rather than the same one; the parity is the last
+/// byte's, so a control block that stated the other one is caught.
+fn fixture_tweak(key: &[u8], root: &[u8; 32]) -> ([u8; 32], bool) {
+    let mut hash = Sha256::new();
+    hash.update(b"fixture-state-curve");
+    hash.update(key);
+    hash.update(root);
+    let derived: [u8; 32] = hash.finalize().into();
+    (derived, (derived[31] & 1) == 1)
+}
 
 /// A deterministic stand-in for public curve arithmetic.
 ///
 /// The assertion keeps it from answering for a key it was not asked
-/// about, and the digest over the root is what makes a wrong nonce
-/// produce a different program rather than the same one.
+/// about.
 pub(super) struct FixtureStateCurve;
 
 impl StateCurveCapability for FixtureStateCurve {
@@ -85,15 +109,57 @@ impl StateCurveCapability for FixtureStateCurve {
 
     fn output_key(&self, key: &[u8; 32], root: &[u8; 32]) -> StateTweakOutcome {
         assert_eq!(key, &STATE_NUMS_KEY);
-        let mut hash = Sha256::new();
-        hash.update(b"fixture-state-curve");
-        hash.update(key);
-        hash.update(root);
-        let derived: [u8; 32] = hash.finalize().into();
-        StateTweakOutcome::OutputKey {
-            key: derived,
-            parity: (derived[31] & 1) == 1,
-        }
+        let (key, parity) = fixture_tweak(key, root);
+        StateTweakOutcome::OutputKey { key, parity }
+    }
+}
+
+/// The same stand-in, answering the live curve vocabulary.
+///
+/// A separate type rather than a second trait on [`FixtureStateCurve`]:
+/// both traits spell the method `output_key` with different signatures,
+/// and one type carrying both would force every call site to say which
+/// it meant for nothing gained. What matters is that the two answer
+/// from one formula, and they do.
+///
+/// The membership question is answered by width alone. It stands for
+/// public point arithmetic this crate deliberately does not have, and a
+/// fixture that pretended to decide it would be asserting the very
+/// thing the capability exists to leave outside.
+pub(super) struct FixtureLiveCurve;
+
+impl LiveCurveCapability for FixtureLiveCurve {
+    fn owner_key_is_a_curve_point(&self, owner: &[u8]) -> bool {
+        owner.len() == STATE_NUMS_KEY.len()
+    }
+
+    fn output_key(&self, internal_key: &[u8], merkle_root: &Digest32) -> Option<TweakedOutputKey> {
+        assert_eq!(internal_key, STATE_NUMS_KEY.as_slice());
+        let (key, parity) = fixture_tweak(internal_key, merkle_root);
+        let parity = if parity {
+            OutputKeyParity::Odd
+        } else {
+            OutputKeyParity::Even
+        };
+        Some(TweakedOutputKey::new(key, parity))
+    }
+}
+
+/// The live stand-in, refusing to call the committed operator key a
+/// point.
+///
+/// The tweak is unchanged, so the only thing this fixture moves is the
+/// membership verdict — which is what lets a test reach the freeze's
+/// first curve refusal without disturbing any tree.
+pub(super) struct FixtureLiveCurveRefusingTheOperatorKey;
+
+impl LiveCurveCapability for FixtureLiveCurveRefusingTheOperatorKey {
+    fn owner_key_is_a_curve_point(&self, _owner: &[u8]) -> bool {
+        false
+    }
+
+    fn output_key(&self, internal_key: &[u8], merkle_root: &Digest32) -> Option<TweakedOutputKey> {
+        FixtureLiveCurve.output_key(internal_key, merkle_root)
     }
 }
 
@@ -205,8 +271,33 @@ pub(super) fn state_metadata() -> StateMetadata {
     }
 }
 
-/// The bound deployment sources of the demonstration link.
-fn bridge() -> StateLinkDeploymentParameters {
+/// The demonstration deployment's identity.
+///
+/// Its genesis is byte-uniform, so it is its own reversal: a check that
+/// converts between the printed and internal byte orders passes over it
+/// whichever direction it converts in. That is why
+/// [`asymmetric_genesis_identity`] exists.
+pub(super) fn demonstration_identity() -> CandidateDeploymentIdentity {
+    CandidateDeploymentIdentity::new([0x11; 32], [0x22; 32])
+        .expect("fixture identifiers are nonzero")
+}
+
+/// A second identity whose genesis is not its own reversal.
+///
+/// One byte moved, and moved at an end: the reversal of this genesis
+/// differs from it in its first and last bytes, so a conversion run in
+/// the wrong direction — or not run at all — produces a value the
+/// binding does not commit to and is caught by name. Everything else
+/// about the deployment is the demonstration one's, so a bundle linked
+/// over it differs in exactly the value under test.
+pub(super) fn asymmetric_genesis_identity() -> CandidateDeploymentIdentity {
+    let mut genesis = [0x22; 32];
+    genesis[0] = 0xa1;
+    CandidateDeploymentIdentity::new([0x11; 32], genesis).expect("fixture identifiers are nonzero")
+}
+
+/// The bound deployment sources of one link, over one identity.
+fn bridge(identity: CandidateDeploymentIdentity) -> StateLinkDeploymentParameters {
     let target = reviewed_target();
     let bounds = AnnouncementLeadBounds::new(Cycle::new(2), Cycle::new(4))
         .expect("the fixture window is nonzero and ordered");
@@ -217,17 +308,15 @@ fn bridge() -> StateLinkDeploymentParameters {
         .expect("fixture internal key has the reviewed width");
     let profile = EstablishedOperatorProfile::establish(selected_operator_profile(), &target)
         .expect("the reviewed target establishes the source selection");
-    let identity = CandidateDeploymentIdentity::new([0x11; 32], [0x22; 32])
-        .expect("fixture identifiers are nonzero");
-    let binding = OperatorDeploymentBinding::bind(&target, key, profile, identity, &internal_key)
-        .expect("the candidate deployment binds");
+    let binding =
+        OperatorDeploymentBinding::bind(&target, key, profile, identity.clone(), &internal_key)
+            .expect("the candidate deployment binds");
 
     StateLinkDeploymentParameters::bind(
         &target,
         plan(),
         StateLeadBounds::new(bounds, StateLeadBoundOrigin::Fixture),
-        CandidateDeploymentIdentity::new([0x11; 32], [0x22; 32])
-            .expect("fixture identifiers are nonzero"),
+        identity,
         binding,
         NonZeroU32::new(8).expect("eight is nonzero"),
         &record(),
@@ -245,6 +334,21 @@ fn bridge() -> StateLinkDeploymentParameters {
 /// Everything else is the demonstration deployment's, so a bundle built
 /// here differs from [`linked_bundle`] in exactly the two values named.
 pub(super) fn linked_bundle_with(
+    budget: StateNonceBudget,
+    metadata: StateMetadata,
+) -> CandidateLinkedMaturityBundle {
+    linked_bundle_over(demonstration_identity(), budget, metadata)
+}
+
+/// The same bundle over one named deployment identity.
+///
+/// The identity reaches both the operator binding and the link's own
+/// deployment parameters, because those two are the pair a genesis
+/// check compares: a fixture that varied one of them would be testing
+/// that they disagree rather than that the conversion between their
+/// byte orders is performed.
+pub(super) fn linked_bundle_over(
+    identity: CandidateDeploymentIdentity,
     budget: StateNonceBudget,
     metadata: StateMetadata,
 ) -> CandidateLinkedMaturityBundle {
@@ -269,7 +373,7 @@ pub(super) fn linked_bundle_with(
         &target,
         &StateLinkSources::new(
             &record(),
-            &bridge(),
+            &bridge(identity),
             &constructor,
             &StateSingletonAsset::new([0x11; 32]),
             &StateSingletonDeclaration::from_architecture_asset(spec)
