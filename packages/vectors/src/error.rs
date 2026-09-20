@@ -9,7 +9,7 @@
 
 use compiler::CompileError;
 use linker::LinkRefusal;
-use realization::{RealizationError, RelationId};
+use realization::{MaturityTransitionRefusal, RealizationError, RelationId};
 use tapscript::bundle::BundleRefusal;
 use tapscript::error::TapscriptError;
 use target_elements::TargetError;
@@ -132,6 +132,24 @@ pub enum VectorError {
         fixture: SemanticFixtureId,
         /// The realization layer's own refusal.
         cause: RealizationError,
+    },
+    /// The realization refused the semantic transition a fixture's
+    /// expectation is derived through.
+    ///
+    /// Distinct from [`Self::ExpectationNotDerivable`], which carries a
+    /// refusal about the value domain: this one carries the transition's
+    /// own closed sum, whose members say whether the predecessor was
+    /// already announced or already complete, whether the announced
+    /// cycle sits below the admissible window or above it, and whether
+    /// the window could be derived at all. Flattening those into a
+    /// domain refusal, or into a report that the fixture is invalid,
+    /// would discard a distinction only the layer deriving the window is
+    /// able to make.
+    ExpectedSuccessorRefused {
+        /// The fixture whose successor was not derivable.
+        fixture: SemanticFixtureId,
+        /// What the transition refused, in the realization's vocabulary.
+        refusal: MaturityTransitionRefusal,
     },
     /// A target vector could not be materialized.
     TargetMaterializationFailed {
