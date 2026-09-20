@@ -1,4 +1,4 @@
-//! Tests for the reviewed compact-ASH transaction forms.
+//! Tests for the reviewed candidate transaction forms.
 //!
 //! These are guard tests over a review, so they check the shape of what
 //! the review states rather than recomputing target behavior — nothing
@@ -9,10 +9,10 @@ use std::collections::BTreeSet;
 
 use crate::{
     DecisionStatus, EvidenceClaimClass, ExplicitZeroValueRule, FeeRecognitionTerm, FieldForm,
-    FormAdmission, FormConstraint, SponsorAuthorizationSource, SponsorInspectedField,
-    StatedAmountCheck, SubstrateSelection, TargetEvidenceRequirementId, TargetEvidenceSubject,
-    TransactionForm, ZeroFeeRepresentation, reviewed_elements_tapscript,
-    reviewed_explicit_zero_value_rule, reviewed_fee_output_contract,
+    FormAdmission, FormConstraint, RelayCondition, SponsorAuthorizationSource,
+    SponsorInspectedField, StatedAmountCheck, SubstrateSelection, TAPSCRIPT_STACK_ITEM_RELAY_LIMIT,
+    TargetEvidenceRequirementId, TargetEvidenceSubject, TransactionForm, ZeroFeeRepresentation,
+    reviewed_elements_tapscript, reviewed_explicit_zero_value_rule, reviewed_fee_output_contract,
     reviewed_sponsor_input_profile, reviewed_stated_amount_bound, reviewed_stated_amount_checks,
     reviewed_substrate_decision, reviewed_transaction_forms, transaction_form_evidence,
 };
@@ -97,7 +97,7 @@ fn a_sponsorless_form_is_admitted_by_consensus_and_conditioned_only_by_relay() {
 }
 
 #[test]
-fn both_forms_are_admitted_by_consensus_so_sponsorship_stays_optional() {
+fn every_reviewed_form_is_admitted_by_consensus_so_sponsorship_stays_optional() {
     let forms = reviewed_transaction_forms();
 
     for form in TransactionForm::ALL {
@@ -109,6 +109,52 @@ fn both_forms_are_admitted_by_consensus_so_sponsorship_stays_optional() {
     }
 
     assert!(forms[&TransactionForm::Sponsored].fee_output_present());
+}
+
+#[test]
+fn the_announcement_is_refused_by_relay_on_a_width_no_condition_lifts() {
+    // The condition set is compared whole rather than by a membership
+    // test: a second condition creeping in beside the direct-submission
+    // route would say the relay path admits the form after all, which
+    // is the reading this verdict exists to refuse.
+    let forms = reviewed_transaction_forms();
+    let announcement = &forms[&TransactionForm::MaturityAnnouncement];
+
+    assert_eq!(announcement.consensus(), FormAdmission::Admitted);
+    assert_eq!(announcement.relay(), FormAdmission::Refused);
+    assert_eq!(
+        announcement.relay_conditions(),
+        &BTreeSet::from([RelayCondition::DirectSubmissionToProducer])
+    );
+    assert!(!announcement.fee_output_present());
+
+    // The neighbours are what make the refusal informative: a form the
+    // relay path still admits under a condition is a different verdict
+    // from one it refuses, and both are present to be told apart.
+    for conditioned in [TransactionForm::Sponsorless, TransactionForm::Sponsored] {
+        assert_eq!(
+            forms[&conditioned].relay(),
+            FormAdmission::AdmittedUnderCondition,
+            "{conditioned:?} would leave the refusal with nothing to contrast against"
+        );
+    }
+}
+
+#[test]
+fn the_relay_width_is_stated_here_and_the_relay_floor_is_not() {
+    // Two policy facts of different kinds. The width is a constant of
+    // the target's own policy source and is stated as a number; the
+    // floor is a per-deployment setting the target publishes no value
+    // for, so the condition naming it carries none and this crate has
+    // no figure to check it against.
+    assert_eq!(TAPSCRIPT_STACK_ITEM_RELAY_LIMIT, 80);
+
+    let forms = reviewed_transaction_forms();
+    assert!(
+        forms[&TransactionForm::Sponsored]
+            .relay_conditions()
+            .contains(&RelayCondition::OwnFeeReachesRelayFloor)
+    );
 }
 
 #[test]

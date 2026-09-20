@@ -148,14 +148,23 @@ fn the_projection_carries_the_reviewed_wave_five_facts_unchanged() {
     );
     assert!(!sponsor.arbitrary_program_support_claimed());
 
-    // Both forms are reviewed, so a sponsorless candidate is not
-    // silently made to depend on sponsorship.
+    // Both sponsorship forms are reviewed, so a sponsorless candidate
+    // is not silently made to depend on sponsorship. The census is
+    // compared against the target's own rather than against a pair
+    // written here: the reviewed forms are the target's list to extend,
+    // and a copy of its length in this crate would turn every extension
+    // into a failure of a test that is not about extension.
     let forms = projection.forms();
+    assert!(forms.contains_key(&TransactionForm::Sponsorless));
+    assert!(forms.contains_key(&TransactionForm::Sponsored));
     assert_eq!(
         forms.keys().copied().collect::<BTreeSet<_>>(),
-        BTreeSet::from([TransactionForm::Sponsorless, TransactionForm::Sponsored]),
+        TransactionForm::ALL
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>(),
     );
-    assert_eq!(forms.len(), 2);
+    assert_eq!(forms.len(), TransactionForm::ALL.len());
     assert!(!projection.zero_value().is_empty());
     let _: &BTreeMap<TransactionForm, _> = forms;
 }

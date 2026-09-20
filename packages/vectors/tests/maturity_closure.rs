@@ -35,7 +35,8 @@ use tapscript::{
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
     OpcodeId, PayloadWidth, ReviewedElementsTapscriptDefinition, StackValueType,
-    reviewed_elements_tapscript, validate_reviewed_development_binding,
+    TAPSCRIPT_STACK_ITEM_RELAY_LIMIT, reviewed_elements_tapscript,
+    validate_reviewed_development_binding,
 };
 use target_elements_conformance::executor::{
     ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust, NativeOperationCapture,
@@ -725,22 +726,6 @@ const COMMITMENT_FAILURE: &str = "Witness program";
 /// What the target says where its amount verification refuses.
 const AMOUNT_FAILURE: &str = "bad-txns-in-ne-out";
 
-/// The widest stack item the target's relay policy admits in a
-/// tapscript spend.
-///
-/// A policy constant of the target rather than a choice of this
-/// workspace, and the reason one placeholder below is not at the width
-/// its role declares: the announcement's predecessor-metadata role is
-/// wider than this, a mempool refuses a tapscript spend carrying a
-/// wider stack item before it runs any script, and a refusal there is
-/// the target declining to state a verdict about the leaf at all. What
-/// this run observes is the first instruction pair of that leaf, which
-/// no stack item's width reaches, so capping the placeholder costs the
-/// observation nothing and is what makes it possible. A spend carrying
-/// real metadata would meet the same limit; that is the target's
-/// standing answer about this leaf and not this run's difficulty.
-const RELAY_STACK_ITEM_LIMIT: usize = 80;
-
 /// The checks the leaf's own comparisons decide a vector by.
 ///
 /// Every one of them sits after the committed operator key's
@@ -1073,11 +1058,14 @@ impl AdoptionRun {
     /// The six roles and the signature are placeholders of the declared
     /// widths, because no layer of this workspace populates them yet,
     /// except where a declared width is wider than the target relays.
+    /// Capping such a placeholder at the reviewed relay width costs this
+    /// observation nothing, because what it observes is the leaf's first
+    /// instruction pair, which no stack item's width reaches.
     fn announcement_stack(&self) -> Vec<Vec<u8>> {
         let mut stack: Vec<Vec<u8>> = self
             .witness_widths
             .iter()
-            .map(|width| vec![0_u8; (*width).min(RELAY_STACK_ITEM_LIMIT)])
+            .map(|width| vec![0_u8; (*width).min(TAPSCRIPT_STACK_ITEM_RELAY_LIMIT)])
             .collect();
         stack.push(self.leaf_bytes.clone());
         stack.push(self.control_block.clone());

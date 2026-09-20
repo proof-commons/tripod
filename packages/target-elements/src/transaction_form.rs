@@ -1,4 +1,4 @@
-//! Reviewed target facts about the compact-ASH transaction forms.
+//! Reviewed target facts about the candidate transaction forms.
 //!
 //! The rest of this crate reviews what one *program* does when a node
 //! executes it. This module reviews what one *transaction* has to look
@@ -209,6 +209,9 @@ census_enum! {
         Sponsorless,
         /// An ASH family plus a sponsor suffix, paying a positive fee.
         Sponsored,
+        /// A maturity announcement: the spend that consumes the
+        /// singleton coin and recreates it under the successor program.
+        MaturityAnnouncement,
     }
 }
 
@@ -246,6 +249,39 @@ pub enum RelayCondition {
     DirectSubmissionToProducer,
 }
 
+/// The widest stack item a default relay policy admits in a tapscript
+/// spend.
+///
+/// Source, in the reviewed target checkout:
+/// `MAX_STANDARD_TAPSCRIPT_STACK_ITEM_SIZE` in `src/policy/policy.h`,
+/// read by the witness standardness test beside it in
+/// `src/policy/policy.cpp`, which measures every item of a script-path
+/// witness before any script runs. It is a standardness figure and not
+/// a consensus one: a node applies it to what it forwards, a deployment
+/// can move it, and a spend it stops is still a spend a block may
+/// contain.
+///
+/// # Why this one carries a figure and the relay floor does not
+///
+/// [`RelayCondition::OwnFeeReachesRelayFloor`] deliberately states no
+/// number, because a floor is a per-deployment setting and the target
+/// publishes no value for it. This width is the other kind of fact: a
+/// constant of the target's own policy source, which a reader can check
+/// against the file named above. Stating it here rather than leaving it
+/// to whichever test needs it is what gives the figure one definition
+/// to disagree with instead of several.
+///
+/// # The consequence the candidate pipeline already carries
+///
+/// The maturity announcement's predecessor-metadata witness role is
+/// eighty-six bytes wide, fixed exactly by the canonical metadata
+/// encoding, so an announcement spend carrying real metadata exceeds
+/// this width unconditionally. Because the measurement happens before
+/// execution, the refusal is the relay path declining to state a
+/// verdict about the leaf at all rather than the target judging it, and
+/// the form is judged at the block layer under any default policy.
+pub const TAPSCRIPT_STACK_ITEM_RELAY_LIMIT: usize = 80;
+
 /// The reviewed verdicts for one transaction form.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransactionFormReview {
@@ -276,6 +312,12 @@ impl TransactionFormReview {
     }
 
     /// The conditions under which the relay path admits it.
+    ///
+    /// Where the relay verdict is [`FormAdmission::Refused`] the set
+    /// names the route around the relay path instead. A refused form
+    /// has no condition the path would admit it under, and it still has
+    /// to reach a block somehow, so the set is read as the answer to
+    /// that question rather than as conditions that were not met.
     #[must_use]
     pub const fn relay_conditions(&self) -> &BTreeSet<RelayCondition> {
         &self.relay_conditions
@@ -306,6 +348,24 @@ impl TransactionFormReview {
 /// individually relayable under a default policy, which is a
 /// deployment fact and not a target one, and which must not be
 /// answered by making sponsorship mandatory.
+///
+/// The announcement form's consensus admission rests on the same
+/// absence of a fee requirement, and its relay verdict is
+/// [`TAPSCRIPT_STACK_ITEM_RELAY_LIMIT`] applied to a witness item
+/// eighty-six bytes wide. A width is not a condition: paying more meets
+/// a fee floor, and travelling in a topology-restricted package meets a
+/// topology limit, but no fee, package or version choice makes an item
+/// narrower. Its relay verdict is therefore a refusal rather than an
+/// admission under condition, and the single condition recorded beside
+/// it names the route a refused form still has — handing the
+/// transaction to a block producer directly.
+///
+/// The announcement's fee-output field records what the form itself
+/// fixes, which is nothing. The announcement leaf constrains the
+/// singleton's own input and output roles and tests no output for the
+/// fee form, so an announcement that carries a fee output is exercising
+/// a freedom the form leaves open rather than meeting a requirement of
+/// it, and one that carries none is equally well formed.
 #[must_use]
 pub fn reviewed_transaction_forms() -> BTreeMap<TransactionForm, TransactionFormReview> {
     [
@@ -327,6 +387,13 @@ pub fn reviewed_transaction_forms() -> BTreeMap<TransactionForm, TransactionForm
             relay: FormAdmission::AdmittedUnderCondition,
             relay_conditions: std::iter::once(RelayCondition::OwnFeeReachesRelayFloor).collect(),
             fee_output_present: true,
+        },
+        TransactionFormReview {
+            form: TransactionForm::MaturityAnnouncement,
+            consensus: FormAdmission::Admitted,
+            relay: FormAdmission::Refused,
+            relay_conditions: std::iter::once(RelayCondition::DirectSubmissionToProducer).collect(),
+            fee_output_present: false,
         },
     ]
     .into_iter()
