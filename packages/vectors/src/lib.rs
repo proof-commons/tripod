@@ -49,6 +49,7 @@ pub mod live_sponsored_private;
 pub mod materialize;
 pub mod matrix;
 pub mod maturity_closure;
+pub mod maturity_first_party;
 pub mod maturity_fixture;
 pub mod maturity_operator;
 pub mod maturity_safety;
