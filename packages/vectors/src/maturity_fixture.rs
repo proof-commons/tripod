@@ -75,26 +75,54 @@
 //! so that a reader counting what §15.1 asks for finds it named rather
 //! than missing.
 //!
-//! # The row vocabulary
+//! # The row vocabulary has one home
 //!
-//! §16.1's fourteen positive rows are named here because nothing else in
-//! the tree names them yet. The STATE safety matrix being written beside
-//! this module transcribes §16's tables in full, and once it lands the
-//! row vocabulary should have one home rather than two: this registry
-//! should key to that section instead of restating it. The ordinals
-//! below are the table's own 1 to 14 and the names are the rows' own
-//! wording, so that unification is one file's edit.
+//! §16.1's fourteen positive rows are named by the STATE safety matrix,
+//! which transcribes §16's tables in full, and this registry reads its
+//! names out of that transcription rather than restating them. A name
+//! written twice is two statements that agree until one of them is
+//! edited, and the wording a reader checks against the guide should be
+//! the wording every consumer reads. The ordinals here are the table's
+//! own 1 to 14, and a row's position in the transcription is what
+//! [`PositiveRow::name`] resolves.
+//!
+//! # A class is a predicate and not a name
+//!
+//! §15.5 asks a positive class for an executable typed predicate and
+//! closes by saying that a class name alone cannot make a fixture
+//! canonical. A name is a claim about a world; a function is a claim a
+//! test can refute. Every class whose subject this layer holds is
+//! therefore a [`MaturityClassWitness`] member whose predicate is a
+//! function over values a case already carries, run over the registry's
+//! own cases by a test, so that filing a case under a class and
+//! exhibiting that class are two separate things and the second can
+//! fail.
+//!
+//! Three of the six classes §15.5 exemplifies have no case as their
+//! subject, and they say so in their own type rather than by being
+//! absent. The nonzero representation nonce is a property of the
+//! constructor's bounded search: a semantic world carries no nonce at
+//! all, so the predicate reads a link's retained search instead, and it
+//! reads one passed to it rather than one held here — this registry
+//! stores no link. The sponsored class has no carrier in this operation
+//! to run a predicate against, and public recovery compares against
+//! material a semantic fixture excludes by construction. A class
+//! carried as a typed member with its reason is one a later wave can
+//! discharge by name, while a class left out is one nobody can find.
 
 use std::collections::BTreeSet;
 
 use architecture::{ObjectId, OperationId};
+use linker::{CandidateLinkedMaturityBundle, StateRetainedConstructor};
 use realization::{
     AnnouncementLeadBounds, Cycle, Maturity, ProtocolAmount, StateMetadata, announce_maturity,
 };
+use tapscript::StateNonceEvidence;
 use transaction::{MaturityAnnouncementRequest, RequestedForm, SponsorChangeRequest};
 
 use crate::error::VectorError;
 use crate::fixture::SemanticFixtureId;
+use crate::maturity_safety::MATURITY_SAFETY_ROWS;
 
 /// The exact operation identity every fixture in this module claims.
 ///
@@ -129,9 +157,9 @@ const THIRD_WINDOW: (u64, u64) = (4, 6);
 
 /// One row of §16.1's positive case table.
 ///
-/// The ordinal is the table's own position and the name is the row's own
-/// wording, both so that a reader can check a row against the table and
-/// so that keying to the §16 transcription later moves one file.
+/// The ordinal is the table's own position, and the name is read out of
+/// the §16 transcription, so that a reader can check a row against the
+/// table and the wording has one home rather than two.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PositiveRow {
     /// An announcement at exactly the minimum admissible lead.
@@ -204,24 +232,83 @@ impl PositiveRow {
         }
     }
 
+    /// The row's entry in the §16 transcription, counting from zero.
+    ///
+    /// The one place a position lives. The transcription holds §16's
+    /// tables contiguously in the guide's order with §16.1 first, so the
+    /// fourteen positive rows are its first fourteen entries and a row's
+    /// ordinal is this position plus one; a test holds both statements
+    /// to the transcription itself rather than leaving the indexing to
+    /// an argument.
+    const fn position(self) -> usize {
+        match self {
+            Self::MinimumValidLead => 0,
+            Self::MaximumValidLead => 1,
+            Self::RepresentativeInteriorLead => 2,
+            Self::SmallestCurrentCycle => 3,
+            Self::CurrentCycleNearCheckedUpperDomain => 4,
+            Self::NontrivialUnaffectedFields => 5,
+            Self::RepresentationNonceZero => 6,
+            Self::RepresentationNonceNonzero => 7,
+            Self::Sponsorless => 8,
+            Self::SponsoredWithoutChange => 9,
+            Self::SponsoredWithChange => 10,
+            Self::PublicSuccessorRecovery => 11,
+            Self::RepeatedEqualConstruction => 12,
+            Self::AcceptedByTheTarget => 13,
+        }
+    }
+
     /// The row's stable name, in the table's own wording.
+    ///
+    /// Read out of the §16 transcription rather than restated here. That
+    /// transcription is what a reader checks against the guide line by
+    /// line, and a second copy of the wording would be a second
+    /// statement of it — one that agrees until either is edited, and
+    /// whose disagreement nothing would report.
     #[must_use]
     pub const fn name(self) -> &'static str {
+        MATURITY_SAFETY_ROWS[self.position()].name()
+    }
+
+    /// The §15.5 class this row keys to, where §15.5 names one.
+    ///
+    /// The two lead rows key to the two lead classes and the
+    /// unaffected-fields row to the single-field transition. Both nonce
+    /// rows key to the one nonce class, because the class's statement —
+    /// that every earlier nonce was checked and refused for a retryable
+    /// reason — is the same at a zero and at a nonzero selection, and is
+    /// what makes either of them least. The sponsored rows and the
+    /// recovery row key to the two classes whose subjects sit outside
+    /// this layer, so that a reader counting §15.5's classes finds them
+    /// named.
+    ///
+    /// The interior-lead row, the two domain-edge rows and the
+    /// sponsorless row key to none, which is not an omission. §15.5
+    /// exemplifies classes, and an interior lead, a domain-edge current
+    /// cycle and the sponsorless form are not among them; minting a
+    /// class name to cover a row is the move §15.5's closing sentence
+    /// refuses. Those rows' own assertions are checked where every
+    /// row's is, when its case is built.
+    #[must_use]
+    pub const fn witness(self) -> Option<MaturityClassWitness> {
         match self {
-            Self::MinimumValidLead => "minimum-valid-lead",
-            Self::MaximumValidLead => "maximum-valid-lead",
-            Self::RepresentativeInteriorLead => "representative-interior-lead",
-            Self::SmallestCurrentCycle => "smallest-current-cycle",
-            Self::CurrentCycleNearCheckedUpperDomain => "current-cycle-near-checked-upper-domain",
-            Self::NontrivialUnaffectedFields => "nontrivial-unaffected-fields",
-            Self::RepresentationNonceZero => "representation-nonce-zero",
-            Self::RepresentationNonceNonzero => "representation-nonce-nonzero",
-            Self::Sponsorless => "sponsorless",
-            Self::SponsoredWithoutChange => "sponsored-without-change",
-            Self::SponsoredWithChange => "sponsored-with-change-where-supported",
-            Self::PublicSuccessorRecovery => "public-successor-recovery",
-            Self::RepeatedEqualConstruction => "repeated-equal-construction",
-            Self::AcceptedByTheTarget => "accepted-target-spend",
+            Self::MinimumValidLead => Some(MaturityClassWitness::MinimumLead),
+            Self::MaximumValidLead => Some(MaturityClassWitness::MaximumLead),
+            Self::NontrivialUnaffectedFields => Some(MaturityClassWitness::SingleFieldTransition),
+            Self::RepresentationNonceZero | Self::RepresentationNonceNonzero => {
+                Some(MaturityClassWitness::NonzeroRepresentationNonce)
+            }
+            Self::SponsoredWithoutChange | Self::SponsoredWithChange => {
+                Some(MaturityClassWitness::Sponsored)
+            }
+            Self::PublicSuccessorRecovery => Some(MaturityClassWitness::PublicRecovery),
+            Self::RepresentativeInteriorLead
+            | Self::SmallestCurrentCycle
+            | Self::CurrentCycleNearCheckedUpperDomain
+            | Self::Sponsorless
+            | Self::RepeatedEqualConstruction
+            | Self::AcceptedByTheTarget => None,
         }
     }
 
@@ -305,6 +392,216 @@ impl UnfixedReason {
             }
         }
     }
+}
+
+/// One §15.5 positive class, as the predicate that class is.
+///
+/// §15.5 lists six classes by example and closes by saying that a class
+/// name alone cannot make a fixture canonical. Each member here carries
+/// the predicate its class is: stated in §15.5's words by
+/// [`Self::predicate`], and computed by [`Self::holds`] wherever the
+/// subject is a case. A member whose subject is not a case says which
+/// reason puts it elsewhere rather than answering `false` about a
+/// question it was never asked.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MaturityClassWitness {
+    /// The announced cycle sits exactly one minimum lead after the
+    /// current one.
+    ///
+    /// Read as the case's stored distance against the window's own lower
+    /// endpoint, so the class is decided by the bounds that admitted the
+    /// world rather than by arithmetic repeated here.
+    MinimumLead,
+    /// The announced cycle sits exactly one maximum lead after the
+    /// current one.
+    ///
+    /// Read the same way against the upper endpoint. More than one
+    /// world can exhibit it, because a class is a property and not an
+    /// identity.
+    MaximumLead,
+    /// Every semantic field but maturity compares equal across the
+    /// transition, and maturity is the field that moved.
+    ///
+    /// Read over the case's predecessor and the successor its own layer
+    /// derived. The moved field is part of the statement: a predicate
+    /// the identity satisfies would witness no transition at all.
+    SingleFieldTransition,
+    /// Every earlier nonce is checked and refused for a retryable
+    /// reason.
+    ///
+    /// The subject is a link's retained search rather than a case, and
+    /// the predicate is [`nonce_search_was_least_first`]. A semantic
+    /// world carries no nonce: the selection belongs to the
+    /// constructor's bounded scan from zero, and the only first-party
+    /// account of what that scan checked is the evidence the scan itself
+    /// retained.
+    NonzeroRepresentationNonce,
+    /// The exact sponsor suffix and fee role are present.
+    ///
+    /// Carried with its predicate stated and nothing to run it against.
+    /// The reduced announcement leaf carries no sponsor check, and the
+    /// sponsor relations hold no region of the transaction until a later
+    /// refit gives them one, so a predicate run today would be deciding
+    /// a form that neither the leaf nor the model constrains.
+    Sponsored,
+    /// An independent reconstruction equals the program of output zero.
+    ///
+    /// Carried because that comparison is against material a semantic
+    /// fixture excludes by construction, so the class is exercised where
+    /// the reconstruction is performed and belongs with the recovery
+    /// deliverables rather than here.
+    PublicRecovery,
+}
+
+impl MaturityClassWitness {
+    /// Every class §15.5 names, in the order it lists them.
+    pub const ALL: &'static [Self] = &[
+        Self::MinimumLead,
+        Self::MaximumLead,
+        Self::SingleFieldTransition,
+        Self::NonzeroRepresentationNonce,
+        Self::Sponsored,
+        Self::PublicRecovery,
+    ];
+
+    /// The predicate the class is, in §15.5's own words.
+    #[must_use]
+    pub const fn predicate(self) -> &'static str {
+        match self {
+            Self::MinimumLead => "the announced cycle is the current cycle plus the minimum lead",
+            Self::MaximumLead => "the announced cycle is the current cycle plus the maximum lead",
+            Self::SingleFieldTransition => "all semantic fields but maturity compare equal",
+            Self::NonzeroRepresentationNonce => {
+                "every earlier nonce is checked and refused for a retryable reason"
+            }
+            Self::Sponsored => "the exact sponsor suffix and fee role are present",
+            Self::PublicRecovery => {
+                "an independent reconstruction equals the program of output zero"
+            }
+        }
+    }
+
+    /// Why a semantic case is not this class's subject, where it is not.
+    ///
+    /// Decided here and nowhere else, so that [`Self::holds`] and a
+    /// reader counting the classes a case can answer cannot disagree.
+    /// The reasons are the registry's own: a class with no case subject
+    /// and a row no fixture answers are one fact read from two sides,
+    /// and a reason with one home is what lets a later wave discharge it
+    /// by name.
+    #[must_use]
+    pub const fn no_case_subject(self) -> Option<UnfixedReason> {
+        match self {
+            Self::MinimumLead | Self::MaximumLead | Self::SingleFieldTransition => None,
+            Self::NonzeroRepresentationNonce => Some(UnfixedReason::RepresentationSearchFact),
+            Self::Sponsored => Some(UnfixedReason::SponsoredFormHasNoCarrier),
+            Self::PublicRecovery => Some(UnfixedReason::RecoveryComparesTargetMaterial),
+        }
+    }
+
+    /// Whether one case exhibits this class.
+    #[must_use]
+    pub fn holds(self, case: &MaturitySemanticCase) -> ClassVerdict {
+        if let Some(reason) = self.no_case_subject() {
+            return ClassVerdict::NoCaseSubject(reason);
+        }
+        let holds = match self {
+            Self::MinimumLead => case.lead() == case.bounds().minimum(),
+            Self::MaximumLead => case.lead() == case.bounds().maximum(),
+            Self::SingleFieldTransition => moves_maturity_alone(case),
+            // Answered above, by the one function that decides which
+            // classes a case is the subject of. Listed rather than left
+            // to a catch-all so that a class added later stops this
+            // match instead of silently reading as refuted.
+            Self::NonzeroRepresentationNonce | Self::Sponsored | Self::PublicRecovery => false,
+        };
+        if holds {
+            ClassVerdict::Holds
+        } else {
+            ClassVerdict::Fails
+        }
+    }
+}
+
+/// What a class's predicate says about one case.
+///
+/// A sum rather than a `bool`, because a class whose subject is not a
+/// case has no answer to give about one, and reporting `false` would
+/// make an inapplicable predicate indistinguishable from a refuted one.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ClassVerdict {
+    /// The case exhibits the class.
+    Holds,
+    /// The case does not exhibit it.
+    Fails,
+    /// The class's subject is not a case, for this reason.
+    NoCaseSubject(UnfixedReason),
+}
+
+/// Whether a link's retained search checked every earlier nonce and
+/// refused each for a reason a nonce change can repair.
+///
+/// The subject §15.5's nonce class needs, and the reason that subject is
+/// not a case: the selection is the constructor's, made by a bounded
+/// scan from zero, and what the scan checked is stated only by the
+/// evidence the scan retained. Every retained instance is read, because
+/// a link retains one per semantic metadata it applied its recipe to and
+/// a claim about the search is a claim about each of them.
+///
+/// Four conditions, over each instance's own evidence record. The bundle
+/// retains at least one instance, since a statement about every search
+/// would otherwise hold where no search ran. The refused candidates are,
+/// in scan order, exactly the nonces below the selected one. Each was
+/// refused for a retryable reason, which is the class's own wording.
+/// And the selected nonce is the first the scan did not refuse, which is
+/// the count of those it did.
+///
+/// The leastness this establishes is leastness inside the scan's budget
+/// and no more. The evidence record carries that residual itself, and a
+/// predicate claiming more would be claiming it about candidates nobody
+/// evaluated.
+#[must_use]
+pub fn nonce_search_was_least_first(bundle: &CandidateLinkedMaturityBundle) -> bool {
+    let instances = bundle.instances();
+    !instances.is_empty()
+        && instances
+            .iter()
+            .map(StateRetainedConstructor::constructor)
+            .all(|constructor| search_was_least_first(constructor.evidence()))
+}
+
+/// Whether the transition moved maturity and left every other semantic
+/// field where it was.
+///
+/// The five unaffected fields compare equal across the case's own
+/// derivation, and maturity is read on both sides rather than only on
+/// one: that it moved from unannounced to the announced cycle the request
+/// names is what makes this a transition, and a predicate the identity
+/// satisfies would be a statement about nothing having happened.
+fn moves_maturity_alone(case: &MaturitySemanticCase) -> bool {
+    let predecessor = case.predecessor();
+    let successor = case.expected();
+    let announced = Maturity::Announced {
+        cycle: case.announced_cycle(),
+    };
+    predecessor.omega == successor.omega
+        && predecessor.y_l == successor.y_l
+        && predecessor.y_t == successor.y_t
+        && predecessor.q == successor.q
+        && predecessor.cycle == successor.cycle
+        && predecessor.maturity == Maturity::Unannounced
+        && successor.maturity == announced
+}
+
+/// Whether one retained search settled on the least nonce it admitted.
+fn search_was_least_first(evidence: &StateNonceEvidence) -> bool {
+    evidence
+        .rejected
+        .iter()
+        .zip(0_u32..)
+        .all(|((nonce, refusal), earlier)| refusal.retryable() && nonce.get() == earlier)
+        && u32::try_from(evidence.rejected.len())
+            .is_ok_and(|checked| evidence.selected.get() == checked)
 }
 
 /// The canonical order §15.1 retains, for one STATE in one operation.
@@ -847,18 +1144,24 @@ pub fn fixtures() -> Result<Vec<MaturitySemanticCase>, VectorError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CanonicalOrder, CensusEntry, MaturitySemanticCase, OPERATION, OutstandingProducer,
-        OutstandingRetention, PositiveRow, SUBJECT, UnfixedReason, fixtures,
-        positive_semantic_census, semantic_case,
+        CanonicalOrder, CensusEntry, ClassVerdict, MaturityClassWitness, MaturitySemanticCase,
+        OPERATION, OutstandingProducer, OutstandingRetention, PositiveRow, SUBJECT, UnfixedReason,
+        fixtures, nonce_search_was_least_first, positive_semantic_census, search_was_least_first,
+        semantic_case,
     };
     use crate::error::VectorError;
     use crate::fixture::SemanticFixtureId;
+    use crate::maturity_closure::{MaturityDeployment, linked_maturity_bundle};
+    use crate::maturity_safety::{
+        MATURITY_SAFETY_ROWS, MaturitySafetyRow, MaturitySafetySection, rows_of,
+    };
     use architecture::{ObjectId, OperationId};
     use realization::{
         AnnouncementLeadBounds, Cycle, Maturity, MaturityTransitionRefusal, ProtocolAmount,
-        StateMetadata, announce_maturity,
+        StateMetadata, StateRepresentationNonce, announce_maturity,
     };
     use std::collections::{BTreeSet, HashSet};
+    use tapscript::{StateConstructorRefusal, StateNonceEvidence};
     use transaction::{MaturityAnnouncementRequest, RequestedForm, SponsorChangeRequest};
 
     /// Every fixture the census carries.
@@ -1212,5 +1515,246 @@ mod tests {
             .map(|case| (case.predecessor(), case.bounds(), case.request()))
             .collect();
         assert_eq!(worlds.len(), census.len());
+    }
+
+    /// Each class with a case subject, run over the registry's own
+    /// cases. The lead pair carries the distinguishing negative — each
+    /// fails on the other's case, which is what makes either a witness
+    /// rather than a label. The single-field predicate has no
+    /// constructible negative here: a case's only constructor derives
+    /// its successor through the realization's own transition, so a case
+    /// whose unaffected fields moved cannot be built at all, and that
+    /// unbuildability is the property itself rather than a gap in the
+    /// exercise. It is therefore run positively over every fixture.
+    #[test]
+    fn each_in_wave_class_holds_on_its_own_row_and_the_lead_classes_reject_each_other() {
+        let census = all_fixtures();
+        let keyed = census
+            .iter()
+            .filter(|case| case.row().witness().is_some())
+            .count();
+        assert_eq!(keyed, 3);
+
+        for case in &census {
+            if let Some(witness) = case.row().witness() {
+                assert_eq!(witness.holds(case), ClassVerdict::Holds, "{:?}", case.id());
+            }
+            assert_eq!(
+                MaturityClassWitness::SingleFieldTransition.holds(case),
+                ClassVerdict::Holds,
+                "{:?}",
+                case.id()
+            );
+        }
+
+        let minimum = named(PositiveRow::MinimumValidLead);
+        let maximum = named(PositiveRow::MaximumValidLead);
+        assert_eq!(
+            MaturityClassWitness::MinimumLead.holds(&maximum),
+            ClassVerdict::Fails
+        );
+        assert_eq!(
+            MaturityClassWitness::MaximumLead.holds(&minimum),
+            ClassVerdict::Fails
+        );
+    }
+
+    /// The nonce class's subject is a link's retained search, so the
+    /// predicate runs over the cheapest link the closure module
+    /// publishes and the record behind its verdict is then read again by
+    /// hand: a predicate agreeing with an independent reading of the
+    /// same record is what keeps this from passing while claiming
+    /// nothing.
+    ///
+    /// Its three refusals are exercised over records written here rather
+    /// than over a link, because a scan that skipped a candidate, one
+    /// that refused a candidate for a reason no nonce change repairs,
+    /// and one that settled above the first candidate it admitted are
+    /// all searches the constructor will not perform. A predicate
+    /// nothing can refute states nothing, and these are the three ways
+    /// this one can be.
+    #[test]
+    fn the_nonce_class_reads_the_links_own_retained_search() {
+        let bundle = linked_maturity_bundle(MaturityDeployment::Demonstration)
+            .expect("the demonstration deployment links through the real curve");
+        assert!(nonce_search_was_least_first(&bundle));
+        assert_eq!(
+            bundle.instances().len(),
+            1,
+            "the link retains the one application it ran"
+        );
+
+        for instance in bundle.instances() {
+            let evidence = instance.constructor().evidence();
+            for (earlier, (nonce, refusal)) in evidence.rejected.iter().enumerate() {
+                assert!(refusal.retryable(), "{refusal:?}");
+                assert_eq!(usize::try_from(nonce.get()), Ok(earlier));
+            }
+            assert_eq!(
+                usize::try_from(evidence.selected.get()),
+                Ok(evidence.rejected.len())
+            );
+        }
+
+        let repairable = StateConstructorRefusal::CanonicalBranchSideNotSatisfied;
+        assert!(repairable.retryable());
+        assert!(search_was_least_first(&StateNonceEvidence {
+            rejected: vec![(StateRepresentationNonce::new(0), repairable)],
+            selected: StateRepresentationNonce::new(1),
+        }));
+        assert!(!search_was_least_first(&StateNonceEvidence {
+            rejected: vec![(
+                StateRepresentationNonce::new(0),
+                StateConstructorRefusal::MetadataEncodingRefused
+            )],
+            selected: StateRepresentationNonce::new(1),
+        }));
+        assert!(!search_was_least_first(&StateNonceEvidence {
+            rejected: vec![(StateRepresentationNonce::new(1), repairable)],
+            selected: StateRepresentationNonce::new(2),
+        }));
+        assert!(!search_was_least_first(&StateNonceEvidence {
+            rejected: vec![(StateRepresentationNonce::new(0), repairable)],
+            selected: StateRepresentationNonce::new(2),
+        }));
+
+        for row in [
+            PositiveRow::RepresentationNonceZero,
+            PositiveRow::RepresentationNonceNonzero,
+        ] {
+            assert_eq!(
+                row.witness(),
+                Some(MaturityClassWitness::NonzeroRepresentationNonce)
+            );
+            assert_eq!(
+                row.carried_reason(),
+                Some(UnfixedReason::RepresentationSearchFact)
+            );
+        }
+        assert_eq!(
+            MaturityClassWitness::NonzeroRepresentationNonce
+                .holds(&named(PositiveRow::MinimumValidLead)),
+            ClassVerdict::NoCaseSubject(UnfixedReason::RepresentationSearchFact)
+        );
+    }
+
+    /// The two classes whose subjects sit outside this layer answer the
+    /// sponsored and the recovery rows and nothing else, each with the
+    /// reason that puts it elsewhere — and that reason is the row's own,
+    /// so a class carried here and a row no fixture answers cannot come
+    /// to disagree about why.
+    #[test]
+    fn the_out_of_wave_classes_answer_exactly_the_sponsored_and_recovery_rows() {
+        let case = named(PositiveRow::MinimumValidLead);
+        for (row, witness, reason) in [
+            (
+                PositiveRow::SponsoredWithoutChange,
+                MaturityClassWitness::Sponsored,
+                UnfixedReason::SponsoredFormHasNoCarrier,
+            ),
+            (
+                PositiveRow::SponsoredWithChange,
+                MaturityClassWitness::Sponsored,
+                UnfixedReason::SponsoredFormHasNoCarrier,
+            ),
+            (
+                PositiveRow::PublicSuccessorRecovery,
+                MaturityClassWitness::PublicRecovery,
+                UnfixedReason::RecoveryComparesTargetMaterial,
+            ),
+        ] {
+            assert_eq!(row.witness(), Some(witness));
+            assert_eq!(witness.no_case_subject(), Some(reason));
+            assert_eq!(row.carried_reason(), Some(reason));
+            assert_eq!(witness.holds(&case), ClassVerdict::NoCaseSubject(reason));
+        }
+
+        let answering: Vec<PositiveRow> = PositiveRow::ALL
+            .iter()
+            .copied()
+            .filter(|row| {
+                matches!(
+                    row.witness(),
+                    Some(MaturityClassWitness::Sponsored | MaturityClassWitness::PublicRecovery)
+                )
+            })
+            .collect();
+        assert_eq!(
+            answering,
+            vec![
+                PositiveRow::SponsoredWithoutChange,
+                PositiveRow::SponsoredWithChange,
+                PositiveRow::PublicSuccessorRecovery
+            ]
+        );
+    }
+
+    /// The keying, checked rather than argued: the transcription's §16.1
+    /// section and this registry's rows are the same fourteen names in
+    /// the same order, and each row's position lands on an entry of that
+    /// section, so the entry a name is read from is the row it claims to
+    /// be. The ordinal a reader checks against the guide is held to the
+    /// same position, because two tables of one fact are two statements
+    /// and this is where they meet.
+    #[test]
+    fn the_registry_reads_its_row_names_from_the_safety_matrix() {
+        let transcribed: Vec<&'static str> = rows_of(MaturitySafetySection::Positive)
+            .map(MaturitySafetyRow::name)
+            .collect();
+        let registered: Vec<&'static str> = PositiveRow::ALL
+            .iter()
+            .copied()
+            .map(PositiveRow::name)
+            .collect();
+        assert_eq!(transcribed.len(), 14);
+        assert_eq!(registered, transcribed);
+
+        for row in PositiveRow::ALL.iter().copied() {
+            let entry = &MATURITY_SAFETY_ROWS[row.position()];
+            assert_eq!(entry.section(), MaturitySafetySection::Positive);
+            assert_eq!(entry.name(), row.name());
+            assert_eq!(usize::try_from(row.ordinal()), Ok(row.position() + 1));
+        }
+    }
+
+    /// Every class §15.5 names states its own predicate and is reachable
+    /// from a row, because a class nothing keys to is a predicate nothing
+    /// runs; and the three whose subject is not a case say so, because a
+    /// class silently inapplicable to a case would be indistinguishable
+    /// from one a case refutes.
+    #[test]
+    fn every_class_states_its_predicate_and_is_keyed_to_a_row() {
+        assert_eq!(MaturityClassWitness::ALL.len(), 6);
+
+        let statements: BTreeSet<&'static str> = MaturityClassWitness::ALL
+            .iter()
+            .copied()
+            .map(MaturityClassWitness::predicate)
+            .collect();
+        assert_eq!(statements.len(), MaturityClassWitness::ALL.len());
+
+        for witness in MaturityClassWitness::ALL.iter().copied() {
+            assert!(witness.predicate().len() > 20, "{witness:?}");
+            assert!(
+                PositiveRow::ALL
+                    .iter()
+                    .any(|row| row.witness() == Some(witness)),
+                "{witness:?}"
+            );
+        }
+
+        let carried: Vec<MaturityClassWitness> = MaturityClassWitness::ALL
+            .iter()
+            .copied()
+            .filter(|witness| witness.no_case_subject().is_some())
+            .collect();
+        assert_eq!(
+            carried,
+            vec![
+                MaturityClassWitness::NonzeroRepresentationNonce,
+                MaturityClassWitness::Sponsored,
+                MaturityClassWitness::PublicRecovery
+            ]
+        );
     }
 }
