@@ -484,8 +484,19 @@ pub fn closure_target() -> Result<ReviewedElementsTapscriptDefinition, MaturityC
 
 /// The validated announcement plan, derived once and handed out by
 /// clone.
-fn announcement_plan() -> Result<ValidatedMaturityAnnouncementOperationPlan, MaturityClosureRefusal>
-{
+///
+/// The §16 safety matrix resolves its rows against this plan, so the
+/// derivation is shared crate-wide rather than repeated: a second
+/// derivation would give two callers two plans to disagree about, and
+/// linking a candidate bundle merely to read a plan would pay for a link
+/// nobody needs.
+///
+/// # Errors
+///
+/// [`MaturityClosureRefusal::PlanUnavailable`] and the other refusals the
+/// derivation behind it raises, cloned from the one derivation.
+pub(crate) fn announcement_plan()
+-> Result<ValidatedMaturityAnnouncementOperationPlan, MaturityClosureRefusal> {
     static PLAN: LazyLock<
         Result<ValidatedMaturityAnnouncementOperationPlan, MaturityClosureRefusal>,
     > = LazyLock::new(build_announcement_plan);

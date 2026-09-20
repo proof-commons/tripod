@@ -44,6 +44,19 @@
 //! thing changes: the reason is a value a test reads, not a sentence in a
 //! comment.
 //!
+//! # A link is computed, never tabulated
+//!
+//! A row states which relation its change is meant to violate and which
+//! published class of that relation it stages, and nothing here writes
+//! down the requirement those two select. [`resolve_row`] computes it
+//! against the compiler's validated announcement plan, so a plan that
+//! moves underneath the matrix fails the matrix: a relation that stops
+//! being published, a class that stops being required, or a class that
+//! starts being required twice all turn a row that used to resolve into a
+//! refusal or a stated non-answer. A table of requirement identities
+//! would instead keep agreeing with itself, which is the one thing a
+//! completeness claim must not be able to do.
+//!
 //! # Nothing here is evidence
 //!
 //! This module holds no fixture, no bundle, no transaction, no witness,
@@ -62,12 +75,19 @@
 //! one home here and the registry will carry fixtures rather than a
 //! second copy of the names.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{AssetId, ObjectId, OperationId};
-use compiler::operation_plan::CollateralPolicy;
+use compiler::maturity_announcement_plan::{
+    MaturityAnnouncementRepresentationPlan, ValidatedMaturityAnnouncementOperationPlan,
+};
+use compiler::operation_plan::{
+    CollateralPolicy, CoverageBoundary, CoverageRequirementId, RelationMutation, SponsorCase,
+    TargetCoverageObligation,
+};
 use realization::{RelationId, RelationKind, RelationSubject, TransactionSide};
 
+use crate::error::VectorError;
 use crate::matrix::{EvidenceBoundary, MutationLayer};
 
 /// The §16 table one row is drawn from.
@@ -430,9 +450,154 @@ pub enum MaturityExpectedProjection {
     ForbiddenPublicationRefused,
 }
 
+/// One published negative class of the announcement's coverage.
+///
+/// A class is a boundary and a mutation together, because a boundary and
+/// a mutation together is what the plan publishes: a relation's negatives
+/// are its runtime mutation vocabulary at the carrier boundary plus the
+/// boundary-and-mutation pairs it requires away from the runtime. Naming
+/// the mutation alone would leave a row unable to say which obligation it
+/// stages wherever one relation publishes one mutation at two boundaries,
+/// and the announcement's lifecycle exit is such a relation: the plan
+/// must require the exit and the emitted program must carry it, two
+/// obligations whose mutation is the same word.
+///
+/// The members are the classes this matrix's rows stage and no others. A
+/// member no row names would be a vocabulary entry standing on nothing,
+/// and a class the plan does not publish would be a row's private
+/// invention; the census tests refuse both.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MaturityMutationClass {
+    /// Fewer members of the relation's family than its minimum.
+    CardinalityBelowMinimum,
+    /// More members of the relation's family than its maximum.
+    ///
+    /// The ceiling the published mutation carries is deliberately not
+    /// restated here: it is an architecture-owned bound the plan cites
+    /// rather than copies, a copy on the row would be a draft that can
+    /// drift from the bound it came from, and one relation-case publishes
+    /// one above-maximum class, so the ceiling narrows nothing.
+    CardinalityAboveMaximum,
+    /// A member of the family carrying another asset.
+    WrongRecognizedAsset,
+    /// A member of the family that is another object.
+    WrongRecognizedObject,
+    /// A root effect other than the one the operation declares.
+    WrongRootEffect,
+    /// A projection the operation requires, absent.
+    MissingRequiredProjection,
+    /// A projection the operation forbids, present.
+    ForbiddenProjectionPresent,
+    /// No external report arrived where the relation needs one.
+    ExternalReportMissing,
+    /// An external report arrived and does not establish its premise.
+    ExternalReportFailed,
+    /// An external report establishes its premise for another subject.
+    ExternalReportSubjectMismatch,
+    /// The required lifecycle exit is absent from the validated plan.
+    ///
+    /// The plan-side half of the exit relation's pair. The rows that name
+    /// it change a semantic fact of the announcement window, and what a
+    /// semantic fact disturbs is the exit condition the plan's own static
+    /// discharge decides; whether the emitted program retains the exit is
+    /// a structural property of bytes, which no row of that table moves.
+    RequiredExitMissingFromThePlan,
+}
+
+impl MaturityMutationClass {
+    /// Every class the matrix's rows stage.
+    pub const ALL: &'static [Self] = &[
+        Self::CardinalityBelowMinimum,
+        Self::CardinalityAboveMaximum,
+        Self::WrongRecognizedAsset,
+        Self::WrongRecognizedObject,
+        Self::WrongRootEffect,
+        Self::MissingRequiredProjection,
+        Self::ForbiddenProjectionPresent,
+        Self::ExternalReportMissing,
+        Self::ExternalReportFailed,
+        Self::ExternalReportSubjectMismatch,
+        Self::RequiredExitMissingFromThePlan,
+    ];
+
+    /// The class's own name, for a report and for the census.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::CardinalityBelowMinimum => "CardinalityBelowMinimum",
+            Self::CardinalityAboveMaximum => "CardinalityAboveMaximum",
+            Self::WrongRecognizedAsset => "WrongRecognizedAsset",
+            Self::WrongRecognizedObject => "WrongRecognizedObject",
+            Self::WrongRootEffect => "WrongRootEffect",
+            Self::MissingRequiredProjection => "MissingRequiredProjection",
+            Self::ForbiddenProjectionPresent => "ForbiddenProjectionPresent",
+            Self::ExternalReportMissing => "ExternalReportMissing",
+            Self::ExternalReportFailed => "ExternalReportFailed",
+            Self::ExternalReportSubjectMismatch => "ExternalReportSubjectMismatch",
+            Self::RequiredExitMissingFromThePlan => "RequiredExitMissingFromThePlan",
+        }
+    }
+
+    /// Where the plan indexes this class's requirement.
+    #[must_use]
+    pub const fn boundary(self) -> CoverageBoundary {
+        match self {
+            Self::CardinalityBelowMinimum
+            | Self::CardinalityAboveMaximum
+            | Self::WrongRecognizedAsset
+            | Self::WrongRecognizedObject
+            | Self::WrongRootEffect
+            | Self::MissingRequiredProjection
+            | Self::ForbiddenProjectionPresent => CoverageBoundary::RuntimeCarrier,
+            Self::ExternalReportMissing
+            | Self::ExternalReportFailed
+            | Self::ExternalReportSubjectMismatch => CoverageBoundary::ExternalEvidence,
+            Self::RequiredExitMissingFromThePlan => CoverageBoundary::CompilerStatic,
+        }
+    }
+
+    /// Whether one published mutation is this class.
+    #[must_use]
+    pub const fn matches(self, mutation: &RelationMutation) -> bool {
+        match self {
+            Self::CardinalityBelowMinimum => {
+                matches!(mutation, RelationMutation::CardinalityBelowMinimum)
+            }
+            Self::CardinalityAboveMaximum => {
+                matches!(mutation, RelationMutation::CardinalityAboveMaximum { .. })
+            }
+            Self::WrongRecognizedAsset => {
+                matches!(mutation, RelationMutation::WrongRecognizedAsset)
+            }
+            Self::WrongRecognizedObject => {
+                matches!(mutation, RelationMutation::WrongRecognizedObject)
+            }
+            Self::WrongRootEffect => matches!(mutation, RelationMutation::WrongRootEffect),
+            Self::MissingRequiredProjection => {
+                matches!(mutation, RelationMutation::MissingRequiredProjection)
+            }
+            Self::ForbiddenProjectionPresent => {
+                matches!(mutation, RelationMutation::ForbiddenProjectionPresent)
+            }
+            Self::ExternalReportMissing => {
+                matches!(mutation, RelationMutation::ExternalEvidenceMissing)
+            }
+            Self::ExternalReportFailed => {
+                matches!(mutation, RelationMutation::ExternalEvidenceFailed)
+            }
+            Self::ExternalReportSubjectMismatch => {
+                matches!(mutation, RelationMutation::ExternalEvidenceIdentityMismatch)
+            }
+            Self::RequiredExitMissingFromThePlan => {
+                matches!(mutation, RelationMutation::RequiredLifecycleExitMissing)
+            }
+        }
+    }
+}
+
 /// Why one §16 row names no published relation.
 ///
-/// Three distinct situations, kept apart because they call for three
+/// Four distinct situations, kept apart because they call for four
 /// different repairs and only some of them are this workspace's to make.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
@@ -456,15 +621,43 @@ pub enum MaturityUnlinkedReason {
     /// serialization, and the evidence is a property of the bytes a
     /// report renders rather than of anything an announcement did.
     TheReportIsTheSubject,
+    /// The relation the row's fault belongs to is published, and is
+    /// evaluated over the whole observed transaction.
+    ///
+    /// Five of the announcement's relations quantify over everything the
+    /// observed transaction carries rather than over the positions the
+    /// operation claims: the object-family closures of both sides, the
+    /// sponsor isolation, the canonical delta partition, the open-flow
+    /// policy and the sponsor envelope count. No leaf enforces any of
+    /// them, and the realization that does enforce them reads a whole
+    /// transaction, so linking such a row to a published requirement
+    /// would claim the plan constrains the region this operation occupies
+    /// when what it constrains is every operation the transaction
+    /// happens to carry. A link here would be a guess in the one
+    /// direction the closure principle forbids as firmly as the other:
+    /// the model would refuse what the covenant accepts.
+    ///
+    /// What would have to land for the row to link is the region-scoping
+    /// refit: region membership becomes part of the observation, a
+    /// transaction becomes the union of its operations' regions, and each
+    /// of those relations becomes a statement about one region. After
+    /// that the relation publishes a class about this operation and the
+    /// row returns to [`MaturityRelationStanding::Declared`] and
+    /// resolves, with the sponsor envelope count retired or re-scoped
+    /// with the rest because it is resource policy rather than semantics.
+    RelationScopedToTheWholeTransaction,
 }
 
 /// What one §16 row intends to violate, or to preserve.
 ///
-/// The relation travels as a stated identifier. Nothing here resolves it
-/// against a published plan: the row says which relation it means, and a
-/// later resolution is what refutes a row that means one the plan does
-/// not publish. Tabulating a resolved requirement identity here would be
-/// a second source of truth that could agree with neither side.
+/// The relation and the class travel as stated identities and no
+/// requirement identity is tabulated beside them. The row says which
+/// relation it means and which published class of it the change stages;
+/// [`resolve_row`] is what turns that into one requirement, and what
+/// refutes a row whose relation or class the plan does not publish. A
+/// requirement identity written down here would be a second source of
+/// truth that could agree with neither side, and it would keep agreeing
+/// with itself after the plan moved.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MaturityRelationStanding {
     /// The row intends every published relation of the operation to hold.
@@ -476,8 +669,13 @@ pub enum MaturityRelationStanding {
     /// single relation would be claiming the others were not its
     /// business.
     EveryPublishedRelation,
-    /// The row names one published relation.
-    Declared(RelationId),
+    /// The row names one published relation and one of its classes.
+    Declared {
+        /// The relation the change is intended to violate.
+        relation: RelationId,
+        /// The published negative class the change stages.
+        class: MaturityMutationClass,
+    },
     /// The row names none, for a stated reason.
     Unlinked(MaturityUnlinkedReason),
 }
@@ -692,6 +890,7 @@ use EvidenceBoundary as B;
 use MaturityCanonicalControl as Control;
 use MaturityExpectedProjection as Projection;
 use MaturityIntendedCarrier as C;
+use MaturityMutationClass as Class;
 use MaturityMutationLocator as Loc;
 use MaturityProjectionTerm as Term;
 use MaturityRelationStanding as Standing;
@@ -757,19 +956,6 @@ const fn sponsor_recognition() -> RelationId {
     sponsor_family(RelationKind::Recognition, TransactionSide::Input)
 }
 
-/// The sponsor isolation relation.
-const fn sponsor_isolation() -> RelationId {
-    relation(RelationKind::SponsorIsolation, RelationSubject::Sponsor)
-}
-
-/// The sponsor envelope multiplicity relation.
-const fn sponsor_multiplicity() -> RelationId {
-    relation(
-        RelationKind::SponsorEnvelopeMultiplicity,
-        RelationSubject::Sponsor,
-    )
-}
-
 /// The closed substrate asset's conservation relation.
 const fn substrate_conservation() -> RelationId {
     relation(
@@ -777,24 +963,6 @@ const fn substrate_conservation() -> RelationId {
         RelationSubject::Asset {
             asset: AssetId::Lbtc,
         },
-    )
-}
-
-/// The operation-wide open-flow policy relation.
-const fn open_flow_policy() -> RelationId {
-    relation(RelationKind::OpenFlowPolicy, RelationSubject::Operation)
-}
-
-/// The operation-wide canonical-delta policy relation.
-///
-/// The announcement's expected canonical delta is empty: the transition
-/// moves the maturity status and copies every other semantic quantity
-/// through. A row that changes a quantity the transition copies is
-/// therefore a row against this relation and not against a field.
-const fn canonical_delta_policy() -> RelationId {
-    relation(
-        RelationKind::CanonicalDeltaPolicy,
-        RelationSubject::Operation,
     )
 }
 
@@ -824,9 +992,12 @@ const fn announcement_exit() -> RelationId {
     )
 }
 
-/// The row names this published relation.
-const fn names(id: RelationId) -> MaturityRelationStanding {
-    Standing::Declared(id)
+/// The row names this published relation and this class of it.
+const fn names(id: RelationId, class: MaturityMutationClass) -> MaturityRelationStanding {
+    Standing::Declared {
+        relation: id,
+        class,
+    }
 }
 
 /// The row names no published relation, for a stated reason.
@@ -843,7 +1014,7 @@ const fn unlinked(reason: MaturityUnlinkedReason) -> MaturityRelationStanding {
 /// would be a third source of truth that could agree with neither side.
 const fn collateral_for(relation: &MaturityRelationStanding) -> Option<CollateralPolicy> {
     match relation {
-        Standing::Declared(_) => Some(CollateralPolicy::RequireIntendedAndDependencyClosure),
+        Standing::Declared { .. } => Some(CollateralPolicy::RequireIntendedAndDependencyClosure),
         Standing::EveryPublishedRelation | Standing::Unlinked(_) => None,
     }
 }
@@ -1060,7 +1231,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PredecessorMetadataField,
         Bound::Layer(B::SemanticRequestRejection),
         C::AnnouncementLeaf,
-        names(announcement_exit()),
+        names(announcement_exit(), Class::RequiredExitMissingFromThePlan),
     ),
     fault(
         S::WindowFault,
@@ -1069,7 +1240,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PredecessorMetadataField,
         Bound::Layer(B::SemanticRequestRejection),
         C::AnnouncementLeaf,
-        names(announcement_exit()),
+        names(announcement_exit(), Class::RequiredExitMissingFromThePlan),
     ),
     fault(
         S::WindowFault,
@@ -1141,7 +1312,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SuccessorMetadataField,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(announcement_exit()),
+        names(announcement_exit(), Class::RequiredExitMissingFromThePlan),
     ),
     fault(
         S::WindowFault,
@@ -1150,7 +1321,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SuccessorMetadataField,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(announcement_exit()),
+        names(announcement_exit(), Class::RequiredExitMissingFromThePlan),
     ),
     // §16.3 — eleven listed faults and one row for each semantic field
     // the announcement leaves unaffected.
@@ -1168,12 +1339,20 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     // that declared both halves of the disjunction could be passed by
     // either of two layers, and a row two layers can pass is a row
     // neither was asked.
+    //
+    // The fault they stage belongs to the canonical-delta policy
+    // relation: the announcement's expected canonical delta is empty
+    // because the transition moves the maturity status and copies every
+    // other semantic quantity through, so a change to a copied quantity
+    // is a fault against that policy rather than against a field. That
+    // relation compares the whole observed transaction's partition, so
+    // these rows state the reason and name no requirement.
     report_fault(
         S::MetadataFault,
         "unaffected-field-omega-changed-alone",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        names(canonical_delta_policy()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
         Projection::TermDiffers(Term::Semantic),
     ),
     report_fault(
@@ -1181,7 +1360,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "unaffected-field-y-l-changed-alone",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        names(canonical_delta_policy()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
         Projection::TermDiffers(Term::Semantic),
     ),
     report_fault(
@@ -1189,7 +1368,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "unaffected-field-y-t-changed-alone",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        names(canonical_delta_policy()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
         Projection::TermDiffers(Term::Semantic),
     ),
     report_fault(
@@ -1197,7 +1376,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "unaffected-field-q-changed-alone",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        names(canonical_delta_policy()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
         Projection::TermDiffers(Term::Semantic),
     ),
     report_fault(
@@ -1205,7 +1384,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "unaffected-field-cycle-changed-alone",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        names(canonical_delta_policy()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
         Projection::TermDiffers(Term::Semantic),
     ),
     fault(
@@ -1287,7 +1466,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PredecessorMetadataField,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(input_recognition()),
+        names(input_recognition(), Class::WrongRecognizedObject),
     ),
     fault(
         S::MetadataFault,
@@ -1307,7 +1486,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "semantic-field-changes-compensated-by-another-field",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        names(canonical_delta_policy()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
         Projection::TermDiffers(Term::Semantic),
     ),
     // §16.4 — the eighteen operator faults.
@@ -1325,7 +1504,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::OperatorSigningResponse,
         Bound::Layer(B::AbiConstructionRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportMissing),
     ),
     fault(
         S::OperatorFault,
@@ -1334,7 +1513,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::OperatorSigningResponse,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportFailed),
     ),
     fault(
         S::OperatorFault,
@@ -1343,7 +1522,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::OperatorSigningResponse,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportFailed),
     ),
     fault(
         S::OperatorFault,
@@ -1352,7 +1531,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::OperatorSigningResponse,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::OperatorFault,
@@ -1361,7 +1540,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ApprovedOperatorKey,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::OperatorFault,
@@ -1370,7 +1549,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ApprovedOperatorKey,
         Bound::Layer(B::AbiConstructionRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportFailed),
     ),
     fault(
         S::OperatorFault,
@@ -1379,7 +1558,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ApprovedOperatorKey,
         Bound::Layer(B::AbiConstructionRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportFailed),
     ),
     fault(
         S::OperatorFault,
@@ -1388,7 +1567,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::OperatorSigningResponse,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::OperatorFault,
@@ -1397,7 +1576,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::OperatorSigningResponse,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::OperatorFault,
@@ -1406,7 +1585,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::OperatorSigningResponse,
         Bound::Layer(B::AbiConstructionRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::OperatorFault,
@@ -1415,7 +1594,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::OperatorSigningResponse,
         Bound::Layer(B::AbiConstructionRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::OperatorFault,
@@ -1424,7 +1603,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::OperatorSigningResponse,
         Bound::Layer(B::AbiConstructionRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::OperatorFault,
@@ -1433,7 +1612,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::OperatorSigningResponse,
         Bound::Layer(B::AbiConstructionRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportFailed),
     ),
     fault(
         S::OperatorFault,
@@ -1442,7 +1621,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::OperatorSigningResponse,
         Bound::Layer(B::AbiConstructionRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportFailed),
     ),
     fault(
         S::OperatorFault,
@@ -1451,7 +1630,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::OperatorFault,
@@ -1460,7 +1639,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::OperatorFault,
@@ -1469,7 +1648,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionInput,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::OperatorFault,
@@ -1478,7 +1657,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     // §16.5 — the fifteen predecessor-constructor faults.
     //
@@ -1496,7 +1675,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionInput,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(input_recognition()),
+        names(input_recognition(), Class::WrongRecognizedAsset),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1505,7 +1684,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionInput,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(input_recognition()),
+        names(input_recognition(), Class::WrongRecognizedObject),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1514,7 +1693,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::LinkedProgram,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(input_recognition()),
+        names(input_recognition(), Class::WrongRecognizedObject),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1523,7 +1702,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PredecessorMetadataField,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1532,7 +1711,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::StaticSubtreeLeaf,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1541,7 +1720,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ControlBlock,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportFailed),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1550,7 +1729,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ControlBlock,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1559,7 +1738,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ControlBlock,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportFailed),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1568,7 +1747,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::LinkedProgram,
         Bound::Layer(B::LinkerRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1577,7 +1756,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::StaticSubtreeLeaf,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1586,7 +1765,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::StaticSubtreeLeaf,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1595,7 +1774,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::StaticSubtreeLeaf,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1604,7 +1783,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::StaticSubtreeLeaf,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::PredecessorConstructorFault,
@@ -1613,7 +1792,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ControlBlock,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportFailed),
     ),
     // A key-path spend runs no script at all: it offers a signature with
     // no leaf and no control block, so no covenant clause is reached and
@@ -1626,7 +1805,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::WitnessStack,
         Bound::Layer(B::KeyPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportFailed),
     ),
     // §16.6 — the fifteen successor-constructor faults.
     //
@@ -1643,7 +1822,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SuccessorMetadataField,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(output_recognition()),
+        names(output_recognition(), Class::WrongRecognizedObject),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1652,7 +1831,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SuccessorMetadataField,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(output_recognition()),
+        names(output_recognition(), Class::WrongRecognizedObject),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1661,7 +1840,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SuccessorMetadataField,
         Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
-        names(output_recognition()),
+        names(output_recognition(), Class::WrongRecognizedObject),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1688,7 +1867,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::LinkedProgram,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1697,7 +1876,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ControlBlock,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1706,7 +1885,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ControlBlock,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportFailed),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1715,7 +1894,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ControlBlock,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportFailed),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1724,7 +1903,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ControlBlock,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportFailed),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1733,7 +1912,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::LinkedProgram,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1742,7 +1921,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::Layer(B::ScriptPathRejection),
         C::CoordinatorStructure,
-        names(output_cardinality()),
+        names(output_cardinality(), Class::CardinalityBelowMinimum),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1751,7 +1930,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::Layer(B::ScriptPathRejection),
         C::CoordinatorStructure,
-        names(output_cardinality()),
+        names(output_cardinality(), Class::CardinalityAboveMaximum),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1760,7 +1939,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::Layer(B::ScriptPathRejection),
         C::CoordinatorStructure,
-        names(output_cardinality()),
+        names(output_cardinality(), Class::CardinalityAboveMaximum),
     ),
     fault(
         S::SuccessorConstructorFault,
@@ -1769,7 +1948,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::StaticSubtreeLeaf,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     // §16.7 — the fourteen branch-order and totality faults.
     //
@@ -1786,7 +1965,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::BranchOrder,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::TotalityFault,
@@ -1795,7 +1974,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::BranchOrder,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::TotalityFault,
@@ -1804,7 +1983,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::BranchOrder,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::TotalityFault,
@@ -1840,7 +2019,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::NonceSearch,
         Bound::TotalityAnsweredByLandedNonceEvidence,
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::TotalityFault,
@@ -1849,7 +2028,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::NonceSearch,
         Bound::TotalityAnsweredByLandedNonceEvidence,
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::TotalityFault,
@@ -1858,7 +2037,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::NonceSearch,
         Bound::TotalityAnsweredByLandedNonceEvidence,
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::TotalityFault,
@@ -1867,7 +2046,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TweakArithmetic,
         Bound::TotalityAnsweredByLandedNonceEvidence,
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::TotalityFault,
@@ -1876,7 +2055,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TweakArithmetic,
         Bound::TotalityAnsweredByLandedNonceEvidence,
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::TotalityFault,
@@ -1885,7 +2064,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TweakArithmetic,
         Bound::TotalityAnsweredByLandedNonceEvidence,
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::TotalityFault,
@@ -1894,7 +2073,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TweakArithmetic,
         Bound::TotalityAnsweredByLandedNonceEvidence,
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::TotalityFault,
@@ -1920,7 +2099,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -1929,7 +2108,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -1938,7 +2117,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -1947,7 +2126,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -1956,7 +2135,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -1965,7 +2144,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -1974,7 +2153,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -1983,7 +2162,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -1992,7 +2171,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -2001,7 +2180,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -2010,7 +2189,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -2019,7 +2198,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -2028,7 +2207,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -2037,7 +2216,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -2046,7 +2225,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     fault(
         S::RootHistoryFault,
@@ -2055,7 +2234,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::RootHistoryEdge,
         Bound::RootHistoryAnsweredByAnotherWavesReport,
         C::Report,
-        names(root_policy()),
+        names(root_policy(), Class::WrongRootEffect),
     ),
     // §16.9 — the fifteen absence and economic faults.
     //
@@ -2192,8 +2371,11 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::Layer(B::AbiConstructionRejection),
         C::CoordinatorStructure,
-        names(projection_policy()),
+        names(projection_policy(), Class::ForbiddenProjectionPresent),
     ),
+    // The fault belongs to the open-flow policy relation, which
+    // quantifies over every open flow the observed transaction carries
+    // rather than over the ones this operation opens.
     fault(
         S::AbsenceFault,
         "introduce-canonical-u-ent-or-dist-ctl-flow",
@@ -2201,7 +2383,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::Layer(B::AbiConstructionRejection),
         C::CoordinatorStructure,
-        names(open_flow_policy()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
     // §16.10 — the fourteen sponsor faults.
     //
@@ -2212,6 +2394,14 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     // property of bytes this workspace renders and needs no sponsor
     // region to check: no target can answer them and no relation is
     // indexed by them.
+    //
+    // The isolation and envelope-count relations that most of these rows
+    // would name read the observed transaction's flows entire, so nine
+    // rows of this table state that reason rather than a link. The two
+    // that name a relation about this operation's own positions — the
+    // sponsor family's recognition by its asset, and the substrate
+    // asset's conservation — keep naming it, because a region gives
+    // neither of them anything it lacks.
     fault(
         S::SponsorFault,
         "state-sponsor-overlap",
@@ -2219,7 +2409,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        names(sponsor_isolation()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
     fault(
         S::SponsorFault,
@@ -2228,7 +2418,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        names(sponsor_multiplicity()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
     fault(
         S::SponsorFault,
@@ -2237,8 +2427,15 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        names(sponsor_recognition()),
+        names(sponsor_recognition(), Class::WrongRecognizedAsset),
     ),
+    // The fault is the sponsor's own authorization missing, and the class
+    // published for it belongs to the sponsor isolation relation rather
+    // than to the operator's: that relation is one of the five evaluated
+    // over the whole observed transaction, so the row cannot link yet.
+    // Naming the operator's authorization relation instead would file a
+    // sponsor fault under the nearest published name, which is the
+    // guessed link every other row here refuses.
     fault(
         S::SponsorFault,
         "missing-sponsor-authorization",
@@ -2246,7 +2443,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::WitnessStack,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        names(authorization()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
     fault(
         S::SponsorFault,
@@ -2255,7 +2452,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        names(sponsor_isolation()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
     fault(
         S::SponsorFault,
@@ -2264,7 +2461,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        names(sponsor_isolation()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
     fault(
         S::SponsorFault,
@@ -2273,7 +2470,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        names(sponsor_isolation()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
     fault(
         S::SponsorFault,
@@ -2282,7 +2479,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        names(sponsor_isolation()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
     fault(
         S::SponsorFault,
@@ -2291,7 +2488,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        names(sponsor_multiplicity()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
     report_fault(
         S::SponsorFault,
@@ -2316,7 +2513,10 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        names(substrate_conservation()),
+        names(
+            substrate_conservation(),
+            Class::ExternalReportSubjectMismatch,
+        ),
     ),
     fault(
         S::SponsorFault,
@@ -2325,7 +2525,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        names(sponsor_isolation()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
     fault(
         S::SponsorFault,
@@ -2371,6 +2571,10 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         C::CoordinatorStructure,
         unlinked(Why::NoPublishedRelationNamesIt),
     ),
+    // Exchanging the two regions' positions is a fault against the
+    // sponsor isolation relation, which reads the observed transaction's
+    // flows entire and so indexes nothing about this operation's
+    // positions yet.
     fault(
         S::AbiLinkerFault,
         "state-and-sponsor-positions-exchanged",
@@ -2378,7 +2582,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::Layer(B::AbiConstructionRejection),
         C::CoordinatorStructure,
-        names(sponsor_isolation()),
+        unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
     fault(
         S::AbiLinkerFault,
@@ -2387,7 +2591,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionField,
         Bound::Layer(B::AbiConstructionRejection),
         C::CoordinatorStructure,
-        names(input_cardinality()),
+        names(input_cardinality(), Class::CardinalityAboveMaximum),
     ),
     fault(
         S::AbiLinkerFault,
@@ -2396,7 +2600,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionField,
         Bound::Layer(B::AbiConstructionRejection),
         C::CoordinatorStructure,
-        names(output_cardinality()),
+        names(output_cardinality(), Class::CardinalityAboveMaximum),
     ),
     fault(
         S::AbiLinkerFault,
@@ -2441,7 +2645,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::StaticSubtreeLeaf,
         Bound::Layer(B::LinkerRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::AbiLinkerFault,
@@ -2450,7 +2654,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ControlBlock,
         Bound::Layer(B::ScriptPathRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::AbiLinkerFault,
@@ -2504,7 +2708,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::StaticSubtreeLeaf,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::AbiLinkerFault,
@@ -2513,7 +2717,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::StaticSubtreeLeaf,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::AbiLinkerFault,
@@ -2522,7 +2726,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::StaticSubtreeLeaf,
         Bound::Layer(B::ConstructorDerivationRejection),
         C::LinkedConstructor,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::AbiLinkerFault,
@@ -2540,7 +2744,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionField,
         Bound::Layer(B::AbiConstructionRejection),
         C::Target,
-        names(constructibility()),
+        names(constructibility(), Class::ExternalReportMissing),
     ),
     fault(
         S::AbiLinkerFault,
@@ -2644,7 +2848,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::ProtocolResponseField,
         Bound::Layer(B::SemanticRequestRejection),
         C::TypedProtocolExchange,
-        names(authorization()),
+        names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
     fault(
         S::ProtocolReportFault,
@@ -2771,7 +2975,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
     fault(
         S::RecoveryFault,
@@ -2780,7 +2984,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
     fault(
         S::RecoveryFault,
@@ -2789,7 +2993,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
     fault(
         S::RecoveryFault,
@@ -2798,7 +3002,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
     fault(
         S::RecoveryFault,
@@ -2807,7 +3011,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
     fault(
         S::RecoveryFault,
@@ -2816,7 +3020,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
     fault(
         S::RecoveryFault,
@@ -2825,7 +3029,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
     fault(
         S::RecoveryFault,
@@ -2834,7 +3038,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
     fault(
         S::RecoveryFault,
@@ -2843,7 +3047,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
     fault(
         S::RecoveryFault,
@@ -2852,7 +3056,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
     fault(
         S::RecoveryFault,
@@ -2861,7 +3065,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
     fault(
         S::RecoveryFault,
@@ -2870,7 +3074,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::ForbiddenProjectionPresent),
     ),
     fault(
         S::RecoveryFault,
@@ -2879,7 +3083,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::PublicationRecord,
         Bound::PublicRecoveryAnsweredByAnotherWave,
         C::Report,
-        names(projection_policy()),
+        names(projection_policy(), Class::MissingRequiredProjection),
     ),
 ];
 
@@ -2913,15 +3117,131 @@ pub const fn row_count() -> usize {
     rows().len()
 }
 
+/// Which requirement one row names, once resolved against the plan.
+///
+/// Four answers and no fifth. A row either resolves to exactly one
+/// published requirement, intends the whole relation census rather than
+/// one member of it, names a relation the plan does not require anything
+/// of in this case, or names none at all for a reason it states.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MaturityRowLink {
+    /// Exactly one published requirement matched.
+    Resolved(CoverageRequirementId),
+    /// The row intends every published relation of the operation to hold.
+    EveryRelation,
+    /// The relation is not active in this representation and case.
+    ///
+    /// An inactive relation-case carries one obligation — that the case is
+    /// accepted and the relation never activates — and no mutation at all,
+    /// because a target rejecting a case this relation does not exercise
+    /// would prove nothing about it. A sponsor family's recognition is
+    /// exactly such a relation in the sponsorless case, and saying so is
+    /// different from saying the row names no requirement anywhere.
+    ///
+    /// This is not a licence for a row to resolve nowhere. A relation
+    /// whose activation does not depend on the sponsor envelope cannot
+    /// reach this answer honestly, and the tests below hold every
+    /// declared row to that: an inactive answer from a relation about this
+    /// operation's own positions is a disagreement between the row and the
+    /// plan, reported rather than absorbed.
+    InactiveInThisCase,
+    /// The row names no requirement, for a stated reason.
+    Blocked(MaturityUnlinkedReason),
+}
+
+/// Resolve one §16 row against the published announcement plan.
+///
+/// The relation, the execution case and the published class select the
+/// requirement, and the resolution must find exactly one. A table mapping
+/// rows to requirement identities would be a third authority that could
+/// agree with neither the guide nor the plan, and it would still agree
+/// with itself after the plan changed; a resolution that must hit exactly
+/// one fails at the moment the plan moves.
+///
+/// # What the class contributes, and why the boundary is part of it
+///
+/// A published negative class is a boundary and a mutation together, so
+/// the class carries both. Selecting on the mutation alone would be exact
+/// for most of this operation's relations and wrong for its lifecycle
+/// exit, which requires the same mutation of the validated plan and of
+/// the emitted program: two obligations, one word. Taking either of them
+/// as the row's answer would be the discharge-by-intent the census exists
+/// to prevent, and taking both would leave the row unable to say which it
+/// meant.
+///
+/// # A row's own boundary is deliberately not consulted
+///
+/// Where a row expects its verdict to come from is a different question
+/// from what its change violates. A construction the builder refuses and
+/// a construction the script refuses violate the same relation, and the
+/// row names that relation either way; what the declared boundary decides
+/// is whether a link is a discharge, which belongs to an evidence plan
+/// and not to a resolution.
+///
+/// # Errors
+///
+/// [`VectorError::NegativeLinkUnresolved`] when the plan publishes this
+/// representation not at all, or publishes more than one requirement of
+/// the row's relation, case and class — either of which means the row and
+/// the plan disagree about what exists.
+pub fn resolve_row(
+    plan: &ValidatedMaturityAnnouncementOperationPlan,
+    row: &MaturitySafetyRow,
+    representation: MaturityAnnouncementRepresentationPlan,
+    case: SponsorCase,
+) -> Result<MaturityRowLink, VectorError> {
+    let (relation, class) = match row.relation() {
+        Standing::EveryPublishedRelation => return Ok(MaturityRowLink::EveryRelation),
+        Standing::Unlinked(reason) => return Ok(MaturityRowLink::Blocked(*reason)),
+        Standing::Declared { relation, class } => (relation, *class),
+    };
+    let class_name = class.name();
+
+    let projection = plan
+        .projection(representation)
+        .ok_or(VectorError::NegativeLinkUnresolved { class: class_name })?;
+
+    let mut found: BTreeSet<CoverageRequirementId> = BTreeSet::new();
+    for requirement in projection.coverage() {
+        let TargetCoverageObligation::Negative(negative) = &requirement.obligation else {
+            continue;
+        };
+        if requirement.id.relation != *relation
+            || requirement.id.case.sponsor != case
+            || requirement.id.boundary != class.boundary()
+            || !class.matches(&negative.mutation)
+        {
+            continue;
+        }
+        found.insert(requirement.id.clone());
+    }
+
+    let mut resolved = found.into_iter();
+    match (resolved.next(), resolved.next()) {
+        (Some(only), None) => Ok(MaturityRowLink::Resolved(only)),
+        // Nothing published here is the conditional answer rather than a
+        // failure: an inactive relation-case publishes no negative, which
+        // in the sponsorless case is what a sponsor family's relations
+        // are. Two or more is always a failure — the row cannot say which
+        // it meant, and taking the first would answer the row with
+        // whichever requirement happened to sort earliest.
+        (None, _) => Ok(MaturityRowLink::InactiveInThisCase),
+        (Some(_), Some(_)) => Err(VectorError::NegativeLinkUnresolved { class: class_name }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        B, Bound, C, Control, L, MaturityRelationStanding, MaturityRowBoundary,
-        MaturitySafetyPolarity, MaturitySafetyRow, MaturitySafetySection, Projection, S, Standing,
-        Why, boundary_admits, census, row_count, rows, rows_of,
+        B, Bound, C, Control, CoverageRequirementId, L, MaturityMutationClass,
+        MaturityRelationStanding, MaturityRowBoundary, MaturityRowLink, MaturitySafetyPolarity,
+        MaturitySafetyRow, MaturitySafetySection, ObjectId, Projection, RelationId,
+        RelationSubject, S, SponsorCase, Standing, TargetCoverageObligation,
+        ValidatedMaturityAnnouncementOperationPlan, Why, boundary_admits, census, resolve_row,
+        row_count, rows, rows_of,
     };
     use crate::observed_boundary::matches_boundary;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
     /// Every observed layer this workspace knows.
@@ -3187,7 +3507,7 @@ mod tests {
             // none has nothing to demand it of.
             assert_eq!(
                 row.collateral().is_some(),
-                matches!(row.relation(), MaturityRelationStanding::Declared(_)),
+                matches!(row.relation(), MaturityRelationStanding::Declared { .. }),
                 "{row} demands collateral of a requirement it does not name",
             );
             // A report row's subject is the report, and a row whose
@@ -3232,6 +3552,271 @@ mod tests {
             if let (Some(boundary), Some(layer)) = (row.refusing_layer(), row.mutation()) {
                 assert!(boundary_admits(boundary, layer), "{row}");
             }
+        }
+    }
+
+    /// The plan every resolution here is read against.
+    ///
+    /// The one derivation the crate already keeps, rather than a second
+    /// one built for the tests: a plan assembled here could pass a
+    /// resolution the shipped plan would fail.
+    fn announcement_plan() -> ValidatedMaturityAnnouncementOperationPlan {
+        crate::maturity_closure::announcement_plan().expect("the announcement plan derives")
+    }
+
+    /// Whether a relation exists only where a sponsor envelope does.
+    ///
+    /// The sponsor family's own relations, and not the relations subjected
+    /// to the sponsor envelope: the isolation and envelope-count relations
+    /// are activated in every case and quantify over whatever the observed
+    /// transaction carries, so an inactive answer from one of them would
+    /// say nothing about a sponsor.
+    fn sponsor_conditional(relation: &RelationId) -> bool {
+        matches!(
+            relation.subject(),
+            RelationSubject::ObjectFamily {
+                object: ObjectId::PlainLbtc,
+                ..
+            }
+        )
+    }
+
+    /// Every declaration the rows carry, deduplicated.
+    fn declarations() -> BTreeSet<(RelationId, MaturityMutationClass)> {
+        rows()
+            .iter()
+            .filter_map(|row| match row.relation() {
+                Standing::Declared { relation, class } => Some((relation.clone(), *class)),
+                Standing::EveryPublishedRelation | Standing::Unlinked(_) => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_declared_row_resolves_in_the_sponsorless_case_of_every_representation() {
+        let plan = announcement_plan();
+        let mut representations = 0_usize;
+        for projection in plan.representations() {
+            representations += 1;
+            let mut resolved = 0_usize;
+            let mut inactive: BTreeSet<&str> = BTreeSet::new();
+            for row in rows() {
+                let Standing::Declared { relation, class } = row.relation() else {
+                    continue;
+                };
+                let link = resolve_row(&plan, row, projection.plan(), SponsorCase::Absent)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{row} names {} and the plan disagrees: {error:?}",
+                            class.name(),
+                        )
+                    });
+                match link {
+                    MaturityRowLink::Resolved(id) => {
+                        assert_eq!(&id.relation, relation, "{row} resolved to another relation");
+                        resolved += 1;
+                    }
+                    // A relation about this operation's own positions has
+                    // no honest inactive answer: the plan requires its
+                    // negatives in every case it publishes, so nothing
+                    // published is the row and the plan disagreeing rather
+                    // than a disposition the case decides.
+                    MaturityRowLink::InactiveInThisCase => {
+                        assert!(
+                            sponsor_conditional(relation),
+                            "{row} resolves nowhere and its relation is not a sponsor family's",
+                        );
+                        inactive.insert(row.name());
+                    }
+                    MaturityRowLink::EveryRelation | MaturityRowLink::Blocked(_) => {
+                        panic!("{row} is declared and answered as though it were not")
+                    }
+                }
+            }
+            // The hundred and two declared rows, less the one naming the
+            // sponsor family's recognition, which a sponsorless case does
+            // not exercise at all.
+            assert_eq!(
+                resolved,
+                101,
+                "{:?} resolves a different census",
+                projection.plan()
+            );
+            assert_eq!(inactive.len(), 1);
+        }
+        assert_eq!(representations, 2, "both admitted modes are read");
+    }
+
+    #[test]
+    fn every_resolved_requirement_is_the_negative_the_row_named() {
+        let plan = announcement_plan();
+        for projection in plan.representations() {
+            for row in rows() {
+                let Standing::Declared { relation, class } = row.relation() else {
+                    continue;
+                };
+                let link = resolve_row(&plan, row, projection.plan(), SponsorCase::Absent)
+                    .expect("every declared row resolves");
+                let MaturityRowLink::Resolved(id) = link else {
+                    continue;
+                };
+                // Read back out of the plan by the identity the resolution
+                // returned, so a resolver answering with an identity the
+                // plan does not publish is caught here rather than
+                // believed by every later consumer.
+                let requirement = projection
+                    .coverage_requirement(&id)
+                    .expect("the resolved identity is published");
+                let TargetCoverageObligation::Negative(negative) = &requirement.obligation else {
+                    panic!("{row} resolved to an obligation that requires no rejection")
+                };
+                assert_eq!(requirement.id, id, "{row} read back another requirement");
+                assert_eq!(&id.relation, relation, "{row} answered another relation");
+                assert_eq!(id.case.sponsor, SponsorCase::Absent);
+                assert_eq!(
+                    id.boundary,
+                    class.boundary(),
+                    "{row} answered at another boundary"
+                );
+                assert!(
+                    class.matches(&negative.mutation),
+                    "{row} answered another mutation class",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn two_rows_share_a_requirement_only_by_sharing_their_declaration() {
+        // Eighteen distinct declarations stand on the hundred and two
+        // declared rows, because §16 states many wordings of one published
+        // class: sixteen root-history rows are sixteen ways to disturb the
+        // one root effect the operation declares. Rows sharing a
+        // requirement is therefore the ordinary case, and the claim worth
+        // making is the other one — that the resolution distinguishes rows
+        // exactly as far as their declarations do, so two rows meeting at
+        // one requirement have met by declaring the same thing.
+        assert_eq!(declarations().len(), 18);
+        let plan = announcement_plan();
+        for projection in plan.representations() {
+            let mut by_requirement: BTreeMap<
+                CoverageRequirementId,
+                BTreeSet<(RelationId, MaturityMutationClass)>,
+            > = BTreeMap::new();
+            for row in rows() {
+                let Standing::Declared { relation, class } = row.relation() else {
+                    continue;
+                };
+                let link = resolve_row(&plan, row, projection.plan(), SponsorCase::Absent)
+                    .expect("every declared row resolves");
+                if let MaturityRowLink::Resolved(id) = link {
+                    by_requirement
+                        .entry(id)
+                        .or_default()
+                        .insert((relation.clone(), *class));
+                }
+            }
+            for (id, declared) in &by_requirement {
+                assert_eq!(
+                    declared.len(),
+                    1,
+                    "one requirement of {:?} answers two declarations",
+                    id.relation,
+                );
+            }
+            // Seventeen of the eighteen resolve here; the eighteenth is
+            // the sponsor family's recognition, inactive in this case.
+            assert_eq!(by_requirement.len(), 17);
+        }
+    }
+
+    #[test]
+    fn the_whole_transaction_scoped_rows_are_exactly_the_recounted_set() {
+        let scoped: Vec<&MaturitySafetyRow> = rows()
+            .iter()
+            .filter(|row| {
+                matches!(
+                    row.relation(),
+                    Standing::Unlinked(Why::RelationScopedToTheWholeTransaction)
+                )
+            })
+            .collect();
+        // Six report-layer metadata rows against the canonical delta, one
+        // absence row against the open-flow policy, one ABI row and nine
+        // sponsor rows against the isolation, the envelope count and the
+        // sponsor's own authorization. Each names a relation the
+        // realization evaluates over the whole observed transaction, and
+        // none of them is a row this workspace could link by choosing a
+        // nearer published name.
+        let mut per_section: BTreeMap<MaturitySafetySection, usize> = BTreeMap::new();
+        for row in &scoped {
+            *per_section.entry(row.section()).or_insert(0) += 1;
+        }
+        assert_eq!(scoped.len(), 17);
+        assert_eq!(per_section[&S::MetadataFault], 6);
+        assert_eq!(per_section[&S::AbsenceFault], 1);
+        assert_eq!(per_section[&S::SponsorFault], 9);
+        assert_eq!(per_section[&S::AbiLinkerFault], 1);
+        assert_eq!(per_section.len(), 4);
+        // The three reasons that stood before stand on the same rows, so a
+        // row was re-standinged and none was reclassified: a relation
+        // standing is not a boundary and the census does not move.
+        let reason = |wanted: Why| {
+            rows()
+                .iter()
+                .filter(|row| row.relation() == &Standing::Unlinked(wanted))
+                .count()
+        };
+        assert_eq!(reason(Why::NoPublishedRelationNamesIt), 55);
+        assert_eq!(reason(Why::SeveralPublishedRelationsFit), 9);
+        assert_eq!(reason(Why::TheReportIsTheSubject), 9);
+        // And the three standings partition the matrix.
+        let positive = rows()
+            .iter()
+            .filter(|row| row.relation() == &Standing::EveryPublishedRelation)
+            .count();
+        let declared = rows()
+            .iter()
+            .filter(|row| matches!(row.relation(), Standing::Declared { .. }))
+            .count();
+        let unlinked = rows()
+            .iter()
+            .filter(|row| matches!(row.relation(), Standing::Unlinked(_)))
+            .count();
+        assert_eq!(positive, 14);
+        assert_eq!(declared, 102);
+        assert_eq!(unlinked, 90);
+        assert_eq!(positive + declared + unlinked, row_count());
+    }
+
+    #[test]
+    fn every_class_stands_on_a_row_and_on_a_published_requirement() {
+        let plan = announcement_plan();
+        let names: BTreeSet<&str> = MaturityMutationClass::ALL
+            .iter()
+            .map(|class| class.name())
+            .collect();
+        assert_eq!(names.len(), MaturityMutationClass::ALL.len());
+        for class in MaturityMutationClass::ALL {
+            // A class no row names is a vocabulary entry standing on
+            // nothing, and a class the plan publishes nowhere is a row's
+            // private invention. Both are caught here rather than by a
+            // reader comparing two files.
+            assert!(
+                declarations().iter().any(|(_, stated)| stated == class),
+                "{} stands on no row",
+                class.name(),
+            );
+            let published = plan.representations().any(|projection| {
+                projection.coverage().any(|requirement| {
+                    let TargetCoverageObligation::Negative(negative) = &requirement.obligation
+                    else {
+                        return false;
+                    };
+                    requirement.id.boundary == class.boundary() && class.matches(&negative.mutation)
+                })
+            });
+            assert!(published, "the plan publishes no {}", class.name());
         }
     }
 }
