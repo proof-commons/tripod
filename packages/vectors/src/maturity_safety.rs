@@ -417,6 +417,197 @@ pub enum MaturityMutationLocator {
     PublicationRecord,
 }
 
+/// What one row's change is about, as against where it sits.
+///
+/// A locator names the structural place a reviewer points at; a subject
+/// names the object whose value or shape is different. The two are
+/// different questions, and the second is the one a refusal has to be
+/// checked against: a run reports where it saw a change, and a reader
+/// asking whether that refusal answered the row it was built for is
+/// asking whether the same object was changed, not whether the same
+/// words were used for the place. Stating the subject as its own closed
+/// vocabulary, reached by a total map, is what makes "the row's change
+/// and no other" a comparison rather than a paraphrase.
+///
+/// # Why no two locators share a subject
+///
+/// The map is a bijection over the locators the matrix uses, and that is
+/// the finding rather than a redundancy: it states that no locator is a
+/// synonym of another, which is what keeps "exactly one subject" a claim
+/// instead of a collapse. Two pairs read as candidates for merging and
+/// are argued apart where they stand, at
+/// [`Self::StaticSubtree`] against [`Self::BranchOrder`] and at
+/// [`Self::LinkedProgram`] against [`Self::RelocationCensus`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MaturityMutationSubject {
+    /// The typed semantic request, as submitted.
+    SemanticRequest,
+    /// The authenticated state the transition reads.
+    PredecessorMetadata,
+    /// The state the transition derives.
+    ///
+    /// A different subject from the predecessor's: a row changing what
+    /// was read claims the transition accepted a state it should have
+    /// refused, and a row changing what was derived claims it produced
+    /// one it should not have.
+    SuccessorMetadata,
+    /// The metadata record's bytes at unchanged semantics.
+    ///
+    /// The one subject whose change can sit between fields rather than
+    /// in one, because the places it names include the domain
+    /// separator, the field order, the reserved fields and the trailing
+    /// bytes.
+    MetadataEncoding,
+    /// The operator response set submitted for authorization.
+    OperatorResponse,
+    /// The approved operator key material the responses are checked
+    /// against.
+    ///
+    /// The authorization input rather than the answer to it, so a row
+    /// changing the approved set is not a row changing a response.
+    ApprovedOperatorKey,
+    /// The static subtree's leaf content.
+    ///
+    /// Kept apart from [`Self::BranchOrder`] because changing a leaf's
+    /// bytes reorders nothing and reordering the leaves changes no
+    /// leaf's bytes: one row claims a commitment covers the wrong
+    /// program, the other that the same programs commit in the wrong
+    /// arrangement.
+    StaticSubtree,
+    /// The program the linked constructor emits.
+    ///
+    /// Kept apart from [`Self::RelocationCensus`] because the census is
+    /// what the linker consumes and accounts for, and the program is
+    /// what it produces: a row changing the census asks the linker to
+    /// resolve something different, and a row changing the program asks
+    /// a later layer to accept something the linker never emitted.
+    LinkedProgram,
+    /// A spend path's control material: internal key, parity, leaf
+    /// version, control recipe.
+    ControlBlock,
+    /// The offered proof's items and their order.
+    Witness,
+    /// One transaction input.
+    TransactionInput,
+    /// One transaction output.
+    ///
+    /// Distinct from an input because the operation's closure is stated
+    /// per side, so a row changing one side is answered by a different
+    /// requirement from a row changing the other.
+    TransactionOutput,
+    /// A whole-transaction field: version, sequence, a count.
+    TransactionField,
+    /// The set of object families a transaction side admits.
+    ///
+    /// A set rather than a member, which is why it is not one of the
+    /// two side subjects: the change adds a family the closure does not
+    /// admit rather than altering an object it does.
+    AdmittedFamily,
+    /// The sponsor envelope, its members, or its range.
+    SponsorEnvelope,
+    /// The root history's edges and cursor.
+    RootHistory,
+    /// The order the taptree's branches stand in, and the source order
+    /// it was built from.
+    BranchOrder,
+    /// The admissible representation nonce the search returns.
+    Nonce,
+    /// The tweak arithmetic over the internal key.
+    ///
+    /// The operation rather than the value the search produced, so a
+    /// row changing the arithmetic is not a row changing the nonce.
+    Tweak,
+    /// The linker's symbol and relocation record.
+    RelocationCensus,
+    /// The typed protocol request record.
+    WireRequest,
+    /// The typed protocol response record.
+    ///
+    /// Distinct from the request because a malformed question and a
+    /// malformed answer are refused by different halves of the
+    /// exchange.
+    WireResponse,
+    /// A field, row, or summary of the rendered safety report.
+    Report,
+    /// The published material a recovery reads back.
+    Publication,
+}
+
+impl MaturityMutationSubject {
+    /// Every subject a locator of this matrix names.
+    ///
+    /// Written out rather than folded over the locators, so that it is
+    /// an independent statement of the vocabulary's width: a subject
+    /// added with no locator reaching it, and a locator whose rows all
+    /// disappear, both fail the comparison against what the rows
+    /// actually name.
+    pub const ALL: &'static [Self] = &[
+        Self::SemanticRequest,
+        Self::PredecessorMetadata,
+        Self::SuccessorMetadata,
+        Self::MetadataEncoding,
+        Self::OperatorResponse,
+        Self::ApprovedOperatorKey,
+        Self::StaticSubtree,
+        Self::LinkedProgram,
+        Self::ControlBlock,
+        Self::Witness,
+        Self::TransactionInput,
+        Self::TransactionOutput,
+        Self::TransactionField,
+        Self::AdmittedFamily,
+        Self::SponsorEnvelope,
+        Self::RootHistory,
+        Self::BranchOrder,
+        Self::Nonce,
+        Self::Tweak,
+        Self::RelocationCensus,
+        Self::WireRequest,
+        Self::WireResponse,
+        Self::Report,
+        Self::Publication,
+    ];
+}
+
+impl MaturityMutationLocator {
+    /// The subject the change at this locator is about.
+    ///
+    /// Total by exhaustion and with no fallback arm: a locator minted
+    /// later cannot compile until somebody states what it changes, and
+    /// a wildcard here would answer that question by accident for every
+    /// locator added after it — which is the failure the fail-closed
+    /// direction exists to prevent.
+    #[must_use]
+    pub const fn subject(self) -> MaturityMutationSubject {
+        match self {
+            Self::SemanticRequestField => MaturityMutationSubject::SemanticRequest,
+            Self::PredecessorMetadataField => MaturityMutationSubject::PredecessorMetadata,
+            Self::SuccessorMetadataField => MaturityMutationSubject::SuccessorMetadata,
+            Self::MetadataEncoding => MaturityMutationSubject::MetadataEncoding,
+            Self::OperatorSigningResponse => MaturityMutationSubject::OperatorResponse,
+            Self::ApprovedOperatorKey => MaturityMutationSubject::ApprovedOperatorKey,
+            Self::StaticSubtreeLeaf => MaturityMutationSubject::StaticSubtree,
+            Self::LinkedProgram => MaturityMutationSubject::LinkedProgram,
+            Self::ControlBlock => MaturityMutationSubject::ControlBlock,
+            Self::WitnessStack => MaturityMutationSubject::Witness,
+            Self::TransactionInput => MaturityMutationSubject::TransactionInput,
+            Self::TransactionOutput => MaturityMutationSubject::TransactionOutput,
+            Self::TransactionField => MaturityMutationSubject::TransactionField,
+            Self::AdmittedObjectFamily => MaturityMutationSubject::AdmittedFamily,
+            Self::SponsorEnvelope => MaturityMutationSubject::SponsorEnvelope,
+            Self::RootHistoryEdge => MaturityMutationSubject::RootHistory,
+            Self::BranchOrder => MaturityMutationSubject::BranchOrder,
+            Self::NonceSearch => MaturityMutationSubject::Nonce,
+            Self::TweakArithmetic => MaturityMutationSubject::Tweak,
+            Self::LinkerRelocation => MaturityMutationSubject::RelocationCensus,
+            Self::ProtocolRequestField => MaturityMutationSubject::WireRequest,
+            Self::ProtocolResponseField => MaturityMutationSubject::WireResponse,
+            Self::ReportField => MaturityMutationSubject::Report,
+            Self::PublicationRecord => MaturityMutationSubject::Publication,
+        }
+    }
+}
+
 /// One term of the projection comparison an accepted announcement
 /// receives.
 ///
@@ -3233,14 +3424,14 @@ pub fn resolve_row(
 #[cfg(test)]
 mod tests {
     use super::{
-        B, Bound, C, Control, CoverageRequirementId, L, MaturityMutationClass,
-        MaturityRelationStanding, MaturityRowBoundary, MaturityRowLink, MaturitySafetyPolarity,
-        MaturitySafetyRow, MaturitySafetySection, ObjectId, Projection, RelationId,
-        RelationSubject, S, SponsorCase, Standing, TargetCoverageObligation,
-        ValidatedMaturityAnnouncementOperationPlan, Why, boundary_admits, census, resolve_row,
-        row_count, rows, rows_of,
+        B, Bound, C, Control, CoverageRequirementId, L, Loc, MaturityMutationClass,
+        MaturityMutationSubject as Subj, MaturityRelationStanding, MaturityRowBoundary,
+        MaturityRowLink, MaturitySafetyPolarity, MaturitySafetyRow, MaturitySafetySection,
+        ObjectId, Projection, RelationId, RelationSubject, S, SponsorCase, Standing,
+        TargetCoverageObligation, ValidatedMaturityAnnouncementOperationPlan, Why, boundary_admits,
+        census, resolve_row, row_count, rows, rows_of,
     };
-    use crate::observed_boundary::matches_boundary;
+    use crate::observed_boundary::{matches_boundary, observed_boundary};
     use std::collections::{BTreeMap, BTreeSet};
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
@@ -3253,6 +3444,140 @@ mod tests {
         ObservedOutcomeLayer::KeyPathRejection,
         ObservedOutcomeLayer::RelayPolicyRejection,
         ObservedOutcomeLayer::Accepted,
+    ];
+
+    /// The control each row departs from, against the subject it changes,
+    /// with the rows standing on each pair.
+    ///
+    /// Stated here and recomputed from the rows in the test, so that the
+    /// two have to agree: a row that changes its control, its locator or
+    /// its table moves a figure, and a pair appearing or disappearing is
+    /// a line of this table rather than a silence. The positive rows
+    /// stand on the one pair with no subject, because they change
+    /// nothing.
+    const CONTROL_AGAINST_SUBJECT: &[(Control, Option<Subj>, usize)] = &[
+        (Control::TheRowIsTheControl, None, 14),
+        (
+            Control::AcceptedAnnouncementPublication,
+            Some(Subj::Publication),
+            13,
+        ),
+        (
+            Control::CanonicalProtocolExchange,
+            Some(Subj::WireRequest),
+            8,
+        ),
+        (
+            Control::CanonicalProtocolExchange,
+            Some(Subj::WireResponse),
+            7,
+        ),
+        (Control::CanonicalSafetyReport, Some(Subj::Report), 9),
+        (
+            Control::CanonicalSafetyReport,
+            Some(Subj::SuccessorMetadata),
+            6,
+        ),
+        (
+            Control::SponsoredAnnouncement,
+            Some(Subj::SponsorEnvelope),
+            8,
+        ),
+        (
+            Control::SponsoredAnnouncement,
+            Some(Subj::TransactionOutput),
+            3,
+        ),
+        (Control::SponsoredAnnouncement, Some(Subj::Witness), 1),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::AdmittedFamily),
+            9,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::ApprovedOperatorKey),
+            3,
+        ),
+        (Control::SponsorlessAnnouncement, Some(Subj::BranchOrder), 3),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::ControlBlock),
+            9,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::LinkedProgram),
+            5,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::MetadataEncoding),
+            9,
+        ),
+        (Control::SponsorlessAnnouncement, Some(Subj::Nonce), 9),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::OperatorResponse),
+            11,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::PredecessorMetadata),
+            4,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::RelocationCensus),
+            5,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::RootHistory),
+            16,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::SemanticRequest),
+            7,
+        ),
+        // One row of the ABI and linker table changes the sponsor
+        // envelope while departing from the sponsorless announcement,
+        // which has none to change. The incidence records it as it
+        // stands: the matrix is transcribed here and a row is not
+        // retyped by the test that measures it.
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::SponsorEnvelope),
+            1,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::StaticSubtree),
+            10,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::SuccessorMetadata),
+            5,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::TransactionField),
+            13,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::TransactionInput),
+            3,
+        ),
+        (
+            Control::SponsorlessAnnouncement,
+            Some(Subj::TransactionOutput),
+            8,
+        ),
+        (Control::SponsorlessAnnouncement, Some(Subj::Tweak), 4),
+        (Control::SponsorlessAnnouncement, Some(Subj::Witness), 3),
     ];
 
     #[test]
@@ -3553,6 +3878,191 @@ mod tests {
                 assert!(boundary_admits(boundary, layer), "{row}");
             }
         }
+    }
+
+    /// Every locator the matrix uses names exactly one subject, and every
+    /// subject the vocabulary publishes stands on a row.
+    ///
+    /// Totality is the compiler's: the map has no fallback arm, so a
+    /// locator minted later fails to build rather than resolving by
+    /// accident. What a test can add is the other two halves —
+    /// injectivity, which is what makes "exactly one" a claim rather
+    /// than a collapse of several places onto one name, and
+    /// inhabitation, which is what keeps the vocabulary the rows' own
+    /// rather than a wider list nobody points at.
+    #[test]
+    fn every_locator_names_one_subject_and_every_subject_stands_on_a_row() {
+        let named: BTreeSet<Loc> = rows()
+            .iter()
+            .filter_map(MaturitySafetyRow::locator)
+            .collect();
+        let subjects: BTreeSet<Subj> = named.iter().copied().map(Loc::subject).collect();
+        assert_eq!(
+            subjects.len(),
+            named.len(),
+            "two locators of the matrix resolve to one subject",
+        );
+        let published: BTreeSet<Subj> = Subj::ALL.iter().copied().collect();
+        assert_eq!(
+            published.len(),
+            Subj::ALL.len(),
+            "a subject is listed twice"
+        );
+        assert_eq!(
+            subjects, published,
+            "the subjects the rows name and the vocabulary's own list differ",
+        );
+        assert_eq!(named.len(), 24);
+    }
+
+    /// The rows that point nowhere are exactly the fourteen positive ones.
+    ///
+    /// A positive row changes nothing, so it has no subject to name: that
+    /// is the only reason a row of this matrix may carry no locator, and
+    /// the count is stated so that a negative row losing its locator
+    /// fails here rather than being read as a positive one. The
+    /// consequence for the observed side is stated where it is used: no
+    /// negative row's locator is absent at this tip, so the structural
+    /// separator a run may report is never the form a row declared.
+    #[test]
+    fn the_rows_that_point_nowhere_are_exactly_the_positive_fourteen() {
+        let mut pointing_nowhere = 0usize;
+        for row in rows() {
+            if row.locator().is_some() {
+                continue;
+            }
+            pointing_nowhere += 1;
+            assert_eq!(
+                row.polarity(),
+                MaturitySafetyPolarity::Positive,
+                "{row} changes something and names no subject",
+            );
+            assert_eq!(row.section(), S::Positive, "{row} sits outside its table");
+            assert_eq!(
+                row.control(),
+                Control::TheRowIsTheControl,
+                "{row} departs from a control while changing nothing",
+            );
+        }
+        assert_eq!(pointing_nowhere, 14);
+        let negatives_pointing_nowhere = rows()
+            .iter()
+            .filter(|row| {
+                row.polarity() == MaturitySafetyPolarity::Negative && row.locator().is_none()
+            })
+            .count();
+        assert_eq!(negatives_pointing_nowhere, 0);
+    }
+
+    /// Each control shape stands only on rows whose subject it can build.
+    ///
+    /// The control a row departs from is derived from the row's table, so
+    /// a test restating that derivation would agree with itself. The
+    /// incidence of controls against subjects does not: it states which
+    /// objects each canonical control actually has to offer a mutant,
+    /// and it moves the moment a row changes either fact. Two of the six
+    /// controls are additionally pinned to a fact outside the table — a
+    /// row is its own control exactly when it is positive, and the
+    /// rendered report is the control exactly where the row's verdict
+    /// comes from the report layer.
+    #[test]
+    fn each_control_shape_stands_only_on_rows_whose_subject_it_can_build() {
+        let mut measured: BTreeMap<(Control, Option<Subj>), usize> = BTreeMap::new();
+        for row in rows() {
+            *measured
+                .entry((row.control(), row.locator().map(Loc::subject)))
+                .or_default() += 1;
+        }
+        let stated: BTreeMap<(Control, Option<Subj>), usize> = CONTROL_AGAINST_SUBJECT
+            .iter()
+            .map(|(control, subject, count)| ((*control, *subject), *count))
+            .collect();
+        assert_eq!(
+            stated.len(),
+            CONTROL_AGAINST_SUBJECT.len(),
+            "the stated incidence names one pair twice",
+        );
+        assert_eq!(
+            measured, stated,
+            "the control a row departs from, against the subject it changes, is not the stated incidence",
+        );
+        assert_eq!(stated.values().sum::<usize>(), row_count());
+        for row in rows() {
+            assert_eq!(
+                row.control() == Control::TheRowIsTheControl,
+                row.polarity() == MaturitySafetyPolarity::Positive,
+                "{row} is its own control without being positive, or the other way about",
+            );
+            assert_eq!(
+                row.control() == Control::CanonicalSafetyReport,
+                row.refusing_layer() == Some(B::ReportSemanticProjectionRejection),
+                "{row} departs from a rendered report without the report answering it",
+            );
+            if row.control() == Control::CanonicalSafetyReport {
+                assert_eq!(
+                    row.carrier(),
+                    C::Report,
+                    "{row} files a report question elsewhere"
+                );
+            }
+        }
+    }
+
+    /// The observed product, walked per row.
+    ///
+    /// The shared mapping's own test walks the whole product of layers
+    /// against boundaries and proves the mapping is diagonal. That says
+    /// nothing about the rows: whether any row's declared boundary is one
+    /// an observation can reach at all, and how many rows wait on a layer
+    /// no run produces, are facts of this matrix. Walking the product
+    /// once per row states them as figures — and ties them to the
+    /// classification's own denominators, since the rows no observation
+    /// reaches are exactly the pre-target and report-layer rows.
+    #[test]
+    fn the_observed_product_reaches_each_row_at_its_own_boundary_only() {
+        let mut reachable = 0usize;
+        let mut unreachable = 0usize;
+        for row in rows() {
+            let Some(boundary) = row.refusing_layer() else {
+                continue;
+            };
+            let mut hits = 0usize;
+            for observed in OBSERVED_LAYERS {
+                let matched = matches_boundary(boundary, *observed);
+                assert_eq!(
+                    matched,
+                    observed_boundary(*observed) == Some(boundary),
+                    "{row} against {observed:?} did not follow the mapping",
+                );
+                if matched {
+                    hits += 1;
+                }
+            }
+            if hits == 0 {
+                unreachable += 1;
+            } else {
+                assert_eq!(hits, 1, "{row} is reached at more than one observed layer");
+                reachable += 1;
+            }
+        }
+        assert_eq!(reachable, 43);
+        assert_eq!(unreachable, 98);
+        assert_eq!(reachable + unreachable, 141);
+        let pre_target = rows()
+            .iter()
+            .filter(|row| row.refusing_layer().is_some_and(B::is_pre_target))
+            .count();
+        let report = rows()
+            .iter()
+            .filter(|row| row.refusing_layer() == Some(B::ReportSemanticProjectionRejection))
+            .count();
+        assert_eq!(pre_target, 83);
+        assert_eq!(report, 15);
+        assert_eq!(
+            pre_target + report,
+            unreachable,
+            "a row no observation reaches is neither pre-target nor answered by the report",
+        );
     }
 
     /// The plan every resolution here is read against.

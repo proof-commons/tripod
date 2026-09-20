@@ -90,8 +90,10 @@
 //! [`crate::maturity_safety::MaturityMutationLocator`],
 //! [`crate::matrix::EvidenceBoundary`], an observed outcome layer, a
 //! published requirement identity, a target-computed identity, a string, a
-//! byte vector, or [`MaturityCarrierOutcome`] — and none of them is the
-//! marker or transitively contains one. The marker offers no conversion,
+//! byte vector, [`MaturityAcceptedControl`] — whose two fields are a
+//! canonical control shape and such an identity — or
+//! [`MaturityCarrierOutcome`], and none of them is the marker or
+//! transitively contains one. The marker offers no conversion,
 //! no `From`, and no rendering into any of those types, so there is no
 //! expression that places one in a standing: a program that tried would
 //! not compile. Its bytes travel verbatim and are never paraphrased into
@@ -149,9 +151,9 @@ use crate::maturity_first_party::{
 };
 use crate::maturity_fixture::{MaturitySemanticCase, positive_semantic_census};
 use crate::maturity_safety::{
-    MaturityExpectedProjection, MaturityIntendedCarrier, MaturityMutationLocator,
-    MaturityRowBoundary, MaturityRowLink, MaturitySafetyRow, MaturitySafetySection, resolve_row,
-    rows,
+    MaturityCanonicalControl, MaturityExpectedProjection, MaturityIntendedCarrier,
+    MaturityMutationLocator, MaturityMutationSubject, MaturityRowBoundary, MaturityRowLink,
+    MaturitySafetyRow, MaturitySafetySection, resolve_row, rows,
 };
 use crate::observed_boundary::matches_boundary;
 use crate::subject::CanonicalSubject;
@@ -663,7 +665,50 @@ impl MaturityCarrierOutcome {
     }
 }
 
-/// The eight facts §14.2 requires every native refusal to store.
+/// Which control a target accepted, and the identity it computed for it.
+///
+/// One value rather than two fields, on the same argument the carrier
+/// outcome is one value: an identity on its own is thirty-two bytes
+/// saying that something was accepted, and a shape on its own repeats
+/// what the row already declared. The pair is what makes the condition
+/// checkable — that the control a refusal departs from was accepted, and
+/// that it was the row's control and not another shape that happened to
+/// be accepted in the same run.
+///
+/// The shape is the expectation and the identity is the observation, and
+/// both travel on the refusal for the reason the declared boundary
+/// travels beside the observed layer: a comparison whose operands are
+/// not both carried cannot be rechecked by a reader who has only the
+/// record.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MaturityAcceptedControl {
+    shape: MaturityCanonicalControl,
+    identity: Txid,
+}
+
+impl MaturityAcceptedControl {
+    /// The control shape a target accepted, with the identity it
+    /// computed for it.
+    #[must_use]
+    pub const fn new(shape: MaturityCanonicalControl, identity: Txid) -> Self {
+        Self { shape, identity }
+    }
+
+    /// Which canonical control was accepted.
+    #[must_use]
+    pub const fn shape(self) -> MaturityCanonicalControl {
+        self.shape
+    }
+
+    /// The identity the target computed for it.
+    #[must_use]
+    pub const fn identity(self) -> Txid {
+        self.identity
+    }
+}
+
+/// The eight facts §14.2 requires every native refusal to store, and the
+/// control's shape beside the control's identity.
 ///
 /// One struct rather than eight fields repeated on two members, because
 /// "every native refusal stores" is a statement about all native refusals:
@@ -681,11 +726,19 @@ impl MaturityCarrierOutcome {
 /// a row declares them before anything executes and a run reports what it
 /// actually reached, exactly as the declared boundary and the observed
 /// layer are both carried rather than compared into a boolean.
+///
+/// The control's shape stands beside its identity on that same argument,
+/// in [`MaturityAcceptedControl`], and not as a ninth field: the identity
+/// records that something was accepted and the shape records what it was,
+/// and only the pair can answer whether the control a refusal departs
+/// from was the row's. Pairing the two facts rather than adding a
+/// parameter is also how the record keeps one argument per fact a caller
+/// can get wrong.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MaturityNativeRefusal {
     declared_boundary: EvidenceBoundary,
     observed_layer: ObservedOutcomeLayer,
-    control_identity: Txid,
+    control: MaturityAcceptedControl,
     refusal_detail: String,
     submitted: MaturitySubmittedSubject,
     site: MaturityMutationSite,
@@ -703,7 +756,7 @@ impl MaturityNativeRefusal {
     pub const fn record(
         declared_boundary: EvidenceBoundary,
         observed_layer: ObservedOutcomeLayer,
-        control_identity: Txid,
+        control: MaturityAcceptedControl,
         refusal_detail: String,
         submitted: MaturitySubmittedSubject,
         site: MaturityMutationSite,
@@ -712,7 +765,7 @@ impl MaturityNativeRefusal {
         Self {
             declared_boundary,
             observed_layer,
-            control_identity,
+            control,
             refusal_detail,
             submitted,
             site,
@@ -732,10 +785,22 @@ impl MaturityNativeRefusal {
         self.observed_layer
     }
 
+    /// The control this refusal's mutant departs from, with its identity.
+    #[must_use]
+    pub const fn accepted_control(&self) -> MaturityAcceptedControl {
+        self.control
+    }
+
+    /// Which canonical control was accepted.
+    #[must_use]
+    pub const fn control(&self) -> MaturityCanonicalControl {
+        self.control.shape()
+    }
+
     /// The identity the target computed for the accepted control.
     #[must_use]
     pub const fn control_identity(&self) -> Txid {
-        self.control_identity
+        self.control.identity()
     }
 
     /// What the target said, in the target's own words.
@@ -779,6 +844,125 @@ impl MaturityNativeRefusal {
     #[must_use]
     pub fn is_at_the_declared_boundary(&self) -> bool {
         matches_boundary(self.declared_boundary, self.observed_layer)
+    }
+}
+
+/// Whether a native refusal is bound to one row, and which condition
+/// failed where it is not.
+///
+/// A boolean would say that a refusal does not answer a row without
+/// saying what about it did not, and the difference matters to whoever
+/// reads the outcome: a refusal at another layer is a row still waiting,
+/// a refusal of another subject is a mutant built wrong, and a refusal
+/// whose carrier never ran is a run that stopped earlier than the row is
+/// about. Those are three different pieces of work.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MaturityRowBinding {
+    /// Every condition this crate can decide holds of the pair.
+    Bound,
+    /// The row is answered by no refusal at all.
+    ///
+    /// Either no layer answers it, so there is no boundary for an
+    /// observation to equal, or the row is its own control, and a
+    /// control is what a mutant departs from rather than something a
+    /// refusal is offered against.
+    RowAdmitsNoRefusal,
+    /// The refusal was observed somewhere other than the row's declared
+    /// boundary, or it was recorded against another boundary entirely.
+    ObservedElsewhere,
+    /// The change the run named is not the row's subject.
+    AnotherSubject,
+    /// The carrier differed from the row's, or was never reached.
+    CarrierDeparted,
+    /// The control accepted was not of the row's own shape.
+    AnotherControl,
+}
+
+/// Whether one native refusal answers one row, on the conditions a
+/// boundary equality is decidable by.
+///
+/// §1.15 answers a negative row by a target refusal on five conditions:
+/// the control was accepted, the mutation was attributable, the intended
+/// carrier was reached, the observed layer equals the row's declared
+/// boundary, and the result is bound to the exact submitted bytes. Three
+/// of them are decided here, from facts the row declares before anything
+/// runs against facts the refusal stores: the boundary equality through
+/// the crate's own `matches_boundary`, read and never restated;
+/// attributability, as the subject the run named against the subject the
+/// row's locator names; and the carrier, which must be the row's and must
+/// have executed, because a refusal that never reached the carrier
+/// establishes nothing about it.
+///
+/// The other two are the run's and no in-crate reader can settle them.
+/// What is decidable about the control is that the shape accepted is the
+/// row's; that the identity carried is of a transaction a chain accepted
+/// is checkable only against that chain, which is why the identity is
+/// carried rather than reduced to a boolean. The byte binding is not a
+/// condition a verdict member can fail either: the submitted subject is a
+/// field of the record and exists in one of the two forms §14.2 admits,
+/// so its shape holds by construction, and whether those bytes are the
+/// mutant's is a comparison against the construction that produced them.
+/// A refusal this function calls bound is therefore bound on the three
+/// conditions the row's own facts settle, and no further.
+///
+/// A run that names a structural separator rather than a locator answers
+/// exactly the rows whose subject is the metadata encoding. That subject
+/// is the one whose documented places — the domain separator, the field
+/// order, the reserved fields, the trailing bytes — sit between fields
+/// rather than in one, so a run reporting a separator there has reported
+/// the row's own subject honestly and a rule that refused it would call a
+/// correct observation unbound. A separator against any other subject is
+/// a departure. The mirrored clause, a row with no locator answered by a
+/// separator, is stated for the rule's sake: no negative row of the
+/// matrix carries an absent locator at this tip, so that clause admits
+/// nothing today and is the rule a future such row would be handled by
+/// rather than a fallthrough.
+#[must_use]
+pub fn native_refusal_binds_to_row(
+    row: &MaturitySafetyRow,
+    refusal: &MaturityNativeRefusal,
+) -> MaturityRowBinding {
+    let Some(boundary) = row.refusing_layer() else {
+        return MaturityRowBinding::RowAdmitsNoRefusal;
+    };
+    if row.control() == MaturityCanonicalControl::TheRowIsTheControl {
+        return MaturityRowBinding::RowAdmitsNoRefusal;
+    }
+    if refusal.control() != row.control() {
+        return MaturityRowBinding::AnotherControl;
+    }
+    if refusal.declared_boundary() != boundary || !refusal.is_at_the_declared_boundary() {
+        return MaturityRowBinding::ObservedElsewhere;
+    }
+    if !site_names_the_rows_subject(row, refusal.site()) {
+        return MaturityRowBinding::AnotherSubject;
+    }
+    if refusal.intended_carrier() != row.carrier()
+        || refusal.carrier_execution() != MaturityCarrierExecution::Executed
+    {
+        return MaturityRowBinding::CarrierDeparted;
+    }
+    MaturityRowBinding::Bound
+}
+
+/// Whether the site a run named is the subject the row changed.
+///
+/// Compared as subjects rather than as locators, because that is the
+/// claim: two names for one object answer the same row, and one name for
+/// two objects would answer neither. The map from locators to subjects is
+/// injective over the matrix, so this is exactly locator equality today
+/// and stays the right comparison if a later locator names a place inside
+/// a subject that already has one.
+fn site_names_the_rows_subject(row: &MaturitySafetyRow, site: &MaturityMutationSite) -> bool {
+    match (row.locator(), site) {
+        (Some(locator), MaturityMutationSite::Locator(named)) => {
+            locator.subject() == named.subject()
+        }
+        (Some(locator), MaturityMutationSite::StructuralSeparator(_)) => {
+            locator.subject() == MaturityMutationSubject::MetadataEncoding
+        }
+        (None, MaturityMutationSite::StructuralSeparator(_)) => true,
+        (None, MaturityMutationSite::Locator(_)) => false,
     }
 }
 
@@ -1645,19 +1829,22 @@ fn census_from_rows(classified: &[MaturityEvidenceRow]) -> MaturityEvidenceCensu
 #[cfg(test)]
 mod tests {
     use super::{
-        DEPLOYMENT, MaturityAnnouncementEvidencePlan, MaturityBranchPoisonMarker,
-        MaturityCarrierExecution, MaturityCarrierOutcome, MaturityEvidenceRefusal,
-        MaturityExecutorProvenanceExpectation, MaturityMutationRegistryKind, MaturityMutationSite,
-        MaturityNativeRefusal, MaturityObservationClass, MaturityRegistryOutstandingReason,
-        MaturityRegistryStanding, MaturityRowStanding, MaturitySubmittedSubject,
-        derive_maturity_evidence_plan_with, stated_executor_provenance,
+        DEPLOYMENT, MaturityAcceptedControl, MaturityAnnouncementEvidencePlan,
+        MaturityBranchPoisonMarker, MaturityCarrierExecution, MaturityCarrierOutcome,
+        MaturityEvidenceRefusal, MaturityExecutorProvenanceExpectation,
+        MaturityMutationRegistryKind, MaturityMutationSite, MaturityNativeRefusal,
+        MaturityObservationClass, MaturityRegistryOutstandingReason, MaturityRegistryStanding,
+        MaturityRowBinding, MaturityRowStanding, MaturitySubmittedSubject,
+        derive_maturity_evidence_plan_with, native_refusal_binds_to_row,
+        site_names_the_rows_subject, stated_executor_provenance,
     };
     use crate::matrix::EvidenceBoundary;
     use crate::maturity_closure::announcement_plan;
     use crate::maturity_first_party::maturity_first_party_cases;
     use crate::maturity_fixture::positive_semantic_census;
     use crate::maturity_safety::{
-        MaturityIntendedCarrier, MaturityMutationLocator, row_count, rows,
+        MaturityCanonicalControl, MaturityIntendedCarrier, MaturityMutationLocator,
+        MaturityMutationSubject, MaturitySafetyRow, row_count, rows,
     };
     use std::sync::LazyLock;
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
@@ -1688,6 +1875,24 @@ mod tests {
     /// standing.
     const STATED_BASE: &str = "fedcba9876543210fedcba9876543210fedcba98";
 
+    /// Every observed layer this workspace knows.
+    const OBSERVED_LAYERS: &[ObservedOutcomeLayer] = &[
+        ObservedOutcomeLayer::FixtureConstructionFailure,
+        ObservedOutcomeLayer::ExecutorInfrastructureFailure,
+        ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+        ObservedOutcomeLayer::ScriptPathRejection,
+        ObservedOutcomeLayer::KeyPathRejection,
+        ObservedOutcomeLayer::RelayPolicyRejection,
+        ObservedOutcomeLayer::Accepted,
+    ];
+
+    /// The identity a hand-built refusal carries for its control.
+    ///
+    /// Fixed public fill. Nothing accepted it, which is the point: a
+    /// hand-built refusal can exercise this crate's own arithmetic and
+    /// can establish nothing whatever about a target.
+    const CONTROL_IDENTITY: [u8; 32] = [0x11; 32];
+
     /// One native refusal, with all eight facts stated.
     fn refusal(
         declared: EvidenceBoundary,
@@ -1696,7 +1901,10 @@ mod tests {
         MaturityNativeRefusal::record(
             declared,
             observed,
-            Txid::from_internal([0x11; 32]),
+            MaturityAcceptedControl::new(
+                MaturityCanonicalControl::SponsorlessAnnouncement,
+                Txid::from_internal(CONTROL_IDENTITY),
+            ),
             "the target refused the mutated candidate".to_owned(),
             MaturitySubmittedSubject::ExactBytes(vec![0x01, 0x02]),
             MaturityMutationSite::Locator(MaturityMutationLocator::WitnessStack),
@@ -1704,6 +1912,84 @@ mod tests {
                 MaturityIntendedCarrier::AnnouncementLeaf,
                 MaturityCarrierExecution::Executed,
             ),
+        )
+    }
+
+    /// One native refusal built to match a row on every fact the row
+    /// declares.
+    ///
+    /// The control shape, the mutation site and the intended carrier are
+    /// taken from the row and the carrier is recorded as having run, so a
+    /// departure a test introduces is the only thing about the pair that
+    /// differs — which is the shape the live generation's exact-subject
+    /// check uses over bytes, transposed to the facts a row declares.
+    fn refusal_for(
+        row: &MaturitySafetyRow,
+        declared: EvidenceBoundary,
+        observed: ObservedOutcomeLayer,
+    ) -> MaturityNativeRefusal {
+        let site = row.locator().map_or_else(
+            || MaturityMutationSite::StructuralSeparator("trailing bytes".to_owned()),
+            MaturityMutationSite::Locator,
+        );
+        MaturityNativeRefusal::record(
+            declared,
+            observed,
+            MaturityAcceptedControl::new(row.control(), Txid::from_internal(CONTROL_IDENTITY)),
+            "the target refused the mutated candidate".to_owned(),
+            MaturitySubmittedSubject::ExactBytes(vec![0x01, 0x02]),
+            site,
+            MaturityCarrierOutcome::new(row.carrier(), MaturityCarrierExecution::Executed),
+        )
+    }
+
+    /// The same refusal with its mutation site replaced and nothing else.
+    fn with_site(
+        refusal: &MaturityNativeRefusal,
+        site: MaturityMutationSite,
+    ) -> MaturityNativeRefusal {
+        MaturityNativeRefusal::record(
+            refusal.declared_boundary(),
+            refusal.observed_layer(),
+            refusal.accepted_control(),
+            refusal.refusal_detail().to_owned(),
+            refusal.submitted().clone(),
+            site,
+            refusal.carrier(),
+        )
+    }
+
+    /// The same refusal with its carrier outcome replaced and nothing
+    /// else.
+    fn with_carrier(
+        refusal: &MaturityNativeRefusal,
+        carrier: MaturityCarrierOutcome,
+    ) -> MaturityNativeRefusal {
+        MaturityNativeRefusal::record(
+            refusal.declared_boundary(),
+            refusal.observed_layer(),
+            refusal.accepted_control(),
+            refusal.refusal_detail().to_owned(),
+            refusal.submitted().clone(),
+            refusal.site().clone(),
+            carrier,
+        )
+    }
+
+    /// The same refusal with its accepted control replaced and nothing
+    /// else.
+    fn with_control(
+        refusal: &MaturityNativeRefusal,
+        control: MaturityAcceptedControl,
+    ) -> MaturityNativeRefusal {
+        MaturityNativeRefusal::record(
+            refusal.declared_boundary(),
+            refusal.observed_layer(),
+            control,
+            refusal.refusal_detail().to_owned(),
+            refusal.submitted().clone(),
+            refusal.site().clone(),
+            refusal.carrier(),
         )
     }
 
@@ -2011,5 +2297,298 @@ mod tests {
                 "half an expectation is none",
             ),
         }
+    }
+
+    /// A refusal matching a row on every fact binds, and a departure in
+    /// the boundary or the subject does not.
+    ///
+    /// One fact at a time, with everything else the matching refusal's
+    /// own. A check that moved two facts could not say which one the
+    /// verdict came from, and a verdict that names its condition is the
+    /// whole reason the reader is typed rather than a boolean.
+    #[test]
+    fn a_refusal_matching_every_fact_binds_and_a_departed_boundary_or_subject_does_not() {
+        let row = rows()
+            .iter()
+            .find(|row| row.refusing_layer() == Some(EvidenceBoundary::ScriptPathRejection))
+            .expect("the matrix declares a script-path row");
+        let locator = row.locator().expect("a negative row points somewhere");
+        assert_ne!(locator.subject(), MaturityMutationSubject::MetadataEncoding);
+        let matching = refusal_for(
+            row,
+            EvidenceBoundary::ScriptPathRejection,
+            ObservedOutcomeLayer::ScriptPathRejection,
+        );
+        assert_eq!(
+            native_refusal_binds_to_row(row, &matching),
+            MaturityRowBinding::Bound,
+        );
+
+        // The observed layer, and then the boundary the refusal was
+        // recorded against: a row is answered at its own boundary or not
+        // at all, and a refusal about another boundary is about another
+        // row.
+        let observed_earlier = refusal_for(
+            row,
+            EvidenceBoundary::ScriptPathRejection,
+            ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+        );
+        assert_eq!(
+            native_refusal_binds_to_row(row, &observed_earlier),
+            MaturityRowBinding::ObservedElsewhere,
+        );
+        let recorded_elsewhere = refusal_for(
+            row,
+            EvidenceBoundary::KeyPathRejection,
+            ObservedOutcomeLayer::KeyPathRejection,
+        );
+        assert_eq!(
+            native_refusal_binds_to_row(row, &recorded_elsewhere),
+            MaturityRowBinding::ObservedElsewhere,
+        );
+
+        // The subject, as another locator and as a separator, which
+        // answers only the rows whose subject sits between fields.
+        let other_locator = rows()
+            .iter()
+            .filter_map(MaturitySafetyRow::locator)
+            .find(|candidate| candidate.subject() != locator.subject())
+            .expect("the matrix names more than one subject");
+        let another_subject = with_site(&matching, MaturityMutationSite::Locator(other_locator));
+        assert_eq!(
+            native_refusal_binds_to_row(row, &another_subject),
+            MaturityRowBinding::AnotherSubject,
+        );
+        let separator = with_site(
+            &matching,
+            MaturityMutationSite::StructuralSeparator("field order".to_owned()),
+        );
+        assert_eq!(
+            native_refusal_binds_to_row(row, &separator),
+            MaturityRowBinding::AnotherSubject,
+        );
+    }
+
+    /// A departure in the carrier or in the control's shape does not
+    /// bind either.
+    ///
+    /// The carrier fails in both of its ways — another carrier, and the
+    /// row's own carrier never reached — because a refusal that stopped
+    /// before the carrier establishes nothing about it. The control
+    /// fails at its shape while carrying the identity the match carried,
+    /// which is what shows the identity alone cannot answer the
+    /// condition.
+    #[test]
+    fn a_departed_carrier_or_control_does_not_bind() {
+        let row = rows()
+            .iter()
+            .find(|row| row.refusing_layer() == Some(EvidenceBoundary::ScriptPathRejection))
+            .expect("the matrix declares a script-path row");
+        let matching = refusal_for(
+            row,
+            EvidenceBoundary::ScriptPathRejection,
+            ObservedOutcomeLayer::ScriptPathRejection,
+        );
+        let other_carrier = if row.carrier() == MaturityIntendedCarrier::Report {
+            MaturityIntendedCarrier::AnnouncementLeaf
+        } else {
+            MaturityIntendedCarrier::Report
+        };
+        let departed = with_carrier(
+            &matching,
+            MaturityCarrierOutcome::new(other_carrier, MaturityCarrierExecution::Executed),
+        );
+        assert_eq!(
+            native_refusal_binds_to_row(row, &departed),
+            MaturityRowBinding::CarrierDeparted,
+        );
+        let not_reached = with_carrier(
+            &matching,
+            MaturityCarrierOutcome::new(row.carrier(), MaturityCarrierExecution::NotReached),
+        );
+        assert_eq!(
+            native_refusal_binds_to_row(row, &not_reached),
+            MaturityRowBinding::CarrierDeparted,
+        );
+        let other_shape = if row.control() == MaturityCanonicalControl::SponsoredAnnouncement {
+            MaturityCanonicalControl::SponsorlessAnnouncement
+        } else {
+            MaturityCanonicalControl::SponsoredAnnouncement
+        };
+        let another_control = with_control(
+            &matching,
+            MaturityAcceptedControl::new(other_shape, matching.control_identity()),
+        );
+        assert_eq!(
+            native_refusal_binds_to_row(row, &another_control),
+            MaturityRowBinding::AnotherControl,
+        );
+        assert_eq!(
+            another_control.control_identity(),
+            matching.control_identity()
+        );
+    }
+
+    /// A separator answers exactly the rows whose subject sits between
+    /// fields, and a locator answers exactly its own row's subject.
+    ///
+    /// Walked over every row that points somewhere, so the rule is a
+    /// rule rather than an example: the metadata encoding is the one
+    /// subject whose documented places include a separator, a field
+    /// order and a trailing region, and every other subject is a field
+    /// a run can name.
+    #[test]
+    fn a_structural_separator_answers_only_the_subject_that_sits_between_fields() {
+        let separator = MaturityMutationSite::StructuralSeparator("domain separator".to_owned());
+        let mut between_fields = 0usize;
+        let mut in_a_field = 0usize;
+        for row in rows() {
+            let Some(locator) = row.locator() else {
+                continue;
+            };
+            assert!(
+                site_names_the_rows_subject(row, &MaturityMutationSite::Locator(locator)),
+                "{row} is not named by its own locator",
+            );
+            if locator.subject() == MaturityMutationSubject::MetadataEncoding {
+                between_fields += 1;
+                assert!(
+                    site_names_the_rows_subject(row, &separator),
+                    "{row} changes the encoding and refuses the form a run can report it in",
+                );
+            } else {
+                in_a_field += 1;
+                assert!(
+                    !site_names_the_rows_subject(row, &separator),
+                    "{row} accepts a separator for a subject that sits in a field",
+                );
+            }
+        }
+        assert_eq!(between_fields, 9);
+        assert_eq!(in_a_field, 183);
+        assert_eq!(between_fields + in_a_field, 192);
+    }
+
+    /// No refusal binds to a row that admits none.
+    ///
+    /// Two populations, and the second is the one a boundary comparison
+    /// alone would miss: a row with no declared layer has no boundary an
+    /// observation could equal, and a row that is its own control is
+    /// what a mutant departs from, so a refusal offered against it is a
+    /// category error rather than a near miss.
+    #[test]
+    fn no_refusal_binds_to_a_row_that_admits_none() {
+        let mut admitting_none = 0usize;
+        for row in rows() {
+            let own_control = row.control() == MaturityCanonicalControl::TheRowIsTheControl;
+            if row.refusing_layer().is_some() && !own_control {
+                continue;
+            }
+            admitting_none += 1;
+            let declared = row
+                .refusing_layer()
+                .unwrap_or(EvidenceBoundary::ScriptPathRejection);
+            let refusal = refusal_for(row, declared, ObservedOutcomeLayer::ScriptPathRejection);
+            assert_eq!(
+                native_refusal_binds_to_row(row, &refusal),
+                MaturityRowBinding::RowAdmitsNoRefusal,
+                "{row} admits a refusal it has no boundary or no mutant for",
+            );
+        }
+        assert_eq!(admitting_none, 66);
+    }
+
+    /// The classifier, walked row by row against every observed layer.
+    ///
+    /// The mapping's own test proves the mapping diagonal over the two
+    /// vocabularies, and two hand-built refusals showed the classifier
+    /// reads it. Neither says what the classifier does with a row: that
+    /// a refusal recorded at each layer in turn answers a row exactly
+    /// where the layer is the row's own, and that the rows a run can
+    /// answer at all are the forty-three the matrix declares a
+    /// target verdict for, are facts about the matrix and the classifier
+    /// together.
+    #[test]
+    fn from_native_refusal_classifies_every_declared_row_at_every_observed_layer() {
+        let mut pairs = 0usize;
+        let mut at_the_boundary = 0usize;
+        let mut bound = 0usize;
+        for row in rows() {
+            let Some(boundary) = row.refusing_layer() else {
+                continue;
+            };
+            for observed in OBSERVED_LAYERS {
+                pairs += 1;
+                let refusal = refusal_for(row, boundary, *observed);
+                let binding = native_refusal_binds_to_row(row, &refusal);
+                let standing = MaturityRowStanding::from_native_refusal(refusal);
+                let diagonal = matches!(standing, MaturityRowStanding::NativeRefusalObserved(_));
+                assert_eq!(
+                    diagonal,
+                    standing.is_answered(),
+                    "{row} at {observed:?} is answered off the diagonal",
+                );
+                if diagonal {
+                    at_the_boundary += 1;
+                } else {
+                    assert!(
+                        matches!(
+                            standing,
+                            MaturityRowStanding::NativeRefusalAtUnexpectedBoundary(_)
+                        ),
+                        "{row} at {observed:?} classified as neither refusal member",
+                    );
+                }
+                if row.control() == MaturityCanonicalControl::TheRowIsTheControl {
+                    assert_eq!(
+                        binding,
+                        MaturityRowBinding::RowAdmitsNoRefusal,
+                        "{row} is its own control and still admits a refusal",
+                    );
+                    continue;
+                }
+                assert_eq!(
+                    binding == MaturityRowBinding::Bound,
+                    diagonal,
+                    "{row} at {observed:?} binds and classifies differently",
+                );
+                if binding == MaturityRowBinding::Bound {
+                    bound += 1;
+                }
+            }
+        }
+        assert_eq!(pairs, 987);
+        assert_eq!(at_the_boundary, 43);
+        assert_eq!(bound, 42);
+    }
+
+    /// The census figures the readers this module adds leave unmoved.
+    ///
+    /// A reader that decides whether a refusal answers a row must not
+    /// answer one: the buckets are stated as the figures they are, so a
+    /// standing minted by a reader, or a row retyped underneath the
+    /// classification, moves a number here rather than passing quietly.
+    #[test]
+    fn the_census_figures_are_unmoved_by_the_binding_readers() {
+        let census = PLAN.census();
+        assert_eq!(census.rows(), 206);
+        assert_eq!(census.first_party_discharged(), 40);
+        assert_eq!(census.first_party_required(), 43);
+        assert_eq!(census.native_run_required(), 43);
+        assert_eq!(census.report_layer_required(), 15);
+        assert_eq!(census.outstanding_under_typed_non_answer(), 65);
+        assert_eq!(census.answered(), 40);
+        assert_eq!(census.native_acceptance_observed(), 0);
+        assert_eq!(census.native_refusal_observed(), 0);
+        assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
+        assert_eq!(
+            census.first_party_discharged()
+                + census.first_party_required()
+                + census.native_run_required()
+                + census.report_layer_required()
+                + census.outstanding_under_typed_non_answer(),
+            row_count(),
+        );
+        assert!(!census.every_required_row_is_answered());
     }
 }
