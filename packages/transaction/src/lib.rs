@@ -23,6 +23,7 @@ pub mod operator_signing;
 pub mod request;
 pub mod script_path_signing;
 pub mod sponsor;
+pub mod state_abi;
 pub mod state_request;
 pub mod state_view;
 pub mod synthetic;
@@ -114,6 +115,13 @@ pub use script_path_signing::{
 pub use sponsor::{
     SighashProfile, SignerRole, SponsorCapability, SponsorOffer, SponsorSignature,
     SponsorSigningRequest,
+};
+pub use state_abi::{
+    CandidateMaturityAnnouncementAbi, InheritedStateLinkObligations, MaturityAbiObligation,
+    MaturityAbiStatus, MaturityCoordinatorRule, MaturityInputLayout, MaturityOutputLayout,
+    MaturityOutputPlacementRule, MaturityOutputRole, MaturityRelayVerdict,
+    MaturitySponsorSuffixRule, MaturityWitnessRole, MaturityWitnessSource,
+    OutstandingMaturityAbiObligations, WitnessClassification, derive_maturity_announcement_abi,
 };
 pub use state_request::{
     MaturityAnnouncementRequest, SelectableMaturityRequestFacet, UnselectableMaturityRequestFacet,

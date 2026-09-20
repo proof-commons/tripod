@@ -74,6 +74,7 @@ pub use state_bundle::{
 pub use state_carrier::{
     StateAbiObligation, StateAbiRequirement, StateCarrierClosure, StateCarrierRow,
     StateDischargeClass, StateDischargeSide, StateLinkedCarrier, close_state_carriers,
+    state_witness_component,
 };
 pub use state_constructor_graph::{
     FrozenStateReferenceGraph, STATE_REFERENCE_LIMIT, StateReferenceComponent, StateReferenceEdge,

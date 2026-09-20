@@ -23,7 +23,7 @@ use linker::live_backend::{
     LiveFamily, LiveTransferLeafRole, LiveTransferRepresentationPlan, LiveTransferShape,
 };
 use tapscript::StateConstructorRefusal;
-use target_elements::ResourceDimension;
+use target_elements::{ResourceDimension, TransactionForm};
 
 use crate::bytes::Outpoint;
 use crate::live_materialize::{ConfidentialInputRegion, ConfidentialOutputRole};
@@ -439,12 +439,14 @@ pub enum TransactionRefusal {
     },
     /// The capability determines no output key for a committed tree.
     DestinationOutputKeyUndetermined,
-    /// The obligation disposition does not partition the handoff's own
-    /// set.
+    /// The obligation disposition does not partition the link's own set.
     ///
     /// Reached when the link owes an obligation this derivation neither
     /// discharges nor carries — which is to say, when a wave added one
-    /// and this one did not notice.
+    /// and this one did not notice. The live-transfer derivation checks
+    /// its handoff's set this way, and the maturity-announcement
+    /// derivation checks the linked bundle's own five the same way; the
+    /// finding is one finding in both, which is why it has one name.
     InheritedObligationUnaccounted,
 
     // --- Live-transfer request ---------------------------------------
@@ -778,5 +780,21 @@ pub enum TransactionRefusal {
         supplied: usize,
         /// How many bytes the program recomputed from the pair occupies.
         recomputed: usize,
+    },
+
+    // --- The maturity-announcement ABI (§12.6, §12.9) ------------------
+    /// The reviewed form census publishes no verdict for the form the ABI
+    /// must state one for.
+    ///
+    /// Either the census holds no entry under that form, or the entry it
+    /// holds there reviews a different form. Both are the same finding:
+    /// the ABI publishes the target's own verdict rather than a copy of
+    /// it, so a census it cannot read a verdict out of leaves it with
+    /// nothing honest to publish, and a verdict invented in place of one
+    /// would be the exact claim about relay behaviour this crate is not
+    /// entitled to make.
+    MissingReviewedTransactionForm {
+        /// The form whose reviewed verdict was wanted.
+        form: TransactionForm,
     },
 }

@@ -1002,7 +1002,15 @@ fn disagreeing_side(left: &StateCarrierRow, right: &StateCarrierRow) -> Option<S
 /// window compares, and the operator's signature, which is the item the
 /// committed-key fragment verifies; neither is a cut's evidence, so
 /// neither appears in that table at all.
-pub(crate) const fn state_witness_component(role: StateProgramWitness) -> StateProgramComponent {
+///
+/// Public because the attribution has a reader outside this crate. The
+/// wave that supplies the ABI publishes one record per witness role, and
+/// the consumer is one of the attributes that record carries; a reader
+/// that recomputed the mapping would put one fact in two places, which is
+/// the drift this function exists to prevent between the evidence table
+/// and the schedule.
+#[must_use]
+pub const fn state_witness_component(role: StateProgramWitness) -> StateProgramComponent {
     match role {
         StateProgramWitness::SuccessorOutputKeyPrefix | StateProgramWitness::SuccessorNonce => {
             StateProgramComponent::Semantic(StateAnnouncementId::SuccessorReconstruction)

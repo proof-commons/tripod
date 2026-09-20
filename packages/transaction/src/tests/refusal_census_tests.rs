@@ -171,7 +171,8 @@ fn every_transaction_refusal_is_censused(refusal: &Refusal) {
         | Refusal::DuplicateMaturityViewEntry(..)
         | Refusal::MissingMaturityViewEntry(..)
         | Refusal::MaturityViewCommitmentRefused { .. }
-        | Refusal::MaturityViewProgramNotReconstructed { .. } => (),
+        | Refusal::MaturityViewProgramNotReconstructed { .. }
+        | Refusal::MissingReviewedTransactionForm { .. } => (),
     }
 }
 
