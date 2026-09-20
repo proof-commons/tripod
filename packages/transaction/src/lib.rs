@@ -24,6 +24,7 @@ pub mod request;
 pub mod script_path_signing;
 pub mod sponsor;
 pub mod state_abi;
+pub mod state_construct;
 pub mod state_request;
 pub mod state_view;
 pub mod synthetic;
@@ -122,6 +123,9 @@ pub use state_abi::{
     MaturityOutputPlacementRule, MaturityOutputRole, MaturityRelayVerdict,
     MaturitySponsorSuffixRule, MaturityWitnessRole, MaturityWitnessSource,
     OutstandingMaturityAbiObligations, WitnessClassification, derive_maturity_announcement_abi,
+};
+pub use state_construct::{
+    MATURITY_ANNOUNCEMENT_LOCK_TIME, MaturityConstruction, construct_maturity_announcement,
 };
 pub use state_request::{
     MaturityAnnouncementRequest, SelectableMaturityRequestFacet, UnselectableMaturityRequestFacet,

@@ -48,6 +48,7 @@ mod operator_right_tests;
 mod operator_signing_tests;
 mod refusal_census_tests;
 mod state_abi_tests;
+mod state_construct_tests;
 mod state_request_tests;
 mod state_support;
 mod state_view_tests;

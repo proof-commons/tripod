@@ -17,11 +17,12 @@
 
 use std::collections::BTreeSet;
 
-use linker::OwnerParameter;
 use linker::backend::{CompactAshShape, InputRole, LeafRole, OutputRole};
 use linker::live_backend::{
     LiveFamily, LiveTransferLeafRole, LiveTransferRepresentationPlan, LiveTransferShape,
 };
+use linker::{OwnerParameter, StateLinkRefusal};
+use realization::MaturityTransitionRefusal;
 use tapscript::StateConstructorRefusal;
 use target_elements::{ResourceDimension, TransactionForm};
 
@@ -797,4 +798,86 @@ pub enum TransactionRefusal {
         /// The form whose reviewed verdict was wanted.
         form: TransactionForm,
     },
+
+    // --- Maturity-announcement construction (§12.5, §12.7) -------------
+    /// The request asks for the sponsored form, which has no carrier.
+    ///
+    /// Not a malformed request: a request that could not ask for a
+    /// sponsor region could not be refused for asking, and the refusal
+    /// worth having is the one that names what the form would need. The
+    /// reduced announcement leaf carries no sponsor check at all, and
+    /// the realization's sponsor relations hold no region of the
+    /// transaction until a later refit gives them one — so a builder
+    /// emitting sponsored bytes now would emit a form that no leaf and
+    /// no model constrains, which is a stronger objection than any
+    /// shape check could state.
+    SponsoredMaturityFormHasNoCarrier,
+    /// The realization refused the semantic maturity transition.
+    ///
+    /// The refusal travels whole because the transition owns the
+    /// question: whether the predecessor was already announced or
+    /// already complete, whether the announced cycle sits below the
+    /// window or above it, and whether the window could be derived at
+    /// all are five findings, and a construction failure that reported
+    /// only that the cycle was wrong would discard the four-way
+    /// distinction the layer deriving the window is the one able to
+    /// make.
+    MaturitySuccessorTransitionRefused {
+        /// What the transition refused, in the realization's vocabulary.
+        refusal: MaturityTransitionRefusal,
+    },
+    /// The linked bundle refused the successor constructor application.
+    ///
+    /// Carried whole and never flattened, because the three things this
+    /// can be are three different findings: a search exhausted at the
+    /// host's budget is a statement about that budget and not about what
+    /// the target would accept, a nonce that reconstructs the wrong
+    /// program is the view's finding elsewhere, and a later admissible
+    /// nonce beyond the budget is a property of a *successful* search
+    /// that the evidence states as its residual. A generic failure here
+    /// would collapse all three into one word.
+    ///
+    /// Boxed because the link's vocabulary is large and every result
+    /// this crate returns would otherwise carry its width; the refusal
+    /// is carried entire, and the box says nothing about its content.
+    MaturitySuccessorSearchRefused {
+        /// What the application refused, in the link's vocabulary.
+        refusal: Box<StateLinkRefusal>,
+    },
+    /// The predecessor and successor constructors do not share their
+    /// fixed construction parameters.
+    ///
+    /// The no-migration rule, read at the transaction layer: adjacent
+    /// states commit under one static root, one internal key and one
+    /// leaf version, and this generation implements no migration
+    /// between them. The constructor's own refusal travels because
+    /// which of the three differs is the whole content of the finding.
+    MaturitySuccessorContinuityRefused {
+        /// What the equality refused, in the constructor's vocabulary.
+        refusal: StateConstructorRefusal,
+    },
+    /// The view states an asset other than the deployment's own
+    /// singleton.
+    ///
+    /// The successor output carries the asset the leaf's structural
+    /// patterns pin, so the caller's statement of the spent output's
+    /// asset is a claim held against that definition rather than a
+    /// source to build from. Raised equally when the resolved census
+    /// defines no asset at all: a definition that is not there is not
+    /// the one the view states, and a linked bundle cannot arrange the
+    /// absence, so a second variant for it would be a name no test
+    /// could reach.
+    MaturityDeploymentAssetDisagreesWithView,
+    /// The view states an amount other than the deployment's declared
+    /// issuance.
+    ///
+    /// The singleton's whole issuance is what the successor output
+    /// carries, and a spend of a different amount is a spend of
+    /// something other than the STATE output this ABI builds against.
+    /// Raised equally when the census defines no amount, and when it
+    /// defines one this layer cannot read as the target's signed
+    /// fixed-width integer: neither is the amount the view states, and
+    /// neither is reachable through a linked bundle, so all three are
+    /// one name for the same reason the asset's is.
+    MaturityDeploymentAmountDisagreesWithView,
 }

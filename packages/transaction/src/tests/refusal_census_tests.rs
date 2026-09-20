@@ -172,7 +172,13 @@ fn every_transaction_refusal_is_censused(refusal: &Refusal) {
         | Refusal::MissingMaturityViewEntry(..)
         | Refusal::MaturityViewCommitmentRefused { .. }
         | Refusal::MaturityViewProgramNotReconstructed { .. }
-        | Refusal::MissingReviewedTransactionForm { .. } => (),
+        | Refusal::MissingReviewedTransactionForm { .. }
+        | Refusal::SponsoredMaturityFormHasNoCarrier
+        | Refusal::MaturitySuccessorTransitionRefused { .. }
+        | Refusal::MaturitySuccessorSearchRefused { .. }
+        | Refusal::MaturitySuccessorContinuityRefused { .. }
+        | Refusal::MaturityDeploymentAssetDisagreesWithView
+        | Refusal::MaturityDeploymentAmountDisagreesWithView => (),
     }
 }
 

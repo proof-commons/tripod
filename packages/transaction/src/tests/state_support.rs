@@ -46,20 +46,22 @@ use linker::{
     StateSingletonAsset, link_state_candidate,
 };
 use realization::{
-    AnnouncementLeadBounds, Cycle, Maturity, ProtocolAmount, RealizationScope, StateMetadata,
-    StateRepresentationNonce, StateSingletonDeclaration, derive,
+    AnnouncementLeadBounds, Cycle, EncodedStateMetadata, Maturity, ProtocolAmount,
+    RealizationScope, StateMetadata, StateRepresentationNonce, StateSingletonDeclaration, derive,
 };
 use sha2::{Digest, Sha256};
 use tapscript::{
     CandidateStateConstructor, EstablishedOperatorProfile, OperatorKey, STATE_NUMS_KEY, StackItem,
     StateAnnouncementBindings, StateAnnouncementProgram, StateAnnouncementSymbol,
-    StateCurveCapability, StateInternalKeyPolicy, StateNonceBudget, StateOperatorBindings,
-    StateOperatorSymbol, StatePatternBindings, StatePatternSymbol, StateTweakOutcome,
+    StateCurveCapability, StateInternalKeyPolicy, StateLeafRole, StateNonceBudget,
+    StateOperatorBindings, StateOperatorSymbol, StatePatternBindings, StatePatternSymbol,
+    StateStaticLeaf, StateStaticNode, StateStaticSubtree, StateTweakOutcome,
     build_state_announcement_program, build_state_operator_pattern, operator_key_encoding_closure,
     production_static_subtree, selected_operator_profile, state_announcement_patterns,
-    state_announcement_program, state_operator_fragment, state_structural_patterns,
+    state_announcement_program, state_metadata_leaf_program, state_operator_fragment,
+    state_structural_patterns,
 };
-use target_elements::EncodingClass;
+use target_elements::{EncodingClass, LeafVersion};
 
 use super::{outpoint, reviewed_target};
 use crate::bytes::{AssetField, AssetId, ValueField};
@@ -233,42 +235,103 @@ fn bridge() -> StateLinkDeploymentParameters {
     .expect("the demonstration sources bind")
 }
 
+/// The candidate linked maturity bundle over one budget and one
+/// predecessor metadata.
+///
+/// The general form, because the nonce budget a bundle carries is the
+/// budget its own constructor declared: a link over a one-attempt
+/// constructor is the only way to reach an exhausted successor search
+/// without a scan that runs for as long as the reviewed budget admits.
+/// Everything else is the demonstration deployment's, so a bundle built
+/// here differs from [`linked_bundle`] in exactly the two values named.
+pub(super) fn linked_bundle_with(
+    budget: StateNonceBudget,
+    metadata: StateMetadata,
+) -> CandidateLinkedMaturityBundle {
+    let target = reviewed_target();
+    let subtree = production_static_subtree(&target, &record())
+        .expect("the composed record yields the production subtree");
+    let constructor = CandidateStateConstructor::derive(
+        &target,
+        &metadata,
+        &subtree,
+        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &FixtureStateCurve)
+            .expect("the reviewed internal key is the derived one"),
+        budget,
+        &FixtureStateCurve,
+    )
+    .expect("the demonstration constructor derives");
+    let spec = ARCHITECTURE
+        .asset(architecture::AssetId::Pid)
+        .expect("the identity asset is declared");
+
+    link_state_candidate(
+        &target,
+        &StateLinkSources::new(
+            &record(),
+            &bridge(),
+            &constructor,
+            &StateSingletonAsset::new([0x11; 32]),
+            &StateSingletonDeclaration::from_architecture_asset(spec)
+                .expect("the declaration is a singleton"),
+            &metadata,
+            &FixtureStateCurve,
+        ),
+    )
+    .expect("the demonstration sources link")
+}
+
 /// The candidate linked maturity bundle, linked once and cloned.
 pub(super) fn linked_bundle() -> CandidateLinkedMaturityBundle {
-    static BUNDLE: LazyLock<CandidateLinkedMaturityBundle> = LazyLock::new(|| {
-        let target = reviewed_target();
-        let subtree = production_static_subtree(&target, &record())
-            .expect("the composed record yields the production subtree");
-        let constructor = CandidateStateConstructor::derive(
-            &target,
-            &state_metadata(),
-            &subtree,
-            StateInternalKeyPolicy::new(STATE_NUMS_KEY, &FixtureStateCurve)
-                .expect("the reviewed internal key is the derived one"),
-            StateNonceBudget::default(),
-            &FixtureStateCurve,
-        )
-        .expect("the demonstration constructor derives");
-        let spec = ARCHITECTURE
-            .asset(architecture::AssetId::Pid)
-            .expect("the identity asset is declared");
-
-        link_state_candidate(
-            &target,
-            &StateLinkSources::new(
-                &record(),
-                &bridge(),
-                &constructor,
-                &StateSingletonAsset::new([0x11; 32]),
-                &StateSingletonDeclaration::from_architecture_asset(spec)
-                    .expect("the declaration is a singleton"),
-                &state_metadata(),
-                &FixtureStateCurve,
-            ),
-        )
-        .expect("the demonstration sources link")
-    });
+    static BUNDLE: LazyLock<CandidateLinkedMaturityBundle> =
+        LazyLock::new(|| linked_bundle_with(StateNonceBudget::default(), state_metadata()));
     BUNDLE.clone()
+}
+
+/// A static subtree differing from the production one in its root
+/// alone.
+///
+/// The production subtree is the announcement leaf by itself; this one
+/// branches that leaf with the canonical metadata leaf in a support
+/// role, so the two commit different roots while the leaf version and
+/// the internal key stay the production ones. That is the only one of
+/// the three parameters the continuity equality compares that a fixture
+/// can vary here: the leaf version is the reviewed target's, and the
+/// stand-in curve answers for one internal key and asserts on any
+/// other.
+pub(super) fn second_static_subtree() -> StateStaticSubtree {
+    let target = reviewed_target();
+    let metadata_leaf = state_metadata_leaf_program(
+        &target,
+        &EncodedStateMetadata {
+            semantic: state_metadata(),
+            representation: StateRepresentationNonce::new(0),
+        },
+    )
+    .expect("the canonical metadata encodes as a leaf program");
+
+    StateStaticSubtree::new(
+        &target,
+        Some(StateStaticNode::Branch(
+            Box::new(StateStaticNode::Leaf {
+                identity: 0,
+                leaf: StateStaticLeaf {
+                    role: StateLeafRole::Announcement,
+                    version: LeafVersion::TAPSCRIPT.get(),
+                    program: record().program().clone(),
+                },
+            }),
+            Box::new(StateStaticNode::Leaf {
+                identity: 1,
+                leaf: StateStaticLeaf {
+                    role: StateLeafRole::Support(0),
+                    version: LeafVersion::TAPSCRIPT.get(),
+                    program: metadata_leaf,
+                },
+            }),
+        )),
+    )
+    .expect("the two-leaf tree is complete and its roles are distinct")
 }
 
 /// The program the link's own application committed, at its own nonce.
