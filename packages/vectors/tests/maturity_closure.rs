@@ -27,10 +27,14 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::Duration;
 
-use linker::{CandidateDeploymentIdentity, StateDischargeClass, StateLinkedCarrier};
+use linker::{
+    CandidateDeploymentIdentity, LinkRefusal, StateDischargeClass, StateLinkRefusal,
+    StateLinkedCarrier,
+};
 use tapscript::{
-    StackItem, StateAnnouncementSymbol, StateLeafRole, StateOperatorSymbol, StateProgramComponent,
-    StateProgramSymbol, TapscriptInstruction, TapscriptProgram,
+    StackItem, StateAnnouncementSymbol, StateConstructorRefusal, StateCurveCapability,
+    StateLeafRole, StateOperatorSymbol, StateProgramComponent, StateProgramSymbol,
+    StateTweakOutcome, TapscriptInstruction, TapscriptProgram,
 };
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
@@ -53,10 +57,11 @@ use transaction::bytes::{
     TargetTransaction, Txid, ValueField,
 };
 use vectors::maturity_closure::{
-    AdoptionCase, AdoptionVector, DecodedAnnouncementLeaf, KeptCheck, LocatedRow,
-    MaturityClosureRefusal, MaturityDeployment, ObservedField, OracleStateCurve, Verdict,
-    adoption_transaction, closure_target, decode_announcement_leaf, decoded_deployment,
-    forbidden_program_literals, kept_check_site, leaf_literals, locate_discharges, moved_sites,
+    AdoptionCase, AdoptionVector, DecodedAnnouncementLeaf, GoldenFigure, KeptCheck, LocatedRow,
+    MaturityClosureRefusal, MaturityDeployment, MaturityDeploymentParameters, ObservedField,
+    OracleStateCurve, Verdict, adoption_transaction, closure_target, decode_announcement_leaf,
+    decoded_deployment, forbidden_program_literals, internal_key_from_bytes, kept_check_site,
+    leaf_literals, locate_discharges, maturity_sources, maturity_sources_with, moved_sites,
     recompute_golden, recovered_values, removed_and_kept_checks,
 };
 
@@ -708,7 +713,238 @@ fn the_outstanding_contract_is_read_from_the_bundle() {
     assert!(!bundle.evidence().is_empty());
 }
 
-// --- (g) The native half: where a real interpreter refuses -------------
+// --- (g) The refusal root, reached by name ------------------------------
+
+/// A curve capability that finds no point at all.
+///
+/// It answers the same way for every key, so it makes no claim about
+/// which key it was asked about and needs none. What the two tests using
+/// it read is the refusal a caller's own capability produces, rather than
+/// an expectation scripted for one input.
+struct CurveWithoutPoints;
+
+impl StateCurveCapability for CurveWithoutPoints {
+    fn internal_key_is_a_point(&self, _x_only: &[u8; 32]) -> bool {
+        false
+    }
+
+    fn output_key(&self, _internal_key: &[u8; 32], _merkle_root: &[u8; 32]) -> StateTweakOutcome {
+        StateTweakOutcome::InternalKeyNotAPoint
+    }
+}
+
+/// The leaf with every internal-key site pushing a literal of another
+/// width.
+///
+/// All four sites move together, because one site left alone would be
+/// refused as two sites of one consumer disagreeing before any width was
+/// read.
+fn internal_key_of_another_width(
+    pair: &Linked,
+    reviewed: &ReviewedElementsTapscriptDefinition,
+) -> DecodedAnnouncementLeaf {
+    let (bundle, leaf) = pair;
+    let narrower = StackItem::new(reviewed, vec![0x5a; 31]).expect("a thirty-one-byte literal");
+    let consumer = bundle
+        .record()
+        .consumers()
+        .get(&StateProgramSymbol::Semantic(
+            StateAnnouncementSymbol::InternalKey,
+        ))
+        .expect("the record names the internal key's own sites");
+    let mut mutated = leaf.clone();
+    for &site in &consumer.sites {
+        mutated = replacing(
+            &mutated,
+            reviewed,
+            site,
+            TapscriptInstruction::Push(narrower.clone()),
+        );
+    }
+    mutated
+}
+
+#[test]
+fn a_zero_lead_minimum_leaves_the_sources_unavailable() {
+    let supplied = MaturityDeployment::Demonstration
+        .parameters()
+        .expect("the demonstration's own values resolve");
+    // Only the window moves. A zero minimum would admit an announcement
+    // for the current cycle, which is not a lead at all, and the window
+    // is the one source built from a value a caller supplies.
+    let zeroed = MaturityDeploymentParameters::new(
+        *supplied.singleton(),
+        *supplied.operator_key(),
+        (0, supplied.lead().1),
+    );
+    assert_eq!(
+        maturity_sources_with(zeroed).err(),
+        Some(MaturityClosureRefusal::SourcesUnavailable)
+    );
+}
+
+#[test]
+fn a_curve_that_finds_no_point_refuses_the_link_by_the_constructors_own_name() {
+    let sources =
+        maturity_sources(MaturityDeployment::Demonstration).expect("the sources bind once");
+    // The first thing a constructor application asks a curve is whether
+    // the internal key is a point, so a capability that finds none is
+    // refused there and the link carries that refusal whole rather than
+    // flattening it.
+    assert_eq!(
+        sources.link(&CurveWithoutPoints).err(),
+        Some(MaturityClosureRefusal::LinkRefused(LinkRefusal::StateLink(
+            StateLinkRefusal::ConstructorApplication(StateConstructorRefusal::InternalKeyNotAPoint)
+        )))
+    );
+}
+
+#[test]
+fn bytes_that_end_inside_a_push_do_not_decode() {
+    let reviewed = target();
+    let (_, leaf) = linked(MaturityDeployment::Demonstration);
+    let item = StackItem::new(&reviewed, vec![0x5a; 32]).expect("a thirty-two-byte literal");
+    let push = TapscriptProgram::new(vec![TapscriptInstruction::Push(item)])
+        .expect("one push is a program")
+        .encode(&reviewed);
+    // The leaf's own bytes, then a push whose header states a width the
+    // payload after it is one byte short of. The header is the encoder's
+    // rather than a byte written down here.
+    let mut truncated = leaf.bytes().to_vec();
+    truncated.extend_from_slice(&push[..push.len() - 1]);
+    assert_eq!(
+        decode_announcement_leaf(&reviewed, &truncated).err(),
+        Some(MaturityClosureRefusal::LeafBytesDoNotDecode)
+    );
+}
+
+#[test]
+fn an_internal_key_of_another_width_is_not_one_key() {
+    let reviewed = target();
+    let pair = linked(MaturityDeployment::Demonstration);
+    let narrowed = internal_key_of_another_width(&pair, &reviewed);
+    let (bundle, _) = &pair;
+    // Four sites agreeing on a value that is not a key is still not a
+    // key, which is what the reader refuses on rather than on the sites
+    // disagreeing.
+    assert_eq!(
+        internal_key_from_bytes(&narrowed, bundle.record()).err(),
+        Some(MaturityClosureRefusal::InternalKeySitesDisagree)
+    );
+}
+
+#[test]
+fn an_internal_key_of_another_width_refuses_re_emission() {
+    let reviewed = target();
+    let pair = linked(MaturityDeployment::Demonstration);
+    let narrowed = internal_key_of_another_width(&pair, &reviewed);
+    let (bundle, _) = &pair;
+    // The semantic bindings admit an internal key of thirty-two bytes and
+    // no other width, so re-emitting the components from the recovered
+    // values is where a value of another width is refused.
+    assert_eq!(
+        locate_discharges(
+            &narrowed,
+            bundle.carrier_closure(),
+            bundle.record(),
+            &reviewed
+        )
+        .err(),
+        Some(MaturityClosureRefusal::ReEmissionRefused)
+    );
+}
+
+#[test]
+fn a_component_whose_primitive_moved_is_not_located() {
+    let reviewed = target();
+    let (bundle, leaf) = linked(MaturityDeployment::Demonstration);
+    let instructions = leaf.program().instructions();
+    // One primitive inside a located component's own claimed range. It is
+    // at no consumer site, so the recovered values and the re-emitted
+    // fragments are exactly what they were and the located slice is the
+    // only thing that moved.
+    let (component, claimed, site) = bundle
+        .carrier_closure()
+        .rows()
+        .iter()
+        .find_map(|row| match row.linked() {
+            StateLinkedCarrier::Component {
+                component, range, ..
+            } => range
+                .clone()
+                .find(|&index| {
+                    matches!(
+                        instructions.get(index),
+                        Some(TapscriptInstruction::Opcode(_))
+                    )
+                })
+                .map(|index| (*component, range.clone(), index)),
+            _ => None,
+        })
+        .expect("a located component's range holds a primitive");
+    // A primitive the reduction removed, which this file's own census
+    // establishes the leaf does not carry, so the replacement differs
+    // from whatever stood there.
+    let moved = replacing(
+        &leaf,
+        &reviewed,
+        site,
+        TapscriptInstruction::Opcode(OpcodeId::InspectNumInputs),
+    );
+    assert_eq!(
+        locate_discharges(&moved, bundle.carrier_closure(), bundle.record(), &reviewed).err(),
+        Some(MaturityClosureRefusal::ComponentNotLocated { component, claimed })
+    );
+}
+
+#[test]
+fn a_golden_over_another_deployments_bytes_disagrees_by_name() {
+    let reviewed = target();
+    let (bundle, _) = linked(MaturityDeployment::Demonstration);
+    let (_, elsewhere) = linked(MaturityDeployment::Second);
+    // One record is composed for every deployment, so another
+    // deployment's leaf recovers the same internal key and the
+    // recomputation reaches the leaf hash — the first figure a
+    // substitution moves.
+    assert_eq!(
+        recompute_golden(&elsewhere, &bundle, &reviewed, &OracleStateCurve).err(),
+        Some(MaturityClosureRefusal::GoldenDisagrees {
+            figure: GoldenFigure::AnnouncementLeafHash
+        })
+    );
+}
+
+#[test]
+fn a_curve_that_determines_no_output_key_is_named_with_its_outcome() {
+    let reviewed = target();
+    let (bundle, leaf) = linked(MaturityDeployment::Demonstration);
+    // Every hash comparison ahead of the tweak is taken over the
+    // module's own arithmetic, so the curve is asked for an output key
+    // only once they have all agreed, and the outcome it answers with is
+    // carried rather than summarized.
+    assert_eq!(
+        recompute_golden(&leaf, &bundle, &reviewed, &CurveWithoutPoints).err(),
+        Some(MaturityClosureRefusal::OutputKeyUndetermined(
+            StateTweakOutcome::InternalKeyNotAPoint
+        ))
+    );
+}
+
+#[test]
+fn two_leaves_of_different_shapes_are_not_comparable() {
+    let reviewed = target();
+    let (_, leaf) = linked(MaturityDeployment::Demonstration);
+    // A site-by-site comparison of two parses of different lengths would
+    // have to decide which site stands for which, which is a decision no
+    // substitution licenses.
+    let shortened = without(&leaf, &reviewed, &[0]);
+    assert_eq!(
+        moved_sites(&leaf, &shortened, &reviewed).err(),
+        Some(MaturityClosureRefusal::LinkedProgramsAreNotComparable)
+    );
+}
+
+// --- (h) The native half: where a real interpreter refuses -------------
 
 /// What the target prefixes a script-execution failure with.
 ///

@@ -2599,3 +2599,209 @@ pub fn adoption_transaction(
         expected,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        GoldenFigure, KeptCheck, LinkRefusal, MaturityClosureRefusal, OpcodeId, OperationId,
+        RelationId, StateAnnouncementSymbol, StateDischargeClass, StateProgramComponent,
+        StateProgramSymbol, StateTweakOutcome, TransactionRefusal,
+    };
+    use linker::StateLinkRefusal;
+    use realization::{RelationKind, RelationSubject};
+    use tapscript::{StateConstructorRefusal, StatePatternId};
+
+    /// Every refusal this module owns, matched with no catch-all.
+    ///
+    /// The guard is the pattern list and nothing else. A variant added to
+    /// the root stops this crate's test target compiling until somebody
+    /// edits this function, which is the point at which they read this
+    /// paragraph and learn that the new variant owes either a test that
+    /// reaches it or an argument that nothing can reach it. A catch-all
+    /// arm would make that stop silent again, which is the whole of why
+    /// there is none here and why adding one later to quiet an
+    /// inconvenient addition would give up the only guarantee this
+    /// function has.
+    ///
+    /// The census lives beside the vocabulary rather than beside the
+    /// closure tests because the root is `#[non_exhaustive]`, as the
+    /// refusal roots of this workspace are: a match outside the crate
+    /// that declares the enum must carry a wildcard, so the only place an
+    /// exhaustive match over these names can be written is here.
+    ///
+    /// A match arm is not a test. What the comments below record is which
+    /// test asserts each variant as an outcome — a real call refusing by
+    /// that name — and, for the ten this module raises where no public
+    /// call arranges them, the reason the raising code gives. Those ten
+    /// are guards against a later change making one of them reachable
+    /// while nothing exercises it, and a fixture that cannot arrange a
+    /// failure is an argument rather than an omission.
+    ///
+    /// The arms are grouped rather than named one at a time because
+    /// exhaustiveness is a property of the pattern set and not of the arm
+    /// bodies: twenty-five bodies that each do nothing would be
+    /// twenty-five copies of one nothing, which is a second place for a
+    /// name to drift and a lint to collapse.
+    fn every_closure_refusal_is_censused(refusal: &MaturityClosureRefusal) {
+        match refusal {
+            // Unreachable: the reviewed contract is a first-party
+            // constant validated once behind a static, and no caller
+            // value reaches the validation that could refuse it.
+            MaturityClosureRefusal::ReviewedTargetInvalid
+            // Unreachable: the plan is derived from the architecture
+            // constant under the search limits this module writes down,
+            // neither of which a caller supplies.
+            | MaturityClosureRefusal::PlanUnavailable
+            // Unreachable: the record is composed from this module's own
+            // constants by the same route, so nothing a caller passes can
+            // make the composition refuse.
+            | MaturityClosureRefusal::RecordUnavailable
+            // Reached by `a_zero_lead_minimum_leaves_the_sources_unavailable`:
+            // the lead window is the one source built from a supplied
+            // value, and its own constructor refuses a zero minimum.
+            | MaturityClosureRefusal::SourcesUnavailable
+            // Reached by `a_curve_that_finds_no_point_refuses_the_link_by_the_constructors_own_name`.
+            | MaturityClosureRefusal::LinkRefused(..)
+            // Unreachable: a bundle's only origin is the link, which
+            // inserts the announcement program and retains one applied
+            // constructor, and the bundle type offers no constructor of
+            // its own.
+            | MaturityClosureRefusal::AnnouncementProgramAbsent
+            // Reached by `bytes_that_end_inside_a_push_do_not_decode`.
+            | MaturityClosureRefusal::LeafBytesDoNotDecode
+            // Unreachable: the decoder refuses any push that is not in
+            // the minimal form the reviewed rule names, and the encoder
+            // writes that same form, so a parse that succeeded re-encodes
+            // to the bytes it was taken from.
+            | MaturityClosureRefusal::LeafBytesDoNotRoundTrip
+            // Reached by `a_removed_primitive_that_returns_is_refused_by_name`.
+            | MaturityClosureRefusal::RemovedPrimitivePresent { .. }
+            // Reached by `an_introspection_that_names_no_literal_zero_is_refused`.
+            | MaturityClosureRefusal::IntrospectionWithoutLiteralZero { .. }
+            // Reached by `a_predecessor_program_literal_that_returns_is_refused`.
+            | MaturityClosureRefusal::ProgramLiteralPresent { .. }
+            // Reached by `a_kept_check_that_goes_missing_is_refused_by_name`.
+            | MaturityClosureRefusal::KeptCheckAbsent { .. }
+            // Reached by `a_consumer_site_the_bytes_do_not_push_is_refused`.
+            | MaturityClosureRefusal::ConsumerSiteIsNotAPush { .. }
+            // Reached by the second half of that same test.
+            | MaturityClosureRefusal::ConsumerSitesDisagree { .. }
+            // Reached by `an_internal_key_of_another_width_refuses_re_emission`:
+            // the semantic bindings admit an internal key of thirty-two
+            // bytes and no other width.
+            | MaturityClosureRefusal::ReEmissionRefused
+            // Reached by `a_component_whose_primitive_moved_is_not_located`.
+            | MaturityClosureRefusal::ComponentNotLocated { .. }
+            // Unreachable: the link settles every row's class against the
+            // carrier that row records, and a row is read-only outside
+            // the linker, so no closure a caller can hold carries a
+            // model-scope row that claims bytes.
+            | MaturityClosureRefusal::ModelScopeRowLocatesBytes { .. }
+            // Unreachable: the published census and the census counted by
+            // locating are one derivation — relations counted once per
+            // class — over one set of rows a caller cannot assemble.
+            | MaturityClosureRefusal::DischargeCensusDisagrees { .. }
+            // Reached by `a_golden_over_another_deployments_bytes_disagrees_by_name`.
+            | MaturityClosureRefusal::GoldenDisagrees { .. }
+            // Reached by `an_internal_key_of_another_width_is_not_one_key`.
+            | MaturityClosureRefusal::InternalKeySitesDisagree
+            // Reached by `a_curve_that_determines_no_output_key_is_named_with_its_outcome`.
+            | MaturityClosureRefusal::OutputKeyUndetermined(..)
+            // Unreachable: an encoding is a function of the instruction
+            // list, so where two parses have equal counts, equal byte
+            // lengths and agreeing spans, a byte that differs lies inside
+            // an instruction that differs, whose span is the span
+            // collected; parses whose spans disagree are refused as
+            // incomparable before the bytes are walked at all.
+            | MaturityClosureRefusal::BytesDifferOutsideMovedSites { .. }
+            // Reached by `two_leaves_of_different_shapes_are_not_comparable`.
+            | MaturityClosureRefusal::LinkedProgramsAreNotComparable
+            // Unreachable: the entry re-derives its leaf from the bundle
+            // it is handed, so the widths it could refuse on are the
+            // link's own — a thirty-two-byte asset identifier and an
+            // eight-byte explicit amount — and every case it builds
+            // states at least one coin and one output.
+            | MaturityClosureRefusal::AdoptionTransactionUnbuildable(..)
+            // Unreachable: those same widths, and a transaction this
+            // entry encoded itself decodes back to itself through the
+            // codec the adoption vectors already read.
+            | MaturityClosureRefusal::AdoptionBytesDoNotRoundTrip => (),
+        }
+    }
+
+    #[test]
+    fn the_whole_closure_refusal_root_is_censused() {
+        // The guarantee is the match above and it is a compile-time one.
+        // This test exists so the guard is reached by a test run and so
+        // one value of every variant has to be nameable here: a variant
+        // added to the root stops this list compiling beside the match.
+        //
+        // The values are constructed rather than provoked, and that is
+        // deliberate. A constructed refusal is evidence about the
+        // vocabulary and never about the code that raises it, so reaching
+        // a variant by name stays with the closure tests, which assert
+        // each of the fifteen as the outcome of a real call.
+        for refusal in [
+            MaturityClosureRefusal::ReviewedTargetInvalid,
+            MaturityClosureRefusal::PlanUnavailable,
+            MaturityClosureRefusal::RecordUnavailable,
+            MaturityClosureRefusal::SourcesUnavailable,
+            MaturityClosureRefusal::LinkRefused(LinkRefusal::StateLink(
+                StateLinkRefusal::ConstructorApplication(
+                    StateConstructorRefusal::InternalKeyNotAPoint,
+                ),
+            )),
+            MaturityClosureRefusal::AnnouncementProgramAbsent,
+            MaturityClosureRefusal::LeafBytesDoNotDecode,
+            MaturityClosureRefusal::LeafBytesDoNotRoundTrip,
+            MaturityClosureRefusal::RemovedPrimitivePresent {
+                opcode: OpcodeId::InspectNumInputs,
+                instruction: 0,
+            },
+            MaturityClosureRefusal::IntrospectionWithoutLiteralZero { instruction: 0 },
+            MaturityClosureRefusal::ProgramLiteralPresent {
+                instruction: 0,
+                width: 32,
+            },
+            MaturityClosureRefusal::KeptCheckAbsent {
+                check: KeptCheck::SelfPositionPin,
+            },
+            MaturityClosureRefusal::ConsumerSiteIsNotAPush { instruction: 0 },
+            MaturityClosureRefusal::ConsumerSitesDisagree {
+                symbol: StateProgramSymbol::Semantic(StateAnnouncementSymbol::InternalKey),
+            },
+            MaturityClosureRefusal::ReEmissionRefused,
+            MaturityClosureRefusal::ComponentNotLocated {
+                component: StateProgramComponent::Structural(
+                    StatePatternId::StateCoordinatorRoleV1,
+                ),
+                claimed: 0..1,
+            },
+            MaturityClosureRefusal::ModelScopeRowLocatesBytes {
+                relation: RelationId::new(
+                    OperationId::AnnounceMaturity,
+                    RelationKind::Lifecycle,
+                    RelationSubject::Operation,
+                ),
+            },
+            MaturityClosureRefusal::DischargeCensusDisagrees {
+                class: StateDischargeClass::Emitted,
+                read: 13,
+                located: 12,
+            },
+            MaturityClosureRefusal::GoldenDisagrees {
+                figure: GoldenFigure::StaticRoot,
+            },
+            MaturityClosureRefusal::InternalKeySitesDisagree,
+            MaturityClosureRefusal::OutputKeyUndetermined(StateTweakOutcome::InternalKeyNotAPoint),
+            MaturityClosureRefusal::BytesDifferOutsideMovedSites { position: 0 },
+            MaturityClosureRefusal::LinkedProgramsAreNotComparable,
+            MaturityClosureRefusal::AdoptionTransactionUnbuildable(
+                TransactionRefusal::EmptyInputCensus,
+            ),
+            MaturityClosureRefusal::AdoptionBytesDoNotRoundTrip,
+        ] {
+            every_closure_refusal_is_censused(&refusal);
+        }
+    }
+}
