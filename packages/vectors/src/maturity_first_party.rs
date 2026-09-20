@@ -41,6 +41,16 @@
 //! the second look like a backlog item and the first look like a
 //! finding.
 //!
+//! No row is of the first kind at this tip, and the vocabulary for it
+//! stays anyway. Every owner this census once deferred to is driven
+//! here, so the set of deferred owners it produces is empty and the test
+//! asserts that emptiness as a set rather than as a smaller count. A row
+//! that declares a pre-target boundary before its owner is driven is
+//! what the next table transcribed here can produce, and it would have
+//! to be carried as outstanding work rather than as work nothing can do;
+//! a vocabulary dropped for being briefly empty would leave whoever met
+//! that row with no way to say which of the two it was.
+//!
 //! The largest group of the second kind is the rows whose stated change
 //! sits at the ABI's classification and role layout. That layout is
 //! derived from the validated view and has no public constructor, so
@@ -60,13 +70,20 @@
 //! than by any property of the chain. No interface here accepts signing
 //! material from a caller.
 
+use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
-use linker::CandidateLinkedMaturityBundle;
+use architecture::ARCHITECTURE;
+use linker::{
+    CandidateLinkedMaturityBundle, LinkRefusal, LinkedStateLeafProgram, StateConsumerCensus,
+    StateLinkRefusal, StateLinkSources, StateSingletonAsset, check_linked_state_program,
+    collect_state_definitions, link_state_candidate, resolve_state_census, substitute_state,
+};
 use realization::{
     Cycle, Maturity, MaturityTransitionRefusal, STATE_METADATA_BYTES, STATE_METADATA_DOMAIN,
     STATE_METADATA_SCHEMA, StateMetadata, StateRepresentationNonce,
 };
+use tapscript::upstream::StateSingletonDeclaration;
 use tapscript::{
     CandidateStateConstructor, OperatorKey, OperatorKeyRejection, StackItem, StateBranchSide,
     StateConstructorRefusal, StateLeafRole, StateMetadataPattern, StateNonceBudget,
@@ -74,7 +91,17 @@ use tapscript::{
     operator_key_encoding_closure,
 };
 use target_elements::{EncodingClass, ReviewedElementsTapscriptDefinition, TargetContractVersion};
-use transaction::bytes::{AssetField, AssetId, Outpoint, Txid, ValueField};
+use target_elements_conformance::conservation::ConservationRowId;
+use target_elements_conformance::fixture::{NativeCaseGroup, NativeCaseId};
+use target_elements_conformance::protocol::{
+    ConservationOpening, ExecutorCapability, MinedFundingReadback, NATIVE_PROTOCOL_SCHEMA,
+    NativeConservationResponse, NativeExecutionResponse, NativeOperationResponse,
+    NativeResourceObservation, NativeVerdict, ObservedOutcomeLayer, OperationCaseId,
+    OperationStepKind, ResponseShapeDefect, validate_response_shape,
+};
+use transaction::bytes::{
+    AssetField, AssetId, Outpoint, TargetOutput, TargetTransaction, Txid, ValueField,
+};
 use transaction::error::TransactionRefusal;
 use transaction::live_request::{RequestedForm, SponsorChangeRequest};
 use transaction::operator_right::{BranchContext, OperatorRightRegistry};
@@ -96,7 +123,8 @@ use crate::error::VectorError;
 use crate::live_capability::OracleLiveCurve;
 use crate::matrix::{EvidenceBoundary, MutationLayer};
 use crate::maturity_closure::{
-    MaturityDeployment, OracleStateCurve, closure_target, linked_maturity_bundle,
+    MaturityDeployment, MaturitySources, OracleStateCurve, closure_target, linked_maturity_bundle,
+    maturity_sources,
 };
 use crate::maturity_operator::{OPERATOR_HANDLE, OperatorVerifier};
 use crate::maturity_safety::{
@@ -133,12 +161,24 @@ const AUXILIARY: [u8; 32] = [0; 32];
 /// one per crate, because neither of those is the unit that answers. Two
 /// members answer in the transaction crate's own vocabulary and two in
 /// the vocabularies of the layers that own the key encoding and the
-/// frozen signing selection; the last four share one refusal root and
-/// are still four members, because what separates them is the input each
-/// call accepts — offered bytes, an offered tree, an offered leaf
-/// program, an offered pair of outer children — and not the word each
-/// answers with. Collapsing them onto their shared root would name a
-/// module where the policy asks for a call.
+/// frozen signing selection; four of the constructor's members share one
+/// refusal root and are still four members, because what separates them
+/// is the input each call accepts — offered bytes, an offered tree, an
+/// offered leaf program, an offered pair of outer children — and not the
+/// word each answers with. Collapsing them onto their shared root would
+/// name a module where the policy asks for a call.
+///
+/// # Why the link is two members and the typed records are three
+///
+/// The same reading, carried into the two layers this census reached
+/// last. A candidate bundle's link and the check of one linked program
+/// are two calls taking two inputs — a tuple of seven sources, and a
+/// program beside the census that claims to describe it — and the second
+/// exists precisely so that a caller holding a program the linker did
+/// not build can put it the same questions. The conformance layer's
+/// three shape checks answer in one defect vocabulary and read three
+/// different records, so which record was offered is exactly what the
+/// member has to say.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyValidator {
     /// Announcement construction over a validated view and a request.
@@ -157,6 +197,19 @@ pub enum MaturityFirstPartyValidator {
     StaticSubtreeValidation,
     /// The fixed outer branch side over an offered pair of children.
     CanonicalBranchSide,
+    /// The link of a candidate bundle over its seven sources.
+    StateCandidateLink,
+    /// The check of one linked program against the census that claims to
+    /// describe it.
+    LinkedProgramCheck,
+    /// The check of an offered transaction against the finalized one.
+    OfferedTransactionCheck,
+    /// The shape check over a script-execution response record.
+    ResponseShapeValidation,
+    /// The shape check over an operation-step response record.
+    OperationResponseShape,
+    /// The shape check over a conservation-row response record.
+    ConservationResponseShape,
 }
 
 impl MaturityFirstPartyValidator {
@@ -170,6 +223,12 @@ impl MaturityFirstPartyValidator {
         Self::MetadataLeafPattern,
         Self::StaticSubtreeValidation,
         Self::CanonicalBranchSide,
+        Self::StateCandidateLink,
+        Self::LinkedProgramCheck,
+        Self::OfferedTransactionCheck,
+        Self::ResponseShapeValidation,
+        Self::OperationResponseShape,
+        Self::ConservationResponseShape,
     ];
 
     /// The entry point's own name, as a reader would call it.
@@ -184,6 +243,12 @@ impl MaturityFirstPartyValidator {
             Self::MetadataLeafPattern => "StateMetadataPattern::validate",
             Self::StaticSubtreeValidation => "StateStaticSubtree::new",
             Self::CanonicalBranchSide => "StateBranchSide::check",
+            Self::StateCandidateLink => "link_state_candidate",
+            Self::LinkedProgramCheck => "check_linked_state_program",
+            Self::OfferedTransactionCheck => "FinalizedMaturityAnnouncement::check_offered",
+            Self::ResponseShapeValidation => "validate_response_shape",
+            Self::OperationResponseShape => "NativeOperationResponse::validate_shape",
+            Self::ConservationResponseShape => "NativeConservationResponse::validate_shape",
         }
     }
 
@@ -191,13 +256,19 @@ impl MaturityFirstPartyValidator {
     #[must_use]
     pub const fn owning_package(self) -> &'static str {
         match self {
-            Self::SemanticConstruction | Self::OperatorAuthorization => "transaction",
+            Self::SemanticConstruction
+            | Self::OperatorAuthorization
+            | Self::OfferedTransactionCheck => "transaction",
             Self::OperatorKeyEncoding
             | Self::OperatorRequestFreeze
             | Self::MetadataPatternDecode
             | Self::MetadataLeafPattern
             | Self::StaticSubtreeValidation
             | Self::CanonicalBranchSide => "tapscript",
+            Self::StateCandidateLink | Self::LinkedProgramCheck => "linker",
+            Self::ResponseShapeValidation
+            | Self::OperationResponseShape
+            | Self::ConservationResponseShape => "target-elements-conformance",
         }
     }
 }
@@ -208,11 +279,14 @@ impl MaturityFirstPartyValidator {
 /// world the view states, the announced cycle, the operator response
 /// set, the offered key encoding, the frozen signing selection, one
 /// range of the canonical metadata bytes, one leaf of the offered static
-/// tree, the literal the metadata leaf verifies, or which of the two
-/// outer children is offered as the metadata child. A change offered to
-/// a validator whose input it does not name leaves that input untouched,
-/// which the discharge refuses as a change that changed nothing rather
-/// than reporting a refusal about something else.
+/// tree, the literal the metadata leaf verifies, which of the two outer
+/// children is offered as the metadata child, which constructor the link
+/// is given, one instruction of the offered linked program, one output
+/// of the offered transaction, or one member of one offered response
+/// record. A change offered to a validator whose input it does not name
+/// leaves that input untouched, which the discharge refuses as a change
+/// that changed nothing rather than reporting a refusal about something
+/// else.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyChange {
     /// State a predecessor whose maturity is already announced.
@@ -275,6 +349,28 @@ pub enum MaturityFirstPartyChange {
     /// State the metadata child on the side the order does not put it
     /// on.
     StateTheMetadataChildOnTheOtherSide,
+    /// Offer the link the constructor it retained from its own run.
+    OfferTheConstructorTheLinkItselfRetained,
+    /// Offer a constructor applied over another deployment's bundle.
+    OfferAConstructorLinkedForAnotherDeployment,
+    /// Restore one relocated site to the literal the record pushes.
+    RestoreOneRelocatedSiteToItsPristinePush,
+    /// Write one linked value at a site no relocation covers.
+    WriteOneLinkedValueAtASiteNoRelocationCovers,
+    /// Offer a transaction whose output the construction did not fix.
+    OfferATransactionWhoseOutputTheConstructionDidNotFix,
+    /// Report a final stack beside a verdict saying nothing ran.
+    ReportAStackBesideAVerdictThatNothingRan,
+    /// Omit the identity an accepted submission took.
+    OmitTheIdentityAnAcceptedSubmissionTook,
+    /// Omit the mined readback an accepted submission owes.
+    OmitTheMinedReadbackAnAcceptedSubmissionOwes,
+    /// Carry an accepted identity on a refused submission.
+    CarryAnAcceptedIdentityOnARefusedSubmission,
+    /// Carry a witness on a refused signing step.
+    CarryAWitnessOnARefusedSigningStep,
+    /// Carry an opening on a refused conservation row.
+    CarryAnOpeningOnARefusedConservationRow,
 }
 
 /// What one owning entry point said when it refused.
@@ -288,6 +384,18 @@ pub enum MaturityFirstPartyChange {
 /// speak, and the validator beside it is what says which call spoke.
 /// Carried whole rather than flattened onto the transaction root, so
 /// that which layer spoke stays readable in the value a report renders.
+///
+/// # Why the linker speaks twice here
+///
+/// Because it really does answer in two roots. The link of a candidate
+/// bundle answers in the shared link root, which wraps the state
+/// refusal; the check of one linked program answers in the state root
+/// directly. Unwrapping the first into the second would drop every
+/// refusal the shared root can raise that the state root has no member
+/// for, and inventing the wrapper around the second would put words in a
+/// call's mouth. Both are therefore carried as the call returned them,
+/// and the expected-class predicates match through the wrapper where
+/// there is one.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum MaturityFirstPartyObservation {
@@ -299,6 +407,21 @@ pub enum MaturityFirstPartyObservation {
     OperatorSigning(OperatorSigningRefusal),
     /// The constructor boundary's own refusal root.
     Constructor(StateConstructorRefusal),
+    /// The link entry's own root, which wraps the state refusal.
+    ///
+    /// Boxed, and the box is not a hedge about the value: this
+    /// vocabulary travels inside the refusal every call in this module
+    /// returns by value, and the linker's roots are the widest words any
+    /// of those calls can answer with. The payload is carried whole
+    /// either way.
+    Link(Box<LinkRefusal>),
+    /// The state link's own root, as the linked-program check returns it.
+    ///
+    /// Boxed for the reason the entry's root above is.
+    StateLink(Box<StateLinkRefusal>),
+    /// The conformance layer's own defect vocabulary for a response
+    /// record's shape.
+    ResponseShape(ResponseShapeDefect),
 }
 
 /// An owning entry point this census located and does not yet drive.
@@ -312,6 +435,18 @@ pub enum MaturityFirstPartyObservation {
 /// honest fallback for a row that might declare its boundary later; the
 /// set the census actually produces, which the census test recomputes,
 /// is what says which work is outstanding.
+///
+/// # Why the vocabulary stays where the set it produces is empty
+///
+/// No row names any member at this tip, and the census test asserts that
+/// emptiness as a set rather than as a count, so a row that starts
+/// deferring fails there rather than passing a smaller total. The type
+/// stays because deferral is something this census must still be able to
+/// say: the next row to declare a pre-target boundary before its owner
+/// is driven needs the word, and a vocabulary retired for being briefly
+/// empty would have to be reinvented by whoever met that row, with
+/// nothing left to tell them that an owner located and an owner absent
+/// had ever been two different answers.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum MaturityDeferredOwner {
@@ -334,10 +469,24 @@ pub enum MaturityDeferredOwner {
     /// answered by the side check or carry a reason of their own.
     StateConstructorDerivation,
     /// The link of a candidate bundle over its sources.
+    ///
+    /// No row names it at this tip: two of the eight rows once deferred
+    /// here are discharged against this call, two against the check of
+    /// one linked program, and the remaining four carry reasons of their
+    /// own, because what each of them would change is an artifact the
+    /// link produces rather than one it accepts.
     StateCandidateLink,
     /// The check of an offered transaction against a finalized one.
+    ///
+    /// No row names it at this tip: the one row deferred here is
+    /// discharged against this call.
     OfferedTransactionCheck,
     /// The typed response shape validation.
+    ///
+    /// No row names it at this tip: one of the seven rows once deferred
+    /// here is discharged against this call, five against the shape
+    /// checks of the two other response records, and the last carries a
+    /// reason of its own.
     ResponseShapeValidation,
 }
 
@@ -372,11 +521,13 @@ impl MaturityDeferredOwner {
 /// swallowed the change: an order normalized before anything commits to
 /// it, a leastness produced by a search instead of checked on an offer,
 /// an owner that derives from what it is given and retains nothing to
-/// compare it against, and a typed input with no term for the change to
-/// land on are four different answers, and a reader told only that the
-/// change was invisible would have to rediscover which. Collapsing them
-/// would make each look like the others, which is the same defect this
-/// census keeps deferral and impossibility apart to avoid.
+/// compare it against, a typed input with no term for the change to land
+/// on, a census the owner resolves for itself, and a bound measured over
+/// what the owner built are six different answers, and a reader told
+/// only that the change was invisible would have to rediscover which.
+/// Collapsing them would make each look like the others, which is the
+/// same defect this census keeps deferral and impossibility apart to
+/// avoid.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum MaturityCarriedReason {
@@ -428,6 +579,29 @@ pub enum MaturityCarriedReason {
     /// have would answer a different row, and the two rows would then be
     /// separated only by a word in their names.
     TheTypedInputCarriesNoTermTheChangeNames,
+    /// The census the owner reads is resolved by the owner itself.
+    ///
+    /// A row asking for a symbol left unresolved asks for a resolved
+    /// census with a gap in it. There is no way to offer one: the type
+    /// publishes readers and no constructor, the resolution that produces
+    /// one refuses a consumed key nothing defines before any relocation
+    /// stage is reached, and the collection feeding that resolution takes
+    /// five whole typed sources with no way to omit a value. So the
+    /// artifact the row would disturb is made by the call that reads it,
+    /// and the refusal the row names answers a census this layer cannot
+    /// hand anybody.
+    TheResolvedCensusIsResolvedByTheOwnerItself,
+    /// The bound is measured over what the owner built.
+    ///
+    /// A row stating that a candidate falls outside a bound asks for a
+    /// bound check over an offered candidate. Every bound the link states
+    /// is computed over an artifact the link made — the census it
+    /// resolved, the graph it assembled from its own applied constructor,
+    /// the resources it measured over the leaf it substituted — so a
+    /// caller can change what the link is given and never what the link
+    /// measures. That is a question about where the row's boundary sits,
+    /// and it stays visible only while the reason says which.
+    TheBoundIsMeasuredOverWhatTheOwnerBuilt,
     /// The owner is located and the discharge waits on its substrate.
     OwnerLocatedDischargeDeferred(MaturityDeferredOwner),
 }
@@ -663,7 +837,22 @@ struct MaturityWorld {
 /// window that bundle's deployment fixes.
 struct MaturitySubstrate {
     target: ReviewedElementsTapscriptDefinition,
+    /// The sources that link was taken over, kept beside their product.
+    ///
+    /// The link's own entry point takes seven values and the bundle
+    /// publishes four of them, so a discharge against that entry needs
+    /// the sources themselves; holding them here is what keeps the
+    /// honest control a second run of the same link rather than a
+    /// reconstruction of one.
+    sources: MaturitySources,
     bundle: CandidateLinkedMaturityBundle,
+    /// A bundle linked over a deployment fixing other values.
+    ///
+    /// Every value a deployment fixes differs, so its applied
+    /// constructor commits a leaf built for another link — which is the
+    /// one thing a row about a leaf from another bundle needs and the
+    /// substrate's own bundle cannot supply.
+    second: CandidateLinkedMaturityBundle,
     honest: MaturityWorld,
     earliest: Cycle,
     latest: Cycle,
@@ -673,7 +862,9 @@ struct MaturitySubstrate {
 /// Build the substrate once, through the real curve.
 fn build_substrate() -> Option<MaturitySubstrate> {
     let target = closure_target().ok()?;
-    let bundle = linked_maturity_bundle(DEPLOYMENT).ok()?;
+    let sources = maturity_sources(DEPLOYMENT).ok()?;
+    let bundle = sources.link(&OracleStateCurve).ok()?;
+    let second = linked_maturity_bundle(MaturityDeployment::Second).ok()?;
     let retained = bundle.instances().first()?;
     let bounds = bundle.deployment().lead_bounds().bounds();
     let metadata = retained.metadata().semantic;
@@ -690,7 +881,9 @@ fn build_substrate() -> Option<MaturitySubstrate> {
     };
     Some(MaturitySubstrate {
         target,
+        sources,
         bundle,
+        second,
         honest,
         earliest,
         latest,
@@ -1431,6 +1624,525 @@ fn discharge_branch_side(
     Ok(MaturityFirstPartyObservation::Constructor(refusal))
 }
 
+// --- The link and the linked program -------------------------------------
+
+/// The two link sources the bundle does not publish.
+///
+/// Rebuilt where the sources themselves took them rather than read back
+/// off an artifact: the issued identifier is deployment data, and the
+/// declaration is the architecture's own. A reader checks both against
+/// the layer that owns them instead of against a copy kept here.
+///
+/// # Errors
+///
+/// [`MaturityFirstPartyRefusal::SubstrateUnavailable`] where the
+/// deployment's values or the architecture's declaration do not resolve.
+fn link_deployment_values()
+-> Result<(StateSingletonAsset, StateSingletonDeclaration), MaturityFirstPartyRefusal> {
+    let unavailable = || MaturityFirstPartyRefusal::SubstrateUnavailable;
+    let parameters = DEPLOYMENT.parameters().map_err(|_| unavailable())?;
+    let specification = ARCHITECTURE
+        .asset(architecture::AssetId::Pid)
+        .ok_or_else(unavailable)?;
+    let declaration = StateSingletonDeclaration::from_architecture_asset(specification)
+        .map_err(|_| unavailable())?;
+    Ok((
+        StateSingletonAsset::new(*parameters.singleton()),
+        declaration,
+    ))
+}
+
+/// One link over one offered constructor, every other source the honest
+/// one.
+fn link_once(
+    substrate: &MaturitySubstrate,
+    constructor: &CandidateStateConstructor,
+) -> Result<Result<(), LinkRefusal>, MaturityFirstPartyRefusal> {
+    let (singleton, declaration) = link_deployment_values()?;
+    let sources = StateLinkSources::new(
+        substrate.sources.record(),
+        substrate.bundle.deployment(),
+        constructor,
+        &singleton,
+        &declaration,
+        &substrate.honest.metadata,
+        &OracleStateCurve,
+    );
+    Ok(link_state_candidate(&substrate.target, &sources).map(|_| ()))
+}
+
+/// The constructor one change offers the link.
+///
+/// Both offers are constructors a link produced rather than constructors
+/// built here, which is what the rows state: one is this bundle's own
+/// application, whose subtree commits the substituted program instead of
+/// the record's, and the other is the application of a bundle linked
+/// over a deployment fixing other values. A change this input does not
+/// name returns the honest constructor.
+fn changed_constructor(
+    substrate: &MaturitySubstrate,
+    change: MaturityFirstPartyChange,
+) -> Result<&CandidateStateConstructor, MaturityFirstPartyRefusal> {
+    match change {
+        MaturityFirstPartyChange::OfferTheConstructorTheLinkItselfRetained => {
+            retained_constructor(substrate)
+        }
+        MaturityFirstPartyChange::OfferAConstructorLinkedForAnotherDeployment => Ok(substrate
+            .second
+            .instances()
+            .first()
+            .ok_or(MaturityFirstPartyRefusal::SubstrateUnavailable)?
+            .constructor()),
+        _ => Ok(substrate.sources.constructor()),
+    }
+}
+
+/// The link over the honest sources, then over the changed constructor.
+fn discharge_candidate_link(
+    substrate: &MaturitySubstrate,
+    change: MaturityFirstPartyChange,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    let honest = substrate.sources.constructor();
+    let changed = changed_constructor(substrate, change)?;
+    if changed == honest {
+        return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+    }
+    link_once(substrate, honest)?.map_err(|refusal| {
+        MaturityFirstPartyRefusal::ControlWasRefused(MaturityFirstPartyObservation::Link(Box::new(
+            refusal,
+        )))
+    })?;
+    let refusal = link_once(substrate, changed)?
+        .err()
+        .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+    Ok(MaturityFirstPartyObservation::Link(Box::new(refusal)))
+}
+
+/// The linked program and the census that claims to describe it.
+///
+/// Both are produced by the calls a link produces them with: the census
+/// resolves the record's consumers against the deployment's definitions,
+/// and the substitution rebuilds the program from it. What this module
+/// offers the check is the program alone, which is exactly the input
+/// that check exists to accept.
+///
+/// # Errors
+///
+/// [`MaturityFirstPartyRefusal::SubstrateUnavailable`] from the
+/// deployment values, and
+/// [`MaturityFirstPartyRefusal::ScenarioNotConstructible`] where the
+/// collection, the resolution or the substitution refuses.
+fn linked_program(
+    substrate: &MaturitySubstrate,
+) -> Result<LinkedStateLeafProgram, MaturityFirstPartyRefusal> {
+    let (singleton, declaration) = link_deployment_values()?;
+    let unbuildable = || MaturityFirstPartyRefusal::ScenarioNotConstructible;
+    let record = substrate.sources.record();
+    let constructor = substrate.sources.constructor();
+    let definitions = collect_state_definitions(
+        &substrate.target,
+        substrate.bundle.deployment(),
+        constructor,
+        &singleton,
+        &declaration,
+    )
+    .map_err(|_| unbuildable())?;
+    let consumers = StateConsumerCensus::from_sources(record, constructor);
+    let resolved = resolve_state_census(&definitions, &consumers).map_err(|_| unbuildable())?;
+    substitute_state(&substrate.target, record, &resolved).map_err(|_| unbuildable())
+}
+
+/// The program one change offers the linked-program check.
+///
+/// One instruction either way. Restoring a relocated site to the literal
+/// the record pushes is a relocation the offered program does not carry;
+/// writing a linked value at a site the census does not cover is that
+/// same relocation carried once more than the census accounts for, and
+/// the site is chosen by what the program holds rather than by an index
+/// written here. A change this input does not name returns the honest
+/// program.
+fn changed_linked_program(
+    linked: &LinkedStateLeafProgram,
+    change: MaturityFirstPartyChange,
+) -> Option<TapscriptProgram> {
+    let census = linked.relocations();
+    let first = census.relocations().first()?;
+    let mut instructions = linked.program().instructions().to_vec();
+    match change {
+        MaturityFirstPartyChange::RestoreOneRelocatedSiteToItsPristinePush => {
+            *instructions.get_mut(first.site())? =
+                TapscriptInstruction::Push(first.pre_value().clone());
+        }
+        MaturityFirstPartyChange::WriteOneLinkedValueAtASiteNoRelocationCovers => {
+            let covered = census.sites();
+            let elsewhere = instructions
+                .iter()
+                .enumerate()
+                .find(|(site, instruction)| {
+                    !covered.contains(site)
+                        && matches!(
+                            instruction,
+                            TapscriptInstruction::Push(item) if item != first.linked_value()
+                        )
+                })
+                .map(|(site, _)| site)?;
+            *instructions.get_mut(elsewhere)? =
+                TapscriptInstruction::Push(first.linked_value().clone());
+        }
+        _ => {}
+    }
+    TapscriptProgram::new(instructions).ok()
+}
+
+/// The check over the honest linked program, then over the changed one.
+fn discharge_linked_program(
+    substrate: &MaturitySubstrate,
+    change: MaturityFirstPartyChange,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    let linked = linked_program(substrate)?;
+    let honest = linked.program().clone();
+    let changed = changed_linked_program(&linked, change)
+        .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    if changed == honest {
+        return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+    }
+    let record = substrate.sources.record();
+    let census = linked.relocations();
+    check_linked_state_program(&substrate.target, record, &honest, census)
+        .map(|_| ())
+        .map_err(|refusal| {
+            MaturityFirstPartyRefusal::ControlWasRefused(MaturityFirstPartyObservation::StateLink(
+                Box::new(refusal),
+            ))
+        })?;
+    let refusal = check_linked_state_program(&substrate.target, record, &changed, census)
+        .err()
+        .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+    Ok(MaturityFirstPartyObservation::StateLink(Box::new(refusal)))
+}
+
+// --- The offered transaction ---------------------------------------------
+
+/// One offering, built through the public transaction constructor.
+///
+/// A rebuild rather than a clone of the finalized bytes, because what
+/// the row states is a transaction a caller wrote: a control that was
+/// the finalized object itself would differ from the changed offering in
+/// authorship as well as in the one field.
+fn rebuilt_offering(
+    protected: &TargetTransaction,
+    outputs: Vec<TargetOutput>,
+) -> Result<TargetTransaction, MaturityFirstPartyRefusal> {
+    TargetTransaction::new(
+        protected.version(),
+        protected.inputs().to_vec(),
+        outputs,
+        protected.lock_time(),
+        protected.witnesses().to_vec(),
+    )
+    .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)
+}
+
+/// The outputs one change offers, the fixed output rewritten.
+///
+/// The asset, the value and the nonce are the finalized output's own, so
+/// the one difference is the program the caller paid to — which is the
+/// output the construction fixes and the row's own statement of what a
+/// raw transaction does differently.
+fn caller_written_outputs(protected: &TargetTransaction) -> Option<Vec<TargetOutput>> {
+    let mut outputs = protected.outputs().to_vec();
+    let fixed = protected.outputs().first()?;
+    let mut program = fixed.program().to_vec();
+    *program.last_mut()? ^= 1;
+    *outputs.first_mut()? = TargetOutput::new(fixed.asset(), fixed.value(), fixed.nonce(), program);
+    Some(outputs)
+}
+
+/// The check over the honest offering, then over the changed one.
+fn discharge_offered_transaction(
+    substrate: &MaturitySubstrate,
+    change: MaturityFirstPartyChange,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    let finalized = honest_finalized(substrate)?;
+    let protected = finalized.protected();
+    let honest = rebuilt_offering(protected, protected.outputs().to_vec())?;
+    let changed = match change {
+        MaturityFirstPartyChange::OfferATransactionWhoseOutputTheConstructionDidNotFix => {
+            let outputs = caller_written_outputs(protected)
+                .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+            rebuilt_offering(protected, outputs)?
+        }
+        _ => honest.clone(),
+    };
+    if changed == honest {
+        return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+    }
+    finalized.check_offered(&honest).map_err(|refusal| {
+        MaturityFirstPartyRefusal::ControlWasRefused(MaturityFirstPartyObservation::Transaction(
+            refusal,
+        ))
+    })?;
+    let refusal = finalized
+        .check_offered(&changed)
+        .err()
+        .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+    Ok(MaturityFirstPartyObservation::Transaction(refusal))
+}
+
+// --- The offered response records ----------------------------------------
+
+/// The identity a target reports for a transaction it took.
+///
+/// A stated stand-in rather than a value copied from a run: the shape
+/// rules read which members a record carries and never what they say, so
+/// a record here states presence and claims nothing about a chain.
+const ACCEPTED_IDENTITY: &str = "accepted-transaction-identity";
+
+/// The block a readback names, on the same reading.
+const MINED_BLOCK: &str = "mined-block-identity";
+
+/// The caller's own name for the submission step these records answer.
+const SUBMISSION_STEP: &str = "announcement-submission";
+
+/// The caller's own name for the signing step.
+const SIGNING_STEP: &str = "announcement-script-path-signing";
+
+/// The conservation row these records answer.
+const CONSERVATION_ROW: &str = "announcement-conservation";
+
+/// What an opening's asset and blinding factors stand for.
+///
+/// The same reading as the identity above: an opening is refused here
+/// for being present beside a refusal, and no rule reads the factors, so
+/// a stand-in is what this record can honestly carry.
+const OPENING_FIGURE: &str = "opening-stand-in";
+
+/// The executor interface every response here is read against.
+///
+/// Stack reporting is advertised so that a record carrying a stack is
+/// answered for the rule its row names rather than for reporting
+/// something its executor said it never observes.
+fn advertised_capabilities() -> BTreeSet<ExecutorCapability> {
+    BTreeSet::from([ExecutorCapability::FinalStackReporting])
+}
+
+/// The well-formed response of a run that never happened.
+fn honest_execution_response() -> NativeExecutionResponse {
+    NativeExecutionResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: NativeCaseId::new(NativeCaseGroup::ExecutionDomain, None, 1),
+        verdict: NativeVerdict::InfrastructureError,
+        final_stack: None,
+        final_altstack: None,
+        observed_failure: None,
+        resources: NativeResourceObservation::default(),
+    }
+}
+
+/// The shape check over the honest response, then over the changed one.
+fn discharge_execution_response(
+    change: MaturityFirstPartyChange,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    let honest = honest_execution_response();
+    let mut changed = honest.clone();
+    if matches!(
+        change,
+        MaturityFirstPartyChange::ReportAStackBesideAVerdictThatNothingRan
+    ) {
+        changed.final_stack = Some(vec![vec![1]]);
+    }
+    if changed == honest {
+        return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+    }
+    let capabilities = advertised_capabilities();
+    validate_response_shape(&honest, &capabilities).map_err(|defect| {
+        MaturityFirstPartyRefusal::ControlWasRefused(MaturityFirstPartyObservation::ResponseShape(
+            defect,
+        ))
+    })?;
+    let defect = validate_response_shape(&changed, &capabilities)
+        .err()
+        .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+    Ok(MaturityFirstPartyObservation::ResponseShape(defect))
+}
+
+/// One operation-step record at one kind and one observed layer.
+///
+/// Every member a step may carry is absent here, and each honest record
+/// below states the ones its own kind owes. A change is therefore one
+/// member added or one removed, against a record whose other members
+/// were never in question.
+fn operation_response(
+    operation: OperationStepKind,
+    step: &str,
+    observed_layer: ObservedOutcomeLayer,
+) -> NativeOperationResponse {
+    NativeOperationResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: OperationCaseId {
+            operation,
+            step: step.to_owned(),
+        },
+        observed_layer,
+        observed_detail: None,
+        issued_asset: None,
+        funded_outputs: Vec::new(),
+        confidential_funded_outputs: Vec::new(),
+        mined_readback: None,
+        accepted_txid: None,
+        sponsor_witness: Vec::new(),
+        script_path_witness: Vec::new(),
+        signer_public_key: None,
+        signed_profile: None,
+        signing_genesis: None,
+        signature_bound_to: None,
+        resources: NativeResourceObservation::default(),
+    }
+}
+
+/// What a node reports for a transaction it has confirmed.
+fn mined_readback() -> MinedFundingReadback {
+    MinedFundingReadback {
+        transaction_id: ACCEPTED_IDENTITY.to_owned(),
+        witness_transaction_id: ACCEPTED_IDENTITY.to_owned(),
+        block_hash: MINED_BLOCK.to_owned(),
+        block_height: 1,
+        raw_transaction: Vec::new(),
+    }
+}
+
+/// The honest record one operation-response change departs from.
+///
+/// Three of them, because the rows are about two answers and two kinds:
+/// what an accepted submission owes, what a refused one may not carry,
+/// and what a refused signing step may not carry. A change this input
+/// does not name departs from the accepted submission and leaves it
+/// untouched.
+fn honest_operation_response(change: MaturityFirstPartyChange) -> NativeOperationResponse {
+    match change {
+        MaturityFirstPartyChange::CarryAnAcceptedIdentityOnARefusedSubmission => {
+            operation_response(
+                OperationStepKind::Submit,
+                SUBMISSION_STEP,
+                ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+            )
+        }
+        MaturityFirstPartyChange::CarryAWitnessOnARefusedSigningStep => operation_response(
+            OperationStepKind::SignScriptPath,
+            SIGNING_STEP,
+            ObservedOutcomeLayer::ScriptPathRejection,
+        ),
+        _ => {
+            let mut accepted = operation_response(
+                OperationStepKind::Submit,
+                SUBMISSION_STEP,
+                ObservedOutcomeLayer::Accepted,
+            );
+            accepted.accepted_txid = Some(ACCEPTED_IDENTITY.to_owned());
+            accepted.mined_readback = Some(mined_readback());
+            accepted
+        }
+    }
+}
+
+/// The record one change offers the operation-step shape check.
+fn changed_operation_response(
+    honest: &NativeOperationResponse,
+    change: MaturityFirstPartyChange,
+) -> NativeOperationResponse {
+    let mut changed = honest.clone();
+    match change {
+        MaturityFirstPartyChange::OmitTheIdentityAnAcceptedSubmissionTook => {
+            changed.accepted_txid = None;
+        }
+        MaturityFirstPartyChange::OmitTheMinedReadbackAnAcceptedSubmissionOwes => {
+            changed.mined_readback = None;
+        }
+        MaturityFirstPartyChange::CarryAnAcceptedIdentityOnARefusedSubmission => {
+            changed.accepted_txid = Some(ACCEPTED_IDENTITY.to_owned());
+        }
+        MaturityFirstPartyChange::CarryAWitnessOnARefusedSigningStep => {
+            // One item, because what the rule reads here is that a
+            // refused step carried an authorization at all; the width a
+            // witness must have is checked behind an acceptance.
+            changed.script_path_witness = vec![vec![1]];
+        }
+        _ => {}
+    }
+    changed
+}
+
+/// The shape check over the honest record, then over the changed one.
+fn discharge_operation_response(
+    change: MaturityFirstPartyChange,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    let honest = honest_operation_response(change);
+    let changed = changed_operation_response(&honest, change);
+    if changed == honest {
+        return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+    }
+    honest.validate_shape().map_err(|defect| {
+        MaturityFirstPartyRefusal::ControlWasRefused(MaturityFirstPartyObservation::ResponseShape(
+            defect,
+        ))
+    })?;
+    let defect = changed
+        .validate_shape()
+        .err()
+        .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+    Ok(MaturityFirstPartyObservation::ResponseShape(defect))
+}
+
+/// The well-formed record of a conservation row the target refused.
+fn honest_conservation_response() -> NativeConservationResponse {
+    NativeConservationResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: ConservationRowId {
+            ordinal: 1,
+            name: CONSERVATION_ROW.to_owned(),
+        },
+        observed_layer: ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+        observed_detail: None,
+        transaction_bytes: None,
+        observed_value_commitments: Vec::new(),
+        observed_asset_commitments: Vec::new(),
+        observed_openings: Vec::new(),
+    }
+}
+
+/// The shape check over the honest row record, then over the changed one.
+fn discharge_conservation_response(
+    change: MaturityFirstPartyChange,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    let honest = honest_conservation_response();
+    let mut changed = honest.clone();
+    if matches!(
+        change,
+        MaturityFirstPartyChange::CarryAnOpeningOnARefusedConservationRow
+    ) {
+        changed.observed_openings = vec![ConservationOpening {
+            vout: 0,
+            amount_satoshis: 1,
+            asset: OPENING_FIGURE.to_owned(),
+            amount_blinder: OPENING_FIGURE.to_owned(),
+            asset_blinder: OPENING_FIGURE.to_owned(),
+        }];
+    }
+    if changed == honest {
+        return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+    }
+    honest.validate_shape().map_err(|defect| {
+        MaturityFirstPartyRefusal::ControlWasRefused(MaturityFirstPartyObservation::ResponseShape(
+            defect,
+        ))
+    })?;
+    let defect = changed
+        .validate_shape()
+        .err()
+        .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+    Ok(MaturityFirstPartyObservation::ResponseShape(defect))
+}
+
 // --- The expected classes ------------------------------------------------
 
 /// The transition refusal one semantic-request row expects.
@@ -1617,6 +2329,109 @@ const fn canonical_branch_side(observation: &MaturityFirstPartyObservation) -> b
         observation,
         MaturityFirstPartyObservation::Constructor(
             StateConstructorRefusal::CanonicalBranchSideNotSatisfied
+        )
+    )
+}
+
+/// The link entry's own word, where the entry is what spoke.
+fn link_refusal(observation: &MaturityFirstPartyObservation) -> Option<&LinkRefusal> {
+    match observation {
+        MaturityFirstPartyObservation::Link(refusal) => Some(refusal.as_ref()),
+        _ => None,
+    }
+}
+
+/// The state link's own word, where the linked-program check spoke.
+fn state_link_refusal(observation: &MaturityFirstPartyObservation) -> Option<&StateLinkRefusal> {
+    match observation {
+        MaturityFirstPartyObservation::StateLink(refusal) => Some(refusal.as_ref()),
+        _ => None,
+    }
+}
+
+/// `SuppliedConstructorCommitsAnotherProgram`, spelled once.
+///
+/// Read through the shared root the link answers in rather than beside
+/// it, because that wrapper is part of what the call said.
+fn supplied_constructor_commits_another_program(
+    observation: &MaturityFirstPartyObservation,
+) -> bool {
+    matches!(
+        link_refusal(observation),
+        Some(LinkRefusal::StateLink(
+            StateLinkRefusal::SuppliedConstructorCommitsAnotherProgram
+        ))
+    )
+}
+
+/// `RelocationNotApplied`, spelled once.
+fn relocation_not_applied(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(
+        state_link_refusal(observation),
+        Some(StateLinkRefusal::RelocationNotApplied { .. })
+    )
+}
+
+/// `UntrackedProgramMutation`, spelled once.
+fn untracked_program_mutation(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(
+        state_link_refusal(observation),
+        Some(StateLinkRefusal::UntrackedProgramMutation { .. })
+    )
+}
+
+/// `OutputMutatedAfterSigning`, spelled once.
+const fn output_mutated_after_signing(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::Transaction(
+            TransactionRefusal::OutputMutatedAfterSigning { .. }
+        )
+    )
+}
+
+/// `InfrastructureResponseCarriesObservation`, spelled once.
+const fn infrastructure_response_carries_observation(
+    observation: &MaturityFirstPartyObservation,
+) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::ResponseShape(
+            ResponseShapeDefect::InfrastructureResponseCarriesObservation
+        )
+    )
+}
+
+/// `AcceptedOperationOmitsObservation`, spelled once.
+const fn accepted_operation_omits_observation(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::ResponseShape(
+            ResponseShapeDefect::AcceptedOperationOmitsObservation
+        )
+    )
+}
+
+/// `RefusedOperationCarriesObservation`, spelled once.
+const fn refused_operation_carries_observation(
+    observation: &MaturityFirstPartyObservation,
+) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::ResponseShape(
+            ResponseShapeDefect::RefusedOperationCarriesObservation
+        )
+    )
+}
+
+/// `RefusedConservationCarriesOpenings`, spelled once.
+const fn refused_conservation_carries_openings(
+    observation: &MaturityFirstPartyObservation,
+) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::ResponseShape(
+            ResponseShapeDefect::RefusedConservationCarriesOpenings
         )
     )
 }
@@ -1971,12 +2786,173 @@ fn constructor_discharges() -> Vec<DischargeEntry> {
     ]
 }
 
+/// The four linker rows a caller can offer an input for, across two
+/// entry points.
+///
+/// Not one call's rows either, and the split is the same reading the
+/// constructor half uses: the link accepts a tuple of sources and the
+/// linked-program check accepts a program beside the census that claims
+/// to describe it, so a row about which constructor was supplied is
+/// answered where constructors are supplied, and a row about an
+/// instruction of the linked program is answered where a program is
+/// checked. Two rows reaching one class stay two rows, because what
+/// separates them is which constructor was offered: one retained from
+/// this bundle's own run, and one applied over a bundle linked for
+/// another deployment.
+fn linker_discharges() -> Vec<DischargeEntry> {
+    use MaturityFirstPartyChange as Change;
+    use MaturityFirstPartyValidator as V;
+    use MaturitySafetySection as S;
+
+    let committed_elsewhere = |change| {
+        discharge(
+            V::StateCandidateLink,
+            change,
+            supplied_constructor_commits_another_program,
+            "SuppliedConstructorCommitsAnotherProgram",
+        )
+    };
+    vec![
+        (
+            S::PredecessorConstructorFault,
+            "stale-constructor-from-another-bundle",
+            committed_elsewhere(Change::OfferTheConstructorTheLinkItselfRetained),
+        ),
+        (
+            S::AbiLinkerFault,
+            "leaf-from-another-bundle",
+            committed_elsewhere(Change::OfferAConstructorLinkedForAnotherDeployment),
+        ),
+        (
+            S::AbiLinkerFault,
+            "relocation-omitted",
+            discharge(
+                V::LinkedProgramCheck,
+                Change::RestoreOneRelocatedSiteToItsPristinePush,
+                relocation_not_applied,
+                "RelocationNotApplied",
+            ),
+        ),
+        (
+            S::AbiLinkerFault,
+            "relocation-applied-twice",
+            discharge(
+                V::LinkedProgramCheck,
+                Change::WriteOneLinkedValueAtASiteNoRelocationCovers,
+                untracked_program_mutation,
+                "UntrackedProgramMutation",
+            ),
+        ),
+    ]
+}
+
+/// The one row about a transaction offered in place of the built one.
+///
+/// Filed against the check that compares an offering with the finalized
+/// candidate rather than against the construction, because the row is
+/// not about a construction that went wrong: it is about a caller who
+/// did not use one, and the only first-party call that can say so is the
+/// one holding the transaction the construction produced.
+fn offered_transaction_discharges() -> Vec<DischargeEntry> {
+    vec![(
+        MaturitySafetySection::AbiLinkerFault,
+        "raw-transaction-bypassing-safe-construction",
+        discharge(
+            MaturityFirstPartyValidator::OfferedTransactionCheck,
+            MaturityFirstPartyChange::OfferATransactionWhoseOutputTheConstructionDidNotFix,
+            output_mutated_after_signing,
+            "OutputMutatedAfterSigning",
+        ),
+    )]
+}
+
+/// The six protocol rows whose subject is a typed response record.
+///
+/// Three entry points and one defect vocabulary, which is why the
+/// validator beside each row is what says who spoke: the three calls
+/// read three different records, and a reader who knew only the class
+/// would not know which record was offered. The request half of that
+/// table is not here — its subject is the wire message a request arrives
+/// as, and no first-party call accepts one — and neither is the signing
+/// echo, whose comparison happens inside a binding this workspace
+/// publishes no entry to.
+fn protocol_discharges() -> Vec<DischargeEntry> {
+    use MaturityFirstPartyChange as Change;
+    use MaturityFirstPartyValidator as V;
+    use MaturitySafetySection as S;
+
+    let submission = |change, expected: fn(&MaturityFirstPartyObservation) -> bool, name| {
+        discharge(V::OperationResponseShape, change, expected, name)
+    };
+    vec![
+        (
+            S::ProtocolReportFault,
+            "infrastructure-response-carrying-target-observation",
+            discharge(
+                V::ResponseShapeValidation,
+                Change::ReportAStackBesideAVerdictThatNothingRan,
+                infrastructure_response_carries_observation,
+                "InfrastructureResponseCarriesObservation",
+            ),
+        ),
+        (
+            S::ProtocolReportFault,
+            "accepted-submission-without-identity",
+            submission(
+                Change::OmitTheIdentityAnAcceptedSubmissionTook,
+                accepted_operation_omits_observation,
+                "AcceptedOperationOmitsObservation",
+            ),
+        ),
+        (
+            S::ProtocolReportFault,
+            "accepted-submission-without-mined-readback-where-required",
+            submission(
+                Change::OmitTheMinedReadbackAnAcceptedSubmissionOwes,
+                accepted_operation_omits_observation,
+                "AcceptedOperationOmitsObservation",
+            ),
+        ),
+        (
+            S::ProtocolReportFault,
+            "rejected-submission-carrying-accepted-identity",
+            submission(
+                Change::CarryAnAcceptedIdentityOnARefusedSubmission,
+                refused_operation_carries_observation,
+                "RefusedOperationCarriesObservation",
+            ),
+        ),
+        (
+            S::ProtocolReportFault,
+            "rejected-signing-response-carrying-witness",
+            submission(
+                Change::CarryAWitnessOnARefusedSigningStep,
+                refused_operation_carries_observation,
+                "RefusedOperationCarriesObservation",
+            ),
+        ),
+        (
+            S::ProtocolReportFault,
+            "conservation-rejection-carrying-accepted-only-openings",
+            discharge(
+                V::ConservationResponseShape,
+                Change::CarryAnOpeningOnARefusedConservationRow,
+                refused_conservation_carries_openings,
+                "RefusedConservationCarriesOpenings",
+            ),
+        ),
+    ]
+}
+
 /// The pre-target rows this census discharges, by table and name.
 fn discharges() -> Vec<DischargeEntry> {
     let mut entries = window_discharges();
     entries.extend(operator_discharges());
     entries.extend(metadata_discharges());
     entries.extend(constructor_discharges());
+    entries.extend(linker_discharges());
+    entries.extend(offered_transaction_discharges());
+    entries.extend(protocol_discharges());
     entries
 }
 
@@ -1990,8 +2966,21 @@ fn discharges() -> Vec<DischargeEntry> {
 /// row whose change an owner accepts is carried naming the mechanism
 /// that accepted it. The last kind is decided the same way — the
 /// metadata table's nonce row is the one carried by the linked
-/// constructor rather than by the announcement leaf, and the
-/// constructor rows are separated below.
+/// constructor rather than by the announcement leaf, the linker's rows
+/// are separated by where their change would land, and the constructor
+/// rows are separated below.
+///
+/// # Why the protocol table splits on a relation
+///
+/// Because that is the fact that separates the two rows left standing
+/// there. The request rows are carried because no first-party call
+/// accepts a wire message, which their locator says. One response row is
+/// carried for the same reason and cannot say so with a locator: the
+/// comparison that owns it — a signing echo against the bytes the
+/// request named — happens inside a binding the executor performs and
+/// publishes no entry to, and what distinguishes that row from the five
+/// response rows discharged beside it is that it is the only one naming
+/// a published relation of its own.
 fn carried_reason(row: &MaturitySafetyRow) -> MaturityCarriedReason {
     use MaturityCarriedReason as Why;
     use MaturityDeferredOwner as Owner;
@@ -2011,7 +3000,8 @@ fn carried_reason(row: &MaturitySafetyRow) -> MaturityCarriedReason {
             if matches!(
                 row.locator(),
                 Some(MaturityMutationLocator::ProtocolRequestField)
-            ) {
+            ) || matches!(row.relation(), MaturityRelationStanding::Declared { .. })
+            {
                 Why::TheOwningValidatorHasNoPublicEntry
             } else {
                 Why::OwnerLocatedDischargeDeferred(Owner::ResponseShapeValidation)
@@ -2026,12 +3016,29 @@ fn carried_reason(row: &MaturitySafetyRow) -> MaturityCarriedReason {
         }
         _ => match row.refusing_layer() {
             Some(EvidenceBoundary::ConstructorDerivationRejection) => constructor_reason(row),
-            Some(EvidenceBoundary::LinkerRejection) => {
-                Why::OwnerLocatedDischargeDeferred(Owner::StateCandidateLink)
-            }
+            Some(EvidenceBoundary::LinkerRejection) => linker_reason(row),
             _ => Why::OwnerLocatedDischargeDeferred(Owner::OfferedTransactionCheck),
         },
     }
+}
+
+/// Why one linker row this census does not discharge carries no case.
+///
+/// Both reasons say that the artifact the row would disturb is one the
+/// link makes rather than one it takes, and they are two reasons because
+/// a reader asking why has to be told which artifact: a resolved census
+/// the link resolves for itself before any relocation reads it, or a
+/// bound the link measures over the leaf it substituted and the graph it
+/// assembled. Where the change would land is what separates them, and
+/// the row states it.
+const fn linker_reason(row: &MaturitySafetyRow) -> MaturityCarriedReason {
+    if matches!(
+        row.locator(),
+        Some(MaturityMutationLocator::LinkerRelocation)
+    ) {
+        return MaturityCarriedReason::TheResolvedCensusIsResolvedByTheOwnerItself;
+    }
+    MaturityCarriedReason::TheBoundIsMeasuredOverWhatTheOwnerBuilt
 }
 
 /// Why one constructor row this census does not discharge carries no
@@ -2172,6 +3179,24 @@ pub fn validate_maturity_first_party(
         MaturityFirstPartyValidator::CanonicalBranchSide => {
             discharge_branch_side(substrate, discharge.change)
         }
+        MaturityFirstPartyValidator::StateCandidateLink => {
+            discharge_candidate_link(substrate, discharge.change)
+        }
+        MaturityFirstPartyValidator::LinkedProgramCheck => {
+            discharge_linked_program(substrate, discharge.change)
+        }
+        MaturityFirstPartyValidator::OfferedTransactionCheck => {
+            discharge_offered_transaction(substrate, discharge.change)
+        }
+        MaturityFirstPartyValidator::ResponseShapeValidation => {
+            discharge_execution_response(discharge.change)
+        }
+        MaturityFirstPartyValidator::OperationResponseShape => {
+            discharge_operation_response(discharge.change)
+        }
+        MaturityFirstPartyValidator::ConservationResponseShape => {
+            discharge_conservation_response(discharge.change)
+        }
     }?;
     if !(discharge.expected)(&observed) {
         return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
@@ -2215,13 +3240,15 @@ pub fn discharge_maturity_first_party()
 #[cfg(test)]
 mod tests {
     use super::{
-        MaturityCarriedReason, MaturityDeferredOwner, MaturityFirstPartyCase,
-        MaturityFirstPartyChange, MaturityFirstPartyDischarge, MaturityFirstPartyDisposition,
-        MaturityFirstPartyRefusal, MaturityFirstPartyValidator,
-        ValidatedMaturityFirstPartyEvidence, canonical_branch_side, discharge,
-        discharge_maturity_first_party, duplicate_leaf, is_pre_target, matrix_row,
+        MaturityCarriedReason, MaturityFirstPartyCase, MaturityFirstPartyChange,
+        MaturityFirstPartyDischarge, MaturityFirstPartyDisposition, MaturityFirstPartyRefusal,
+        MaturityFirstPartyValidator, ValidatedMaturityFirstPartyEvidence,
+        accepted_operation_omits_observation, canonical_branch_side, discharge,
+        discharge_maturity_first_party, duplicate_leaf,
+        infrastructure_response_carries_observation, is_pre_target, matrix_row,
         maturity_first_party_cases, metadata_encoding_refused, metadata_leaf_not_unspendable,
-        missing_response, validate_maturity_first_party,
+        missing_response, output_mutated_after_signing, relocation_not_applied,
+        supplied_constructor_commits_another_program, validate_maturity_first_party,
     };
     use crate::matrix::EvidenceBoundary;
     use crate::maturity_safety::{MaturityCanonicalControl, MaturitySafetySection, rows};
@@ -2303,7 +3330,7 @@ mod tests {
             .filter_map(MaturityFirstPartyCase::carried_reason)
             .collect();
         assert_eq!(discharged.len() + carried.len(), cases.len());
-        assert_eq!(discharged.len(), 29);
+        assert_eq!(discharged.len(), 40);
 
         // The layout rows are the census's largest carried group, and
         // they are carried for a reason that is not deferral.
@@ -2315,10 +3342,12 @@ mod tests {
 
         // Every deferred row names the owner it waits on, so a reader
         // can tell outstanding work from work nothing can do. The set is
-        // the census's own rather than the type's: three entry points
-        // this census once deferred to are now driven, and a row still
-        // naming one of them would be outstanding work nobody had
-        // noticed rather than a member that happens to exist.
+        // the census's own rather than the type's, and it is empty:
+        // every entry point this census once deferred to is driven, so a
+        // row naming one of them would be outstanding work nobody had
+        // noticed rather than a member that happens to exist. Asserted
+        // as a set so that the row appears here rather than as a count
+        // that a second change could restore.
         let owners: BTreeSet<_> = carried
             .iter()
             .filter_map(|reason| match reason {
@@ -2326,14 +3355,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(
-            owners,
-            BTreeSet::from([
-                MaturityDeferredOwner::StateCandidateLink,
-                MaturityDeferredOwner::OfferedTransactionCheck,
-                MaturityDeferredOwner::ResponseShapeValidation,
-            ]),
-        );
+        assert_eq!(owners, BTreeSet::new());
     }
 
     #[test]
@@ -2375,6 +3397,34 @@ mod tests {
             Some(["conflicting-leaf-weight"].as_slice()),
         );
 
+        // The two reasons this bite adds, on the rows whose change the
+        // link swallows by making the artifact it checks. A resolution
+        // that began accepting a census, or a bound that began taking an
+        // offered candidate, would fail here.
+        assert_eq!(
+            standing(&MaturityCarriedReason::TheResolvedCensusIsResolvedByTheOwnerItself),
+            Some(
+                [
+                    "unresolved-metadata-schema-symbol",
+                    "unresolved-lead-bound-symbol",
+                    "unresolved-operator-symbol"
+                ]
+                .as_slice()
+            ),
+        );
+        assert_eq!(
+            standing(&MaturityCarriedReason::TheBoundIsMeasuredOverWhatTheOwnerBuilt),
+            Some(["candidate-outside-bounds"].as_slice()),
+        );
+
+        // The one response row carried beside the eight request rows,
+        // for the reason they carry: the comparison that owns it runs
+        // inside a binding no public entry reaches.
+        assert!(
+            named[&MaturityCarriedReason::TheOwningValidatorHasNoPublicEntry]
+                .contains(&"signing-response-bound-to-other-bytes"),
+        );
+
         // The one row this bite carries under a reason the census
         // already had: the metadata leaf is derived from the metadata
         // rather than accepted beside it, which is what the window rows
@@ -2401,7 +3451,7 @@ mod tests {
                     .unwrap_or_else(|refusal| panic!("{case:?} did not meet §4.2: {refusal:?}"))
             })
             .collect();
-        assert_eq!(discharged.len(), 29);
+        assert_eq!(discharged.len(), 40);
         assert_eq!(
             discharge_maturity_first_party().expect("the census discharges"),
             discharged,
@@ -2551,6 +3601,122 @@ mod tests {
                 MaturityFirstPartyChange::StateTheMetadataChildOnTheOtherSide,
                 metadata_leaf_not_unspendable,
                 "MetadataLeafNotUnspendable",
+            )),
+        );
+        assert!(matches!(
+            validate_maturity_first_party(&offered),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_)),
+        ));
+    }
+
+    #[test]
+    fn the_link_does_not_discharge_a_linked_program_row() {
+        // The same clause against this bite's six owners, and the two
+        // linker owners are where it earns the most: both calls answer
+        // about one link, so a row filed against the wrong one of them
+        // would look right in every rendering. It fails here, because
+        // the refusal it produced is the other call's.
+        let offered = case(
+            MaturitySafetySection::AbiLinkerFault,
+            "relocation-omitted",
+            MaturityFirstPartyDisposition::Discharge(discharge(
+                MaturityFirstPartyValidator::StateCandidateLink,
+                MaturityFirstPartyChange::OfferTheConstructorTheLinkItselfRetained,
+                relocation_not_applied,
+                "RelocationNotApplied",
+            )),
+        );
+        assert!(matches!(
+            validate_maturity_first_party(&offered),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_)),
+        ));
+    }
+
+    #[test]
+    fn the_linked_program_check_does_not_discharge_a_link_row() {
+        let offered = case(
+            MaturitySafetySection::PredecessorConstructorFault,
+            "stale-constructor-from-another-bundle",
+            MaturityFirstPartyDisposition::Discharge(discharge(
+                MaturityFirstPartyValidator::LinkedProgramCheck,
+                MaturityFirstPartyChange::RestoreOneRelocatedSiteToItsPristinePush,
+                supplied_constructor_commits_another_program,
+                "SuppliedConstructorCommitsAnotherProgram",
+            )),
+        );
+        assert!(matches!(
+            validate_maturity_first_party(&offered),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_)),
+        ));
+    }
+
+    #[test]
+    fn the_offered_transaction_check_does_not_discharge_a_response_row() {
+        let offered = case(
+            MaturitySafetySection::ProtocolReportFault,
+            "infrastructure-response-carrying-target-observation",
+            MaturityFirstPartyDisposition::Discharge(discharge(
+                MaturityFirstPartyValidator::OfferedTransactionCheck,
+                MaturityFirstPartyChange::OfferATransactionWhoseOutputTheConstructionDidNotFix,
+                infrastructure_response_carries_observation,
+                "InfrastructureResponseCarriesObservation",
+            )),
+        );
+        assert!(matches!(
+            validate_maturity_first_party(&offered),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_)),
+        ));
+    }
+
+    #[test]
+    fn the_response_shape_check_does_not_discharge_the_offered_transaction_row() {
+        let offered = case(
+            MaturitySafetySection::AbiLinkerFault,
+            "raw-transaction-bypassing-safe-construction",
+            MaturityFirstPartyDisposition::Discharge(discharge(
+                MaturityFirstPartyValidator::ResponseShapeValidation,
+                MaturityFirstPartyChange::ReportAStackBesideAVerdictThatNothingRan,
+                output_mutated_after_signing,
+                "OutputMutatedAfterSigning",
+            )),
+        );
+        assert!(matches!(
+            validate_maturity_first_party(&offered),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_)),
+        ));
+    }
+
+    #[test]
+    fn the_operation_response_check_does_not_discharge_a_metadata_row() {
+        let offered = case(
+            MaturitySafetySection::MetadataFault,
+            "omit-one-field",
+            MaturityFirstPartyDisposition::Discharge(discharge(
+                MaturityFirstPartyValidator::OperationResponseShape,
+                MaturityFirstPartyChange::OmitTheIdentityAnAcceptedSubmissionTook,
+                metadata_encoding_refused,
+                "MetadataEncodingRefused",
+            )),
+        );
+        assert!(matches!(
+            validate_maturity_first_party(&offered),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_)),
+        ));
+    }
+
+    #[test]
+    fn the_conservation_response_check_does_not_discharge_a_submission_row() {
+        // The pair this clause is sharpest on: two records in one
+        // vocabulary, so the class alone would not say which was
+        // offered, and only the validator beside the row does.
+        let offered = case(
+            MaturitySafetySection::ProtocolReportFault,
+            "accepted-submission-without-identity",
+            MaturityFirstPartyDisposition::Discharge(discharge(
+                MaturityFirstPartyValidator::ConservationResponseShape,
+                MaturityFirstPartyChange::CarryAnOpeningOnARefusedConservationRow,
+                accepted_operation_omits_observation,
+                "AcceptedOperationOmitsObservation",
             )),
         );
         assert!(matches!(
