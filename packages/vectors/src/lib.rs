@@ -54,6 +54,7 @@ pub mod maturity_first_party;
 pub mod maturity_fixture;
 pub mod maturity_negative_half;
 pub mod maturity_operator;
+pub mod maturity_report;
 pub mod maturity_safety;
 pub mod mutation;
 mod observed_boundary;
