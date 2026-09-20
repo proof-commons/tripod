@@ -64,10 +64,13 @@ use std::sync::LazyLock;
 
 use linker::CandidateLinkedMaturityBundle;
 use realization::{
-    Cycle, Maturity, MaturityTransitionRefusal, StateMetadata, StateRepresentationNonce,
+    Cycle, Maturity, MaturityTransitionRefusal, STATE_METADATA_BYTES, STATE_METADATA_DOMAIN,
+    STATE_METADATA_SCHEMA, StateMetadata, StateRepresentationNonce,
 };
 use tapscript::{
-    CandidateStateConstructor, OperatorKey, OperatorKeyRejection, StateNonceBudget,
+    CandidateStateConstructor, OperatorKey, OperatorKeyRejection, StackItem, StateBranchSide,
+    StateConstructorRefusal, StateLeafRole, StateMetadataPattern, StateNonceBudget,
+    StateStaticLeaf, StateStaticNode, StateStaticSubtree, TapscriptInstruction, TapscriptProgram,
     operator_key_encoding_closure,
 };
 use target_elements::{EncodingClass, ReviewedElementsTapscriptDefinition, TargetContractVersion};
@@ -97,7 +100,8 @@ use crate::maturity_closure::{
 };
 use crate::maturity_operator::{OPERATOR_HANDLE, OperatorVerifier};
 use crate::maturity_safety::{
-    MaturityCanonicalControl, MaturityMutationLocator, MaturitySafetyRow, MaturitySafetySection,
+    MaturityCanonicalControl, MaturityIntendedCarrier, MaturityMutationClass,
+    MaturityMutationLocator, MaturityRelationStanding, MaturitySafetyRow, MaturitySafetySection,
     rows,
 };
 
@@ -125,12 +129,16 @@ const AUXILIARY: [u8; 32] = [0; 32];
 
 /// One entry point that owns a pre-target refusal of this chain.
 ///
-/// One member per owning entry point, and the refusal type differs
-/// between them: two of the four answer in the transaction crate's own
-/// vocabulary and two answer in the vocabularies of the layers that own
-/// the key encoding and the frozen signing selection. A census that
-/// named only the crate would have had to flatten those two into a
-/// wrapper that no call actually returns.
+/// One member per owning entry point rather than one per refusal type or
+/// one per crate, because neither of those is the unit that answers. Two
+/// members answer in the transaction crate's own vocabulary and two in
+/// the vocabularies of the layers that own the key encoding and the
+/// frozen signing selection; the last four share one refusal root and
+/// are still four members, because what separates them is the input each
+/// call accepts — offered bytes, an offered tree, an offered leaf
+/// program, an offered pair of outer children — and not the word each
+/// answers with. Collapsing them onto their shared root would name a
+/// module where the policy asks for a call.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyValidator {
     /// Announcement construction over a validated view and a request.
@@ -141,6 +149,14 @@ pub enum MaturityFirstPartyValidator {
     OperatorKeyEncoding,
     /// The freeze of the operator signing request.
     OperatorRequestFreeze,
+    /// The canonical metadata decode over offered bytes.
+    MetadataPatternDecode,
+    /// The metadata leaf's unspendability over an offered program.
+    MetadataLeafPattern,
+    /// The validation of an offered static subtree.
+    StaticSubtreeValidation,
+    /// The fixed outer branch side over an offered pair of children.
+    CanonicalBranchSide,
 }
 
 impl MaturityFirstPartyValidator {
@@ -150,6 +166,10 @@ impl MaturityFirstPartyValidator {
         Self::OperatorAuthorization,
         Self::OperatorKeyEncoding,
         Self::OperatorRequestFreeze,
+        Self::MetadataPatternDecode,
+        Self::MetadataLeafPattern,
+        Self::StaticSubtreeValidation,
+        Self::CanonicalBranchSide,
     ];
 
     /// The entry point's own name, as a reader would call it.
@@ -160,6 +180,10 @@ impl MaturityFirstPartyValidator {
             Self::OperatorAuthorization => "OperatorSigningStarted::authorize",
             Self::OperatorKeyEncoding => "OperatorKey::new",
             Self::OperatorRequestFreeze => "OperatorSigningRequest::freeze",
+            Self::MetadataPatternDecode => "StateMetadataPattern::from_bytes",
+            Self::MetadataLeafPattern => "StateMetadataPattern::validate",
+            Self::StaticSubtreeValidation => "StateStaticSubtree::new",
+            Self::CanonicalBranchSide => "StateBranchSide::check",
         }
     }
 
@@ -168,7 +192,12 @@ impl MaturityFirstPartyValidator {
     pub const fn owning_package(self) -> &'static str {
         match self {
             Self::SemanticConstruction | Self::OperatorAuthorization => "transaction",
-            Self::OperatorKeyEncoding | Self::OperatorRequestFreeze => "tapscript",
+            Self::OperatorKeyEncoding
+            | Self::OperatorRequestFreeze
+            | Self::MetadataPatternDecode
+            | Self::MetadataLeafPattern
+            | Self::StaticSubtreeValidation
+            | Self::CanonicalBranchSide => "tapscript",
         }
     }
 }
@@ -177,10 +206,13 @@ impl MaturityFirstPartyValidator {
 ///
 /// Named in the rows' own words, and applied at exactly one place: the
 /// world the view states, the announced cycle, the operator response
-/// set, the offered key encoding, or the frozen signing selection. A
-/// change offered to a validator whose input it does not name leaves
-/// that input untouched, which the discharge refuses as a change that
-/// changed nothing rather than reporting a refusal about something else.
+/// set, the offered key encoding, the frozen signing selection, one
+/// range of the canonical metadata bytes, one leaf of the offered static
+/// tree, the literal the metadata leaf verifies, or which of the two
+/// outer children is offered as the metadata child. A change offered to
+/// a validator whose input it does not name leaves that input untouched,
+/// which the discharge refuses as a change that changed nothing rather
+/// than reporting a refusal about something else.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyChange {
     /// State a predecessor whose maturity is already announced.
@@ -214,6 +246,35 @@ pub enum MaturityFirstPartyChange {
     AnswerOneMorePositionThanWasFrozen,
     /// Freeze a leaf script the stated selection does not hash to.
     FreezeALeafScriptTheSelectionDoesNotHashTo,
+    /// Omit one semantic field from the metadata encoding.
+    OmitOneMetadataField,
+    /// Offer one semantic field of the metadata encoding twice.
+    DuplicateOneMetadataField,
+    /// Present the schema revision ahead of the domain separator.
+    ReorderTheMetadataFraming,
+    /// State a metadata schema revision the decode does not support.
+    StateAnUnsupportedMetadataSchema,
+    /// State a separator that does not identify STATE metadata.
+    StateAnotherMetadataDomainSeparator,
+    /// State a maturity discriminant the schema does not define.
+    StateAMaturityTagTheSchemaDoesNotDefine,
+    /// Set a reserved metadata byte nonzero.
+    SetAReservedMetadataByteNonzero,
+    /// Append a byte past the encoding's fixed width.
+    AppendAByteAfterTheFixedWidth,
+    /// Offer a static subtree that also holds the metadata leaf.
+    OfferAStaticSubtreeHoldingTheMetadataLeaf,
+    /// Offer a static subtree carrying no operation leaf.
+    OfferAStaticSubtreeWithoutTheOperationLeaf,
+    /// Declare one leaf identity twice with one definition.
+    DeclareOneLeafIdentityTwiceIdentically,
+    /// Declare one leaf identity under two roles.
+    DeclareOneLeafIdentityUnderTwoRoles,
+    /// Offer a metadata leaf whose verification can survive.
+    OfferAMetadataLeafWhoseVerificationCanSurvive,
+    /// State the metadata child on the side the order does not put it
+    /// on.
+    StateTheMetadataChildOnTheOtherSide,
 }
 
 /// What one owning entry point said when it refused.
@@ -221,9 +282,12 @@ pub enum MaturityFirstPartyChange {
 /// One member per owning entry point's refusal type rather than one per
 /// crate, because a crate is not the unit that answers: the key encoding
 /// and the frozen selection are refused in two different vocabularies of
-/// the same package. Carried whole rather than flattened onto the
-/// transaction root, so that which layer spoke stays readable in the
-/// value a report renders.
+/// the same package. One member is therefore not one validator either —
+/// four of the census's entry points answer in the constructor's single
+/// root — so this vocabulary stays a list of the words the chain can
+/// speak, and the validator beside it is what says which call spoke.
+/// Carried whole rather than flattened onto the transaction root, so
+/// that which layer spoke stays readable in the value a report renders.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum MaturityFirstPartyObservation {
@@ -233,23 +297,41 @@ pub enum MaturityFirstPartyObservation {
     OperatorKey(OperatorKeyRejection),
     /// The operator signing boundary's own finding.
     OperatorSigning(OperatorSigningRefusal),
+    /// The constructor boundary's own refusal root.
+    Constructor(StateConstructorRefusal),
 }
 
 /// An owning entry point this census located and does not yet drive.
 ///
 /// Each member names a call that exists and is public. The substrate it
 /// needs — a metadata byte string, an offered static tree, a link source
-/// tuple, a response record — is not the substrate this bite builds, and
-/// naming the owner is what keeps the outstanding work checkable instead
-/// of remembered.
+/// tuple, a response record — is not the substrate the bite that named
+/// it built, and naming the owner is what keeps the outstanding work
+/// checkable instead of remembered. A member no row names is a located
+/// owner whose rows have since been answered, and it stands as the
+/// honest fallback for a row that might declare its boundary later; the
+/// set the census actually produces, which the census test recomputes,
+/// is what says which work is outstanding.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum MaturityDeferredOwner {
     /// The canonical metadata decode over offered bytes.
+    ///
+    /// No row names it at this tip: the eight encoding rows are
+    /// discharged against this call and the ninth carries a reason of
+    /// its own.
     MetadataPatternFromBytes,
     /// The offered static subtree's validation.
+    ///
+    /// No row names it at this tip: four rows are discharged against
+    /// this call and the rest carry reasons of their own.
     StaticSubtreeConstruction,
     /// The constructor derivation over a static subtree.
+    ///
+    /// No row names it at this tip, and no row did own it: the
+    /// derivation fixes the outer branch side itself and retries a nonce
+    /// that violates it, so the three rows once deferred here are
+    /// answered by the side check or carry a reason of their own.
     StateConstructorDerivation,
     /// The link of a candidate bundle over its sources.
     StateCandidateLink,
@@ -279,9 +361,22 @@ impl MaturityDeferredOwner {
 /// The first member is the census's largest group and its own finding:
 /// a row whose stated change is at the ABI's layout names a change no
 /// public call accepts, so either the row's stated layer is wrong or the
-/// layout needs a constructor a caller can offer one to. The last member
-/// is work outstanding and says whose; the middle three are properties
-/// of the typed interface that no later bite changes by itself.
+/// layout needs a constructor a caller can offer one to. The deferral
+/// member is work outstanding and says whose; every other member is a
+/// property of the typed interface that no later bite changes by itself.
+///
+/// # Why each of those names a mechanism rather than an absence
+///
+/// A row whose change no owner can see is a question about the row's
+/// stated layer, and a reader can only ask it if the reason says what
+/// swallowed the change: an order normalized before anything commits to
+/// it, a leastness produced by a search instead of checked on an offer,
+/// an owner that derives from what it is given and retains nothing to
+/// compare it against, and a typed input with no term for the change to
+/// land on are four different answers, and a reader told only that the
+/// change was invisible would have to rediscover which. Collapsing them
+/// would make each look like the others, which is the same defect this
+/// census keeps deferral and impossibility apart to avoid.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum MaturityCarriedReason {
@@ -294,6 +389,45 @@ pub enum MaturityCarriedReason {
     TheValueIsDerivedNotAccepted,
     /// The owning validator publishes no entry a caller can call.
     TheOwningValidatorHasNoPublicEntry,
+    /// Leastness is a property of the search, not of an offer.
+    ///
+    /// The nonce a canonical encoding carries is read back as the four
+    /// bytes it was written from, and nothing pre-target asks whether a
+    /// smaller one would have been admitted: the one scan that decides
+    /// leastness produces the nonce rather than checking one, and the
+    /// call that commits a caller's nonce says in its own documentation
+    /// that it claims no leastness. A row changing a nonce for a larger
+    /// admitted one therefore offers an input every pre-target owner
+    /// accepts.
+    LeastnessIsAPropertyOfTheSearchNotOfAnOffer,
+    /// The offered order is normalized before anything commits to it.
+    ///
+    /// A branch hashes its two children in sorted order, and a leaf's
+    /// path records the sibling's hash rather than the side it sat on,
+    /// so the two orders of one branch produce the same root, the same
+    /// leaf hashes and the same paths. A row that states an order
+    /// therefore states something the commitment cannot distinguish, and
+    /// a refusal of it would have to be invented rather than observed.
+    TheOfferedOrderIsNormalizedBeforeItIsCommitted,
+    /// The owner derives from the offer and retains nothing to compare
+    /// it against.
+    ///
+    /// A row whose change is that the offered object is the wrong one,
+    /// rather than that it is malformed, asks for a comparison against a
+    /// retained object. The owner here is handed one object and derives
+    /// from it; a different well-formed object is a different derivation
+    /// and not a refusal. The comparison exists further along, where a
+    /// retained object is in hand, which is a different boundary than
+    /// the row declares.
+    TheOwnerHasNoRetainedObjectToCompareTheOfferAgainst,
+    /// The typed input carries no term the row's change names.
+    ///
+    /// The change states two declarations of one thing disagreeing about
+    /// a term, and the typed input the owner accepts has no such term to
+    /// disagree about. Staging the disagreement on a term the input does
+    /// have would answer a different row, and the two rows would then be
+    /// separated only by a word in their names.
+    TheTypedInputCarriesNoTermTheChangeNames,
     /// The owner is located and the discharge waits on its substrate.
     OwnerLocatedDischargeDeferred(MaturityDeferredOwner),
 }
@@ -815,7 +949,198 @@ fn changed_responses(
     }
 }
 
-// --- The four discharges -------------------------------------------------
+// --- The constructor inputs ----------------------------------------------
+
+/// The width the encoding writes one semantic amount at.
+///
+/// Read off the integer type the codec encodes with rather than copied
+/// as a figure, so a widened field moves this with it.
+const METADATA_AMOUNT_BYTES: usize = size_of::<u64>();
+
+/// The width the encoding writes the schema revision at.
+const METADATA_SCHEMA_BYTES: usize = size_of::<u32>();
+
+/// The amount fields written before the maturity discriminant.
+const METADATA_AMOUNTS_BEFORE_THE_TAG: usize = 5;
+
+/// A maturity discriminant the canonical schema does not define.
+///
+/// The schema defines three, so the first undefined one is the fourth.
+const UNDEFINED_MATURITY_TAG: u8 = 3;
+
+/// The position the canonical metadata leaf verifies its literal at.
+///
+/// The leaf is three instructions — the metadata push, the literal, the
+/// verification — and the literal is what decides that the leaf aborts.
+const METADATA_LEAF_LITERAL: usize = 1;
+
+/// The constructor the linked bundle retained for the predecessor.
+fn retained_constructor(
+    substrate: &MaturitySubstrate,
+) -> Result<&CandidateStateConstructor, MaturityFirstPartyRefusal> {
+    Ok(substrate
+        .bundle
+        .instances()
+        .first()
+        .ok_or(MaturityFirstPartyRefusal::SubstrateUnavailable)?
+        .constructor())
+}
+
+/// The metadata bytes one change offers the decode.
+///
+/// Every arm rebuilds the canonical encoding with exactly one range
+/// changed, and the ranges are computed from the codec's own published
+/// domain, width and integer types rather than from figures written
+/// beside them. A change this input does not name returns the honest
+/// bytes, which the discharge refuses as a change that changed nothing.
+fn changed_metadata_bytes(honest: &[u8], change: MaturityFirstPartyChange) -> Option<Vec<u8>> {
+    use MaturityFirstPartyChange as Change;
+
+    let domain = STATE_METADATA_DOMAIN.len();
+    let schema_end = domain + METADATA_SCHEMA_BYTES;
+    let field_end = schema_end + METADATA_AMOUNT_BYTES;
+    let tag = schema_end + METADATA_AMOUNTS_BEFORE_THE_TAG * METADATA_AMOUNT_BYTES;
+    let reserved = STATE_METADATA_BYTES.checked_sub(METADATA_AMOUNT_BYTES)?;
+    let mut bytes = honest.to_vec();
+    match change {
+        Change::OmitOneMetadataField => {
+            let mut trimmed = honest.get(..schema_end)?.to_vec();
+            trimmed.extend_from_slice(honest.get(field_end..)?);
+            bytes = trimmed;
+        }
+        Change::DuplicateOneMetadataField => {
+            let mut doubled = honest.get(..field_end)?.to_vec();
+            doubled.extend_from_slice(honest.get(schema_end..field_end)?);
+            doubled.extend_from_slice(honest.get(field_end..)?);
+            bytes = doubled;
+        }
+        Change::ReorderTheMetadataFraming => {
+            let mut reordered = honest.get(domain..schema_end)?.to_vec();
+            reordered.extend_from_slice(honest.get(..domain)?);
+            reordered.extend_from_slice(honest.get(schema_end..)?);
+            bytes = reordered;
+        }
+        Change::StateAnUnsupportedMetadataSchema => {
+            let unsupported = STATE_METADATA_SCHEMA.checked_add(1)?;
+            bytes
+                .get_mut(domain..schema_end)?
+                .copy_from_slice(&unsupported.to_be_bytes());
+        }
+        Change::StateAnotherMetadataDomainSeparator => {
+            *bytes.first_mut()? ^= 1;
+        }
+        Change::StateAMaturityTagTheSchemaDoesNotDefine => {
+            *bytes.get_mut(tag)? = UNDEFINED_MATURITY_TAG;
+        }
+        Change::SetAReservedMetadataByteNonzero => {
+            *bytes.get_mut(reserved)? = 1;
+        }
+        Change::AppendAByteAfterTheFixedWidth => {
+            bytes.push(0);
+        }
+        _ => {}
+    }
+    Some(bytes)
+}
+
+/// The offered tree with its operation leaf re-roled as a support leaf.
+///
+/// The leaf itself stays where it is and keeps its program: what changes
+/// is the role the subtree reads to decide that an operation is on the
+/// tree at all, which is the one thing the row states.
+fn support_instead_of_the_operation(node: &StateStaticNode, spare: u32) -> StateStaticNode {
+    match node {
+        StateStaticNode::Leaf { identity, leaf } if leaf.role == StateLeafRole::Announcement => {
+            let mut demoted = leaf.clone();
+            demoted.role = StateLeafRole::Support(spare);
+            StateStaticNode::Leaf {
+                identity: *identity,
+                leaf: demoted,
+            }
+        }
+        StateStaticNode::Branch(left, right) => StateStaticNode::Branch(
+            Box::new(support_instead_of_the_operation(left, spare)),
+            Box::new(support_instead_of_the_operation(right, spare)),
+        ),
+        support @ StateStaticNode::Leaf { .. } => support.clone(),
+    }
+}
+
+/// The static node tree one change offers the subtree validation.
+///
+/// A change that adds a leaf adds the branch that holds it, because a
+/// tree has no other way to carry one; everything else about the offered
+/// tree is the honest tree's. A change this input does not name returns
+/// the honest tree.
+fn changed_static_tree(
+    substrate: &MaturitySubstrate,
+    change: MaturityFirstPartyChange,
+) -> Option<StateStaticNode> {
+    use MaturityFirstPartyChange as Change;
+
+    let subtree = substrate.bundle.static_subtree();
+    let honest = subtree.tree();
+    let first = subtree.leaves().first()?;
+    let spare = subtree
+        .leaves()
+        .iter()
+        .map(|entry| entry.identity)
+        .max()?
+        .checked_add(1)?;
+    let beside = |identity: u32, leaf: StateStaticLeaf| {
+        StateStaticNode::Branch(
+            Box::new(honest.clone()),
+            Box::new(StateStaticNode::Leaf { identity, leaf }),
+        )
+    };
+    match change {
+        Change::OfferAStaticSubtreeHoldingTheMetadataLeaf => Some(beside(
+            spare,
+            StateStaticLeaf {
+                role: StateLeafRole::MetadataCommitment,
+                program: retained_constructor(substrate).ok()?.leaf_program().clone(),
+                version: substrate.target.definition().leaf_version().get(),
+            },
+        )),
+        Change::OfferAStaticSubtreeWithoutTheOperationLeaf => {
+            Some(support_instead_of_the_operation(honest, spare))
+        }
+        Change::DeclareOneLeafIdentityTwiceIdentically => {
+            Some(beside(first.identity, first.leaf.clone()))
+        }
+        Change::DeclareOneLeafIdentityUnderTwoRoles => {
+            let mut disagreeing = first.leaf.clone();
+            // Stated against the leaf's own role rather than as a fixed
+            // one, so the second declaration differs from the first
+            // whatever role the first carries.
+            disagreeing.role = match first.leaf.role {
+                StateLeafRole::Announcement => StateLeafRole::Support(spare),
+                _ => StateLeafRole::Announcement,
+            };
+            Some(beside(first.identity, disagreeing))
+        }
+        _ => Some(honest.clone()),
+    }
+}
+
+/// The metadata leaf program one change offers the pattern validation.
+///
+/// The canonical leaf pushes the metadata, pushes an empty item and
+/// verifies it, and an empty item is what makes that verification abort
+/// on every admitted stack. The one change is the literal: an item with
+/// a byte in it is one the verification accepts, which is the row's own
+/// statement that the metadata leaf can be spent.
+fn surviving_leaf_program(
+    substrate: &MaturitySubstrate,
+    honest: &TapscriptProgram,
+) -> Option<TapscriptProgram> {
+    let mut instructions = honest.instructions().to_vec();
+    let literal = instructions.get_mut(METADATA_LEAF_LITERAL)?;
+    *literal = TapscriptInstruction::Push(StackItem::new(&substrate.target, vec![1]).ok()?);
+    TapscriptProgram::new(instructions).ok()
+}
+
+// --- The eight discharges ------------------------------------------------
 
 /// Construction over the honest world, then over the changed one.
 fn discharge_construction(
@@ -981,6 +1306,131 @@ fn freeze_once(
     .map(|_| ())
 }
 
+/// The canonical decode over the honest bytes, then the changed ones.
+///
+/// The owner answers every noncanonical encoding with one class, so the
+/// eight rows filed here are separated by the change each states and not
+/// by the word the layer answered with — the same reading that keeps two
+/// window rows reaching one arithmetic finding two rows. The finer
+/// eight-way vocabulary exists one crate down, in the codec this call
+/// wraps, and reaching for it would name a layer that is not the row's
+/// owner, which §4.2 does not admit.
+fn discharge_metadata_decode(
+    substrate: &MaturitySubstrate,
+    change: MaturityFirstPartyChange,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    let honest = retained_constructor(substrate)?.metadata_bytes().to_vec();
+    let changed = changed_metadata_bytes(&honest, change)
+        .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    if changed == honest {
+        return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+    }
+    StateMetadataPattern::from_bytes(&substrate.target, &honest).map_err(|refusal| {
+        MaturityFirstPartyRefusal::ControlWasRefused(MaturityFirstPartyObservation::Constructor(
+            refusal,
+        ))
+    })?;
+    let refusal = StateMetadataPattern::from_bytes(&substrate.target, &changed)
+        .err()
+        .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+    Ok(MaturityFirstPartyObservation::Constructor(refusal))
+}
+
+/// The subtree validation over the honest tree, then the changed one.
+fn discharge_static_subtree(
+    substrate: &MaturitySubstrate,
+    change: MaturityFirstPartyChange,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    let honest = substrate.bundle.static_subtree().tree().clone();
+    let changed = changed_static_tree(substrate, change)
+        .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    if changed == honest {
+        return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+    }
+    StateStaticSubtree::new(&substrate.target, Some(honest)).map_err(|refusal| {
+        MaturityFirstPartyRefusal::ControlWasRefused(MaturityFirstPartyObservation::Constructor(
+            refusal,
+        ))
+    })?;
+    let refusal = StateStaticSubtree::new(&substrate.target, Some(changed))
+        .err()
+        .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+    Ok(MaturityFirstPartyObservation::Constructor(refusal))
+}
+
+/// The leaf pattern over the honest program, then the changed one.
+///
+/// Both runs commit the same metadata, so the only difference the
+/// validation can answer to is the program: a control refused here would
+/// have said the retained leaf was never the canonical one.
+fn discharge_metadata_leaf(
+    substrate: &MaturitySubstrate,
+    change: MaturityFirstPartyChange,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    let retained = retained_constructor(substrate)?;
+    let honest = retained.leaf_program().clone();
+    let changed = match change {
+        MaturityFirstPartyChange::OfferAMetadataLeafWhoseVerificationCanSurvive => {
+            surviving_leaf_program(substrate, &honest)
+                .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?
+        }
+        _ => honest.clone(),
+    };
+    if changed == honest {
+        return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+    }
+    let metadata = retained.encoded_metadata();
+    StateMetadataPattern::validate(&substrate.target, metadata, &honest).map_err(|refusal| {
+        MaturityFirstPartyRefusal::ControlWasRefused(MaturityFirstPartyObservation::Constructor(
+            refusal,
+        ))
+    })?;
+    let refusal = StateMetadataPattern::validate(&substrate.target, metadata, &changed)
+        .err()
+        .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+    Ok(MaturityFirstPartyObservation::Constructor(refusal))
+}
+
+/// The fixed outer side over the honest pair, then the changed one.
+///
+/// The pair is the derivation's own: the metadata leaf hash is read back
+/// off the retained constructor's control recipe for the non-executing
+/// role, and the static root off the subtree that recipe's sibling names.
+/// The change is which of the two is offered as the metadata child,
+/// which is the one thing this call reads.
+fn discharge_branch_side(
+    substrate: &MaturitySubstrate,
+    change: MaturityFirstPartyChange,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    let retained = retained_constructor(substrate)?;
+    let recipe = retained
+        .control_recipe(StateLeafRole::MetadataCommitment)
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    let honest = (
+        recipe.executing_leaf_hash,
+        *retained.static_subtree().root(),
+    );
+    let changed = match change {
+        MaturityFirstPartyChange::StateTheMetadataChildOnTheOtherSide => (honest.1, honest.0),
+        _ => honest,
+    };
+    if changed == honest {
+        return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+    }
+    StateBranchSide::MetadataLeftStaticRight
+        .check(&honest.0, &honest.1)
+        .map_err(|refusal| {
+            MaturityFirstPartyRefusal::ControlWasRefused(
+                MaturityFirstPartyObservation::Constructor(refusal),
+            )
+        })?;
+    let refusal = StateBranchSide::MetadataLeftStaticRight
+        .check(&changed.0, &changed.1)
+        .err()
+        .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+    Ok(MaturityFirstPartyObservation::Constructor(refusal))
+}
+
 // --- The expected classes ------------------------------------------------
 
 /// The transition refusal one semantic-request row expects.
@@ -1112,6 +1562,62 @@ const fn wrong_key_width(observation: &MaturityFirstPartyObservation) -> bool {
     matches!(
         observation,
         MaturityFirstPartyObservation::OperatorKey(OperatorKeyRejection::WrongWidth { .. })
+    )
+}
+
+/// `MetadataEncodingRefused`, spelled once.
+const fn metadata_encoding_refused(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::Constructor(
+            StateConstructorRefusal::MetadataEncodingRefused
+        )
+    )
+}
+
+/// `MetadataLeafNotUnspendable`, spelled once.
+const fn metadata_leaf_not_unspendable(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::Constructor(
+            StateConstructorRefusal::MetadataLeafNotUnspendable
+        )
+    )
+}
+
+/// `StaticSubtreeIncomplete`, spelled once.
+const fn static_subtree_incomplete(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::Constructor(
+            StateConstructorRefusal::StaticSubtreeIncomplete
+        )
+    )
+}
+
+/// `DuplicateLeaf`, spelled once.
+const fn duplicate_leaf(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::Constructor(StateConstructorRefusal::DuplicateLeaf)
+    )
+}
+
+/// `ConflictingLeaf`, spelled once.
+const fn conflicting_leaf(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::Constructor(StateConstructorRefusal::ConflictingLeaf)
+    )
+}
+
+/// `CanonicalBranchSideNotSatisfied`, spelled once.
+const fn canonical_branch_side(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::Constructor(
+            StateConstructorRefusal::CanonicalBranchSideNotSatisfied
+        )
     )
 }
 
@@ -1323,19 +1829,169 @@ fn operator_discharges() -> Vec<DischargeEntry> {
     ]
 }
 
-/// The pre-target rows this bite discharges, by table and name.
+/// The eight metadata-encoding rows, owned by one decode.
+///
+/// Eight rows and eight changes against one class. What a reader checks
+/// here is that no two rows state the same change to the same canonical
+/// bytes: the class they share is the owner's whole vocabulary for a
+/// noncanonical encoding, so it separates nothing, and the change is
+/// what each row is.
+fn metadata_discharges() -> Vec<DischargeEntry> {
+    use MaturityFirstPartyChange as Change;
+    use MaturityFirstPartyValidator as V;
+    use MaturitySafetySection as S;
+
+    let refused = |change| {
+        discharge(
+            V::MetadataPatternDecode,
+            change,
+            metadata_encoding_refused,
+            "MetadataEncodingRefused",
+        )
+    };
+    vec![
+        (
+            S::MetadataFault,
+            "omit-one-field",
+            refused(Change::OmitOneMetadataField),
+        ),
+        (
+            S::MetadataFault,
+            "duplicate-one-field",
+            refused(Change::DuplicateOneMetadataField),
+        ),
+        (
+            S::MetadataFault,
+            "reorder-fields",
+            refused(Change::ReorderTheMetadataFraming),
+        ),
+        (
+            S::MetadataFault,
+            "unknown-schema",
+            refused(Change::StateAnUnsupportedMetadataSchema),
+        ),
+        (
+            S::MetadataFault,
+            "wrong-domain-separator",
+            refused(Change::StateAnotherMetadataDomainSeparator),
+        ),
+        (
+            S::MetadataFault,
+            "noncanonical-enum-tag",
+            refused(Change::StateAMaturityTagTheSchemaDoesNotDefine),
+        ),
+        (
+            S::MetadataFault,
+            "nonzero-reserved-field",
+            refused(Change::SetAReservedMetadataByteNonzero),
+        ),
+        (
+            S::MetadataFault,
+            "trailing-bytes",
+            refused(Change::AppendAByteAfterTheFixedWidth),
+        ),
+    ]
+}
+
+/// The six constructor rows, across three entry points.
+///
+/// Not one call's rows, and not the call the rows' boundary is named
+/// after: the derivation accepts a validated subtree and a semantic
+/// metadata and nothing else a caller can misstate, so the offered tree
+/// is answered where a tree is validated, the metadata leaf where a leaf
+/// program is validated, and the outer side where that side is checked —
+/// which the derivation itself only reaches through a retryable refusal
+/// it answers by moving to the next nonce.
+fn constructor_discharges() -> Vec<DischargeEntry> {
+    use MaturityFirstPartyChange as Change;
+    use MaturityFirstPartyValidator as V;
+    use MaturitySafetySection as S;
+
+    vec![
+        (
+            S::PredecessorConstructorFault,
+            "metadata-leaf-duplicated",
+            discharge(
+                V::StaticSubtreeValidation,
+                Change::OfferAStaticSubtreeHoldingTheMetadataLeaf,
+                static_subtree_incomplete,
+                "StaticSubtreeIncomplete",
+            ),
+        ),
+        (
+            S::PredecessorConstructorFault,
+            "operation-leaf-missing",
+            discharge(
+                V::StaticSubtreeValidation,
+                Change::OfferAStaticSubtreeWithoutTheOperationLeaf,
+                static_subtree_incomplete,
+                "StaticSubtreeIncomplete",
+            ),
+        ),
+        (
+            S::SuccessorConstructorFault,
+            "spendable-metadata-leaf",
+            discharge(
+                V::MetadataLeafPattern,
+                Change::OfferAMetadataLeafWhoseVerificationCanSurvive,
+                metadata_leaf_not_unspendable,
+                "MetadataLeafNotUnspendable",
+            ),
+        ),
+        (
+            S::TotalityFault,
+            "metadata-child-on-wrong-side",
+            discharge(
+                V::CanonicalBranchSide,
+                Change::StateTheMetadataChildOnTheOtherSide,
+                canonical_branch_side,
+                "CanonicalBranchSideNotSatisfied",
+            ),
+        ),
+        (
+            S::AbiLinkerFault,
+            "duplicate-tree-leaf",
+            discharge(
+                V::StaticSubtreeValidation,
+                Change::DeclareOneLeafIdentityTwiceIdentically,
+                duplicate_leaf,
+                "DuplicateLeaf",
+            ),
+        ),
+        (
+            S::AbiLinkerFault,
+            "conflicting-leaf-role",
+            discharge(
+                V::StaticSubtreeValidation,
+                Change::DeclareOneLeafIdentityUnderTwoRoles,
+                conflicting_leaf,
+                "ConflictingLeaf",
+            ),
+        ),
+    ]
+}
+
+/// The pre-target rows this census discharges, by table and name.
 fn discharges() -> Vec<DischargeEntry> {
     let mut entries = window_discharges();
     entries.extend(operator_discharges());
+    entries.extend(metadata_discharges());
+    entries.extend(constructor_discharges());
     entries
 }
 
-/// Why one pre-target row this bite does not discharge carries no case.
+/// Why one pre-target row this census does not discharge carries no
+/// case.
 ///
 /// Total over the pre-target rows, and decided from the row's own facts
 /// rather than from a list beside them: a row whose stated change sits
 /// at the ABI layout is carried for that reason whichever table it comes
-/// from, and a row whose owner is located is carried naming the owner.
+/// from, a row whose owner is located is carried naming the owner, and a
+/// row whose change an owner accepts is carried naming the mechanism
+/// that accepted it. The last kind is decided the same way — the
+/// metadata table's nonce row is the one carried by the linked
+/// constructor rather than by the announcement leaf, and the
+/// constructor rows are separated below.
 fn carried_reason(row: &MaturitySafetyRow) -> MaturityCarriedReason {
     use MaturityCarriedReason as Why;
     use MaturityDeferredOwner as Owner;
@@ -1362,21 +2018,51 @@ fn carried_reason(row: &MaturitySafetyRow) -> MaturityCarriedReason {
             }
         }
         MaturitySafetySection::MetadataFault => {
-            Why::OwnerLocatedDischargeDeferred(Owner::MetadataPatternFromBytes)
+            if matches!(row.carrier(), MaturityIntendedCarrier::LinkedConstructor) {
+                Why::LeastnessIsAPropertyOfTheSearchNotOfAnOffer
+            } else {
+                Why::OwnerLocatedDischargeDeferred(Owner::MetadataPatternFromBytes)
+            }
         }
         _ => match row.refusing_layer() {
-            Some(EvidenceBoundary::ConstructorDerivationRejection) => {
-                if matches!(row.locator(), Some(MaturityMutationLocator::BranchOrder)) {
-                    Why::OwnerLocatedDischargeDeferred(Owner::StateConstructorDerivation)
-                } else {
-                    Why::OwnerLocatedDischargeDeferred(Owner::StaticSubtreeConstruction)
-                }
-            }
+            Some(EvidenceBoundary::ConstructorDerivationRejection) => constructor_reason(row),
             Some(EvidenceBoundary::LinkerRejection) => {
                 Why::OwnerLocatedDischargeDeferred(Owner::StateCandidateLink)
             }
             _ => Why::OwnerLocatedDischargeDeferred(Owner::OfferedTransactionCheck),
         },
+    }
+}
+
+/// Why one constructor row this census does not discharge carries no
+/// case.
+///
+/// Decided from the row's own facts in the order that separates them: a
+/// row that states an order is answered by the order being normalized
+/// whatever else it says, a row whose class is a mismatch with a subject
+/// asks for a comparison rather than a form, and the two rows left are
+/// separated by the table they come from, because one states a term the
+/// constructor's typed leaf does not carry and the other states a leaf
+/// the constructor derives rather than accepts.
+const fn constructor_reason(row: &MaturitySafetyRow) -> MaturityCarriedReason {
+    use MaturityCarriedReason as Why;
+
+    if matches!(row.locator(), Some(MaturityMutationLocator::BranchOrder)) {
+        return Why::TheOfferedOrderIsNormalizedBeforeItIsCommitted;
+    }
+    if matches!(
+        row.relation(),
+        MaturityRelationStanding::Declared {
+            class: MaturityMutationClass::ExternalReportSubjectMismatch,
+            ..
+        }
+    ) {
+        return Why::TheOwnerHasNoRetainedObjectToCompareTheOfferAgainst;
+    }
+    match row.section() {
+        MaturitySafetySection::AbiLinkerFault => Why::TheTypedInputCarriesNoTermTheChangeNames,
+        MaturitySafetySection::PredecessorConstructorFault => Why::TheValueIsDerivedNotAccepted,
+        _ => Why::OwnerLocatedDischargeDeferred(MaturityDeferredOwner::StaticSubtreeConstruction),
     }
 }
 
@@ -1474,6 +2160,18 @@ pub fn validate_maturity_first_party(
         MaturityFirstPartyValidator::OperatorRequestFreeze => {
             discharge_request_freeze(substrate, discharge.change)
         }
+        MaturityFirstPartyValidator::MetadataPatternDecode => {
+            discharge_metadata_decode(substrate, discharge.change)
+        }
+        MaturityFirstPartyValidator::MetadataLeafPattern => {
+            discharge_metadata_leaf(substrate, discharge.change)
+        }
+        MaturityFirstPartyValidator::StaticSubtreeValidation => {
+            discharge_static_subtree(substrate, discharge.change)
+        }
+        MaturityFirstPartyValidator::CanonicalBranchSide => {
+            discharge_branch_side(substrate, discharge.change)
+        }
     }?;
     if !(discharge.expected)(&observed) {
         return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
@@ -1517,10 +2215,12 @@ pub fn discharge_maturity_first_party()
 #[cfg(test)]
 mod tests {
     use super::{
-        MaturityCarriedReason, MaturityFirstPartyCase, MaturityFirstPartyChange,
-        MaturityFirstPartyDischarge, MaturityFirstPartyDisposition, MaturityFirstPartyRefusal,
-        MaturityFirstPartyValidator, ValidatedMaturityFirstPartyEvidence, discharge,
-        discharge_maturity_first_party, is_pre_target, matrix_row, maturity_first_party_cases,
+        MaturityCarriedReason, MaturityDeferredOwner, MaturityFirstPartyCase,
+        MaturityFirstPartyChange, MaturityFirstPartyDischarge, MaturityFirstPartyDisposition,
+        MaturityFirstPartyRefusal, MaturityFirstPartyValidator,
+        ValidatedMaturityFirstPartyEvidence, canonical_branch_side, discharge,
+        discharge_maturity_first_party, duplicate_leaf, is_pre_target, matrix_row,
+        maturity_first_party_cases, metadata_encoding_refused, metadata_leaf_not_unspendable,
         missing_response, validate_maturity_first_party,
     };
     use crate::matrix::EvidenceBoundary;
@@ -1603,7 +2303,7 @@ mod tests {
             .filter_map(MaturityFirstPartyCase::carried_reason)
             .collect();
         assert_eq!(discharged.len() + carried.len(), cases.len());
-        assert_eq!(discharged.len(), 15);
+        assert_eq!(discharged.len(), 29);
 
         // The layout rows are the census's largest carried group, and
         // they are carried for a reason that is not deferral.
@@ -1614,7 +2314,11 @@ mod tests {
         assert_eq!(layout, 21);
 
         // Every deferred row names the owner it waits on, so a reader
-        // can tell outstanding work from work nothing can do.
+        // can tell outstanding work from work nothing can do. The set is
+        // the census's own rather than the type's: three entry points
+        // this census once deferred to are now driven, and a row still
+        // naming one of them would be outstanding work nobody had
+        // noticed rather than a member that happens to exist.
         let owners: BTreeSet<_> = carried
             .iter()
             .filter_map(|reason| match reason {
@@ -1622,7 +2326,63 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(owners.len(), 6);
+        assert_eq!(
+            owners,
+            BTreeSet::from([
+                MaturityDeferredOwner::StateCandidateLink,
+                MaturityDeferredOwner::OfferedTransactionCheck,
+                MaturityDeferredOwner::ResponseShapeValidation,
+            ]),
+        );
+    }
+
+    #[test]
+    fn each_mechanism_reason_stands_on_exactly_the_rows_it_names() {
+        // The reasons that name a mechanism rather than a deferral,
+        // checked against the census rather than against a remembered
+        // figure. Each says what swallowed the row's change, and each
+        // would be falsified by the tree moving under it: a leastness
+        // check on an offer, a branch that stopped sorting its children,
+        // a retained object arriving at the derivation, or a weight term
+        // entering the typed leaf would each fail here.
+        let mut named: BTreeMap<MaturityCarriedReason, Vec<&'static str>> = BTreeMap::new();
+        for case in &maturity_first_party_cases() {
+            if let Some(reason) = case.carried_reason() {
+                named.entry(reason).or_default().push(case.name());
+            }
+        }
+        let standing = |reason: &MaturityCarriedReason| named.get(reason).map(Vec::as_slice);
+        assert_eq!(
+            standing(&MaturityCarriedReason::LeastnessIsAPropertyOfTheSearchNotOfAnOffer),
+            Some(["correct-semantic-metadata-with-noncanonical-representation-nonce"].as_slice()),
+        );
+        assert_eq!(
+            standing(&MaturityCarriedReason::TheOfferedOrderIsNormalizedBeforeItIsCommitted),
+            Some(
+                [
+                    "caller-supplied-branch-order",
+                    "source-order-dependent-tree"
+                ]
+                .as_slice()
+            ),
+        );
+        assert_eq!(
+            standing(&MaturityCarriedReason::TheOwnerHasNoRetainedObjectToCompareTheOfferAgainst),
+            Some(["wrong-static-subtree", "extra-escape-leaf"].as_slice()),
+        );
+        assert_eq!(
+            standing(&MaturityCarriedReason::TheTypedInputCarriesNoTermTheChangeNames),
+            Some(["conflicting-leaf-weight"].as_slice()),
+        );
+
+        // The one row this bite carries under a reason the census
+        // already had: the metadata leaf is derived from the metadata
+        // rather than accepted beside it, which is what the window rows
+        // sharing this reason say about their own derived values.
+        assert!(
+            named[&MaturityCarriedReason::TheValueIsDerivedNotAccepted]
+                .contains(&"metadata-leaf-missing"),
+        );
     }
 
     #[test]
@@ -1641,14 +2401,14 @@ mod tests {
                     .unwrap_or_else(|refusal| panic!("{case:?} did not meet §4.2: {refusal:?}"))
             })
             .collect();
-        assert_eq!(discharged.len(), 15);
+        assert_eq!(discharged.len(), 29);
         assert_eq!(
             discharge_maturity_first_party().expect("the census discharges"),
             discharged,
         );
 
-        // All four owning entry points were really driven, so a census
-        // that quietly lost one would fail rather than report a smaller
+        // Every owning entry point was really driven, so a census that
+        // quietly lost one would fail rather than report a smaller
         // matrix.
         let validators: BTreeSet<_> = discharged
             .iter()
@@ -1712,6 +2472,85 @@ mod tests {
                 MaturityFirstPartyChange::OfferAnUnapprovedKeyEncoding,
                 missing_response,
                 "MissingResponse",
+            )),
+        );
+        assert!(matches!(
+            validate_maturity_first_party(&offered),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_)),
+        ));
+    }
+
+    #[test]
+    fn the_subtree_validation_does_not_discharge_a_metadata_encoding_row() {
+        // Each of the four tests below performs §4.2's clause that a
+        // refusal from another layer does not satisfy a row, against one
+        // of this bite's owners. The wrong owner is given its own change
+        // so that it really refuses: what fails is not the call but the
+        // claim that its refusal answered this row, and the case is
+        // refused for naming another class rather than passing on a
+        // refusal it did not earn.
+        let offered = case(
+            MaturitySafetySection::MetadataFault,
+            "omit-one-field",
+            MaturityFirstPartyDisposition::Discharge(discharge(
+                MaturityFirstPartyValidator::StaticSubtreeValidation,
+                MaturityFirstPartyChange::OfferAStaticSubtreeWithoutTheOperationLeaf,
+                metadata_encoding_refused,
+                "MetadataEncodingRefused",
+            )),
+        );
+        assert!(matches!(
+            validate_maturity_first_party(&offered),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_)),
+        ));
+    }
+
+    #[test]
+    fn the_metadata_decode_does_not_discharge_a_static_subtree_row() {
+        let offered = case(
+            MaturitySafetySection::AbiLinkerFault,
+            "duplicate-tree-leaf",
+            MaturityFirstPartyDisposition::Discharge(discharge(
+                MaturityFirstPartyValidator::MetadataPatternDecode,
+                MaturityFirstPartyChange::OmitOneMetadataField,
+                duplicate_leaf,
+                "DuplicateLeaf",
+            )),
+        );
+        assert!(matches!(
+            validate_maturity_first_party(&offered),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_)),
+        ));
+    }
+
+    #[test]
+    fn the_leaf_pattern_does_not_discharge_the_branch_side_row() {
+        let offered = case(
+            MaturitySafetySection::TotalityFault,
+            "metadata-child-on-wrong-side",
+            MaturityFirstPartyDisposition::Discharge(discharge(
+                MaturityFirstPartyValidator::MetadataLeafPattern,
+                MaturityFirstPartyChange::OfferAMetadataLeafWhoseVerificationCanSurvive,
+                canonical_branch_side,
+                "CanonicalBranchSideNotSatisfied",
+            )),
+        );
+        assert!(matches!(
+            validate_maturity_first_party(&offered),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_)),
+        ));
+    }
+
+    #[test]
+    fn the_branch_side_does_not_discharge_the_metadata_leaf_row() {
+        let offered = case(
+            MaturitySafetySection::SuccessorConstructorFault,
+            "spendable-metadata-leaf",
+            MaturityFirstPartyDisposition::Discharge(discharge(
+                MaturityFirstPartyValidator::CanonicalBranchSide,
+                MaturityFirstPartyChange::StateTheMetadataChildOnTheOtherSide,
+                metadata_leaf_not_unspendable,
+                "MetadataLeafNotUnspendable",
             )),
         );
         assert!(matches!(
