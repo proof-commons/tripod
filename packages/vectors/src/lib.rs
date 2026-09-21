@@ -49,6 +49,7 @@ pub mod live_sponsored_private;
 pub mod materialize;
 pub mod matrix;
 pub mod maturity_closure;
+pub mod maturity_corpus;
 pub mod maturity_evidence;
 pub mod maturity_first_party;
 pub mod maturity_fixture;
@@ -199,6 +200,10 @@ pub use maturity_closure::{
     internal_key_from_bytes, kept_check_site, leaf_literals, linked_announcement_bytes,
     linked_maturity_bundle, locate_discharges, maturity_sources, moved_sites, recompute_golden,
     recovered_values, removed_and_kept_checks, verdict,
+};
+pub use maturity_corpus::{
+    MATURITY_MANIFEST_SHA256, MATURITY_RUN_ADDRESS, MaturityCorpusImportRefusal,
+    MaturityReportFacts, ValidatedMaturityCorpus, maturity_run_of_record,
 };
 pub use plan::{
     CompactAshEvidencePlan, NegativeObservability, PlanCensus, RequiredTargetWork,

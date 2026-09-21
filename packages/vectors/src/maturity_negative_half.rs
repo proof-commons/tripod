@@ -282,21 +282,8 @@ use MaturitySafetySection as S;
 /// routing and the test below is what keeps the writing and the routing
 /// one list.
 ///
-/// The waiting set is the rows a run has not answered, which is not the
-/// same as the rows of negative polarity: the one positive row whose
-/// declared boundary names a layer stands here beside forty-two faults,
-/// because its answer is a target verdict like theirs. The other positive
-/// rows ask for an acceptance and state, by type, that no acceptance is
-/// reachable, so no run is owed them and they are not here.
+/// The waiting set contains forty-two faults after the committed run answers the sponsorless positive row at its declared relay boundary. Acceptance remains outstanding; the other positive rows state typed non-answers and do not enter this target-run register.
 pub const STILL_REQUIRED: &[MaturityNegativeHalfEntry] = &[
-    // §16.1 — the one positive row a target verdict answers.
-    entry(
-        S::Positive,
-        "sponsorless",
-        G::TargetRunNotYetPlanned,
-        K::NotFiledAgainstAnyRequirement,
-        "the honest announcement the closure already links is this row's whole candidate, so nothing has to be staged and what is absent is a planner that states the operation and a run that submits it",
-    ),
     // §16.2 — the two window faults, both a write at the successor's own
     // metadata field.
     entry(
@@ -757,6 +744,11 @@ mod tests {
     fn the_gap_census_accounts_for_every_row() {
         let census = gap_census();
         assert_eq!(
+            census.get(&MaturityNegativeHalfGap::TargetRunNotYetPlanned),
+            None
+        );
+        assert_eq!(census.values().sum::<usize>(), 42);
+        assert_eq!(
             census.values().sum::<usize>(),
             STILL_REQUIRED.len(),
             "the gap census and the register disagree about how many rows there are",
@@ -774,6 +766,12 @@ mod tests {
     #[test]
     fn the_register_length_is_the_figure_the_plan_recomputes() {
         let plan = plan().expect("the evidence plan derives");
+        assert_eq!(STILL_REQUIRED.len(), 42);
+        assert!(
+            !STILL_REQUIRED
+                .iter()
+                .any(|entry| entry.row() == "sponsorless")
+        );
         assert_eq!(
             STILL_REQUIRED.len(),
             plan.census().native_run_required(),

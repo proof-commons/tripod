@@ -1384,17 +1384,39 @@ mod tests {
     }
 
     #[test]
-    fn the_register_still_requires_the_sponsorless_target_run() {
-        let entries: Vec<_> = STILL_REQUIRED
+    fn the_register_no_longer_requires_the_sponsorless_target_run() {
+        use crate::maturity_corpus::{MATURITY_RUN_ADDRESS, maturity_run_of_record};
+        use crate::maturity_evidence::{
+            MaturityExecutorProvenanceExpectation, MaturityRowStanding,
+            derive_maturity_evidence_plan_with,
+        };
+
+        for entry in STILL_REQUIRED {
+            assert_ne!(entry.row(), "sponsorless");
+            assert_ne!(entry.gap(), MaturityNegativeHalfGap::TargetRunNotYetPlanned);
+        }
+        let plan = derive_maturity_evidence_plan_with(
+            MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+        )
+        .expect("evidence plan");
+        let row = plan
+            .rows()
             .iter()
-            .filter(|entry| {
-                entry.section() == MaturitySafetySection::Positive && entry.row() == "sponsorless"
-            })
-            .collect();
-        assert_eq!(entries.len(), 1);
+            .find(|row| row.row().name() == "sponsorless")
+            .expect("sponsorless row");
+        let corpus = maturity_run_of_record().expect("admitted run");
+        assert_eq!(row.row().section(), MaturitySafetySection::Positive);
+        assert!(row.standing().is_answered());
         assert_eq!(
-            entries[0].gap(),
-            MaturityNegativeHalfGap::TargetRunNotYetPlanned
+            row.standing(),
+            &MaturityRowStanding::NativeDeclaredBoundaryObserved {
+                run_address: MATURITY_RUN_ADDRESS,
+                recorded_detail: corpus.recorded_refusal_detail(),
+            }
+        );
+        assert_eq!(
+            expected_layer("sponsorless"),
+            Some(ObservedOutcomeLayer::RelayPolicyRejection)
         );
     }
 

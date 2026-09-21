@@ -790,7 +790,7 @@ const fn completeness_of(census: MaturityEvidenceCensus) -> MaturitySafetyComple
 }
 
 /// Every census bucket, paired with the name it renders under.
-const fn census_buckets(census: MaturityEvidenceCensus) -> [(&'static str, usize); 15] {
+const fn census_buckets(census: MaturityEvidenceCensus) -> [(&'static str, usize); 16] {
     [
         ("rows", census.rows()),
         ("first_party_discharged", census.first_party_discharged()),
@@ -800,6 +800,10 @@ const fn census_buckets(census: MaturityEvidenceCensus) -> [(&'static str, usize
             census.native_acceptance_observed(),
         ),
         ("native_refusal_observed", census.native_refusal_observed()),
+        (
+            "native_declared_boundary_observed",
+            census.native_declared_boundary_observed(),
+        ),
         (
             "native_refusal_at_unexpected_boundary",
             census.native_refusal_at_unexpected_boundary(),
@@ -1399,6 +1403,7 @@ mod tests {
         "first_party_required",
         "native_acceptance_observed",
         "native_refusal_observed",
+        "native_declared_boundary_observed",
         "native_refusal_at_unexpected_boundary",
         "native_run_required",
         "constructor_continuity_observed",
@@ -1528,8 +1533,15 @@ mod tests {
         );
         assert_eq!(
             validated.report().answered(),
-            census.first_party_discharged()
+            census.first_party_discharged() + census.native_declared_boundary_observed()
         );
+        assert_eq!(validated.report().answered(), 41);
+        assert_eq!(validated.report().outstanding(), 165);
+        let rendered = render_maturity_safety_report(&validated);
+        assert!(rendered.contains("native_declared_boundary_observed 1\n"));
+        assert!(rendered.contains("native_run_required 42\n"));
+        assert!(rendered.contains("answered 41\n"));
+        assert!(rendered.contains("outstanding 165\n"));
     }
 
     #[test]

@@ -144,12 +144,16 @@ use crate::maturity_closure::{
     MaturityClosureRefusal, MaturityDeployment, OracleStateCurve, announcement_plan,
     closure_target, linked_maturity_bundle,
 };
+use crate::maturity_corpus::{
+    MATURITY_RUN_ADDRESS, MaturityCorpusImportRefusal, maturity_run_of_record,
+};
 use crate::maturity_first_party::{
     MaturityCarriedReason, MaturityFirstPartyRefusal, MaturityFirstPartyValidator,
     ValidatedMaturityFirstPartyEvidence, discharge_maturity_first_party,
     maturity_first_party_cases,
 };
 use crate::maturity_fixture::{MaturitySemanticCase, positive_semantic_census};
+use crate::maturity_native::MaturityNativeStanding;
 use crate::maturity_safety::{
     MaturityCanonicalControl, MaturityExpectedProjection, MaturityIntendedCarrier,
     MaturityMutationLocator, MaturityMutationSubject, MaturityRowBoundary, MaturityRowLink,
@@ -1014,6 +1018,15 @@ pub enum MaturityRowStanding {
     /// the observed layer against the declared boundary through the one
     /// mapping both consumers of that rule share.
     NativeRefusalObserved(MaturityNativeRefusal),
+    /// A committed run reached a positive row's declared boundary.
+    ///
+    /// A positive row departs from no control, so a mutant's refusal cannot answer it. Exact replay of the admitted run establishes this observation; reaching the relay boundary leaves the accepted positive control outstanding.
+    NativeDeclaredBoundaryObserved {
+        /// The pinned SHA-256 content address of the run report.
+        run_address: &'static str,
+        /// The recorded refusal detail cross-checked against the response.
+        recorded_detail: &'static str,
+    },
     /// A target refused this row's mutant at a boundary that is not the
     /// one the row declared.
     ///
@@ -1118,6 +1131,7 @@ impl MaturityRowStanding {
             Self::FirstPartyDischarged { .. }
                 | Self::NativeAcceptanceObserved { .. }
                 | Self::NativeRefusalObserved(_)
+                | Self::NativeDeclaredBoundaryObserved { .. }
                 | Self::ConstructorContinuityObserved
                 | Self::RootHistoryObserved
                 | Self::PublicRecoveryObserved
@@ -1160,6 +1174,7 @@ pub struct MaturityEvidenceCensus {
     first_party_required: usize,
     native_acceptance_observed: usize,
     native_refusal_observed: usize,
+    native_declared_boundary_observed: usize,
     native_refusal_at_unexpected_boundary: usize,
     native_run_required: usize,
     constructor_continuity_observed: usize,
@@ -1202,6 +1217,12 @@ impl MaturityEvidenceCensus {
     #[must_use]
     pub const fn native_refusal_observed(&self) -> usize {
         self.native_refusal_observed
+    }
+
+    /// How many positive rows an admitted run answered at their declared boundary.
+    #[must_use]
+    pub const fn native_declared_boundary_observed(&self) -> usize {
+        self.native_declared_boundary_observed
     }
 
     /// How many rows were refused somewhere other than where they said
@@ -1271,6 +1292,7 @@ impl MaturityEvidenceCensus {
         self.first_party_discharged
             + self.native_acceptance_observed
             + self.native_refusal_observed
+            + self.native_declared_boundary_observed
             + self.constructor_continuity_observed
             + self.root_history_observed
             + self.public_recovery_observed
@@ -1430,6 +1452,8 @@ impl MaturityAnnouncementEvidencePlan {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum MaturityEvidenceRefusal {
+    /// The committed maturity run failed its byte, grammar, binding or replay admission.
+    NativeCorpusImportRefused(MaturityCorpusImportRefusal),
     /// The validated announcement plan could not be derived.
     OperationPlanUnavailable(MaturityClosureRefusal),
     /// The exact linked bundle could not be linked.
@@ -1565,10 +1589,25 @@ pub fn derive_maturity_evidence_plan_with(
 
     let discharged = discharge_maturity_first_party()
         .map_err(MaturityEvidenceRefusal::FirstPartyEvidenceRefused)?;
+    let corpus =
+        maturity_run_of_record().map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let index = FirstPartyIndex::of(&discharged);
     let mut classified = Vec::with_capacity(rows().len());
     for row in rows() {
         let standing = classify(row, &plan, &index)?;
+        let standing = if row.section() == MaturitySafetySection::Positive
+            && row.name() == "sponsorless"
+            && row.refusing_layer() == Some(EvidenceBoundary::RelayPolicyRejection)
+            && matches!(standing, MaturityRowStanding::NativeRunRequired(_))
+            && corpus.evidence().standing() == MaturityNativeStanding::AnsweredAtDeclaredBoundary
+        {
+            MaturityRowStanding::NativeDeclaredBoundaryObserved {
+                run_address: MATURITY_RUN_ADDRESS,
+                recorded_detail: corpus.recorded_refusal_detail(),
+            }
+        } else {
+            standing
+        };
         classified.push(MaturityEvidenceRow { row, standing });
     }
     let census = census_from_rows(&classified);
@@ -1765,13 +1804,7 @@ fn first_party_standing(
 
 /// The standing of one row whose verdict a target produces.
 ///
-/// No run exists, so the row is waiting on one, and it carries the
-/// requirement it resolves to under the explicit representation in the
-/// sponsorless case — which is the case a first run submits — so that a
-/// run's observation can be filed against a relation. A row whose declared
-/// relation no longer resolves is a disagreement between the matrix and
-/// the published plan, and it refuses here rather than standing as
-/// waiting.
+/// Before an admitted observation is applied, the row carries the requirement it resolves to under the explicit representation in the sponsorless case, so that a run's observation can be filed against a relation. An unresolved relation disagrees with the published plan and refuses rather than standing as waiting.
 fn native_standing(
     row: &MaturitySafetyRow,
     plan: &ValidatedMaturityAnnouncementOperationPlan,
@@ -1805,6 +1838,9 @@ fn census_from_rows(classified: &[MaturityEvidenceRow]) -> MaturityEvidenceCensu
                 census.native_acceptance_observed += 1;
             }
             MaturityRowStanding::NativeRefusalObserved(_) => census.native_refusal_observed += 1,
+            MaturityRowStanding::NativeDeclaredBoundaryObserved { .. } => {
+                census.native_declared_boundary_observed += 1;
+            }
             MaturityRowStanding::NativeRefusalAtUnexpectedBoundary(_) => {
                 census.native_refusal_at_unexpected_boundary += 1;
             }
@@ -1844,7 +1880,7 @@ mod tests {
     use crate::maturity_fixture::positive_semantic_census;
     use crate::maturity_safety::{
         MaturityCanonicalControl, MaturityIntendedCarrier, MaturityMutationLocator,
-        MaturityMutationSubject, MaturitySafetyRow, row_count, rows,
+        MaturityMutationSubject, MaturitySafetyRow, MaturitySafetySection, row_count, rows,
     };
     use std::sync::LazyLock;
     use target_elements_conformance::protocol::ObservedOutcomeLayer;
@@ -2046,12 +2082,13 @@ mod tests {
         assert_eq!(census.first_party_discharged(), discharged);
         assert_eq!(census.first_party_discharged(), PLAN.discharged().len());
         assert_eq!(census.first_party_required(), pre_target - discharged);
-        assert_eq!(census.native_run_required(), run_required);
+        assert_eq!(census.native_run_required(), run_required - 1);
+        assert_eq!(census.native_declared_boundary_observed(), 1);
         assert_eq!(census.report_layer_required(), report_required);
         assert_eq!(census.outstanding_under_typed_non_answer(), outstanding);
 
-        // Nine standings count zero, and each of them says why: no run has
-        // been made, no continuity, root-history or recovery report exists,
+        // Nine standings still count zero: the admitted relay observation
+        // is no acceptance or mutant refusal, no later report exists,
         // no report validation has read the rendered bytes, no component
         // this plan needs is missing, and no row of the matrix is ad hoc.
         assert_eq!(census.native_acceptance_observed(), 0);
@@ -2068,6 +2105,7 @@ mod tests {
             census.first_party_discharged()
                 + census.first_party_required()
                 + census.native_run_required()
+                + census.native_declared_boundary_observed()
                 + census.report_layer_required()
                 + census.outstanding_under_typed_non_answer(),
             row_count(),
@@ -2111,17 +2149,18 @@ mod tests {
                 matches!(
                     classified.standing(),
                     MaturityRowStanding::FirstPartyDischarged { .. }
+                        | MaturityRowStanding::NativeDeclaredBoundaryObserved { .. }
                 ),
-                "at this tip a row is answered exactly where a validator was driven to its refusal",
+                "answers are recomputed first-party refusals or the admitted positive boundary",
             );
         }
     }
 
     #[test]
-    fn no_required_row_is_answered_at_this_tip() {
+    fn required_rows_remain_outstanding_after_the_admitted_run() {
         let census = PLAN.census();
         assert!(!census.every_required_row_is_answered());
-        assert_eq!(census.answered(), census.first_party_discharged());
+        assert_eq!(census.answered(), census.first_party_discharged() + 1);
         assert_eq!(
             census.answered() + census.outstanding(),
             census.rows(),
@@ -2129,7 +2168,7 @@ mod tests {
         );
         assert_eq!(
             census.outstanding(),
-            census.rows() - census.first_party_discharged(),
+            census.rows() - census.first_party_discharged() - 1,
         );
     }
 
@@ -2574,10 +2613,11 @@ mod tests {
         assert_eq!(census.rows(), 206);
         assert_eq!(census.first_party_discharged(), 40);
         assert_eq!(census.first_party_required(), 43);
-        assert_eq!(census.native_run_required(), 43);
+        assert_eq!(census.native_run_required(), 42);
         assert_eq!(census.report_layer_required(), 15);
         assert_eq!(census.outstanding_under_typed_non_answer(), 65);
-        assert_eq!(census.answered(), 40);
+        assert_eq!(census.answered(), 41);
+        assert_eq!(census.native_declared_boundary_observed(), 1);
         assert_eq!(census.native_acceptance_observed(), 0);
         assert_eq!(census.native_refusal_observed(), 0);
         assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
@@ -2585,10 +2625,47 @@ mod tests {
             census.first_party_discharged()
                 + census.first_party_required()
                 + census.native_run_required()
+                + census.native_declared_boundary_observed()
                 + census.report_layer_required()
                 + census.outstanding_under_typed_non_answer(),
             row_count(),
         );
         assert!(!census.every_required_row_is_answered());
+    }
+
+    #[test]
+    fn the_positive_boundary_names_the_admitted_run_without_claiming_acceptance() {
+        let corpus = crate::maturity_corpus::maturity_run_of_record().expect("admitted run");
+        let observed: Vec<_> = PLAN
+            .rows()
+            .iter()
+            .filter(|row| {
+                matches!(
+                    row.standing(),
+                    MaturityRowStanding::NativeDeclaredBoundaryObserved { .. }
+                )
+            })
+            .collect();
+        assert_eq!(observed.len(), 1);
+        assert_eq!(observed[0].row().section(), MaturitySafetySection::Positive);
+        assert_eq!(observed[0].row().name(), "sponsorless");
+        assert_eq!(
+            observed[0].standing(),
+            &MaturityRowStanding::NativeDeclaredBoundaryObserved {
+                run_address: crate::maturity_corpus::MATURITY_RUN_ADDRESS,
+                recorded_detail: corpus.recorded_refusal_detail(),
+            }
+        );
+        assert_eq!(PLAN.census().native_acceptance_observed(), 0);
+        assert_eq!(PLAN.census().native_refusal_observed(), 0);
+        assert_eq!(
+            corpus.evidence().acceptance_obligation(),
+            crate::maturity_native::MaturityAcceptanceObligation::Outstanding {
+                routes: [
+                    crate::maturity_native::MaturityAcceptanceRoute::RelayWitnessRestructure,
+                    crate::maturity_native::MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
+                ],
+            }
+        );
     }
 }

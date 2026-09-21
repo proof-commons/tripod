@@ -52,6 +52,7 @@ vectors_source_files = files(
   'src/materialize.rs',
   'src/matrix.rs',
   'src/maturity_closure.rs',
+  'src/maturity_corpus.rs',
   'src/maturity_evidence.rs',
   'src/maturity_first_party.rs',
   'src/maturity_fixture.rs',
@@ -82,6 +83,11 @@ vectors_doc_files = files('README.md')
 # `include_bytes!`; timing sidecars and the predecessor setup transcript
 # remain audit-only bytes.
 vectors_fixture_files = files(
+  'fixtures/maturity-run-of-record/3a690139.report.capture',
+  'fixtures/maturity-run-of-record/3a690139.report.capture.timing',
+  'fixtures/maturity-run-of-record/MANIFEST.sha256',
+  'fixtures/maturity-run-of-record/RUN-REPORT',
+) + files(
   'fixtures/native-operator-run-of-record/353e698f.report.capture',
   'fixtures/native-operator-run-of-record/353e698f.report.capture.timing',
   'fixtures/native-operator-run-of-record/MANIFEST.sha256',
