@@ -52,6 +52,7 @@ pub mod maturity_closure;
 pub mod maturity_evidence;
 pub mod maturity_first_party;
 pub mod maturity_fixture;
+pub mod maturity_native;
 pub mod maturity_negative_half;
 pub mod maturity_operator;
 pub mod maturity_report;
