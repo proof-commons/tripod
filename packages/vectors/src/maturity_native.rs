@@ -4,7 +4,7 @@
 //!
 //! The positive submission declares the relay-policy boundary because the metadata witness exceeds the reviewed standardness width before execution. The executor reports relay rejection when its block fallback accepts, which exercises the signed linked candidate without establishing the accepted positive control required by §23. This run supplies evidence rather than closing that gate, and relaxing policy would not answer it.
 //!
-//! The declaration stays here because a submission carries bytes alone, with no expected layer, identity or observation class. Funding has no matrix row and therefore no declared layer, although construction requires accepted funding. This module stages no negative mutations and assigns no evidence standing or executor trust.
+//! The declaration stays here because a submission carries bytes alone, with no expected layer, identity or observation class. Funding has no matrix row and therefore no declared layer, although construction requires accepted funding. Transcript evidence replays the planner before comparing the recorded observation with that declaration; it authenticates no executor and leaves the accepted positive control outstanding.
 
 use architecture::ARCHITECTURE;
 use linker::{
@@ -41,6 +41,7 @@ use crate::maturity_closure::{
     decode_announcement_leaf, linked_announcement_bytes, maturity_sources,
 };
 use crate::maturity_operator::{OPERATOR_HANDLE, OperatorVerifier};
+pub use crate::observed_boundary::{matches_boundary, observed_boundary};
 
 /// The funding exchanges followed by the exact signed announcement.
 pub const ANNOUNCEMENT_STEPS: [&str; 3] = [
@@ -107,9 +108,182 @@ pub enum MaturityNativePlanRefusal {
     SubmissionReadbackMismatch,
     /// Completion was requested before all three exchanges settled.
     IncompleteTranscript,
+    /// A recorded request differed from the exact next request reconstructed by replay.
+    TranscriptStepMismatch {
+        /// The zero-based position of the differing or surplus request.
+        position: usize,
+    },
 }
 
 type Refusal = MaturityNativePlanRefusal;
+
+/// One settled exchange with its declaration retained beside its observation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MaturityNativeObservation {
+    subject: &'static str,
+    declared_layer: Option<ObservedOutcomeLayer>,
+    observed_layer: ObservedOutcomeLayer,
+}
+
+impl MaturityNativeObservation {
+    /// The planner's subject name, in execution order.
+    #[must_use]
+    pub const fn subject(&self) -> &'static str {
+        self.subject
+    }
+
+    /// The layer declared before execution, absent for infrastructure funding.
+    #[must_use]
+    pub const fn declared_layer(&self) -> Option<ObservedOutcomeLayer> {
+        self.declared_layer
+    }
+
+    /// The response's observation, preserved even when it contradicts the declaration.
+    #[must_use]
+    pub const fn observed_layer(&self) -> ObservedOutcomeLayer {
+        self.observed_layer
+    }
+}
+
+/// The sponsorless row's comparison, without an executor-trust or acceptance claim.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityNativeStanding {
+    /// The recorded refusal reached the row's declared relay-policy boundary.
+    AnsweredAtDeclaredBoundary,
+    /// The recorded layer differs; the observation remains available unchanged.
+    ObservedElsewhere,
+}
+
+/// A route to the accepted sponsorless positive control still required by §23.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityAcceptanceRoute {
+    /// Reopen the witness design to fit the deployed relay policy.
+    RelayWitnessRestructure,
+    /// Add a block-layer submission subject through a protocol revision.
+    BlockLayerSubmissionSubject,
+}
+
+/// The seventh conjunct of §23 remains unestablished by this transcript comparison.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityAcceptanceObligation {
+    /// Neither a relay refusal nor an off-declaration observation closes this obligation.
+    Outstanding {
+        /// The two remaining routes, rather than a relaxed-policy acceptance claim.
+        routes: [MaturityAcceptanceRoute; 2],
+    },
+}
+
+/// Settled transcript observations compared with the planner's prior declaration.
+///
+/// This value establishes transcript consistency, not provenance or current-root freshness. A scripted response can produce it; a native-run claim additionally needs the executor and capture provenance. Even an accepted off-declaration observation leaves the accepted positive control outstanding here.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MaturityNativeEvidence {
+    identity: CandidateDeploymentIdentity,
+    branch: BranchContext,
+    observations: Vec<MaturityNativeObservation>,
+    standing: MaturityNativeStanding,
+    acceptance_obligation: MaturityAcceptanceObligation,
+}
+
+impl MaturityNativeEvidence {
+    /// Reconstructs each exact request and settles every response before deriving standing.
+    ///
+    /// The deployment and branch are caller-supplied replay context, not observations inferred from funding. The branch value establishes no current-root freshness.
+    ///
+    /// # Errors
+    /// Preserves the planner's construction and response refusals; returns `TranscriptStepMismatch` for an altered or surplus request and `IncompleteTranscript` for missing exchanges.
+    ///
+    /// # Panics
+    /// Panics only if the fixed architecture omits its singleton asset or a linked bundle retains no constructor, which the published architecture and public linker cannot arrange.
+    pub fn from_transcript(
+        identity: CandidateDeploymentIdentity,
+        branch: BranchContext,
+        exchanges: &[(OperationStep, NativeOperationResponse)],
+    ) -> Result<Self, MaturityNativePlanRefusal> {
+        let mut planner = MaturityAnnouncementPlanner::new(identity.clone(), branch)?;
+        let mut next = replay_next(&mut planner, None)?;
+        for (position, (step, response)) in exchanges.iter().enumerate() {
+            if next.as_ref() != Some(step) {
+                return Err(Refusal::TranscriptStepMismatch { position });
+            }
+            next = replay_next(&mut planner, Some((step.case(), response)))?;
+        }
+        let settled = planner.completed_transcript()?;
+        let observations = settled
+            .iter()
+            .zip(ANNOUNCEMENT_STEPS)
+            .map(|((_, response), subject)| MaturityNativeObservation {
+                subject,
+                declared_layer: expected_layer(subject),
+                observed_layer: response.observed_layer,
+            })
+            .collect();
+        let (_, submission) = settled.last().ok_or(Refusal::IncompleteTranscript)?;
+        let answered = expected_layer("sponsorless")
+            .and_then(crate::observed_boundary::observed_boundary)
+            .is_some_and(|boundary| {
+                crate::observed_boundary::matches_boundary(boundary, submission.observed_layer)
+            });
+        Ok(Self {
+            identity,
+            branch,
+            observations,
+            standing: if answered {
+                MaturityNativeStanding::AnsweredAtDeclaredBoundary
+            } else {
+                MaturityNativeStanding::ObservedElsewhere
+            },
+            acceptance_obligation: MaturityAcceptanceObligation::Outstanding {
+                routes: [
+                    MaturityAcceptanceRoute::RelayWitnessRestructure,
+                    MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
+                ],
+            },
+        })
+    }
+
+    /// The deployment supplied for exact replay.
+    #[must_use]
+    pub const fn identity(&self) -> &CandidateDeploymentIdentity {
+        &self.identity
+    }
+
+    /// The caller-supplied branch and checkpoint, with no freshness claim.
+    #[must_use]
+    pub const fn branch(&self) -> BranchContext {
+        self.branch
+    }
+
+    /// Every settled step's declaration and observation, in execution order.
+    #[must_use]
+    pub fn observations(&self) -> &[MaturityNativeObservation] {
+        &self.observations
+    }
+
+    /// Whether the sponsorless observation answered its declared boundary.
+    #[must_use]
+    pub const fn standing(&self) -> MaturityNativeStanding {
+        self.standing
+    }
+
+    /// The outstanding accepted positive control and its two routes.
+    #[must_use]
+    pub const fn acceptance_obligation(&self) -> MaturityAcceptanceObligation {
+        self.acceptance_obligation
+    }
+}
+
+fn replay_next(
+    planner: &mut MaturityAnnouncementPlanner,
+    previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+) -> Result<Option<OperationStep>, Refusal> {
+    planner.next_step(previous).map_err(|PlanRefused| {
+        planner
+            .refusal()
+            .cloned()
+            .unwrap_or(Refusal::UnexpectedResponse)
+    })
+}
 
 fn closure(refusal: MaturityClosureRefusal) -> Refusal {
     Refusal::Closure(Box::new(refusal))
@@ -1221,6 +1395,166 @@ mod tests {
         assert_eq!(
             entries[0].gap(),
             MaturityNegativeHalfGap::TargetRunNotYetPlanned
+        );
+    }
+
+    fn settled(layer: ObservedOutcomeLayer) -> MaturityAnnouncementPlanner {
+        let (mut plan, step) = funded();
+        let response = submission_response(&step, layer);
+        assert_eq!(plan.next_step(Some((step.case(), &response))), Ok(None));
+        plan
+    }
+
+    fn evidence(plan: &MaturityAnnouncementPlanner) -> MaturityNativeEvidence {
+        MaturityNativeEvidence::from_transcript(
+            plan.identity.clone(),
+            plan.branch,
+            plan.completed_transcript().expect("settled exchanges"),
+        )
+        .expect("exact replay")
+    }
+
+    fn assert_outstanding(evidence: &MaturityNativeEvidence) {
+        assert_eq!(
+            evidence.acceptance_obligation(),
+            MaturityAcceptanceObligation::Outstanding {
+                routes: [
+                    MaturityAcceptanceRoute::RelayWitnessRestructure,
+                    MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn evidence_retains_the_declared_refusal_and_outstanding_acceptance() {
+        let plan = settled(ObservedOutcomeLayer::RelayPolicyRejection);
+        let evidence = evidence(&plan);
+        assert_eq!(evidence.identity(), &plan.identity);
+        assert_eq!(evidence.branch(), plan.branch);
+        assert_eq!(evidence.observations().len(), ANNOUNCEMENT_STEPS.len());
+        for (observation, subject) in evidence.observations().iter().zip(ANNOUNCEMENT_STEPS) {
+            assert_eq!(observation.subject(), subject);
+            assert_eq!(observation.declared_layer(), expected_layer(subject));
+            let expected = if subject == "sponsorless" {
+                ObservedOutcomeLayer::RelayPolicyRejection
+            } else {
+                ObservedOutcomeLayer::Accepted
+            };
+            assert_eq!(observation.observed_layer(), expected);
+        }
+        assert_eq!(
+            evidence.standing(),
+            MaturityNativeStanding::AnsweredAtDeclaredBoundary
+        );
+        assert_outstanding(&evidence);
+    }
+
+    #[test]
+    fn accepted_observation_is_off_declaration_and_acceptance_stays_outstanding() {
+        let plan = settled(ObservedOutcomeLayer::Accepted);
+        let evidence = evidence(&plan);
+        let submission = evidence.observations().last().expect("submission");
+        assert_eq!(submission.subject(), "sponsorless");
+        assert_eq!(submission.observed_layer(), ObservedOutcomeLayer::Accepted);
+        assert_eq!(
+            submission.declared_layer(),
+            Some(ObservedOutcomeLayer::RelayPolicyRejection)
+        );
+        assert_eq!(
+            evidence.standing(),
+            MaturityNativeStanding::ObservedElsewhere
+        );
+        assert_outstanding(&evidence);
+    }
+
+    #[test]
+    fn evidence_refuses_every_incomplete_prefix() {
+        let plan = settled(ObservedOutcomeLayer::RelayPolicyRejection);
+        let exchanges = plan.completed_transcript().expect("complete");
+        for (length, _) in exchanges.iter().enumerate() {
+            assert_eq!(
+                MaturityNativeEvidence::from_transcript(
+                    plan.identity.clone(),
+                    plan.branch,
+                    &exchanges[..length]
+                ),
+                Err(Refusal::IncompleteTranscript)
+            );
+        }
+    }
+
+    #[test]
+    fn standing_agrees_with_matches_boundary_for_every_observed_layer() {
+        let boundary = crate::observed_boundary::observed_boundary(
+            expected_layer("sponsorless").expect("declaration"),
+        )
+        .expect("target boundary");
+        for observed in NON_ACCEPTED
+            .into_iter()
+            .chain([ObservedOutcomeLayer::Accepted])
+        {
+            let evidence = evidence(&settled(observed));
+            assert_eq!(
+                evidence.standing() == MaturityNativeStanding::AnsweredAtDeclaredBoundary,
+                crate::observed_boundary::matches_boundary(boundary, observed)
+            );
+            assert_eq!(
+                evidence
+                    .observations()
+                    .last()
+                    .expect("submission")
+                    .observed_layer(),
+                observed
+            );
+            assert_outstanding(&evidence);
+        }
+    }
+
+    #[test]
+    fn evidence_replay_refuses_altered_reordered_and_surplus_steps() {
+        let plan = settled(ObservedOutcomeLayer::RelayPolicyRejection);
+        let exchanges = plan.completed_transcript().expect("complete");
+        for (position, (step, _)) in exchanges.iter().enumerate() {
+            let mut altered = exchanges.to_vec();
+            let mut subject = step.subject().clone();
+            match &mut subject {
+                OperationSubject::Funding(funding) => funding.output_program.push(0),
+                OperationSubject::Submission(submission) => submission.transaction_bytes.push(0),
+                _ => panic!("only funding and submission"),
+            }
+            altered[position].0 = OperationStep::new(&step.case().step, subject);
+            assert_eq!(
+                MaturityNativeEvidence::from_transcript(
+                    plan.identity.clone(),
+                    plan.branch,
+                    &altered
+                ),
+                Err(Refusal::TranscriptStepMismatch { position })
+            );
+        }
+        let mut reordered = exchanges.to_vec();
+        reordered.swap(0, 1);
+        assert_eq!(
+            MaturityNativeEvidence::from_transcript(plan.identity.clone(), plan.branch, &reordered),
+            Err(Refusal::TranscriptStepMismatch { position: 0 })
+        );
+        let mut surplus = exchanges.to_vec();
+        surplus.push(exchanges[0].clone());
+        assert_eq!(
+            MaturityNativeEvidence::from_transcript(plan.identity.clone(), plan.branch, &surplus),
+            Err(Refusal::TranscriptStepMismatch { position: 3 })
+        );
+    }
+
+    #[test]
+    fn evidence_replay_preserves_the_planners_response_refusal() {
+        let plan = settled(ObservedOutcomeLayer::RelayPolicyRejection);
+        let mut exchanges = plan.completed_transcript().expect("complete").to_vec();
+        exchanges[0].1.funded_outputs[0].amount_satoshis += 1;
+        assert_eq!(
+            MaturityNativeEvidence::from_transcript(plan.identity.clone(), plan.branch, &exchanges),
+            Err(Refusal::FundingMismatch)
         );
     }
 }

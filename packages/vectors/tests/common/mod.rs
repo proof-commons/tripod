@@ -742,6 +742,7 @@ pub(crate) struct CaptureDestination {
     pub(crate) short_sha: String,
     pub(crate) suite_commit: String,
     pub(crate) suite_tree: String,
+    pub(crate) report_test_name: &'static str,
 }
 
 impl CaptureDestination {
@@ -765,7 +766,17 @@ impl CaptureDestination {
             short_sha,
             suite_commit,
             suite_tree,
+            report_test_name: CeremonyId::Report.rust_test_name(),
         })
+    }
+
+    /// The report caller may name its test without changing another ceremony's identity.
+    pub(crate) fn rust_test_name(&self, ceremony: CeremonyId) -> &'static str {
+        if ceremony == CeremonyId::Report {
+            self.report_test_name
+        } else {
+            ceremony.rust_test_name()
+        }
     }
 
     pub(crate) fn capture_path(
@@ -773,11 +784,11 @@ impl CaptureDestination {
         ceremony: CeremonyId,
         current_test_name: &str,
     ) -> Result<PathBuf, String> {
-        if current_test_name != ceremony.rust_test_name() {
+        if current_test_name != self.rust_test_name(ceremony) {
             return Err(format!(
                 "ceremony {} belongs to {}, not {current_test_name}",
                 ceremony.as_str(),
-                ceremony.rust_test_name(),
+                self.rust_test_name(ceremony),
             ));
         }
         let filename = if ceremony.is_setup() {
@@ -807,7 +818,7 @@ pub(crate) struct CaptureGuard {
 impl CaptureGuard {
     pub(crate) fn for_test(ceremony: CeremonyId, destination: CaptureDestination) -> Self {
         let path = destination
-            .capture_path(ceremony, ceremony.rust_test_name())
+            .capture_path(ceremony, destination.rust_test_name(ceremony))
             .expect("the test capture path is valid");
         Self {
             ceremony,
@@ -944,7 +955,7 @@ pub(crate) fn render_run_identity(
     let suite_tree = &destination.suite_tree;
     let _ = writeln!(out, "native-capture-schema 2");
     let _ = writeln!(out, "ceremony-id {}", ceremony.as_str());
-    write_text_field(out, "rust-test-name", ceremony.rust_test_name());
+    write_text_field(out, "rust-test-name", destination.rust_test_name(ceremony));
     let _ = writeln!(out, "suite-commit {suite_commit}");
     let _ = writeln!(out, "suite-tree {suite_tree}");
     let _ = writeln!(out, "fixture-digest-algorithm forward-v2");
