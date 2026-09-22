@@ -249,10 +249,23 @@ pub(super) fn record() -> StateAnnouncementProgram {
         let operator = build_state_operator_pattern(&target, &operator, fragment)
             .expect("the operator pattern builds");
 
-        let raw = state_announcement_program(&target, &structural, &semantic, &operator)
-            .expect("the composed program assembles");
-        build_state_announcement_program(&target, &structural, &semantic, &operator, raw)
-            .expect("the composed record is admitted")
+        let raw = state_announcement_program(
+            &target,
+            &structural,
+            &semantic,
+            &operator,
+            tapscript::StateWitnessSchedule::WholeMetadata,
+        )
+        .expect("the composed program assembles");
+        build_state_announcement_program(
+            &target,
+            &structural,
+            &semantic,
+            &operator,
+            tapscript::StateWitnessSchedule::WholeMetadata,
+            raw,
+        )
+        .expect("the composed record is admitted")
     });
     RECORD.clone()
 }

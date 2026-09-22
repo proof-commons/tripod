@@ -82,11 +82,11 @@ use tapscript::{
     STATE_NUMS_KEY, StackItem, StateAnnouncementBindings, StateAnnouncementProgram,
     StateAnnouncementSymbol, StateCurveCapability, StateInternalKeyPolicy, StateLeafRole,
     StateNonceBudget, StateOperatorBindings, StateOperatorSymbol, StatePatternBindings,
-    StatePatternSymbol, StateProgramComponent, StateProgramSymbol, StateTweakOutcome,
-    TapscriptInstruction, TapscriptProgram, build_state_announcement_program,
-    build_state_operator_pattern, operator_key_encoding_closure, production_static_subtree,
-    selected_operator_profile, state_announcement_patterns, state_announcement_program,
-    state_operator_fragment, state_structural_patterns,
+    StatePatternSymbol, StateProgramComponent, StateProgramRefusal, StateProgramSymbol,
+    StateTweakOutcome, StateWitnessSchedule, TapscriptInstruction, TapscriptProgram,
+    build_state_announcement_program, build_state_operator_pattern, operator_key_encoding_closure,
+    production_static_subtree, selected_operator_profile, state_announcement_patterns,
+    state_announcement_program, state_operator_fragment, state_structural_patterns,
 };
 use target_elements::{
     EncodingClass, OpcodeId, ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript,
@@ -119,6 +119,16 @@ use transaction::taproot::witness_program_script;
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MaturityClosureRefusal {
+    /// The historical transport is refused for a new deployment's submission.
+    ReplayOnlySchedule {
+        /// The replay-only schedule selected for emission.
+        schedule: StateWitnessSchedule,
+    },
+    /// The composer holds no legalization for the selected transport.
+    ScheduleLegalizationUnavailable {
+        /// The schedule the composer refused.
+        schedule: StateWitnessSchedule,
+    },
     /// The reviewed target contract did not validate.
     ReviewedTargetInvalid,
     /// The realization did not derive, the compiler did not bind its
@@ -395,6 +405,48 @@ impl MaturityDeployment {
     }
 }
 
+/// Whether composition reconstructs a retained schedule or emits a new deployment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityWitnessSelection {
+    /// Reconstruct the schedule a record retains for replay or node-free comparison.
+    Retained(StateWitnessSchedule),
+    /// Compose a new deployment's submission under an admissible schedule.
+    Emission(StateWitnessSchedule),
+}
+
+impl MaturityWitnessSelection {
+    /// The explicitly selected witness schedule.
+    #[must_use]
+    pub const fn schedule(self) -> StateWitnessSchedule {
+        match self {
+            Self::Retained(schedule) | Self::Emission(schedule) => schedule,
+        }
+    }
+
+    /// Whether the caller requests a new deployment's submission.
+    #[must_use]
+    pub const fn is_emission(self) -> bool {
+        matches!(self, Self::Emission(_))
+    }
+
+    /// Reconstruct the whole-metadata schedule retained by historical records.
+    #[must_use]
+    pub const fn retained_whole_metadata() -> Self {
+        Self::Retained(StateWitnessSchedule::WholeMetadata)
+    }
+}
+
+const fn admit_selection(
+    selection: MaturityWitnessSelection,
+) -> Result<StateWitnessSchedule, MaturityClosureRefusal> {
+    let schedule = selection.schedule();
+    if selection.is_emission() && schedule.is_replay_only() {
+        Err(MaturityClosureRefusal::ReplayOnlySchedule { schedule })
+    } else {
+        Ok(schedule)
+    }
+}
+
 /// The published signer's x-only key, resolved once.
 ///
 /// Read through the handle census that owns the disposable material,
@@ -527,16 +579,36 @@ fn build_announcement_plan()
     .map_err(|_| refused())
 }
 
-/// The composed announcement record, built once and handed out by clone.
-fn composed_record() -> Result<StateAnnouncementProgram, MaturityClosureRefusal> {
-    static RECORD: LazyLock<Result<StateAnnouncementProgram, MaturityClosureRefusal>> =
-        LazyLock::new(build_composed_record);
-    RECORD.clone()
+/// The composed announcement record, built once per schedule and handed out by clone.
+fn composed_record(
+    schedule: StateWitnessSchedule,
+) -> Result<StateAnnouncementProgram, MaturityClosureRefusal> {
+    static WHOLE: LazyLock<Result<StateAnnouncementProgram, MaturityClosureRefusal>> =
+        LazyLock::new(|| build_composed_record(StateWitnessSchedule::WholeMetadata));
+    static VARIABLE: LazyLock<Result<StateAnnouncementProgram, MaturityClosureRefusal>> =
+        LazyLock::new(|| build_composed_record(StateWitnessSchedule::VariableMetadata));
+    match schedule {
+        StateWitnessSchedule::WholeMetadata => WHOLE.clone(),
+        StateWitnessSchedule::VariableMetadata => VARIABLE.clone(),
+    }
+}
+
+const fn composition_refusal(refusal: &StateProgramRefusal) -> MaturityClosureRefusal {
+    match refusal {
+        StateProgramRefusal::ScheduleLegalizationUnavailable(schedule) => {
+            MaturityClosureRefusal::ScheduleLegalizationUnavailable {
+                schedule: *schedule,
+            }
+        }
+        _ => MaturityClosureRefusal::RecordUnavailable,
+    }
 }
 
 /// The record, through the three public component entries and the
 /// composition entry that admits them.
-fn build_composed_record() -> Result<StateAnnouncementProgram, MaturityClosureRefusal> {
+fn build_composed_record(
+    schedule: StateWitnessSchedule,
+) -> Result<StateAnnouncementProgram, MaturityClosureRefusal> {
     let target = closure_target()?;
     let refused = || MaturityClosureRefusal::RecordUnavailable;
     let item = |bytes: Vec<u8>| StackItem::new(&target, bytes).map_err(|_| refused());
@@ -584,10 +656,10 @@ fn build_composed_record() -> Result<StateAnnouncementProgram, MaturityClosureRe
     let operator =
         build_state_operator_pattern(&target, &operator, fragment).map_err(|_| refused())?;
 
-    let raw = state_announcement_program(&target, &structural, &semantic, &operator)
-        .map_err(|_| refused())?;
-    build_state_announcement_program(&target, &structural, &semantic, &operator, raw)
-        .map_err(|_| refused())
+    let raw = state_announcement_program(&target, &structural, &semantic, &operator, schedule)
+        .map_err(|refusal| composition_refusal(&refusal))?;
+    build_state_announcement_program(&target, &structural, &semantic, &operator, schedule, raw)
+        .map_err(|refusal| composition_refusal(&refusal))
 }
 
 /// One deployment's committed operator key, as bindings.
@@ -606,26 +678,36 @@ fn operator_bindings(
 }
 
 /// The candidate constructor over the record's own production subtree,
-/// derived once with real arithmetic and handed out by clone.
-fn fixture_constructor() -> Result<CandidateStateConstructor, MaturityClosureRefusal> {
-    static CONSTRUCTOR: LazyLock<Result<CandidateStateConstructor, MaturityClosureRefusal>> =
-        LazyLock::new(|| {
-            let target = closure_target()?;
-            let record = composed_record()?;
-            let refused = || MaturityClosureRefusal::SourcesUnavailable;
-            let subtree = production_static_subtree(&target, &record).map_err(|_| refused())?;
-            CandidateStateConstructor::derive(
-                &target,
-                &fixture_metadata()?,
-                &subtree,
-                StateInternalKeyPolicy::new(STATE_NUMS_KEY, &OracleStateCurve)
-                    .map_err(|_| refused())?,
-                StateNonceBudget::default(),
-                &OracleStateCurve,
-            )
-            .map_err(|_| refused())
-        });
-    CONSTRUCTOR.clone()
+/// derived once per schedule with real arithmetic and handed out by clone.
+fn fixture_constructor(
+    schedule: StateWitnessSchedule,
+) -> Result<CandidateStateConstructor, MaturityClosureRefusal> {
+    static WHOLE: LazyLock<Result<CandidateStateConstructor, MaturityClosureRefusal>> =
+        LazyLock::new(|| build_fixture_constructor(StateWitnessSchedule::WholeMetadata));
+    static VARIABLE: LazyLock<Result<CandidateStateConstructor, MaturityClosureRefusal>> =
+        LazyLock::new(|| build_fixture_constructor(StateWitnessSchedule::VariableMetadata));
+    match schedule {
+        StateWitnessSchedule::WholeMetadata => WHOLE.clone(),
+        StateWitnessSchedule::VariableMetadata => VARIABLE.clone(),
+    }
+}
+
+fn build_fixture_constructor(
+    schedule: StateWitnessSchedule,
+) -> Result<CandidateStateConstructor, MaturityClosureRefusal> {
+    let target = closure_target()?;
+    let record = composed_record(schedule)?;
+    let refused = || MaturityClosureRefusal::SourcesUnavailable;
+    let subtree = production_static_subtree(&target, &record).map_err(|_| refused())?;
+    CandidateStateConstructor::derive(
+        &target,
+        &fixture_metadata()?,
+        &subtree,
+        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &OracleStateCurve).map_err(|_| refused())?,
+        StateNonceBudget::default(),
+        &OracleStateCurve,
+    )
+    .map_err(|_| refused())
 }
 
 /// The semantic metadata every constructor here is derived from.
@@ -653,17 +735,22 @@ fn fixture_metadata() -> Result<StateMetadata, MaturityClosureRefusal> {
 ///
 /// # Errors
 ///
-/// [`MaturityClosureRefusal::ReviewedTargetInvalid`],
+/// [`MaturityClosureRefusal::ReplayOnlySchedule`] for emission of a replay-only
+/// schedule, [`MaturityClosureRefusal::ScheduleLegalizationUnavailable`] for a
+/// schedule without a legalization, [`MaturityClosureRefusal::ReviewedTargetInvalid`],
 /// [`MaturityClosureRefusal::PlanUnavailable`],
 /// [`MaturityClosureRefusal::RecordUnavailable`] or
 /// [`MaturityClosureRefusal::SourcesUnavailable`], naming the layer that
 /// refused.
+#[must_use = "source construction can refuse the selected schedule"]
 pub fn maturity_sources_with(
     parameters: MaturityDeploymentParameters,
+    selection: MaturityWitnessSelection,
 ) -> Result<MaturitySources, MaturityClosureRefusal> {
+    let schedule = admit_selection(selection)?;
     let target = closure_target()?;
-    let record = composed_record()?;
-    let constructor = fixture_constructor()?;
+    let record = composed_record(schedule)?;
+    let constructor = fixture_constructor(schedule)?;
     let refused = || MaturityClosureRefusal::SourcesUnavailable;
 
     let (minimum, maximum) = parameters.lead();
@@ -717,10 +804,12 @@ pub fn maturity_sources_with(
 /// Everything [`maturity_sources_with`] refuses, plus
 /// [`MaturityClosureRefusal::SourcesUnavailable`] where the deployment's
 /// own values do not resolve.
+#[must_use = "source construction can refuse the selected schedule"]
 pub fn maturity_sources(
     deployment: MaturityDeployment,
+    selection: MaturityWitnessSelection,
 ) -> Result<MaturitySources, MaturityClosureRefusal> {
-    maturity_sources_with(deployment.parameters()?)
+    maturity_sources_with(deployment.parameters()?, selection)
 }
 
 /// One deployment's linked candidate bundle, through the real curve.
@@ -729,10 +818,12 @@ pub fn maturity_sources(
 ///
 /// Everything [`maturity_sources`] refuses, plus
 /// [`MaturityClosureRefusal::LinkRefused`].
+#[must_use = "linking can refuse the selected schedule or deployment"]
 pub fn linked_maturity_bundle(
     deployment: MaturityDeployment,
+    selection: MaturityWitnessSelection,
 ) -> Result<CandidateLinkedMaturityBundle, MaturityClosureRefusal> {
-    maturity_sources(deployment)?.link(&OracleStateCurve)
+    maturity_sources(deployment, selection)?.link(&OracleStateCurve)
 }
 
 // --- The decoded leaf ---------------------------------------------------
@@ -826,11 +917,13 @@ pub fn decode_announcement_leaf(
 ///
 /// Everything [`linked_maturity_bundle`] and
 /// [`decode_announcement_leaf`] refuse.
+#[must_use = "decoding can refuse the selected schedule or deployment"]
 pub fn decoded_deployment(
     deployment: MaturityDeployment,
+    selection: MaturityWitnessSelection,
 ) -> Result<(CandidateLinkedMaturityBundle, DecodedAnnouncementLeaf), MaturityClosureRefusal> {
     let target = closure_target()?;
-    let bundle = linked_maturity_bundle(deployment)?;
+    let bundle = linked_maturity_bundle(deployment, selection)?;
     let bytes = linked_announcement_bytes(&bundle, &target)?;
     let leaf = decode_announcement_leaf(&target, &bytes)?;
     Ok((bundle, leaf))
@@ -2620,7 +2713,7 @@ mod tests {
     };
     use linker::StateLinkRefusal;
     use realization::{RelationKind, RelationSubject};
-    use tapscript::{StateConstructorRefusal, StatePatternId};
+    use tapscript::{StateConstructorRefusal, StatePatternId, StateWitnessSchedule};
 
     /// Every refusal this module owns, matched with no catch-all.
     ///
@@ -2650,22 +2743,26 @@ mod tests {
     ///
     /// The arms are grouped rather than named one at a time because
     /// exhaustiveness is a property of the pattern set and not of the arm
-    /// bodies: twenty-five bodies that each do nothing would be
-    /// twenty-five copies of one nothing, which is a second place for a
+    /// bodies: twenty-seven bodies that each do nothing would be
+    /// twenty-seven copies of one nothing, which is a second place for a
     /// name to drift and a lint to collapse.
     fn every_closure_refusal_is_censused(refusal: &MaturityClosureRefusal) {
         match refusal {
+            // Reached by `whole_metadata_emission_refuses_at_sources_and_linking`.
+            MaturityClosureRefusal::ReplayOnlySchedule { .. }
+            // Reached by `variable_metadata_selections_preserve_the_composers_refusal`.
+            | MaturityClosureRefusal::ScheduleLegalizationUnavailable { .. }
             // Unreachable: the reviewed contract is a first-party
             // constant validated once behind a static, and no caller
             // value reaches the validation that could refuse it.
-            MaturityClosureRefusal::ReviewedTargetInvalid
+            | MaturityClosureRefusal::ReviewedTargetInvalid
             // Unreachable: the plan is derived from the architecture
             // constant under the search limits this module writes down,
             // neither of which a caller supplies.
             | MaturityClosureRefusal::PlanUnavailable
             // Unreachable: the record is composed from this module's own
-            // constants by the same route, so nothing a caller passes can
-            // make the composition refuse.
+            // constants; schedule refusals retain their separate typed
+            // variant, and callers cannot alter the component recipes.
             | MaturityClosureRefusal::RecordUnavailable
             // Reached by `a_zero_lead_minimum_leaves_the_sources_unavailable`:
             // the lead window is the one source built from a supplied
@@ -2751,8 +2848,14 @@ mod tests {
         // deliberate. A constructed refusal is evidence about the
         // vocabulary and never about the code that raises it, so reaching
         // a variant by name stays with the closure tests, which assert
-        // each of the fifteen as the outcome of a real call.
+        // each of the seventeen as the outcome of a real call.
         for refusal in [
+            MaturityClosureRefusal::ReplayOnlySchedule {
+                schedule: StateWitnessSchedule::WholeMetadata,
+            },
+            MaturityClosureRefusal::ScheduleLegalizationUnavailable {
+                schedule: StateWitnessSchedule::VariableMetadata,
+            },
             MaturityClosureRefusal::ReviewedTargetInvalid,
             MaturityClosureRefusal::PlanUnavailable,
             MaturityClosureRefusal::RecordUnavailable,

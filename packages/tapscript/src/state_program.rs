@@ -138,9 +138,41 @@ pub enum StateProgramWitness {
     OperatorSignature,
 }
 
+/// The predecessor metadata transport retained by a composed announcement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StateWitnessSchedule {
+    /// Every canonical metadata byte, retained for historical replay only.
+    WholeMetadata,
+    /// The canonical variable region, with constants restored by the executing leaf.
+    VariableMetadata,
+}
+
+impl StateWitnessSchedule {
+    /// Every schedule, in declaration order.
+    pub const ALL: [Self; 2] = [Self::WholeMetadata, Self::VariableMetadata];
+
+    /// The stable diagnostic name of the transport.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::WholeMetadata => "whole-metadata",
+            Self::VariableMetadata => "variable-metadata",
+        }
+    }
+
+    /// Whether the transport is retained only for replay and reconstruction.
+    #[must_use]
+    pub const fn is_replay_only(self) -> bool {
+        matches!(self, Self::WholeMetadata)
+    }
+}
+
 /// Refusals at the composed-program boundary.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum StateProgramRefusal {
+    /// The composer holds no legalization for the requested schedule.
+    #[error("announcement witness schedule {} has no legalization", .0.name())]
+    ScheduleLegalizationUnavailable(StateWitnessSchedule),
     /// A supplied program changed the complete recipe.
     #[error("announcement program differs from its component recipe")]
     ComponentRecipe,
@@ -162,8 +194,13 @@ pub enum StateProgramRefusal {
 }
 
 /// An immutable complete record admitted by recipe equality and abstract execution.
+///
+/// The retained witness schedule lets a consumer compose, replay or compare against
+/// the schedule this record was composed under. A schedule for which the composer
+/// holds no legalization is refused rather than composed as another schedule.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateAnnouncementProgram {
+    schedule: StateWitnessSchedule,
     program: TapscriptProgram,
     witness: Vec<(StateProgramWitness, StackValueType)>,
     precondition: AbstractStackState,
@@ -427,13 +464,21 @@ fn metadata(
 /// Emit the exact complete recipe in component order.
 ///
 /// # Errors
-/// Refuses incompatible shared consumers or invalid typed instructions.
+/// Refuses schedules without a legalization, incompatible shared consumers or
+/// invalid typed instructions.
+#[must_use = "composition can refuse the requested schedule or recipe"]
 pub fn state_announcement_program(
     target: &ReviewedElementsTapscriptDefinition,
     structural: &StatePatternRecipe,
     semantic: &StateAnnouncementRecipe,
     operator: &StateOperatorPattern,
+    schedule: StateWitnessSchedule,
 ) -> Result<TapscriptProgram, StateProgramRefusal> {
+    if schedule == StateWitnessSchedule::VariableMetadata {
+        return Err(StateProgramRefusal::ScheduleLegalizationUnavailable(
+            schedule,
+        ));
+    }
     Ok(TapscriptProgram::new(
         assemble(target, structural, semantic, operator)?.instructions,
     )?)
@@ -445,14 +490,22 @@ pub fn state_announcement_program(
 /// final item is the canonical true literal, not just another one-byte value.
 ///
 /// # Errors
-/// Refuses recipe changes, inconsistent consumers, contract or resource failures.
+/// Refuses schedules without a legalization, recipe changes, inconsistent
+/// consumers, contract or resource failures.
+#[must_use = "record admission can refuse the requested schedule or recipe"]
 pub fn build_state_announcement_program(
     target: &ReviewedElementsTapscriptDefinition,
     structural: &StatePatternRecipe,
     semantic: &StateAnnouncementRecipe,
     operator: &StateOperatorPattern,
+    schedule: StateWitnessSchedule,
     program: TapscriptProgram,
 ) -> Result<StateAnnouncementProgram, StateProgramRefusal> {
+    if schedule == StateWitnessSchedule::VariableMetadata {
+        return Err(StateProgramRefusal::ScheduleLegalizationUnavailable(
+            schedule,
+        ));
+    }
     let assembly = assemble(target, structural, semantic, operator)?;
     if assembly.instructions != program.instructions() {
         return Err(StateProgramRefusal::ComponentRecipe);
@@ -491,6 +544,7 @@ pub fn build_state_announcement_program(
         }
     }
     Ok(StateAnnouncementProgram {
+        schedule,
         prerequisites: fragment_prerequisites(&program),
         metadata: metadata(target, structural, semantic, operator, &assembly),
         program,
@@ -539,6 +593,12 @@ pub fn production_static_subtree(
 }
 
 impl StateAnnouncementProgram {
+    /// The witness schedule this record was composed under.
+    #[must_use]
+    pub const fn schedule(&self) -> StateWitnessSchedule {
+        self.schedule
+    }
+
     /// Exact composed instructions.
     #[must_use]
     pub const fn program(&self) -> &TapscriptProgram {

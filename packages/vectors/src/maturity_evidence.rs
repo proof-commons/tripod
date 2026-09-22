@@ -1574,8 +1574,11 @@ pub fn derive_maturity_evidence_plan_with(
     provenance: MaturityExecutorProvenanceExpectation,
 ) -> Result<MaturityAnnouncementEvidencePlan, MaturityEvidenceRefusal> {
     let plan = announcement_plan().map_err(MaturityEvidenceRefusal::OperationPlanUnavailable)?;
-    let bundle = linked_maturity_bundle(DEPLOYMENT)
-        .map_err(MaturityEvidenceRefusal::LinkedBundleUnavailable)?;
+    let bundle = linked_maturity_bundle(
+        DEPLOYMENT,
+        crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+    )
+    .map_err(MaturityEvidenceRefusal::LinkedBundleUnavailable)?;
     let target = closure_target().map_err(MaturityEvidenceRefusal::TargetBindingUnavailable)?;
     let view = validated_view(&target, &bundle)?;
     let abi = derive_maturity_announcement_abi(&target, &view)

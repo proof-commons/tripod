@@ -74,10 +74,23 @@ pub(super) fn fixtures() -> &'static Fixtures {
             state_operator_fragment(&bindings).unwrap(),
         )
         .unwrap();
-        let raw = state_announcement_program(&target, &structural, &semantic, &operator).unwrap();
-        let program =
-            build_state_announcement_program(&target, &structural, &semantic, &operator, raw)
-                .unwrap();
+        let raw = state_announcement_program(
+            &target,
+            &structural,
+            &semantic,
+            &operator,
+            StateWitnessSchedule::WholeMetadata,
+        )
+        .unwrap();
+        let program = build_state_announcement_program(
+            &target,
+            &structural,
+            &semantic,
+            &operator,
+            StateWitnessSchedule::WholeMetadata,
+            raw,
+        )
+        .unwrap();
         Fixtures {
             structural,
             semantic,
@@ -123,8 +136,72 @@ fn admit(
         &f.structural,
         &f.semantic,
         &f.operator,
+        StateWitnessSchedule::WholeMetadata,
         TapscriptProgram::new(instructions).unwrap(),
     )
+}
+
+#[test]
+fn composed_record_retains_its_whole_metadata_schedule() {
+    assert_eq!(
+        fixtures().program.schedule(),
+        StateWitnessSchedule::WholeMetadata
+    );
+}
+
+#[test]
+fn witness_schedules_have_distinct_stable_names_and_replay_dispositions() {
+    assert_eq!(
+        StateWitnessSchedule::ALL,
+        [
+            StateWitnessSchedule::WholeMetadata,
+            StateWitnessSchedule::VariableMetadata
+        ]
+    );
+    let names = StateWitnessSchedule::ALL.map(StateWitnessSchedule::name);
+    assert_eq!(names, ["whole-metadata", "variable-metadata"]);
+    assert!(names.iter().all(|name| !name.is_empty()));
+    assert_eq!(BTreeSet::from(names).len(), 2);
+    assert!(StateWitnessSchedule::WholeMetadata.is_replay_only());
+    assert!(!StateWitnessSchedule::VariableMetadata.is_replay_only());
+}
+
+#[test]
+fn variable_metadata_refuses_before_recipe_assembly_or_comparison() {
+    let f = fixtures();
+    let target = reviewed_target();
+    let schedule = StateWitnessSchedule::VariableMetadata;
+    let refusal = StateProgramRefusal::ScheduleLegalizationUnavailable(schedule);
+    let mut values = semantic_values();
+    values.insert(
+        StateAnnouncementSymbol::StateAsset,
+        StackItem::new(&target, vec![0x77; 32]).unwrap(),
+    );
+    let bindings = StateAnnouncementBindings::new(&target, values).unwrap();
+    let mismatched = state_announcement_patterns(&target, &bindings).unwrap();
+    for semantic in [&f.semantic, &mismatched] {
+        assert_eq!(
+            state_announcement_program(&target, &f.structural, semantic, &f.operator, schedule),
+            Err(refusal.clone())
+        );
+        for program in [
+            f.program.program().clone(),
+            TapscriptProgram::new(vec![number(&target, 1).unwrap()]).unwrap(),
+        ] {
+            assert_eq!(
+                build_state_announcement_program(
+                    &target,
+                    &f.structural,
+                    semantic,
+                    &f.operator,
+                    schedule,
+                    program,
+                ),
+                Err(refusal.clone())
+            );
+        }
+    }
+    assert!(refusal.to_string().contains(schedule.name()));
 }
 
 #[test]
@@ -549,7 +626,13 @@ fn either_mismatched_shared_binding_is_refused() {
         let bindings = StateAnnouncementBindings::new(&target, values).unwrap();
         let semantic = state_announcement_patterns(&target, &bindings).unwrap();
         assert_eq!(
-            state_announcement_program(&target, &f.structural, &semantic, &f.operator),
+            state_announcement_program(
+                &target,
+                &f.structural,
+                &semantic,
+                &f.operator,
+                StateWitnessSchedule::WholeMetadata
+            ),
             Err(StateProgramRefusal::ConsumerCensus)
         );
         assert_eq!(
@@ -558,6 +641,7 @@ fn either_mismatched_shared_binding_is_refused() {
                 &f.structural,
                 &semantic,
                 &f.operator,
+                StateWitnessSchedule::WholeMetadata,
                 f.program.program().clone()
             ),
             Err(StateProgramRefusal::ConsumerCensus)
@@ -928,6 +1012,10 @@ fn program_refusal_declaration_has_exact_exercised_and_unreachable_census() {
         include_str!("../state_program.rs"),
         "StateProgramRefusal",
         &[
+            (
+                "ScheduleLegalizationUnavailable",
+                variable_metadata_refuses_before_recipe_assembly_or_comparison,
+            ),
             (
                 "ComponentRecipe",
                 deleting_each_instruction_refuses_the_composed_identity,

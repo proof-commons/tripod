@@ -862,9 +862,17 @@ struct MaturitySubstrate {
 /// Build the substrate once, through the real curve.
 fn build_substrate() -> Option<MaturitySubstrate> {
     let target = closure_target().ok()?;
-    let sources = maturity_sources(DEPLOYMENT).ok()?;
+    let sources = maturity_sources(
+        DEPLOYMENT,
+        crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+    )
+    .ok()?;
     let bundle = sources.link(&OracleStateCurve).ok()?;
-    let second = linked_maturity_bundle(MaturityDeployment::Second).ok()?;
+    let second = linked_maturity_bundle(
+        MaturityDeployment::Second,
+        crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+    )
+    .ok()?;
     let retained = bundle.instances().first()?;
     let bounds = bundle.deployment().lead_bounds().bounds();
     let metadata = retained.metadata().semantic;

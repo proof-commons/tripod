@@ -37,8 +37,8 @@ use transaction::state_view::{MaturityViewStatement, PublicMaturityStateView};
 use crate::live_capability::OracleLiveCurve;
 use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
 use crate::maturity_closure::{
-    MaturityClosureRefusal, MaturityDeployment, OracleStateCurve, closure_target,
-    decode_announcement_leaf, linked_announcement_bytes, maturity_sources,
+    MaturityClosureRefusal, MaturityDeployment, MaturityWitnessSelection, OracleStateCurve,
+    closure_target, decode_announcement_leaf, linked_announcement_bytes, maturity_sources,
 };
 use crate::maturity_operator::{OPERATOR_HANDLE, OperatorVerifier};
 pub use crate::observed_boundary::{matches_boundary, observed_boundary};
@@ -178,6 +178,7 @@ pub enum MaturityAcceptanceObligation {
 /// This value establishes transcript consistency, not provenance or current-root freshness. A scripted response can produce it; a native-run claim additionally needs the executor and capture provenance. Even an accepted off-declaration observation leaves the accepted positive control outstanding here.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MaturityNativeEvidence {
+    schedule: tapscript::StateWitnessSchedule,
     identity: CandidateDeploymentIdentity,
     branch: BranchContext,
     observations: Vec<MaturityNativeObservation>,
@@ -195,12 +196,14 @@ impl MaturityNativeEvidence {
     ///
     /// # Panics
     /// Panics only if the fixed architecture omits its singleton asset or a linked bundle retains no constructor, which the published architecture and public linker cannot arrange.
+    #[must_use = "transcript replay can refuse the selected schedule or exchanges"]
     pub fn from_transcript(
         identity: CandidateDeploymentIdentity,
         branch: BranchContext,
+        selection: MaturityWitnessSelection,
         exchanges: &[(OperationStep, NativeOperationResponse)],
     ) -> Result<Self, MaturityNativePlanRefusal> {
-        let mut planner = MaturityAnnouncementPlanner::new(identity.clone(), branch)?;
+        let mut planner = MaturityAnnouncementPlanner::new(identity.clone(), branch, selection)?;
         let mut next = replay_next(&mut planner, None)?;
         for (position, (step, response)) in exchanges.iter().enumerate() {
             if next.as_ref() != Some(step) {
@@ -225,6 +228,7 @@ impl MaturityNativeEvidence {
                 crate::observed_boundary::matches_boundary(boundary, submission.observed_layer)
             });
         Ok(Self {
+            schedule: planner.schedule(),
             identity,
             branch,
             observations,
@@ -240,6 +244,12 @@ impl MaturityNativeEvidence {
                 ],
             },
         })
+    }
+
+    /// The composed schedule used to reconstruct every recorded request.
+    #[must_use]
+    pub const fn schedule(&self) -> tapscript::StateWitnessSchedule {
+        self.schedule
     }
 
     /// The deployment supplied for exact replay.
@@ -299,6 +309,7 @@ fn link_refusal(refusal: linker::LinkRefusal) -> Refusal {
 
 /// One run retaining the exact linked subject and every settled exchange.
 pub struct MaturityAnnouncementPlanner {
+    schedule: tapscript::StateWitnessSchedule,
     identity: CandidateDeploymentIdentity,
     branch: BranchContext,
     position: usize,
@@ -323,16 +334,23 @@ impl MaturityAnnouncementPlanner {
     ///
     /// # Panics
     /// Panics only if the fixed architecture omits its singleton asset or a linked bundle retains no constructor, which the published architecture and public linker cannot arrange.
+    #[must_use = "planner construction can refuse the selected schedule or deployment"]
     pub fn new(
         identity: CandidateDeploymentIdentity,
         branch: BranchContext,
+        selection: MaturityWitnessSelection,
     ) -> Result<Self, MaturityNativePlanRefusal> {
         let parameters = MaturityDeployment::PublishedSignerHeld
             .parameters()
             .map_err(closure)?;
         let declaration = singleton_declaration()?;
-        let bundle = link_for(&identity, AssetId::from_internal(*parameters.singleton()))?;
+        let (bundle, schedule) = link_for(
+            &identity,
+            AssetId::from_internal(*parameters.singleton()),
+            selection,
+        )?;
         Ok(Self {
+            schedule,
             identity,
             branch,
             position: 0,
@@ -346,6 +364,12 @@ impl MaturityAnnouncementPlanner {
             submission: None,
             refusal: None,
         })
+    }
+
+    /// The schedule retained by the composed record used for this run.
+    #[must_use]
+    pub const fn schedule(&self) -> tapscript::StateWitnessSchedule {
+        self.schedule
     }
 
     /// The bootstrap link, replaced by the runtime-singleton link after issuance.
@@ -479,7 +503,13 @@ impl MaturityAnnouncementPlanner {
         let outpoint = check_coin(subject, coin, asset)?;
         let decoded_asset = asset_of(asset).ok_or(Refusal::IssuedAssetMissingOrInvalid)?;
         if subject.issue_asset {
-            self.bundle = link_for(&self.identity, decoded_asset)?;
+            // Admission is applied at construction; relinking reconstructs the
+            // schedule that admission retained rather than making a second choice.
+            (self.bundle, self.schedule) = link_for(
+                &self.identity,
+                decoded_asset,
+                MaturityWitnessSelection::Retained(self.schedule),
+            )?;
             self.asset = Some(asset.to_owned());
         } else {
             let finalized = build_announcement(
@@ -533,9 +563,17 @@ fn predecessor_program(bundle: &CandidateLinkedMaturityBundle) -> Vec<u8> {
 fn link_for(
     identity: &CandidateDeploymentIdentity,
     asset: AssetId,
-) -> Result<CandidateLinkedMaturityBundle, Refusal> {
+    selection: MaturityWitnessSelection,
+) -> Result<
+    (
+        CandidateLinkedMaturityBundle,
+        tapscript::StateWitnessSchedule,
+    ),
+    Refusal,
+> {
     let target = closure_target().map_err(closure)?;
-    let sources = maturity_sources(MaturityDeployment::PublishedSignerHeld).map_err(closure)?;
+    let sources =
+        maturity_sources(MaturityDeployment::PublishedSignerHeld, selection).map_err(closure)?;
     let seed = sources.link(&OracleStateCurve).map_err(closure)?;
     let deployment = seed.deployment();
     let internal = StackItem::encoded(
@@ -585,7 +623,7 @@ fn link_for(
     .map_err(link_refusal)?;
     let bytes = linked_announcement_bytes(&linked, &target).map_err(closure)?;
     decode_announcement_leaf(&target, &bytes).map_err(closure)?;
-    Ok(linked)
+    Ok((linked, sources.record().schedule()))
 }
 
 fn build_announcement(
@@ -727,6 +765,7 @@ mod tests {
 
     fn copy_plan(plan: &MaturityAnnouncementPlanner) -> MaturityAnnouncementPlanner {
         MaturityAnnouncementPlanner {
+            schedule: plan.schedule,
             identity: plan.identity.clone(),
             branch: plan.branch,
             position: plan.position,
@@ -751,6 +790,7 @@ mod tests {
             MaturityAnnouncementPlanner::new(
                 CandidateDeploymentIdentity::new([0x17; 32], genesis).expect("identity"),
                 BranchContext::new([0x41; 32], 7).expect("branch"),
+                crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
             )
             .expect("public planner")
         }))
@@ -946,11 +986,14 @@ mod tests {
         let parameters = MaturityDeployment::PublishedSignerHeld
             .parameters()
             .expect("parameters");
-        let independently_linked = maturity_sources_with(MaturityDeploymentParameters::new(
-            *asset.internal(),
-            *parameters.operator_key(),
-            parameters.lead(),
-        ))
+        let independently_linked = maturity_sources_with(
+            MaturityDeploymentParameters::new(
+                *asset.internal(),
+                *parameters.operator_key(),
+                parameters.lead(),
+            ),
+            crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        )
         .expect("sources")
         .link(&OracleStateCurve)
         .expect("link");
@@ -1431,9 +1474,56 @@ mod tests {
         MaturityNativeEvidence::from_transcript(
             plan.identity.clone(),
             plan.branch,
+            crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
             plan.completed_transcript().expect("settled exchanges"),
         )
         .expect("exact replay")
+    }
+
+    #[test]
+    fn planner_refuses_emission_of_the_replay_only_schedule() {
+        let plan = planner();
+        let schedule = tapscript::StateWitnessSchedule::WholeMetadata;
+        assert_eq!(
+            MaturityAnnouncementPlanner::new(
+                plan.identity.clone(),
+                plan.branch,
+                MaturityWitnessSelection::Emission(schedule),
+            )
+            .err(),
+            Some(Refusal::Closure(Box::new(
+                MaturityClosureRefusal::ReplayOnlySchedule { schedule }
+            )))
+        );
+    }
+
+    #[test]
+    fn planner_preserves_the_refusal_for_a_schedule_without_legalization() {
+        let plan = planner();
+        let schedule = tapscript::StateWitnessSchedule::VariableMetadata;
+        assert_eq!(
+            MaturityAnnouncementPlanner::new(
+                plan.identity.clone(),
+                plan.branch,
+                MaturityWitnessSelection::Retained(schedule),
+            )
+            .err(),
+            Some(Refusal::Closure(Box::new(
+                MaturityClosureRefusal::ScheduleLegalizationUnavailable { schedule }
+            )))
+        );
+    }
+
+    #[test]
+    fn planner_and_replayed_evidence_retain_the_composed_schedule() {
+        let schedule = tapscript::StateWitnessSchedule::WholeMetadata;
+        let bootstrap = planner();
+        assert_eq!(bootstrap.schedule(), schedule);
+        assert_eq!(bootstrap.bundle().record().schedule(), schedule);
+        let plan = settled(ObservedOutcomeLayer::RelayPolicyRejection);
+        assert_eq!(plan.schedule(), schedule);
+        assert_eq!(plan.bundle().record().schedule(), schedule);
+        assert_eq!(evidence(&plan).schedule(), schedule);
     }
 
     fn assert_outstanding(evidence: &MaturityNativeEvidence) {
@@ -1499,6 +1589,7 @@ mod tests {
                 MaturityNativeEvidence::from_transcript(
                     plan.identity.clone(),
                     plan.branch,
+                    crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
                     &exchanges[..length]
                 ),
                 Err(Refusal::IncompleteTranscript)
@@ -1550,6 +1641,7 @@ mod tests {
                 MaturityNativeEvidence::from_transcript(
                     plan.identity.clone(),
                     plan.branch,
+                    crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
                     &altered
                 ),
                 Err(Refusal::TranscriptStepMismatch { position })
@@ -1558,13 +1650,23 @@ mod tests {
         let mut reordered = exchanges.to_vec();
         reordered.swap(0, 1);
         assert_eq!(
-            MaturityNativeEvidence::from_transcript(plan.identity.clone(), plan.branch, &reordered),
+            MaturityNativeEvidence::from_transcript(
+                plan.identity.clone(),
+                plan.branch,
+                crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+                &reordered
+            ),
             Err(Refusal::TranscriptStepMismatch { position: 0 })
         );
         let mut surplus = exchanges.to_vec();
         surplus.push(exchanges[0].clone());
         assert_eq!(
-            MaturityNativeEvidence::from_transcript(plan.identity.clone(), plan.branch, &surplus),
+            MaturityNativeEvidence::from_transcript(
+                plan.identity.clone(),
+                plan.branch,
+                crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+                &surplus
+            ),
             Err(Refusal::TranscriptStepMismatch { position: 3 })
         );
     }
@@ -1575,7 +1677,12 @@ mod tests {
         let mut exchanges = plan.completed_transcript().expect("complete").to_vec();
         exchanges[0].1.funded_outputs[0].amount_satoshis += 1;
         assert_eq!(
-            MaturityNativeEvidence::from_transcript(plan.identity.clone(), plan.branch, &exchanges),
+            MaturityNativeEvidence::from_transcript(
+                plan.identity.clone(),
+                plan.branch,
+                crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+                &exchanges
+            ),
             Err(Refusal::FundingMismatch)
         );
     }

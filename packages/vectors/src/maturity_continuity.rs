@@ -2021,8 +2021,12 @@ mod tests {
             let corpus = maturity_run_of_record().expect("validated archive");
             let identity = corpus.evidence().identity().clone();
             let branch = corpus.evidence().branch();
-            let mut planner =
-                MaturityAnnouncementPlanner::new(identity.clone(), branch).expect("planner");
+            let mut planner = MaturityAnnouncementPlanner::new(
+                identity.clone(),
+                branch,
+                crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+            )
+            .expect("planner");
             let mut next = planner.next_step(None).expect("issue");
             for (step, response) in &corpus.exchanges()[..2] {
                 assert_eq!(next.as_ref(), Some(step));
@@ -2109,8 +2113,12 @@ mod tests {
             genesis[31] = 0xfe;
             let identity = CandidateDeploymentIdentity::new([0x17; 32], genesis).expect("identity");
             let branch = BranchContext::new([0x41; 32], 7).expect("branch");
-            let mut planner =
-                MaturityAnnouncementPlanner::new(identity.clone(), branch).expect("planner");
+            let mut planner = MaturityAnnouncementPlanner::new(
+                identity.clone(),
+                branch,
+                crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+            )
+            .expect("planner");
             let issue = planner.next_step(None).expect("issue").expect("step");
             let issued = scripted_response(&issue);
             issued.validate_shape().expect("issuance shape");
@@ -2305,10 +2313,13 @@ mod tests {
 
     fn coherent_source(deployment: MaturityDeployment) -> Source {
         let target = closure_target().expect("target");
-        let bundle = maturity_sources(deployment)
-            .expect("sources")
-            .link(&OracleStateCurve)
-            .expect("link");
+        let bundle = maturity_sources(
+            deployment,
+            crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        )
+        .expect("sources")
+        .link(&OracleStateCurve)
+        .expect("link");
         let predecessor = &bundle.instances()[0];
         let metadata = *predecessor.metadata();
         let identity = bundle.deployment().identity().clone();
@@ -3209,6 +3220,7 @@ mod tests {
         assert_ne!(Some(witnessed.as_ref()), retained.as_deref());
         let other = crate::maturity_closure::maturity_sources(
             crate::maturity_closure::MaturityDeployment::Second,
+            crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
         )
         .expect("sources")
         .link(&OracleStateCurve)

@@ -154,8 +154,12 @@ fn the_maturity_announcement_runs_against_a_real_target() {
     let mut guard = common::CaptureGuard::for_test(common::CeremonyId::Report, destination);
     let deployment = native_identity();
     let context = branch();
-    let mut planner = MaturityAnnouncementPlanner::new(deployment.clone(), context)
-        .expect("public announcement planner");
+    let mut planner = MaturityAnnouncementPlanner::new(
+        deployment.clone(),
+        context,
+        vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+    )
+    .expect("public announcement planner");
     let mut capture = NativeOperationCapture::default();
     let outcome = execute(
         Path::new(&executor),
@@ -166,7 +170,12 @@ fn the_maturity_announcement_runs_against_a_real_target() {
         &mut capture,
     );
     let derived = planner.completed_transcript().and_then(|exchanges| {
-        MaturityNativeEvidence::from_transcript(deployment.clone(), context, exchanges)
+        MaturityNativeEvidence::from_transcript(
+            deployment.clone(),
+            context,
+            vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+            exchanges,
+        )
     });
     let mut payload = evidence_payload(&capture, &deployment, context, &derived);
     if let Err(error) = &outcome {
@@ -293,7 +302,12 @@ fn display_hash(bytes: &[u8]) -> String {
 }
 
 fn scripted_run(layer: ObservedOutcomeLayer) -> MaturityAnnouncementPlanner {
-    let mut planner = MaturityAnnouncementPlanner::new(identity(), branch()).expect("planner");
+    let mut planner = MaturityAnnouncementPlanner::new(
+        identity(),
+        branch(),
+        vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+    )
+    .expect("planner");
     let mut current = planner.next_step(None).expect("initial step");
     while let Some(step) = current {
         let response = answer(&step, layer);
@@ -312,7 +326,12 @@ fn scripted_run(layer: ObservedOutcomeLayer) -> MaturityAnnouncementPlanner {
 fn derive(
     planner: &MaturityAnnouncementPlanner,
 ) -> Result<MaturityNativeEvidence, MaturityNativePlanRefusal> {
-    MaturityNativeEvidence::from_transcript(identity(), branch(), planner.completed_transcript()?)
+    MaturityNativeEvidence::from_transcript(
+        identity(),
+        branch(),
+        vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        planner.completed_transcript()?,
+    )
 }
 
 fn assert_outstanding(evidence: &MaturityNativeEvidence) {
@@ -350,7 +369,12 @@ fn scripted_acceptance_is_off_declaration_and_does_not_claim_acceptance() {
 
 #[test]
 fn incomplete_scripted_run_has_no_evidence() {
-    let mut planner = MaturityAnnouncementPlanner::new(identity(), branch()).expect("planner");
+    let mut planner = MaturityAnnouncementPlanner::new(
+        identity(),
+        branch(),
+        vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+    )
+    .expect("planner");
     let issue = planner.next_step(None).expect("initial").expect("issue");
     let response = answer(&issue, ObservedOutcomeLayer::RelayPolicyRejection);
     planner
@@ -457,7 +481,12 @@ fn scripted_capture_retains_replay_operands_before_gates() {
     .expect("scripted protocol peer");
     std::fs::set_permissions(&adapter, std::fs::Permissions::from_mode(0o755))
         .expect("scripted peer permissions");
-    let mut planner = MaturityAnnouncementPlanner::new(identity(), branch()).expect("planner");
+    let mut planner = MaturityAnnouncementPlanner::new(
+        identity(),
+        branch(),
+        vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+    )
+    .expect("planner");
     let mut capture = NativeOperationCapture::default();
     let transcript = execute(
         &adapter,

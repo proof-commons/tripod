@@ -164,10 +164,23 @@ fn announcement_program() -> &'static StateAnnouncementProgram {
         )
         .expect("the operator pattern builds");
 
-        let composed = state_announcement_program(&target, &structural, &semantic, &operator)
-            .expect("the announcement program composes");
-        build_state_announcement_program(&target, &structural, &semantic, &operator, composed)
-            .expect("the composed program is admitted")
+        let composed = state_announcement_program(
+            &target,
+            &structural,
+            &semantic,
+            &operator,
+            tapscript::StateWitnessSchedule::WholeMetadata,
+        )
+        .expect("the announcement program composes");
+        build_state_announcement_program(
+            &target,
+            &structural,
+            &semantic,
+            &operator,
+            tapscript::StateWitnessSchedule::WholeMetadata,
+            composed,
+        )
+        .expect("the composed program is admitted")
     });
     &PROGRAM
 }

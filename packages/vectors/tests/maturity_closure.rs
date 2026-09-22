@@ -58,12 +58,74 @@ use transaction::bytes::{
 };
 use vectors::maturity_closure::{
     AdoptionCase, AdoptionVector, DecodedAnnouncementLeaf, GoldenFigure, KeptCheck, LocatedRow,
-    MaturityClosureRefusal, MaturityDeployment, MaturityDeploymentParameters, ObservedField,
-    OracleStateCurve, Verdict, adoption_transaction, closure_target, decode_announcement_leaf,
-    decoded_deployment, forbidden_program_literals, internal_key_from_bytes, kept_check_site,
-    leaf_literals, locate_discharges, maturity_sources, maturity_sources_with, moved_sites,
-    recompute_golden, recovered_values, removed_and_kept_checks,
+    MaturityClosureRefusal, MaturityDeployment, MaturityDeploymentParameters,
+    MaturityWitnessSelection, ObservedField, OracleStateCurve, Verdict, adoption_transaction,
+    closure_target, decode_announcement_leaf, decoded_deployment, forbidden_program_literals,
+    internal_key_from_bytes, kept_check_site, leaf_literals, linked_announcement_bytes,
+    linked_maturity_bundle, locate_discharges, maturity_sources, maturity_sources_with,
+    moved_sites, recompute_golden, recovered_values, removed_and_kept_checks,
 };
+
+#[test]
+fn whole_metadata_emission_refuses_at_sources_and_linking() {
+    let schedule = tapscript::StateWitnessSchedule::WholeMetadata;
+    let selection = MaturityWitnessSelection::Emission(schedule);
+    assert!(selection.is_emission());
+    assert_eq!(selection.schedule(), schedule);
+    for deployment in MaturityDeployment::ALL {
+        assert_eq!(
+            maturity_sources(deployment, selection).err(),
+            Some(MaturityClosureRefusal::ReplayOnlySchedule { schedule })
+        );
+        assert_eq!(
+            linked_maturity_bundle(deployment, selection).err(),
+            Some(MaturityClosureRefusal::ReplayOnlySchedule { schedule })
+        );
+    }
+}
+
+#[test]
+fn variable_metadata_selections_preserve_the_composers_refusal() {
+    let schedule = tapscript::StateWitnessSchedule::VariableMetadata;
+    for selection in [
+        MaturityWitnessSelection::Retained(schedule),
+        MaturityWitnessSelection::Emission(schedule),
+    ] {
+        assert_eq!(selection.schedule(), schedule);
+        for deployment in MaturityDeployment::ALL {
+            let refusal =
+                Some(MaturityClosureRefusal::ScheduleLegalizationUnavailable { schedule });
+            assert_eq!(maturity_sources(deployment, selection).err(), refusal);
+            assert_eq!(linked_maturity_bundle(deployment, selection).err(), refusal);
+            assert_eq!(decoded_deployment(deployment, selection).err(), refusal);
+            assert_eq!(
+                maturity_sources_with(deployment.parameters().expect("parameters"), selection)
+                    .err(),
+                refusal
+            );
+        }
+    }
+}
+
+#[test]
+fn retained_whole_metadata_sources_preserve_the_linked_announcement_bytes() {
+    let selection = MaturityWitnessSelection::retained_whole_metadata();
+    assert!(!selection.is_emission());
+    assert_eq!(
+        selection,
+        MaturityWitnessSelection::Retained(tapscript::StateWitnessSchedule::WholeMetadata)
+    );
+    for deployment in MaturityDeployment::ALL {
+        let sources = maturity_sources(deployment, selection).expect("retained sources");
+        assert_eq!(sources.record().schedule(), selection.schedule());
+        let bundle = sources.link(&OracleStateCurve).expect("retained link");
+        let (_, leaf) = linked(deployment);
+        assert_eq!(
+            linked_announcement_bytes(&bundle, &target()).expect("announcement"),
+            leaf.bytes()
+        );
+    }
+}
 
 /// The golden roots this lane publishes, recomputed and carried alike.
 ///
@@ -94,14 +156,25 @@ type Linked = (
 /// One deployment's linked bundle and decoded leaf, linked once.
 fn linked(deployment: MaturityDeployment) -> Linked {
     static DEMONSTRATION: LazyLock<Linked> = LazyLock::new(|| {
-        decoded_deployment(MaturityDeployment::Demonstration)
-            .expect("the demonstration deployment links")
+        decoded_deployment(
+            MaturityDeployment::Demonstration,
+            vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        )
+        .expect("the demonstration deployment links")
     });
-    static SECOND: LazyLock<Linked> =
-        LazyLock::new(|| decoded_deployment(MaturityDeployment::Second).expect("the second links"));
+    static SECOND: LazyLock<Linked> = LazyLock::new(|| {
+        decoded_deployment(
+            MaturityDeployment::Second,
+            vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        )
+        .expect("the second links")
+    });
     static PUBLISHED_SIGNER_HELD: LazyLock<Linked> = LazyLock::new(|| {
-        decoded_deployment(MaturityDeployment::PublishedSignerHeld)
-            .expect("the published signer's deployment links")
+        decoded_deployment(
+            MaturityDeployment::PublishedSignerHeld,
+            vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        )
+        .expect("the published signer's deployment links")
     });
     match deployment {
         MaturityDeployment::Demonstration => DEMONSTRATION.clone(),
@@ -778,15 +851,22 @@ fn a_zero_lead_minimum_leaves_the_sources_unavailable() {
         (0, supplied.lead().1),
     );
     assert_eq!(
-        maturity_sources_with(zeroed).err(),
+        maturity_sources_with(
+            zeroed,
+            vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata()
+        )
+        .err(),
         Some(MaturityClosureRefusal::SourcesUnavailable)
     );
 }
 
 #[test]
 fn a_curve_that_finds_no_point_refuses_the_link_by_the_constructors_own_name() {
-    let sources =
-        maturity_sources(MaturityDeployment::Demonstration).expect("the sources bind once");
+    let sources = maturity_sources(
+        MaturityDeployment::Demonstration,
+        vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+    )
+    .expect("the sources bind once");
     // The first thing a constructor application asks a curve is whether
     // the internal key is a point, so a capability that finds none is
     // refused there and the link carries that refusal whole rather than

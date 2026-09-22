@@ -1575,8 +1575,11 @@ mod tests {
     /// this one can be.
     #[test]
     fn the_nonce_class_reads_the_links_own_retained_search() {
-        let bundle = linked_maturity_bundle(MaturityDeployment::Demonstration)
-            .expect("the demonstration deployment links through the real curve");
+        let bundle = linked_maturity_bundle(
+            MaturityDeployment::Demonstration,
+            crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        )
+        .expect("the demonstration deployment links through the real curve");
         assert!(nonce_search_was_least_first(&bundle));
         assert_eq!(
             bundle.instances().len(),

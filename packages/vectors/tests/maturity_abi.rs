@@ -131,7 +131,11 @@ fn target() -> ReviewedElementsTapscriptDefinition {
 /// Every call links again rather than cloning, which is what lets a
 /// second build of the chain be independent of the first.
 fn link() -> CandidateLinkedMaturityBundle {
-    linked_maturity_bundle(DEPLOYMENT).expect("the deployment links through the real curve")
+    linked_maturity_bundle(
+        DEPLOYMENT,
+        vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+    )
+    .expect("the deployment links through the real curve")
 }
 
 /// The bundle the tests that need only one share, linked once.

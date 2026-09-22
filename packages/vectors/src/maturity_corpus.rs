@@ -14,10 +14,16 @@ use target_elements_conformance::protocol::{
 };
 use transaction::operator_right::BranchContext;
 
+use crate::maturity_closure::MaturityWitnessSelection;
 use crate::maturity_native::{
     ANNOUNCEMENT_STEPS, MaturityAcceptanceObligation, MaturityAcceptanceRoute,
     MaturityNativeEvidence, MaturityNativePlanRefusal, MaturityNativeStanding,
 };
+
+/// The archive's witness schedule, established by exact replay of all three
+/// recorded requests rather than selected as a deployment preference.
+pub const MATURITY_RUN_SCHEDULE: tapscript::StateWitnessSchedule =
+    tapscript::StateWitnessSchedule::WholeMetadata;
 
 /// SHA-256 of the exact two-entry evidence manifest.
 pub const MATURITY_MANIFEST_SHA256: &str =
@@ -228,6 +234,12 @@ pub struct ValidatedMaturityCorpus {
 }
 
 impl ValidatedMaturityCorpus {
+    /// The composed schedule established by replay of the admitted exchanges.
+    #[must_use]
+    pub const fn schedule(&self) -> tapscript::StateWitnessSchedule {
+        self.evidence.schedule()
+    }
+
     /// The evidence produced by the planner's reviewed non-mock settlement.
     #[must_use]
     pub const fn evidence(&self) -> &MaturityNativeEvidence {
@@ -963,6 +975,7 @@ fn derive(payload: &Payload) -> ImportResult<MaturityNativeEvidence> {
     MaturityNativeEvidence::from_transcript(
         payload.identity.clone(),
         payload.branch,
+        MaturityWitnessSelection::Retained(MATURITY_RUN_SCHEDULE),
         &payload.exchanges,
     )
     .map_err(Refusal::Derivation)
@@ -1066,9 +1079,79 @@ pub fn maturity_run_of_record()
         Err(refusal) => Err(refusal.clone()),
     }
 }
+/// Replays the once-admitted immutable archive under an explicit witness selection.
+///
+/// Every reconstructed request is compared with its recorded counterpart before
+/// the responses establish evidence. The archive's byte bindings and admission
+/// remain those of [`maturity_run_of_record`].
+///
+/// # Errors
+/// Preserves archive admission refusals and the planner's schedule or exact-replay
+/// refusals through [`MaturityCorpusImportRefusal::Derivation`].
+///
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton or the public linker
+/// loses a retained constructor, which neither published input can arrange.
+#[must_use = "archive replay can refuse the selected schedule or recorded exchanges"]
+pub fn replay_maturity_run_of_record(
+    selection: MaturityWitnessSelection,
+) -> Result<MaturityNativeEvidence, MaturityCorpusImportRefusal> {
+    let corpus = maturity_run_of_record()?;
+    MaturityNativeEvidence::from_transcript(
+        corpus.evidence().identity().clone(),
+        corpus.evidence().branch(),
+        selection,
+        corpus.exchanges(),
+    )
+    .map_err(Refusal::Derivation)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retained_whole_metadata_replays_all_three_archived_requests_exactly() {
+        let corpus = maturity_run_of_record().expect("admitted archive");
+        assert_eq!(
+            MATURITY_RUN_SCHEDULE,
+            tapscript::StateWitnessSchedule::WholeMetadata
+        );
+        assert_eq!(corpus.schedule(), MATURITY_RUN_SCHEDULE);
+        assert_eq!(corpus.exchanges().len(), 3);
+        let evidence = replay_maturity_run_of_record(MaturityWitnessSelection::Retained(
+            MATURITY_RUN_SCHEDULE,
+        ))
+        .expect("exact replay of each recorded request");
+        assert_eq!(&evidence, corpus.evidence());
+        assert_eq!(evidence.schedule(), corpus.schedule());
+    }
+
+    #[test]
+    fn archive_replay_preserves_the_cross_schedule_legalization_refusal() {
+        let schedule = tapscript::StateWitnessSchedule::VariableMetadata;
+        assert_eq!(
+            replay_maturity_run_of_record(MaturityWitnessSelection::Retained(schedule)),
+            Err(Refusal::Derivation(MaturityNativePlanRefusal::Closure(Box::new(
+                crate::maturity_closure::MaturityClosureRefusal::ScheduleLegalizationUnavailable { schedule },
+            ))))
+        );
+    }
+
+    #[test]
+    fn archive_replay_refuses_whole_metadata_emission() {
+        let schedule = MATURITY_RUN_SCHEDULE;
+        assert_eq!(
+            replay_maturity_run_of_record(MaturityWitnessSelection::Emission(schedule)),
+            Err(Refusal::Derivation(MaturityNativePlanRefusal::Closure(
+                Box::new(
+                    crate::maturity_closure::MaturityClosureRefusal::ReplayOnlySchedule {
+                        schedule
+                    },
+                )
+            )))
+        );
+    }
 
     struct OwnedCorpus {
         bytes: [Vec<u8>; 4],
