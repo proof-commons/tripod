@@ -50,6 +50,7 @@ pub mod materialize;
 pub mod matrix;
 pub mod maturity_closure;
 pub mod maturity_continuity;
+pub mod maturity_continuity_report;
 pub mod maturity_corpus;
 pub mod maturity_evidence;
 pub mod maturity_first_party;
