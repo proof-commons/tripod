@@ -2144,6 +2144,9 @@ mod tests {
     static BINDING: LazyLock<MaturityTargetBinding> = LazyLock::new(|| {
         derive_maturity_evidence_plan_with(
             MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            crate::maturity_evidence::MaturityConstructorMaterial::Absent(
+                crate::maturity_evidence::MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+            ),
         )
         .expect("independent evidence plan")
         .binding()

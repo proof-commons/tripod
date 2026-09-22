@@ -1370,6 +1370,8 @@ impl MaturityMutationContext {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MaturityContinuityMutant {
     context: MaturityMutationContext,
+    source: MaturityByteSource,
+    branch: BranchContext,
     submitted: Vec<u8>,
     digest: [u8; 32],
     failure: MaturityContinuityRefusal,
@@ -1384,12 +1386,16 @@ impl MaturityContinuityMutant {
         context: MaturityMutationContext,
         input: MaturityProjectionInput<'_>,
     ) -> Result<ExperimentalSubject<Self>, MaturityMutantAssemblyRefusal> {
+        let source = input.source.clone();
+        let branch = input.branch;
         let submitted = input.submitted_bytes.to_vec();
         let failure = project_maturity_continuity(input)
             .err()
             .ok_or(MaturityMutantAssemblyRefusal::ProjectionSucceeded)?;
         Ok(ExperimentalSubject::observe(Self {
             context,
+            source,
+            branch,
             digest: sha256(&submitted),
             submitted,
             failure,
@@ -1399,6 +1405,16 @@ impl MaturityContinuityMutant {
     #[must_use]
     pub const fn context(&self) -> &MaturityMutationContext {
         &self.context
+    }
+    /// The source class supplied to the refused projection.
+    #[must_use]
+    pub const fn source(&self) -> &MaturityByteSource {
+        &self.source
+    }
+    /// Caller-stated branch context supplied to the refused projection.
+    #[must_use]
+    pub const fn branch(&self) -> BranchContext {
+        self.branch
     }
     /// Exact bytes supplied to the projector.
     #[must_use]
@@ -2776,6 +2792,28 @@ mod tests {
             ),
             Err(MaturityMutantAssemblyRefusal::UnknownRow)
         );
+    }
+
+    #[test]
+    fn observed_mutant_retains_its_source_and_branch() {
+        for original in [archived(), node_free()] {
+            let mut source = original.clone();
+            source.bytes.push(0);
+            source.branch = BranchContext::new([0x73; 32], 19).expect("distinct branch");
+            let context = mutation_context(
+                MaturitySafetySection::PredecessorConstructorFault,
+                "wrong-control-block",
+                MutationLayer::WitnessProof,
+                "submitted serialization with trailing byte",
+                &[],
+                None,
+            );
+            let observed = MaturityContinuityMutant::observe(context, source.input())
+                .expect("framing refusal");
+            assert_eq!(observed.subject().source(), &source.origin);
+            assert_eq!(observed.subject().branch(), source.branch);
+            assert_ne!(observed.subject().branch(), original.branch);
+        }
     }
 
     #[test]

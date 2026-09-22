@@ -4,7 +4,11 @@
 //!
 //! # What it answers, and what it does not
 //!
-//! It answers nothing by implication. §1.14 keeps eleven evidence classes apart and forbids one report from silently satisfying another, so this report carries constructor continuity, root history and public recovery as rows standing under their own typed reasons rather than as conclusions it reached. It states no abstraction relation and no forward-simulation theorem: those want an accepted concrete step and the predecessor and successor constructor projections, and neither exists at this tip.
+//! Host continuity comparisons and projector refusals travel as exact-row records
+//! alongside the unchanged standing census. Their material presence is explicit;
+//! their source and branch context confer no target acceptance or freshness.
+//! Root history and public recovery retain their separate obligations. A host
+//! comparison alone supplies no accepted concrete step or forward simulation.
 //!
 //! # One clause, stated in its own type
 //!
@@ -16,7 +20,11 @@
 //!
 //! # The exclusions are a type, and the timing travels apart
 //!
-//! §14.9 lists eleven fields canonical report bytes exclude and puts timing in a separate emission. [`MaturityVolatileField`] is that list as a census a test can walk, and [`render_maturity_safety_report`] takes a validated report and nothing else. The eleven are not filtered out of the bytes: no field reachable from the renderer's one argument has any of those types, so the exclusion is a fact about what compiles rather than a rule somebody has to keep. [`MaturityReportTiming`] holds the derivation's wall, renders itself under its own noncanonical marker, and is never a field of the report, never a field of the validated wrapper, and never an argument of the canonical renderer — which is why two derivations of one plan can be compared byte for byte at all.
+//! [`MaturityVolatileField`] names the eleven excluded categories. The renderer
+//! emits a closed set of keys, source classes, byte identities and refusal names;
+//! archived addresses and diagnostic text remain outside that projection.
+//! [`MaturityReportTiming`] renders separately and is neither a report field nor
+//! a canonical renderer argument. Equal plans therefore render equal bytes.
 //!
 //! # The wrapper is where the figures are established
 //!
@@ -27,8 +35,10 @@ use std::fmt::Write as _;
 use std::time::Duration;
 
 use crate::matrix::EvidenceBoundary;
+use crate::maturity_continuity::{MaturityByteSource, MaturityContinuityRefusal};
 use crate::maturity_evidence::{
-    MaturityAnnouncementEvidencePlan, MaturityEvidenceCensus,
+    MaturityAnnouncementEvidencePlan, MaturityConstructorMaterialPresence,
+    MaturityContinuityObservation, MaturityContinuityRecord, MaturityEvidenceCensus,
     MaturityExecutorProvenanceExpectation, MaturityGuaranteeQuantifier, MaturityRowStanding,
     MaturityTargetBinding,
 };
@@ -396,6 +406,8 @@ pub struct MaturityAnnouncementSafetyReport {
     quantifier: MaturityGuaranteeQuantifier,
     witnessed: Vec<MaturityWitnessedRefusal>,
     waiting: Vec<MaturityWaitingRow>,
+    material: MaturityConstructorMaterialPresence,
+    records: Vec<MaturityContinuityRecord>,
     report_layer: Vec<MaturityReportLayerRequirement>,
     census: MaturityEvidenceCensus,
     answered: usize,
@@ -445,6 +457,18 @@ impl MaturityAnnouncementSafetyReport {
     #[must_use]
     pub fn waiting(&self) -> &[MaturityWaitingRow] {
         &self.waiting
+    }
+
+    /// Whether the evidence plan received constructor-continuity material.
+    #[must_use]
+    pub const fn constructor_material(&self) -> MaturityConstructorMaterialPresence {
+        self.material
+    }
+
+    /// Exact-row continuity records in the evidence plan's input order.
+    #[must_use]
+    pub fn continuity_records(&self) -> &[MaturityContinuityRecord] {
+        &self.records
     }
 
     /// The obligations this report states about itself, in the matrix's order.
@@ -509,6 +533,8 @@ pub enum MaturityRecomputedItem {
     WitnessedRefusals,
     /// The register's set equality with the plan's waiting rows.
     RegisterSetEquality,
+    /// Material presence and exact-row continuity records.
+    ConstructorContinuityMaterial,
     /// The obligations the report states about itself.
     ReportLayerRequirements,
     /// The clause witness and its counts.
@@ -516,7 +542,7 @@ pub enum MaturityRecomputedItem {
 }
 
 impl MaturityRecomputedItem {
-    /// All twelve, in the order the validation performs them.
+    /// All thirteen, in the order the validation performs them.
     pub const ALL: &'static [Self] = &[
         Self::Schema,
         Self::Role,
@@ -528,6 +554,7 @@ impl MaturityRecomputedItem {
         Self::Completeness,
         Self::WitnessedRefusals,
         Self::RegisterSetEquality,
+        Self::ConstructorContinuityMaterial,
         Self::ReportLayerRequirements,
         Self::ClauseWitness,
     ];
@@ -546,6 +573,7 @@ impl MaturityRecomputedItem {
             Self::Completeness => "completeness",
             Self::WitnessedRefusals => "witnessed-refusals",
             Self::RegisterSetEquality => "register-set-equality",
+            Self::ConstructorContinuityMaterial => "constructor-continuity-material",
             Self::ReportLayerRequirements => "report-layer-requirements",
             Self::ClauseWitness => "clause-witness",
         }
@@ -648,6 +676,15 @@ pub enum MaturitySafetyReportRefusal {
         /// What the named source counts.
         recomputed: usize,
     },
+    /// The report's material presence differs from the supplied plan's.
+    ConstructorMaterialPresenceDiffers {
+        /// What the report states.
+        stated: MaturityConstructorMaterialPresence,
+        /// What the plan supplies.
+        recomputed: MaturityConstructorMaterialPresence,
+    },
+    /// The ordered continuity records differ from the supplied plan's.
+    ContinuityRecordsDiffer,
     /// One report-layer requirement is not the one the matrix states.
     ReportLayerRequirementDiffers {
         /// The table the disagreeing row is drawn from.
@@ -715,6 +752,9 @@ impl MaturitySafetyReportRefusal {
             | Self::RegisteredRowIsNotWaiting { .. }
             | Self::WaitingRowCountDiffers { .. } => {
                 Some(MaturityRecomputedItem::RegisterSetEquality)
+            }
+            Self::ConstructorMaterialPresenceDiffers { .. } | Self::ContinuityRecordsDiffer => {
+                Some(MaturityRecomputedItem::ConstructorContinuityMaterial)
             }
             Self::ReportLayerRequirementDiffers { .. }
             | Self::ReportLayerRequirementCountDiffers { .. } => {
@@ -950,6 +990,8 @@ pub fn assemble_maturity_safety_report(
         quantifier: census.quantifier(),
         witnessed,
         waiting: waiting_rows(plan)?,
+        material: plan.constructor_material().presence(),
+        records: plan.continuity_records().to_vec(),
         report_layer: report_layer_requirements(plan),
         census,
         answered: census.answered(),
@@ -957,6 +999,28 @@ pub fn assemble_maturity_safety_report(
         completeness: completeness_of(census),
         clause,
     })
+}
+
+/// Recompute material presence and every ordered continuity-record operand.
+fn validate_constructor_material(
+    report: &MaturityAnnouncementSafetyReport,
+    plan: &MaturityAnnouncementEvidencePlan,
+    done: &mut BTreeSet<MaturityRecomputedItem>,
+) -> Result<(), MaturitySafetyReportRefusal> {
+    let recomputed = plan.constructor_material().presence();
+    if report.material != recomputed {
+        return Err(
+            MaturitySafetyReportRefusal::ConstructorMaterialPresenceDiffers {
+                stated: report.material,
+                recomputed,
+            },
+        );
+    }
+    if report.records != plan.continuity_records() {
+        return Err(MaturitySafetyReportRefusal::ContinuityRecordsDiffer);
+    }
+    done.insert(MaturityRecomputedItem::ConstructorContinuityMaterial);
+    Ok(())
 }
 
 /// Recompute the envelope: schema, role, binding, provenance, quantifier.
@@ -1247,6 +1311,7 @@ pub fn validate_maturity_safety_report(
     validate_census(&report, plan, &mut done)?;
     validate_witnessed(&report, plan, &mut done)?;
     validate_register(&report, plan, &mut done)?;
+    validate_constructor_material(&report, plan, &mut done)?;
     validate_report_layer(&report, plan, &mut done)?;
     validate_clause(&report, plan, &mut done)?;
     Ok(ValidatedMaturityAnnouncementSafetyReport {
@@ -1300,6 +1365,77 @@ fn render_clause(text: &mut String, report: &MaturityAnnouncementSafetyReport) {
     let _ = writeln!(text, "clause_rows_still_owed {}", clause.rows_still_owed);
 }
 
+/// Render only a refusal's stable variant name, excluding diagnostic payloads.
+const fn continuity_refusal_name(refusal: &MaturityContinuityRefusal) -> &'static str {
+    use MaturityContinuityRefusal as Refusal;
+    match refusal {
+        Refusal::PrefixEvidence { .. } => "PrefixEvidence",
+        Refusal::TweakEvidence { .. } => "TweakEvidence",
+        Refusal::ControlEvidence { .. } => "ControlEvidence",
+        Refusal::Decode(_) => "Decode",
+        Refusal::InputCount { .. } => "InputCount",
+        Refusal::OutputCount { .. } => "OutputCount",
+        Refusal::WitnessItemCount { .. } => "WitnessItemCount",
+        Refusal::WitnessWidth { .. } => "WitnessWidth",
+        Refusal::SpentOutpoint { .. } => "SpentOutpoint",
+        Refusal::MetadataDecode(_) => "MetadataDecode",
+        Refusal::RetainedContext { .. } => "RetainedContext",
+        Refusal::PredecessorReconstruction(_) => "PredecessorReconstruction",
+        Refusal::PredecessorProgram { .. } => "PredecessorProgram",
+        Refusal::PredecessorSearch(_) => "PredecessorSearch",
+        Refusal::StaticRoot(_) => "StaticRoot",
+        Refusal::Target(_) => "Target",
+        Refusal::LeafReconstruction(_) => "LeafReconstruction",
+        Refusal::LeafScript(_) => "LeafScript",
+        Refusal::ControlRecipe(_) => "ControlRecipe",
+        Refusal::ControlBlock(_) => "ControlBlock",
+        Refusal::PredecessorPrefix(_) => "PredecessorPrefix",
+        Refusal::Transition(_) => "Transition",
+        Refusal::SuccessorReconstruction(_) => "SuccessorReconstruction",
+        Refusal::OutputProgram(_) => "OutputProgram",
+        Refusal::SuccessorPrefix(_) => "SuccessorPrefix",
+        Refusal::SuccessorSearch(_) => "SuccessorSearch",
+    }
+}
+
+/// Append binary identity bytes in canonical lowercase hexadecimal.
+fn render_identity(text: &mut String, bytes: &[u8]) {
+    for byte in bytes {
+        let _ = write!(text, "{byte:02x}");
+    }
+}
+
+/// Material and host records are rendered separately from the standing census.
+fn render_constructor_material(text: &mut String, report: &MaturityAnnouncementSafetyReport) {
+    let _ = writeln!(text, "constructor_material {}", report.material.name());
+    for record in &report.records {
+        let source = match record.source() {
+            MaturityByteSource::NodeFreeSubmitReady => "node-free-submit-ready",
+            MaturityByteSource::ArchivedSubmission { .. } => "archived-submission",
+        };
+        let _ = write!(
+            text,
+            "continuity_record {} {} {source} ",
+            record.section().section(),
+            record.row(),
+        );
+        render_identity(text, record.branch().identifier());
+        let _ = write!(text, " {} ", record.branch().checkpoint());
+        render_identity(text, record.byte_identity());
+        match record.observation() {
+            MaturityContinuityObservation::ValidatedComparison {
+                comparisons,
+                agreements,
+            } => {
+                let _ = writeln!(text, " compared {comparisons} {agreements}");
+            }
+            MaturityContinuityObservation::RefusedMutant { refusal } => {
+                let _ = writeln!(text, " refused {}", continuity_refusal_name(refusal));
+            }
+        }
+    }
+}
+
 /// The items this validation recomputed, in the item vocabulary's order.
 fn render_recomputed(text: &mut String, items: &BTreeSet<MaturityRecomputedItem>) {
     for item in items {
@@ -1343,7 +1479,9 @@ fn render_rows(text: &mut String, report: &MaturityAnnouncementSafetyReport) {
 
 /// Render the canonical bytes of one validated safety report.
 ///
-/// A pure function of its one argument. The eleven fields of §14.9 are not filtered here — none of them is reachable from a validated report, which is the difference between a rule and a habit: the carriers are a schema number, unit-payload enums, static row names, counts, and a target projection whose own type carries no host, no environment value, no source path and no digest. Timing travels in [`MaturityReportTiming`], which this function takes no argument of.
+/// A pure function of its argument. The canonical projection renders source
+/// classes and byte identities, excluding archived addresses and refusal
+/// diagnostic text. Timing travels separately in [`MaturityReportTiming`].
 ///
 /// The bytes are computed here rather than sealed into the wrapper because nothing validates them: the rows whose boundary is this serialization are carried as obligations the report states about itself, and the validation that reads these bytes is the subject of a later step. A sealed field would be a cache with no reader.
 ///
@@ -1357,6 +1495,7 @@ pub fn render_maturity_safety_report(
     let mut text = String::new();
     render_header(&mut text, &validated.report);
     render_census(&mut text, &validated.report);
+    render_constructor_material(&mut text, &validated.report);
     render_clause(&mut text, &validated.report);
     render_recomputed(&mut text, &validated.recomputed_items);
     render_rows(&mut text, &validated.report);
@@ -1374,9 +1513,11 @@ mod tests {
         validate_maturity_safety_report,
     };
     use crate::matrix::EvidenceBoundary;
+    use crate::maturity_evidence::tests::{absent_material, present_material};
     use crate::maturity_evidence::{
-        MaturityAnnouncementEvidencePlan, MaturityEvidenceRefusal,
-        MaturityExecutorProvenanceExpectation, MaturityRowStanding,
+        MaturityAnnouncementEvidencePlan, MaturityConstructorMaterial,
+        MaturityConstructorMaterialPresence, MaturityContinuityObservation,
+        MaturityEvidenceRefusal, MaturityExecutorProvenanceExpectation, MaturityRowStanding,
         derive_maturity_evidence_plan_with,
     };
     use crate::maturity_first_party::{MaturityFirstPartyCase, maturity_first_party_cases};
@@ -1417,6 +1558,8 @@ mod tests {
         "answered",
         "outstanding",
         "completeness",
+        "constructor_material",
+        "continuity_record",
         "clause",
         "clause_standing",
         "clause_refusals_witnessed",
@@ -1434,12 +1577,31 @@ mod tests {
     fn derive() -> Result<MaturityAnnouncementEvidencePlan, MaturityEvidenceRefusal> {
         derive_maturity_evidence_plan_with(
             MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            absent_material(),
         )
     }
 
     /// The plan every test below reads, derived once.
     static PLAN: LazyLock<MaturityAnnouncementEvidencePlan> =
         LazyLock::new(|| derive().expect("the evidence plan derives from its eight inputs"));
+
+    static PRESENT_PLAN: LazyLock<MaturityAnnouncementEvidencePlan> = LazyLock::new(|| {
+        derive_maturity_evidence_plan_with(
+            MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            present_material(),
+        )
+        .expect("plan with independently validated material")
+    });
+
+    fn validated_from(
+        plan: &MaturityAnnouncementEvidencePlan,
+    ) -> ValidatedMaturityAnnouncementSafetyReport {
+        validate_maturity_safety_report(
+            assemble_maturity_safety_report(plan).expect("assembly"),
+            plan,
+        )
+        .expect("validation")
+    }
 
     /// The assembled report for the plan above.
     fn assembled() -> MaturityAnnouncementSafetyReport {
@@ -1469,24 +1631,30 @@ mod tests {
             MaturitySafetyReportRole::MaturityAnnouncementSafety,
         );
 
-        // Every one of the twelve recomputations ran. The set is what the
+        // Every one of the thirteen recomputations ran. The set is what the
         // wrapper is, so a validation that skipped one could not produce
         // this value at all.
         let every: BTreeSet<MaturityRecomputedItem> =
             MaturityRecomputedItem::ALL.iter().copied().collect();
         assert_eq!(validated.recomputed_items(), &every);
-        assert_eq!(MaturityRecomputedItem::ALL.len(), 12);
+        assert_eq!(MaturityRecomputedItem::ALL.len(), 13);
+        assert_eq!(validated_from(&PRESENT_PLAN).recomputed_items(), &every);
     }
 
     #[test]
     fn two_derivations_of_one_plan_render_identical_canonical_bytes() {
-        let first = derive().expect("the first derivation succeeds");
-        let second = derive().expect("the second derivation succeeds");
-
-        // Two independent derivations, not two renders of one value: what
-        // is being held is that the bytes are a function of the plan and
-        // of nothing the machine contributed between the two runs.
-        assert_eq!(rendered_from(&first), rendered_from(&second));
+        for material in [absent_material(), present_material()] {
+            let derive = |material: MaturityConstructorMaterial| {
+                derive_maturity_evidence_plan_with(
+                    MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+                    material,
+                )
+                .expect("independent derivation")
+            };
+            let first = derive(material.clone());
+            let second = derive(material);
+            assert_eq!(rendered_from(&first), rendered_from(&second));
+        }
     }
 
     #[test]
@@ -1507,9 +1675,11 @@ mod tests {
         // And neither reaches the canonical bytes. The renderer takes no
         // timing argument, so this is a statement about what the digits
         // could have been rather than about a filter that removed them.
-        let bytes = render_maturity_safety_report(&validated());
-        assert!(!bytes.contains(&quick.derivation().as_nanos().to_string()));
-        assert!(!bytes.contains(&slow.derivation().as_nanos().to_string()));
+        for plan in [&*PLAN, &*PRESENT_PLAN] {
+            let bytes = rendered_from(plan);
+            assert!(!bytes.contains(&quick.derivation().as_nanos().to_string()));
+            assert!(!bytes.contains(&slow.derivation().as_nanos().to_string()));
+        }
     }
 
     #[test]
@@ -1535,13 +1705,26 @@ mod tests {
             validated.report().answered(),
             census.first_party_discharged() + census.native_declared_boundary_observed()
         );
-        assert_eq!(validated.report().answered(), 41);
-        assert_eq!(validated.report().outstanding(), 165);
+        assert_eq!(validated.report().answered(), census.answered());
+        assert_eq!(validated.report().outstanding(), census.outstanding());
         let rendered = render_maturity_safety_report(&validated);
-        assert!(rendered.contains("native_declared_boundary_observed 1\n"));
-        assert!(rendered.contains("native_run_required 42\n"));
-        assert!(rendered.contains("answered 41\n"));
-        assert!(rendered.contains("outstanding 165\n"));
+        for (key, figure) in [
+            (
+                "native_declared_boundary_observed",
+                census.native_declared_boundary_observed(),
+            ),
+            ("native_run_required", census.native_run_required()),
+            ("answered", census.answered()),
+            ("outstanding", census.outstanding()),
+        ] {
+            assert!(rendered.contains(&format!("{key} {figure}\n")));
+        }
+        let present = validated_from(&PRESENT_PLAN);
+        assert_eq!(present.report().census(), census);
+        assert_eq!(
+            present.report().completeness(),
+            validated.report().completeness()
+        );
     }
 
     #[test]
@@ -1701,8 +1884,13 @@ mod tests {
 
     #[test]
     fn the_canonical_bytes_carry_no_volatile_field() {
-        let validated = validated();
-        let bytes = render_maturity_safety_report(&validated);
+        for plan in [&*PLAN, &*PRESENT_PLAN] {
+            assert_canonical_fields(&validated_from(plan));
+        }
+    }
+
+    fn assert_canonical_fields(validated: &ValidatedMaturityAnnouncementSafetyReport) {
+        let bytes = render_maturity_safety_report(validated);
 
         // Every block is as long as the value it was rendered from, so a
         // block that silently stopped rendering fails here rather than
@@ -1720,6 +1908,11 @@ mod tests {
         );
         assert_eq!(key_count("witness"), validated.report().witnessed().len());
         assert_eq!(key_count("waiting"), validated.report().waiting().len());
+        assert_eq!(key_count("constructor_material"), 1);
+        assert_eq!(
+            key_count("continuity_record"),
+            validated.report().continuity_records().len()
+        );
         assert_eq!(
             key_count("report_layer"),
             validated.report().report_layer().len(),
@@ -1742,7 +1935,7 @@ mod tests {
 
         // Rendering is a function of the validated report and nothing
         // else, so the same value renders the same bytes twice.
-        assert_eq!(bytes, render_maturity_safety_report(&validated));
+        assert_eq!(bytes, render_maturity_safety_report(validated));
     }
 
     #[test]
@@ -1866,6 +2059,9 @@ mod tests {
         assert_eq!(plan_waiting, registered, "the two sets are one set");
         assert_eq!(waiting.len(), registered.len());
         assert_eq!(waiting.len(), PLAN.census().native_run_required());
+        let present = validated_from(&PRESENT_PLAN);
+        assert_eq!(present.report().waiting(), waiting);
+        assert_eq!(PRESENT_PLAN.rows(), PLAN.rows());
 
         // Each carried gap is the register's own rather than a second
         // opinion kept beside it.
@@ -1876,6 +2072,166 @@ mod tests {
                 .expect("a waiting row is a registered row");
             assert_eq!(row.gap(), entry.gap());
             assert_eq!(row.link(), entry.link());
+        }
+    }
+
+    fn hex(bytes: &[u8]) -> String {
+        use std::fmt::Write as _;
+        let mut text = String::new();
+        for byte in bytes {
+            write!(text, "{byte:02x}").expect("String write");
+        }
+        text
+    }
+
+    #[test]
+    fn present_constructor_material_is_validated_and_rendered() {
+        let validated = validated_from(&PRESENT_PLAN);
+        let report = validated.report();
+        assert_eq!(
+            report.constructor_material(),
+            MaturityConstructorMaterialPresence::Present
+        );
+        assert_eq!(
+            report.continuity_records(),
+            PRESENT_PLAN.continuity_records()
+        );
+        assert!(MaturityRecomputedItem::ALL.windows(3).any(|items| items
+            == [
+                MaturityRecomputedItem::RegisterSetEquality,
+                MaturityRecomputedItem::ConstructorContinuityMaterial,
+                MaturityRecomputedItem::ReportLayerRequirements,
+            ]));
+        assert!(
+            validated
+                .recomputed_items()
+                .contains(&MaturityRecomputedItem::ConstructorContinuityMaterial)
+        );
+        let bytes = render_maturity_safety_report(&validated);
+        assert!(bytes.contains("constructor_material present\n"));
+        let lines: Vec<_> = bytes
+            .lines()
+            .filter(|line| line.starts_with("continuity_record "))
+            .collect();
+        assert_eq!(lines.len(), PRESENT_PLAN.continuity_records().len());
+        for (line, record) in lines.iter().zip(PRESENT_PLAN.continuity_records()) {
+            let source = match record.source() {
+                crate::maturity_continuity::MaturityByteSource::NodeFreeSubmitReady => {
+                    "node-free-submit-ready"
+                }
+                crate::maturity_continuity::MaturityByteSource::ArchivedSubmission {
+                    run_address,
+                } => {
+                    assert!(!bytes.contains(run_address));
+                    "archived-submission"
+                }
+            };
+            let observation = match record.observation() {
+                MaturityContinuityObservation::ValidatedComparison {
+                    comparisons,
+                    agreements,
+                } => format!("compared {comparisons} {agreements}"),
+                MaturityContinuityObservation::RefusedMutant { refusal } => {
+                    assert!(matches!(
+                        refusal,
+                        crate::maturity_continuity::MaturityContinuityRefusal::RetainedContext { .. }
+                    ));
+                    "refused RetainedContext".to_owned()
+                }
+            };
+            assert_eq!(
+                *line,
+                format!(
+                    "continuity_record {} {} {source} {} {} {} {observation}",
+                    record.section().section(),
+                    record.row(),
+                    hex(record.branch().identifier()),
+                    record.branch().checkpoint(),
+                    hex(record.byte_identity()),
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn validation_refuses_an_altered_constructor_presence() {
+        for (plan, altered) in [
+            (&*PLAN, MaturityConstructorMaterialPresence::Present),
+            (&*PRESENT_PLAN, absent_material().presence()),
+        ] {
+            let mut report = assemble_maturity_safety_report(plan).expect("assembly");
+            report.material = altered;
+            let refusal =
+                validate_maturity_safety_report(report, plan).expect_err("altered presence");
+            assert_eq!(
+                refusal,
+                MaturitySafetyReportRefusal::ConstructorMaterialPresenceDiffers {
+                    stated: altered,
+                    recomputed: plan.constructor_material().presence(),
+                }
+            );
+            assert_eq!(
+                refusal.failed_item(),
+                Some(MaturityRecomputedItem::ConstructorContinuityMaterial)
+            );
+        }
+    }
+
+    #[test]
+    fn validation_refuses_altered_continuity_records() {
+        let original = assemble_maturity_safety_report(&PRESENT_PLAN).expect("assembly");
+        let mut replaced = original.clone();
+        replaced.records[0] = replaced.records[2].clone();
+        let mut reordered = original.clone();
+        reordered.records.swap(0, 1);
+        let mut removed = original.clone();
+        removed.records.pop();
+        let mut duplicated = original.clone();
+        duplicated.records.push(original.records[0].clone());
+        for report in [replaced, reordered, removed, duplicated] {
+            let refusal = validate_maturity_safety_report(report, &PRESENT_PLAN)
+                .expect_err("altered records");
+            assert_eq!(
+                refusal,
+                MaturitySafetyReportRefusal::ContinuityRecordsDiffer
+            );
+            assert_eq!(
+                refusal.failed_item(),
+                Some(MaturityRecomputedItem::ConstructorContinuityMaterial)
+            );
+        }
+    }
+
+    #[test]
+    fn material_keys_are_exact_and_in_canonical_block_order() {
+        assert_eq!(RENDERED_KEYS.len(), 38);
+        for plan in [&*PLAN, &*PRESENT_PLAN] {
+            let bytes = rendered_from(plan);
+            let keys: Vec<_> = bytes
+                .lines()
+                .map(|line| line.split_once(' ').expect("key and value").0)
+                .collect();
+            let actual: BTreeSet<_> = keys.iter().copied().collect();
+            let expected: BTreeSet<_> = RENDERED_KEYS
+                .iter()
+                .copied()
+                .filter(|key| *key != "continuity_record" || !plan.continuity_records().is_empty())
+                .collect();
+            assert_eq!(actual, expected);
+            let positions: Vec<_> = keys
+                .iter()
+                .map(|key| {
+                    RENDERED_KEYS
+                        .iter()
+                        .position(|expected| expected == key)
+                        .expect("listed key")
+                })
+                .collect();
+            assert!(positions.windows(2).all(|pair| pair[0] <= pair[1]));
+            assert!(bytes.contains(&format!(
+                "constructor_material {}\n",
+                plan.constructor_material().presence().name()
+            )));
         }
     }
 
@@ -1906,6 +2262,15 @@ mod tests {
             .map(|item| item.name())
             .collect();
         assert_eq!(items.len(), MaturityRecomputedItem::ALL.len());
+        assert_eq!(
+            MaturityRecomputedItem::ConstructorContinuityMaterial.name(),
+            "constructor-continuity-material"
+        );
+        assert_eq!(
+            MaturityConstructorMaterialPresence::Present.name(),
+            "present"
+        );
+        assert_eq!(absent_material().presence().name(), "absent");
 
         assert_eq!(
             MaturityRefinementClause::SoundnessOfRefusedSteps.name(),

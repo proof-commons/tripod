@@ -618,6 +618,9 @@ pub fn outstanding_rows()
 -> Result<Vec<(MaturitySafetySection, &'static str)>, MaturityEvidenceRefusal> {
     let plan = derive_maturity_evidence_plan_with(
         MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+        crate::maturity_evidence::MaturityConstructorMaterial::Absent(
+            crate::maturity_evidence::MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+        ),
     )?;
     let waiting: Vec<RowIdentity> = plan
         .rows()
@@ -662,6 +665,9 @@ mod tests {
     fn plan() -> Result<MaturityAnnouncementEvidencePlan, MaturityEvidenceRefusal> {
         derive_maturity_evidence_plan_with(
             MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            crate::maturity_evidence::MaturityConstructorMaterial::Absent(
+                crate::maturity_evidence::MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+            ),
         )
     }
 

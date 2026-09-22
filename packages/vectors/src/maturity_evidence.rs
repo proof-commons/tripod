@@ -4,45 +4,31 @@
 //! §14.1 gives the plan private fields, no public constructor accepting a
 //! caller-authored verdict, and eight inputs it is built from. This module
 //! is that plan: a value obtainable only from
-//! [`derive_maturity_evidence_plan_with`], which builds every input,
-//! records the standing of the two that cannot be built yet, and
-//! classifies every row of the §16 safety matrix into exactly one
-//! standing.
+//! [`derive_maturity_evidence_plan_with`], which retains explicit premises,
+//! builds the other inputs and classifies every safety-matrix row.
 //!
 //! # Why the derivation takes the eight inputs and nothing else
 //!
 //! A plan assembled field by field would be a caller's opinion about what
 //! has been established, and a plan that read an input from somewhere the
 //! signature does not mention would be making a claim its own type cannot
-//! be checked against. Seven inputs are built here from public entry
-//! points; the eighth — what the operator declares the executor was built
-//! from — is an argument of the derivation rather than an ambient read,
-//! because an expectation this crate computed for itself would be the
-//! subject of a comparison supplying both of its operands.
+//! be checked against. Executor provenance and constructor material are
+//! explicit arguments: a comparison that manufactured its own premises
+//! would supply both operands. The other six inputs are derived here.
 //! [`derive_maturity_evidence_plan`] is the convenience that obtains that
 //! argument through [`stated_executor_provenance`] and then calls the
 //! derivation, so the ambient read has one site and it is not inside the
 //! derivation.
 //!
-//! # Why two registries are present and explicitly outstanding
+//! # Material and history have distinct obligations
 //!
-//! Two of §14.1's eight inputs index material no landed layer produces:
-//! the canonical constructor mutation registry wants the predecessor and
-//! successor constructor projections, and the canonical root-history
-//! mutation registry wants a typed branch context that can be projected,
-//! rewound and reprojected. Neither is left out of the derivation. Each is
-//! built as a registry that exists, carries a typed reason for its
-//! emptiness, and counts zero mutations under a named standing, on the
-//! discipline the tree already practises twice: the candidate ABI carries
-//! its least obligation by name rather than dropping it
-//! (`packages/transaction/src/state_abi.rs`), because an obligation
-//! carried whole would understate what was computed and one dropped would
-//! overstate it; and the live plan keeps its residuals as a typed empty
-//! set rather than as prose, so that a residual entering or leaving is an
-//! edit to the one place a reader looks. A plan built from six inputs
-//! would not be the plan §14.1 defines, and a plan deferred until its last
-//! input exists would leave the first of this stage's exits with no
-//! derivation behind it.
+//! Validated host comparisons and observed projector refusals are records
+//! associated with exact rows. They carry source and caller-stated branch
+//! context without authenticating freshness or target acceptance. Their
+//! acceptance vocabulary contains only an outstanding obligation, so they
+//! cannot mint an accepted-continuity standing. Missing constructor material
+//! is an explicit input with a typed reason. The root-history registry stays
+//! outstanding because branch-indexed history cannot be projected.
 //!
 //! # What an answered standing is here
 //!
@@ -111,13 +97,10 @@
 //!
 //! # Nothing here is a run
 //!
-//! No target is asked anything by this module. The observed standings
-//! exist because §14.2 names the classes, and at this tip nine of the
-//! fourteen count zero rows: no run has been made, no continuity,
-//! root-history or recovery report exists, no report-layer validation has
-//! observed the rendered bytes, no component this plan needs is missing,
-//! and no row of the matrix is ad hoc. The census says so as figures
-//! rather than as prose.
+//! No target is asked anything by this module. The admitted corpus supplies
+//! its recorded boundary observation. Constructor records preserve host
+//! comparisons separately from row standings, and the census counts only
+//! those standings.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -144,6 +127,13 @@ use crate::maturity_closure::{
     MaturityClosureRefusal, MaturityDeployment, OracleStateCurve, announcement_plan,
     closure_target, linked_maturity_bundle,
 };
+use crate::maturity_continuity::{
+    MaturityByteComparison, MaturityByteSource, MaturityContinuityMutant,
+    MaturityContinuityRefusal, MaturityFieldComparison,
+};
+use crate::maturity_continuity_report::{
+    MaturityContinuityReportEntry, ValidatedMaturityContinuityReport,
+};
 use crate::maturity_corpus::{
     MATURITY_RUN_ADDRESS, MaturityCorpusImportRefusal, maturity_run_of_record,
 };
@@ -153,14 +143,14 @@ use crate::maturity_first_party::{
     maturity_first_party_cases,
 };
 use crate::maturity_fixture::{MaturitySemanticCase, positive_semantic_census};
-use crate::maturity_native::MaturityNativeStanding;
+use crate::maturity_native::{MaturityAcceptanceObligation, MaturityNativeStanding};
 use crate::maturity_safety::{
     MaturityCanonicalControl, MaturityExpectedProjection, MaturityIntendedCarrier,
     MaturityMutationLocator, MaturityMutationSubject, MaturityRowBoundary, MaturityRowLink,
     MaturitySafetyRow, MaturitySafetySection, resolve_row, rows,
 };
 use crate::observed_boundary::matches_boundary;
-use crate::subject::CanonicalSubject;
+use crate::subject::{CanonicalSubject, ExperimentalSubject};
 
 /// The deployment this plan's bundle, view and candidate ABI are taken
 /// over.
@@ -353,16 +343,169 @@ impl fmt::Display for MaturityGuaranteeQuantifier {
     }
 }
 
-/// Which of §14.1's two later-wave registries one registry is.
+/// Why constructor-continuity material is absent from a derivation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MaturityConstructorMaterialAbsence {
+    /// The derivation received no constructor-continuity material.
+    NotSuppliedToDerivation,
+}
+
+/// Whether a derivation received constructor-continuity material.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MaturityConstructorMaterialPresence {
+    /// Validated comparison material was supplied.
+    Present,
+    /// No material was supplied, for the stated reason.
+    Absent(MaturityConstructorMaterialAbsence),
+}
+
+impl MaturityConstructorMaterialPresence {
+    /// The presence token's wire spelling.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Present => "present",
+            Self::Absent(_) => "absent",
+        }
+    }
+}
+
+/// Constructor input supplied independently of the evidence derivation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MaturityConstructorMaterial {
+    /// A validated continuity report and observed projector refusals.
+    Present(MaturityPresentConstructorMaterial),
+    /// Explicit absence preserves the input and its reason.
+    Absent(MaturityConstructorMaterialAbsence),
+}
+
+impl MaturityConstructorMaterial {
+    /// Whether material was supplied, preserving the reason for absence.
+    #[must_use]
+    pub const fn presence(&self) -> MaturityConstructorMaterialPresence {
+        match self {
+            Self::Present(_) => MaturityConstructorMaterialPresence::Present,
+            Self::Absent(reason) => MaturityConstructorMaterialPresence::Absent(*reason),
+        }
+    }
+}
+
+/// Validated comparison material without any target-acceptance assertion.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturityPresentConstructorMaterial {
+    report: Box<ValidatedMaturityContinuityReport>,
+    mutants: Vec<ExperimentalSubject<MaturityContinuityMutant>>,
+}
+
+impl MaturityPresentConstructorMaterial {
+    /// Retain a validated report and subjects obtainable through observation.
+    #[must_use]
+    pub fn new(
+        report: ValidatedMaturityContinuityReport,
+        mutants: Vec<ExperimentalSubject<MaturityContinuityMutant>>,
+    ) -> Self {
+        Self {
+            report: Box::new(report),
+            mutants,
+        }
+    }
+
+    /// The independently validated continuity report.
+    #[must_use]
+    pub fn report(&self) -> &ValidatedMaturityContinuityReport {
+        &self.report
+    }
+
+    /// Refused experimental subjects in supplied order.
+    #[must_use]
+    pub fn mutants(&self) -> &[ExperimentalSubject<MaturityContinuityMutant>] {
+        &self.mutants
+    }
+
+    /// The report's outstanding acceptance obligation.
+    #[must_use]
+    pub fn acceptance(&self) -> MaturityAcceptanceObligation {
+        self.report.report().acceptance()
+    }
+}
+
+/// A host observation, separate from any row standing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MaturityContinuityObservation {
+    /// Comparison counts recomputed from a validated report entry.
+    ValidatedComparison {
+        /// Number of individual comparison results.
+        comparisons: usize,
+        /// Number of successful comparison results.
+        agreements: usize,
+    },
+    /// A projector refusal over an observed mutant's exact bytes.
+    RefusedMutant {
+        /// The projector's refusal, preserving its diagnostics.
+        refusal: MaturityContinuityRefusal,
+    },
+}
+
+/// A first-party continuity record associated with one exact matrix row.
+///
+/// Branch context is caller-stated and makes no freshness claim. Neither
+/// observation carries target-computed acceptance or a class-three marker.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturityContinuityRecord {
+    section: MaturitySafetySection,
+    row: &'static str,
+    source: MaturityByteSource,
+    branch: BranchContext,
+    byte_identity: [u8; 32],
+    observation: MaturityContinuityObservation,
+}
+
+impl MaturityContinuityRecord {
+    /// The exact row's matrix section.
+    #[must_use]
+    pub const fn section(&self) -> MaturitySafetySection {
+        self.section
+    }
+
+    /// The exact row's name within its section.
+    #[must_use]
+    pub const fn row(&self) -> &'static str {
+        self.row
+    }
+
+    /// The source class of the compared or refused bytes.
+    #[must_use]
+    pub const fn source(&self) -> &MaturityByteSource {
+        &self.source
+    }
+
+    /// Caller-stated branch identity and checkpoint.
+    #[must_use]
+    pub const fn branch(&self) -> BranchContext {
+        self.branch
+    }
+
+    /// SHA-256 identity of the exact compared or refused bytes.
+    #[must_use]
+    pub const fn byte_identity(&self) -> &[u8; 32] {
+        &self.byte_identity
+    }
+
+    /// The host observation, carrying no row standing.
+    #[must_use]
+    pub const fn observation(&self) -> &MaturityContinuityObservation {
+        &self.observation
+    }
+}
+
+/// The mutation registry whose branch-indexed material is outstanding.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityMutationRegistryKind {
-    /// The canonical constructor mutation registry.
-    Constructor,
     /// The canonical root-history mutation registry.
     RootHistory,
 }
 
-/// Why one registry of §14.1 carries no mutations yet.
+/// Why the history registry carries no mutations.
 ///
 /// A typed reason rather than an absence, because an absent registry makes
 /// the plan's input list shorter and its completeness claim stronger,
@@ -371,15 +514,6 @@ pub enum MaturityMutationRegistryKind {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum MaturityRegistryOutstandingReason {
-    /// No layer publishes the predecessor and successor constructor
-    /// projections a constructor mutation would be stated against.
-    ///
-    /// A mutation registry states what is changed and what the change is
-    /// expected to break. Both halves need a projection that says what the
-    /// constructor was before and after, and nothing in this tree computes
-    /// one, so an entry written now would name a comparison nobody can
-    /// make.
-    ConstructorProjectionsAreNotPublished,
     /// No typed branch context can be projected, rewound and reprojected,
     /// so a root-history mutation has nothing to be relative to.
     ///
@@ -396,9 +530,6 @@ impl MaturityRegistryOutstandingReason {
     #[must_use]
     pub const fn kind(self) -> MaturityMutationRegistryKind {
         match self {
-            Self::ConstructorProjectionsAreNotPublished => {
-                MaturityMutationRegistryKind::Constructor
-            }
             Self::BranchIndexedHistoryIsNotProjectable => MaturityMutationRegistryKind::RootHistory,
         }
     }
@@ -409,7 +540,7 @@ impl MaturityRegistryOutstandingReason {
 /// One member, read and never written, on the precedent of the candidate
 /// ABI's own single-variant status: a count with no standing beside it
 /// would read as a registry that has been surveyed and found empty, which
-/// is the opposite of what these two registries record.
+/// is the opposite of what this registry records.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityRegistryStanding {
     /// The registry is outstanding until the material it indexes exists.
@@ -423,7 +554,7 @@ pub enum MaturityRegistryStanding {
 /// locator this workspace does not otherwise use would be a second
 /// vocabulary for the same facts, and the two would disagree the first
 /// time a row moved. There is no public constructor and this module builds
-/// none, which is what makes the emptiness of both registries a property
+/// none, which is what makes the emptiness of the history registry a property
 /// of the type rather than a claim about a list.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MaturityRegisteredMutation {
@@ -473,13 +604,11 @@ impl MaturityMutationRegistryCensus {
     }
 }
 
-/// One of §14.1's two registries whose material no landed layer produces.
+/// The root-history registry whose branch-indexed material is outstanding.
 ///
 /// Structurally present and explicitly outstanding: it names which
 /// registry it is, why it carries nothing, and counts its mutations under
-/// a standing. The mutation list is typed rather than notional, so the
-/// wave that lands the material adds entries here instead of introducing a
-/// registry the plan never had.
+/// a standing. The mutation list retains the matrix's own identity vocabulary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MaturityOutstandingMutationRegistry {
     kind: MaturityMutationRegistryKind,
@@ -1159,6 +1288,17 @@ impl MaturityEvidenceRow {
     pub const fn standing(&self) -> &MaturityRowStanding {
         &self.standing
     }
+
+    /// Count records associated with this row's section and exact name.
+    #[must_use]
+    pub fn continuity_record_count(&self, records: &[MaturityContinuityRecord]) -> usize {
+        records
+            .iter()
+            .filter(|record| {
+                (record.section(), record.row()) == (self.row.section(), self.row.name())
+            })
+            .count()
+    }
 }
 
 /// One bucket per standing, and the denominator they partition.
@@ -1361,7 +1501,8 @@ pub struct MaturityAnnouncementEvidencePlan {
     bundle: CandidateLinkedMaturityBundle,
     abi: CandidateMaturityAnnouncementAbi,
     fixtures: Vec<CanonicalSubject<MaturitySemanticCase>>,
-    constructor_mutations: MaturityOutstandingMutationRegistry,
+    material: MaturityConstructorMaterial,
+    records: Vec<MaturityContinuityRecord>,
     root_history_mutations: MaturityOutstandingMutationRegistry,
     binding: MaturityTargetBinding,
     provenance: MaturityExecutorProvenanceExpectation,
@@ -1398,10 +1539,22 @@ impl MaturityAnnouncementEvidencePlan {
         &self.fixtures
     }
 
-    /// The canonical constructor mutation registry.
+    /// The supplied constructor material or its explicit absence.
     #[must_use]
-    pub const fn constructor_mutations(&self) -> &MaturityOutstandingMutationRegistry {
-        &self.constructor_mutations
+    pub const fn constructor_material(&self) -> &MaturityConstructorMaterial {
+        &self.material
+    }
+
+    /// Validated entry records followed by mutant records, in input order.
+    #[must_use]
+    pub fn continuity_records(&self) -> &[MaturityContinuityRecord] {
+        &self.records
+    }
+
+    /// Count this plan's records associated with an exact matrix row.
+    #[must_use]
+    pub fn continuity_record_count(&self, row: &MaturityEvidenceRow) -> usize {
+        row.continuity_record_count(self.continuity_records())
     }
 
     /// The canonical root-history mutation registry.
@@ -1539,29 +1692,34 @@ fn environment(name: &str) -> Option<String> {
 
 /// Derive the canonical evidence plan of §14.1.
 ///
-/// The convenience entry: it obtains the eighth input through
-/// [`stated_executor_provenance`] and then calls
-/// [`derive_maturity_evidence_plan_with`], which is the derivation. A
-/// caller that wants to state the expectation itself calls that one.
+/// Read provenance through [`stated_executor_provenance`] and supply explicit
+/// absent constructor material to [`derive_maturity_evidence_plan_with`].
+/// Call that derivation directly to supply independent comparison material.
 ///
 /// # Errors
 ///
 /// Everything [`stated_executor_provenance`] and
 /// [`derive_maturity_evidence_plan_with`] refuse.
+#[must_use = "the derived plan carries the evidence partition"]
 pub fn derive_maturity_evidence_plan()
 -> Result<MaturityAnnouncementEvidencePlan, MaturityEvidenceRefusal> {
-    derive_maturity_evidence_plan_with(stated_executor_provenance()?)
+    derive_maturity_evidence_plan_with(
+        stated_executor_provenance()?,
+        MaturityConstructorMaterial::Absent(
+            MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+        ),
+    )
 }
 
 /// Derive the canonical evidence plan from the eight inputs of §14.1.
 ///
-/// Seven inputs are built here: the validated operation plan, the exact
+/// Six inputs are built here: the validated operation plan, the exact
 /// linked bundle, the candidate ABI over the validated view this module
 /// states, the canonical semantic fixture registry admitted after the
-/// census that validates it, the two outstanding mutation registries, and
-/// the exact target and deployment binding. The eighth is the argument,
-/// because an expectation the crate computed for itself would be the
-/// comparison supplying both of its operands. Every row of the matrix is
+/// census that validates it, the outstanding root-history registry, and
+/// the exact target and deployment binding. Provenance and constructor
+/// material are independently supplied premises: manufacturing either
+/// here would give a comparison both its operands. Every matrix row is
 /// then classified into exactly one standing, and the census is counted
 /// from the classified rows.
 ///
@@ -1570,8 +1728,10 @@ pub fn derive_maturity_evidence_plan()
 /// [`MaturityEvidenceRefusal`], naming the input that refused and carrying
 /// the refusal that layer raised, or the disagreement a classification met
 /// between the matrix and the first-party census or the published plan.
+#[must_use = "the derived plan carries the evidence partition and supplied material"]
 pub fn derive_maturity_evidence_plan_with(
     provenance: MaturityExecutorProvenanceExpectation,
+    material: MaturityConstructorMaterial,
 ) -> Result<MaturityAnnouncementEvidencePlan, MaturityEvidenceRefusal> {
     let plan = announcement_plan().map_err(MaturityEvidenceRefusal::OperationPlanUnavailable)?;
     let bundle = linked_maturity_bundle(
@@ -1620,9 +1780,8 @@ pub fn derive_maturity_evidence_plan_with(
         bundle,
         abi,
         fixtures,
-        constructor_mutations: MaturityOutstandingMutationRegistry::outstanding(
-            MaturityRegistryOutstandingReason::ConstructorProjectionsAreNotPublished,
-        ),
+        records: constructor_records(&material),
+        material,
         root_history_mutations: MaturityOutstandingMutationRegistry::outstanding(
             MaturityRegistryOutstandingReason::BranchIndexedHistoryIsNotProjectable,
         ),
@@ -1632,6 +1791,86 @@ pub fn derive_maturity_evidence_plan_with(
         discharged,
         census,
     })
+}
+
+/// Recompute the same individual comparisons carried by a continuity entry.
+fn entry_observation(entry: &MaturityContinuityReportEntry) -> MaturityContinuityObservation {
+    let static_facts = entry.static_facts();
+    let semantic = entry.semantic_facts();
+    let controls = entry.controls();
+    let mut results = vec![
+        static_facts.root_binding().agrees(),
+        static_facts.control_binding().agrees(),
+        static_facts.descriptor_result().is_ok(),
+        static_facts.constructor_result().is_ok(),
+        semantic.transition_agrees(),
+    ];
+    results.extend(semantic.reconstruction_agrees());
+    results.extend(
+        semantic
+            .predecessor_fields()
+            .iter()
+            .map(MaturityFieldComparison::agrees),
+    );
+    if let Some(fields) = semantic.successor_fields() {
+        results.extend(fields.iter().map(MaturityFieldComparison::agrees));
+    }
+    for tweak in [entry.predecessor_tweak(), entry.successor_tweak()] {
+        results.extend([
+            tweak.internal().agrees(),
+            tweak.metadata().agrees(),
+            tweak.branch().agrees(),
+            tweak.digest().agrees(),
+            tweak.key().agrees(),
+            tweak.oddness().agrees(),
+            tweak.program().agrees(),
+        ]);
+    }
+    results.extend([controls.observed().agrees(), controls.inner().agrees()]);
+    results.extend(controls.outer().iter().map(MaturityByteComparison::agrees));
+    let (actual, predicted) = controls.first_byte_relation();
+    results.push(actual == predicted);
+    MaturityContinuityObservation::ValidatedComparison {
+        comparisons: results.len(),
+        agreements: results.iter().filter(|result| **result).count(),
+    }
+}
+
+/// Associate host observations without entering the standing classifier.
+fn constructor_records(material: &MaturityConstructorMaterial) -> Vec<MaturityContinuityRecord> {
+    let MaturityConstructorMaterial::Present(present) = material else {
+        return Vec::new();
+    };
+    let MaturityAcceptanceObligation::Outstanding { .. } = present.acceptance();
+    let entries =
+        present
+            .report()
+            .report()
+            .entries()
+            .iter()
+            .map(|entry| MaturityContinuityRecord {
+                section: MaturitySafetySection::Positive,
+                row: "sponsorless",
+                source: entry.source().clone(),
+                branch: entry.branch(),
+                byte_identity: *entry.byte_identity(),
+                observation: entry_observation(entry),
+            });
+    let mutants = present.mutants().iter().map(|observed| {
+        let mutant = observed.subject();
+        let row = mutant.context().row();
+        MaturityContinuityRecord {
+            section: row.section(),
+            row: row.name(),
+            source: mutant.source().clone(),
+            branch: mutant.branch(),
+            byte_identity: *mutant.digest(),
+            observation: MaturityContinuityObservation::RefusedMutant {
+                refusal: mutant.failure().clone(),
+            },
+        }
+    });
+    entries.chain(mutants).collect()
 }
 
 /// The validated view this module's candidate ABI is derived over.
@@ -1866,27 +2105,49 @@ fn census_from_rows(classified: &[MaturityEvidenceRow]) -> MaturityEvidenceCensu
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{
         DEPLOYMENT, MaturityAcceptedControl, MaturityAnnouncementEvidencePlan,
         MaturityBranchPoisonMarker, MaturityCarrierExecution, MaturityCarrierOutcome,
+        MaturityConstructorMaterial, MaturityConstructorMaterialAbsence,
+        MaturityConstructorMaterialPresence, MaturityContinuityObservation,
         MaturityEvidenceRefusal, MaturityExecutorProvenanceExpectation,
         MaturityMutationRegistryKind, MaturityMutationSite, MaturityNativeRefusal,
-        MaturityObservationClass, MaturityRegistryOutstandingReason, MaturityRegistryStanding,
-        MaturityRowBinding, MaturityRowStanding, MaturitySubmittedSubject,
-        derive_maturity_evidence_plan_with, native_refusal_binds_to_row,
-        site_names_the_rows_subject, stated_executor_provenance,
+        MaturityObservationClass, MaturityPresentConstructorMaterial,
+        MaturityRegistryOutstandingReason, MaturityRegistryStanding, MaturityRowBinding,
+        MaturityRowStanding, MaturitySubmittedSubject, derive_maturity_evidence_plan_with,
+        native_refusal_binds_to_row, site_names_the_rows_subject, stated_executor_provenance,
     };
-    use crate::matrix::EvidenceBoundary;
+    use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
+    use crate::matrix::{EvidenceBoundary, MutationLayer};
     use crate::maturity_closure::announcement_plan;
+    use crate::maturity_continuity::{
+        MaturityByteSource, MaturityContinuityMutant, MaturityContinuityRefusal,
+        MaturityFundedPredecessor, MaturityMutationCarrier, MaturityMutationContext,
+        MaturityProjectionInput, MaturitySignatureDisposition, ValidatedMaturityContinuity,
+        project_maturity_continuity,
+    };
+    use crate::maturity_continuity_report::{
+        assemble_maturity_continuity_report, validate_maturity_continuity_report,
+    };
+    use crate::maturity_corpus::maturity_run_of_record;
     use crate::maturity_first_party::maturity_first_party_cases;
     use crate::maturity_fixture::positive_semantic_census;
+    use crate::maturity_native::MaturityAnnouncementPlanner;
     use crate::maturity_safety::{
         MaturityCanonicalControl, MaturityIntendedCarrier, MaturityMutationLocator,
         MaturityMutationSubject, MaturitySafetyRow, MaturitySafetySection, row_count, rows,
     };
+    use crate::subject::ExperimentalSubject;
+    use linker::CandidateDeploymentIdentity;
+    use std::fmt::Write as _;
+    use std::io::Write as _;
     use std::sync::LazyLock;
-    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+    use target_elements_conformance::executor::{OperationStep, TargetOperationPlanner};
+    use target_elements_conformance::protocol::{
+        FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, NativeResourceObservation,
+        ObservedOutcomeLayer, OperationSubject, WireOutpoint,
+    };
     use target_elements_conformance::provenance::ExpectedExecutorProvenance;
     use transaction::bytes::Txid;
     use transaction::operator_right::BranchContext;
@@ -1900,9 +2161,398 @@ mod tests {
     static PLAN: LazyLock<MaturityAnnouncementEvidencePlan> = LazyLock::new(|| {
         derive_maturity_evidence_plan_with(
             MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            absent_material(),
         )
         .expect("the evidence plan derives from its eight inputs")
     });
+
+    /// Explicit absence used by deterministic test derivations.
+    #[must_use]
+    pub const fn absent_material() -> MaturityConstructorMaterial {
+        MaturityConstructorMaterial::Absent(
+            MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+        )
+    }
+
+    fn hex(bytes: &[u8]) -> String {
+        let mut text = String::new();
+        for byte in bytes {
+            write!(text, "{byte:02x}").expect("String write");
+        }
+        text
+    }
+
+    fn refused_constructor(
+        source: &ValidatedMaturityContinuity,
+    ) -> ExperimentalSubject<MaturityContinuityMutant> {
+        let mut funded = source.funded().clone();
+        funded.program = source.successor().output_program().to_vec();
+        assert_ne!(funded.program, source.funded().program);
+        let context = MaturityMutationContext::new(
+            MaturitySafetySection::PredecessorConstructorFault,
+            "wrong-predecessor-program",
+            MutationLayer::LinkedConstructorProgram,
+            MaturityMutationCarrier::new(
+                "funding program replaced by the constructed successor program".to_owned(),
+                Vec::new(),
+                None,
+                "original retained predecessor and deployment".to_owned(),
+                MaturitySignatureDisposition::SubmittedUnverified,
+            ),
+        )
+        .expect("exact constructor row");
+        let branch = BranchContext::new([0x73; 32], 19).expect("distinct stated context");
+        let mutant = MaturityContinuityMutant::observe(
+            context,
+            MaturityProjectionInput {
+                source: source.source().clone(),
+                submitted_bytes: source.submitted_bytes(),
+                funded: &funded,
+                branch,
+                bundle: source.bundle(),
+                identity: source.identity(),
+            },
+        )
+        .expect("constructed program substitution refuses");
+        assert!(matches!(
+            mutant.subject().failure(),
+            MaturityContinuityRefusal::RetainedContext { .. }
+        ));
+        mutant
+    }
+
+    /// Public-path material shared by evidence and safety-report tests.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a fixed test input refuses projection or report validation.
+    #[must_use]
+    pub fn present_material() -> MaturityConstructorMaterial {
+        static MATERIAL: LazyLock<MaturityPresentConstructorMaterial> = LazyLock::new(|| {
+            let sources = [archived(), node_free()];
+            let references = [&sources[0], &sources[1]];
+            let binding = PLAN.binding();
+            let provenance = PLAN.executor_provenance();
+            let report = assemble_maturity_continuity_report(
+                &references,
+                binding.clone(),
+                provenance.clone(),
+            );
+            let validated =
+                validate_maturity_continuity_report(&report, &references, binding, provenance)
+                    .expect("independent report validation");
+            MaturityPresentConstructorMaterial::new(
+                validated,
+                vec![refused_constructor(&sources[1])],
+            )
+        });
+        MaturityConstructorMaterial::Present(MATERIAL.clone())
+    }
+
+    fn derive_with_material(
+        material: MaturityConstructorMaterial,
+    ) -> MaturityAnnouncementEvidencePlan {
+        derive_maturity_evidence_plan_with(
+            MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            material,
+        )
+        .expect("evidence plan")
+    }
+
+    fn present_plan() -> &'static MaturityAnnouncementEvidencePlan {
+        static PRESENT: LazyLock<MaturityAnnouncementEvidencePlan> =
+            LazyLock::new(|| derive_with_material(present_material()));
+        &PRESENT
+    }
+
+    fn assert_standings_equal(
+        first: &MaturityAnnouncementEvidencePlan,
+        second: &MaturityAnnouncementEvidencePlan,
+    ) {
+        assert_eq!(first.census(), second.census());
+        assert_eq!(first.census().answered(), second.census().answered());
+        assert_eq!(first.census().outstanding(), second.census().outstanding());
+        assert_eq!(first.rows(), second.rows());
+        assert_eq!(
+            first.root_history_mutations(),
+            second.root_history_mutations()
+        );
+        assert_eq!(first.census().constructor_continuity_observed(), 0);
+        assert_eq!(second.census().constructor_continuity_observed(), 0);
+        assert!(!first.census().every_required_row_is_answered());
+        assert!(!second.census().every_required_row_is_answered());
+    }
+
+    #[test]
+    fn absent_material_preserves_the_entire_partition_and_has_no_records() {
+        let absent = derive_with_material(absent_material());
+        assert_standings_equal(&PLAN, &absent);
+        assert_eq!(absent.constructor_material(), &absent_material());
+        assert_eq!(absent.continuity_records(), []);
+        for row in absent.rows() {
+            assert_eq!(row.continuity_record_count(absent.continuity_records()), 0);
+            assert_eq!(absent.continuity_record_count(row), 0);
+        }
+        writeln!(
+            std::io::stdout().lock(),
+            "\nRUN-REPORT evidence absent census={:?} answered={} outstanding={} records={}",
+            absent.census(),
+            absent.census().answered(),
+            absent.census().outstanding(),
+            absent.continuity_records().len()
+        )
+        .expect("census observation");
+    }
+
+    #[test]
+    fn present_material_associates_exact_records_without_moving_standings() {
+        let plan = present_plan();
+        let material = plan.constructor_material();
+        let MaturityConstructorMaterial::Present(present) = material else {
+            panic!("present fixture");
+        };
+        let report = present.report().report();
+        assert_standings_equal(&PLAN, plan);
+        assert_eq!(plan.constructor_material(), &present_material());
+        assert_eq!(
+            plan.constructor_material().presence(),
+            MaturityConstructorMaterialPresence::Present
+        );
+        assert_eq!(present.acceptance(), report.acceptance());
+        let records = plan.continuity_records();
+        assert_eq!(
+            records.len(),
+            report.entries().len() + present.mutants().len()
+        );
+        let (comparisons, agreements) = assert_comparison_records(plan, present);
+        assert_mutant_records(plan, present);
+        for row in plan.rows() {
+            let identity = (row.row().section(), row.row().name());
+            let expected = if identity == (MaturitySafetySection::Positive, "sponsorless") {
+                report.entries().len()
+            } else {
+                present
+                    .mutants()
+                    .iter()
+                    .filter(|mutant| {
+                        let context = mutant.subject().context().row();
+                        identity == (context.section(), context.name())
+                    })
+                    .count()
+            };
+            assert_eq!(row.continuity_record_count(records), expected);
+            assert_eq!(plan.continuity_record_count(row), expected);
+        }
+        let sponsorless = plan
+            .rows()
+            .iter()
+            .find(|row| {
+                (row.row().section(), row.row().name())
+                    == (MaturitySafetySection::Positive, "sponsorless")
+            })
+            .expect("positive row");
+        let mut other_section = records[0].clone();
+        other_section.section = MaturitySafetySection::PredecessorConstructorFault;
+        assert_eq!(sponsorless.continuity_record_count(&[other_section]), 0);
+        writeln!(std::io::stdout().lock(), "\nRUN-REPORT evidence present census={:?} answered={} outstanding={} records={} entries={} mutants={} comparisons={comparisons} agreements={agreements}", plan.census(), plan.census().answered(), plan.census().outstanding(), records.len(), report.entries().len(), present.mutants().len()).expect("census observation");
+    }
+
+    fn assert_comparison_records(
+        plan: &MaturityAnnouncementEvidencePlan,
+        present: &MaturityPresentConstructorMaterial,
+    ) -> (usize, usize) {
+        let report = present.report().report();
+        let records = plan.continuity_records();
+        let mut comparisons = 0;
+        let mut agreements = 0;
+        for (record, entry) in records.iter().zip(report.entries()) {
+            assert_eq!(
+                (record.section(), record.row()),
+                (MaturitySafetySection::Positive, "sponsorless")
+            );
+            assert_eq!(record.source(), entry.source());
+            assert_eq!(record.branch(), entry.branch());
+            assert_eq!(record.byte_identity(), entry.byte_identity());
+            let MaturityContinuityObservation::ValidatedComparison {
+                comparisons: count,
+                agreements: agreed,
+            } = record.observation()
+            else {
+                panic!("comparison record");
+            };
+            comparisons += count;
+            agreements += agreed;
+        }
+        assert_eq!(comparisons, report.census().comparisons());
+        assert_eq!(agreements, report.census().agreements());
+        (comparisons, agreements)
+    }
+
+    fn assert_mutant_records(
+        plan: &MaturityAnnouncementEvidencePlan,
+        present: &MaturityPresentConstructorMaterial,
+    ) {
+        let report = present.report().report();
+        let records = plan.continuity_records();
+        for (record, observed) in records[report.entries().len()..]
+            .iter()
+            .zip(present.mutants())
+        {
+            let mutant = observed.subject();
+            let row = mutant.context().row();
+            assert_eq!(
+                (record.section(), record.row()),
+                (row.section(), row.name())
+            );
+            assert_eq!(record.source(), mutant.source());
+            assert_eq!(record.branch(), mutant.branch());
+            assert!(
+                report
+                    .entries()
+                    .iter()
+                    .all(|entry| entry.branch() != record.branch())
+            );
+            assert_eq!(record.byte_identity(), mutant.digest());
+            assert_eq!(
+                record.observation(),
+                &MaturityContinuityObservation::RefusedMutant {
+                    refusal: mutant.failure().clone()
+                }
+            );
+            assert_eq!(records.iter().filter(|record| (record.section(), record.row()) == (row.section(), row.name())).count(), 1);
+        }
+    }
+
+    fn funding(output: &FundedOutput) -> MaturityFundedPredecessor {
+        MaturityFundedPredecessor {
+            outpoint: outpoint_of(&output.outpoint).expect("funding outpoint"),
+            asset: asset_of(&output.asset).expect("funding asset"),
+            amount: output.amount_satoshis,
+            program: decode_hex(&output.script).expect("funding program"),
+        }
+    }
+
+    fn archived() -> ValidatedMaturityContinuity {
+        let corpus = maturity_run_of_record().expect("validated archive");
+        let identity = corpus.evidence().identity().clone();
+        let branch = corpus.evidence().branch();
+        let mut planner = MaturityAnnouncementPlanner::new(
+            identity.clone(),
+            branch,
+            crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        )
+        .expect("planner");
+        let mut next = planner.next_step(None).expect("issuance");
+        for (step, response) in &corpus.exchanges()[..2] {
+            assert_eq!(next.as_ref(), Some(step));
+            next = planner
+                .next_step(Some((step.case(), response)))
+                .expect("replayed funding");
+        }
+        assert_eq!(next.as_ref(), Some(&corpus.exchanges()[2].0));
+        let submission = match corpus.exchanges()[2].0.subject() {
+            OperationSubject::Submission(value) => Some(value),
+            _ => None,
+        }
+        .expect("submission subject");
+        assert_eq!(
+            planner.submission_bytes(),
+            Some(submission.transaction_bytes.as_slice())
+        );
+        let outputs = &corpus.exchanges()[1].1.funded_outputs;
+        assert_eq!(outputs.len(), 1);
+        project_maturity_continuity(MaturityProjectionInput {
+            source: MaturityByteSource::ArchivedSubmission {
+                run_address: corpus.report().run_address().to_owned(),
+            },
+            submitted_bytes: &submission.transaction_bytes,
+            funded: &funding(&outputs[0]),
+            branch,
+            bundle: planner.bundle(),
+            identity: &identity,
+        })
+        .expect("archived projection")
+    }
+
+    fn scripted_response(step: &OperationStep) -> NativeOperationResponse {
+        let subject = match step.subject() {
+            OperationSubject::Funding(value) => Some(value),
+            _ => None,
+        }
+        .expect("funding subject");
+        let asset = format!("01{}fe", "55".repeat(30));
+        NativeOperationResponse {
+            schema: NATIVE_PROTOCOL_SCHEMA,
+            case: step.case().clone(),
+            observed_layer: ObservedOutcomeLayer::Accepted,
+            observed_detail: None,
+            issued_asset: subject.issue_asset.then(|| asset.clone()),
+            funded_outputs: vec![FundedOutput {
+                outpoint: WireOutpoint {
+                    txid: format!("02{}fd", "66".repeat(30)),
+                    vout: if subject.issue_asset { 3 } else { 7 },
+                },
+                asset,
+                amount_satoshis: subject.amount_per_output,
+                script: hex(&subject.output_program),
+            }],
+            confidential_funded_outputs: Vec::new(),
+            mined_readback: None,
+            accepted_txid: None,
+            sponsor_witness: Vec::new(),
+            script_path_witness: Vec::new(),
+            signer_public_key: None,
+            signed_profile: None,
+            signing_genesis: None,
+            signature_bound_to: None,
+            resources: NativeResourceObservation::default(),
+        }
+    }
+
+    fn node_free() -> ValidatedMaturityContinuity {
+        let mut genesis = [0x22; 32];
+        genesis[0] = 0x01;
+        genesis[31] = 0xfe;
+        let identity = CandidateDeploymentIdentity::new([0x17; 32], genesis).expect("identity");
+        let branch = BranchContext::new([0x41; 32], 7).expect("branch");
+        let mut planner = MaturityAnnouncementPlanner::new(
+            identity.clone(),
+            branch,
+            crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        )
+        .expect("planner");
+        let issue = planner.next_step(None).expect("issuance").expect("step");
+        let issued = scripted_response(&issue);
+        issued.validate_shape().expect("issuance response shape");
+        let fund = planner
+            .next_step(Some((issue.case(), &issued)))
+            .expect("funding")
+            .expect("step");
+        let response = scripted_response(&fund);
+        response.validate_shape().expect("funding response shape");
+        let step = planner
+            .next_step(Some((fund.case(), &response)))
+            .expect("submission")
+            .expect("step");
+        let submission = match step.subject() {
+            OperationSubject::Submission(value) => Some(value),
+            _ => None,
+        }
+        .expect("submission subject");
+        assert_eq!(
+            planner.submission_bytes(),
+            Some(submission.transaction_bytes.as_slice())
+        );
+        project_maturity_continuity(MaturityProjectionInput {
+            source: MaturityByteSource::NodeFreeSubmitReady,
+            submitted_bytes: &submission.transaction_bytes,
+            funded: &funding(&response.funded_outputs[0]),
+            branch,
+            bundle: planner.bundle(),
+            identity: &identity,
+        })
+        .expect("node-free projection")
+    }
 
     /// A published pattern in the admitted revision syntax.
     ///
@@ -2050,6 +2700,7 @@ mod tests {
     #[test]
     fn the_census_buckets_are_the_figures_the_inputs_recompute() {
         let census = PLAN.census();
+        assert_eq!(present_plan().census(), census);
         let cases = maturity_first_party_cases();
         let discharged = cases
             .iter()
@@ -2090,10 +2741,7 @@ mod tests {
         assert_eq!(census.report_layer_required(), report_required);
         assert_eq!(census.outstanding_under_typed_non_answer(), outstanding);
 
-        // Nine standings still count zero: the admitted relay observation
-        // is no acceptance or mutant refusal, no later report exists,
-        // no report validation has read the rendered bytes, no component
-        // this plan needs is missing, and no row of the matrix is ad hoc.
+        // Host records do not change the standing partition.
         assert_eq!(census.native_acceptance_observed(), 0);
         assert_eq!(census.native_refusal_observed(), 0);
         assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
@@ -2162,8 +2810,12 @@ mod tests {
     #[test]
     fn required_rows_remain_outstanding_after_the_admitted_run() {
         let census = PLAN.census();
+        assert_eq!(present_plan().census(), census);
         assert!(!census.every_required_row_is_answered());
-        assert_eq!(census.answered(), census.first_party_discharged() + 1);
+        assert_eq!(
+            census.answered(),
+            census.first_party_discharged() + census.native_declared_boundary_observed()
+        );
         assert_eq!(
             census.answered() + census.outstanding(),
             census.rows(),
@@ -2171,36 +2823,28 @@ mod tests {
         );
         assert_eq!(
             census.outstanding(),
-            census.rows() - census.first_party_discharged() - 1,
+            census.rows()
+                - census.first_party_discharged()
+                - census.native_declared_boundary_observed(),
         );
     }
 
     #[test]
-    fn both_outstanding_registries_carry_their_reason_and_count_zero() {
-        let constructor = PLAN.constructor_mutations();
+    fn absent_constructor_material_and_history_carry_their_reasons() {
         let history = PLAN.root_history_mutations();
-        assert_eq!(
-            constructor.kind(),
-            MaturityMutationRegistryKind::Constructor
-        );
+        assert_eq!(PLAN.constructor_material(), &absent_material(),);
         assert_eq!(history.kind(), MaturityMutationRegistryKind::RootHistory);
-        assert_eq!(
-            constructor.reason(),
-            MaturityRegistryOutstandingReason::ConstructorProjectionsAreNotPublished,
-        );
         assert_eq!(
             history.reason(),
             MaturityRegistryOutstandingReason::BranchIndexedHistoryIsNotProjectable,
         );
-        for registry in [constructor, history] {
-            assert_eq!(registry.mutations().len(), 0);
-            assert_eq!(registry.census().mutations(), 0);
-            assert_eq!(
-                registry.census().standing(),
-                MaturityRegistryStanding::OutstandingUntilItsMaterialLands,
-            );
-            assert_eq!(registry.reason().kind(), registry.kind());
-        }
+        assert_eq!(history.mutations().len(), 0);
+        assert_eq!(history.census().mutations(), 0);
+        assert_eq!(
+            history.census().standing(),
+            MaturityRegistryStanding::OutstandingUntilItsMaterialLands,
+        );
+        assert_eq!(history.reason().kind(), history.kind());
     }
 
     #[test]
@@ -2299,7 +2943,7 @@ mod tests {
             plan.executor_provenance(),
             &MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
         );
-        assert_eq!(plan.constructor_mutations().census().mutations(), 0);
+        assert_eq!(plan.constructor_material(), &absent_material());
         assert_eq!(plan.root_history_mutations().census().mutations(), 0);
 
         // The same derivation under a stated expectation: the eighth input
@@ -2309,6 +2953,7 @@ mod tests {
             .expect("the stated pattern is in the admitted syntax");
         let stated = derive_maturity_evidence_plan_with(
             MaturityExecutorProvenanceExpectation::Stated(expectation.clone()),
+            absent_material(),
         )
         .expect("the plan derives under a stated expectation");
         assert_eq!(stated.executor_provenance().stated(), Some(&expectation));

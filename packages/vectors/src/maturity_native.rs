@@ -1440,6 +1440,9 @@ mod tests {
         }
         let plan = derive_maturity_evidence_plan_with(
             MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            crate::maturity_evidence::MaturityConstructorMaterial::Absent(
+                crate::maturity_evidence::MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+            ),
         )
         .expect("evidence plan");
         let row = plan
