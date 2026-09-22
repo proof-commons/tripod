@@ -14,6 +14,7 @@ adr_record_files = files(
   '022-interchange-conventions.md',
   '023-script-tree-label-carrier.md',
   '024-closure-exact-linking.md',
+  '025-relay-admissible-announcement-witness.md',
 )
 
 # Non-numbered documentation in this directory (DOC owner).

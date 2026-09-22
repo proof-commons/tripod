@@ -8,7 +8,12 @@ The directory stands even when empty: it is the template for the next adopted dr
 
 ## Index · `tab:drafts:index`
 
-No draft is currently archived. A new draft joins this index with its subject and its integration owner, and joins the census in `meson.build` in the same commit.
+| Draft | Subject | Integration owner | Deliberate divergences |
+|---|---|---|---|
+| [Relay-witness split study](relay-witness-split-study.md) | Relay admission rule, witness consumers, transport alternatives, counted effects and evidence obligations. | [ADR-025](../../adr/025-relay-admissible-announcement-witness.md) and route track `T11-100` through `T11-109`. | Recorded node revision strings replaced by "the binary revision string recorded at `packages/vectors/fixtures/maturity-run-of-record/RUN-REPORT`"; absolute Elements citation prefixes replaced by `elements: `; the bare checkout sentence and source-version sentence name the Elements source tree at version 28.99.0; the absolute study-worktree path replaced by "the study worktree"; backtick delimiters removed from seven bracketed byte/width arrays on supplied lines 49, 207 and 248 because the labels gate parsed them as imported citations; otherwise verbatim. |
+| [Constant-elision proposal](relay-witness-constant-elision-proposal.md) | Constant-elision witness transport, emission policy, historical replay and accepted-evidence route. | [ADR-025](../../adr/025-relay-admissible-announcement-witness.md) and route track `T11-100` through `T11-109`. | The opening status sentence identifies the document as the design proposal ratified by ADR-025 without naming a role or review; otherwise verbatim, including illustrative Rust sketches. |
+
+A new draft joins this index with its subject and its integration owner, and joins the census in `meson.build` in the same commit.
 
 ## Draft rule · `rule:drafts:authority`
 
