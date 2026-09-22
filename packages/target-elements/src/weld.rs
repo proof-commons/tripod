@@ -662,10 +662,13 @@ fn weld_resources(definition: &TargetDefinition, errors: &mut Vec<TargetError>) 
         disagrees = true;
     }
 
-    // A policy bound on a dimension consensus does not state has
-    // nothing to narrow, so it describes a rule with no subject.
+    // An initial witness-item width is observed by relay before script
+    // execution, so it has a policy subject without a consensus resource
+    // bound. Other policy dimensions narrow a stated consensus dimension.
     for dimension in resources.policy().bounds().keys() {
-        if !resources.consensus().bounds().contains_key(dimension) {
+        if *dimension != crate::resource::ResourceDimension::InitialWitnessItemBytes
+            && !resources.consensus().bounds().contains_key(dimension)
+        {
             disagrees = true;
         }
     }

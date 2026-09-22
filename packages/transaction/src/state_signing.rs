@@ -80,12 +80,14 @@
 //! 1  successor nonce               4 bytes   successor constructor's nonce
 //! 2  requested cycle               8 bytes   the typed request
 //! 3  static subtree root          32 bytes   the linked bundle's subtree
-//! 4  predecessor metadata         86 bytes   the view's metadata and nonce
+//! 4  predecessor metadata         86/53 bytes whole/variable schedule
 //! 5  predecessor output-key prefix 1 byte    retained predecessor's parity
 //! 6  operator signature           64 bytes   the authorized boundary witness
 //! 7  leaf script                             the predecessor's committed leaf
 //! 8  control block                           that leaf's authentication
 //! ```
+//! The variable schedule carries the metadata's changing region; its leaf
+//! restores the canonical encoding before authenticating it.
 //!
 //! The two prefix bytes are compressed-key prefixes and neither is the
 //! control block's first byte, which packs the same parity bit with a
@@ -146,8 +148,11 @@
 //! absent, and a value that could submit itself would let the state be
 //! claimed by running it rather than by reaching it.
 
-use realization::{StateMetadata, StateRepresentationNonce, encode_state_metadata};
-use tapscript::{CandidateStateConstructor, StateProgramWitness};
+use realization::{
+    STATE_METADATA_BYTES, StateMetadata, StateRepresentationNonce, encode_state_metadata,
+    state_metadata_variable_region,
+};
+use tapscript::{CandidateStateConstructor, StateProgramWitness, StateWitnessSchedule};
 use target_elements::ReviewedElementsTapscriptDefinition;
 
 use crate::bytes::{InputWitness, OutputWitness, TargetInput, TargetOutput, TargetTransaction};
@@ -162,6 +167,7 @@ use crate::operator_signing::{
     ScriptPathSignatureVerifier, authorize_operator_under_right,
 };
 use crate::script_path_signing::SpentOutputCensusEntry;
+use crate::state_abi::MaturityWitnessRole;
 use crate::state_finalize::{FinalizedMaturityAnnouncement, MaturityExecutingLeaf};
 
 /// The compressed-key prefix that states an even output key.
@@ -803,8 +809,11 @@ impl<'finalized> OperatorAuthorizedMaturityAnnouncement<'finalized> {
             .abi()
             .witness_roles()
             .iter()
-            .map(|record| witness_item(finalized, record.role(), &authorization))
-            .collect();
+            .map(|record| {
+                let item = witness_item(finalized, record.role(), &authorization)?;
+                checked_witness_item_width(record, item)
+            })
+            .collect::<Result<_, _>>()?;
         stack.push(leaf.leaf_script().to_vec());
         stack.push(leaf.control_block().to_vec());
         let witness = InputWitness::new(stack);
@@ -936,10 +945,10 @@ fn witness_item(
     finalized: &FinalizedMaturityAnnouncement,
     role: StateProgramWitness,
     authorization: &[u8],
-) -> Vec<u8> {
+) -> Result<Vec<u8>, TransactionRefusal> {
     let construction = finalized.construction();
     let view = construction.validated_view().view();
-    match role {
+    Ok(match role {
         StateProgramWitness::SuccessorOutputKeyPrefix => {
             vec![output_key_prefix(
                 construction.successor_constructor().parity(),
@@ -962,15 +971,50 @@ fn witness_item(
             .static_subtree()
             .root()
             .to_vec(),
-        StateProgramWitness::PredecessorMetadata => encode_state_metadata(
-            &view.predecessor_metadata(),
-            view.predecessor_representation_nonce(),
-        ),
+        StateProgramWitness::PredecessorMetadata => {
+            let canonical = encode_state_metadata(
+                &view.predecessor_metadata(),
+                view.predecessor_representation_nonce(),
+            );
+            match construction.abi().schedule() {
+                StateWitnessSchedule::WholeMetadata => canonical,
+                StateWitnessSchedule::VariableMetadata => {
+                    let canonical: [u8; STATE_METADATA_BYTES] =
+                        canonical.try_into().map_err(|bytes: Vec<u8>| {
+                            TransactionRefusal::WitnessItemWidthMismatch {
+                                role,
+                                declared: STATE_METADATA_BYTES,
+                                populated: bytes.len(),
+                            }
+                        })?;
+                    state_metadata_variable_region(&canonical).to_vec()
+                }
+            }
+        }
         StateProgramWitness::PredecessorOutputKeyPrefix => {
             vec![output_key_prefix(retained_predecessor(finalized).parity())]
         }
         StateProgramWitness::OperatorSignature => authorization.to_vec(),
+    })
+}
+
+/// Compare one populated item with the ABI's exact declared width.
+///
+/// # Errors
+/// Refuses an item whose width differs from its role's declaration.
+pub(crate) fn checked_witness_item_width(
+    record: &MaturityWitnessRole,
+    item: Vec<u8>,
+) -> Result<Vec<u8>, TransactionRefusal> {
+    let declared = record.maximum_width().unwrap_or(0);
+    if record.minimum_width() != Some(declared) || item.len() != declared {
+        return Err(TransactionRefusal::WitnessItemWidthMismatch {
+            role: record.role(),
+            declared,
+            populated: item.len(),
+        });
     }
+    Ok(item)
 }
 
 /// The predecessor constructor the link itself retained.

@@ -3,9 +3,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
+use realization::{STATE_METADATA_LAYOUT, STATE_METADATA_VARIABLE_RANGE, StateMetadataRegionClass};
 use sha2::{Digest, Sha256};
 use target_elements::{
-    EncodingClass, FailureCause, LeafVersion, OpcodeId, ResourceDimension, StackValueType,
+    EncodingClass, FailureCause, LeafVersion, OpcodeId, ResourceBound, ResourceDimension,
+    StackValueType,
 };
 
 use super::reviewed_target;
@@ -52,13 +54,61 @@ fn semantic_values() -> BTreeMap<StateAnnouncementSymbol, StackItem> {
     ])
 }
 
+fn variable_semantic_values() -> BTreeMap<StateAnnouncementSymbol, StackItem> {
+    let mut values = semantic_values();
+    let header = STATE_METADATA_LAYOUT
+        .iter()
+        .take_while(|row| row.range.end <= STATE_METADATA_VARIABLE_RANGE.start)
+        .filter_map(|row| match row.class {
+            StateMetadataRegionClass::Constant(bytes) => Some(bytes),
+            StateMetadataRegionClass::Variable => None,
+        })
+        .flatten()
+        .copied()
+        .collect();
+    values.insert(
+        StateAnnouncementSymbol::MetadataHeader,
+        StackItem::new(&reviewed_target(), header).unwrap(),
+    );
+    values
+}
+
+fn variable_program() -> &'static StateAnnouncementProgram {
+    static VARIABLE: OnceLock<StateAnnouncementProgram> = OnceLock::new();
+    VARIABLE.get_or_init(|| {
+        let target = reviewed_target();
+        let f = fixtures();
+        let schedule = StateWitnessSchedule::VariableMetadata;
+        let bindings =
+            StateAnnouncementBindings::new(&target, schedule, variable_semantic_values()).unwrap();
+        let semantic = state_announcement_patterns(&target, &bindings).unwrap();
+        let raw =
+            state_announcement_program(&target, &f.structural, &semantic, &f.operator, schedule)
+                .unwrap();
+        build_state_announcement_program(
+            &target,
+            &f.structural,
+            &semantic,
+            &f.operator,
+            schedule,
+            raw,
+        )
+        .unwrap()
+    })
+}
+
 pub(super) fn fixtures() -> &'static Fixtures {
     static FIXTURES: OnceLock<Fixtures> = OnceLock::new();
     FIXTURES.get_or_init(|| {
         let target = reviewed_target();
         let bindings = StatePatternBindings::new(&target, structural_values()).unwrap();
         let structural = state_structural_patterns(&target, &bindings).unwrap();
-        let bindings = StateAnnouncementBindings::new(&target, semantic_values()).unwrap();
+        let bindings = StateAnnouncementBindings::new(
+            &target,
+            StateWitnessSchedule::WholeMetadata,
+            semantic_values(),
+        )
+        .unwrap();
         let semantic = state_announcement_patterns(&target, &bindings).unwrap();
         let bindings = StateOperatorBindings::new(
             &target,
@@ -167,41 +217,133 @@ fn witness_schedules_have_distinct_stable_names_and_replay_dispositions() {
 }
 
 #[test]
-fn variable_metadata_refuses_before_recipe_assembly_or_comparison() {
+fn a_recipe_for_another_schedule_refuses_before_assembly() {
     let f = fixtures();
     let target = reviewed_target();
     let schedule = StateWitnessSchedule::VariableMetadata;
-    let refusal = StateProgramRefusal::ScheduleLegalizationUnavailable(schedule);
-    let mut values = semantic_values();
-    values.insert(
-        StateAnnouncementSymbol::StateAsset,
-        StackItem::new(&target, vec![0x77; 32]).unwrap(),
+    assert_eq!(
+        state_announcement_program(&target, &f.structural, &f.semantic, &f.operator, schedule),
+        Err(StateProgramRefusal::ComponentRecipe)
     );
-    let bindings = StateAnnouncementBindings::new(&target, values).unwrap();
-    let mismatched = state_announcement_patterns(&target, &bindings).unwrap();
-    for semantic in [&f.semantic, &mismatched] {
-        assert_eq!(
-            state_announcement_program(&target, &f.structural, semantic, &f.operator, schedule),
-            Err(refusal.clone())
-        );
-        for program in [
-            f.program.program().clone(),
-            TapscriptProgram::new(vec![number(&target, 1).unwrap()]).unwrap(),
-        ] {
-            assert_eq!(
-                build_state_announcement_program(
-                    &target,
-                    &f.structural,
-                    semantic,
-                    &f.operator,
-                    schedule,
-                    program,
-                ),
-                Err(refusal.clone())
-            );
+    assert_eq!(
+        build_state_announcement_program(
+            &target,
+            &f.structural,
+            &f.semantic,
+            &f.operator,
+            schedule,
+            f.program.program().clone()
+        ),
+        Err(StateProgramRefusal::ComponentRecipe)
+    );
+}
+
+#[test]
+fn lowering_refuses_separated_variable_rows() {
+    let mut layout = STATE_METADATA_LAYOUT.clone();
+    layout[3].range.start += 1;
+    assert_eq!(
+        legalize_state_witness_schedule(
+            StateWitnessSchedule::VariableMetadata,
+            &layout,
+            ResourceBound::Maximum(80)
+        ),
+        Err(StateWitnessLoweringRefusal::VariableRowsNotContiguous)
+    );
+}
+
+#[test]
+fn lowering_refuses_a_variable_span_wider_than_policy() {
+    assert_eq!(
+        legalize_state_witness_schedule(
+            StateWitnessSchedule::VariableMetadata,
+            &STATE_METADATA_LAYOUT,
+            ResourceBound::Maximum(52)
+        ),
+        Err(StateWitnessLoweringRefusal::VariableRegionTooWide {
+            width: 53,
+            bound: 52
+        })
+    );
+}
+
+#[test]
+fn lowering_and_composed_witness_agree_on_the_variable_region() {
+    let lowered = legalize_state_witness_schedule(
+        StateWitnessSchedule::VariableMetadata,
+        &STATE_METADATA_LAYOUT,
+        ResourceBound::Maximum(80),
+    )
+    .unwrap();
+    assert_eq!(
+        lowered,
+        StateWitnessLegalization::ExpandFromVariable {
+            range: 25..78,
+            header_width: 25,
+            trailer: vec![0; 8],
+            whole_width: 86,
         }
+    );
+    assert_eq!(
+        legalize_state_witness_schedule(
+            StateWitnessSchedule::WholeMetadata,
+            &STATE_METADATA_LAYOUT,
+            ResourceBound::Maximum(80)
+        )
+        .unwrap(),
+        StateWitnessLegalization::Whole { width: 86 }
+    );
+    let record = variable_program();
+    assert_eq!(record.witness().len(), 7);
+    assert_eq!(
+        record.witness()[4].0,
+        StateProgramWitness::PredecessorMetadata
+    );
+    assert_eq!(
+        record.witness()[4].1,
+        StackValueType::Bytes {
+            minimum: 53,
+            maximum: 53
+        }
+    );
+    assert_eq!(record.precondition().main()[4], record.witness()[4].1);
+}
+
+#[test]
+fn both_schedules_compose_deterministically_and_select_distinct_leaves() {
+    let target = reviewed_target();
+    let f = fixtures();
+    let variable = variable_program();
+    let variable_bindings = StateAnnouncementBindings::new(
+        &target,
+        StateWitnessSchedule::VariableMetadata,
+        variable_semantic_values(),
+    )
+    .unwrap();
+    let variable_semantic = state_announcement_patterns(&target, &variable_bindings).unwrap();
+    assert_eq!(variable.schedule(), StateWitnessSchedule::VariableMetadata);
+    assert_eq!(variable.witness().len(), 7);
+    assert_ne!(
+        f.program.program().encode(&target),
+        variable.program().encode(&target)
+    );
+    for (schedule, semantic, expected) in [
+        (StateWitnessSchedule::WholeMetadata, &f.semantic, &f.program),
+        (
+            StateWitnessSchedule::VariableMetadata,
+            &variable_semantic,
+            variable,
+        ),
+    ] {
+        let first =
+            state_announcement_program(&target, &f.structural, semantic, &f.operator, schedule)
+                .unwrap();
+        let second =
+            state_announcement_program(&target, &f.structural, semantic, &f.operator, schedule)
+                .unwrap();
+        assert_eq!(first, second);
+        assert_eq!(first.encode(&target), expected.program().encode(&target));
     }
-    assert!(refusal.to_string().contains(schedule.name()));
 }
 
 #[test]
@@ -474,6 +616,16 @@ fn the_composed_consumer_census_is_exactly_six_symbols_over_fifteen_sites() {
             .sum::<usize>(),
         15
     );
+    let variable = variable_program();
+    assert_eq!(variable.consumers().len(), 7);
+    assert_eq!(
+        variable
+            .consumers()
+            .values()
+            .map(|consumer| consumer.sites.len())
+            .sum::<usize>(),
+        16
+    );
 }
 
 // A strange sponsor is not a threat class. The composed leaf introspects the
@@ -623,7 +775,9 @@ fn either_mismatched_shared_binding_is_refused() {
     ] {
         let mut values = semantic_values();
         values.insert(symbol, replacement);
-        let bindings = StateAnnouncementBindings::new(&target, values).unwrap();
+        let bindings =
+            StateAnnouncementBindings::new(&target, StateWitnessSchedule::WholeMetadata, values)
+                .unwrap();
         let semantic = state_announcement_patterns(&target, &bindings).unwrap();
         assert_eq!(
             state_announcement_program(
@@ -1013,10 +1167,6 @@ fn program_refusal_declaration_has_exact_exercised_and_unreachable_census() {
         "StateProgramRefusal",
         &[
             (
-                "ScheduleLegalizationUnavailable",
-                variable_metadata_refuses_before_recipe_assembly_or_comparison,
-            ),
-            (
                 "ComponentRecipe",
                 deleting_each_instruction_refuses_the_composed_identity,
             ),
@@ -1026,6 +1176,10 @@ fn program_refusal_declaration_has_exact_exercised_and_unreachable_census() {
             ),
         ],
         &[
+            (
+                "WitnessLowering",
+                "The reviewed layout is contiguous and its 53-byte variable span fits the 80-byte policy; public lowering tests exercise both causes with synthetic inputs.",
+            ),
             (
                 "InvalidContract",
                 "Exact assembly and fixed witness precede the contract check; needs an internal contract validation seam.",

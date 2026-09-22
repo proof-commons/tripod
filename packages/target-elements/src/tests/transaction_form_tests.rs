@@ -9,9 +9,10 @@ use std::collections::BTreeSet;
 
 use crate::{
     DecisionStatus, EvidenceClaimClass, ExplicitZeroValueRule, FeeRecognitionTerm, FieldForm,
-    FormAdmission, FormConstraint, RelayCondition, SponsorAuthorizationSource,
-    SponsorInspectedField, StatedAmountCheck, SubstrateSelection, TAPSCRIPT_STACK_ITEM_RELAY_LIMIT,
-    TargetEvidenceRequirementId, TargetEvidenceSubject, TransactionForm, ZeroFeeRepresentation,
+    FormAdmission, FormConstraint, RelayCondition, ResourceBound, ResourceDimension,
+    SponsorAuthorizationSource, SponsorInspectedField, StatedAmountCheck, SubstrateSelection,
+    TAPSCRIPT_STACK_ITEM_RELAY_LIMIT, TargetEvidenceRequirementId, TargetEvidenceSubject,
+    TransactionForm, ZeroFeeRepresentation, review_maturity_announcement_form,
     reviewed_elements_tapscript, reviewed_explicit_zero_value_rule, reviewed_fee_output_contract,
     reviewed_sponsor_input_profile, reviewed_stated_amount_bound, reviewed_stated_amount_checks,
     reviewed_substrate_decision, reviewed_transaction_forms, transaction_form_evidence,
@@ -155,6 +156,63 @@ fn the_relay_width_is_stated_here_and_the_relay_floor_is_not() {
             .relay_conditions()
             .contains(&RelayCondition::OwnFeeReachesRelayFloor)
     );
+}
+
+#[test]
+fn initial_witness_item_policy_and_relay_constant_are_one_figure() {
+    let target = reviewed_elements_tapscript().expect("reviewed target validates");
+    assert_eq!(
+        target
+            .definition()
+            .resources()
+            .policy()
+            .bounds()
+            .get(&ResourceDimension::InitialWitnessItemBytes),
+        Some(&ResourceBound::Maximum(
+            u64::try_from(TAPSCRIPT_STACK_ITEM_RELAY_LIMIT).unwrap()
+        ))
+    );
+    assert!(
+        !ResourceDimension::REQUIRED_BY_CONSENSUS
+            .contains(&ResourceDimension::InitialWitnessItemBytes)
+    );
+}
+
+#[test]
+fn announcement_review_follows_each_schedules_declared_item_widths() {
+    let resources = crate::resource::reviewed_resources();
+    let whole = review_maturity_announcement_form([1, 4, 8, 32, 86, 1, 64], &resources);
+    let variable = review_maturity_announcement_form([1, 4, 8, 32, 53, 1, 64], &resources);
+    assert_eq!(whole.consensus(), FormAdmission::Admitted);
+    assert_eq!(variable.consensus(), FormAdmission::Admitted);
+    assert_eq!(whole.relay(), FormAdmission::Refused);
+    assert_eq!(
+        whole.relay_conditions(),
+        &BTreeSet::from([RelayCondition::DirectSubmissionToProducer])
+    );
+    assert_eq!(variable.relay(), FormAdmission::AdmittedUnderCondition);
+    assert_eq!(
+        variable.relay_conditions(),
+        &BTreeSet::from([
+            RelayCondition::TopologyRestrictedPackage,
+            RelayCondition::DirectSubmissionToProducer
+        ])
+    );
+    assert!(!whole.fee_output_present());
+    assert!(!variable.fee_output_present());
+}
+
+#[test]
+fn published_announcement_review_equals_the_historical_width_review() {
+    let forms = reviewed_transaction_forms();
+    assert_eq!(
+        forms[&TransactionForm::MaturityAnnouncement],
+        review_maturity_announcement_form(
+            [1, 4, 8, 32, 86, 1, 64],
+            &crate::resource::reviewed_resources()
+        )
+    );
+    assert_eq!(forms.len(), 3);
 }
 
 #[test]

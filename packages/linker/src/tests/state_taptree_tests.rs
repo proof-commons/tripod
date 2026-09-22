@@ -124,6 +124,7 @@ fn announcement_program() -> &'static StateAnnouncementProgram {
 
         let bindings = StateAnnouncementBindings::new(
             &target,
+            tapscript::StateWitnessSchedule::WholeMetadata,
             BTreeMap::from([
                 (
                     StateAnnouncementSymbol::InternalKey,

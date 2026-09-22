@@ -74,7 +74,8 @@ use linker::{
 };
 use realization::{
     Cycle, ExternalEvidenceRequirement, Maturity, ProtocolAmount, RealizationScope, RelationId,
-    StateMetadata, derive,
+    STATE_METADATA_LAYOUT, STATE_METADATA_VARIABLE_RANGE, StateMetadata, StateMetadataRegionClass,
+    derive,
 };
 use tapscript::upstream::{AnnouncementLeadBounds, StateSingletonDeclaration};
 use tapscript::{
@@ -83,10 +84,11 @@ use tapscript::{
     StateAnnouncementSymbol, StateCurveCapability, StateInternalKeyPolicy, StateLeafRole,
     StateNonceBudget, StateOperatorBindings, StateOperatorSymbol, StatePatternBindings,
     StatePatternSymbol, StateProgramComponent, StateProgramRefusal, StateProgramSymbol,
-    StateTweakOutcome, StateWitnessSchedule, TapscriptInstruction, TapscriptProgram,
-    build_state_announcement_program, build_state_operator_pattern, operator_key_encoding_closure,
-    production_static_subtree, selected_operator_profile, state_announcement_patterns,
-    state_announcement_program, state_operator_fragment, state_structural_patterns,
+    StateTweakOutcome, StateWitnessLoweringRefusal, StateWitnessSchedule, TapscriptInstruction,
+    TapscriptProgram, build_state_announcement_program, build_state_operator_pattern,
+    operator_key_encoding_closure, production_static_subtree, selected_operator_profile,
+    state_announcement_patterns, state_announcement_program, state_operator_fragment,
+    state_structural_patterns,
 };
 use target_elements::{
     EncodingClass, OpcodeId, ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript,
@@ -124,11 +126,8 @@ pub enum MaturityClosureRefusal {
         /// The replay-only schedule selected for emission.
         schedule: StateWitnessSchedule,
     },
-    /// The composer holds no legalization for the selected transport.
-    ScheduleLegalizationUnavailable {
-        /// The schedule the composer refused.
-        schedule: StateWitnessSchedule,
-    },
+    /// The selected transport exceeds or breaks the target's lowering rule.
+    WitnessLowering(StateWitnessLoweringRefusal),
     /// The reviewed target contract did not validate.
     ReviewedTargetInvalid,
     /// The realization did not derive, the compiler did not bind its
@@ -593,12 +592,10 @@ fn composed_record(
     }
 }
 
-const fn composition_refusal(refusal: &StateProgramRefusal) -> MaturityClosureRefusal {
+fn composition_refusal(refusal: &StateProgramRefusal) -> MaturityClosureRefusal {
     match refusal {
-        StateProgramRefusal::ScheduleLegalizationUnavailable(schedule) => {
-            MaturityClosureRefusal::ScheduleLegalizationUnavailable {
-                schedule: *schedule,
-            }
+        StateProgramRefusal::WitnessLowering(cause) => {
+            MaturityClosureRefusal::WitnessLowering(cause.clone())
         }
         _ => MaturityClosureRefusal::RecordUnavailable,
     }
@@ -626,29 +623,33 @@ fn build_composed_record(
     .map_err(|_| refused())?;
     let structural = state_structural_patterns(&target, &structural).map_err(|_| refused())?;
 
-    let semantic = StateAnnouncementBindings::new(
-        &target,
-        BTreeMap::from([
-            (
-                StateAnnouncementSymbol::InternalKey,
-                item(STATE_NUMS_KEY.to_vec())?,
-            ),
-            (
-                StateAnnouncementSymbol::MaturityLeadMin,
-                StackItem::unsigned_le64(&target, 2),
-            ),
-            (
-                StateAnnouncementSymbol::MaturityLeadMax,
-                StackItem::unsigned_le64(&target, 4),
-            ),
-            (StateAnnouncementSymbol::StateAsset, item(vec![0x11; 32])?),
-            (
-                StateAnnouncementSymbol::StateAmount,
-                StackItem::signed_le64(&target, 1),
-            ),
-        ]),
-    )
-    .map_err(|_| refused())?;
+    let mut semantic_values = BTreeMap::from([
+        (
+            StateAnnouncementSymbol::InternalKey,
+            item(STATE_NUMS_KEY.to_vec())?,
+        ),
+        (
+            StateAnnouncementSymbol::MaturityLeadMin,
+            StackItem::unsigned_le64(&target, 2),
+        ),
+        (
+            StateAnnouncementSymbol::MaturityLeadMax,
+            StackItem::unsigned_le64(&target, 4),
+        ),
+        (StateAnnouncementSymbol::StateAsset, item(vec![0x11; 32])?),
+        (
+            StateAnnouncementSymbol::StateAmount,
+            StackItem::signed_le64(&target, 1),
+        ),
+    ]);
+    if schedule == StateWitnessSchedule::VariableMetadata {
+        semantic_values.insert(
+            StateAnnouncementSymbol::MetadataHeader,
+            item(metadata_header_bytes())?,
+        );
+    }
+    let semantic = StateAnnouncementBindings::new(&target, schedule, semantic_values)
+        .map_err(|_| refused())?;
     let semantic = state_announcement_patterns(&target, &semantic).map_err(|_| refused())?;
 
     let operator = operator_bindings(&target, 0x33)?;
@@ -660,6 +661,19 @@ fn build_composed_record(
         .map_err(|refusal| composition_refusal(&refusal))?;
     build_state_announcement_program(&target, &structural, &semantic, &operator, schedule, raw)
         .map_err(|refusal| composition_refusal(&refusal))
+}
+
+fn metadata_header_bytes() -> Vec<u8> {
+    STATE_METADATA_LAYOUT
+        .iter()
+        .take_while(|row| row.range.end <= STATE_METADATA_VARIABLE_RANGE.start)
+        .filter_map(|row| match row.class {
+            StateMetadataRegionClass::Constant(bytes) => Some(bytes),
+            StateMetadataRegionClass::Variable => None,
+        })
+        .flatten()
+        .copied()
+        .collect()
 }
 
 /// One deployment's committed operator key, as bindings.
@@ -736,8 +750,8 @@ fn fixture_metadata() -> Result<StateMetadata, MaturityClosureRefusal> {
 /// # Errors
 ///
 /// [`MaturityClosureRefusal::ReplayOnlySchedule`] for emission of a replay-only
-/// schedule, [`MaturityClosureRefusal::ScheduleLegalizationUnavailable`] for a
-/// schedule without a legalization, [`MaturityClosureRefusal::ReviewedTargetInvalid`],
+/// schedule, [`MaturityClosureRefusal::WitnessLowering`] for an illegal
+/// transport, [`MaturityClosureRefusal::ReviewedTargetInvalid`],
 /// [`MaturityClosureRefusal::PlanUnavailable`],
 /// [`MaturityClosureRefusal::RecordUnavailable`] or
 /// [`MaturityClosureRefusal::SourcesUnavailable`], naming the layer that
@@ -1498,6 +1512,7 @@ pub fn recovered_values(
 fn reemitted_components(
     values: &BTreeMap<StateProgramSymbol, StackItem>,
     target: &ReviewedElementsTapscriptDefinition,
+    schedule: StateWitnessSchedule,
 ) -> Result<BTreeMap<StateProgramComponent, Vec<TapscriptInstruction>>, MaturityClosureRefusal> {
     let refused = || MaturityClosureRefusal::ReEmissionRefused;
     let structural_value = |symbol: StatePatternSymbol| {
@@ -1515,7 +1530,14 @@ fn reemitted_components(
     let structural = state_structural_patterns(target, &structural).map_err(|_| refused())?;
 
     let mut semantic_values = BTreeMap::new();
-    for symbol in StateAnnouncementSymbol::ALL.iter().copied() {
+    for symbol in StateAnnouncementSymbol::ALL
+        .iter()
+        .copied()
+        .filter(|symbol| {
+            schedule == StateWitnessSchedule::VariableMetadata
+                || *symbol != StateAnnouncementSymbol::MetadataHeader
+        })
+    {
         let item = match symbol.structural() {
             Some(shared) => structural_value(shared)?,
             None => values
@@ -1526,7 +1548,7 @@ fn reemitted_components(
         semantic_values.insert(symbol, item);
     }
     let semantic =
-        StateAnnouncementBindings::new(target, semantic_values).map_err(|_| refused())?;
+        StateAnnouncementBindings::new(target, schedule, semantic_values).map_err(|_| refused())?;
     let semantic = state_announcement_patterns(target, &semantic).map_err(|_| refused())?;
 
     let key = values
@@ -1734,7 +1756,8 @@ pub fn locate_discharges(
     record: &StateAnnouncementProgram,
     target: &ReviewedElementsTapscriptDefinition,
 ) -> Result<LocatedDischarges, MaturityClosureRefusal> {
-    let emitted = reemitted_components(&recovered_values(leaf, record)?, target)?;
+    let emitted =
+        reemitted_components(&recovered_values(leaf, record)?, target, record.schedule())?;
     let mut rows = Vec::new();
     for row in closure.rows() {
         rows.push(locate_row(row, leaf, record, &emitted)?);
@@ -2713,7 +2736,9 @@ mod tests {
     };
     use linker::StateLinkRefusal;
     use realization::{RelationKind, RelationSubject};
-    use tapscript::{StateConstructorRefusal, StatePatternId, StateWitnessSchedule};
+    use tapscript::{
+        StateConstructorRefusal, StatePatternId, StateWitnessLoweringRefusal, StateWitnessSchedule,
+    };
 
     /// Every refusal this module owns, matched with no catch-all.
     ///
@@ -2750,8 +2775,8 @@ mod tests {
         match refusal {
             // Reached by `whole_metadata_emission_refuses_at_sources_and_linking`.
             MaturityClosureRefusal::ReplayOnlySchedule { .. }
-            // Reached by `variable_metadata_selections_preserve_the_composers_refusal`.
-            | MaturityClosureRefusal::ScheduleLegalizationUnavailable { .. }
+            // The fixed canonical layout and reviewed bound admit both schedules.
+            | MaturityClosureRefusal::WitnessLowering(_)
             // Unreachable: the reviewed contract is a first-party
             // constant validated once behind a static, and no caller
             // value reaches the validation that could refuse it.
@@ -2853,9 +2878,9 @@ mod tests {
             MaturityClosureRefusal::ReplayOnlySchedule {
                 schedule: StateWitnessSchedule::WholeMetadata,
             },
-            MaturityClosureRefusal::ScheduleLegalizationUnavailable {
-                schedule: StateWitnessSchedule::VariableMetadata,
-            },
+            MaturityClosureRefusal::WitnessLowering(
+                StateWitnessLoweringRefusal::VariableRowsNotContiguous,
+            ),
             MaturityClosureRefusal::ReviewedTargetInvalid,
             MaturityClosureRefusal::PlanUnavailable,
             MaturityClosureRefusal::RecordUnavailable,

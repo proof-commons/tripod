@@ -26,6 +26,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{ARCHITECTURE, AssetId};
+use realization::{STATE_METADATA_LAYOUT, StateMetadataRegionClass};
 use tapscript::upstream::{Cycle, StateSingletonDeclaration};
 use tapscript::{
     StackItem, StateConstructorReference, StateLeafRole, StateProgramWitness, TapscriptInstruction,
@@ -33,7 +34,9 @@ use tapscript::{
 use target_elements::{ReviewedElementsTapscriptDefinition, TargetContractVersion};
 
 use crate::tests::state_graph_tests::residual_cycle_refusal;
-use crate::tests::{bridge, declaration, record, reviewed_target, singleton, state_constructor};
+use crate::tests::{
+    bridge, declaration, record, record_for_schedule, reviewed_target, singleton, state_constructor,
+};
 use crate::{
     STATE_REFERENCE_LIMIT, StateBindingTime, StateConsumerCensus, StateDefinitionCensus,
     StateDefinitionOrigin as Origin, StateGraphNode, StateLinkRefusal, StateLinkSymbol as Key,
@@ -49,6 +52,7 @@ fn definitions(target: &ReviewedElementsTapscriptDefinition) -> StateDefinitionC
         &state_constructor(),
         &singleton(),
         &declaration(),
+        tapscript::StateWitnessSchedule::WholeMetadata,
     )
     .expect("the demonstration sources define every key")
 }
@@ -70,13 +74,12 @@ fn pushed_keys() -> Vec<Key> {
     ]
 }
 
-// (a) The key vocabulary itself: thirteen, in key order, six of them
-// pushed, and every symbol the record's own census carries lands on one
-// of those six.
+// (a) The key vocabulary itself: fourteen, in key order, seven of them
+// program-capable, while the historical record consumes six.
 #[test]
-fn the_census_is_thirteen_keys_in_key_order_six_of_them_pushed() {
+fn the_key_vocabulary_is_fourteen_with_seven_program_symbols() {
     let all = Key::ALL;
-    assert_eq!(all.len(), 13);
+    assert_eq!(all.len(), 14);
 
     let unique: BTreeSet<Key> = all.iter().copied().collect();
     assert_eq!(unique.len(), all.len());
@@ -87,7 +90,15 @@ fn the_census_is_thirteen_keys_in_key_order_six_of_them_pushed() {
         .copied()
         .filter(|symbol| symbol.is_program_symbol())
         .collect();
-    assert_eq!(pushed, pushed_keys());
+    assert_eq!(pushed.len(), 7);
+    assert_eq!(
+        pushed
+            .iter()
+            .copied()
+            .filter(|key| *key != Key::MetadataHeader)
+            .collect::<Vec<_>>(),
+        pushed_keys()
+    );
 
     let composed = record();
     let mapped: BTreeSet<Key> = composed
@@ -95,7 +106,7 @@ fn the_census_is_thirteen_keys_in_key_order_six_of_them_pushed() {
         .keys()
         .map(|symbol| Key::from_program(*symbol))
         .collect();
-    assert_eq!(mapped, pushed.into_iter().collect::<BTreeSet<_>>());
+    assert_eq!(mapped, pushed_keys().into_iter().collect::<BTreeSet<_>>());
 
     let kinds: BTreeSet<Key> = state_constructor()
         .reference_declarations()
@@ -137,6 +148,7 @@ fn pass_one_defines_thirteen_keys_over_five_typed_origins() {
         .map(|(symbol, definition)| (*symbol, definition.origin()))
         .collect();
     assert_eq!(observed, expected);
+    assert_eq!(observed.values().copied().collect::<BTreeSet<_>>().len(), 5);
 
     for (symbol, definition) in census.definitions() {
         assert_eq!(definition.symbol(), *symbol);
@@ -297,6 +309,89 @@ fn every_pushed_definition_carries_the_record_item_at_each_of_its_sites() {
     assert_eq!(visited, 15);
 }
 
+#[test]
+fn variable_census_defines_and_consumes_the_layout_header_at_one_push_site() {
+    let target = reviewed_target();
+    let record = record_for_schedule(tapscript::StateWitnessSchedule::VariableMetadata);
+    let definitions = collect_state_definitions(
+        &target,
+        &bridge(),
+        &state_constructor(),
+        &singleton(),
+        &declaration(),
+        record.schedule(),
+    )
+    .expect("variable definitions collect");
+    let consumers = StateConsumerCensus::from_sources(&record, &state_constructor());
+    let resolved =
+        resolve_state_census(&definitions, &consumers).expect("variable census resolves");
+    assert_eq!(definitions.len(), 14);
+    assert_eq!(
+        definitions
+            .definitions()
+            .values()
+            .map(crate::StateSymbolDefinition::origin)
+            .collect::<BTreeSet<_>>()
+            .len(),
+        6
+    );
+    assert_eq!(
+        definitions
+            .from_origin(Origin::CanonicalMetadataLayout)
+            .collect::<Vec<_>>(),
+        vec![Key::MetadataHeader]
+    );
+    assert_eq!(resolved.entries().len(), 14);
+    assert_eq!(resolved.program_keys().len(), 7);
+    assert_eq!(resolved.push_site_count(), 16);
+    let header = &resolved.entries()[&Key::MetadataHeader];
+    assert_eq!(
+        header.definition().value().symbol_type(),
+        StateSymbolType::MetadataHeader
+    );
+    assert_eq!(header.sites().record_sites().len(), 1);
+    let item = header
+        .definition()
+        .value()
+        .push_item(&target)
+        .expect("header has a pushed item");
+    assert_eq!(item.len(), 25);
+    for &site in header.sites().record_sites() {
+        assert_eq!(
+            record.program().instructions().get(site),
+            Some(&TapscriptInstruction::Push(item.clone()))
+        );
+    }
+}
+
+#[test]
+fn a_header_width_disagreement_is_refused() {
+    let target = reviewed_target();
+    let mut layout = STATE_METADATA_LAYOUT.clone();
+    layout[0].class = StateMetadataRegionClass::Constant(&[0; 20]);
+    assert_eq!(
+        crate::state_symbol::metadata_header_from_layout(&target, &layout, 1),
+        Err(StateLinkRefusal::MetadataHeaderWidthMismatch {
+            width: 24,
+            variable_start: 25
+        })
+    );
+}
+
+#[test]
+fn a_header_schema_disagreement_is_refused() {
+    let target = reviewed_target();
+    let mut layout = STATE_METADATA_LAYOUT.clone();
+    layout[1].class = StateMetadataRegionClass::Constant(&[0, 0, 0, 2]);
+    assert_eq!(
+        crate::state_symbol::metadata_header_from_layout(&target, &layout, 1),
+        Err(StateLinkRefusal::MetadataSchemaDisagreement {
+            layout: vec![0, 0, 0, 2],
+            constructor: 1
+        })
+    );
+}
+
 // (e) Pass one refuses a second claim rather than overwriting the first.
 #[test]
 fn a_second_claim_on_one_key_is_refused() {
@@ -347,7 +442,10 @@ fn a_consumed_key_with_no_definition_is_refused() {
     let target = reviewed_target();
     let consumers = consumers();
 
-    for dropped in Key::ALL {
+    for dropped in Key::ALL
+        .into_iter()
+        .filter(|key| *key != Key::MetadataHeader)
+    {
         let census = definitions_without(&target, dropped);
         assert_eq!(census.len(), 12);
         assert_eq!(
@@ -367,7 +465,10 @@ fn a_definition_no_consumer_reads_is_refused() {
     let census = definitions(&target);
     let full = consumers();
 
-    for dropped in Key::ALL {
+    for dropped in Key::ALL
+        .into_iter()
+        .filter(|key| *key != Key::MetadataHeader)
+    {
         let mut map = full.consumers().clone();
         map.remove(&dropped);
 
@@ -430,6 +531,7 @@ fn a_declaration_for_another_asset_is_refused() {
             &state_constructor(),
             &singleton(),
             &declaration,
+            tapscript::StateWitnessSchedule::WholeMetadata,
         ),
         Err(StateLinkRefusal::SingletonDeclarationMismatch)
     );
@@ -467,6 +569,12 @@ fn reachability(refusal: &StateLinkRefusal) -> &'static str {
         StateLinkRefusal::MissingDefinition(_) => "a_consumed_key_with_no_definition_is_refused",
         StateLinkRefusal::UnusedDefinition(_) => "a_definition_no_consumer_reads_is_refused",
         StateLinkRefusal::IncompatibleType { .. } => "a_definition_of_the_wrong_kind_is_refused",
+        StateLinkRefusal::MetadataHeaderWidthMismatch { .. } => {
+            "a_header_width_disagreement_is_refused"
+        }
+        StateLinkRefusal::MetadataSchemaDisagreement { .. } => {
+            "a_header_schema_disagreement_is_refused"
+        }
         StateLinkRefusal::SingletonDeclarationMismatch => {
             "a_declaration_for_another_asset_is_refused"
         }
@@ -565,6 +673,14 @@ fn the_closed_refusal_root_is_covered_by_test_or_by_reason() {
             declared: StateSymbolType::Asset,
             offered: StateSymbolType::LeadBound,
         },
+        StateLinkRefusal::MetadataHeaderWidthMismatch {
+            width: 24,
+            variable_start: 25,
+        },
+        StateLinkRefusal::MetadataSchemaDisagreement {
+            layout: vec![0, 0, 0, 2],
+            constructor: 1,
+        },
         StateLinkRefusal::TargetRevisionDisagreement {
             constructor: TargetContractVersion::V1,
             reviewed: TargetContractVersion::V2,
@@ -601,8 +717,8 @@ fn the_closed_refusal_root_is_covered_by_test_or_by_reason() {
     ];
 
     let accounts: BTreeSet<&str> = refusals.iter().map(reachability).collect();
-    assert_eq!(refusals.len(), 13);
-    assert_eq!(accounts.len(), 13);
+    assert_eq!(refusals.len(), 15);
+    assert_eq!(accounts.len(), 15);
     assert_eq!(
         refusals
             .iter()

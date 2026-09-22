@@ -82,10 +82,10 @@ pub use transaction_form::{
     SponsorProgramClass, StatedAmountBound, StatedAmountCheck, SubstrateGround,
     SubstrateRevisitTrigger, SubstrateSelection, TAPSCRIPT_STACK_ITEM_RELAY_LIMIT,
     ThirdPartySubstrateReview, TransactionForm, TransactionFormReview,
-    TransactionSubstrateDecision, ZeroFeeRepresentation, reviewed_explicit_zero_value_rule,
-    reviewed_fee_output_contract, reviewed_sponsor_input_profile, reviewed_stated_amount_bound,
-    reviewed_stated_amount_checks, reviewed_substrate_decision, reviewed_transaction_forms,
-    transaction_form_evidence,
+    TransactionSubstrateDecision, ZeroFeeRepresentation, review_maturity_announcement_form,
+    reviewed_explicit_zero_value_rule, reviewed_fee_output_contract,
+    reviewed_sponsor_input_profile, reviewed_stated_amount_bound, reviewed_stated_amount_checks,
+    reviewed_substrate_decision, reviewed_transaction_forms, transaction_form_evidence,
 };
 
 #[cfg(test)]

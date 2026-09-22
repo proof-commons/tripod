@@ -76,11 +76,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use tapscript::upstream::{Cycle, StateSingletonDeclaration};
+use tapscript::upstream::{
+    Cycle, STATE_METADATA_LAYOUT, StateMetadataLayoutRow, StateMetadataRegionClass,
+    StateSingletonDeclaration,
+};
 use tapscript::{
     CandidateStateConstructor, StackItem, StateAnnouncementProgram, StateAnnouncementSymbol,
     StateBranchSide, StateConstructorReference, StateInternalKeyPolicy, StateNonceBudget,
-    StateOperatorSymbol, StatePatternSymbol, StateProgramSymbol,
+    StateOperatorSymbol, StatePatternSymbol, StateProgramSymbol, StateWitnessSchedule,
 };
 use target_elements::{LeafVersion, ReviewedElementsTapscriptDefinition, TargetContractVersion};
 
@@ -91,7 +94,12 @@ use crate::state_error::StateLinkRefusal;
 
 /// One typed key of a maturity announcement link.
 ///
-/// Thirteen: the six the composed program pushes, derived from the three
+/// The historical schedule has thirteen keys and six program pushes. The
+/// variable schedule adds the metadata header as a seventh push. Its
+/// definition exists only when a site consumes it: an unconsumed key is
+/// refused by pass two rather than retained as unused vocabulary.
+///
+/// The pushed keys are derived from the three
 /// family enums with the shared asset and amount canonicalized, and the
 /// seven kinds of constructor reference, whose values are stored beside
 /// the key rather than inside it.
@@ -111,6 +119,8 @@ pub enum StateLinkSymbol {
     MaturityLeadMax,
     /// The committed operator public key the leaf authorizes against.
     CommittedOperatorKey,
+    /// Constant metadata header restored by the variable leaf.
+    MetadataHeader,
     /// The canonical metadata schema revision.
     MetadataSchema,
     /// The exact static subtree root.
@@ -134,13 +144,14 @@ impl StateLinkSymbol {
     /// this type states: a key added without a definition and a consumer
     /// changes this length, and the tests read the length from here
     /// rather than restating it.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::StateAsset,
         Self::StateAmount,
         Self::InternalKey,
         Self::MaturityLeadMin,
         Self::MaturityLeadMax,
         Self::CommittedOperatorKey,
+        Self::MetadataHeader,
         Self::MetadataSchema,
         Self::StaticSubtreeRoot,
         Self::LeafVersion,
@@ -172,6 +183,9 @@ impl StateLinkSymbol {
             StateProgramSymbol::Semantic(StateAnnouncementSymbol::MaturityLeadMax) => {
                 Self::MaturityLeadMax
             }
+            StateProgramSymbol::Semantic(StateAnnouncementSymbol::MetadataHeader) => {
+                Self::MetadataHeader
+            }
             StateProgramSymbol::Operator(StateOperatorSymbol::CommittedOperatorKey) => {
                 Self::CommittedOperatorKey
             }
@@ -195,9 +209,9 @@ impl StateLinkSymbol {
 
     /// Whether some instruction of the composed program pushes this key.
     ///
-    /// The six that do are the reduced census the composed record
-    /// carries; the seven that do not are constructor policy, consumed
-    /// by a field rather than by a push.
+    /// Seven keys can be pushed, including the header consumed only by
+    /// the variable schedule. A whole-metadata record pushes the other
+    /// six. The seven constructor keys are consumed by fields.
     #[must_use]
     pub const fn is_program_symbol(self) -> bool {
         matches!(
@@ -208,6 +222,7 @@ impl StateLinkSymbol {
                 | Self::MaturityLeadMin
                 | Self::MaturityLeadMax
                 | Self::CommittedOperatorKey
+                | Self::MetadataHeader
         )
     }
 }
@@ -229,6 +244,8 @@ pub enum StateSymbolType {
     XOnlyPublicKey,
     /// An announcement lead, in cycles.
     LeadBound,
+    /// Constant prefix of canonical metadata.
+    MetadataHeader,
     /// A canonical metadata schema revision.
     MetadataSchema,
     /// A static subtree root.
@@ -257,6 +274,7 @@ pub const fn state_declared_type(symbol: StateLinkSymbol) -> StateSymbolType {
         StateLinkSymbol::MaturityLeadMin | StateLinkSymbol::MaturityLeadMax => {
             StateSymbolType::LeadBound
         }
+        StateLinkSymbol::MetadataHeader => StateSymbolType::MetadataHeader,
         StateLinkSymbol::MetadataSchema => StateSymbolType::MetadataSchema,
         StateLinkSymbol::StaticSubtreeRoot => StateSymbolType::StaticRoot,
         StateLinkSymbol::LeafVersion => StateSymbolType::LeafVersion,
@@ -278,6 +296,8 @@ pub enum StateSymbolValue {
     XOnlyPublicKey(StackItem),
     /// An announcement lead.
     LeadBound(Cycle),
+    /// Layout-derived constant metadata prefix.
+    MetadataHeader(StackItem),
     /// A metadata schema revision.
     MetadataSchema(u32),
     /// A static subtree root.
@@ -303,6 +323,7 @@ impl StateSymbolValue {
             Self::ExplicitAmount(_) => StateSymbolType::ExplicitAmount,
             Self::XOnlyPublicKey(_) => StateSymbolType::XOnlyPublicKey,
             Self::LeadBound(_) => StateSymbolType::LeadBound,
+            Self::MetadataHeader(_) => StateSymbolType::MetadataHeader,
             Self::MetadataSchema(_) => StateSymbolType::MetadataSchema,
             Self::StaticRoot(_) => StateSymbolType::StaticRoot,
             Self::LeafVersion(_) => StateSymbolType::LeafVersion,
@@ -325,9 +346,10 @@ impl StateSymbolValue {
     #[must_use]
     pub fn push_item(&self, target: &ReviewedElementsTapscriptDefinition) -> Option<StackItem> {
         match self {
-            Self::Asset(item) | Self::ExplicitAmount(item) | Self::XOnlyPublicKey(item) => {
-                Some(item.clone())
-            }
+            Self::Asset(item)
+            | Self::ExplicitAmount(item)
+            | Self::XOnlyPublicKey(item)
+            | Self::MetadataHeader(item) => Some(item.clone()),
             Self::LeadBound(cycle) => Some(StackItem::unsigned_le64(target, cycle.get())),
             Self::MetadataSchema(_)
             | Self::StaticRoot(_)
@@ -344,14 +366,11 @@ impl StateSymbolValue {
 
 /// Which layer is answerable for one definition.
 ///
-/// Five, because five layers settle things here, and merging any two
-/// would make the census say something false about who answers for a
-/// value. A deployment's choice, the constructor's own recipe, the
-/// reviewed contract, the architecture's lead bounds and the
-/// architecture's asset declaration are five different kinds of claim,
-/// and the last two are separate because a lead bound requires
-/// deployment calibration while a declared issuance is fixed by the
-/// declaration itself.
+/// The historical census has five origins: deployment, constructor,
+/// reviewed target, architecture bounds and architecture asset. The
+/// variable schedule adds the codec's fixed layout as a sixth origin.
+/// A lead bound requires calibration while a declared issuance is fixed
+/// by the asset declaration, and the metadata header is neither one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StateDefinitionOrigin {
     /// The deployment: values known only once the object exists.
@@ -365,6 +384,9 @@ pub enum StateDefinitionOrigin {
     ArchitectureBounds,
     /// The architecture's asset declaration for the singleton.
     ArchitectureAsset,
+    /// Fixed codec rows of the frontend's encoding, owned by no deployment
+    /// parameter or constructor reference.
+    CanonicalMetadataLayout,
 }
 
 /// The issued singleton's asset identifier.
@@ -513,7 +535,8 @@ fn definition_item(
 
 /// Pass one: collect one definition per key from the typed sources.
 ///
-/// Thirteen definitions over five origins. Two of them are not read off
+/// Thirteen definitions over five origins for the whole schedule, or
+/// fourteen over six for the variable schedule. Two are not read off
 /// a source but checked between two of them first: the declaration must
 /// name the asset the validated plan recognizes STATE by, and the
 /// constructor's declared revision must be the reviewed one this link is
@@ -540,6 +563,10 @@ fn definition_item(
 /// declaration names another asset,
 /// [`StateLinkRefusal::TargetRevisionDisagreement`] when the
 /// constructor's revision is not the reviewed one,
+/// [`StateLinkRefusal::MetadataHeaderWidthMismatch`] when the fixed prefix
+/// does not reach the variable range's start,
+/// [`StateLinkRefusal::MetadataSchemaDisagreement`] when the fixed schema
+/// differs from the constructor's declaration,
 /// [`StateLinkRefusal::DuplicateDefinition`] when one key is claimed
 /// twice, and [`StateLinkRefusal::InvalidDefinitionItem`] when a value's
 /// bytes are not a literal the reviewed contract admits.
@@ -549,6 +576,7 @@ pub fn collect_state_definitions(
     constructor: &CandidateStateConstructor,
     singleton: &StateSingletonAsset,
     declaration: &StateSingletonDeclaration,
+    schedule: StateWitnessSchedule,
 ) -> Result<StateDefinitionCensus, StateLinkRefusal> {
     // Two identifiers the architecture owns, compared without naming
     // their type: this crate depends on neither the architecture nor the
@@ -607,7 +635,73 @@ pub fn collect_state_definitions(
 
     define_constructor_references(&mut census, target, deployment, constructor)?;
 
+    if schedule == StateWitnessSchedule::VariableMetadata {
+        let schema = constructor
+            .reference_declarations()
+            .into_iter()
+            .find_map(|declared| match declared.reference {
+                StateConstructorReference::MetadataSchema(schema) => Some(schema),
+                _ => None,
+            })
+            .ok_or(StateLinkRefusal::MissingDefinition(
+                StateLinkSymbol::MetadataSchema,
+            ))?;
+        let header = metadata_header_from_layout(target, &STATE_METADATA_LAYOUT, schema)?;
+        census.define(
+            StateLinkSymbol::MetadataHeader,
+            StateSymbolValue::MetadataHeader(header),
+            StateDefinitionOrigin::CanonicalMetadataLayout,
+        )?;
+    }
+
     Ok(census)
+}
+
+/// Resolve the fixed prefix from layout rows and compare its schema with the constructor.
+///
+/// # Errors
+/// Refuses a prefix with the wrong width, a schema disagreement, or a
+/// literal the reviewed target cannot encode.
+pub fn metadata_header_from_layout(
+    target: &ReviewedElementsTapscriptDefinition,
+    layout: &[StateMetadataLayoutRow],
+    constructor_schema: u32,
+) -> Result<StackItem, StateLinkRefusal> {
+    let variable_start = layout
+        .iter()
+        .find(|row| row.class == StateMetadataRegionClass::Variable)
+        .map_or(0, |row| row.range.start);
+    let header: Vec<u8> = layout
+        .iter()
+        .take_while(|row| row.range.end <= variable_start)
+        .filter_map(|row| match row.class {
+            StateMetadataRegionClass::Constant(bytes) => Some(bytes),
+            StateMetadataRegionClass::Variable => None,
+        })
+        .flatten()
+        .copied()
+        .collect();
+    if header.len() != variable_start {
+        return Err(StateLinkRefusal::MetadataHeaderWidthMismatch {
+            width: header.len(),
+            variable_start,
+        });
+    }
+    let schema = layout
+        .iter()
+        .find(|row| row.name == "schema")
+        .and_then(|row| match row.class {
+            StateMetadataRegionClass::Constant(bytes) => Some(bytes.to_vec()),
+            StateMetadataRegionClass::Variable => None,
+        })
+        .unwrap_or_default();
+    if schema != constructor_schema.to_be_bytes() {
+        return Err(StateLinkRefusal::MetadataSchemaDisagreement {
+            layout: schema,
+            constructor: constructor_schema,
+        });
+    }
+    definition_item(target, StateLinkSymbol::MetadataHeader, &header)
 }
 
 /// Record the constructor's seven declarations and the key they carry.

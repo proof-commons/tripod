@@ -963,6 +963,7 @@ fn resolve<C: StateCurveCapability>(
         constructor,
         sources.singleton,
         sources.declaration,
+        sources.record.schedule(),
     )?;
     resolve_state_census(
         &definitions,

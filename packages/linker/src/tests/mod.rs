@@ -76,7 +76,10 @@ use compiler::maturity_announcement_plan::{
 use compiler::operation_plan::{
     PlacementSearchLimits, ValidatedTargetOperationPlan, plan_compact_ash_target_operation,
 };
-use realization::{Cycle, Maturity, ProtocolAmount, RealizationScope, StateMetadata, derive};
+use realization::{
+    Cycle, Maturity, ProtocolAmount, RealizationScope, STATE_METADATA_LAYOUT,
+    STATE_METADATA_VARIABLE_RANGE, StateMetadata, StateMetadataRegionClass, derive,
+};
 use tapscript::upstream::{AnnouncementLeadBounds, StateSingletonDeclaration};
 use tapscript::{
     CandidateRelocatableLiveTransferBundle, CandidateRelocatableTapscriptBundle,
@@ -85,12 +88,12 @@ use tapscript::{
     StateAnnouncementProgram, StateAnnouncementSymbol, StateCurveCapability,
     StateInternalKeyPolicy, StateNonceBudget, StateOperatorBindings, StateOperatorSymbol,
     StatePatternBindings, StatePatternSymbol, StateStaticLeaf, StateStaticNode, StateStaticSubtree,
-    StateTweakOutcome, build_state_announcement_program, build_state_operator_pattern,
-    demonstration_live_shape_set, demonstration_policy, derive_live_receipt_constructor,
-    emit_candidate_bundle, emit_candidate_live_bundle, operator_key_encoding_closure,
-    owner_key_encoding_closure, production_static_subtree, selected_operator_profile,
-    state_announcement_patterns, state_announcement_program, state_operator_fragment,
-    state_structural_patterns, static_transfer_leaf_set,
+    StateTweakOutcome, StateWitnessSchedule, build_state_announcement_program,
+    build_state_operator_pattern, demonstration_live_shape_set, demonstration_policy,
+    derive_live_receipt_constructor, emit_candidate_bundle, emit_candidate_live_bundle,
+    operator_key_encoding_closure, owner_key_encoding_closure, production_static_subtree,
+    selected_operator_profile, state_announcement_patterns, state_announcement_program,
+    state_operator_fragment, state_structural_patterns, static_transfer_leaf_set,
 };
 use target_elements::{
     EncodingClass, LeafVersion, ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript,
@@ -377,82 +380,92 @@ fn plan() -> ValidatedMaturityAnnouncementOperationPlan {
 
 /// The composed announcement record, built once and handed out by clone.
 fn record() -> StateAnnouncementProgram {
-    static RECORD: LazyLock<StateAnnouncementProgram> = LazyLock::new(|| {
-        let target = reviewed_target();
-        let item = |bytes| StackItem::new(&target, bytes).expect("fixture bytes are a stack item");
+    record_for_schedule(StateWitnessSchedule::WholeMetadata)
+}
 
-        let structural = StatePatternBindings::new(
-            &target,
-            BTreeMap::from([
-                (StatePatternSymbol::StateAsset, item(vec![0x11; 32])),
-                (
-                    StatePatternSymbol::StateAmount,
-                    StackItem::signed_le64(&target, 1),
-                ),
-            ]),
-        )
-        .expect("the structural census is complete");
-        let structural =
-            state_structural_patterns(&target, &structural).expect("the structural recipe builds");
+fn record_for_schedule(schedule: StateWitnessSchedule) -> StateAnnouncementProgram {
+    static WHOLE: LazyLock<StateAnnouncementProgram> =
+        LazyLock::new(|| build_record(StateWitnessSchedule::WholeMetadata));
+    static VARIABLE: LazyLock<StateAnnouncementProgram> =
+        LazyLock::new(|| build_record(StateWitnessSchedule::VariableMetadata));
+    match schedule {
+        StateWitnessSchedule::WholeMetadata => WHOLE.clone(),
+        StateWitnessSchedule::VariableMetadata => VARIABLE.clone(),
+    }
+}
 
-        let semantic = StateAnnouncementBindings::new(
-            &target,
-            BTreeMap::from([
-                (
-                    StateAnnouncementSymbol::InternalKey,
-                    item(STATE_NUMS_KEY.to_vec()),
-                ),
-                (
-                    StateAnnouncementSymbol::MaturityLeadMin,
-                    StackItem::unsigned_le64(&target, 2),
-                ),
-                (
-                    StateAnnouncementSymbol::MaturityLeadMax,
-                    StackItem::unsigned_le64(&target, 4),
-                ),
-                (StateAnnouncementSymbol::StateAsset, item(vec![0x11; 32])),
-                (
-                    StateAnnouncementSymbol::StateAmount,
-                    StackItem::signed_le64(&target, 1),
-                ),
-            ]),
-        )
+fn build_record(schedule: StateWitnessSchedule) -> StateAnnouncementProgram {
+    let target = reviewed_target();
+    let item = |bytes| StackItem::new(&target, bytes).expect("fixture bytes are a stack item");
+
+    let structural = StatePatternBindings::new(
+        &target,
+        BTreeMap::from([
+            (StatePatternSymbol::StateAsset, item(vec![0x11; 32])),
+            (
+                StatePatternSymbol::StateAmount,
+                StackItem::signed_le64(&target, 1),
+            ),
+        ]),
+    )
+    .expect("the structural census is complete");
+    let structural =
+        state_structural_patterns(&target, &structural).expect("the structural recipe builds");
+
+    let mut semantic_values = BTreeMap::from([
+        (
+            StateAnnouncementSymbol::InternalKey,
+            item(STATE_NUMS_KEY.to_vec()),
+        ),
+        (
+            StateAnnouncementSymbol::MaturityLeadMin,
+            StackItem::unsigned_le64(&target, 2),
+        ),
+        (
+            StateAnnouncementSymbol::MaturityLeadMax,
+            StackItem::unsigned_le64(&target, 4),
+        ),
+        (StateAnnouncementSymbol::StateAsset, item(vec![0x11; 32])),
+        (
+            StateAnnouncementSymbol::StateAmount,
+            StackItem::signed_le64(&target, 1),
+        ),
+    ]);
+    if schedule == StateWitnessSchedule::VariableMetadata {
+        let header = STATE_METADATA_LAYOUT
+            .iter()
+            .take_while(|row| row.range.end <= STATE_METADATA_VARIABLE_RANGE.start)
+            .filter_map(|row| match row.class {
+                StateMetadataRegionClass::Constant(bytes) => Some(bytes),
+                StateMetadataRegionClass::Variable => None,
+            })
+            .flatten()
+            .copied()
+            .collect();
+        semantic_values.insert(StateAnnouncementSymbol::MetadataHeader, item(header));
+    }
+    let semantic = StateAnnouncementBindings::new(&target, schedule, semantic_values)
         .expect("the semantic census is complete");
-        let semantic =
-            state_announcement_patterns(&target, &semantic).expect("the semantic recipe builds");
+    let semantic =
+        state_announcement_patterns(&target, &semantic).expect("the semantic recipe builds");
 
-        let operator = StateOperatorBindings::new(
-            &target,
-            &BTreeMap::from([(
-                StateOperatorSymbol::CommittedOperatorKey,
-                StackItem::encoded(&target, EncodingClass::XOnlyPublicKey, vec![0x33; 32])
-                    .expect("the fixture key has the reviewed width"),
-            )]),
-        )
-        .expect("the operator census is complete");
-        let fragment = state_operator_fragment(&operator).expect("the operator fragment builds");
-        let operator = build_state_operator_pattern(&target, &operator, fragment)
-            .expect("the operator pattern builds");
+    let operator = StateOperatorBindings::new(
+        &target,
+        &BTreeMap::from([(
+            StateOperatorSymbol::CommittedOperatorKey,
+            StackItem::encoded(&target, EncodingClass::XOnlyPublicKey, vec![0x33; 32])
+                .expect("the fixture key has the reviewed width"),
+        )]),
+    )
+    .expect("the operator census is complete");
+    let fragment = state_operator_fragment(&operator).expect("the operator fragment builds");
+    let operator = build_state_operator_pattern(&target, &operator, fragment)
+        .expect("the operator pattern builds");
 
-        let raw = state_announcement_program(
-            &target,
-            &structural,
-            &semantic,
-            &operator,
-            tapscript::StateWitnessSchedule::WholeMetadata,
-        )
+    let raw = state_announcement_program(&target, &structural, &semantic, &operator, schedule)
         .expect("the composed program assembles");
-        build_state_announcement_program(
-            &target,
-            &structural,
-            &semantic,
-            &operator,
-            tapscript::StateWitnessSchedule::WholeMetadata,
-            raw,
-        )
+    build_state_announcement_program(&target, &structural, &semantic, &operator, schedule, raw)
         .expect("the composed record is admitted")
-    });
-    RECORD.clone()
 }
 
 /// The fixture lead window: test material standing for no deployment.
@@ -576,6 +589,7 @@ fn resolved_census() -> StateResolvedCensus {
         &state_constructor(),
         &singleton(),
         &declaration(),
+        tapscript::StateWitnessSchedule::WholeMetadata,
     )
     .expect("the demonstration sources define every key");
 

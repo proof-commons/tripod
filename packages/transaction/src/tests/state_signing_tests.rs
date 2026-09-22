@@ -33,14 +33,18 @@
 
 use linker::live_backend::{OperatorKey, OperatorProfileDisposition};
 use linker::{CandidateDeploymentIdentity, OperatorDeploymentBinding};
-use realization::{Cycle, StateRepresentationNonce, encode_state_metadata};
+use realization::{
+    Cycle, STATE_METADATA_BYTES, STATE_METADATA_VARIABLE_RANGE, StateRepresentationNonce,
+    decode_state_metadata, encode_state_metadata, rebuild_state_metadata,
+    state_metadata_variable_region,
+};
 use tapscript::{StateProgramWitness, operator_key_encoding_closure};
 use target_elements::{EncodingClass, TargetContractVersion};
 
 use super::reviewed_target;
 use super::state_support::{
     FIXTURE_VERIFIER, FixtureLiveCurve, FixtureScriptPathVerifier, FixtureStateCurve,
-    asymmetric_genesis_identity, fixture_sign, validated_view,
+    asymmetric_genesis_identity, fixture_sign, validated_view, variable_validated_view,
 };
 use crate::bytes::{
     InputWitness, NonceField, OutputWitness, TargetInput, TargetOutput, TargetTransaction,
@@ -63,7 +67,7 @@ use crate::state_request::MaturityAnnouncementRequest;
 use crate::state_signing::{
     EVEN_OUTPUT_KEY_PREFIX, MaturityAuthorizationFailure, MaturityProtectedRegion,
     MaturitySubmissionStatus, ODD_OUTPUT_KEY_PREFIX, OperatorAuthorizedMaturityAnnouncement,
-    OperatorSigningStarted, SubmitReadyMaturityAnnouncement,
+    OperatorSigningStarted, SubmitReadyMaturityAnnouncement, checked_witness_item_width,
 };
 use crate::taproot::leaf_hash;
 
@@ -98,6 +102,68 @@ fn demonstration() -> FinalizedMaturityAnnouncement {
     )
     .expect("the demonstration deployment constructs its announcement");
     finalize_maturity_announcement(construction)
+}
+
+fn variable_demonstration() -> FinalizedMaturityAnnouncement {
+    let target = reviewed_target();
+    let validated = variable_validated_view();
+    let abi = derive_maturity_announcement_abi(&target, &validated)
+        .expect("the variable view derives an ABI");
+    let construction = construct_maturity_announcement(
+        &target,
+        &abi,
+        &validated,
+        &sponsorless(),
+        &FixtureStateCurve,
+    )
+    .expect("the variable deployment constructs an announcement");
+    finalize_maturity_announcement(construction)
+}
+
+#[test]
+fn variable_loader_carries_the_region_and_strict_rebuild_decodes_the_input() {
+    let finalized = variable_demonstration();
+    let ready = submit_ready_over(&finalized);
+    let stack = ready.witness().stack();
+    assert_eq!(stack.len(), 9);
+    assert_eq!(
+        stack.iter().take(7).map(Vec::len).collect::<Vec<_>>(),
+        vec![1, 4, 8, 32, 53, 1, 64]
+    );
+    let view = finalized.construction().validated_view().view();
+    let encoded = encode_state_metadata(
+        &view.predecessor_metadata(),
+        view.predecessor_representation_nonce(),
+    );
+    let canonical: [u8; STATE_METADATA_BYTES] =
+        encoded.try_into().expect("encoder fixes the width");
+    let variable = state_metadata_variable_region(&canonical);
+    assert_eq!(stack[4], variable);
+    let rebuilt = rebuild_state_metadata(&variable);
+    assert_eq!(rebuilt, canonical);
+    assert_eq!(
+        decode_state_metadata(&rebuilt),
+        decode_state_metadata(&canonical)
+    );
+    let mut wrong = variable;
+    wrong[65 - STATE_METADATA_VARIABLE_RANGE.start] = 0xff;
+    assert!(decode_state_metadata(&rebuild_state_metadata(&wrong)).is_err());
+}
+
+#[test]
+fn loader_refuses_an_item_shorter_or_longer_than_the_declared_role() {
+    let finalized = variable_demonstration();
+    let record = &finalized.construction().abi().witness_roles()[4];
+    for populated in [52, 54] {
+        assert_eq!(
+            checked_witness_item_width(record, vec![0; populated]),
+            Err(TransactionRefusal::WitnessItemWidthMismatch {
+                role: StateProgramWitness::PredecessorMetadata,
+                declared: 53,
+                populated,
+            })
+        );
+    }
 }
 
 /// The started state over one finalized announcement.

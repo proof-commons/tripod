@@ -3,18 +3,20 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use realization::{
-    Cycle, Maturity, ProtocolAmount, StateMetadata, StateRepresentationNonce, encode_state_metadata,
+    Cycle, Maturity, ProtocolAmount, STATE_METADATA_LAYOUT, STATE_METADATA_VARIABLE_RANGE,
+    StateMetadata, StateMetadataRegionClass, StateRepresentationNonce, encode_state_metadata,
+    state_metadata_variable_region,
 };
 use sha2::{Digest, Sha256};
-use target_elements::{FailureCause, OpcodeId};
+use target_elements::{FailureCause, OpcodeId, StackValueType};
 
 use super::reviewed_target;
 use crate::pattern::{fragment_prerequisites, op};
 use crate::state_announcement::*;
 use crate::state_constructor::{STATE_GENERATOR_X, STATE_GENERATOR_Y, STATE_NUMS_KEY};
 use crate::{
-    AbstractLimits, StackItem, TapscriptInstruction, TapscriptProgram, resource_projection,
-    validate_program,
+    AbstractLimits, StackItem, StateWitnessSchedule, TapscriptInstruction, TapscriptProgram,
+    resource_projection, validate_program,
 };
 
 fn values(minimum: u64, maximum: u64) -> BTreeMap<StateAnnouncementSymbol, StackItem> {
@@ -31,7 +33,39 @@ fn values(minimum: u64, maximum: u64) -> BTreeMap<StateAnnouncementSymbol, Stack
 }
 
 fn bindings(minimum: u64, maximum: u64) -> StateAnnouncementBindings {
-    StateAnnouncementBindings::new(&reviewed_target(), values(minimum, maximum)).unwrap()
+    StateAnnouncementBindings::new(
+        &reviewed_target(),
+        StateWitnessSchedule::WholeMetadata,
+        values(minimum, maximum),
+    )
+    .unwrap()
+}
+
+fn variable_bindings(minimum: u64, maximum: u64) -> StateAnnouncementBindings {
+    let target = reviewed_target();
+    let mut values = values(minimum, maximum);
+    let header = STATE_METADATA_LAYOUT
+        .iter()
+        .take_while(|row| row.range.end <= STATE_METADATA_VARIABLE_RANGE.start)
+        .filter_map(|row| match row.class {
+            StateMetadataRegionClass::Constant(bytes) => Some(bytes),
+            StateMetadataRegionClass::Variable => None,
+        })
+        .flatten()
+        .copied()
+        .collect();
+    values.insert(
+        StateAnnouncementSymbol::MetadataHeader,
+        StackItem::new(&target, header).unwrap(),
+    );
+    StateAnnouncementBindings::new(&target, StateWitnessSchedule::VariableMetadata, values).unwrap()
+}
+
+fn variable_record(id: StateAnnouncementId) -> StateAnnouncementPattern {
+    let target = reviewed_target();
+    let bindings = variable_bindings(2, 4);
+    let fragment = state_announcement_fragment(&target, &bindings, id).unwrap();
+    build_state_announcement_pattern(&target, &bindings, id, fragment).unwrap()
 }
 
 fn metadata(cycle: u64, maturity: Maturity, nonce: u32) -> Vec<u8> {
@@ -66,7 +100,10 @@ fn contract(id: StateAnnouncementId) {
     )
     .unwrap();
     assert_eq!(record.id(), &id);
-    assert_eq!(record.precondition(), &id.precondition());
+    assert_eq!(
+        record.precondition(),
+        &id.precondition(StateWitnessSchedule::WholeMetadata)
+    );
     assert_eq!(record.success(), walked.success());
     assert_eq!(record.success().len(), 1);
     assert_eq!(record.nonaborting_failure(), &BTreeSet::new());
@@ -602,6 +639,117 @@ fn authentication_rejects_every_metadata_byte_and_wrong_parity() {
 }
 
 #[test]
+fn variable_authentication_has_exactly_seven_restoration_instructions() {
+    let target = reviewed_target();
+    let whole = record(StateAnnouncementId::MetadataAuthentication);
+    let variable = variable_record(StateAnnouncementId::MetadataAuthentication);
+    let header = variable_bindings(2, 4);
+    let header = state_announcement_fragment(
+        &target,
+        &header,
+        StateAnnouncementId::MetadataAuthentication,
+    )
+    .unwrap()
+    .instructions()[1]
+        .clone();
+    let zero = TapscriptInstruction::Push(StackItem::new(&target, vec![0; 8]).unwrap());
+    assert_eq!(
+        &variable.fragment().instructions()[..7],
+        &[
+            op(OpcodeId::Swap),
+            header,
+            op(OpcodeId::Swap),
+            op(OpcodeId::Concatenate),
+            zero,
+            op(OpcodeId::Concatenate),
+            op(OpcodeId::Swap),
+        ]
+    );
+    assert_eq!(
+        &variable.fragment().instructions()[7..],
+        whole.fragment().instructions()
+    );
+    assert_eq!(variable.precondition().main().len(), 3);
+    assert_eq!(
+        variable.precondition().main()[1],
+        StackValueType::Bytes {
+            minimum: 53,
+            maximum: 53
+        }
+    );
+    assert_eq!(variable.success(), whole.success());
+}
+
+#[test]
+fn oracle_restoration_reaches_the_historical_entry_stack_and_outcome() {
+    let canonical = metadata(5, Maturity::Unannounced, 1);
+    let array: [u8; 86] = canonical.clone().try_into().unwrap();
+    let variable = state_metadata_variable_region(&array);
+    let whole = record(StateAnnouncementId::MetadataAuthentication);
+    let variable_fragment = variable_record(StateAnnouncementId::MetadataAuthentication);
+    let mut historical = authenticated_oracle(canonical.clone());
+    let mut restored = authenticated_oracle(canonical);
+    restored.stack[1] = variable.to_vec();
+    let prologue =
+        TapscriptProgram::new(variable_fragment.fragment().instructions()[..7].to_vec()).unwrap();
+    assert_eq!(restored.execute(&prologue), Ok(()));
+    assert_eq!(restored.stack, historical.stack);
+    assert_eq!(historical.execute(whole.fragment()), Ok(()));
+    assert_eq!(restored.execute(whole.fragment()), Ok(()));
+    assert_eq!(restored.stack, historical.stack);
+}
+
+#[test]
+fn canonical_authentication_cases_keep_their_outcomes_under_both_schedules() {
+    let canonical = metadata(5, Maturity::Unannounced, 1);
+    let whole = record(StateAnnouncementId::MetadataAuthentication);
+    let variable = variable_record(StateAnnouncementId::MetadataAuthentication);
+    for mutation in 0..=55 {
+        let mut historical = authenticated_oracle(canonical.clone());
+        let mut shortened = authenticated_oracle(canonical.clone());
+        shortened.stack[1] = canonical[STATE_METADATA_VARIABLE_RANGE].to_vec();
+        match mutation {
+            0..=52 => {
+                historical.stack[1][25 + mutation] ^= 1;
+                shortened.stack[1][mutation] ^= 1;
+            }
+            53 => {
+                historical.stack[0][0] ^= 1;
+                shortened.stack[0][0] ^= 1;
+            }
+            54 => {
+                historical.stack[2][0] ^= 1;
+                shortened.stack[2][0] ^= 1;
+            }
+            _ => (),
+        }
+        assert_eq!(
+            historical.execute(whole.fragment()),
+            shortened.execute(variable.fragment())
+        );
+    }
+}
+
+#[test]
+fn malformed_variable_items_refuse_authentication() {
+    let canonical = metadata(5, Maturity::Unannounced, 1);
+    let variable = variable_record(StateAnnouncementId::MetadataAuthentication);
+    for item in [
+        canonical[STATE_METADATA_VARIABLE_RANGE].to_vec()[..52].to_vec(),
+        vec![0; 54],
+        {
+            let mut wrong = canonical[STATE_METADATA_VARIABLE_RANGE].to_vec();
+            wrong[0] ^= 1;
+            wrong
+        },
+    ] {
+        let mut oracle = authenticated_oracle(canonical.clone());
+        oracle.stack[1] = item;
+        assert!(oracle.execute(variable.fragment()).is_err());
+    }
+}
+
+#[test]
 fn wrong_witnessed_root_and_internal_key_do_not_authenticate() {
     let base = authenticated_oracle(metadata(5, Maturity::Unannounced, 1));
     for id in [
@@ -621,7 +769,12 @@ fn wrong_witnessed_root_and_internal_key_do_not_authenticate() {
             StateAnnouncementSymbol::InternalKey,
             StackItem::new(&reviewed_target(), vec![0x33; 32]).unwrap(),
         );
-        let bindings = StateAnnouncementBindings::new(&reviewed_target(), substitutions).unwrap();
+        let bindings = StateAnnouncementBindings::new(
+            &reviewed_target(),
+            StateWitnessSchedule::WholeMetadata,
+            substitutions,
+        )
+        .unwrap();
         let program = state_announcement_fragment(&reviewed_target(), &bindings, id).unwrap();
         let mut wrong = Oracle::new(base.stack.clone());
         wrong.program.clone_from(&base.program);
@@ -971,40 +1124,84 @@ fn recipe_metadata_and_consumers_are_exact_component_unions() {
     assert_eq!(recipe.metadata(), &union);
     assert_eq!(
         recipe.consumers().keys().copied().collect::<BTreeSet<_>>(),
-        StateAnnouncementSymbol::ALL.iter().copied().collect()
+        StateAnnouncementSymbol::ALL
+            .iter()
+            .copied()
+            .filter(|symbol| *symbol != StateAnnouncementSymbol::MetadataHeader)
+            .collect()
     );
     assert_eq!(StateAnnouncementOwner::ALL.len(), 5);
     assert_eq!(StateAnnouncementWitness::ALL.len(), 6);
-    assert_eq!(StateAnnouncementSymbol::ALL.len(), 5);
+    assert_eq!(StateAnnouncementSymbol::ALL.len(), 6);
+    assert_eq!(recipe.consumers().len(), 5);
 }
 
 #[test]
 fn binding_census_rejects_missing_width_domain_and_bound_order() {
     use StateAnnouncementSymbol as S;
     let target = reviewed_target();
-    for &symbol in S::ALL {
+    for &symbol in S::ALL.iter().filter(|&&symbol| symbol != S::MetadataHeader) {
         let mut missing = values(2, 4);
         missing.remove(&symbol);
         assert_eq!(
-            StateAnnouncementBindings::new(&target, missing),
+            StateAnnouncementBindings::new(&target, StateWitnessSchedule::WholeMetadata, missing),
             Err(StateAnnouncementRefusal::ConsumerCensus)
         );
         let mut invalid = values(2, 4);
         invalid.insert(symbol, StackItem::new(&target, vec![1; 7]).unwrap());
         assert_eq!(
-            StateAnnouncementBindings::new(&target, invalid),
+            StateAnnouncementBindings::new(&target, StateWitnessSchedule::WholeMetadata, invalid),
             Err(StateAnnouncementRefusal::InvalidBinding(symbol))
         );
     }
     for (minimum, maximum) in [(0, 1), (5, 4)] {
         assert_eq!(
-            StateAnnouncementBindings::new(&target, values(minimum, maximum)),
+            StateAnnouncementBindings::new(
+                &target,
+                StateWitnessSchedule::WholeMetadata,
+                values(minimum, maximum)
+            ),
             Err(StateAnnouncementRefusal::InvalidBinding(S::MaturityLeadMin))
         );
     }
     for symbol in [S::StateAsset, S::StateAmount] {
         assert!(symbol.structural().is_some());
     }
+    assert_eq!(S::MetadataHeader.structural(), None);
+    assert_eq!(
+        StateAnnouncementBindings::new(
+            &target,
+            StateWitnessSchedule::VariableMetadata,
+            values(2, 4)
+        ),
+        Err(StateAnnouncementRefusal::ConsumerCensus)
+    );
+    let fragment = variable_record(StateAnnouncementId::MetadataAuthentication);
+    let TapscriptInstruction::Push(header) = &fragment.fragment().instructions()[1] else {
+        panic!("the prologue header is a push");
+    };
+    let mut with_header = values(2, 4);
+    with_header.insert(S::MetadataHeader, header.clone());
+    assert_eq!(
+        StateAnnouncementBindings::new(
+            &target,
+            StateWitnessSchedule::WholeMetadata,
+            with_header.clone()
+        ),
+        Err(StateAnnouncementRefusal::ConsumerCensus)
+    );
+    with_header.insert(
+        S::MetadataHeader,
+        StackItem::new(&target, vec![0; 24]).unwrap(),
+    );
+    assert_eq!(
+        StateAnnouncementBindings::new(
+            &target,
+            StateWitnessSchedule::VariableMetadata,
+            with_header
+        ),
+        Err(StateAnnouncementRefusal::InvalidBinding(S::MetadataHeader))
+    );
 }
 
 #[test]
@@ -1259,7 +1456,11 @@ fn every_reversed_extreme_lead_pair_is_a_named_binding_refusal() {
         for maximum in [0, 1, (1 << 63) - 1, 1 << 63, u64::MAX] {
             if minimum > maximum {
                 assert_eq!(
-                    StateAnnouncementBindings::new(&target, values(minimum, maximum)),
+                    StateAnnouncementBindings::new(
+                        &target,
+                        StateWitnessSchedule::WholeMetadata,
+                        values(minimum, maximum)
+                    ),
                     Err(StateAnnouncementRefusal::InvalidBinding(
                         StateAnnouncementSymbol::MaturityLeadMin
                     ))

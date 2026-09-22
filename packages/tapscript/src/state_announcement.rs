@@ -10,7 +10,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use compiler::operation_plan::RequiredSourceKind;
-use realization::{STATE_METADATA_BYTES, STATE_METADATA_DOMAIN, StateField};
+use realization::{
+    STATE_METADATA_BYTES, STATE_METADATA_DOMAIN, STATE_METADATA_VARIABLE_BYTES,
+    STATE_METADATA_VARIABLE_RANGE, StateField,
+};
 use sha2::{Digest, Sha256};
 use target_elements::{
     ElementsCapability, EncodingClass, FailureCause, OpcodeId, ResourceDimension,
@@ -25,6 +28,7 @@ use crate::pattern::{fragment_prerequisites, number, op, require_explicit};
 use crate::program::TapscriptProgram;
 use crate::stack::{AbstractLimits, AbstractStackState, resource_projection, validate_program};
 use crate::state_pattern::{StatePatternConstructibility, StatePatternSymbol};
+use crate::state_program::StateWitnessSchedule;
 
 census_enum! {
     /// Identities admitted after walking their witness schedules.
@@ -87,6 +91,12 @@ census_enum! {
         StateAsset,
         /// The same future linker reference as `StatePatternSymbol::StateAmount`.
         StateAmount,
+        /// Constant metadata header, consumed only by the variable schedule.
+        ///
+        /// The census follows the schedule because a symbol consumed by no
+        /// site would leave a defined link key nothing reads; the link refuses
+        /// such a definition by design.
+        MetadataHeader,
     }
 }
 
@@ -145,7 +155,10 @@ pub enum StateAnnouncementRefusal {
 
 /// Checked substitutions that still require linker resolution.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StateAnnouncementBindings(BTreeMap<StateAnnouncementSymbol, StackItem>);
+pub struct StateAnnouncementBindings {
+    schedule: StateWitnessSchedule,
+    values: BTreeMap<StateAnnouncementSymbol, StackItem>,
+}
 
 impl StateAnnouncementBindings {
     /// Check the exact census, widths, singleton amount and ordered lead bounds.
@@ -154,10 +167,18 @@ impl StateAnnouncementBindings {
     /// Refuses missing, unused or malformed substitutions.
     pub fn new(
         target: &ReviewedElementsTapscriptDefinition,
+        schedule: StateWitnessSchedule,
         values: BTreeMap<StateAnnouncementSymbol, StackItem>,
     ) -> Result<Self, StateAnnouncementRefusal> {
         use StateAnnouncementSymbol as S;
-        if values.keys().copied().collect::<BTreeSet<_>>() != S::ALL.iter().copied().collect() {
+        let expected: BTreeSet<_> = S::ALL
+            .iter()
+            .copied()
+            .filter(|symbol| {
+                schedule == StateWitnessSchedule::VariableMetadata || *symbol != S::MetadataHeader
+            })
+            .collect();
+        if values.keys().copied().collect::<BTreeSet<_>>() != expected {
             return Err(StateAnnouncementRefusal::ConsumerCensus);
         }
         for (&symbol, item) in &values {
@@ -165,6 +186,7 @@ impl StateAnnouncementBindings {
                 S::InternalKey | S::StateAsset => item.len() == 32,
                 S::MaturityLeadMin | S::MaturityLeadMax => item.len() == 8,
                 S::StateAmount => item.signed_le64_value(target).is_some_and(|n| n > 0),
+                S::MetadataHeader => item.len() == STATE_METADATA_VARIABLE_RANGE.start,
             };
             if !valid {
                 return Err(StateAnnouncementRefusal::InvalidBinding(symbol));
@@ -178,7 +200,13 @@ impl StateAnnouncementBindings {
         if read(S::MaturityLeadMin) == 0 || read(S::MaturityLeadMin) > read(S::MaturityLeadMax) {
             return Err(StateAnnouncementRefusal::InvalidBinding(S::MaturityLeadMin));
         }
-        Ok(Self(values))
+        Ok(Self { schedule, values })
+    }
+
+    /// Schedule whose exact symbol census these bindings satisfy.
+    #[must_use]
+    pub const fn schedule(&self) -> StateWitnessSchedule {
+        self.schedule
     }
 }
 
@@ -241,6 +269,7 @@ pub struct StateAnnouncementPattern {
 /// A union over the five components, without a composed leaf.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateAnnouncementRecipe {
+    schedule: StateWitnessSchedule,
     components: Vec<StateAnnouncementPattern>,
     metadata: StateAnnouncementMetadata,
     consumers: BTreeMap<StateAnnouncementSymbol, StateAnnouncementConsumer>,
@@ -295,13 +324,19 @@ impl StateAnnouncementId {
 
     /// Exact starting stack for this standalone fragment.
     #[must_use]
-    pub fn precondition(self) -> AbstractStackState {
+    pub fn precondition(self, schedule: StateWitnessSchedule) -> AbstractStackState {
         use StateAnnouncementWitness as W;
         AbstractStackState::from_main(
             self.witness()
                 .iter()
                 .map(|role| {
                     width(match role {
+                        W::PredecessorMetadata
+                            if self == Self::MetadataAuthentication
+                                && schedule == StateWitnessSchedule::VariableMetadata =>
+                        {
+                            STATE_METADATA_VARIABLE_BYTES
+                        }
                         W::PredecessorMetadata | W::DerivedSuccessorMetadata => {
                             STATE_METADATA_BYTES
                         }
@@ -315,9 +350,9 @@ impl StateAnnouncementId {
         )
     }
 
-    fn postcondition(self) -> AbstractStackState {
+    fn postcondition(self, schedule: StateWitnessSchedule) -> AbstractStackState {
         if self == Self::LeadWindow {
-            self.precondition()
+            self.precondition(schedule)
         } else if matches!(self, Self::MetadataAuthentication | Self::CopyThrough) {
             AbstractStackState::from_main(vec![width(32), width(STATE_METADATA_BYTES)])
         } else {
@@ -384,8 +419,9 @@ impl Emitter<'_> {
             .entry(symbol)
             .or_default()
             .insert(self.instructions.len());
-        self.instructions
-            .push(TapscriptInstruction::Push(self.bindings.0[&symbol].clone()));
+        self.instructions.push(TapscriptInstruction::Push(
+            self.bindings.values[&symbol].clone(),
+        ));
     }
 
     fn tag(&mut self, name: &[u8]) -> Result<(), StateAnnouncementRefusal> {
@@ -569,6 +605,14 @@ fn emit<'a>(
     };
     match id {
         StateAnnouncementId::MetadataAuthentication => {
+            if bindings.schedule() == StateWitnessSchedule::VariableMetadata {
+                use OpcodeId as O;
+                emitter.ops(&[O::Swap]);
+                emitter.symbol(StateAnnouncementSymbol::MetadataHeader);
+                emitter.ops(&[O::Swap, O::Concatenate]);
+                emitter.raw(&[0; 8])?;
+                emitter.ops(&[O::Concatenate, O::Swap]);
+            }
             emitter.authenticate(OpcodeId::InspectInputScriptPubKey, true)?;
         }
         StateAnnouncementId::MaturityPredecessor => {
@@ -655,14 +699,14 @@ pub fn build_state_announcement_pattern(
     if fragment.instructions() != emitted.instructions {
         return Err(StateAnnouncementRefusal::FragmentMismatch);
     }
-    let precondition = id.precondition();
+    let precondition = id.precondition(bindings.schedule());
     let execution = validate_program(
         target,
         &fragment,
         &precondition,
         AbstractLimits::for_target(target),
     )?;
-    if execution.success() != &BTreeSet::from([id.postcondition()])
+    if execution.success() != &BTreeSet::from([id.postcondition(bindings.schedule())])
         || !execution.nonaborting_failure().is_empty()
         || !execution.signature_forms().is_empty()
     {
@@ -711,6 +755,7 @@ impl StateAnnouncementRecipe {
         {
             return Err(StateAnnouncementRefusal::ComponentRecipe);
         }
+        let schedule = components[0].bindings.schedule();
         let mut metadata = StateAnnouncementMetadata::default();
         let mut consumers: BTreeMap<_, StateAnnouncementConsumer> = BTreeMap::new();
         for component in &components {
@@ -730,6 +775,7 @@ impl StateAnnouncementRecipe {
             }
         }
         Ok(Self {
+            schedule,
             components,
             metadata,
             consumers,
@@ -819,6 +865,12 @@ impl StateAnnouncementPattern {
 }
 
 impl StateAnnouncementRecipe {
+    /// Witness schedule shared by all five component bindings.
+    #[must_use]
+    pub const fn schedule(&self) -> StateWitnessSchedule {
+        self.schedule
+    }
+
     /// Ordered component records.
     #[must_use]
     pub const fn components(&self) -> &Vec<StateAnnouncementPattern> {

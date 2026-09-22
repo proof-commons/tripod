@@ -127,6 +127,7 @@ fn definitions(
         &state_constructor(),
         singleton,
         &demonstration_declaration(),
+        tapscript::StateWitnessSchedule::WholeMetadata,
     )
     .expect("the sources define every key")
 }

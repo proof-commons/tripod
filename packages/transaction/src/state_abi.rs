@@ -73,32 +73,26 @@
 //!
 //! # The relay verdict is the target's, with its residual named
 //!
-//! The announcement form's reviewed verdict is published as the reviewed
-//! target states it rather than as literals copied into this module: the
-//! consensus admission, the relay admission, the conditions recorded
-//! beside it, and whether the form carries a fee output. The verdict that
-//! comes back is a relay refusal with direct submission to a producer as
-//! the route, and the reason it is a refusal rather than an admission
-//! under condition is a width: the predecessor-metadata item is eighty-six
-//! bytes, the default relay policy admits no tapscript stack item wider
-//! than eighty, and no fee, package or version choice makes an item
-//! narrower. That is also why this form is built at the standard
-//! transaction version while the sponsorless compact form is built at the
-//! topology-restricted one — there, selecting the version turns a recorded
-//! relay condition into a constructible path, and here there is no
-//! condition to select. Splitting the item into relay-admissible pieces a
-//! leaf reassembles is a real candidate and is named as an outstanding
-//! obligation rather than performed, because it would move the witness
-//! schedule, its widths and order, the authentication's slicing and the
-//! leaf's bytes.
+//! The announcement form review takes the composed record's declared
+//! initial-item widths and the reviewed target's policy bound. Both
+//! schedules have consensus admission and no fee output. The historical
+//! eighty-six-byte metadata item exceeds the eighty-byte relay bound, so
+//! its verdict is refusal with direct submission to a producer as its
+//! route; the split residual stays outstanding. The variable schedule
+//! carries fifty-three metadata bytes, so its verdict is conditional
+//! admission with the fee-free topology and direct-submission conditions.
+//! Its outstanding obligation names the absence of a measurement of
+//! initial argument widths over the linked instructions. Both schedules
+//! use the standard announcement transaction version; the verdict records
+//! the different relay routes.
 //!
 //! # The partition refuses rather than lists
 //!
 //! [`InheritedStateLinkObligations`] names what this derivation did about
 //! each obligation the link left standing, and both halves are named
 //! sets. The check is then made against the bundle's own set rather than
-//! trusted: an obligation a later wave adds to the link and this module
-//! does not name is neither discharged nor carried, and the derivation
+//! trusted: an obligation the link carries and this module does not name
+//! is neither discharged nor carried, and the derivation
 //! refuses instead of quietly dropping it. The ABI's own outstanding set
 //! is structurally non-empty for the reason the link's is — the least
 //! obligation is a field of its own — and its carried members are derived
@@ -113,11 +107,12 @@ use linker::{
 };
 use tapscript::{
     StateAnnouncementProgram, StateLeafRole, StateProgramComponent, StateProgramWitness,
+    StateWitnessSchedule,
 };
 use target_elements::{
     FormAdmission, LeafVersion, PayloadWidth, RelayCondition, ReviewedElementsTapscriptDefinition,
     StackValueType, TargetContractVersion, TransactionForm, TransactionFormReview,
-    reviewed_transaction_forms,
+    review_maturity_announcement_form,
 };
 
 use crate::abi::{SequenceConstraint, TargetTransactionVersion};
@@ -314,6 +309,10 @@ pub struct MaturityRelayVerdict {
 }
 
 impl MaturityRelayVerdict {
+    const fn from_review(review: TransactionFormReview) -> Self {
+        Self { review }
+    }
+
     /// The announcement form's verdict, read from a reviewed census.
     ///
     /// # Errors
@@ -527,18 +526,21 @@ pub enum MaturityAbiObligation {
     /// obligation carried whole would understate what was computed, and
     /// one dropped would overstate it.
     CurrentStateRootFreshnessUnestablished,
-    /// The relay-admissible split of the predecessor-metadata item is
-    /// not opened.
+    /// The whole-metadata schedule still requires a relay-admissible split.
     ///
-    /// The metadata item is eighty-six bytes by the canonical encoding
-    /// and the default relay policy admits no tapscript stack item wider
-    /// than eighty, so an announcement spend carrying real metadata is
-    /// judged at the block layer rather than forwarded. Splitting the
-    /// item into pieces the leaf reassembles is the candidate answer and
-    /// is named rather than taken, because it moves the witness schedule,
-    /// its widths and order, the authentication's slicing and the leaf's
-    /// bytes together.
+    /// The historical item's eighty-six bytes exceed the reviewed
+    /// eighty-byte relay bound. This obligation is carried exactly when
+    /// the record's declared witness widths make the form review refuse
+    /// relay admission. The variable schedule instead carries only the
+    /// changing region and reconstructs the canonical encoding in the leaf.
     RelayAdmissibleWitnessSplitUnopened,
+    /// Initial argument widths have not been measured over the linked program.
+    ///
+    /// This ABI cites the composed record's declared widths. The link's
+    /// resource projection measures execution bounds, while admission checks
+    /// the initial arguments. Measuring the linked bytes is what prevents a
+    /// changed declaration from claiming a width the program does not use.
+    InitialArgumentWidthsUnmeasuredOverLinkedProgram,
     /// No representation nonce was searched for a successor of an
     /// observed predecessor.
     ///
@@ -633,6 +635,7 @@ impl InheritedStateLinkObligations {
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CandidateMaturityAnnouncementAbi {
+    schedule: StateWitnessSchedule,
     contract: TargetContractVersion,
     leaf_version: LeafVersion,
     inputs: MaturityInputLayout,
@@ -646,6 +649,12 @@ pub struct CandidateMaturityAnnouncementAbi {
 }
 
 impl CandidateMaturityAnnouncementAbi {
+    /// Transport schedule retained by the composed record.
+    #[must_use]
+    pub const fn schedule(&self) -> StateWitnessSchedule {
+        self.schedule
+    }
+
     /// The reviewed contract revision this ABI is bound to.
     #[must_use]
     pub const fn contract(&self) -> TargetContractVersion {
@@ -684,13 +693,9 @@ impl CandidateMaturityAnnouncementAbi {
 
     /// The transaction version an announcement is built at.
     ///
-    /// The standard version. The topology-restricted one is selected
-    /// where a form's reviewed relay verdict is admitted under a
-    /// condition and one of those conditions is a topology-restricted
-    /// package, because selecting it turns a recorded condition into a
-    /// constructible path. The announcement's relay verdict is a refusal
-    /// on a stack-item width, which leaves no condition to select and
-    /// nothing for the restricted version to buy.
+    /// The standard announcement version is independent of whether the
+    /// selected witness schedule's declared widths produce a relay refusal
+    /// or conditional admission. The relay verdict records that distinction.
     #[must_use]
     pub const fn version(&self) -> TargetTransactionVersion {
         self.version
@@ -761,17 +766,26 @@ pub fn derive_maturity_announcement_abi(
     }
 
     let inherited = disposition(bundle.obligations())?;
-    let obligations = outstanding(&inherited);
+    let roles = witness_roles(bundle.record());
+    let review = review_maturity_announcement_form(
+        roles
+            .iter()
+            .map(|role| role.maximum_width().unwrap_or(usize::MAX)),
+        target.definition().resources(),
+    );
+    let relay = MaturityRelayVerdict::from_review(review);
+    let obligations = outstanding(&inherited, &relay);
 
     Ok(CandidateMaturityAnnouncementAbi {
+        schedule: bundle.record().schedule(),
         contract: bundle.policy().target_policy(),
         leaf_version: bundle.policy().leaf_version(),
         inputs: MaturityInputLayout::stated(),
         outputs: MaturityOutputLayout::stated(),
         sequence: SequenceConstraint::FinalOnEveryInput,
         version: TargetTransactionVersion::Standard,
-        relay: MaturityRelayVerdict::read(&reviewed_transaction_forms())?,
-        witness_roles: witness_roles(bundle.record()),
+        relay,
+        witness_roles: roles,
         inherited,
         obligations,
     })
@@ -822,14 +836,21 @@ fn disposition(
 /// The carried half is read from the partition rather than listed a
 /// second time, so the two censuses cannot disagree about which link
 /// obligation survived.
-fn outstanding(inherited: &InheritedStateLinkObligations) -> OutstandingMaturityAbiObligations {
+fn outstanding(
+    inherited: &InheritedStateLinkObligations,
+    relay: &MaturityRelayVerdict,
+) -> OutstandingMaturityAbiObligations {
     let mut rest: BTreeSet<_> = inherited
         .carried()
         .iter()
         .copied()
         .filter_map(carried_member)
         .collect();
-    rest.insert(MaturityAbiObligation::RelayAdmissibleWitnessSplitUnopened);
+    if relay.relay() == FormAdmission::Refused {
+        rest.insert(MaturityAbiObligation::RelayAdmissibleWitnessSplitUnopened);
+    } else {
+        rest.insert(MaturityAbiObligation::InitialArgumentWidthsUnmeasuredOverLinkedProgram);
+    }
 
     OutstandingMaturityAbiObligations {
         least: MaturityAbiObligation::CurrentStateRootFreshnessUnestablished,

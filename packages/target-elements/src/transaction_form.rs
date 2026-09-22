@@ -31,6 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::capability::census_enum;
 use crate::evidence::TargetEvidenceRequirementId;
+use crate::resource::{ResourceContract, ResourceDimension};
 
 census_enum! {
     /// One structural term the target's fee-role test is made of.
@@ -330,6 +331,51 @@ impl TransactionFormReview {
     }
 }
 
+/// Review an announcement from the widths its initial argument frame declares.
+///
+/// The reviewed policy measures each item before script execution. An over-wide
+/// item therefore refuses relay regardless of the leaf's later stack effects.
+///
+/// The resource contract supplies the target policy rather than teaching the
+/// metadata codec a transport limit.
+#[must_use]
+pub fn review_maturity_announcement_form(
+    widths: impl IntoIterator<Item = usize>,
+    resources: &ResourceContract,
+) -> TransactionFormReview {
+    let limit = resources
+        .policy()
+        .bounds()
+        .get(&ResourceDimension::InitialWitnessItemBytes)
+        .and_then(|bound| bound.maximum());
+    let over_width = widths.into_iter().any(|width| {
+        limit.is_none_or(|bound| u64::try_from(width).map_or(true, |width| width > bound))
+    });
+    let (relay, relay_conditions) = if over_width {
+        (
+            FormAdmission::Refused,
+            std::iter::once(RelayCondition::DirectSubmissionToProducer).collect(),
+        )
+    } else {
+        (
+            FormAdmission::AdmittedUnderCondition,
+            [
+                RelayCondition::TopologyRestrictedPackage,
+                RelayCondition::DirectSubmissionToProducer,
+            ]
+            .into_iter()
+            .collect(),
+        )
+    };
+    TransactionFormReview {
+        form: TransactionForm::MaturityAnnouncement,
+        consensus: FormAdmission::Admitted,
+        relay,
+        relay_conditions,
+        fee_output_present: false,
+    }
+}
+
 /// The reviewed verdicts for every candidate transaction form.
 ///
 /// Source, in the reviewed target checkout: consensus admission of a
@@ -388,13 +434,10 @@ pub fn reviewed_transaction_forms() -> BTreeMap<TransactionForm, TransactionForm
             relay_conditions: std::iter::once(RelayCondition::OwnFeeReachesRelayFloor).collect(),
             fee_output_present: true,
         },
-        TransactionFormReview {
-            form: TransactionForm::MaturityAnnouncement,
-            consensus: FormAdmission::Admitted,
-            relay: FormAdmission::Refused,
-            relay_conditions: std::iter::once(RelayCondition::DirectSubmissionToProducer).collect(),
-            fee_output_present: false,
-        },
+        review_maturity_announcement_form(
+            [1, 4, 8, 32, 86, 1, 64],
+            &crate::resource::reviewed_resources(),
+        ),
     ]
     .into_iter()
     .map(|review| (review.form, review))

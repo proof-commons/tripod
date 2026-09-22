@@ -142,6 +142,7 @@ fn every_carried_artifact_equals_what_its_own_stage_produces() {
         constructor,
         &singleton(),
         &declaration(),
+        tapscript::StateWitnessSchedule::WholeMetadata,
     )
     .expect("the demonstration sources define every key");
     let resolved = resolve_state_census(
@@ -217,7 +218,7 @@ fn one_announcement_program_and_every_delegating_accessor_reads_through() {
         .map(StateResolvedEntry::definition)
         .collect();
     assert_eq!(projected, embedded);
-    assert_eq!(projected.len(), StateLinkSymbol::ALL.len());
+    assert_eq!(projected.len(), 13);
 }
 
 // (a) The status is read and never written, and the outstanding set is

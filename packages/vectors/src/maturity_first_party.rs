@@ -1753,6 +1753,7 @@ fn linked_program(
         constructor,
         &singleton,
         &declaration,
+        record.schedule(),
     )
     .map_err(|_| unbuildable())?;
     let consumers = StateConsumerCensus::from_sources(record, constructor);

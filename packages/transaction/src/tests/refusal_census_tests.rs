@@ -185,6 +185,7 @@ fn every_transaction_refusal_is_censused(refusal: &Refusal) {
         | Refusal::MaturityBytesDifferAfterFinalization { .. }
         | Refusal::MaturityMutationAfterSigningStarted { .. }
         | Refusal::MaturityOperatorAuthorizationRefused { .. }
+        | Refusal::WitnessItemWidthMismatch { .. }
         | Refusal::MaturityConstructionRightRefused { .. }
         | Refusal::MaturitySuccessorMetadataChangedAfterSigning
         | Refusal::MaturitySuccessorProgramChangedAfterSigning { .. }

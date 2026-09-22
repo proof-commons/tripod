@@ -178,8 +178,9 @@ pub use state_pattern::{
 pub use state_program::{
     StateAnnouncementProgram, StateProgramAdapter, StateProgramComponent, StateProgramConsumer,
     StateProgramDisclosure, StateProgramMetadata, StateProgramRefusal, StateProgramResidual,
-    StateProgramSymbol, StateProgramWitness, StateWitnessSchedule,
-    build_state_announcement_program, production_static_subtree, state_announcement_program,
+    StateProgramSymbol, StateProgramWitness, StateWitnessLegalization, StateWitnessLoweringRefusal,
+    StateWitnessSchedule, build_state_announcement_program, legalize_state_witness_schedule,
+    production_static_subtree, state_announcement_program,
 };
 
 #[cfg(test)]

@@ -23,7 +23,7 @@ use linker::live_backend::{
 };
 use linker::{OwnerParameter, StateLinkRefusal};
 use realization::MaturityTransitionRefusal;
-use tapscript::StateConstructorRefusal;
+use tapscript::{StateConstructorRefusal, StateProgramWitness};
 use target_elements::{ResourceDimension, TransactionForm};
 
 use crate::bytes::Outpoint;
@@ -800,6 +800,16 @@ pub enum TransactionRefusal {
     MissingReviewedTransactionForm {
         /// The form whose reviewed verdict was wanted.
         form: TransactionForm,
+    },
+
+    /// A populated initial argument disagrees with its ABI role width.
+    WitnessItemWidthMismatch {
+        /// Role whose item was populated.
+        role: StateProgramWitness,
+        /// Exact width declared by the composed record.
+        declared: usize,
+        /// Width the loader produced.
+        populated: usize,
     },
 
     // --- Maturity-announcement construction (§12.5, §12.7) -------------

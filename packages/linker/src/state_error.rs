@@ -86,6 +86,22 @@ pub enum StateLinkRefusal {
         offered: StateSymbolType,
     },
 
+    /// Layout constants do not fill the prefix before the variable span.
+    MetadataHeaderWidthMismatch {
+        /// Bytes the constant rows supplied.
+        width: usize,
+        /// Expected width fixed by the variable span's start.
+        variable_start: usize,
+    },
+
+    /// The codec's constant schema bytes disagree with the constructor.
+    MetadataSchemaDisagreement {
+        /// Schema bytes fixed by the layout.
+        layout: Vec<u8>,
+        /// Schema revision declared by the constructor.
+        constructor: u32,
+    },
+
     /// The constructor's declared revision is not the reviewed one the
     /// link is bound to.
     ///

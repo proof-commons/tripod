@@ -25,6 +25,7 @@
 use std::collections::BTreeMap;
 
 use crate::capability::census_enum;
+use crate::transaction_form::TAPSCRIPT_STACK_ITEM_RELAY_LIMIT;
 
 census_enum! {
     /// One resource the target accounts for, in its own unit.
@@ -38,6 +39,8 @@ census_enum! {
         ScriptBytes,
         /// Items on the witness stack before execution begins.
         InitialStackItems,
+        /// Bytes of one initial witness item under relay policy.
+        InitialWitnessItemBytes,
         /// The greatest combined main and alternate stack depth reached.
         PeakStackItems,
         /// Bytes of one stack element.
@@ -254,6 +257,12 @@ pub(crate) fn reviewed_resources() -> ResourceContract {
             4,
             50,
         ),
-        PolicyResourceLimits::new([(D::TransactionWeight, Maximum(400_000))]),
+        PolicyResourceLimits::new([
+            (D::TransactionWeight, Maximum(400_000)),
+            (
+                D::InitialWitnessItemBytes,
+                Maximum(u64::try_from(TAPSCRIPT_STACK_ITEM_RELAY_LIMIT).unwrap_or(u64::MAX)),
+            ),
+        ]),
     )
 }

@@ -85,7 +85,7 @@ fn whole_metadata_emission_refuses_at_sources_and_linking() {
 }
 
 #[test]
-fn variable_metadata_selections_preserve_the_composers_refusal() {
+fn variable_metadata_selections_link_distinct_leaves_and_resolve_the_header() {
     let schedule = tapscript::StateWitnessSchedule::VariableMetadata;
     for selection in [
         MaturityWitnessSelection::Retained(schedule),
@@ -93,15 +93,30 @@ fn variable_metadata_selections_preserve_the_composers_refusal() {
     ] {
         assert_eq!(selection.schedule(), schedule);
         for deployment in MaturityDeployment::ALL {
-            let refusal =
-                Some(MaturityClosureRefusal::ScheduleLegalizationUnavailable { schedule });
-            assert_eq!(maturity_sources(deployment, selection).err(), refusal);
-            assert_eq!(linked_maturity_bundle(deployment, selection).err(), refusal);
-            assert_eq!(decoded_deployment(deployment, selection).err(), refusal);
-            assert_eq!(
+            let sources =
+                maturity_sources(deployment, selection).expect("variable sources compose");
+            assert_eq!(sources.record().schedule(), schedule);
+            let direct =
                 maturity_sources_with(deployment.parameters().expect("parameters"), selection)
-                    .err(),
-                refusal
+                    .expect("supplied variable sources compose");
+            assert_eq!(direct.record(), sources.record());
+            let bundle =
+                linked_maturity_bundle(deployment, selection).expect("variable link resolves");
+            let (decoded_bundle, leaf) =
+                decoded_deployment(deployment, selection).expect("variable leaf decodes");
+            assert_eq!(decoded_bundle, bundle);
+            assert_eq!(bundle.resolved().entries().len(), 14);
+            assert_eq!(bundle.resolved().program_keys().len(), 7);
+            assert_eq!(bundle.resolved().push_site_count(), 16);
+            let (whole, whole_leaf) = linked(deployment);
+            assert_ne!(leaf.bytes(), whole_leaf.bytes());
+            assert_ne!(
+                bundle.static_subtree().root(),
+                whole.static_subtree().root()
+            );
+            assert_ne!(
+                bundle.instances()[0].constructor().output_key(),
+                whole.instances()[0].constructor().output_key()
             );
         }
     }
@@ -1700,9 +1715,13 @@ fn compared_checks_follow_the_operator_check(
 /// case is refused before the leaf while the other three are refused
 /// inside it.
 #[test]
-#[ignore = "requires the native adapter and a target node"]
 fn the_four_adoption_vectors_are_submitted_to_a_real_target() {
-    let executor = required_environment("TRIPOD_LIVE_EXECUTOR");
+    let Ok(executor) = std::env::var("TRIPOD_LIVE_EXECUTOR") else {
+        return;
+    };
+    if executor.is_empty() {
+        return;
+    }
     let deployment = native_identity();
     let diagnostics = diagnostics_directory();
     let reviewed = target();

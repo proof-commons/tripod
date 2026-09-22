@@ -1501,20 +1501,17 @@ mod tests {
     }
 
     #[test]
-    fn planner_preserves_the_refusal_for_a_schedule_without_legalization() {
+    fn planner_retains_the_variable_metadata_schedule() {
         let plan = planner();
         let schedule = tapscript::StateWitnessSchedule::VariableMetadata;
-        assert_eq!(
-            MaturityAnnouncementPlanner::new(
-                plan.identity.clone(),
-                plan.branch,
-                MaturityWitnessSelection::Retained(schedule),
-            )
-            .err(),
-            Some(Refusal::Closure(Box::new(
-                MaturityClosureRefusal::ScheduleLegalizationUnavailable { schedule }
-            )))
-        );
+        let variable = MaturityAnnouncementPlanner::new(
+            plan.identity.clone(),
+            plan.branch,
+            MaturityWitnessSelection::Retained(schedule),
+        )
+        .expect("the variable schedule has a linked constructor");
+        assert_eq!(variable.schedule(), schedule);
+        assert_eq!(variable.bundle().record().schedule(), schedule);
     }
 
     #[test]

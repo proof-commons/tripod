@@ -110,5 +110,6 @@ pub use compiler::operation_plan::{
 pub use compiler::target::{ExternalEvidenceRole, RequiredCapability as TargetRequiredCapability};
 pub use realization::{
     AnnouncementLeadBounds, Cycle, EncodedStateMetadata, ExternalEvidenceRequirement, RelationId,
-    StateMetadata, StateSingletonDeclaration,
+    STATE_METADATA_LAYOUT, StateMetadata, StateMetadataLayoutRow, StateMetadataRegionClass,
+    StateSingletonDeclaration,
 };

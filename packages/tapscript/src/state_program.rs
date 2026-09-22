@@ -7,8 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use compiler::operation_plan::RequiredSourceKind;
+use realization::{STATE_METADATA_LAYOUT, StateMetadataLayoutRow, StateMetadataRegionClass};
 use target_elements::{
-    ElementsCapability, LeafVersion, OpcodeId, ResourceDimension,
+    ElementsCapability, LeafVersion, OpcodeId, ResourceBound, ResourceDimension,
     ReviewedElementsTapscriptDefinition, StackValueType, TargetEvidenceRequirementId,
 };
 use thiserror::Error;
@@ -167,12 +168,124 @@ impl StateWitnessSchedule {
     }
 }
 
+/// The predecessor metadata transport selected from a canonical layout.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StateWitnessLegalization {
+    /// Carry every canonical byte, for historical replay.
+    Whole { width: usize },
+    /// Carry only the variable span and restore fixed bytes in the leaf.
+    ExpandFromVariable {
+        /// The carried range in the canonical encoding.
+        range: Range<usize>,
+        /// Width of the constant header supplied by the linker.
+        header_width: usize,
+        /// Constant trailer emitted as a leaf literal.
+        trailer: Vec<u8>,
+        /// Width after reconstruction.
+        whole_width: usize,
+    },
+}
+
+/// Why the layout cannot travel under a target's initial-item policy.
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+pub enum StateWitnessLoweringRefusal {
+    /// Variable rows do not form one uninterrupted carried item.
+    #[error("metadata variable rows are not contiguous")]
+    VariableRowsNotContiguous,
+    /// The carried variable item exceeds the reviewed policy ceiling.
+    #[error("metadata variable item width {width} exceeds policy bound {bound}")]
+    VariableRegionTooWide {
+        /// Width required by the layout.
+        width: usize,
+        /// Greatest initial-item width the target forwards.
+        bound: u64,
+    },
+}
+
+/// Lower a metadata layout against one initial witness-item policy bound.
+///
+/// The layout describes the encoding and the bound describes the target.
+/// Keeping both inputs explicit lets emission refuse a type without legal
+/// transport while the codec remains independent of relay policy.
+///
+/// # Errors
+/// Refuses separated variable rows or a variable span wider than the bound.
+pub fn legalize_state_witness_schedule(
+    schedule: StateWitnessSchedule,
+    layout: &[StateMetadataLayoutRow],
+    bound: ResourceBound,
+) -> Result<StateWitnessLegalization, StateWitnessLoweringRefusal> {
+    let whole_width = layout.last().map_or(0, |row| row.range.end);
+    if schedule == StateWitnessSchedule::WholeMetadata {
+        return Ok(StateWitnessLegalization::Whole { width: whole_width });
+    }
+    let variable: Vec<_> = layout
+        .iter()
+        .filter(|row| row.class == StateMetadataRegionClass::Variable)
+        .collect();
+    let Some(first) = variable.first() else {
+        return Err(StateWitnessLoweringRefusal::VariableRowsNotContiguous);
+    };
+    if variable
+        .windows(2)
+        .any(|pair| pair[0].range.end != pair[1].range.start)
+    {
+        return Err(StateWitnessLoweringRefusal::VariableRowsNotContiguous);
+    }
+    let end = variable.last().map_or(first.range.end, |row| row.range.end);
+    let range = first.range.start..end;
+    let width = range.end - range.start;
+    if let ResourceBound::Maximum(limit) = bound
+        && u64::try_from(width).map_or(true, |width| width > limit)
+    {
+        return Err(StateWitnessLoweringRefusal::VariableRegionTooWide {
+            width,
+            bound: limit,
+        });
+    }
+    let trailer = layout
+        .iter()
+        .filter(|row| row.range.start >= range.end)
+        .filter_map(|row| match row.class {
+            StateMetadataRegionClass::Constant(bytes) => Some(bytes),
+            StateMetadataRegionClass::Variable => None,
+        })
+        .flatten()
+        .copied()
+        .collect();
+    Ok(StateWitnessLegalization::ExpandFromVariable {
+        header_width: range.start,
+        range,
+        trailer,
+        whole_width,
+    })
+}
+
+fn target_legalization(
+    target: &ReviewedElementsTapscriptDefinition,
+    schedule: StateWitnessSchedule,
+) -> Result<StateWitnessLegalization, StateProgramRefusal> {
+    let bound = target
+        .definition()
+        .resources()
+        .policy()
+        .bounds()
+        .get(&ResourceDimension::InitialWitnessItemBytes)
+        .copied()
+        .unwrap_or(ResourceBound::Maximum(0));
+    Ok(legalize_state_witness_schedule(
+        schedule,
+        &STATE_METADATA_LAYOUT,
+        bound,
+    )?)
+}
+
 /// Refusals at the composed-program boundary.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum StateProgramRefusal {
-    /// The composer holds no legalization for the requested schedule.
-    #[error("announcement witness schedule {} has no legalization", .0.name())]
-    ScheduleLegalizationUnavailable(StateWitnessSchedule),
+    /// The requested witness transport has no legal lowering.
+    #[error(transparent)]
+    WitnessLowering(#[from] StateWitnessLoweringRefusal),
     /// A supplied program changed the complete recipe.
     #[error("announcement program differs from its component recipe")]
     ComponentRecipe,
@@ -195,9 +308,8 @@ pub enum StateProgramRefusal {
 
 /// An immutable complete record admitted by recipe equality and abstract execution.
 ///
-/// The retained witness schedule lets a consumer compose, replay or compare against
-/// the schedule this record was composed under. A schedule for which the composer
-/// holds no legalization is refused rather than composed as another schedule.
+/// The retained witness schedule lets a consumer compose, replay or compare
+/// against the schedule this record was composed under.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateAnnouncementProgram {
     schedule: StateWitnessSchedule,
@@ -464,8 +576,7 @@ fn metadata(
 /// Emit the exact complete recipe in component order.
 ///
 /// # Errors
-/// Refuses schedules without a legalization, incompatible shared consumers or
-/// invalid typed instructions.
+/// Refuses an illegal transport, incompatible recipe or typed instructions.
 #[must_use = "composition can refuse the requested schedule or recipe"]
 pub fn state_announcement_program(
     target: &ReviewedElementsTapscriptDefinition,
@@ -474,10 +585,9 @@ pub fn state_announcement_program(
     operator: &StateOperatorPattern,
     schedule: StateWitnessSchedule,
 ) -> Result<TapscriptProgram, StateProgramRefusal> {
-    if schedule == StateWitnessSchedule::VariableMetadata {
-        return Err(StateProgramRefusal::ScheduleLegalizationUnavailable(
-            schedule,
-        ));
+    let _legalization = target_legalization(target, schedule)?;
+    if semantic.schedule() != schedule {
+        return Err(StateProgramRefusal::ComponentRecipe);
     }
     Ok(TapscriptProgram::new(
         assemble(target, structural, semantic, operator)?.instructions,
@@ -490,7 +600,7 @@ pub fn state_announcement_program(
 /// final item is the canonical true literal, not just another one-byte value.
 ///
 /// # Errors
-/// Refuses schedules without a legalization, recipe changes, inconsistent
+/// Refuses illegal transports, recipe changes, inconsistent
 /// consumers, contract or resource failures.
 #[must_use = "record admission can refuse the requested schedule or recipe"]
 pub fn build_state_announcement_program(
@@ -501,10 +611,9 @@ pub fn build_state_announcement_program(
     schedule: StateWitnessSchedule,
     program: TapscriptProgram,
 ) -> Result<StateAnnouncementProgram, StateProgramRefusal> {
-    if schedule == StateWitnessSchedule::VariableMetadata {
-        return Err(StateProgramRefusal::ScheduleLegalizationUnavailable(
-            schedule,
-        ));
+    let _legalization = target_legalization(target, schedule)?;
+    if semantic.schedule() != schedule {
+        return Err(StateProgramRefusal::ComponentRecipe);
     }
     let assembly = assemble(target, structural, semantic, operator)?;
     if assembly.instructions != program.instructions() {

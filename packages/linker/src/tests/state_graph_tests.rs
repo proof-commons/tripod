@@ -229,6 +229,7 @@ fn the_real_graph_holds_every_key_both_leaves_and_the_output() {
     let expected: BTreeSet<Node> = Key::ALL
         .iter()
         .copied()
+        .filter(|key| *key != Key::MetadataHeader)
         .map(Node::Definition)
         .chain([METADATA, ANNOUNCEMENT, Node::Output])
         .collect();

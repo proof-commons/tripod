@@ -56,7 +56,8 @@ use linker::{
 };
 use realization::{
     AnnouncementLeadBounds, Cycle, EncodedStateMetadata, Maturity, ProtocolAmount,
-    RealizationScope, StateMetadata, StateRepresentationNonce, StateSingletonDeclaration, derive,
+    RealizationScope, STATE_METADATA_LAYOUT, STATE_METADATA_VARIABLE_RANGE, StateMetadata,
+    StateMetadataRegionClass, StateRepresentationNonce, StateSingletonDeclaration, derive,
 };
 use sha2::{Digest, Sha256};
 use tapscript::{
@@ -64,7 +65,7 @@ use tapscript::{
     StateAnnouncementBindings, StateAnnouncementProgram, StateAnnouncementSymbol,
     StateCurveCapability, StateInternalKeyPolicy, StateLeafRole, StateNonceBudget,
     StateOperatorBindings, StateOperatorSymbol, StatePatternBindings, StatePatternSymbol,
-    StateStaticLeaf, StateStaticNode, StateStaticSubtree, StateTweakOutcome,
+    StateStaticLeaf, StateStaticNode, StateStaticSubtree, StateTweakOutcome, StateWitnessSchedule,
     build_state_announcement_program, build_state_operator_pattern, operator_key_encoding_closure,
     production_static_subtree, selected_operator_profile, state_announcement_patterns,
     state_announcement_program, state_metadata_leaf_program, state_operator_fragment,
@@ -192,82 +193,92 @@ fn plan() -> ValidatedMaturityAnnouncementOperationPlan {
 
 /// The composed announcement record, built once and handed out by clone.
 pub(super) fn record() -> StateAnnouncementProgram {
-    static RECORD: LazyLock<StateAnnouncementProgram> = LazyLock::new(|| {
-        let target = reviewed_target();
-        let item = |bytes| StackItem::new(&target, bytes).expect("fixture bytes are a stack item");
+    record_for_schedule(StateWitnessSchedule::WholeMetadata)
+}
 
-        let structural = StatePatternBindings::new(
-            &target,
-            BTreeMap::from([
-                (StatePatternSymbol::StateAsset, item(vec![0x11; 32])),
-                (
-                    StatePatternSymbol::StateAmount,
-                    StackItem::signed_le64(&target, 1),
-                ),
-            ]),
-        )
-        .expect("the structural census is complete");
-        let structural =
-            state_structural_patterns(&target, &structural).expect("the structural recipe builds");
+pub(super) fn record_for_schedule(schedule: StateWitnessSchedule) -> StateAnnouncementProgram {
+    static WHOLE: LazyLock<StateAnnouncementProgram> =
+        LazyLock::new(|| build_record(StateWitnessSchedule::WholeMetadata));
+    static VARIABLE: LazyLock<StateAnnouncementProgram> =
+        LazyLock::new(|| build_record(StateWitnessSchedule::VariableMetadata));
+    match schedule {
+        StateWitnessSchedule::WholeMetadata => WHOLE.clone(),
+        StateWitnessSchedule::VariableMetadata => VARIABLE.clone(),
+    }
+}
 
-        let semantic = StateAnnouncementBindings::new(
-            &target,
-            BTreeMap::from([
-                (
-                    StateAnnouncementSymbol::InternalKey,
-                    item(STATE_NUMS_KEY.to_vec()),
-                ),
-                (
-                    StateAnnouncementSymbol::MaturityLeadMin,
-                    StackItem::unsigned_le64(&target, 2),
-                ),
-                (
-                    StateAnnouncementSymbol::MaturityLeadMax,
-                    StackItem::unsigned_le64(&target, 4),
-                ),
-                (StateAnnouncementSymbol::StateAsset, item(vec![0x11; 32])),
-                (
-                    StateAnnouncementSymbol::StateAmount,
-                    StackItem::signed_le64(&target, 1),
-                ),
-            ]),
-        )
+fn build_record(schedule: StateWitnessSchedule) -> StateAnnouncementProgram {
+    let target = reviewed_target();
+    let item = |bytes| StackItem::new(&target, bytes).expect("fixture bytes are a stack item");
+
+    let structural = StatePatternBindings::new(
+        &target,
+        BTreeMap::from([
+            (StatePatternSymbol::StateAsset, item(vec![0x11; 32])),
+            (
+                StatePatternSymbol::StateAmount,
+                StackItem::signed_le64(&target, 1),
+            ),
+        ]),
+    )
+    .expect("the structural census is complete");
+    let structural =
+        state_structural_patterns(&target, &structural).expect("the structural recipe builds");
+
+    let mut semantic_values = BTreeMap::from([
+        (
+            StateAnnouncementSymbol::InternalKey,
+            item(STATE_NUMS_KEY.to_vec()),
+        ),
+        (
+            StateAnnouncementSymbol::MaturityLeadMin,
+            StackItem::unsigned_le64(&target, 2),
+        ),
+        (
+            StateAnnouncementSymbol::MaturityLeadMax,
+            StackItem::unsigned_le64(&target, 4),
+        ),
+        (StateAnnouncementSymbol::StateAsset, item(vec![0x11; 32])),
+        (
+            StateAnnouncementSymbol::StateAmount,
+            StackItem::signed_le64(&target, 1),
+        ),
+    ]);
+    if schedule == StateWitnessSchedule::VariableMetadata {
+        let header = STATE_METADATA_LAYOUT
+            .iter()
+            .take_while(|row| row.range.end <= STATE_METADATA_VARIABLE_RANGE.start)
+            .filter_map(|row| match row.class {
+                StateMetadataRegionClass::Constant(bytes) => Some(bytes),
+                StateMetadataRegionClass::Variable => None,
+            })
+            .flatten()
+            .copied()
+            .collect();
+        semantic_values.insert(StateAnnouncementSymbol::MetadataHeader, item(header));
+    }
+    let semantic = StateAnnouncementBindings::new(&target, schedule, semantic_values)
         .expect("the semantic census is complete");
-        let semantic =
-            state_announcement_patterns(&target, &semantic).expect("the semantic recipe builds");
+    let semantic =
+        state_announcement_patterns(&target, &semantic).expect("the semantic recipe builds");
 
-        let operator = StateOperatorBindings::new(
-            &target,
-            &BTreeMap::from([(
-                StateOperatorSymbol::CommittedOperatorKey,
-                StackItem::encoded(&target, EncodingClass::XOnlyPublicKey, vec![0x33; 32])
-                    .expect("the fixture key has the reviewed width"),
-            )]),
-        )
-        .expect("the operator census is complete");
-        let fragment = state_operator_fragment(&operator).expect("the operator fragment builds");
-        let operator = build_state_operator_pattern(&target, &operator, fragment)
-            .expect("the operator pattern builds");
+    let operator = StateOperatorBindings::new(
+        &target,
+        &BTreeMap::from([(
+            StateOperatorSymbol::CommittedOperatorKey,
+            StackItem::encoded(&target, EncodingClass::XOnlyPublicKey, vec![0x33; 32])
+                .expect("the fixture key has the reviewed width"),
+        )]),
+    )
+    .expect("the operator census is complete");
+    let fragment = state_operator_fragment(&operator).expect("the operator fragment builds");
+    let operator = build_state_operator_pattern(&target, &operator, fragment)
+        .expect("the operator pattern builds");
 
-        let raw = state_announcement_program(
-            &target,
-            &structural,
-            &semantic,
-            &operator,
-            tapscript::StateWitnessSchedule::WholeMetadata,
-        )
+    let raw = state_announcement_program(&target, &structural, &semantic, &operator, schedule)
         .expect("the composed program assembles");
-        build_state_announcement_program(
-            &target,
-            &structural,
-            &semantic,
-            &operator,
-            tapscript::StateWitnessSchedule::WholeMetadata,
-            raw,
-        )
+    build_state_announcement_program(&target, &structural, &semantic, &operator, schedule, raw)
         .expect("the composed record is admitted")
-    });
-    RECORD.clone()
 }
 
 /// The semantic metadata the demonstration link is run over.
@@ -311,7 +322,10 @@ pub(super) fn asymmetric_genesis_identity() -> CandidateDeploymentIdentity {
 }
 
 /// The bound deployment sources of one link, over one identity.
-fn bridge(identity: CandidateDeploymentIdentity) -> StateLinkDeploymentParameters {
+fn bridge_for_record(
+    identity: CandidateDeploymentIdentity,
+    record: &StateAnnouncementProgram,
+) -> StateLinkDeploymentParameters {
     let target = reviewed_target();
     let bounds = AnnouncementLeadBounds::new(Cycle::new(2), Cycle::new(4))
         .expect("the fixture window is nonzero and ordered");
@@ -333,7 +347,7 @@ fn bridge(identity: CandidateDeploymentIdentity) -> StateLinkDeploymentParameter
         identity,
         binding,
         NonZeroU32::new(8).expect("eight is nonzero"),
-        &record(),
+        record,
     )
     .expect("the demonstration sources bind")
 }
@@ -366,8 +380,23 @@ pub(super) fn linked_bundle_over(
     budget: StateNonceBudget,
     metadata: StateMetadata,
 ) -> CandidateLinkedMaturityBundle {
+    linked_bundle_over_schedule(
+        identity,
+        budget,
+        metadata,
+        StateWitnessSchedule::WholeMetadata,
+    )
+}
+
+fn linked_bundle_over_schedule(
+    identity: CandidateDeploymentIdentity,
+    budget: StateNonceBudget,
+    metadata: StateMetadata,
+    schedule: StateWitnessSchedule,
+) -> CandidateLinkedMaturityBundle {
     let target = reviewed_target();
-    let subtree = production_static_subtree(&target, &record())
+    let record = record_for_schedule(schedule);
+    let subtree = production_static_subtree(&target, &record)
         .expect("the composed record yields the production subtree");
     let constructor = CandidateStateConstructor::derive(
         &target,
@@ -386,8 +415,8 @@ pub(super) fn linked_bundle_over(
     link_state_candidate(
         &target,
         &StateLinkSources::new(
-            &record(),
-            &bridge(identity),
+            &record,
+            &bridge_for_record(identity, &record),
             &constructor,
             &StateSingletonAsset::new([0x11; 32]),
             &StateSingletonDeclaration::from_architecture_asset(spec)
@@ -403,6 +432,18 @@ pub(super) fn linked_bundle_over(
 pub(super) fn linked_bundle() -> CandidateLinkedMaturityBundle {
     static BUNDLE: LazyLock<CandidateLinkedMaturityBundle> =
         LazyLock::new(|| linked_bundle_with(StateNonceBudget::default(), state_metadata()));
+    BUNDLE.clone()
+}
+
+pub(super) fn variable_linked_bundle() -> CandidateLinkedMaturityBundle {
+    static BUNDLE: LazyLock<CandidateLinkedMaturityBundle> = LazyLock::new(|| {
+        linked_bundle_over_schedule(
+            demonstration_identity(),
+            StateNonceBudget::default(),
+            state_metadata(),
+            StateWitnessSchedule::VariableMetadata,
+        )
+    });
     BUNDLE.clone()
 }
 
@@ -496,6 +537,15 @@ pub(super) fn validated_view() -> ValidatedMaturityStateView {
     demonstration_view()
         .validate(&reviewed_target(), &FixtureStateCurve)
         .expect("the stated pair reproduces the stated program")
+}
+
+pub(super) fn variable_validated_view() -> ValidatedMaturityStateView {
+    let bundle = variable_linked_bundle();
+    let (nonce, program) = linked_pair(&bundle);
+    PublicMaturityStateView::new(statements(&bundle, state_metadata(), nonce, program))
+        .expect("the variable view's seven statements are distinct")
+        .validate(&reviewed_target(), &FixtureStateCurve)
+        .expect("the variable constructor reproduces its program")
 }
 
 /// What the fixture verifier calls itself.

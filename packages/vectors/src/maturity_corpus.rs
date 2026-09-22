@@ -1128,13 +1128,13 @@ mod tests {
     }
 
     #[test]
-    fn archive_replay_preserves_the_cross_schedule_legalization_refusal() {
+    fn archive_replay_refuses_a_different_leafs_transcript() {
         let schedule = tapscript::StateWitnessSchedule::VariableMetadata;
         assert_eq!(
             replay_maturity_run_of_record(MaturityWitnessSelection::Retained(schedule)),
-            Err(Refusal::Derivation(MaturityNativePlanRefusal::Closure(Box::new(
-                crate::maturity_closure::MaturityClosureRefusal::ScheduleLegalizationUnavailable { schedule },
-            ))))
+            Err(Refusal::Derivation(
+                MaturityNativePlanRefusal::TranscriptStepMismatch { position: 0 }
+            ))
         );
     }
 

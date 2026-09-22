@@ -34,7 +34,7 @@ use target_elements::{
     reviewed_transaction_forms,
 };
 
-use super::state_support::{linked_bundle, record, validated_view};
+use super::state_support::{linked_bundle, record, validated_view, variable_validated_view};
 use crate::abi::{SequenceConstraint, TargetTransactionVersion};
 use crate::error::TransactionRefusal;
 use crate::state_abi::{
@@ -47,6 +47,83 @@ use crate::state_abi::{
 fn abi() -> CandidateMaturityAnnouncementAbi {
     derive_maturity_announcement_abi(&super::reviewed_target(), &validated_view())
         .expect("the demonstration validated view derives an ABI")
+}
+
+fn variable_abi() -> CandidateMaturityAnnouncementAbi {
+    derive_maturity_announcement_abi(&super::reviewed_target(), &variable_validated_view())
+        .expect("the variable view derives its ABI")
+}
+
+#[test]
+fn each_abi_retains_its_records_schedule_and_seven_declared_widths() {
+    let whole = abi();
+    let variable = variable_abi();
+    assert_eq!(
+        whole.schedule(),
+        tapscript::StateWitnessSchedule::WholeMetadata
+    );
+    assert_eq!(
+        variable.schedule(),
+        tapscript::StateWitnessSchedule::VariableMetadata
+    );
+    assert_eq!(
+        whole
+            .witness_roles()
+            .iter()
+            .map(MaturityWitnessRole::maximum_width)
+            .collect::<Vec<_>>(),
+        vec![
+            Some(1),
+            Some(4),
+            Some(8),
+            Some(32),
+            Some(86),
+            Some(1),
+            Some(64)
+        ]
+    );
+    assert_eq!(
+        variable
+            .witness_roles()
+            .iter()
+            .map(MaturityWitnessRole::maximum_width)
+            .collect::<Vec<_>>(),
+        vec![
+            Some(1),
+            Some(4),
+            Some(8),
+            Some(32),
+            Some(53),
+            Some(1),
+            Some(64)
+        ]
+    );
+}
+
+#[test]
+fn variable_abi_reviews_relay_conditionally_and_carries_the_measurement_obligation() {
+    let variable = variable_abi();
+    assert_eq!(
+        variable.relay_verdict().consensus(),
+        FormAdmission::Admitted
+    );
+    assert_eq!(
+        variable.relay_verdict().relay(),
+        FormAdmission::AdmittedUnderCondition
+    );
+    assert_eq!(
+        variable.relay_verdict().relay_conditions(),
+        &BTreeSet::from([
+            RelayCondition::TopologyRestrictedPackage,
+            RelayCondition::DirectSubmissionToProducer
+        ])
+    );
+    let obligations = variable.outstanding_obligations();
+    assert!(
+        obligations.holds(MaturityAbiObligation::InitialArgumentWidthsUnmeasuredOverLinkedProgram)
+    );
+    assert!(!obligations.holds(MaturityAbiObligation::RelayAdmissibleWitnessSplitUnopened));
+    assert_eq!(obligations.count().get(), 5);
 }
 
 #[test]
