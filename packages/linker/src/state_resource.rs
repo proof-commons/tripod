@@ -43,17 +43,27 @@
 //! not charge it by. Either would be inventing a measurement, so each is
 //! carried as a named gap instead, recomputed from the emitter it comes
 //! from.
+//!
+//! # Initial arguments and execution elements have different bounds
+//!
+//! Relay judges the seven initial arguments before the program runs. The
+//! policy bound on those arguments is measured from the record's starting
+//! stack beside the linked program's walk. The execution element bound is
+//! enforced by the item constructor and is not a total here: the leaf's
+//! 86- and 118-byte intermediates are legal execution elements. One
+//! greatest-width figure cannot stand for both rules.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use tapscript::pattern::fragment_prerequisites;
 use tapscript::{
     AbstractExecutionResult, AbstractLimits, FinalStackDefect, StateAnnouncementProgram,
-    TapscriptInstruction, TapscriptProgram, final_stack_defects, program_stack_profile,
+    StateProgramWitness, TapscriptInstruction, TapscriptProgram, final_stack_defects,
+    program_stack_profile,
 };
 use target_elements::{
-    ElementsCapability, OpcodeId, OpcodeResourceCost, OperandContract, ResourceDimension,
-    ReviewedElementsTapscriptDefinition,
+    ElementsCapability, OpcodeId, OpcodeResourceCost, OperandContract, PayloadWidth, ResourceBound,
+    ResourceDimension, ReviewedElementsTapscriptDefinition, StackValueType,
 };
 
 use crate::state_error::StateLinkRefusal;
@@ -71,7 +81,221 @@ const STREAMING_HASH: [OpcodeId; 3] = [
 
 // --- Checked totals ----------------------------------------------------
 
+/// The width fixed by one initial argument's declared type.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InitialArgumentWidth {
+    /// The declaration fixes this many bytes.
+    Exact(u64),
+    /// The declaration does not fix one exact width.
+    NoExactWidth(StackValueType),
+}
+
+/// The policy statement used for initial-argument admission.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InitialArgumentBound {
+    /// The reviewed policy states this bound.
+    Stated(ResourceBound),
+    /// The reviewed policy states no bound for this dimension.
+    NoBoundStated,
+}
+
+/// The result of comparing one initial argument with policy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InitialArgumentOutcome {
+    /// The exact width satisfies the stated bound.
+    WithinBound,
+    /// The exact width exceeds the stated maximum.
+    OverBound,
+    /// The declaration fixes no exact width to compare.
+    NoExactWidth,
+    /// There is no stated policy bound to compare against.
+    NoBoundStated,
+}
+
+/// Whether every initial argument has established relay admission.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InitialArgumentVerdict {
+    /// Every initial argument has an exact admitted width.
+    Admitted,
+    /// At least one initial argument has not established admission.
+    Refused,
+}
+
+/// One initial argument in the record's deepest-first order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InitialArgumentAssessment {
+    position: usize,
+    role: StateProgramWitness,
+    width: InitialArgumentWidth,
+    outcome: InitialArgumentOutcome,
+}
+
+impl InitialArgumentAssessment {
+    /// The argument's deepest-first position.
+    #[must_use]
+    pub const fn position(&self) -> usize {
+        self.position
+    }
+
+    /// The record's name for this argument.
+    #[must_use]
+    pub const fn role(&self) -> StateProgramWitness {
+        self.role
+    }
+
+    /// The width its declared type fixes, or the type that fixes none.
+    #[must_use]
+    pub const fn width(&self) -> &InitialArgumentWidth {
+        &self.width
+    }
+
+    /// The argument's comparison with policy.
+    #[must_use]
+    pub const fn outcome(&self) -> InitialArgumentOutcome {
+        self.outcome
+    }
+}
+
+/// Policy admission of every initial argument of one linked program.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateInitialArgumentAdmission {
+    bound: InitialArgumentBound,
+    arguments: Vec<InitialArgumentAssessment>,
+    over_bound_positions: BTreeSet<usize>,
+    verdict: InitialArgumentVerdict,
+}
+
+impl StateInitialArgumentAdmission {
+    /// The policy statement compared with the arguments.
+    #[must_use]
+    pub const fn bound(&self) -> InitialArgumentBound {
+        self.bound
+    }
+
+    /// Every argument, deepest first, including non-exact declarations.
+    #[must_use]
+    pub fn arguments(&self) -> &[InitialArgumentAssessment] {
+        &self.arguments
+    }
+
+    /// Positions whose exact widths exceed a stated maximum.
+    #[must_use]
+    pub const fn over_bound_positions(&self) -> &BTreeSet<usize> {
+        &self.over_bound_positions
+    }
+
+    /// Whether every initial argument establishes admission.
+    #[must_use]
+    pub const fn verdict(&self) -> InitialArgumentVerdict {
+        self.verdict
+    }
+}
+
+/// Compare initial arguments in deepest-first order with one stated bound.
+///
+/// Equality with a maximum is admitted. An unbounded statement admits
+/// every exact width. A declaration without one exact width never
+/// establishes admission, including under an unbounded statement.
+#[must_use]
+pub fn compare_initial_argument_widths(
+    arguments: &[(StateProgramWitness, InitialArgumentWidth)],
+    bound: ResourceBound,
+) -> StateInitialArgumentAdmission {
+    compare_initial_arguments(arguments, InitialArgumentBound::Stated(bound))
+}
+
+/// Compare against either a stated policy bound or an explicit absence.
+#[must_use]
+pub(crate) fn compare_initial_arguments(
+    arguments: &[(StateProgramWitness, InitialArgumentWidth)],
+    bound: InitialArgumentBound,
+) -> StateInitialArgumentAdmission {
+    let arguments: Vec<_> = arguments
+        .iter()
+        .enumerate()
+        .map(|(position, (role, width))| {
+            let outcome = match (width, bound) {
+                (InitialArgumentWidth::NoExactWidth(_), _) => InitialArgumentOutcome::NoExactWidth,
+                (InitialArgumentWidth::Exact(_), InitialArgumentBound::NoBoundStated) => {
+                    InitialArgumentOutcome::NoBoundStated
+                }
+                (
+                    InitialArgumentWidth::Exact(width),
+                    InitialArgumentBound::Stated(ResourceBound::Maximum(maximum)),
+                ) if *width > maximum => InitialArgumentOutcome::OverBound,
+                (InitialArgumentWidth::Exact(_), InitialArgumentBound::Stated(_)) => {
+                    InitialArgumentOutcome::WithinBound
+                }
+            };
+            InitialArgumentAssessment {
+                position,
+                role: *role,
+                width: width.clone(),
+                outcome,
+            }
+        })
+        .collect();
+    let over_bound_positions = arguments
+        .iter()
+        .filter(|argument| argument.outcome == InitialArgumentOutcome::OverBound)
+        .map(|argument| argument.position)
+        .collect();
+    let verdict = if matches!(bound, InitialArgumentBound::Stated(_))
+        && arguments
+            .iter()
+            .all(|argument| argument.outcome == InitialArgumentOutcome::WithinBound)
+    {
+        InitialArgumentVerdict::Admitted
+    } else {
+        InitialArgumentVerdict::Refused
+    };
+    StateInitialArgumentAdmission {
+        bound,
+        arguments,
+        over_bound_positions,
+        verdict,
+    }
+}
+
+/// Read the same exact declaration forms that the witness ABI reads.
+fn declared_initial_width(declared: &StackValueType) -> InitialArgumentWidth {
+    let width = match declared {
+        StackValueType::Bytes { minimum, maximum } if minimum == maximum => Some(*minimum),
+        StackValueType::Encoded(class) => match class.v1_shape().payload() {
+            PayloadWidth::Absent => Some(0),
+            PayloadWidth::Exact(width) => Some(width.get()),
+            PayloadWidth::Bounded { minimum, maximum } if minimum == maximum.get() => Some(minimum),
+            PayloadWidth::Bounded { .. } => None,
+        },
+        _ => None,
+    };
+    width
+        .and_then(|width| u64::try_from(width).ok())
+        .map_or_else(
+            || InitialArgumentWidth::NoExactWidth(declared.clone()),
+            InitialArgumentWidth::Exact,
+        )
+}
+
+/// Pair the walked starting stack with the record's role order.
+fn initial_arguments(
+    record: &StateAnnouncementProgram,
+) -> Vec<(StateProgramWitness, InitialArgumentWidth)> {
+    record
+        .witness()
+        .iter()
+        .zip(record.precondition().main())
+        .map(|((role, _), declared)| (*role, declared_initial_width(declared)))
+        .collect()
+}
+
 /// Every dimension this module measures over one linked program.
+///
+/// The greatest initial-argument width is present only when every
+/// initial argument declares one exact width. A non-exact declaration
+/// leaves that dimension absent rather than supplying an invented peak.
+/// [`ResourceDimension::InitialWitnessItemBytes`] names that policy
+/// measurement separately from the execution element bound.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateLinkedResourceTotals {
     totals: BTreeMap<ResourceDimension, u64>,
@@ -102,12 +326,15 @@ impl StateLinkedResourceTotals {
 ///
 /// # Which dimensions are measured, and why the rest are not
 ///
-/// Five of the roster's ten are properties of this program and the
+/// Six of the roster's eleven are properties of this program and the
 /// witness it declares, and each is computed from the reviewed
 /// contract's own figures: the script bytes are the encoder's own count,
 /// the operation cost and the validation budget are checked sums of the
 /// per-primitive figures, the initial stack is the declared witness's
-/// depth, and the peak stack is the abstract walk's own profile.
+/// depth, the greatest initial-argument width is read from the same
+/// precondition the linked program walks from, and the peak stack is
+/// the abstract walk's own profile. The width total is present only
+/// when each argument declares an exact width.
 ///
 /// The other five are absent because no program fixes them, and saying
 /// so is the point of naming them. The transaction weight and the
@@ -167,18 +394,31 @@ pub fn measure_state_totals(
     // the program's own.
     let instructions = u64::try_from(program.len()).unwrap_or(u64::MAX);
     let initial = u64::try_from(record.precondition().depth()).unwrap_or(u64::MAX);
+    let arguments = initial_arguments(record);
+    let greatest_initial_width = arguments
+        .iter()
+        .map(|(_, width)| match width {
+            InitialArgumentWidth::Exact(width) => Some(*width),
+            InitialArgumentWidth::NoExactWidth(_) => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .and_then(|widths| widths.into_iter().max());
+    let mut totals = BTreeMap::from([
+        (
+            ResourceDimension::ScriptBytes,
+            program.encoded_length(target),
+        ),
+        (ResourceDimension::OperationCost, operation_cost),
+        (ResourceDimension::ValidationBudget, validation_budget),
+        (ResourceDimension::InitialStackItems, initial),
+        (ResourceDimension::PeakStackItems, peak),
+    ]);
+    if let Some(width) = greatest_initial_width {
+        totals.insert(ResourceDimension::InitialWitnessItemBytes, width);
+    }
 
     Ok(StateLinkedResourceTotals {
-        totals: BTreeMap::from([
-            (
-                ResourceDimension::ScriptBytes,
-                program.encoded_length(target),
-            ),
-            (ResourceDimension::OperationCost, operation_cost),
-            (ResourceDimension::ValidationBudget, validation_budget),
-            (ResourceDimension::InitialStackItems, initial),
-            (ResourceDimension::PeakStackItems, peak),
-        ]),
+        totals,
         instructions,
     })
 }
@@ -367,6 +607,7 @@ fn admits_an_empty_signature(target: &ReviewedElementsTapscriptDefinition, id: O
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateLinkedResources {
     totals: StateLinkedResourceTotals,
+    initial_argument_admission: Box<StateInitialArgumentAdmission>,
     schedule: AbstractExecutionResult,
     final_stack: Vec<FinalStackDefect>,
     observations: StateNativeObservations,
@@ -379,6 +620,12 @@ impl StateLinkedResources {
     #[must_use]
     pub const fn totals(&self) -> &StateLinkedResourceTotals {
         &self.totals
+    }
+
+    /// Each initial argument's admission under the reviewed relay policy.
+    #[must_use]
+    pub const fn initial_argument_admission(&self) -> &StateInitialArgumentAdmission {
+        &self.initial_argument_admission
     }
 
     /// The walk the linked program was admitted by.
@@ -434,6 +681,8 @@ impl StateLinkedResources {
 /// final-stack walk cannot schedule the program,
 /// [`StateLinkRefusal::LinkedProgramFailsTheFinalStackRule`] when that
 /// walk finds a defect, and
+/// [`StateLinkRefusal::InitialArgumentNotAdmitted`] when a non-replay
+/// schedule has an initial argument policy does not admit, and
 /// [`StateLinkRefusal::ResourceProjectionDisagreement`] when a checked
 /// total and an unpinned diagnostic figure differ.
 pub fn measure_state_resources(
@@ -449,6 +698,32 @@ pub fn measure_state_resources(
     if !final_stack.is_empty() {
         return Err(StateLinkRefusal::LinkedProgramFailsTheFinalStackRule {
             defects: final_stack,
+        });
+    }
+
+    let bound = target
+        .definition()
+        .resources()
+        .policy()
+        .bounds()
+        .get(&ResourceDimension::InitialWitnessItemBytes)
+        .copied()
+        .map_or(
+            InitialArgumentBound::NoBoundStated,
+            InitialArgumentBound::Stated,
+        );
+    let initial_argument_admission = compare_initial_arguments(&initial_arguments(record), bound);
+    if !record.schedule().is_replay_only()
+        && let Some(argument) = initial_argument_admission
+            .arguments()
+            .iter()
+            .find(|argument| argument.outcome() != InitialArgumentOutcome::WithinBound)
+    {
+        return Err(StateLinkRefusal::InitialArgumentNotAdmitted {
+            position: argument.position(),
+            role: argument.role(),
+            width: argument.width().clone(),
+            bound,
         });
     }
 
@@ -469,6 +744,7 @@ pub fn measure_state_resources(
 
     Ok(StateLinkedResources {
         totals,
+        initial_argument_admission: Box::new(initial_argument_admission),
         schedule: linked.execution().clone(),
         final_stack,
         observations: observe(program),

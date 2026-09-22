@@ -17,18 +17,30 @@
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
+use realization::{STATE_METADATA_LAYOUT, STATE_METADATA_VARIABLE_BYTES};
 use tapscript::pattern::fragment_prerequisites;
 use tapscript::{
-    FinalStackDefect, MAXIMUM_PROGRAM_INSTRUCTIONS, TapscriptInstruction, TapscriptProgram,
-    final_stack_defects,
+    AbstractLimits, FinalStackDefect, MAXIMUM_PROGRAM_INSTRUCTIONS, StateAnnouncementId,
+    StateAnnouncementProgram, StateProgramComponent, StateProgramWitness,
+    StateWitnessLoweringRefusal, StateWitnessSchedule, TapscriptInstruction, TapscriptProgram,
+    final_stack_defects, legalize_state_witness_schedule, program_stack_profile,
 };
-use target_elements::{ElementsCapability, OpcodeId, OperandContract, ResourceDimension};
+use target_elements::{
+    ElementsCapability, EncodingClass, OpcodeId, OperandContract, PayloadWidth, ResourceBound,
+    ResourceDimension, StackValueType,
+};
 
 use super::state_relocate_tests::{resolved_census, second_resolved_census};
-use crate::tests::{record, reviewed_target};
+use crate::state_resource::compare_initial_arguments;
+use crate::tests::{
+    bridge_for_record, declaration, record, record_for_schedule, reviewed_target, singleton,
+    state_constructor,
+};
 use crate::{
-    StateLinkRefusal, StateLinkedResources, StateResourceGap, measure_state_resources,
-    measure_state_totals, substitute_state,
+    InitialArgumentBound, InitialArgumentOutcome, InitialArgumentVerdict, InitialArgumentWidth,
+    LinkedStateLeafProgram, StateConsumerCensus, StateLinkRefusal, StateLinkedResources,
+    StateResourceGap, collect_state_definitions, compare_initial_argument_widths,
+    measure_state_resources, measure_state_totals, resolve_state_census, substitute_state,
 };
 
 /// The streaming hash primitives, as this file's own list.
@@ -68,11 +80,75 @@ fn second_resources() -> StateLinkedResources {
     RESOURCES.clone()
 }
 
+/// The linked variable schedule, with its own record-bound bridge.
+fn variable_linked() -> (StateAnnouncementProgram, LinkedStateLeafProgram) {
+    static LINKED: LazyLock<(StateAnnouncementProgram, LinkedStateLeafProgram)> =
+        LazyLock::new(|| {
+            let target = reviewed_target();
+            let record = record_for_schedule(StateWitnessSchedule::VariableMetadata);
+            let constructor = state_constructor();
+            let definitions = collect_state_definitions(
+                &target,
+                &bridge_for_record(&record),
+                &constructor,
+                &singleton(),
+                &declaration(),
+                record.schedule(),
+            )
+            .expect("variable definitions collect");
+            let consumers = StateConsumerCensus::from_sources(&record, &constructor);
+            let resolved = resolve_state_census(&definitions, &consumers)
+                .expect("variable definitions resolve against their consumers");
+            assert_eq!(definitions.len(), 14);
+            assert_eq!(
+                definitions.len(),
+                record.consumers().len() + constructor.reference_declarations().len()
+            );
+            assert_eq!(resolved.entries().len(), definitions.len());
+            assert_eq!(resolved.push_site_count(), 16);
+            assert_eq!(
+                resolved.push_site_count(),
+                record
+                    .consumers()
+                    .values()
+                    .map(|consumer| consumer.sites.len())
+                    .sum::<usize>()
+            );
+            let linked = substitute_state(&target, &record, &resolved)
+                .expect("the variable schedule substitutes into a linked program");
+            (record, linked)
+        });
+    LINKED.clone()
+}
+
+/// The variable linked program's measurement, taken once.
+fn variable_resources() -> StateLinkedResources {
+    static RESOURCES: LazyLock<StateLinkedResources> = LazyLock::new(|| {
+        let (record, linked) = variable_linked();
+        measure_state_resources(&reviewed_target(), &record, &linked)
+            .expect("the variable linked program measures")
+    });
+    RESOURCES.clone()
+}
+
 /// Whether the composed program schedules one primitive.
 fn schedules(program: &TapscriptProgram, id: OpcodeId) -> bool {
     program.instructions().iter().any(
         |instruction| matches!(instruction, TapscriptInstruction::Opcode(scheduled) if *scheduled == id),
     )
+}
+
+/// Read an exact width directly from the fixture's declared type.
+fn exact_width(declared: &StackValueType) -> u64 {
+    let width = match declared {
+        StackValueType::Bytes { minimum, maximum } if minimum == maximum => *minimum,
+        StackValueType::Encoded(class) => match class.v1_shape().payload() {
+            PayloadWidth::Exact(width) => width.get(),
+            other => panic!("the fixture's encoded argument must be exact: {other:?}"),
+        },
+        other => panic!("the fixture's argument must be exact: {other:?}"),
+    };
+    u64::try_from(width).expect("the declared width fits a resource unit")
 }
 
 // --- (a) The checked totals ---------------------------------------------
@@ -105,6 +181,10 @@ fn the_checked_totals_are_the_linked_program_s_own() {
     assert_eq!(
         totals.total(ResourceDimension::InitialStackItems),
         Some(u64::try_from(composed.witness().len()).expect("the witness is a magnitude"))
+    );
+    assert_eq!(
+        totals.total(ResourceDimension::InitialWitnessItemBytes),
+        composed.precondition().main().iter().map(exact_width).max()
     );
 
     // The reviewed domain charges no operation budget for any primitive,
@@ -140,27 +220,320 @@ fn the_checked_totals_are_the_linked_program_s_own() {
     ] {
         assert_eq!(totals.total(dimension), None, "{dimension:?}");
     }
-    assert_eq!(totals.totals().len(), 5);
+    assert_eq!(totals.totals().len(), 6);
 }
 
 // The peak stack is the walk's own, and the alternate stack never grows,
 // so the combined figure is a depth rather than a bound on one.
 #[test]
 fn the_peak_stack_is_the_walk_s_own_combined_depth() {
-    let composed = record();
-    let totals = demonstration_resources();
-    let peak = totals
-        .totals()
-        .total(ResourceDimension::PeakStackItems)
-        .expect("the peak stack is measured");
+    for (composed, resources) in [
+        (record(), demonstration_resources()),
+        (variable_linked().0, variable_resources()),
+    ] {
+        let peak = resources
+            .totals()
+            .total(ResourceDimension::PeakStackItems)
+            .expect("the peak stack is measured");
 
-    assert!(peak >= u64::try_from(composed.precondition().depth()).expect("a magnitude"));
-    for state in composed.execution().success() {
-        assert!(peak >= u64::try_from(state.depth()).expect("a magnitude"));
-        // No reviewed primitive moves an item to the alternate stack, so
-        // adding the two peaks is exact rather than an over-count.
-        assert_eq!(state.alternate(), []);
+        assert!(peak >= u64::try_from(composed.precondition().depth()).expect("a magnitude"));
+        for state in composed.execution().success() {
+            assert!(peak >= u64::try_from(state.depth()).expect("a magnitude"));
+            // No reviewed primitive moves an item to the alternate stack, so
+            // adding the two peaks is exact rather than an over-count.
+            assert_eq!(state.alternate(), []);
+        }
     }
+}
+
+// Equality is admitted; the next byte is refused. An explicit unbounded
+// policy statement admits both exact widths.
+#[test]
+fn the_initial_argument_comparator_observes_the_policy_boundary() {
+    let arguments = [
+        (
+            StateProgramWitness::SuccessorNonce,
+            InitialArgumentWidth::Exact(80),
+        ),
+        (
+            StateProgramWitness::RequestedCycle,
+            InitialArgumentWidth::Exact(81),
+        ),
+    ];
+    let bounded = compare_initial_argument_widths(&arguments, ResourceBound::Maximum(80));
+    assert_eq!(
+        bounded.bound(),
+        InitialArgumentBound::Stated(ResourceBound::Maximum(80))
+    );
+    assert_eq!(
+        bounded.arguments()[0].outcome(),
+        InitialArgumentOutcome::WithinBound
+    );
+    assert_eq!(
+        bounded.arguments()[1].outcome(),
+        InitialArgumentOutcome::OverBound
+    );
+    assert_eq!(bounded.over_bound_positions(), &BTreeSet::from([1]));
+    assert_eq!(bounded.verdict(), InitialArgumentVerdict::Refused);
+
+    let exact_boundary =
+        compare_initial_argument_widths(&arguments[..1], ResourceBound::Maximum(80));
+    assert_eq!(exact_boundary.verdict(), InitialArgumentVerdict::Admitted);
+    let unbounded = compare_initial_argument_widths(&arguments, ResourceBound::Unbounded);
+    assert_eq!(unbounded.verdict(), InitialArgumentVerdict::Admitted);
+    assert!(unbounded.over_bound_positions().is_empty());
+}
+
+// A type without an exact width stays visible in the returned value and
+// does not become admitted merely because a policy says unbounded.
+#[test]
+fn a_non_exact_declaration_has_a_typed_refused_entry() {
+    let declared = StackValueType::ScriptNumber;
+    let admission = compare_initial_argument_widths(
+        &[(
+            StateProgramWitness::RequestedCycle,
+            InitialArgumentWidth::NoExactWidth(declared.clone()),
+        )],
+        ResourceBound::Unbounded,
+    );
+    assert_eq!(admission.arguments().len(), 1);
+    assert_eq!(admission.arguments()[0].position(), 0);
+    assert_eq!(
+        admission.arguments()[0].role(),
+        StateProgramWitness::RequestedCycle
+    );
+    assert_eq!(
+        admission.arguments()[0].width(),
+        &InitialArgumentWidth::NoExactWidth(declared)
+    );
+    assert_eq!(
+        admission.arguments()[0].outcome(),
+        InitialArgumentOutcome::NoExactWidth
+    );
+    assert!(admission.over_bound_positions().is_empty());
+    assert_eq!(admission.verdict(), InitialArgumentVerdict::Refused);
+}
+
+// A missing policy statement is not the reviewed assertion Unbounded.
+#[test]
+fn no_bound_stated_does_not_establish_admission() {
+    let admission = compare_initial_arguments(
+        &[(
+            StateProgramWitness::SuccessorNonce,
+            InitialArgumentWidth::Exact(4),
+        )],
+        InitialArgumentBound::NoBoundStated,
+    );
+    assert_eq!(admission.bound(), InitialArgumentBound::NoBoundStated);
+    assert_eq!(
+        admission.arguments()[0].outcome(),
+        InitialArgumentOutcome::NoBoundStated
+    );
+    assert_eq!(admission.verdict(), InitialArgumentVerdict::Refused);
+    assert!(admission.over_bound_positions().is_empty());
+}
+
+// The historical argument over the relay policy is measured, while the
+// replay-only schedule still resolves to the same linked program.
+#[test]
+fn the_linked_whole_schedule_retains_its_policy_refusal() {
+    let target = reviewed_target();
+    let record = record();
+    let linked = substitute_state(&target, &record, &resolved_census())
+        .expect("the historical program still links");
+    let resources = demonstration_resources();
+    let admission = resources.initial_argument_admission();
+    let bound = target.definition().resources().policy().bounds()
+        [&ResourceDimension::InitialWitnessItemBytes];
+    let metadata_position = record
+        .witness()
+        .iter()
+        .position(|(role, _)| *role == StateProgramWitness::PredecessorMetadata)
+        .expect("the record declares predecessor metadata");
+
+    assert!(record.schedule().is_replay_only());
+    assert_eq!(
+        linked.program().encode(&target),
+        record.program().encode(&target)
+    );
+    assert_eq!(record.precondition().depth(), 7);
+    assert_eq!(record.precondition().alternate(), []);
+    assert_eq!(admission.arguments().len(), record.precondition().depth());
+    assert_eq!(admission.bound(), InitialArgumentBound::Stated(bound));
+    for (position, ((role, _), declared)) in record
+        .witness()
+        .iter()
+        .zip(record.precondition().main())
+        .enumerate()
+    {
+        let entry = &admission.arguments()[position];
+        assert_eq!(entry.position(), position);
+        assert_eq!(entry.role(), *role);
+        assert_eq!(
+            entry.width(),
+            &InitialArgumentWidth::Exact(exact_width(declared))
+        );
+    }
+    assert_eq!(
+        admission.over_bound_positions(),
+        &BTreeSet::from([metadata_position])
+    );
+    assert_eq!(
+        admission.arguments()[metadata_position].outcome(),
+        InitialArgumentOutcome::OverBound
+    );
+    assert_eq!(admission.verdict(), InitialArgumentVerdict::Refused);
+    assert_eq!(
+        admission.arguments()[metadata_position].width(),
+        &InitialArgumentWidth::Exact(86)
+    );
+    assert_eq!(bound, ResourceBound::Maximum(80));
+}
+
+// All three premises for the resource refusal's reachability account
+// are read from the lowering, the composed record, and the reviewed type.
+#[test]
+fn the_linked_variable_schedule_has_seven_admitted_arguments() {
+    let target = reviewed_target();
+    let (record, linked) = variable_linked();
+    let admission = variable_resources().initial_argument_admission().clone();
+    let bound = target.definition().resources().policy().bounds()
+        [&ResourceDimension::InitialWitnessItemBytes];
+    let metadata_position = record
+        .witness()
+        .iter()
+        .position(|(role, _)| *role == StateProgramWitness::PredecessorMetadata)
+        .expect("the record declares predecessor metadata");
+    let signature_position = record
+        .witness()
+        .iter()
+        .position(|(role, _)| *role == StateProgramWitness::OperatorSignature)
+        .expect("the record declares the operator signature");
+    let variable_width = exact_width(&record.precondition().main()[metadata_position]);
+    let signature_width = exact_width(&record.precondition().main()[signature_position]);
+
+    assert!(!record.schedule().is_replay_only());
+    assert_eq!(record.precondition().depth(), 7);
+    assert_eq!(record.precondition().alternate(), []);
+    assert_eq!(admission.arguments().len(), record.precondition().depth());
+    assert_eq!(admission.verdict(), InitialArgumentVerdict::Admitted);
+    assert!(admission.over_bound_positions().is_empty());
+    assert!(
+        admission
+            .arguments()
+            .iter()
+            .all(|entry| entry.outcome() == InitialArgumentOutcome::WithinBound)
+    );
+    assert_eq!(
+        variable_width,
+        u64::try_from(STATE_METADATA_VARIABLE_BYTES).expect("a width")
+    );
+    assert_eq!(signature_width, 64);
+    assert!(signature_width > variable_width);
+    assert_eq!(
+        record.precondition().main()[signature_position],
+        StackValueType::Encoded(EncodingClass::SchnorrSignature)
+    );
+    assert!(
+        matches!(EncodingClass::SchnorrSignature.v1_shape().payload(), PayloadWidth::Exact(width) if width.get() == 64)
+    );
+    assert_eq!(
+        variable_resources()
+            .totals()
+            .total(ResourceDimension::InitialWitnessItemBytes),
+        Some(signature_width)
+    );
+    assert_eq!(admission.bound(), InitialArgumentBound::Stated(bound));
+    assert_eq!(linked.program().len(), record.program().len());
+
+    let narrower = ResourceBound::Maximum(variable_width - 1);
+    assert_eq!(
+        legalize_state_witness_schedule(record.schedule(), &STATE_METADATA_LAYOUT, narrower),
+        Err(StateWitnessLoweringRefusal::VariableRegionTooWide {
+            width: STATE_METADATA_VARIABLE_BYTES,
+            bound: variable_width - 1,
+        })
+    );
+}
+
+// Both schedules' figures come from their linked encoding and walk; the
+// extra bytes and instructions are the variable restoration prologue.
+#[test]
+fn both_linked_schedules_recompute_their_totals_and_prologue_difference() {
+    let target = reviewed_target();
+    let whole_record = record();
+    let whole_linked = substitute_state(&target, &whole_record, &resolved_census())
+        .expect("the whole schedule links");
+    let (variable_record, variable_linked) = variable_linked();
+    let whole = demonstration_resources();
+    let variable = variable_resources();
+
+    for (record, linked, resources) in [
+        (&whole_record, &whole_linked, &whole),
+        (&variable_record, &variable_linked, &variable),
+    ] {
+        let program = linked.program();
+        let totals = resources.totals();
+        let profile = program_stack_profile(
+            &target,
+            program,
+            record.precondition(),
+            AbstractLimits::for_target(&target),
+        );
+        assert_eq!(totals.totals().len(), 6);
+        assert_eq!(
+            totals.instructions(),
+            u64::try_from(program.len()).expect("instruction count")
+        );
+        assert_eq!(
+            totals.total(ResourceDimension::ScriptBytes),
+            Some(program.encoded_length(&target))
+        );
+        assert_eq!(
+            totals.total(ResourceDimension::InitialStackItems),
+            Some(u64::try_from(record.precondition().depth()).expect("depth"))
+        );
+        assert_eq!(
+            totals.total(ResourceDimension::PeakStackItems),
+            Some(profile.peak_main() + profile.peak_alternate())
+        );
+        assert_eq!(
+            totals.total(ResourceDimension::InitialWitnessItemBytes),
+            record.precondition().main().iter().map(exact_width).max()
+        );
+    }
+
+    let range = variable_record.components()
+        [&StateProgramComponent::Semantic(StateAnnouncementId::MetadataAuthentication)]
+        .clone();
+    let prologue = &variable_linked.program().instructions()[range.start..range.start + 7];
+    let prologue_program =
+        TapscriptProgram::new(prologue.to_vec()).expect("the prologue is a program");
+    let push_widths: Vec<_> = prologue
+        .iter()
+        .filter_map(|instruction| match instruction {
+            TapscriptInstruction::Push(item) => Some(item.len()),
+            TapscriptInstruction::Opcode(_) => None,
+        })
+        .collect();
+    assert_eq!(push_widths, [25, 8]);
+    assert_eq!(prologue.len() - push_widths.len(), 5);
+    assert_eq!(prologue_program.encoded_length(&target), 40);
+    assert_eq!(
+        variable.totals().instructions() - whole.totals().instructions(),
+        u64::try_from(prologue.len()).expect("prologue length")
+    );
+    assert_eq!(
+        variable
+            .totals()
+            .total(ResourceDimension::ScriptBytes)
+            .expect("variable script")
+            - whole
+                .totals()
+                .total(ResourceDimension::ScriptBytes)
+                .expect("whole script"),
+        prologue_program.encoded_length(&target)
+    );
 }
 
 // --- (b) The second deployment ------------------------------------------
@@ -380,6 +753,12 @@ pub(super) fn resource_reachability(refusal: &StateLinkRefusal) -> &'static str 
         StateLinkRefusal::ResourceTotalOverflow { .. } => {
             "unreachable: no_admissible_program_can_overflow_a_checked_total computes why"
         }
+        StateLinkRefusal::InitialArgumentNotAdmitted { .. } => {
+            "unreachable: the_linked_variable_schedule_has_seven_admitted_arguments checks \
+             that lowering refuses an over-wide variable span before composition, the \
+             composed variable metadata has its reviewed exact width, and the signature \
+             is the greatest variable argument under the reviewed bound"
+        }
         StateLinkRefusal::LinkedProgramFailsTheFinalStackRule { .. } => {
             "unreachable: a linked program comes from the substitution, which admits only the \
              pristine program with equal-width payloads, and that program's walk is empty"
@@ -399,6 +778,12 @@ fn every_resource_refusal_is_reached_or_declared() {
     let refusals = [
         StateLinkRefusal::ResourceTotalOverflow {
             dimension: ResourceDimension::ValidationBudget,
+        },
+        StateLinkRefusal::InitialArgumentNotAdmitted {
+            position: 4,
+            role: StateProgramWitness::PredecessorMetadata,
+            width: InitialArgumentWidth::Exact(81),
+            bound: InitialArgumentBound::Stated(ResourceBound::Maximum(80)),
         },
         StateLinkRefusal::LinkedProgramFailsTheFinalStackRule {
             defects: vec![FinalStackDefect::DoesNotEndOnTheCanonicalTrueItem],
@@ -427,15 +812,21 @@ fn the_totals_are_measured_over_the_linked_program() {
     let composed = record();
     let linked = substitute_state(&target, &composed, &second_resolved_census())
         .expect("the second deployment links");
+    let (variable_record, variable_linked) = variable_linked();
 
-    let totals = measure_state_totals(&target, &composed, linked.program())
-        .expect("the linked program measures");
-    assert_eq!(totals, *second_resources().totals());
+    for (record, linked, resources) in [
+        (&composed, &linked, second_resources()),
+        (&variable_record, &variable_linked, variable_resources()),
+    ] {
+        let totals = measure_state_totals(&target, record, linked.program())
+            .expect("the linked program measures");
+        assert_eq!(totals, *resources.totals());
 
-    // The pristine program measures to the same figures, which is what
-    // the fixed widths mean and why the record's projection is
-    // comparable with the linked one's at all.
-    let pristine = measure_state_totals(&target, &composed, composed.program())
-        .expect("the pristine program measures");
-    assert_eq!(pristine, totals);
+        // The pristine program measures to the same figures, which is
+        // what the fixed widths mean and why the record's projection is
+        // comparable with the linked one's at all.
+        let pristine = measure_state_totals(&target, record, record.program())
+            .expect("the pristine program measures");
+        assert_eq!(pristine, totals);
+    }
 }

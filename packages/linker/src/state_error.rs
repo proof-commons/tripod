@@ -42,6 +42,7 @@ use target_elements::{ResourceDimension, TargetContractVersion};
 use crate::state_carrier::{StateDischargeClass, StateDischargeSide};
 use crate::state_constructor_graph::StateReferenceGraphRefusal;
 use crate::state_graph::{StateBindingTime, StateGraphNode, StateResidualComponent};
+use crate::state_resource::{InitialArgumentBound, InitialArgumentWidth};
 use crate::state_symbol::{StateLinkSymbol, StateSymbolType};
 
 /// Why a STATE maturity link refused.
@@ -357,6 +358,23 @@ pub enum StateLinkRefusal {
     ResourceTotalOverflow {
         /// The dimension whose sum overflowed.
         dimension: ResourceDimension,
+    },
+
+    /// An emitted schedule has an initial argument whose relay admission
+    /// is not established by its exact width and the reviewed policy.
+    ///
+    /// The first refused position is named so a link cannot hide a
+    /// later refusal behind an earlier one. Replay-only schedules keep
+    /// this observation without changing their linked bytes.
+    InitialArgumentNotAdmitted {
+        /// The argument's deepest-first position.
+        position: usize,
+        /// The role declared at that position.
+        role: StateProgramWitness,
+        /// Its exact width or its non-exact declaration.
+        width: InitialArgumentWidth,
+        /// The stated policy bound or its explicit absence.
+        bound: InitialArgumentBound,
     },
 
     /// The linked program leaves the final stack in a state the rule

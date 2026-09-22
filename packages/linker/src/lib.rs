@@ -92,8 +92,10 @@ pub use state_relocate::{
     check_linked_state_program, discover_state_relocations, substitute_state,
 };
 pub use state_resource::{
+    InitialArgumentAssessment, InitialArgumentBound, InitialArgumentOutcome,
+    InitialArgumentVerdict, InitialArgumentWidth, StateInitialArgumentAdmission,
     StateLinkedResourceTotals, StateLinkedResources, StateNativeObservations, StateResourceGap,
-    measure_state_resources, measure_state_totals,
+    compare_initial_argument_widths, measure_state_resources, measure_state_totals,
 };
 pub use state_symbol::{
     StateConsumerCensus, StateConsumerSites, StateDefinitionCensus, StateDefinitionOrigin,

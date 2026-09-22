@@ -619,6 +619,7 @@ fn reachability(refusal: &StateLinkRefusal) -> &'static str {
             crate::tests::state_relocate_tests::relocation_reachability(refusal)
         }
         StateLinkRefusal::ResourceTotalOverflow { .. }
+        | StateLinkRefusal::InitialArgumentNotAdmitted { .. }
         | StateLinkRefusal::LinkedProgramFailsTheFinalStackRule { .. }
         | StateLinkRefusal::ResourceProjectionDisagreement { .. } => {
             crate::tests::state_resource_tests::resource_reachability(refusal)

@@ -510,6 +510,11 @@ fn depth() -> NonZeroU32 {
 
 /// The maturity link's bound sources over the demonstration fixtures.
 fn bridge() -> StateLinkDeploymentParameters {
+    bridge_for_record(&record())
+}
+
+/// Bind the demonstration deployment to the record being measured.
+fn bridge_for_record(record: &StateAnnouncementProgram) -> StateLinkDeploymentParameters {
     StateLinkDeploymentParameters::bind(
         &reviewed_target(),
         plan(),
@@ -517,7 +522,7 @@ fn bridge() -> StateLinkDeploymentParameters {
         identity(0x11, 0x22),
         binding(),
         depth(),
-        &record(),
+        record,
     )
     .expect("the demonstration sources bind")
 }
