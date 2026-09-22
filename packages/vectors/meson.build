@@ -52,6 +52,7 @@ vectors_source_files = files(
   'src/materialize.rs',
   'src/matrix.rs',
   'src/maturity_closure.rs',
+  'src/maturity_continuity.rs',
   'src/maturity_corpus.rs',
   'src/maturity_evidence.rs',
   'src/maturity_first_party.rs',
