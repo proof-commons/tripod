@@ -4,8 +4,11 @@ use proptest::prelude::*;
 
 use crate::{
     Cycle, EncodedStateMetadata, Maturity, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount,
-    STATE_METADATA_BYTES, STATE_METADATA_DOMAIN, StateMetadata, StateMetadataRefusal,
-    StateRepresentationNonce, decode_state_metadata, encode_state_metadata,
+    STATE_METADATA_BYTES, STATE_METADATA_CONSTANT_BYTES, STATE_METADATA_DOMAIN,
+    STATE_METADATA_LAYOUT, STATE_METADATA_VARIABLE_BYTES, STATE_METADATA_VARIABLE_RANGE,
+    StateMetadata, StateMetadataRefusal, StateMetadataRegionClass, StateRepresentationNonce,
+    decode_state_metadata, encode_state_metadata, rebuild_state_metadata,
+    state_metadata_variable_region,
 };
 
 const SCHEMA_OFFSET: usize = 21;
@@ -140,6 +143,98 @@ fn expected_after_replacement(
 }
 
 #[test]
+fn layout_rows_tile_the_canonical_encoding() {
+    let mut cursor = 0;
+    let mut constant_bytes = 0;
+    for row in STATE_METADATA_LAYOUT {
+        assert_eq!(
+            row.range.start, cursor,
+            "gap or overlap before {}",
+            row.name
+        );
+        assert!(row.range.end > row.range.start);
+        if let StateMetadataRegionClass::Constant(bytes) = row.class {
+            assert_eq!(bytes.len(), row.range.len());
+            constant_bytes += bytes.len();
+        }
+        cursor = row.range.end;
+    }
+
+    assert_eq!(cursor, STATE_METADATA_BYTES);
+    assert_eq!(constant_bytes, 33);
+    assert_eq!(STATE_METADATA_CONSTANT_BYTES, constant_bytes);
+    assert_eq!(STATE_METADATA_VARIABLE_RANGE, 25..78);
+    assert_eq!(STATE_METADATA_VARIABLE_BYTES, 53);
+    assert_eq!(constant_bytes + STATE_METADATA_VARIABLE_BYTES, cursor);
+}
+
+#[test]
+fn layout_variable_rows_match_field_slices() {
+    let offsets = [
+        ("domain", 0),
+        ("schema", SCHEMA_OFFSET),
+        ("omega", OMEGA_OFFSET),
+        ("y_l", Y_L_OFFSET),
+        ("y_t", Y_T_OFFSET),
+        ("q", Q_OFFSET),
+        ("cycle", CYCLE_OFFSET),
+        ("maturity", MATURITY_TAG_OFFSET),
+        ("nonce", NONCE_OFFSET),
+        ("reserved", RESERVED_OFFSET),
+    ];
+    assert_eq!(STATE_METADATA_LAYOUT.len(), offsets.len());
+    for (row, (name, offset)) in STATE_METADATA_LAYOUT.iter().zip(offsets) {
+        assert_eq!(row.name, name);
+        assert_eq!(row.range.start, offset);
+    }
+    assert_eq!(
+        MATURITY_PAYLOAD_OFFSET,
+        STATE_METADATA_LAYOUT[7].range.start + 1
+    );
+
+    let variable_rows = STATE_METADATA_LAYOUT
+        .iter()
+        .filter(|row| row.class == StateMetadataRegionClass::Variable)
+        .map(|row| (row.name, row.range.clone()))
+        .collect::<Vec<_>>();
+    let fields = STATE_FIELD_SLICES
+        .iter()
+        .map(|&(field, offset, width)| {
+            let name = match field {
+                StateField::Omega => "omega",
+                StateField::Yl => "y_l",
+                StateField::Yt => "y_t",
+                StateField::Q => "q",
+                StateField::Cycle => "cycle",
+                StateField::Maturity => "maturity",
+                StateField::Nonce => "nonce",
+            };
+            (name, offset..offset + width)
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(variable_rows, fields);
+    assert_eq!(
+        variable_rows
+            .iter()
+            .map(|(_, range)| range.clone())
+            .collect::<Vec<_>>(),
+        [25..33, 33..41, 41..49, 49..57, 57..65, 65..74, 74..78],
+    );
+    assert_eq!(
+        variable_rows.first().unwrap().1.start,
+        STATE_METADATA_VARIABLE_RANGE.start
+    );
+    assert_eq!(
+        variable_rows.last().unwrap().1.end,
+        STATE_METADATA_VARIABLE_RANGE.end
+    );
+    for pair in variable_rows.windows(2) {
+        assert_eq!(pair[0].1.end, pair[1].1.start);
+    }
+}
+
+#[test]
 fn field_slices_tile_the_canonical_encoding() {
     assert_eq!(SCHEMA_OFFSET, STATE_METADATA_DOMAIN.len());
     assert_eq!(OMEGA_OFFSET, SCHEMA_OFFSET + size_of::<u32>());
@@ -232,6 +327,11 @@ fn golden_vector_pins_layout_and_byte_order() {
     ];
 
     assert_eq!(encoded.as_slice(), expected.as_slice());
+    for row in STATE_METADATA_LAYOUT {
+        if let StateMetadataRegionClass::Constant(bytes) = row.class {
+            assert_eq!(&expected[row.range], bytes, "constant row {}", row.name);
+        }
+    }
 }
 
 #[test]
@@ -429,6 +529,63 @@ fn refusal_names_are_distinct() {
 }
 
 proptest! {
+    #[test]
+    fn layout_constants_match_encoded_metadata(
+        semantic in metadata_strategy(),
+        nonce in any::<u32>(),
+    ) {
+        let encoded = encode_state_metadata(&semantic, StateRepresentationNonce::new(nonce));
+        for row in STATE_METADATA_LAYOUT {
+            if let StateMetadataRegionClass::Constant(bytes) = row.class {
+                prop_assert_eq!(&encoded[row.range], bytes);
+            }
+        }
+    }
+
+    #[test]
+    fn variable_region_round_trips_encoded_metadata(
+        semantic in metadata_strategy(),
+        nonce in any::<u32>(),
+    ) {
+        let encoded = encode_state_metadata(&semantic, StateRepresentationNonce::new(nonce));
+        let canonical: [u8; STATE_METADATA_BYTES] = encoded.as_slice().try_into().unwrap();
+        let variable = state_metadata_variable_region(&canonical);
+
+        prop_assert_eq!(variable.as_slice(), &encoded[25..78]);
+        prop_assert_eq!(rebuild_state_metadata(&variable), canonical);
+    }
+
+    #[test]
+    fn rebuilt_metadata_decodes_identically(
+        semantic in metadata_strategy(),
+        nonce in any::<u32>(),
+    ) {
+        let representation = StateRepresentationNonce::new(nonce);
+        let encoded = encode_state_metadata(&semantic, representation);
+        let canonical: [u8; STATE_METADATA_BYTES] = encoded.as_slice().try_into().unwrap();
+        let rebuilt = rebuild_state_metadata(&state_metadata_variable_region(&canonical));
+        let decoded = decode_state_metadata(&rebuilt);
+
+        prop_assert_eq!(&decoded, &decode_state_metadata(&encoded));
+        prop_assert_eq!(decoded, Ok(EncodedStateMetadata { semantic, representation }));
+    }
+
+    #[test]
+    fn arbitrary_variable_regions_round_trip(
+        bytes in prop::collection::vec(any::<u8>(), STATE_METADATA_VARIABLE_BYTES),
+    ) {
+        let variable: [u8; STATE_METADATA_VARIABLE_BYTES] = bytes.as_slice().try_into().unwrap();
+        let rebuilt = rebuild_state_metadata(&variable);
+
+        prop_assert_eq!(state_metadata_variable_region(&rebuilt), variable);
+        prop_assert_eq!(&rebuilt[25..78], variable.as_slice());
+        for row in STATE_METADATA_LAYOUT {
+            if let StateMetadataRegionClass::Constant(bytes) = row.class {
+                prop_assert_eq!(&rebuilt[row.range], bytes);
+            }
+        }
+    }
+
     #[test]
     fn field_slices_match_canonical_bytes_and_exact_differences(
         left_semantic in metadata_strategy(),

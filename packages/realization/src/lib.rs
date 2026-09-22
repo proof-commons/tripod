@@ -124,8 +124,12 @@ pub use state::{
     StateSingletonDeclaration, announce_maturity,
 };
 pub use state_codec::{
-    EncodedStateMetadata, STATE_METADATA_BYTES, STATE_METADATA_DOMAIN, STATE_METADATA_SCHEMA,
-    StateMetadataRefusal, StateRepresentationNonce, decode_state_metadata, encode_state_metadata,
+    EncodedStateMetadata, STATE_METADATA_BYTES, STATE_METADATA_CONSTANT_BYTES,
+    STATE_METADATA_DOMAIN, STATE_METADATA_LAYOUT, STATE_METADATA_SCHEMA,
+    STATE_METADATA_VARIABLE_BYTES, STATE_METADATA_VARIABLE_RANGE, StateMetadataLayoutRow,
+    StateMetadataRefusal, StateMetadataRegionClass, StateRepresentationNonce,
+    decode_state_metadata, encode_state_metadata, rebuild_state_metadata,
+    state_metadata_variable_region,
 };
 #[cfg(test)]
 pub(crate) use validate::constructibility_authorizations;

@@ -24,6 +24,130 @@ pub const STATE_METADATA_SCHEMA: u32 = 1;
 /// Exact width of one canonical STATE metadata encoding.
 pub const STATE_METADATA_BYTES: usize = 86;
 
+/// Whether a canonical metadata region is fixed or depends on the represented value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateMetadataRegionClass {
+    /// Exact bytes fixed by the canonical encoding.
+    Constant(&'static [u8]),
+    /// Bytes determined by semantic metadata or its representation nonce.
+    Variable,
+}
+
+/// A descriptive row of the canonical STATE metadata layout.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateMetadataLayoutRow {
+    /// Name of the encoded field.
+    pub name: &'static str,
+    /// Byte range within the complete canonical encoding.
+    pub range: core::ops::Range<usize>,
+    /// Whether the row carries fixed bytes or represented data.
+    pub class: StateMetadataRegionClass,
+}
+
+/// Canonical STATE metadata rows in encoding order, including every fixed byte.
+pub const STATE_METADATA_LAYOUT: [StateMetadataLayoutRow; 10] = [
+    StateMetadataLayoutRow {
+        name: "domain",
+        range: 0..21,
+        class: StateMetadataRegionClass::Constant(STATE_METADATA_DOMAIN),
+    },
+    StateMetadataLayoutRow {
+        name: "schema",
+        range: 21..25,
+        class: StateMetadataRegionClass::Constant(&STATE_METADATA_SCHEMA.to_be_bytes()),
+    },
+    StateMetadataLayoutRow {
+        name: "omega",
+        range: 25..33,
+        class: StateMetadataRegionClass::Variable,
+    },
+    StateMetadataLayoutRow {
+        name: "y_l",
+        range: 33..41,
+        class: StateMetadataRegionClass::Variable,
+    },
+    StateMetadataLayoutRow {
+        name: "y_t",
+        range: 41..49,
+        class: StateMetadataRegionClass::Variable,
+    },
+    StateMetadataLayoutRow {
+        name: "q",
+        range: 49..57,
+        class: StateMetadataRegionClass::Variable,
+    },
+    StateMetadataLayoutRow {
+        name: "cycle",
+        range: 57..65,
+        class: StateMetadataRegionClass::Variable,
+    },
+    StateMetadataLayoutRow {
+        name: "maturity",
+        range: 65..74,
+        class: StateMetadataRegionClass::Variable,
+    },
+    StateMetadataLayoutRow {
+        name: "nonce",
+        range: 74..78,
+        class: StateMetadataRegionClass::Variable,
+    },
+    StateMetadataLayoutRow {
+        name: "reserved",
+        range: 78..86,
+        class: StateMetadataRegionClass::Constant(&[0_u8; 8]),
+    },
+];
+
+/// Contiguous span occupied by the canonical layout's variable rows.
+pub const STATE_METADATA_VARIABLE_RANGE: core::ops::Range<usize> =
+    STATE_METADATA_LAYOUT[2].range.start..STATE_METADATA_LAYOUT[8].range.end;
+
+/// Width of the canonical metadata's variable region.
+pub const STATE_METADATA_VARIABLE_BYTES: usize =
+    STATE_METADATA_VARIABLE_RANGE.end - STATE_METADATA_VARIABLE_RANGE.start;
+
+/// Total width of the canonical metadata's constant rows.
+pub const STATE_METADATA_CONSTANT_BYTES: usize =
+    STATE_METADATA_BYTES - STATE_METADATA_VARIABLE_BYTES;
+
+/// Extract the variable region for consumers that obtain fixed bytes from the layout.
+///
+/// The array type fixes the input width; callers holding a slice check its width
+/// before calling. This function does not validate canonicality or decode bytes.
+#[must_use]
+pub fn state_metadata_variable_region(
+    canonical: &[u8; STATE_METADATA_BYTES],
+) -> [u8; STATE_METADATA_VARIABLE_BYTES] {
+    let mut variable = [0_u8; STATE_METADATA_VARIABLE_BYTES];
+    variable.copy_from_slice(&canonical[STATE_METADATA_VARIABLE_RANGE]);
+    variable
+}
+
+/// Rebuild the complete encoding from the variable region and the layout's constants.
+///
+/// Rows are copied in encoding order. The array type fixes the input width;
+/// callers holding a slice check its width before calling. Arbitrary variable
+/// bytes may be semantically invalid: strict validation remains the job of
+/// [`decode_state_metadata`]. This function does not decode bytes.
+#[must_use]
+pub fn rebuild_state_metadata(
+    variable: &[u8; STATE_METADATA_VARIABLE_BYTES],
+) -> [u8; STATE_METADATA_BYTES] {
+    let mut canonical = [0_u8; STATE_METADATA_BYTES];
+    for row in STATE_METADATA_LAYOUT {
+        let bytes = match row.class {
+            StateMetadataRegionClass::Constant(bytes) => bytes,
+            StateMetadataRegionClass::Variable => {
+                let start = row.range.start - STATE_METADATA_VARIABLE_RANGE.start;
+                let end = row.range.end - STATE_METADATA_VARIABLE_RANGE.start;
+                &variable[start..end]
+            }
+        };
+        canonical[row.range].copy_from_slice(bytes);
+    }
+    canonical
+}
+
 /// Non-semantic nonce retained by the STATE metadata representation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StateRepresentationNonce(u32);
