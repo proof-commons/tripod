@@ -40,13 +40,13 @@
 use std::collections::BTreeSet;
 
 use architecture::{ARCHITECTURE, AssetId};
-use realization::{Cycle, Maturity, ProtocolAmount, StateMetadata};
+use realization::{Cycle, Maturity, ProtocolAmount, StateMetadata, announce_maturity};
 use tapscript::upstream::{
     MaturityAnnouncementRepresentationProjection, StateSingletonDeclaration,
 };
 use tapscript::{
     CandidateStateConstructor, STATE_NUMS_KEY, StateConstructorRefusal, StateCurveCapability,
-    StateLeafRole, StateNonceBudget, StateTweakOutcome,
+    StateLeafRole, StateNonceBudget, StateStaticNode, StateStaticSubtree, StateTweakOutcome,
 };
 
 use crate::tests::state_relocate_tests::{second_bridge, second_resolved_census, second_singleton};
@@ -516,6 +516,133 @@ fn retaining_one_metadata_twice_is_refused() {
         Some(StateLinkRefusal::InstanceAlreadyRetained { metadata: held }),
     );
     assert_eq!(bundle.instances().len(), 1);
+}
+
+// Retaining the transition's own successor keeps both semantic sides over one exact linked subtree. A second deployment is the perturbed arm: its different program must fail both continuity checks even though it can construct the same successor metadata.
+#[test]
+fn retained_maturity_transition_preserves_both_continuities_and_refuses_deployment_migration() {
+    let target = reviewed_target();
+    let mut bundle = linked_bundle();
+    let predecessor = bundle.instances()[0].clone();
+    let input = state_metadata();
+    assert_eq!(predecessor.metadata().semantic, input);
+    let bounds = bridge().lead_bounds().bounds();
+    let (request, _) = bounds
+        .window(input.cycle)
+        .expect("the fixture cycle has a lead window");
+    let output = announce_maturity(&input, request, bounds)
+        .expect("the earliest cycle in the fixture window is admissible");
+    let successor = bundle
+        .retain(&target, &output, &ScriptedCurve)
+        .expect("the transition's successor is retained beside its predecessor")
+        .clone();
+    assert_eq!(bundle.instances().len(), 2);
+    assert_eq!(
+        bundle.instances(),
+        &[predecessor.clone(), successor.clone()]
+    );
+    assert_eq!(successor.metadata().semantic, output);
+    assert_eq!(
+        successor.metadata(),
+        successor.constructor().encoded_metadata()
+    );
+    let before = predecessor.metadata().semantic;
+    let after = successor.metadata().semantic;
+    assert_eq!(
+        (before.omega, before.y_l, before.y_t, before.q, before.cycle),
+        (after.omega, after.y_l, after.y_t, after.q, after.cycle),
+    );
+    assert_ne!(before.maturity, after.maturity);
+    let before = predecessor.constructor();
+    let after = successor.constructor();
+    for (left, right) in [(before, after), (after, before)] {
+        assert_eq!(
+            state_bundle_continuity(left.static_subtree(), right.static_subtree()),
+            Ok(())
+        );
+        assert_eq!(left.continuity(right), Ok(()));
+    }
+
+    let other = second_bundle();
+    let migrated = other
+        .apply_constructor(&target, &output, &ScriptedCurve)
+        .expect("the second deployment also constructs the successor metadata");
+    assert_eq!(
+        migrated.encoded_metadata().semantic,
+        after.encoded_metadata().semantic
+    );
+    assert_ne!(
+        before.static_subtree().root(),
+        other.static_subtree().root()
+    );
+    assert_eq!(
+        state_bundle_continuity(before.static_subtree(), other.static_subtree()),
+        Err(StateLinkRefusal::StaticSubtreeDiscontinuity {
+            predecessor: *before.static_subtree().root(),
+            successor: *other.static_subtree().root(),
+        }),
+    );
+    assert_eq!(
+        before.continuity(&migrated),
+        Err(StateConstructorRefusal::ConflictingLeaf)
+    );
+}
+
+// Rebuilding the linked leaf with its original identity preserves the whole descriptor; changing only that identity preserves the root but fails the linker's equality. The refusal carries roots, not the descriptor difference, so a validated report has to state separately which equality failed: the same refusal variant also reports program migration, and its payload cannot describe the retained-tree distinction.
+#[test]
+fn equal_static_roots_do_not_establish_retained_descriptor_continuity() {
+    let target = reviewed_target();
+    let bundle = linked_bundle();
+    let original = &bundle.static_subtree().leaves()[0];
+    assert_eq!(original.identity, 0);
+    let with_identity = |identity| {
+        StateStaticSubtree::new(
+            &target,
+            Some(StateStaticNode::Leaf {
+                identity,
+                leaf: original.leaf.clone(),
+            }),
+        )
+        .expect("the unchanged linked announcement leaf is a complete static subtree")
+    };
+    let honest = with_identity(original.identity);
+    assert_eq!(&honest, bundle.static_subtree());
+    assert_eq!(
+        state_bundle_continuity(bundle.static_subtree(), &honest),
+        Ok(())
+    );
+
+    let rebuilt = with_identity(1);
+    assert_ne!(&rebuilt, bundle.static_subtree());
+    assert_eq!(rebuilt.root(), bundle.static_subtree().root());
+    let refusal = state_bundle_continuity(bundle.static_subtree(), &rebuilt);
+    assert_eq!(
+        refusal,
+        Err(StateLinkRefusal::StaticSubtreeDiscontinuity {
+            predecessor: *bundle.static_subtree().root(),
+            successor: *rebuilt.root(),
+        })
+    );
+    let Err(StateLinkRefusal::StaticSubtreeDiscontinuity {
+        predecessor,
+        successor,
+    }) = refusal
+    else {
+        panic!("a changed descriptor must be refused even with an equal root");
+    };
+    assert_eq!(predecessor, successor);
+    let constructed = CandidateStateConstructor::derive(
+        &target,
+        &state_metadata(),
+        &rebuilt,
+        bundle.policy().internal_key(),
+        bundle.policy().budget(),
+        &ScriptedCurve,
+    )
+    .expect("the identity change leaves the committed bytes admissible");
+    assert_eq!(constructed.static_subtree(), &rebuilt);
+    assert_eq!(applied(&bundle).continuity(&constructed), Ok(()));
+    assert_eq!(constructed.continuity(applied(&bundle)), Ok(()));
 }
 
 // (e) An application whose every candidate nonce is refused exhausts its

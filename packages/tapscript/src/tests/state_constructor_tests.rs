@@ -1184,3 +1184,432 @@ fn the_production_golden_is_the_least_nonce_satisfying_the_branch_order() {
     }
     assert!(closure_metadata_leaf(expected.nonce) <= expected.static_root);
 }
+
+fn real_constructor(
+    semantic: &StateMetadata,
+    tree: &StateStaticSubtree,
+    budget: StateNonceBudget,
+) -> Result<CandidateStateConstructor, StateConstructorRefusal> {
+    let curve = PublicArithmeticCurve;
+    CandidateStateConstructor::derive(
+        &reviewed_target(),
+        semantic,
+        tree,
+        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &curve).unwrap(),
+        budget,
+        &curve,
+    )
+}
+
+fn real_transition_pair(
+    request: Cycle,
+    bounds: AnnouncementLeadBounds,
+) -> [CandidateStateConstructor; 2] {
+    let input = metadata();
+    let output = announce_maturity(&input, request, bounds).unwrap();
+    [input, output].map(|semantic| {
+        real_constructor(&semantic, &production_tree(), StateNonceBudget::default()).unwrap()
+    })
+}
+
+fn independently_framed_metadata(
+    semantic: &StateMetadata,
+    nonce: StateRepresentationNonce,
+) -> Vec<u8> {
+    let bytes = encode_state_metadata(semantic, nonce);
+    let mut program = vec![0x4c, u8::try_from(bytes.len()).unwrap()];
+    program.extend(bytes);
+    program.extend([0, 0x69]);
+    program
+}
+
+fn metadata_leaf_at(semantic: &StateMetadata, nonce: StateRepresentationNonce) -> [u8; 32] {
+    independent_leaf_hash(&independently_framed_metadata(semantic, nonce))
+}
+
+fn assert_real_reconstruction(built: &CandidateStateConstructor) {
+    use super::state_announcement_tests::{output_key, tagged};
+
+    let encoded = built.encoded_metadata();
+    let nonce = built.evidence().selected;
+    assert_eq!((built.nonce(), encoded.representation), (nonce, nonce));
+    assert_eq!(
+        built.metadata_bytes(),
+        encode_state_metadata(&encoded.semantic, nonce)
+    );
+    let program = independently_framed_metadata(&encoded.semantic, nonce);
+    assert_eq!(built.leaf_program().encode(&reviewed_target()), program);
+    let leaf = independent_leaf_hash(&program);
+    assert_eq!(
+        built
+            .control_recipe(StateLeafRole::MetadataCommitment)
+            .unwrap()
+            .executing_leaf_hash,
+        leaf
+    );
+    let static_root =
+        independent_leaf_hash(&fixtures().program.program().encode(&reviewed_target()));
+    assert_eq!(built.static_subtree().root(), &static_root);
+    assert!(leaf <= static_root);
+    let root = tagged(b"TapBranch/elements", &[leaf, static_root].concat());
+    let tweak = tagged(b"TapTweak/elements", &[STATE_NUMS_KEY, root].concat());
+    let compressed = output_key(tweak);
+    assert_eq!((built.merkle_root(), built.tweak_hash()), (&root, tweak));
+    assert_eq!(built.output_key().as_slice(), &compressed[1..]);
+    assert_eq!(built.parity(), compressed[0] == 3);
+    assert_eq!(
+        built.output_program(),
+        [vec![0x51, 0x20], compressed[1..].to_vec()].concat()
+    );
+}
+
+// Both sides commit the transition's own metadata under one unchanged static descriptor. Reconstructing each output with public arithmetic checks that agreement reaches the bytes, while a moved tree and a changed omega separate static continuity from semantic agreement.
+#[test]
+fn real_maturity_transition_reconstructs_both_sides_and_separates_static_from_semantic_agreement() {
+    let [before, after] = real_transition_pair(
+        Cycle::new(7),
+        AnnouncementLeadBounds::new(Cycle::new(1), Cycle::new(3)).unwrap(),
+    );
+    assert_eq!(before.continuity(&after), Ok(()));
+    assert_eq!(after.continuity(&before), Ok(()));
+    assert_eq!(before.static_subtree(), after.static_subtree());
+    let input = before.field_commitments(TransactionSide::Input);
+    let output = after.field_commitments(TransactionSide::Output);
+    assert_eq!(
+        input.iter().map(|entry| entry.field).collect::<Vec<_>>(),
+        StateField::ALL
+    );
+    assert_eq!(input.len(), output.len());
+    for (old, new) in input.iter().zip(&output) {
+        assert_eq!(
+            (old.side, new.side),
+            (TransactionSide::Input, TransactionSide::Output)
+        );
+        assert_eq!((old.field, &old.range), (new.field, &new.range));
+        assert_eq!(old.bytes, before.metadata_bytes()[old.range.clone()]);
+        assert_eq!(new.bytes, after.metadata_bytes()[new.range.clone()]);
+        assert_eq!(old.bytes != new.bytes, old.field == StateField::Maturity);
+    }
+    assert_ne!(before.metadata_bytes(), after.metadata_bytes());
+    assert_ne!(
+        before
+            .control_recipe(StateLeafRole::MetadataCommitment)
+            .unwrap()
+            .executing_leaf_hash,
+        after
+            .control_recipe(StateLeafRole::MetadataCommitment)
+            .unwrap()
+            .executing_leaf_hash
+    );
+    assert_ne!(before.merkle_root(), after.merkle_root());
+    assert_ne!(before.output_program(), after.output_program());
+    for built in [&before, &after] {
+        assert_real_reconstruction(built);
+    }
+
+    let moved = real_constructor(
+        &after.encoded_metadata().semantic,
+        &subtree(4),
+        StateNonceBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        before.continuity(&moved),
+        Err(StateConstructorRefusal::ConflictingLeaf)
+    );
+    assert_eq!(moved.field_commitments(TransactionSide::Output), output);
+
+    let changed = StateMetadata {
+        omega: ProtocolAmount::new(7).unwrap(),
+        ..after.encoded_metadata().semantic
+    };
+    let semantic_mutant =
+        real_constructor(&changed, &production_tree(), StateNonceBudget::default()).unwrap();
+    assert_eq!(before.continuity(&semantic_mutant), Ok(()));
+    for (honest, mutant) in output
+        .iter()
+        .zip(semantic_mutant.field_commitments(TransactionSide::Output))
+    {
+        assert_eq!(honest.field, mutant.field);
+        assert_eq!(
+            honest.bytes != mutant.bytes,
+            honest.field == StateField::Omega
+        );
+    }
+}
+
+// Searching cycles from the original cycle makes the nonzero example reproducible instead of trusting a fixture. Every lower nonce must fail the branch comparison and the public fixed-nonce entry; removing the final permitted attempt must exhaust the same search.
+#[test]
+fn real_nonce_search_checks_a_pinned_nonzero_prefix_and_exhausts_one_attempt_short() {
+    let tree = production_tree();
+    let semantic = (5..=4096)
+        .map(|cycle| StateMetadata {
+            cycle: Cycle::new(cycle),
+            ..metadata()
+        })
+        .find(|semantic| metadata_leaf_at(semantic, StateRepresentationNonce::ZERO) > *tree.root())
+        .unwrap();
+    let built = real_constructor(&semantic, &tree, StateNonceBudget::default()).unwrap();
+    let selected = built.evidence().selected;
+    assert_eq!(
+        (semantic.cycle.get(), selected.get()),
+        (7, 2),
+        "measured first cycle and selected nonce"
+    );
+    assert_eq!(built.nonce(), selected);
+    assert_ne!(built.evidence().rejected.len(), 0);
+    assert_eq!(
+        built.evidence().rejected.len(),
+        usize::try_from(selected.get()).unwrap()
+    );
+    let curve = PublicArithmeticCurve;
+    let policy = StateInternalKeyPolicy::new(STATE_NUMS_KEY, &curve).unwrap();
+    let at = |representation| {
+        state_output_program_at_nonce(
+            &reviewed_target(),
+            &EncodedStateMetadata {
+                semantic,
+                representation,
+            },
+            &tree,
+            policy,
+            &curve,
+        )
+    };
+    for (index, (nonce, refusal)) in built.evidence().rejected.iter().enumerate() {
+        assert_eq!(
+            *nonce,
+            StateRepresentationNonce::new(u32::try_from(index).unwrap())
+        );
+        assert_eq!(
+            *refusal,
+            StateConstructorRefusal::CanonicalBranchSideNotSatisfied
+        );
+        assert!(metadata_leaf_at(&semantic, *nonce) > *tree.root());
+        assert!(refusal.retryable());
+        assert_eq!(at(*nonce), Err(*refusal));
+    }
+    assert!(metadata_leaf_at(&semantic, selected) <= *tree.root());
+    assert_eq!(at(selected).unwrap(), built.output_program());
+    assert_eq!(
+        real_constructor(
+            &semantic,
+            &tree,
+            StateNonceBudget::new(selected.get()).unwrap()
+        ),
+        Err(StateConstructorRefusal::RepresentationSearchExhausted)
+    );
+}
+
+// Sorted branch hashes and leaf programs forget child source order and caller identities, but the retained descriptor keeps both. All three real outputs therefore agree; changing a support program checks that this agreement is about committed bytes rather than an indiscriminate continuity answer.
+#[test]
+fn real_commitments_forget_static_order_and_identity_but_detect_program_changes() {
+    let announcement = node(0, StateLeafRole::Announcement, 1);
+    let support = node(1, StateLeafRole::Support(0), 2);
+    let trees = [
+        branch(announcement.clone(), support.clone()),
+        branch(support.clone(), announcement),
+        branch(node(7, StateLeafRole::Announcement, 1), support),
+    ]
+    .map(|tree| StateStaticSubtree::new(&reviewed_target(), Some(tree)).unwrap());
+    for (index, left) in trees.iter().enumerate() {
+        for right in trees.iter().skip(index + 1) {
+            assert_ne!(left, right);
+            assert_eq!(left.root(), right.root());
+            for entry in left.leaves() {
+                let matching = right
+                    .leaves()
+                    .iter()
+                    .find(|other| other.leaf.role == entry.leaf.role)
+                    .unwrap();
+                assert_eq!(
+                    (entry.hash, &entry.siblings),
+                    (matching.hash, &matching.siblings)
+                );
+                assert_eq!(left.path_to(&entry.hash), right.path_to(&entry.hash));
+                assert_eq!(entry.siblings.len(), 1);
+                let mut pair = [entry.hash, entry.siblings[0]];
+                pair.sort_unstable();
+                assert_eq!(
+                    *left.root(),
+                    super::state_announcement_tests::tagged(b"TapBranch/elements", &pair.concat())
+                );
+            }
+        }
+    }
+    let constructors = trees
+        .each_ref()
+        .map(|tree| real_constructor(&metadata(), tree, StateNonceBudget::default()).unwrap());
+    for left in &constructors {
+        for right in &constructors {
+            assert_eq!(left.continuity(right), Ok(()));
+            assert_eq!(
+                (
+                    left.merkle_root(),
+                    left.tweak_hash(),
+                    left.output_key(),
+                    left.output_program()
+                ),
+                (
+                    right.merkle_root(),
+                    right.tweak_hash(),
+                    right.output_key(),
+                    right.output_program()
+                )
+            );
+        }
+    }
+    let changed = StateStaticSubtree::new(
+        &reviewed_target(),
+        Some(branch(
+            node(0, StateLeafRole::Announcement, 1),
+            node(1, StateLeafRole::Support(0), 3),
+        )),
+    )
+    .unwrap();
+    let mutant = real_constructor(&metadata(), &changed, StateNonceBudget::default()).unwrap();
+    for honest in &constructors {
+        assert_ne!(honest.static_subtree().root(), changed.root());
+        assert_eq!(
+            honest.continuity(&mutant),
+            Err(StateConstructorRefusal::ConflictingLeaf)
+        );
+    }
+}
+
+fn assert_control_recipe_ownership(
+    built: &CandidateStateConstructor,
+    announcement: &StateControlRecipe,
+    commitment: &StateControlRecipe,
+) {
+    let leaf = built
+        .static_subtree()
+        .leaves()
+        .iter()
+        .find(|entry| entry.leaf.role == StateLeafRole::Announcement)
+        .unwrap();
+    assert_eq!(announcement.role, StateLeafRole::Announcement);
+    assert_eq!(announcement.executing_leaf_hash, leaf.hash);
+    let (outer, inner) = announcement.siblings.split_last().unwrap();
+    assert_eq!(inner, built.static_subtree().path_to(&leaf.hash).unwrap());
+    assert_eq!(outer, &commitment.executing_leaf_hash);
+    assert_eq!(commitment.role, StateLeafRole::MetadataCommitment);
+    assert_eq!(
+        commitment.executing_leaf_hash,
+        metadata_leaf_at(
+            &built.encoded_metadata().semantic,
+            built.evidence().selected,
+        )
+    );
+    assert_eq!(commitment.siblings, vec![*built.static_subtree().root()]);
+    for recipe in [announcement, commitment] {
+        assert_eq!(recipe.parity, built.parity());
+        assert_eq!(recipe.internal_key, STATE_NUMS_KEY);
+        assert_eq!(recipe.leaf_version, LeafVersion::TAPSCRIPT);
+    }
+}
+
+fn assert_transition_control_recipes(
+    before: &CandidateStateConstructor,
+    after: &CandidateStateConstructor,
+    equal_parities: bool,
+) {
+    if equal_parities {
+        assert_eq!(before.parity(), after.parity());
+    } else {
+        assert_ne!(before.parity(), after.parity());
+    }
+    let announcement =
+        [before, after].map(|built| built.control_recipe(StateLeafRole::Announcement).unwrap());
+    let metadata = [before, after].map(|built| {
+        built
+            .control_recipe(StateLeafRole::MetadataCommitment)
+            .unwrap()
+    });
+    let [old, new] = &announcement;
+    assert_eq!(
+        (
+            old.role,
+            old.leaf_version,
+            old.internal_key,
+            old.executing_leaf_hash
+        ),
+        (
+            new.role,
+            new.leaf_version,
+            new.internal_key,
+            new.executing_leaf_hash
+        )
+    );
+    assert_eq!(old.siblings.len(), new.siblings.len());
+    let inner = old.siblings.len() - 1;
+    assert_eq!(old.siblings[..inner], new.siblings[..inner]);
+    assert_ne!(
+        metadata[0].executing_leaf_hash,
+        metadata[1].executing_leaf_hash
+    );
+    for ((built, recipe), commitment) in [before, after]
+        .into_iter()
+        .zip(&announcement)
+        .zip(&metadata)
+    {
+        assert_control_recipe_ownership(built, recipe, commitment);
+    }
+    assert_eq!(metadata[0].siblings, metadata[1].siblings);
+    let old_bytes = old.control_bytes().unwrap();
+    let new_bytes = new.control_bytes().unwrap();
+    assert_eq!(old_bytes.len(), new_bytes.len());
+    let outer = old_bytes.len() - metadata[0].executing_leaf_hash.len();
+    assert_eq!(
+        old_bytes[0] ^ new_bytes[0],
+        u8::from(before.parity() != after.parity())
+    );
+    assert_eq!(old_bytes[1..outer], new_bytes[1..outer]);
+    assert_eq!(old_bytes[outer..], metadata[0].executing_leaf_hash);
+    assert_eq!(new_bytes[outer..], metadata[1].executing_leaf_hash);
+    let mut siblings = old.siblings.clone();
+    *siblings.last_mut().unwrap() = metadata[1].executing_leaf_hash;
+    let hybrid = StateControlRecipe {
+        siblings,
+        ..old.clone()
+    }
+    .control_bytes()
+    .unwrap();
+    assert_ne!(hybrid, old_bytes);
+    if equal_parities {
+        assert_eq!(hybrid, new_bytes);
+    } else {
+        assert_ne!(hybrid, new_bytes);
+    }
+}
+
+// A control block carries the output parity and the path, not the executing leaf hash. Swapping the outer sibling into the predecessor block therefore equals the successor block exactly when their parities agree; the wider lead window supplies the other relation so neither consequence is left conditional and unexercised.
+#[test]
+fn real_transition_control_recipes_change_only_outer_sibling_and_output_parity() {
+    let [before, after] = real_transition_pair(
+        Cycle::new(7),
+        AnnouncementLeadBounds::new(Cycle::new(1), Cycle::new(3)).unwrap(),
+    );
+    let natural_equal = before.parity() == after.parity();
+    assert_transition_control_recipes(&before, &after, natural_equal);
+
+    let bounds = AnnouncementLeadBounds::new(Cycle::new(2), Cycle::new(32)).unwrap();
+    let (earliest, latest) = bounds.window(metadata().cycle).unwrap();
+    let other = (earliest.get()..=latest.get())
+        .map(|request| {
+            let semantic = announce_maturity(&metadata(), Cycle::new(request), bounds).unwrap();
+            real_constructor(&semantic, &production_tree(), StateNonceBudget::default()).unwrap()
+        })
+        .find(|candidate| (candidate.parity() == before.parity()) != natural_equal)
+        .unwrap();
+    assert_eq!(before.parity() == other.parity(), !natural_equal);
+    assert_transition_control_recipes(&before, &other, !natural_equal);
+    assert_ne!(after.parity(), other.parity());
+    assert_eq!(
+        [natural_equal, before.parity() == other.parity()]
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([false, true])
+    );
+    assert_real_reconstruction(&other);
+}
