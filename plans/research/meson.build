@@ -10,5 +10,6 @@ plans_research_files = files(
   'public-declassification.md',
   'settlement-layout.md',
   'state-constructor.md',
+  'test-performance.md',
   'wide-arithmetic.md',
 )
