@@ -3,6 +3,7 @@
 # meson.build accumulates this list into its role group.
 plans_drafts_files = files(
   'README.md',
+  'accepted-byte-classification-study.md',
   'relay-witness-constant-elision-proposal.md',
   'relay-witness-split-study.md',
 )
