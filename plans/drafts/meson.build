@@ -6,4 +6,5 @@ plans_drafts_files = files(
   'accepted-byte-classification-study.md',
   'relay-witness-constant-elision-proposal.md',
   'relay-witness-split-study.md',
+  'wave10-root-history-and-recovery-study.md',
 )
