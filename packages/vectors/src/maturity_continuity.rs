@@ -2059,6 +2059,9 @@ mod tests {
     use std::fmt::Write as _;
     use std::io::Write as _;
     use std::sync::LazyLock;
+    use target_elements_conformance::constructor::tagged::{
+        TAP_BRANCH_TAG, TAP_LEAF_TAG, TAP_TWEAK_TAG, tagged_hash as constructor_tagged_hash,
+    };
     use target_elements_conformance::executor::{OperationStep, TargetOperationPlanner};
     use target_elements_conformance::protocol::{
         FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, NativeResourceObservation,
@@ -2774,6 +2777,8 @@ mod tests {
 
     #[test]
     fn tweak_evidence_recomputes_both_sides() {
+        use MaturityCommitmentAssumption as A;
+
         for source in [archived(), node_free()] {
             let record = source.project().expect("projection");
             for evidence in [record.predecessor_tweak(), record.successor_tweak()] {
@@ -2788,7 +2793,18 @@ mod tests {
                 ] {
                     assert!(comparison.agrees());
                 }
-                assert_eq!(evidence.premises().len(), 7);
+                assert_eq!(
+                    evidence.premises(),
+                    &[
+                        A::LeafCollisionResistance,
+                        A::LeafSecondPreimageResistance,
+                        A::BranchCollisionResistance,
+                        A::BranchSecondPreimageResistance,
+                        A::TweakCollisionResistance,
+                        A::TweakSecondPreimageResistance,
+                        A::NumsDiscreteLogAndPreimageResistance,
+                    ]
+                );
                 assert_eq!(
                     evidence.premises()[6].domain_or_residual(),
                     tapscript::StateInternalKeyPolicy::RESIDUAL
@@ -2796,6 +2812,42 @@ mod tests {
                 writeln!(std::io::stdout().lock(), "\nRUN-REPORT tweak source={:?} side={:?} nums={} leaf={} branch={} digest={} key={} parity={:?} comparisons=all-agree", source.origin, evidence.side(), hex(evidence.internal().reconstructed()), hex(evidence.metadata().reconstructed()), hex(evidence.branch().reconstructed()), hex(evidence.digest().reconstructed()), hex(evidence.key().reconstructed()), evidence.oddness().reconstructed()).expect("tweak observation");
             }
         }
+    }
+
+    #[test]
+    fn commitment_premises_name_constructor_hash_domains() {
+        use MaturityCommitmentAssumption as A;
+
+        for (premise, expected) in [
+            (A::LeafCollisionResistance, TAP_LEAF_TAG),
+            (A::LeafSecondPreimageResistance, TAP_LEAF_TAG),
+            (A::BranchCollisionResistance, TAP_BRANCH_TAG),
+            (A::BranchSecondPreimageResistance, TAP_BRANCH_TAG),
+            (A::TweakCollisionResistance, TAP_TWEAK_TAG),
+            (A::TweakSecondPreimageResistance, TAP_TWEAK_TAG),
+            (
+                A::NumsDiscreteLogAndPreimageResistance,
+                tapscript::StateInternalKeyPolicy::RESIDUAL,
+            ),
+        ] {
+            assert_eq!(
+                premise.domain_or_residual(),
+                expected,
+                "wrong tagged-hash domain for {premise:?}"
+            );
+        }
+
+        assert_ne!(TAP_LEAF_TAG, TAP_BRANCH_TAG);
+        assert_ne!(TAP_LEAF_TAG, TAP_TWEAK_TAG);
+        assert_ne!(TAP_BRANCH_TAG, TAP_TWEAK_TAG);
+
+        let message = b"commitment premise";
+        let leaf = constructor_tagged_hash(TAP_LEAF_TAG, message);
+        let branch = constructor_tagged_hash(TAP_BRANCH_TAG, message);
+        let tweak = constructor_tagged_hash(TAP_TWEAK_TAG, message);
+        assert_ne!(leaf, branch);
+        assert_ne!(leaf, tweak);
+        assert_ne!(branch, tweak);
     }
 
     #[test]

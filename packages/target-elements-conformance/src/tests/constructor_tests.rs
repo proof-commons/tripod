@@ -57,7 +57,9 @@ use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
 use crate::constructor::metadata::{
     METADATA_BYTES, MetadataDefect, PrototypeMetadata, TransitionDefect,
 };
-use crate::constructor::tagged::{Digest32, sha256, tagged_hash};
+use crate::constructor::tagged::{
+    Digest32, TAP_BRANCH_TAG, TAP_LEAF_TAG, TAP_TWEAK_TAG, sha256, tagged_hash,
+};
 use crate::constructor::totality::{TotalityDefect, TweakTotalityPolicy, construct_under_policy};
 use crate::constructor::tree::{
     ConstructedOutput, ConstructionDefect, FixtureTapTree, TreeDefect, TweakDefect, branch_hash,
@@ -557,16 +559,19 @@ fn a_tagged_hash_is_the_tag_digest_twice_and_then_the_message() {
 
 #[test]
 fn a_tag_separates_domains() {
-    assert_ne!(
-        tagged_hash("TapLeaf/elements", b""),
-        tagged_hash("TapBranch/elements", b"")
-    );
+    let message = b"";
+    let leaf = tagged_hash(TAP_LEAF_TAG, message);
+    let branch = tagged_hash(TAP_BRANCH_TAG, message);
+    let tweak = tagged_hash(TAP_TWEAK_TAG, message);
+    assert_ne!(leaf, branch);
+    assert_ne!(leaf, tweak);
+    assert_ne!(branch, tweak);
+
     // And the target's tags are not the upstream Bitcoin ones, which is
     // the mistake that would produce a well-formed wrong answer.
-    assert_ne!(
-        tagged_hash("TapLeaf/elements", b""),
-        tagged_hash("TapLeaf", b"")
-    );
+    assert_ne!(leaf, tagged_hash("TapLeaf", message));
+    assert_ne!(branch, tagged_hash("TapBranch", message));
+    assert_ne!(tweak, tagged_hash("TapTweak", message));
 }
 
 #[test]
