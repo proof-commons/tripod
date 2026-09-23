@@ -1,7 +1,7 @@
 //! Native capture carrier for the sponsorless maturity announcement.
 //!
 //! The loop invokes `scripts/live-native-maturity-capture.sh` with its documented adapter, deployment and toolchain environment. That driver supplies the clean suite identity and new report directory and selects only the ignored test. The ordinary tests below drive scripted responses in process and require no node.
-//! The caller's branch context is retained for replay and establishes no current-root freshness. The whole-metadata schedule declares the archived relay refusal; the variable-metadata schedule declares acceptance. Exact scripted replay can establish acceptance bindings without authenticating a native run or promoting a row standing.
+//! The caller's branch context is retained for replay and establishes no current-root freshness. The whole-metadata schedule declares the archived relay refusal. The variable-metadata native run establishes acceptance bindings and authenticates nothing else; neither schedule promotes a row standing.
 
 pub mod common;
 
@@ -180,7 +180,9 @@ fn the_maturity_announcement_runs_against_a_real_target() {
     let mut planner = MaturityAnnouncementPlanner::new(
         deployment.clone(),
         context,
-        vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        vectors::maturity_closure::MaturityWitnessSelection::Retained(
+            tapscript::StateWitnessSchedule::VariableMetadata,
+        ),
     )
     .expect("public announcement planner");
     let mut capture = NativeOperationCapture::default();
@@ -196,7 +198,9 @@ fn the_maturity_announcement_runs_against_a_real_target() {
         MaturityNativeEvidence::from_transcript(
             deployment.clone(),
             context,
-            vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+            vectors::maturity_closure::MaturityWitnessSelection::Retained(
+                tapscript::StateWitnessSchedule::VariableMetadata,
+            ),
             exchanges,
         )
     });
@@ -250,7 +254,23 @@ fn assert_completed(planner: &MaturityAnnouncementPlanner, evidence: &MaturityNa
         planner.predecessor(),
         Some(announcement.protected().inputs()[0].outpoint())
     );
-    assert_outstanding(evidence);
+    match planner.schedule() {
+        tapscript::StateWitnessSchedule::WholeMetadata => assert_outstanding(evidence),
+        tapscript::StateWitnessSchedule::VariableMetadata => {
+            let MaturityAcceptanceObligation::Established {
+                schedule,
+                identity,
+                readback,
+            } = evidence.acceptance_obligation()
+            else {
+                panic!("variable acceptance must establish its checked readback")
+            };
+            assert_eq!(*schedule, planner.schedule());
+            assert_eq!(*identity, readback.identity());
+            assert_eq!(planner.readback(), Some(readback));
+            assert_eq!(readback.bytes(), subject.transaction_bytes.as_slice());
+        }
+    }
 }
 
 fn identity() -> CandidateDeploymentIdentity {
@@ -427,6 +447,16 @@ fn variable_scripted_acceptance_establishes_through_the_public_api() {
         readback.bytes(),
         planner.submission_bytes().expect("submitted bytes")
     );
+}
+
+#[test]
+fn variable_scripted_run_satisfies_the_per_schedule_completion_assertion() {
+    let planner = scripted_run_for(
+        tapscript::StateWitnessSchedule::VariableMetadata,
+        ObservedOutcomeLayer::Accepted,
+    );
+    let evidence = derive(&planner).expect("accepted replay");
+    assert_completed(&planner, &evidence);
 }
 
 #[test]

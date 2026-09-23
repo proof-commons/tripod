@@ -1,6 +1,6 @@
 //! Pinned four-file admission and planner replay of maturity announcement runs.
 //!
-//! Names, sizes and addresses bind each archive before its closed grammars are interpreted. The historical refused loader is one set of pins; an accepted corpus uses the same bindings and exact replay with its own schedule and sponsorless expectation.
+//! Names, sizes and addresses bind each archive before its closed grammars are interpreted. The historical refused loader is one set of pins; an accepted corpus uses the same bindings and exact replay with its own schedule and sponsorless expectation. A corpus also pins the cargo path, framework revision mode and funding advertisement of the host that ran it.
 //!
 //! An accepted payload carries mined readback beside the capture's request bytes, verdict, layer, target identity and detail. Replay checks the reconstructed response against the submitted transaction. This establishes transcript consistency under the schedule, not executor provenance, current-root freshness or a promoted standing.
 
@@ -93,6 +93,15 @@ pub enum MaturitySponsorlessExpectation {
     Acceptance,
 }
 
+/// How the capture binds the framework revision to its run report.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityFrameworkRevision {
+    /// The framework revision was recorded as empty text.
+    Unrecorded,
+    /// The framework revision equals the report's intended executed tip.
+    IntendedTip,
+}
+
 /// The addresses and declaration that bind one immutable four-file corpus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MaturityCorpusPins<'a> {
@@ -103,20 +112,25 @@ pub struct MaturityCorpusPins<'a> {
     run_address: &'a str,
     ceremony_sha256: &'a str,
     sponsorless: MaturitySponsorlessExpectation,
+    cargo_path: &'a str,
+    framework_revision: MaturityFrameworkRevision,
+    funding_count: usize,
 }
 
 impl<'a> MaturityCorpusPins<'a> {
-    /// Collects the ordered file pins and sponsorless declaration.
+    /// Collects the ordered file pins, addresses, sponsorless declaration and host facts.
     #[must_use]
     pub const fn new(
         schedule: tapscript::StateWitnessSchedule,
-        names: [&'a str; 4],
-        sizes: [usize; 4],
-        manifest_sha256: &'a str,
-        run_address: &'a str,
-        ceremony_sha256: &'a str,
+        files: ([&'a str; 4], [usize; 4]),
+        addresses: (&'a str, &'a str, &'a str),
         sponsorless: MaturitySponsorlessExpectation,
+        cargo_path: &'a str,
+        framework_revision: MaturityFrameworkRevision,
+        funding_count: usize,
     ) -> Self {
+        let (names, sizes) = files;
+        let (manifest_sha256, run_address, ceremony_sha256) = addresses;
         Self {
             schedule,
             names,
@@ -125,6 +139,9 @@ impl<'a> MaturityCorpusPins<'a> {
             run_address,
             ceremony_sha256,
             sponsorless,
+            cargo_path,
+            framework_revision,
+            funding_count,
         }
     }
 
@@ -169,23 +186,48 @@ impl<'a> MaturityCorpusPins<'a> {
     pub const fn sponsorless(&self) -> MaturitySponsorlessExpectation {
         self.sponsorless
     }
+
+    /// The executable path recorded at the start of the report's cargo argv.
+    #[must_use]
+    pub const fn cargo_path(&self) -> &'a str {
+        self.cargo_path
+    }
+
+    /// The framework revision binding used by the capture handshake.
+    #[must_use]
+    pub const fn framework_revision(&self) -> MaturityFrameworkRevision {
+        self.framework_revision
+    }
+
+    /// The number of funding advertisements in the capture environment.
+    #[must_use]
+    pub const fn funding_count(&self) -> usize {
+        self.funding_count
+    }
 }
 
 const HISTORICAL_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
     MATURITY_RUN_SCHEDULE,
-    [
-        "3a690139.report.capture",
-        "3a690139.report.capture.timing",
-        "MANIFEST.sha256",
-        "RUN-REPORT",
-    ],
-    FILE_SIZES,
-    MATURITY_MANIFEST_SHA256,
-    MATURITY_RUN_ADDRESS,
-    CEREMONY_SHA256,
+    (
+        [
+            "3a690139.report.capture",
+            "3a690139.report.capture.timing",
+            "MANIFEST.sha256",
+            "RUN-REPORT",
+        ],
+        FILE_SIZES,
+    ),
+    (
+        MATURITY_MANIFEST_SHA256,
+        MATURITY_RUN_ADDRESS,
+        CEREMONY_SHA256,
+    ),
     MaturitySponsorlessExpectation::RelayRefusal {
         detail: "bad-witness-nonstandard",
     },
+    "/workspace/toolchains/cargo/bin/cargo",
+    MaturityFrameworkRevision::Unrecorded,
+    0,
 );
 
 /// The layer at which maturity corpus admission stopped.
@@ -602,7 +644,10 @@ fn validate_manifest(files: &[MaturityArchiveFile<'_>], expected_hash: &str) -> 
     cursor.done().map_err(|_| Refusal::ManifestGrammar)
 }
 
-fn parse_report_suite(cursor: &mut Cursor<'_>) -> ImportResult<[String; 5]> {
+fn parse_report_suite(
+    cursor: &mut Cursor<'_>,
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<[String; 5]> {
     cursor.exact("run-report-schema native-maturity-run-report 1")?;
     cursor.exact("capture-format-schema native-maturity-capture 1")?;
     let suite_commit = cursor.value("suite-commit")?.to_owned();
@@ -613,9 +658,9 @@ fn parse_report_suite(cursor: &mut Cursor<'_>) -> ImportResult<[String; 5]> {
     cursor.exact("suite-clean yes")?;
     cursor.exact("rust-test-target maturity_native")?;
     if cursor.text("cargo-argv")?
-        != concat!(
-            "/workspace/toolchains/cargo/bin/cargo test -p tripod-vectors ",
-            "--test maturity_native -- --ignored --test-threads=1"
+        != format!(
+            "{} test -p tripod-vectors --test maturity_native -- --ignored --test-threads=1",
+            pins.cargo_path()
         )
     {
         return Err(cursor.refusal());
@@ -654,7 +699,10 @@ fn parse_report_suite(cursor: &mut Cursor<'_>) -> ImportResult<[String; 5]> {
     ])
 }
 
-fn parse_report_body(bytes: &[u8]) -> ImportResult<MaturityReportFacts> {
+fn parse_report_body(
+    bytes: &[u8],
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<MaturityReportFacts> {
     let mut cursor = Cursor::new("RUN-REPORT", bytes)?;
     let [
         suite_commit,
@@ -662,7 +710,7 @@ fn parse_report_body(bytes: &[u8]) -> ImportResult<MaturityReportFacts> {
         expected_tip,
         binary_revision,
         intended_tip,
-    ] = parse_report_suite(&mut cursor)?;
+    ] = parse_report_suite(&mut cursor, pins)?;
     let adapter_name = cursor.text("executor-adapter-name")?;
     let adapter_version = cursor.text("executor-adapter-version")?;
     let node_name = cursor.text("node-name")?;
@@ -716,9 +764,9 @@ fn parse_report_body(bytes: &[u8]) -> ImportResult<MaturityReportFacts> {
     })
 }
 
-fn parse_report(bytes: &[u8], expected_hash: &str) -> ImportResult<MaturityReportFacts> {
-    let report = parse_report_body(bytes).map_err(|_| Refusal::RunReportGrammar)?;
-    if report.run_address != expected_hash {
+fn parse_report(bytes: &[u8], pins: &MaturityCorpusPins<'_>) -> ImportResult<MaturityReportFacts> {
+    let report = parse_report_body(bytes, pins).map_err(|_| Refusal::RunReportGrammar)?;
+    if report.run_address != pins.run_address() {
         return Err(Refusal::RunReportAddress);
     }
     Ok(report)
@@ -742,6 +790,7 @@ const CAPABILITIES: [&str; 12] = [
 fn parse_environment(
     cursor: &mut Cursor<'_>,
     report: &MaturityReportFacts,
+    pins: &MaturityCorpusPins<'_>,
 ) -> ImportResult<Vec<String>> {
     cursor.exact("environment-schema 8")?;
     cursor.exact("environment-chain 15 656c656d656e747372656774657374")?;
@@ -770,13 +819,20 @@ fn parse_environment(
         }
         capabilities.push((*expected).to_owned());
     }
-    cursor.exact("environment-funding-count 0")?;
+    cursor.exact(&format!(
+        "environment-funding-count {}",
+        pins.funding_count()
+    ))?;
+    for _ in 0..pins.funding_count() {
+        cursor.value("environment-funding")?;
+    }
     Ok(capabilities)
 }
 
 fn parse_header(
     cursor: &mut Cursor<'_>,
     report: &MaturityReportFacts,
+    pins: &MaturityCorpusPins<'_>,
 ) -> ImportResult<[String; 2]> {
     cursor.exact("native-capture-schema 2")?;
     cursor.exact("ceremony-id report")?;
@@ -810,19 +866,26 @@ fn parse_header(
         "protocol-revision",
         cursor.value("handshake-protocol-schema")? == "8",
     )?;
+    let framework_revision = match pins.framework_revision() {
+        MaturityFrameworkRevision::Unrecorded => "",
+        MaturityFrameworkRevision::IntendedTip => report.intended_tip.as_str(),
+    };
     for (field, expected) in [
-        ("handshake-adapter-name", &report.adapter_name),
-        ("handshake-adapter-version", &report.adapter_version),
-        ("handshake-framework-revision", &String::new()),
-        ("handshake-node-name", &report.node_name),
-        ("handshake-node-version", &report.node_version),
+        ("handshake-adapter-name", report.adapter_name.as_str()),
+        ("handshake-adapter-version", report.adapter_version.as_str()),
+        ("handshake-framework-revision", framework_revision),
+        ("handshake-node-name", report.node_name.as_str()),
+        ("handshake-node-version", report.node_version.as_str()),
         (
             "handshake-binary-reported-revision",
-            &report.binary_revision,
+            report.binary_revision.as_str(),
         ),
-        ("handshake-intended-executed-tip", &report.intended_tip),
+        (
+            "handshake-intended-executed-tip",
+            report.intended_tip.as_str(),
+        ),
     ] {
-        binding(field, cursor.text(field)? == *expected)?;
+        binding(field, cursor.text(field)? == expected)?;
     }
     cursor.exact("handshake-upstream-base 0 ")?;
     cursor.exact("handshake-topic-count 0")?;
@@ -1264,8 +1327,8 @@ fn admit_capture(
         hex_bytes(&tagged::sha256(bytes)) == report.ceremony_digest,
     )?;
     let mut cursor = Cursor::new("maturity capture", bytes)?;
-    let capture_suite = parse_header(&mut cursor, &report)?;
-    let capabilities = parse_environment(&mut cursor, &report)?;
+    let capture_suite = parse_header(&mut cursor, &report, pins)?;
+    let capabilities = parse_environment(&mut cursor, &report, pins)?;
     cursor.exact("digest-count 0")?;
     cursor.exact("operation-count 3")?;
     let operations = ANNOUNCEMENT_STEPS
@@ -1302,7 +1365,7 @@ fn validate_inputs(
 ) -> ImportResult<ValidatedMaturityCorpus> {
     validate_census(files, pins)?;
     validate_manifest(files, pins.manifest_sha256())?;
-    let report = parse_report(files[3].bytes, pins.run_address())?;
+    let report = parse_report(files[3].bytes, pins)?;
     binding(
         "manifest-sha256",
         report.manifest_digest == pins.manifest_sha256(),
@@ -1527,12 +1590,12 @@ mod tests {
             let sizes = std::array::from_fn(|index| self.bytes[index].len());
             let pins = MaturityCorpusPins::new(
                 schedule,
-                HISTORICAL_PINS.names,
-                sizes,
-                &manifest_hash,
-                &address,
-                &capture_hash,
+                (HISTORICAL_PINS.names, sizes),
+                (&manifest_hash, &address, &capture_hash),
                 sponsorless,
+                HISTORICAL_PINS.cargo_path,
+                HISTORICAL_PINS.framework_revision,
+                HISTORICAL_PINS.funding_count,
             );
             admit_maturity_corpus(&self.inputs(), &pins)
         }
@@ -2237,14 +2300,14 @@ mod tests {
             let mut corpus = OwnedCorpus::new();
             corpus.replace(3, from, to);
             assert_eq!(
-                parse_report(&corpus.bytes[3], MATURITY_RUN_ADDRESS),
+                parse_report(&corpus.bytes[3], &HISTORICAL_PINS),
                 Err(Refusal::RunReportGrammar)
             );
         }
         let mut corpus = OwnedCorpus::new();
         corpus.bytes[3].extend_from_slice(b"extra field\n");
         assert_eq!(
-            parse_report(&corpus.bytes[3], MATURITY_RUN_ADDRESS),
+            parse_report(&corpus.bytes[3], &HISTORICAL_PINS),
             Err(Refusal::RunReportGrammar)
         );
     }
