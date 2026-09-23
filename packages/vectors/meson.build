@@ -58,6 +58,7 @@ vectors_source_files = files(
   'src/maturity_evidence.rs',
   'src/maturity_first_party.rs',
   'src/maturity_fixture.rs',
+  'src/maturity_history.rs',
   'src/maturity_native.rs',
   'src/maturity_negative_half.rs',
   'src/maturity_operator.rs',

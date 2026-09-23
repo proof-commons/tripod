@@ -2181,7 +2181,7 @@ impl ValidatedMaturityContinuity {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
     use crate::matrix::EvidenceBoundary;
@@ -2220,11 +2220,15 @@ mod tests {
     use transaction::{MaturityAnnouncementRequest, RequestedForm, SponsorChangeRequest};
 
     #[derive(Clone)]
-    struct Source {
+    #[expect(
+        clippy::redundant_pub_crate,
+        reason = "Shared with sibling history tests."
+    )]
+    pub(crate) struct Source {
         origin: MaturityByteSource,
         bytes: Vec<u8>,
         funded: MaturityFundedPredecessor,
-        bundle: CandidateLinkedMaturityBundle,
+        pub(crate) bundle: CandidateLinkedMaturityBundle,
         identity: CandidateDeploymentIdentity,
         branch: BranchContext,
         acceptance: MaturityAcceptanceObligation,
@@ -2232,7 +2236,7 @@ mod tests {
     }
 
     impl Source {
-        fn input(&self) -> MaturityProjectionInput<'_> {
+        pub(crate) fn input(&self) -> MaturityProjectionInput<'_> {
             MaturityProjectionInput {
                 source: self.origin.clone(),
                 submitted_bytes: &self.bytes,
@@ -2270,7 +2274,11 @@ mod tests {
         }
     }
 
-    fn archived() -> &'static Source {
+    #[expect(
+        clippy::redundant_pub_crate,
+        reason = "Shared with sibling history tests."
+    )]
+    pub(crate) fn archived() -> &'static Source {
         static SOURCE: LazyLock<Source> = LazyLock::new(|| {
             let corpus = maturity_run_of_record().expect("validated archive");
             let identity = corpus.evidence().identity().clone();
@@ -2320,7 +2328,11 @@ mod tests {
         &SOURCE
     }
 
-    fn variable_archived() -> &'static Source {
+    #[expect(
+        clippy::redundant_pub_crate,
+        reason = "Shared with sibling history tests."
+    )]
+    pub(crate) fn variable_archived() -> &'static Source {
         static SOURCE: LazyLock<Source> = LazyLock::new(|| {
             let corpus = maturity_variable_run_of_record().expect("validated accepted archive");
             let identity = corpus.evidence().identity().clone();
@@ -2462,7 +2474,11 @@ mod tests {
         }
     }
 
-    fn node_free() -> &'static Source {
+    #[expect(
+        clippy::redundant_pub_crate,
+        reason = "Shared with sibling history tests."
+    )]
+    pub(crate) fn node_free() -> &'static Source {
         static SOURCE: LazyLock<Source> =
             LazyLock::new(|| node_free_with_schedule(StateWitnessSchedule::WholeMetadata));
         &SOURCE
