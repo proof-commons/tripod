@@ -62,6 +62,7 @@ vectors_source_files = files(
   'src/maturity_native.rs',
   'src/maturity_negative_half.rs',
   'src/maturity_operator.rs',
+  'src/maturity_recovery.rs',
   'src/maturity_report.rs',
   'src/maturity_safety.rs',
   'src/mutation.rs',
@@ -283,5 +284,6 @@ vectors_excluded_files = vectors_fixture_files + files(
   'tests/maturity_continuity.rs',
   'tests/maturity_native.rs',
   'tests/maturity_operator.rs',
+  'tests/maturity_recovery.rs',
   'tests/sighash_verdict.rs',
 )

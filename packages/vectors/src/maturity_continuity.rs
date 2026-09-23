@@ -225,7 +225,8 @@ pub struct MaturityByteComparison {
 }
 
 impl MaturityByteComparison {
-    fn new(witnessed: &[u8], reconstructed: &[u8]) -> Self {
+    /// Retain both byte operands for an exact public comparison.
+    pub(crate) fn new(witnessed: &[u8], reconstructed: &[u8]) -> Self {
         Self {
             witnessed: witnessed.to_vec(),
             reconstructed: reconstructed.to_vec(),
@@ -588,7 +589,11 @@ const fn declared_widths(schedule: StateWitnessSchedule) -> [usize; 7] {
     [1, 4, 8, 32, metadata, 1, 64]
 }
 
-fn witness(
+/// Read one announcement's public witness under its declared schedule.
+///
+/// # Errors
+/// Refuses an unexpected input, output or witness count or declared item width.
+pub(crate) fn witness(
     transaction: &TargetTransaction,
     schedule: StateWitnessSchedule,
 ) -> ProjectionResult<&[Vec<u8>]> {
@@ -634,7 +639,11 @@ fn fixed_bytes<const N: usize>(bytes: &[u8]) -> [u8; N] {
     result
 }
 
-fn decoded_witness_metadata(
+/// Decode the witnessed predecessor metadata under the reviewed target.
+///
+/// # Errors
+/// Preserves witness legalization, width and metadata decoding refusals.
+pub(crate) fn decoded_witness_metadata(
     stack: &[Vec<u8>],
     schedule: StateWitnessSchedule,
     target: &ReviewedElementsTapscriptDefinition,
