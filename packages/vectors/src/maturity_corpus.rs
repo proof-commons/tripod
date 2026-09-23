@@ -1,6 +1,6 @@
 //! Pinned four-file admission and planner replay of maturity announcement runs.
 //!
-//! Names, sizes and addresses bind each archive before its closed grammars are interpreted. The historical refused loader is one set of pins; an accepted corpus uses the same bindings and exact replay with its own schedule and sponsorless expectation. A corpus also pins the cargo path, framework revision mode and funding advertisement of the host that ran it.
+//! Names, sizes and addresses bind each archive before its closed grammars are interpreted. The historical refused loader is one set of pins; the second immutable corpus binds a variable-metadata acceptance with its own schedule and sponsorless expectation. Each corpus also pins the cargo path, framework revision mode and funding advertisement of the host that ran it.
 //!
 //! An accepted payload carries mined readback beside the capture's request bytes, verdict, layer, target identity and detail. Replay checks the reconstructed response against the submitted transaction. This establishes transcript consistency under the schedule, not executor provenance, current-root freshness or a promoted standing.
 
@@ -34,6 +34,16 @@ pub const MATURITY_MANIFEST_SHA256: &str =
 /// SHA-256 of the report binding the complete maturity run.
 pub const MATURITY_RUN_ADDRESS: &str =
     "fb2912ecb8e8b3a6ba8af7839167e644f6398fe7a296f89ff9fc757be83b31f3";
+
+/// The witness schedule established by replay of the accepted archive.
+pub const MATURITY_VARIABLE_RUN_SCHEDULE: tapscript::StateWitnessSchedule =
+    tapscript::StateWitnessSchedule::VariableMetadata;
+/// SHA-256 of the accepted archive's exact two-entry manifest.
+pub const MATURITY_VARIABLE_MANIFEST_SHA256: &str =
+    "a59b750c459c95d0b72fe2e77c45c6e959c1407c702ce13b9e4a3ba0c487dece";
+/// SHA-256 of the accepted archive's report.
+pub const MATURITY_VARIABLE_RUN_ADDRESS: &str =
+    "b624e245fcdfe839ff9bb3e94285165ab0c9fbdd606748fd115ae8b02dc87b0c";
 
 const CEREMONY_SHA256: &str = "d48e105b85708cd8edadbe423ed020c48fdbe1c0225f67724ff6f68449d25515";
 
@@ -83,6 +93,29 @@ const FILES: [MaturityArchiveFile<'static>; 4] = [
     },
 ];
 const FILE_SIZES: [usize; 4] = [31_153, 49, 187, 1_927];
+
+const VARIABLE_FILES: [MaturityArchiveFile<'static>; 4] = [
+    MaturityArchiveFile {
+        name: "cae3bd7c.report.capture",
+        bytes: include_bytes!(
+            "../fixtures/maturity-variable-run-of-record/cae3bd7c.report.capture"
+        ),
+    },
+    MaturityArchiveFile {
+        name: "cae3bd7c.report.capture.timing",
+        bytes: include_bytes!(
+            "../fixtures/maturity-variable-run-of-record/cae3bd7c.report.capture.timing"
+        ),
+    },
+    MaturityArchiveFile {
+        name: "MANIFEST.sha256",
+        bytes: include_bytes!("../fixtures/maturity-variable-run-of-record/MANIFEST.sha256"),
+    },
+    MaturityArchiveFile {
+        name: "RUN-REPORT",
+        bytes: include_bytes!("../fixtures/maturity-variable-run-of-record/RUN-REPORT"),
+    },
+];
 
 /// The expected outcome of the sponsorless operation in a pinned corpus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -227,6 +260,28 @@ const HISTORICAL_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
     },
     "/workspace/toolchains/cargo/bin/cargo",
     MaturityFrameworkRevision::Unrecorded,
+    0,
+);
+
+const VARIABLE_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
+    MATURITY_VARIABLE_RUN_SCHEDULE,
+    (
+        [
+            "cae3bd7c.report.capture",
+            "cae3bd7c.report.capture.timing",
+            "MANIFEST.sha256",
+            "RUN-REPORT",
+        ],
+        [55_271, 49, 187, 1_927],
+    ),
+    (
+        MATURITY_VARIABLE_MANIFEST_SHA256,
+        MATURITY_VARIABLE_RUN_ADDRESS,
+        "fa474763a165c60d4e48b7c0c06f01ce79204a1fc4f9020bd7612c82e22bb3ee",
+    ),
+    MaturitySponsorlessExpectation::Acceptance,
+    "/workspace/toolchains/cargo/bin/cargo",
+    MaturityFrameworkRevision::IntendedTip,
     0,
 );
 
@@ -1458,6 +1513,46 @@ pub fn replay_maturity_run_of_record(
     .map_err(Refusal::Derivation)
 }
 
+/// Admits the immutable accepted variable-metadata archive through its own pins.
+///
+/// The executor's development node ran with `-minrelaytxfee=0` and `-blockmintxfee=0`. Admission establishes acceptance in that environment; it does not establish relayability under a positive fee floor, authenticate root freshness, or promote an artifact.
+///
+/// # Errors
+/// Returns the first failed byte, grammar or planner replay binding.
+///
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton or the public linker loses a retained constructor, which neither published input can arrange.
+#[must_use = "accepted corpus admission can refuse a file or replay binding"]
+pub fn maturity_variable_run_of_record()
+-> Result<&'static ValidatedMaturityCorpus, MaturityCorpusImportRefusal> {
+    static CORPUS: OnceLock<ImportResult<ValidatedMaturityCorpus>> = OnceLock::new();
+    match CORPUS.get_or_init(|| admit_maturity_corpus(&VARIABLE_FILES, &VARIABLE_PINS)) {
+        Ok(corpus) => Ok(corpus),
+        Err(refusal) => Err(refusal.clone()),
+    }
+}
+
+/// Replays the once-admitted accepted archive under an explicit witness selection.
+///
+/// # Errors
+/// Preserves archive admission refusals and planner schedule or exact-replay refusals.
+///
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton or the public linker loses a retained constructor, which neither published input can arrange.
+#[must_use = "accepted archive replay can refuse the selection or exchanges"]
+pub fn replay_maturity_variable_run_of_record(
+    selection: MaturityWitnessSelection,
+) -> Result<MaturityNativeEvidence, MaturityCorpusImportRefusal> {
+    let corpus = maturity_variable_run_of_record()?;
+    MaturityNativeEvidence::from_transcript(
+        corpus.evidence().identity().clone(),
+        corpus.evidence().branch(),
+        selection,
+        corpus.exchanges(),
+    )
+    .map_err(Refusal::Derivation)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1918,6 +2013,15 @@ mod tests {
         assert_eq!(HISTORICAL_PINS.run_address(), MATURITY_RUN_ADDRESS);
         assert_eq!(HISTORICAL_PINS.ceremony_sha256(), CEREMONY_SHA256);
         assert_eq!(
+            HISTORICAL_PINS.cargo_path(),
+            "/workspace/toolchains/cargo/bin/cargo"
+        );
+        assert_eq!(
+            HISTORICAL_PINS.framework_revision(),
+            MaturityFrameworkRevision::Unrecorded
+        );
+        assert_eq!(HISTORICAL_PINS.funding_count(), 0);
+        assert_eq!(
             HISTORICAL_PINS.sponsorless(),
             MaturitySponsorlessExpectation::RelayRefusal {
                 detail: "bad-witness-nonstandard"
@@ -1927,6 +2031,190 @@ mod tests {
             admit_maturity_corpus(&FILES, &HISTORICAL_PINS),
             Ok(maturity_run_of_record().expect("historical loader").clone())
         );
+    }
+
+    #[test]
+    fn variable_archive_admits_established_identity_and_exact_mined_readback() {
+        let corpus = maturity_variable_run_of_record().expect("accepted archive");
+        assert_eq!(corpus.schedule(), MATURITY_VARIABLE_RUN_SCHEDULE);
+        assert_eq!(corpus.exchanges().len(), 3);
+        assert_eq!(
+            corpus.evidence().standing(),
+            MaturityNativeStanding::AnsweredAtDeclaredBoundary
+        );
+        let MaturityAcceptanceObligation::Established {
+            schedule,
+            identity,
+            readback,
+        } = corpus.evidence().acceptance_obligation()
+        else {
+            panic!("accepted archive obligation")
+        };
+        assert_eq!(*schedule, MATURITY_VARIABLE_RUN_SCHEDULE);
+        assert_eq!(*identity, readback.identity());
+        assert!(readback.block_height() >= 1);
+        let OperationSubject::Submission(subject) = corpus.exchanges()[2].0.subject() else {
+            panic!("submission subject")
+        };
+        assert_eq!(readback.bytes(), subject.transaction_bytes.as_slice());
+        let capture = std::str::from_utf8(VARIABLE_FILES[0].bytes()).expect("capture text");
+        let response_identity = capture
+            .lines()
+            .rfind(|line| line.starts_with("response-target-identity "))
+            .expect("submission response identity")
+            .strip_prefix("response-target-identity ")
+            .expect("response field");
+        assert_eq!(identity.to_target_display(), response_identity);
+        let rendered_hex = capture
+            .lines()
+            .find_map(|line| line.strip_prefix("legacy-rendering "))
+            .expect("payload")
+            .split_whitespace()
+            .nth(1)
+            .expect("payload hex");
+        let rendered = decode_hex(rendered_hex).expect("payload bytes");
+        let rendered = std::str::from_utf8(&rendered).expect("payload text");
+        assert!(rendered.contains(&format!("accepted-identity {response_identity}\n")));
+        assert_eq!(
+            replay_maturity_variable_run_of_record(MaturityWitnessSelection::Retained(
+                MATURITY_VARIABLE_RUN_SCHEDULE
+            )),
+            Ok(corpus.evidence().clone())
+        );
+    }
+
+    #[test]
+    fn variable_pins_equal_the_embedded_file_facts() {
+        assert_eq!(
+            VARIABLE_PINS.names(),
+            &VARIABLE_FILES.map(|file| file.name())
+        );
+        assert_eq!(
+            VARIABLE_PINS.sizes(),
+            &VARIABLE_FILES.map(|file| file.bytes().len())
+        );
+        assert_eq!(
+            VARIABLE_PINS.ceremony_sha256(),
+            hex_bytes(&tagged::sha256(VARIABLE_FILES[0].bytes()))
+        );
+        assert_eq!(
+            VARIABLE_PINS.manifest_sha256(),
+            hex_bytes(&tagged::sha256(VARIABLE_FILES[2].bytes()))
+        );
+        assert_eq!(
+            VARIABLE_PINS.run_address(),
+            hex_bytes(&tagged::sha256(VARIABLE_FILES[3].bytes()))
+        );
+        assert_eq!(
+            VARIABLE_PINS.sponsorless(),
+            MaturitySponsorlessExpectation::Acceptance
+        );
+        let report = std::str::from_utf8(VARIABLE_FILES[3].bytes()).expect("report text");
+        let argv_hex = report
+            .lines()
+            .find_map(|line| line.strip_prefix("cargo-argv "))
+            .expect("cargo argv")
+            .split_whitespace()
+            .nth(1)
+            .expect("cargo hex");
+        let argv = decode_hex(argv_hex).expect("cargo bytes");
+        assert_eq!(
+            std::str::from_utf8(&argv).expect("cargo text"),
+            format!(
+                "{} test -p tripod-vectors --test maturity_native -- --ignored --test-threads=1",
+                VARIABLE_PINS.cargo_path()
+            )
+        );
+        let capture = std::str::from_utf8(VARIABLE_FILES[0].bytes()).expect("capture text");
+        let framework_hex = capture
+            .lines()
+            .find_map(|line| line.strip_prefix("handshake-framework-revision 40 "))
+            .expect("recorded framework tip");
+        let framework = decode_hex(framework_hex).expect("framework bytes");
+        assert_eq!(
+            std::str::from_utf8(&framework).expect("framework text"),
+            maturity_variable_run_of_record()
+                .expect("accepted archive")
+                .report()
+                .intended_tip()
+        );
+        assert_eq!(
+            VARIABLE_PINS.framework_revision(),
+            MaturityFrameworkRevision::IntendedTip
+        );
+        let funding_count = capture
+            .lines()
+            .find_map(|line| line.strip_prefix("environment-funding-count "))
+            .expect("funding count")
+            .parse::<usize>()
+            .expect("funding number");
+        assert_eq!(VARIABLE_PINS.funding_count(), funding_count);
+    }
+
+    #[test]
+    fn variable_files_under_historical_pins_refuse_corpus_census() {
+        assert_eq!(
+            admit_maturity_corpus(&VARIABLE_FILES, &HISTORICAL_PINS),
+            Err(Refusal::CorpusCensus)
+        );
+    }
+
+    #[test]
+    fn historical_files_under_variable_pins_refuse_corpus_census() {
+        assert_eq!(
+            admit_maturity_corpus(&FILES, &VARIABLE_PINS),
+            Err(Refusal::CorpusCensus)
+        );
+    }
+
+    #[test]
+    fn variable_replay_under_whole_schedule_refuses_transcript_step_mismatch_zero() {
+        assert_eq!(
+            replay_maturity_variable_run_of_record(MaturityWitnessSelection::Retained(
+                tapscript::StateWitnessSchedule::WholeMetadata
+            )),
+            Err(Refusal::Derivation(
+                MaturityNativePlanRefusal::TranscriptStepMismatch { position: 0 }
+            ))
+        );
+    }
+
+    #[test]
+    fn wrong_cargo_path_pin_refuses_run_report_grammar() {
+        let pins = MaturityCorpusPins {
+            cargo_path: "/another/cargo",
+            ..VARIABLE_PINS
+        };
+        assert_eq!(
+            admit_maturity_corpus(&VARIABLE_FILES, &pins),
+            Err(Refusal::RunReportGrammar)
+        );
+    }
+
+    #[test]
+    fn unrecorded_framework_pin_refuses_cross_file_binding() {
+        let pins = MaturityCorpusPins {
+            framework_revision: MaturityFrameworkRevision::Unrecorded,
+            ..VARIABLE_PINS
+        };
+        assert_eq!(
+            admit_maturity_corpus(&VARIABLE_FILES, &pins),
+            Err(Refusal::CrossFileBinding {
+                field: "handshake-framework-revision"
+            })
+        );
+    }
+
+    #[test]
+    fn wrong_funding_count_pin_refuses_transcript_grammar() {
+        let pins = MaturityCorpusPins {
+            funding_count: VARIABLE_PINS.funding_count() + 1,
+            ..VARIABLE_PINS
+        };
+        assert!(matches!(
+            admit_maturity_corpus(&VARIABLE_FILES, &pins),
+            Err(Refusal::TranscriptGrammar { .. })
+        ));
     }
 
     #[test]

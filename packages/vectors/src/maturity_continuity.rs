@@ -2042,7 +2042,17 @@ mod tests {
     use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
     use crate::matrix::EvidenceBoundary;
     use crate::maturity_closure::{MaturityDeployment, maturity_sources};
-    use crate::maturity_corpus::maturity_run_of_record;
+    use crate::maturity_continuity_report::{
+        MaturityContinuityReportEntry, assemble_maturity_continuity_report,
+        render_maturity_continuity_report, validate_maturity_continuity_report,
+    };
+    use crate::maturity_corpus::{
+        MATURITY_VARIABLE_RUN_ADDRESS, maturity_run_of_record, maturity_variable_run_of_record,
+    };
+    use crate::maturity_evidence::{
+        MaturityConstructorMaterial, MaturityConstructorMaterialAbsence,
+        MaturityExecutorProvenanceExpectation, derive_maturity_evidence_plan_with,
+    };
     use crate::maturity_native::MaturityAnnouncementPlanner;
     use crate::subject::{ExperimentalSubject, SubjectStanding};
     use realization::ProtocolAmount;
@@ -2140,6 +2150,57 @@ mod tests {
                 planner_successor: planner
                     .announcement()
                     .expect("announcement")
+                    .construction()
+                    .successor_constructor()
+                    .clone(),
+            }
+        });
+        &SOURCE
+    }
+
+    fn variable_archived() -> &'static Source {
+        static SOURCE: LazyLock<Source> = LazyLock::new(|| {
+            let corpus = maturity_variable_run_of_record().expect("validated accepted archive");
+            let identity = corpus.evidence().identity().clone();
+            let branch = corpus.evidence().branch();
+            let mut planner = MaturityAnnouncementPlanner::new(
+                identity.clone(),
+                branch,
+                crate::maturity_closure::MaturityWitnessSelection::Retained(
+                    StateWitnessSchedule::VariableMetadata,
+                ),
+            )
+            .expect("variable planner");
+            let mut next = planner.next_step(None).expect("issue");
+            for (step, response) in &corpus.exchanges()[..2] {
+                assert_eq!(next.as_ref(), Some(step));
+                next = planner
+                    .next_step(Some((step.case(), response)))
+                    .expect("replay accepted funding");
+            }
+            assert_eq!(next.as_ref(), Some(&corpus.exchanges()[2].0));
+            let OperationSubject::Submission(submission) = corpus.exchanges()[2].0.subject() else {
+                panic!("accepted submission")
+            };
+            assert_eq!(
+                planner.submission_bytes(),
+                Some(submission.transaction_bytes.as_slice())
+            );
+            let [funded] = corpus.exchanges()[1].1.funded_outputs.as_slice() else {
+                panic!("one accepted funded coin")
+            };
+            Source {
+                origin: MaturityByteSource::ArchivedSubmission {
+                    run_address: MATURITY_VARIABLE_RUN_ADDRESS.to_owned(),
+                },
+                bytes: submission.transaction_bytes.clone(),
+                funded: coin(funded),
+                bundle: planner.bundle().clone(),
+                identity,
+                branch,
+                planner_successor: planner
+                    .announcement()
+                    .expect("variable announcement")
                     .construction()
                     .successor_constructor()
                     .clone(),
@@ -3206,6 +3267,67 @@ mod tests {
         )
         .expect("decoder observation");
         report_observed("archived", &record);
+    }
+
+    #[test]
+    fn accepted_variable_archived_bytes_project_with_complete_byte_identity() {
+        let source = variable_archived();
+        let record = positive(source);
+        assert_eq!(record.schedule(), StateWitnessSchedule::VariableMetadata);
+        assert_eq!(
+            record.source(),
+            &MaturityByteSource::ArchivedSubmission {
+                run_address: MATURITY_VARIABLE_RUN_ADDRESS.to_owned()
+            }
+        );
+        assert_eq!(record.submitted_bytes(), source.bytes.as_slice());
+        assert_eq!(record.byte_identity(), &sha256(&source.bytes));
+        assert!(record.static_comparison().static_root().agrees());
+        assert!(record.static_comparison().control_block().agrees());
+        assert!(record.semantic_comparison().transition_agrees());
+        assert_eq!(
+            record.semantic_comparison().reconstruction_agrees(),
+            Some(true)
+        );
+        report_observed("accepted-variable-archived", &record);
+    }
+
+    #[test]
+    fn historical_and_variable_archives_validate_one_continuity_report() {
+        let historical = positive(archived());
+        let variable = positive(variable_archived());
+        let sources = [&historical, &variable];
+        let provenance = MaturityExecutorProvenanceExpectation::NotStatedByTheOperator;
+        let binding = derive_maturity_evidence_plan_with(
+            provenance.clone(),
+            MaturityConstructorMaterial::Absent(
+                MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+            ),
+        )
+        .expect("independent target binding")
+        .binding()
+        .clone();
+        let report =
+            assemble_maturity_continuity_report(&sources, binding.clone(), provenance.clone());
+        let validated =
+            validate_maturity_continuity_report(&report, &sources, &binding, &provenance)
+                .expect("two-schedule report validation");
+        let schedules: Vec<_> = report
+            .entries()
+            .iter()
+            .map(MaturityContinuityReportEntry::schedule)
+            .collect();
+        assert_eq!(
+            schedules,
+            [
+                StateWitnessSchedule::WholeMetadata,
+                StateWitnessSchedule::VariableMetadata
+            ]
+        );
+        assert_eq!(report.census().sources(), 2);
+        let rendered = render_maturity_continuity_report(&validated);
+        assert!(rendered.contains("schedule whole-metadata\n"));
+        assert!(rendered.contains("schedule variable-metadata\n"));
     }
 
     #[test]

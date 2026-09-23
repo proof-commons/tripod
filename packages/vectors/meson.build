@@ -90,6 +90,11 @@ vectors_fixture_files = files(
   'fixtures/maturity-run-of-record/MANIFEST.sha256',
   'fixtures/maturity-run-of-record/RUN-REPORT',
 ) + files(
+  'fixtures/maturity-variable-run-of-record/cae3bd7c.report.capture',
+  'fixtures/maturity-variable-run-of-record/cae3bd7c.report.capture.timing',
+  'fixtures/maturity-variable-run-of-record/MANIFEST.sha256',
+  'fixtures/maturity-variable-run-of-record/RUN-REPORT',
+) + files(
   'fixtures/native-operator-run-of-record/353e698f.report.capture',
   'fixtures/native-operator-run-of-record/353e698f.report.capture.timing',
   'fixtures/native-operator-run-of-record/MANIFEST.sha256',
