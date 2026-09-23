@@ -1390,13 +1390,14 @@ const fn report_fault(
 pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     // §16.1 — the fourteen positive cases.
     //
-    // Eleven of them ask for an acceptance, and no acceptance is
-    // reachable: the sponsorless case is the one a run answers today, at
-    // the relay boundary and for the reason that boundary's own standing
-    // gives. Naming the sponsorless row's layer while the others state
-    // their reason is not an inconsistency — it is the difference
-    // between a row a run reaches and a row whose answer does not exist
-    // yet.
+    // Eleven of them ask for an acceptance. The admitted accepted run
+    // answers the sponsorless case under the variable schedule. Its
+    // declaration here remains the relay-policy layer of the whole
+    // schedule; the schedule-indexed boundary rule maps the case for
+    // both schedules. Naming the sponsorless row's layer while the
+    // other ten state their reason is not an inconsistency — it
+    // distinguishes a row answered by an admitted run from rows whose
+    // acceptance remains outstanding.
     positive(
         "minimum-valid-lead",
         Bound::AcceptanceAwaitsRelayAdmissibility,

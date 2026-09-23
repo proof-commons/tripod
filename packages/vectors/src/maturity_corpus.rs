@@ -135,6 +135,59 @@ pub enum MaturityFrameworkRevision {
     IntendedTip,
 }
 
+/// Source of a disclosed environment premise that corpus admission does not check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityPremiseProvenance {
+    /// The node arguments passed by the native executor.
+    ExecutorArguments,
+}
+
+/// Fee floors disclosed for the node that ran an admitted archive.
+///
+/// The immutable RUN-REPORT grammar carries no fee line, so archive admission
+/// cannot verify these values. They are declared from the executor's node
+/// arguments and remain a premise rather than a checked binding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaturityDisclosedFeeFloors {
+    min_relay_tx_fee: &'static str,
+    block_min_tx_fee: &'static str,
+    provenance: MaturityPremiseProvenance,
+}
+
+impl MaturityDisclosedFeeFloors {
+    /// Declares the two executor node arguments without attributing them to archive bytes.
+    #[must_use]
+    pub const fn declared(min_relay_tx_fee: &'static str, block_min_tx_fee: &'static str) -> Self {
+        Self {
+            min_relay_tx_fee,
+            block_min_tx_fee,
+            provenance: MaturityPremiseProvenance::ExecutorArguments,
+        }
+    }
+
+    /// The declared minimum relay transaction fee argument.
+    #[must_use]
+    pub const fn min_relay_tx_fee(&self) -> &'static str {
+        self.min_relay_tx_fee
+    }
+
+    /// The declared minimum block transaction fee argument.
+    #[must_use]
+    pub const fn block_min_tx_fee(&self) -> &'static str {
+        self.block_min_tx_fee
+    }
+
+    /// Where the two declared values came from.
+    #[must_use]
+    pub const fn provenance(&self) -> MaturityPremiseProvenance {
+        self.provenance
+    }
+}
+
+/// The fee arguments disclosed for both admitted runs of the native executor.
+pub const MATURITY_DISCLOSED_FEE_FLOORS: MaturityDisclosedFeeFloors =
+    MaturityDisclosedFeeFloors::declared("0", "0");
+
 /// The addresses and declaration that bind one immutable four-file corpus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MaturityCorpusPins<'a> {
@@ -148,11 +201,16 @@ pub struct MaturityCorpusPins<'a> {
     cargo_path: &'a str,
     framework_revision: MaturityFrameworkRevision,
     funding_count: usize,
+    fee_floors: MaturityDisclosedFeeFloors,
 }
 
 impl<'a> MaturityCorpusPins<'a> {
-    /// Collects the ordered file pins, addresses, sponsorless declaration and host facts.
+    /// Collects the ordered file pins, addresses, sponsorless declaration and host premises.
     #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "all eight pins are declared at every call site rather than defaulted"
+    )]
     pub const fn new(
         schedule: tapscript::StateWitnessSchedule,
         files: ([&'a str; 4], [usize; 4]),
@@ -161,6 +219,7 @@ impl<'a> MaturityCorpusPins<'a> {
         cargo_path: &'a str,
         framework_revision: MaturityFrameworkRevision,
         funding_count: usize,
+        fee_floors: MaturityDisclosedFeeFloors,
     ) -> Self {
         let (names, sizes) = files;
         let (manifest_sha256, run_address, ceremony_sha256) = addresses;
@@ -175,6 +234,7 @@ impl<'a> MaturityCorpusPins<'a> {
             cargo_path,
             framework_revision,
             funding_count,
+            fee_floors,
         }
     }
 
@@ -237,6 +297,12 @@ impl<'a> MaturityCorpusPins<'a> {
     pub const fn funding_count(&self) -> usize {
         self.funding_count
     }
+
+    /// The declared fee floors under which the executor ran this archive.
+    #[must_use]
+    pub const fn fee_floors(&self) -> MaturityDisclosedFeeFloors {
+        self.fee_floors
+    }
 }
 
 const HISTORICAL_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
@@ -261,6 +327,7 @@ const HISTORICAL_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
     "/workspace/toolchains/cargo/bin/cargo",
     MaturityFrameworkRevision::Unrecorded,
     0,
+    MATURITY_DISCLOSED_FEE_FLOORS,
 );
 
 const VARIABLE_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
@@ -283,6 +350,7 @@ const VARIABLE_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
     "/workspace/toolchains/cargo/bin/cargo",
     MaturityFrameworkRevision::IntendedTip,
     0,
+    MATURITY_DISCLOSED_FEE_FLOORS,
 );
 
 /// The layer at which maturity corpus admission stopped.
@@ -447,11 +515,12 @@ impl MaturityReportFacts {
     }
 }
 
-/// Complete immutable maturity evidence derived from the admitted bytes.
+/// Complete maturity evidence from admitted bytes with declared executor fee floors.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedMaturityCorpus {
     evidence: MaturityNativeEvidence,
     report: MaturityReportFacts,
+    fee_floors: MaturityDisclosedFeeFloors,
     capture_suite: [String; 2],
     exchanges: Vec<(OperationStep, NativeOperationResponse)>,
     capabilities: Vec<String>,
@@ -469,6 +538,12 @@ impl ValidatedMaturityCorpus {
     #[must_use]
     pub const fn evidence(&self) -> &MaturityNativeEvidence {
         &self.evidence
+    }
+
+    /// The fee floors declared for this admitted archive's executor environment.
+    #[must_use]
+    pub const fn fee_floors(&self) -> MaturityDisclosedFeeFloors {
+        self.fee_floors
     }
 
     /// The closed report's cross-checked facts.
@@ -1407,6 +1482,7 @@ fn admit_capture(
     Ok(ValidatedMaturityCorpus {
         evidence,
         report,
+        fee_floors: pins.fee_floors(),
         capture_suite,
         capabilities,
         exchanges: payload.exchanges,
@@ -1564,6 +1640,31 @@ mod tests {
     use transaction::bytes::TargetTransaction;
 
     #[test]
+    fn admitted_archives_disclose_the_executor_fee_arguments() {
+        let historical = maturity_run_of_record().expect("historical archive");
+        let accepted = maturity_variable_run_of_record().expect("accepted archive");
+        for corpus in [historical, accepted] {
+            assert_eq!(corpus.fee_floors(), MATURITY_DISCLOSED_FEE_FLOORS);
+            assert_eq!(
+                corpus.fee_floors().provenance(),
+                MaturityPremiseProvenance::ExecutorArguments
+            );
+        }
+        let floors = MATURITY_DISCLOSED_FEE_FLOORS;
+        assert_eq!(floors.min_relay_tx_fee(), "0");
+        assert_eq!(floors.block_min_tx_fee(), "0");
+        let driver_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("scripts/elements-native-executor.py");
+        let driver = std::fs::read_to_string(driver_path).expect("native executor source");
+        assert!(driver.contains("-minrelaytxfee=0"));
+        assert!(driver.contains("-blockmintxfee=0"));
+        assert!(driver.contains(&format!("-minrelaytxfee={}", floors.min_relay_tx_fee())));
+        assert!(driver.contains(&format!("-blockmintxfee={}", floors.block_min_tx_fee())));
+    }
+
+    #[test]
     fn retained_whole_metadata_replays_all_three_archived_requests_exactly() {
         let corpus = maturity_run_of_record().expect("admitted archive");
         assert_eq!(
@@ -1691,6 +1792,7 @@ mod tests {
                 HISTORICAL_PINS.cargo_path,
                 HISTORICAL_PINS.framework_revision,
                 HISTORICAL_PINS.funding_count,
+                MATURITY_DISCLOSED_FEE_FLOORS,
             );
             admit_maturity_corpus(&self.inputs(), &pins)
         }

@@ -282,7 +282,7 @@ use MaturitySafetySection as S;
 /// routing and the test below is what keeps the writing and the routing
 /// one list.
 ///
-/// The waiting set contains forty-two faults after the committed run answers the sponsorless positive row at its declared relay boundary. Acceptance remains outstanding; the other positive rows state typed non-answers and do not enter this target-run register.
+/// The waiting set contains forty-two faults after the admitted accepted run answers the sponsorless positive row with an acceptance under the variable schedule. The historical whole-schedule run reached its declared relay boundary. The other positive rows state typed non-answers and do not enter this target-run register.
 pub const STILL_REQUIRED: &[MaturityNegativeHalfEntry] = &[
     // §16.2 — the two window faults, both a write at the successor's own
     // metadata field.

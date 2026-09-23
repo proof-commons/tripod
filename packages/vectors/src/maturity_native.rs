@@ -1611,7 +1611,7 @@ mod tests {
 
     #[test]
     fn the_register_no_longer_requires_the_sponsorless_target_run() {
-        use crate::maturity_corpus::{MATURITY_RUN_ADDRESS, maturity_run_of_record};
+        use crate::maturity_corpus::MATURITY_VARIABLE_RUN_ADDRESS;
         use crate::maturity_evidence::{
             MaturityExecutorProvenanceExpectation, MaturityRowStanding,
             derive_maturity_evidence_plan_with,
@@ -1633,22 +1633,29 @@ mod tests {
             .iter()
             .find(|row| row.row().name() == "sponsorless")
             .expect("sponsorless row");
-        let corpus = maturity_run_of_record().expect("admitted run");
         assert_eq!(row.row().section(), MaturitySafetySection::Positive);
         assert!(row.standing().is_answered());
-        assert_eq!(
+        assert!(matches!(
             row.standing(),
-            &MaturityRowStanding::NativeDeclaredBoundaryObserved {
-                run_address: MATURITY_RUN_ADDRESS,
-                recorded_detail: corpus.recorded_refusal_detail(),
-            }
-        );
+            MaturityRowStanding::NativeAcceptanceObserved {
+                run_address,
+                schedule: tapscript::StateWitnessSchedule::VariableMetadata,
+                ..
+            } if *run_address == MATURITY_VARIABLE_RUN_ADDRESS
+        ));
         assert_eq!(
             expected_layer(
                 "sponsorless",
                 tapscript::StateWitnessSchedule::WholeMetadata
             ),
             Some(ObservedOutcomeLayer::RelayPolicyRejection)
+        );
+        assert_eq!(
+            expected_layer(
+                "sponsorless",
+                tapscript::StateWitnessSchedule::VariableMetadata
+            ),
+            Some(ObservedOutcomeLayer::Accepted)
         );
     }
 

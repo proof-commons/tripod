@@ -135,7 +135,8 @@ use crate::maturity_continuity_report::{
     MaturityContinuityReportEntry, ValidatedMaturityContinuityReport,
 };
 use crate::maturity_corpus::{
-    MATURITY_RUN_ADDRESS, MaturityCorpusImportRefusal, maturity_run_of_record,
+    MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS, MaturityCorpusImportRefusal,
+    MaturityDisclosedFeeFloors, maturity_run_of_record, maturity_variable_run_of_record,
 };
 use crate::maturity_first_party::{
     MaturityCarriedReason, MaturityFirstPartyRefusal, MaturityFirstPartyValidator,
@@ -1135,10 +1136,21 @@ pub enum MaturityRowStanding {
     ///
     /// The identity is carried rather than a boolean, so the claim can be
     /// checked against a chain by somebody who does not trust this crate.
-    /// No row stands here at this tip.
+    /// The run address and block height locate that transaction, and the
+    /// schedule distinguishes the accepted declaration from the historical
+    /// refused one. The disclosed fee floors state the environment in which
+    /// acceptance holds; they are a declared premise the archive does not verify.
     NativeAcceptanceObserved {
+        /// The pinned SHA-256 content address of the accepted run report.
+        run_address: &'static str,
+        /// The schedule established by exact replay of the accepted archive.
+        schedule: tapscript::StateWitnessSchedule,
         /// The identity the target computed for the accepted candidate.
         identity: Txid,
+        /// The mined block height checked against the accepted readback.
+        block_height: u32,
+        /// The fee floors disclosed from the executor's node arguments.
+        fee_floors: MaturityDisclosedFeeFloors,
     },
     /// A target refused this row's mutant at exactly the boundary the row
     /// declared.
@@ -1149,7 +1161,7 @@ pub enum MaturityRowStanding {
     NativeRefusalObserved(MaturityNativeRefusal),
     /// A committed run reached a positive row's declared boundary.
     ///
-    /// A positive row departs from no control, so a mutant's refusal cannot answer it. Exact replay of the admitted run establishes this observation; reaching the relay boundary leaves the accepted positive control outstanding.
+    /// A positive row departs from no control, so a mutant's refusal cannot answer it. Exact replay of the historical admitted run establishes this observation; reaching the relay boundary leaves the accepted positive control outstanding. The admitted accepted run under the variable schedule answers that control and displaces this standing on the row.
     NativeDeclaredBoundaryObserved {
         /// The pinned SHA-256 content address of the run report.
         run_address: &'static str,
@@ -1711,6 +1723,45 @@ pub fn derive_maturity_evidence_plan()
     )
 }
 
+/// Enter the accepted archive's established sponsorless obligation as its row standing.
+///
+/// The schedule-indexed boundary rule has already determined each archive's
+/// native standing, so this conversion reads that standing rather than
+/// implementing the declared-boundary comparison again.
+#[must_use]
+fn sponsorless_acceptance_standing(
+    standing: MaturityNativeStanding,
+    obligation: &MaturityAcceptanceObligation,
+    run_address: &'static str,
+    fee_floors: MaturityDisclosedFeeFloors,
+) -> Option<MaturityRowStanding> {
+    if standing != MaturityNativeStanding::AnsweredAtDeclaredBoundary
+        || run_address != MATURITY_VARIABLE_RUN_ADDRESS
+    {
+        return None;
+    }
+    let MaturityAcceptanceObligation::Established {
+        schedule,
+        identity,
+        readback,
+    } = obligation
+    else {
+        return None;
+    };
+    if *schedule != tapscript::StateWitnessSchedule::VariableMetadata
+        || *identity != readback.identity()
+    {
+        return None;
+    }
+    Some(MaturityRowStanding::NativeAcceptanceObserved {
+        run_address,
+        schedule: *schedule,
+        identity: *identity,
+        block_height: readback.block_height(),
+        fee_floors,
+    })
+}
+
 /// Derive the canonical evidence plan from the eight inputs of §14.1.
 ///
 /// Six inputs are built here: the validated operation plan, the exact
@@ -1754,19 +1805,32 @@ pub fn derive_maturity_evidence_plan_with(
         .map_err(MaturityEvidenceRefusal::FirstPartyEvidenceRefused)?;
     let corpus =
         maturity_run_of_record().map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
+    let accepted_corpus = maturity_variable_run_of_record()
+        .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let index = FirstPartyIndex::of(&discharged);
     let mut classified = Vec::with_capacity(rows().len());
     for row in rows() {
         let standing = classify(row, &plan, &index)?;
         let standing = if row.section() == MaturitySafetySection::Positive
             && row.name() == "sponsorless"
-            && row.refusing_layer() == Some(EvidenceBoundary::RelayPolicyRejection)
             && matches!(standing, MaturityRowStanding::NativeRunRequired(_))
-            && corpus.evidence().standing() == MaturityNativeStanding::AnsweredAtDeclaredBoundary
         {
-            MaturityRowStanding::NativeDeclaredBoundaryObserved {
-                run_address: MATURITY_RUN_ADDRESS,
-                recorded_detail: corpus.recorded_refusal_detail(),
+            let historical_answered =
+                corpus.evidence().standing() == MaturityNativeStanding::AnsweredAtDeclaredBoundary;
+            match sponsorless_acceptance_standing(
+                accepted_corpus.evidence().standing(),
+                accepted_corpus.evidence().acceptance_obligation(),
+                MATURITY_VARIABLE_RUN_ADDRESS,
+                accepted_corpus.fee_floors(),
+            ) {
+                Some(acceptance) => acceptance,
+                None if historical_answered => {
+                    MaturityRowStanding::NativeDeclaredBoundaryObserved {
+                        run_address: MATURITY_RUN_ADDRESS,
+                        recorded_detail: corpus.recorded_refusal_detail(),
+                    }
+                }
+                None => standing,
             }
         } else {
             standing
@@ -2129,7 +2193,8 @@ pub(crate) mod tests {
         MaturityObservationClass, MaturityPresentConstructorMaterial,
         MaturityRegistryOutstandingReason, MaturityRegistryStanding, MaturityRowBinding,
         MaturityRowStanding, MaturitySubmittedSubject, derive_maturity_evidence_plan_with,
-        native_refusal_binds_to_row, site_names_the_rows_subject, stated_executor_provenance,
+        native_refusal_binds_to_row, site_names_the_rows_subject, sponsorless_acceptance_standing,
+        stated_executor_provenance,
     };
     use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
     use crate::matrix::{EvidenceBoundary, MutationLayer};
@@ -2143,10 +2208,14 @@ pub(crate) mod tests {
     use crate::maturity_continuity_report::{
         assemble_maturity_continuity_report, validate_maturity_continuity_report,
     };
-    use crate::maturity_corpus::maturity_run_of_record;
+    use crate::maturity_corpus::{
+        MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS, maturity_run_of_record,
+    };
     use crate::maturity_first_party::maturity_first_party_cases;
     use crate::maturity_fixture::positive_semantic_census;
-    use crate::maturity_native::MaturityAnnouncementPlanner;
+    use crate::maturity_native::{
+        MaturityAcceptanceObligation, MaturityAnnouncementPlanner, MaturityNativeStanding,
+    };
     use crate::maturity_safety::{
         MaturityCanonicalControl, MaturityIntendedCarrier, MaturityMutationLocator,
         MaturityMutationSubject, MaturitySafetyRow, MaturitySafetySection, row_count, rows,
@@ -2750,12 +2819,12 @@ pub(crate) mod tests {
         assert_eq!(census.first_party_discharged(), PLAN.discharged().len());
         assert_eq!(census.first_party_required(), pre_target - discharged);
         assert_eq!(census.native_run_required(), run_required - 1);
-        assert_eq!(census.native_declared_boundary_observed(), 1);
+        assert_eq!(census.native_declared_boundary_observed(), 0);
         assert_eq!(census.report_layer_required(), report_required);
         assert_eq!(census.outstanding_under_typed_non_answer(), outstanding);
 
         // Host records do not change the standing partition.
-        assert_eq!(census.native_acceptance_observed(), 0);
+        assert_eq!(census.native_acceptance_observed(), 1);
         assert_eq!(census.native_refusal_observed(), 0);
         assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
         assert_eq!(census.constructor_continuity_observed(), 0);
@@ -2769,7 +2838,7 @@ pub(crate) mod tests {
             census.first_party_discharged()
                 + census.first_party_required()
                 + census.native_run_required()
-                + census.native_declared_boundary_observed()
+                + census.native_acceptance_observed()
                 + census.report_layer_required()
                 + census.outstanding_under_typed_non_answer(),
             row_count(),
@@ -2813,9 +2882,9 @@ pub(crate) mod tests {
                 matches!(
                     classified.standing(),
                     MaturityRowStanding::FirstPartyDischarged { .. }
-                        | MaturityRowStanding::NativeDeclaredBoundaryObserved { .. }
+                        | MaturityRowStanding::NativeAcceptanceObserved { .. }
                 ),
-                "answers are recomputed first-party refusals or the admitted positive boundary",
+                "answers are recomputed first-party refusals or the admitted acceptance",
             );
         }
     }
@@ -2827,7 +2896,7 @@ pub(crate) mod tests {
         assert!(!census.every_required_row_is_answered());
         assert_eq!(
             census.answered(),
-            census.first_party_discharged() + census.native_declared_boundary_observed()
+            census.first_party_discharged() + census.native_acceptance_observed()
         );
         assert_eq!(
             census.answered() + census.outstanding(),
@@ -2836,9 +2905,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             census.outstanding(),
-            census.rows()
-                - census.first_party_discharged()
-                - census.native_declared_boundary_observed(),
+            census.rows() - census.first_party_discharged() - census.native_acceptance_observed(),
         );
     }
 
@@ -3278,15 +3345,15 @@ pub(crate) mod tests {
         assert_eq!(census.report_layer_required(), 15);
         assert_eq!(census.outstanding_under_typed_non_answer(), 65);
         assert_eq!(census.answered(), 41);
-        assert_eq!(census.native_declared_boundary_observed(), 1);
-        assert_eq!(census.native_acceptance_observed(), 0);
+        assert_eq!(census.native_declared_boundary_observed(), 0);
+        assert_eq!(census.native_acceptance_observed(), 1);
         assert_eq!(census.native_refusal_observed(), 0);
         assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
         assert_eq!(
             census.first_party_discharged()
                 + census.first_party_required()
                 + census.native_run_required()
-                + census.native_declared_boundary_observed()
+                + census.native_acceptance_observed()
                 + census.report_layer_required()
                 + census.outstanding_under_typed_non_answer(),
             row_count(),
@@ -3295,15 +3362,25 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_positive_boundary_names_the_admitted_run_without_claiming_acceptance() {
-        let corpus = crate::maturity_corpus::maturity_run_of_record().expect("admitted run");
+    fn the_positive_row_names_the_accepted_run_and_its_disclosed_environment() {
+        let historical = crate::maturity_corpus::maturity_run_of_record().expect("historical run");
+        let accepted =
+            crate::maturity_corpus::maturity_variable_run_of_record().expect("accepted run");
+        let MaturityAcceptanceObligation::Established {
+            schedule,
+            identity,
+            readback,
+        } = accepted.evidence().acceptance_obligation()
+        else {
+            panic!("accepted archive must establish the obligation");
+        };
         let observed: Vec<_> = PLAN
             .rows()
             .iter()
             .filter(|row| {
                 matches!(
                     row.standing(),
-                    MaturityRowStanding::NativeDeclaredBoundaryObserved { .. }
+                    MaturityRowStanding::NativeAcceptanceObserved { .. }
                 )
             })
             .collect();
@@ -3312,21 +3389,127 @@ pub(crate) mod tests {
         assert_eq!(observed[0].row().name(), "sponsorless");
         assert_eq!(
             observed[0].standing(),
-            &MaturityRowStanding::NativeDeclaredBoundaryObserved {
-                run_address: crate::maturity_corpus::MATURITY_RUN_ADDRESS,
-                recorded_detail: corpus.recorded_refusal_detail(),
+            &MaturityRowStanding::NativeAcceptanceObserved {
+                run_address: MATURITY_VARIABLE_RUN_ADDRESS,
+                schedule: tapscript::StateWitnessSchedule::VariableMetadata,
+                identity: *identity,
+                block_height: readback.block_height(),
+                fee_floors: accepted.fee_floors(),
             }
         );
-        assert_eq!(PLAN.census().native_acceptance_observed(), 0);
+        assert_eq!(*schedule, tapscript::StateWitnessSchedule::VariableMetadata);
+        assert_eq!(*identity, readback.identity());
+        assert_eq!(
+            accepted.fee_floors().provenance(),
+            crate::maturity_corpus::MaturityPremiseProvenance::ExecutorArguments
+        );
+        assert_eq!(PLAN.census().native_declared_boundary_observed(), 0);
+        assert_eq!(PLAN.census().native_acceptance_observed(), 1);
         assert_eq!(PLAN.census().native_refusal_observed(), 0);
         assert_eq!(
-            corpus.evidence().acceptance_obligation(),
+            historical.evidence().acceptance_obligation(),
             &crate::maturity_native::MaturityAcceptanceObligation::Outstanding {
                 routes: [
                     crate::maturity_native::MaturityAcceptanceRoute::RelayWitnessRestructure,
                     crate::maturity_native::MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
                 ],
             }
+        );
+    }
+
+    #[test]
+    fn an_outstanding_obligation_keeps_the_historical_standing() {
+        let historical = crate::maturity_corpus::maturity_run_of_record().expect("historical run");
+        let accepted =
+            crate::maturity_corpus::maturity_variable_run_of_record().expect("accepted run");
+        let outstanding = historical.evidence().acceptance_obligation();
+        let answered = MaturityNativeStanding::AnsweredAtDeclaredBoundary;
+        for run_address in [MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS] {
+            assert_eq!(
+                sponsorless_acceptance_standing(
+                    answered,
+                    outstanding,
+                    run_address,
+                    historical.fee_floors(),
+                ),
+                None,
+            );
+        }
+        assert_eq!(
+            sponsorless_acceptance_standing(
+                historical.evidence().standing(),
+                outstanding,
+                MATURITY_RUN_ADDRESS,
+                historical.fee_floors(),
+            ),
+            None,
+        );
+        assert_eq!(
+            sponsorless_acceptance_standing(
+                accepted.evidence().standing(),
+                accepted.evidence().acceptance_obligation(),
+                MATURITY_RUN_ADDRESS,
+                accepted.fee_floors(),
+            ),
+            None,
+        );
+        assert_eq!(
+            sponsorless_acceptance_standing(
+                MaturityNativeStanding::ObservedElsewhere,
+                accepted.evidence().acceptance_obligation(),
+                MATURITY_VARIABLE_RUN_ADDRESS,
+                accepted.fee_floors(),
+            ),
+            None,
+        );
+        let MaturityAcceptanceObligation::Established {
+            identity, readback, ..
+        } = accepted.evidence().acceptance_obligation()
+        else {
+            panic!("accepted archive must establish the obligation");
+        };
+        let wrong_schedule = MaturityAcceptanceObligation::Established {
+            schedule: tapscript::StateWitnessSchedule::WholeMetadata,
+            identity: *identity,
+            readback: readback.clone(),
+        };
+        assert_eq!(
+            sponsorless_acceptance_standing(
+                answered,
+                &wrong_schedule,
+                MATURITY_VARIABLE_RUN_ADDRESS,
+                accepted.fee_floors(),
+            ),
+            None,
+        );
+        assert_ne!(*identity, readback.witness_identity());
+        let wrong_identity = MaturityAcceptanceObligation::Established {
+            schedule: tapscript::StateWitnessSchedule::VariableMetadata,
+            identity: readback.witness_identity(),
+            readback: readback.clone(),
+        };
+        assert_eq!(
+            sponsorless_acceptance_standing(
+                answered,
+                &wrong_identity,
+                MATURITY_VARIABLE_RUN_ADDRESS,
+                accepted.fee_floors(),
+            ),
+            None,
+        );
+        let sponsorless = PLAN
+            .rows()
+            .iter()
+            .find(|row| row.row().name() == "sponsorless")
+            .expect("sponsorless row");
+        assert_eq!(
+            sponsorless_acceptance_standing(
+                accepted.evidence().standing(),
+                accepted.evidence().acceptance_obligation(),
+                MATURITY_VARIABLE_RUN_ADDRESS,
+                accepted.fee_floors(),
+            ),
+            Some(sponsorless.standing().clone()),
         );
     }
 }
