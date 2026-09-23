@@ -1396,6 +1396,7 @@ const fn continuity_refusal_name(refusal: &MaturityContinuityRefusal) -> &'stati
         Refusal::OutputProgram(_) => "OutputProgram",
         Refusal::SuccessorPrefix(_) => "SuccessorPrefix",
         Refusal::SuccessorSearch(_) => "SuccessorSearch",
+        Refusal::AcceptanceClaim(_) => "AcceptanceClaim",
     }
 }
 

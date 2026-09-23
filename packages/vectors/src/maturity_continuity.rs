@@ -4,7 +4,9 @@
 //!
 //! Static byte bindings, whole retained-descriptor equality and semantic comparisons are separate results. Reusing one retained tree on both sides states the descriptor equality's premise; a matching root alone establishes neither descriptor identity nor hidden-subtree contents. The successor field comparison checks reconstruction consistency, not an independently observed semantic tuple. A different successor commitment is refused without attributing its cause to a semantic change or another static tree.
 //!
-//! Fixed-nonce reconstruction and host leastness are separate evidence. These projections verify no signature, authenticate no branch freshness and establish no accepted readback. Acceptance remains an outstanding obligation, and experimental byte mutations answer no matrix row.
+//! Fixed-nonce reconstruction and host leastness are separate evidence. These projections verify no signature, authenticate no branch freshness and establish no accepted readback. Without a stated acceptance, the obligation remains outstanding, and experimental byte mutations answer no matrix row.
+//!
+//! A stated acceptance is checked by recomputing its schedule, readback bytes and identities against the projected bytes; a disagreement is refused. The projector makes no target observation of its own. An outstanding claim remains outstanding, while an established claim carries only the standing of the transcript or corpus that minted it.
 //!
 //! The retained witness schedule supplies the reconstruction recipe. Legalization
 //! checks its carried width against the observed item; variable metadata is
@@ -29,7 +31,7 @@ use tapscript::{
 };
 use target_elements::{ResourceBound, ResourceDimension, ReviewedElementsTapscriptDefinition};
 use target_elements_conformance::constructor::tagged::sha256;
-use transaction::bytes::{AssetId, Outpoint, TargetTransaction};
+use transaction::bytes::{AssetId, Outpoint, TargetTransaction, Txid};
 use transaction::error::TransactionRefusal;
 use transaction::operator_right::BranchContext;
 use transaction::taproot::{branch_hash, leaf_hash, tagged_hash};
@@ -409,6 +411,39 @@ impl MaturityProjectionDiagnostics {
     }
 }
 
+/// A stated acceptance operand that disagreed with the projected transaction.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MaturityAcceptanceClaimMismatch {
+    /// The claimed schedule differs from the retained bundle's schedule.
+    Schedule {
+        /// The schedule named by the acceptance claim.
+        claimed: StateWitnessSchedule,
+        /// The schedule retained by the bundle.
+        retained: StateWitnessSchedule,
+    },
+    /// The claimed readback bytes differ from the submitted bytes.
+    ReadbackBytes {
+        /// The readback bytes named by the claim.
+        claimed: Vec<u8>,
+        /// The bytes submitted to the projector.
+        submitted: Vec<u8>,
+    },
+    /// A claimed transaction identity differs from the witness-stripped digest.
+    Identity {
+        /// The first disagreeing identity, from the obligation or readback.
+        claimed: Txid,
+        /// The identity recomputed from the transaction.
+        recomputed: Txid,
+    },
+    /// The claimed witness identity differs from the digest of bytes as sent.
+    WitnessIdentity {
+        /// The readback's witness identity.
+        claimed: Txid,
+        /// The witness identity recomputed from submitted bytes.
+        recomputed: Txid,
+    },
+}
+
 /// The first failed projection check, preserving inner roots and the operands already compared.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -522,6 +557,8 @@ pub enum MaturityContinuityRefusal {
     SuccessorPrefix(Box<MaturityProjectionDiagnostics>),
     /// The separate successor leastness scan refused.
     SuccessorSearch(Box<StateConstructorRefusal>),
+    /// The stated acceptance disagreed with projected bytes; no commitment-binding comparison failed, so no projection diagnostics are retained.
+    AcceptanceClaim(Box<MaturityAcceptanceClaimMismatch>),
 }
 
 impl MaturityContinuityRefusal {
@@ -1583,14 +1620,123 @@ fn static_comparison(
     }
 }
 
+/// Identities of a submitted transaction under witness-stripped and exact-byte hashing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaturitySubmittedIdentities {
+    identity: Txid,
+    witness_identity: Txid,
+}
+
+impl MaturitySubmittedIdentities {
+    /// The double SHA-256 identity of the witness-stripped transaction.
+    #[must_use]
+    pub const fn identity(&self) -> Txid {
+        self.identity
+    }
+
+    /// The double SHA-256 identity of the submitted bytes as sent.
+    #[must_use]
+    pub const fn witness_identity(&self) -> Txid {
+        self.witness_identity
+    }
+}
+
+/// Compute both identities used to check a stated accepted readback.
+///
+/// The witness identity hashes the submitted bytes as sent because the target hashes what it receives, rather than a re-encoding. `the_reference_txid_is_the_first_party_witness_stripped_digest` is the reference oracle test for this construction.
+#[must_use]
+pub fn submitted_transaction_identities(
+    transaction: &TargetTransaction,
+    submitted_bytes: &[u8],
+) -> MaturitySubmittedIdentities {
+    MaturitySubmittedIdentities {
+        identity: Txid::from_internal(sha256(&sha256(&transaction.encode_without_witness()))),
+        witness_identity: Txid::from_internal(sha256(&sha256(submitted_bytes))),
+    }
+}
+
+fn verify_acceptance_claim(
+    claim: &MaturityAcceptanceObligation,
+    schedule: StateWitnessSchedule,
+    transaction: &TargetTransaction,
+    submitted_bytes: &[u8],
+) -> ProjectionResult<()> {
+    if let MaturityAcceptanceObligation::Established {
+        schedule: claimed_schedule,
+        identity: claimed_identity,
+        readback,
+    } = claim
+    {
+        if *claimed_schedule != schedule {
+            return Err(Refusal::AcceptanceClaim(Box::new(
+                MaturityAcceptanceClaimMismatch::Schedule {
+                    claimed: *claimed_schedule,
+                    retained: schedule,
+                },
+            )));
+        }
+        if readback.bytes() != submitted_bytes {
+            return Err(Refusal::AcceptanceClaim(Box::new(
+                MaturityAcceptanceClaimMismatch::ReadbackBytes {
+                    claimed: readback.bytes().to_vec(),
+                    submitted: submitted_bytes.to_vec(),
+                },
+            )));
+        }
+        let identities = submitted_transaction_identities(transaction, submitted_bytes);
+        for claimed in [*claimed_identity, readback.identity()] {
+            if claimed != identities.identity() {
+                return Err(Refusal::AcceptanceClaim(Box::new(
+                    MaturityAcceptanceClaimMismatch::Identity {
+                        claimed,
+                        recomputed: identities.identity(),
+                    },
+                )));
+            }
+        }
+        if readback.witness_identity() != identities.witness_identity() {
+            return Err(Refusal::AcceptanceClaim(Box::new(
+                MaturityAcceptanceClaimMismatch::WitnessIdentity {
+                    claimed: readback.witness_identity(),
+                    recomputed: identities.witness_identity(),
+                },
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Project both constructor sides from exact submitted bytes and the supplied spent output under one retained recipe.
 ///
 /// Checks are ordered: decode and witness shape; spent outpoint and canonical metadata; retained-context coherence; predecessor reconstruction and leastness; root, leaf, control and predecessor prefix; realization transition; successor reconstruction, output and prefix; successor leastness; separate comparisons. Funding asset and amount remain supplied facts because the input contains neither. The source label and branch context are stated provenance, not authenticated provenance.
 ///
 /// # Errors
 /// Returns the first failed check as [`MaturityContinuityRefusal`]. Binding failures retain only comparisons already reached; in particular a static-root refusal issues no semantic verdict, and an output refusal names the expected successor without attributing the mismatch to a semantic or static change.
+#[must_use = "projection can refuse the submitted bytes"]
 pub fn project_maturity_continuity(
     input: MaturityProjectionInput<'_>,
+) -> Result<ValidatedMaturityContinuity, MaturityContinuityRefusal> {
+    project_maturity_continuity_with_acceptance(
+        input,
+        &MaturityAcceptanceObligation::Outstanding {
+            routes: [
+                MaturityAcceptanceRoute::RelayWitnessRestructure,
+                MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
+            ],
+        },
+    )
+}
+
+/// Project exact submitted bytes and verify a stated acceptance against the retained schedule and those bytes.
+///
+/// An outstanding obligation passes through because a projection without an accepted transcript has no acceptance to verify. An established obligation is checked after all constructor evidence is assembled, preserving the first-refusal order.
+///
+/// # Errors
+/// Returns the first byte-binding refusal, or [`MaturityContinuityRefusal::AcceptanceClaim`] when an established claim disagrees with the projected transaction.
+#[must_use = "acceptance verification can refuse the stated claim"]
+pub fn project_maturity_continuity_with_acceptance(
+    input: MaturityProjectionInput<'_>,
+    claim: &MaturityAcceptanceObligation,
 ) -> Result<ValidatedMaturityContinuity, MaturityContinuityRefusal> {
     let transaction = TargetTransaction::decode(input.submitted_bytes)
         .map_err(|error| Refusal::Decode(Box::new(error)))?;
@@ -1664,6 +1810,7 @@ pub fn project_maturity_continuity(
         input.bundle,
         &stack[8],
     )?;
+    verify_acceptance_claim(claim, schedule, &transaction, input.submitted_bytes)?;
     Ok(ValidatedMaturityContinuity {
         source: input.source,
         submitted_bytes: input.submitted_bytes.to_vec(),
@@ -1683,6 +1830,7 @@ pub fn project_maturity_continuity(
         semantic_comparison,
         diagnostics,
         evidence,
+        acceptance: Box::new(claim.clone()),
     })
 }
 
@@ -1886,6 +2034,7 @@ pub struct ValidatedMaturityContinuity {
     semantic_comparison: MaturitySemanticComparison,
     diagnostics: MaturityProjectionDiagnostics,
     evidence: CheckedMaterial,
+    acceptance: Box<MaturityAcceptanceObligation>,
 }
 
 impl ValidatedMaturityContinuity {
@@ -2019,15 +2168,10 @@ impl ValidatedMaturityContinuity {
     pub fn quantifier(&self) -> MaturityGuaranteeQuantifier {
         MaturityEvidenceCensus::default().quantifier()
     }
-    /// The unresolved accepted-step obligation with both implementation routes.
+    /// The verified or passed-through obligation, outstanding when none was stated.
     #[must_use]
-    pub const fn acceptance_obligation(&self) -> MaturityAcceptanceObligation {
-        MaturityAcceptanceObligation::Outstanding {
-            routes: [
-                MaturityAcceptanceRoute::RelayWitnessRestructure,
-                MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
-            ],
-        }
+    pub fn acceptance_obligation(&self) -> MaturityAcceptanceObligation {
+        self.acceptance.as_ref().clone()
     }
     /// An output mismatch cannot distinguish another static tree from another semantic commitment.
     #[must_use]
@@ -2053,7 +2197,7 @@ mod tests {
         MaturityConstructorMaterial, MaturityConstructorMaterialAbsence,
         MaturityExecutorProvenanceExpectation, derive_maturity_evidence_plan_with,
     };
-    use crate::maturity_native::MaturityAnnouncementPlanner;
+    use crate::maturity_native::{MaturityAcceptedReadback, MaturityAnnouncementPlanner};
     use crate::subject::{ExperimentalSubject, SubjectStanding};
     use realization::ProtocolAmount;
     use std::fmt::Write as _;
@@ -2083,6 +2227,7 @@ mod tests {
         bundle: CandidateLinkedMaturityBundle,
         identity: CandidateDeploymentIdentity,
         branch: BranchContext,
+        acceptance: MaturityAcceptanceObligation,
         planner_successor: CandidateStateConstructor,
     }
 
@@ -2100,6 +2245,19 @@ mod tests {
 
         fn project(&self) -> ProjectionResult<ValidatedMaturityContinuity> {
             project_maturity_continuity(self.input())
+        }
+
+        fn project_claimed(&self) -> ProjectionResult<ValidatedMaturityContinuity> {
+            project_maturity_continuity_with_acceptance(self.input(), &self.acceptance)
+        }
+    }
+
+    fn outstanding_acceptance() -> MaturityAcceptanceObligation {
+        MaturityAcceptanceObligation::Outstanding {
+            routes: [
+                MaturityAcceptanceRoute::RelayWitnessRestructure,
+                MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
+            ],
         }
     }
 
@@ -2150,6 +2308,7 @@ mod tests {
                 bundle: planner.bundle().clone(),
                 identity,
                 branch,
+                acceptance: outstanding_acceptance(),
                 planner_successor: planner
                     .announcement()
                     .expect("announcement")
@@ -2201,6 +2360,7 @@ mod tests {
                 bundle: planner.bundle().clone(),
                 identity,
                 branch,
+                acceptance: corpus.evidence().acceptance_obligation().clone(),
                 planner_successor: planner
                     .announcement()
                     .expect("variable announcement")
@@ -2292,6 +2452,7 @@ mod tests {
             bundle: planner.bundle().clone(),
             identity,
             branch,
+            acceptance: outstanding_acceptance(),
             planner_successor: planner
                 .announcement()
                 .expect("announcement")
@@ -2529,6 +2690,7 @@ mod tests {
             bundle,
             identity,
             branch,
+            acceptance: outstanding_acceptance(),
             planner_successor: successor,
         }
     }
@@ -2709,6 +2871,165 @@ mod tests {
         .expect("expected program");
         assert_eq!(comparison.reconstructed(), expected);
         assert_eq!(comparison.witnessed(), tx.outputs()[0].program());
+    }
+
+    #[test]
+    fn accepted_archive_claim_survives_projection() {
+        let source = variable_archived();
+        let record = source
+            .project_claimed()
+            .expect("accepted archive projection");
+        let corpus = maturity_variable_run_of_record().expect("accepted archive");
+        assert_eq!(
+            record.acceptance_obligation(),
+            corpus.evidence().acceptance_obligation().clone()
+        );
+        let MaturityAcceptanceObligation::Established {
+            schedule,
+            identity,
+            readback,
+        } = record.acceptance_obligation()
+        else {
+            panic!("established acceptance")
+        };
+        assert_eq!(schedule, StateWitnessSchedule::VariableMetadata);
+        assert_eq!(identity, readback.identity());
+        assert_eq!(readback.bytes(), source.bytes.as_slice());
+    }
+
+    #[test]
+    fn a_claim_under_another_schedule_refuses() {
+        let mut source = archived().clone();
+        source.acceptance = variable_archived().acceptance.clone();
+        let Refusal::AcceptanceClaim(mismatch) =
+            source.project_claimed().expect_err("schedule disagreement")
+        else {
+            panic!("acceptance claim refusal")
+        };
+        assert_eq!(
+            *mismatch,
+            MaturityAcceptanceClaimMismatch::Schedule {
+                claimed: StateWitnessSchedule::VariableMetadata,
+                retained: StateWitnessSchedule::WholeMetadata,
+            }
+        );
+    }
+
+    #[test]
+    fn a_claim_whose_readback_bytes_are_not_the_submitted_bytes_refuses() {
+        let mut source = variable_node_free().clone();
+        source.acceptance = variable_archived().acceptance.clone();
+        let Refusal::AcceptanceClaim(mismatch) = source
+            .project_claimed()
+            .expect_err("readback bytes disagreement")
+        else {
+            panic!("acceptance claim refusal")
+        };
+        let MaturityAcceptanceClaimMismatch::ReadbackBytes { claimed, submitted } = *mismatch
+        else {
+            panic!("readback bytes mismatch")
+        };
+        let MaturityAcceptanceObligation::Established { readback, .. } = &source.acceptance else {
+            panic!("established acceptance")
+        };
+        assert_ne!(readback.bytes(), source.bytes.as_slice());
+        assert_eq!(claimed.as_slice(), readback.bytes());
+        assert_eq!(submitted.as_slice(), source.bytes.as_slice());
+    }
+
+    #[test]
+    fn a_claim_naming_another_identity_refuses() {
+        let mut source = variable_archived().clone();
+        let MaturityAcceptanceObligation::Established {
+            identity, readback, ..
+        } = &mut source.acceptance
+        else {
+            panic!("established acceptance")
+        };
+        let recomputed = readback.identity();
+        let claimed = Txid::from_internal([0x7d; 32]);
+        assert_ne!(claimed, recomputed);
+        *identity = claimed;
+        let Refusal::AcceptanceClaim(mismatch) =
+            source.project_claimed().expect_err("identity disagreement")
+        else {
+            panic!("acceptance claim refusal")
+        };
+        assert_eq!(
+            *mismatch,
+            MaturityAcceptanceClaimMismatch::Identity {
+                claimed,
+                recomputed,
+            }
+        );
+    }
+
+    #[test]
+    fn a_claim_whose_readback_witness_identity_is_wrong_refuses() {
+        let mut source = variable_archived().clone();
+        let MaturityAcceptanceObligation::Established { readback, .. } = &mut source.acceptance
+        else {
+            panic!("established acceptance")
+        };
+        let original = readback.clone();
+        let recomputed = original.witness_identity();
+        let claimed = Txid::from_internal([0x6d; 32]);
+        assert_ne!(claimed, recomputed);
+        *readback = MaturityAcceptedReadback::from_parts(
+            original.identity(),
+            claimed,
+            *original.block_hash(),
+            original.block_height(),
+            original.bytes().to_vec(),
+        );
+        let Refusal::AcceptanceClaim(mismatch) = source
+            .project_claimed()
+            .expect_err("witness identity disagreement")
+        else {
+            panic!("acceptance claim refusal")
+        };
+        assert_eq!(
+            *mismatch,
+            MaturityAcceptanceClaimMismatch::WitnessIdentity {
+                claimed,
+                recomputed,
+            }
+        );
+    }
+
+    #[test]
+    fn an_outstanding_claim_leaves_every_projection_outstanding() {
+        let claim = outstanding_acceptance();
+        for source in [
+            archived(),
+            node_free(),
+            variable_node_free(),
+            variable_archived(),
+        ] {
+            let stated = project_maturity_continuity_with_acceptance(source.input(), &claim)
+                .expect("stated outstanding projection");
+            let unstated = source.project().expect("unstated projection");
+            assert_eq!(
+                stated.acceptance_obligation(),
+                unstated.acceptance_obligation()
+            );
+            assert!(matches!(
+                stated.acceptance_obligation(),
+                MaturityAcceptanceObligation::Outstanding { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn the_published_identities_agree_with_the_accepted_readback() {
+        let source = variable_archived();
+        let transaction = TargetTransaction::decode(&source.bytes).expect("accepted transaction");
+        let identities = submitted_transaction_identities(&transaction, &source.bytes);
+        let MaturityAcceptanceObligation::Established { readback, .. } = &source.acceptance else {
+            panic!("established acceptance")
+        };
+        assert_eq!(identities.identity(), readback.identity());
+        assert_eq!(identities.witness_identity(), readback.witness_identity());
     }
 
     #[test]
@@ -4257,6 +4578,7 @@ mod tests {
                 "replaced_output_program_is_refused; request_mutation_retains_expected_successor_on_output_refusal"
             }
             Refusal::SuccessorPrefix(_) => "replaced_successor_prefix_is_refused",
+            Refusal::AcceptanceClaim(_) => "a_claim_under_another_schedule_refuses",
         }
     }
 
@@ -4327,8 +4649,12 @@ mod tests {
             Refusal::OutputProgram(diagnostics.clone()),
             Refusal::SuccessorPrefix(diagnostics),
             Refusal::SuccessorSearch(constructor),
+            Refusal::AcceptanceClaim(Box::new(MaturityAcceptanceClaimMismatch::Schedule {
+                claimed: StateWitnessSchedule::VariableMetadata,
+                retained: StateWitnessSchedule::WholeMetadata,
+            })),
         ];
-        assert_eq!(refusals.len(), 27);
+        assert_eq!(refusals.len(), 28);
         for refusal in refusals {
             assert_ne!(reachability(&refusal).len(), 0);
         }

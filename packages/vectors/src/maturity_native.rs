@@ -213,6 +213,27 @@ impl MaturityAcceptedReadback {
     }
 }
 
+#[cfg(test)]
+impl MaturityAcceptedReadback {
+    /// Assemble a readback for mismatch tests. Production readbacks are constructed only by submission checking, so an established production claim remains traceable to a transcript or admitted archive.
+    #[must_use]
+    pub(crate) const fn from_parts(
+        identity: Txid,
+        witness_identity: Txid,
+        block_hash: [u8; 32],
+        block_height: u32,
+        bytes: Vec<u8>,
+    ) -> Self {
+        Self {
+            identity,
+            witness_identity,
+            block_hash,
+            block_height,
+            bytes,
+        }
+    }
+}
+
 /// The sponsorless acceptance obligation derived from exact transcript replay.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MaturityAcceptanceObligation {
