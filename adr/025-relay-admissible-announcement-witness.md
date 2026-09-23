@@ -1,6 +1,6 @@
 # ADR-025: Relay-Admissible Announcement Witness by Constant Elision
 
-**Status:** Decided and adopted for the STATE generation; implementation lands with the route track `T11-101` through `T11-108` under ruling 79 at (`[PLAN-rule:phase6:wave9-rulings]`); the historical whole-item schedule remains the archived run's replay form.
+**Status:** Decided and implemented for the STATE generation; the route track `T11-101` through `T11-108` landed on `0.6.234-dev` through `0.6.245-dev` under ruling 79 at (`[PLAN-rule:phase6:wave9-rulings]`) and closed under `T11-109`; the historical whole-item schedule remains the archived run's replay form.
 **Scope:** How a canonical metadata argument crosses the target's admission policy, in every generation this repository emits for a taproot script path.
 **Supersedes:** Nothing verbatim; refines ruling 70's no-route-taken clause at (`[PLAN-rule:phase6:wave9-rulings]`) for the route alone, and narrows the current form's reviewed status of consensus-admitted and relay-refused to the historical whole-item schedule. Finding 91 at (`[PLAN-sec:phase6:wave7-findings]`) records ownership of the target limit; the reviewed status itself is in `packages/target-elements/src/transaction_form.rs`.
 **Does not establish:** Relayability under a positive fee floor; root freshness; Wave 12's resource closure; any artifact promotion; or the accepted run itself.
@@ -87,4 +87,4 @@ This record reads implemented only when:
 - the second immutable corpus admits the fresh run's accepted identity and exact mined readback, the old corpus still admits, and the accepted-byte continuity comparison supplies `T11-098` through `T11-108`;
 - the route's measured dispositions pass its repository and documentation gates without claiming root freshness, positive-fee-floor relayability, resource closure or artifact promotion from acceptance alone.
 
-Until those conditions hold, this record is decided and adopted but unimplemented. The backlog owns the bite sequence; this record owns the transport and emission rule.
+Those conditions hold on `0.6.245-dev` as recorded at (`[PLAN-sec:phase6:route-closure]`); the backlog owns the bite sequence, and this record owns the transport and emission rule.

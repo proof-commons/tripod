@@ -621,11 +621,7 @@ root, outer commitment, and control recipes through the schedule's own tree.
 retained in `StateNonceEvidence`, while zero budget and exhaustion have their
 own non-retryable forms (`0.6.174-dev`).
 
-The abstract oracle establishes that the production metadata leaf has no
-success or non-aborting-failure path for empty, true, false, arbitrary, and
-depth-edge initial stacks. The two target-native rows—no accepted spend through
-the leaf and rejection of every attempted spend—remain outstanding for Wave 8
-and are not implied by that abstract result (`0.6.178-dev`).
+The abstract oracle establishes that the production metadata leaf has no success or non-aborting-failure path for empty, true, false, arbitrary, and depth-edge initial stacks. The abstract result alone supplies no target verdict (`0.6.178-dev`); an accepted spend through the leaf is admitted in the second corpus on `0.6.245-dev`, while `T11-099` owns classification of the row standings over those accepted bytes.
 
 ### The maturity-announcement records (Guide-14 Wave 5)
 
@@ -645,14 +641,7 @@ that is not last — presents it with the same observations. What keeps the
 singleton exclusive to input zero and output zero is the pin, the
 non-reissuable declaration and consensus conservation, not a count.
 
-The composed leaf declares seven witness items, deepest first: successor
-output-key prefix, successor nonce, requested cycle, static-subtree root,
-predecessor metadata, predecessor output-key prefix, and operator signature.
-The root is witnessed rather than pushed by the leaf that it roots. Three
-one-instruction adapters align the lead-window, copy-through, and successor
-stacks; the closing adapter drops derived metadata and pushes canonical true
-(`0.6.183-dev`). The complete census is six unresolved symbols over 15 push
-sites, with the shared asset and amount represented once.
+The composed leaf declares seven witness roles, deepest first: successor output-key prefix, successor nonce, requested cycle, static-subtree root, predecessor metadata, predecessor output-key prefix, and operator signature. Their widths are [1, 4, 8, 32, 86, 1, 64] under the historical whole-item schedule and [1, 4, 8, 32, 53, 1, 64] under the variable-metadata schedule; the root remains witnessed. Three one-instruction adapters align the lead-window, copy-through, and successor stacks; the closing adapter drops derived metadata and pushes canonical true (`0.6.183-dev`). Under the variable schedule, `MetadataHeader` supplies the 25-byte constant prefix to a seven-instruction, 40-byte restoration prologue before the existing authentication checks, and the leaf appends eight reserved zero bytes. The whole schedule has six pushed keys at fifteen sites, with the shared asset and amount represented once; the variable schedule has seven pushed keys at sixteen sites (`0.6.239-dev`, `0.6.241-dev`).
 
 The record-backed assessment completes 27 of 87 rows per representation and
 leaves 60 pending, down from 63 complete before the reduction. The groups,
