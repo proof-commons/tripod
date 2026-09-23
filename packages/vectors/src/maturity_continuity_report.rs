@@ -557,7 +557,9 @@ impl MaturityContinuityReport {
     pub fn entries(&self) -> &[MaturityContinuityReportEntry] {
         &self.entries
     }
-    /// Accepted binding or unmet readback routes.
+    /// The join of the sources' verified acceptance obligations: established when a
+    /// source carries verified acceptance and no established source disagrees,
+    /// outstanding otherwise.
     #[must_use]
     pub const fn acceptance(&self) -> &MaturityAcceptanceObligation {
         &self.acceptance
@@ -572,7 +574,8 @@ impl MaturityContinuityReport {
     pub const fn census(&self) -> &MaturityContinuityReportCensus {
         &self.census
     }
-    /// Partial while accepted readback is absent.
+    /// Partial while required rows stand outstanding in the evidence census,
+    /// independent of accepted readback.
     #[must_use]
     pub const fn completeness(&self) -> MaturitySafetyCompleteness {
         self.completeness
@@ -1073,6 +1076,13 @@ pub enum MaturityContinuityReportRefusal {
         /// First position that disagrees.
         position: usize,
     },
+    /// Assembly refuses two different verified established acceptances.
+    AcceptanceDisagrees {
+        /// Position of the first established source.
+        first: usize,
+        /// Position of the first later established source that differs.
+        second: usize,
+    },
     /// A recomputed claim differs.
     ItemDiffers {
         /// The first failed comparison.
@@ -1089,6 +1099,9 @@ impl MaturityContinuityReportRefusal {
             Self::UnsupportedSchema { .. } => MaturityContinuityRecomputedItem::Schema,
             Self::SourceCountDiffers { .. } => MaturityContinuityRecomputedItem::SourceCount,
             Self::SourceOrderDiffers { .. } => MaturityContinuityRecomputedItem::SourceOrder,
+            Self::AcceptanceDisagrees { .. } => {
+                MaturityContinuityRecomputedItem::AcceptanceDisposition
+            }
             Self::ItemDiffers { item, .. } => *item,
         }
     }
@@ -1260,31 +1273,59 @@ fn census_of(sources: &[&ValidatedMaturityContinuity]) -> MaturityContinuityRepo
     }
 }
 
-fn acceptance_of(sources: &[&ValidatedMaturityContinuity]) -> MaturityAcceptanceObligation {
-    sources.first().map_or(
+/// Join verified obligations; an outstanding source is silent about acceptance.
+#[rustfmt::skip]
+fn acceptance_of(sources: &[&ValidatedMaturityContinuity]) -> Result<MaturityAcceptanceObligation, MaturityContinuityReportRefusal> {
+    let mut established = None;
+    for (position, source) in sources.iter().enumerate() {
+        match source.acceptance_obligation() {
+            MaturityAcceptanceObligation::Outstanding { .. } => {}
+            accepted @ MaturityAcceptanceObligation::Established { .. } => {
+                if let Some((first, prior)) = &established {
+                    if *prior != accepted {
+                        return Err(MaturityContinuityReportRefusal::AcceptanceDisagrees {
+                            first: *first,
+                            second: position,
+                        });
+                    }
+                } else {
+                    established = Some((position, accepted));
+                }
+            }
+        }
+    }
+    Ok(established.map_or(
         MaturityAcceptanceObligation::Outstanding {
             routes: [
                 MaturityAcceptanceRoute::RelayWitnessRestructure,
                 MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
             ],
         },
-        |source| source.acceptance_obligation(),
-    )
+        |(_, accepted)| accepted,
+    ))
 }
 
 /// Assemble claims solely from validated projections and caller-stated premises.
 ///
 /// Binding and executor provenance are envelope premises, not authenticated
 /// conclusions of the projector. Validation requires their independent originals.
-/// All possible input lengths remain partial: this input vocabulary contains no
-/// accepted readback with target-computed identity.
-#[must_use]
+/// An outstanding source is silent about acceptance, so it leaves an established
+/// obligation from another source unchanged. Every assembly is partial because
+/// native-run-required and report-layer-required rows stand outstanding in the
+/// evidence census; a continuity report answers no row.
+///
+/// # Errors
+///
+/// Returns `AcceptanceDisagrees` when two sources carry different established
+/// acceptance obligations.
+#[must_use = "acceptance disagreement must be handled"]
 pub fn assemble_maturity_continuity_report(
     sources: &[&ValidatedMaturityContinuity],
     binding: MaturityTargetBinding,
     provenance: MaturityExecutorProvenanceExpectation,
-) -> MaturityContinuityReport {
-    MaturityContinuityReport {
+) -> Result<MaturityContinuityReport, MaturityContinuityReportRefusal> {
+    let acceptance = acceptance_of(sources)?;
+    Ok(MaturityContinuityReport {
         schema: MATURITY_CONTINUITY_REPORT_SCHEMA,
         role: MaturityContinuityReportRole::StateConstructorContinuity,
         binding,
@@ -1294,11 +1335,11 @@ pub fn assemble_maturity_continuity_report(
             .enumerate()
             .map(|(position, source)| entry_of(position, source))
             .collect(),
-        acceptance: acceptance_of(sources),
+        acceptance,
         residuals: MaturityContinuityReportResidual::ALL.to_vec(),
         census: census_of(sources),
         completeness: MaturitySafetyCompleteness::PartialRequiredRowsOutstanding,
-    }
+    })
 }
 
 fn preflight(
@@ -1345,8 +1386,14 @@ fn envelope_agrees(
         Item::SourceOrder => report.entries.iter().enumerate().all(|(position, entry)| entry.position == position),
         Item::TargetBinding => &report.binding == binding,
         Item::ExecutorProvenanceExpectation => &report.provenance == provenance,
-        Item::AcceptanceDisposition => report.acceptance == acceptance_of(sources)
-            && sources.iter().all(|source| source.acceptance_obligation() == report.acceptance),
+        Item::AcceptanceDisposition => {
+            acceptance_of(sources).is_ok_and(|acceptance| acceptance == report.acceptance)
+                && sources.iter().all(|source| {
+                    let obligation = source.acceptance_obligation();
+                    matches!(obligation, MaturityAcceptanceObligation::Outstanding { .. })
+                        || obligation == report.acceptance
+                })
+        }
         Item::AttributionResidual => report.residuals.len() == MaturityContinuityReportResidual::ALL.len()
             && report.residuals.first() == MaturityContinuityReportResidual::ALL.first()
             && sources.iter().all(|source| matches!(source.successor_attribution(), crate::maturity_continuity::MaturitySuccessorAttribution::CommitmentMismatchWithoutCauseAttribution)),
@@ -2148,10 +2195,15 @@ pub fn render_maturity_continuity_report(validated: &ValidatedMaturityContinuity
 mod tests {
     use super::*;
     use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
-    use crate::maturity_continuity::{MaturityProjectionInput, project_maturity_continuity};
-    use crate::maturity_corpus::maturity_run_of_record;
+    use crate::maturity_continuity::{
+        MaturityProjectionInput, project_maturity_continuity,
+        project_maturity_continuity_with_acceptance, submitted_transaction_identities,
+    };
+    use crate::maturity_corpus::{
+        ValidatedMaturityCorpus, maturity_run_of_record, maturity_variable_run_of_record,
+    };
     use crate::maturity_evidence::derive_maturity_evidence_plan_with;
-    use crate::maturity_native::MaturityAnnouncementPlanner;
+    use crate::maturity_native::{MaturityAcceptedReadback, MaturityAnnouncementPlanner};
     use crate::maturity_report::{
         MaturityReportTiming, MaturitySafetyReportRole, MaturityVolatileField,
     };
@@ -2164,6 +2216,7 @@ mod tests {
         ObservedOutcomeLayer, OperationSubject, WireOutpoint,
     };
     use target_elements_conformance::provenance::ExpectedExecutorProvenance;
+    use transaction::bytes::TargetTransaction;
 
     static SOURCES: LazyLock<[ValidatedMaturityContinuity; 2]> = LazyLock::new(derive_sources);
     static BINDING: LazyLock<MaturityTargetBinding> = LazyLock::new(|| {
@@ -2186,6 +2239,7 @@ mod tests {
     }
     fn assembled() -> MaturityContinuityReport {
         assemble_maturity_continuity_report(&references(), BINDING.clone(), provenance())
+            .expect("fixed sources agree on acceptance")
     }
     fn validate(
         report: &MaturityContinuityReport,
@@ -2205,16 +2259,14 @@ mod tests {
         }
     }
 
-    fn archived() -> ValidatedMaturityContinuity {
-        let corpus = maturity_run_of_record().expect("validated archive");
+    fn archived_from(
+        corpus: &ValidatedMaturityCorpus,
+        selection: crate::maturity_closure::MaturityWitnessSelection,
+    ) -> ValidatedMaturityContinuity {
         let identity = corpus.evidence().identity().clone();
         let branch = corpus.evidence().branch();
-        let mut planner = MaturityAnnouncementPlanner::new(
-            identity.clone(),
-            branch,
-            crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
-        )
-        .expect("planner");
+        let mut planner =
+            MaturityAnnouncementPlanner::new(identity.clone(), branch, selection).expect("planner");
         let mut next = planner.next_step(None).expect("issuance");
         for (step, response) in &corpus.exchanges()[..2] {
             assert_eq!(next.as_ref(), Some(step));
@@ -2234,17 +2286,38 @@ mod tests {
         );
         let outputs = &corpus.exchanges()[1].1.funded_outputs;
         assert_eq!(outputs.len(), 1);
-        project_maturity_continuity(MaturityProjectionInput {
-            source: MaturityByteSource::ArchivedSubmission {
-                run_address: corpus.report().run_address().to_owned(),
+        project_maturity_continuity_with_acceptance(
+            MaturityProjectionInput {
+                source: MaturityByteSource::ArchivedSubmission {
+                    run_address: corpus.report().run_address().to_owned(),
+                },
+                submitted_bytes: &submission.transaction_bytes,
+                funded: &funding(&outputs[0]),
+                branch,
+                bundle: planner.bundle(),
+                identity: &identity,
             },
-            submitted_bytes: &submission.transaction_bytes,
-            funded: &funding(&outputs[0]),
-            branch,
-            bundle: planner.bundle(),
-            identity: &identity,
-        })
+            corpus.evidence().acceptance_obligation(),
+        )
         .expect("archived projection")
+    }
+
+    fn archived() -> ValidatedMaturityContinuity {
+        let corpus = maturity_run_of_record().expect("validated archive");
+        archived_from(
+            corpus,
+            crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        )
+    }
+
+    fn accepted_variable_archived() -> ValidatedMaturityContinuity {
+        let corpus = maturity_variable_run_of_record().expect("accepted variable archive");
+        archived_from(
+            corpus,
+            crate::maturity_closure::MaturityWitnessSelection::Retained(
+                StateWitnessSchedule::VariableMetadata,
+            ),
+        )
     }
 
     fn scripted_response(step: &OperationStep) -> NativeOperationResponse {
@@ -2792,7 +2865,8 @@ mod tests {
         let sources = Box::new((archived(), node_free(), variable_node_free()));
         let references = [&sources.0, &sources.1, &sources.2];
         let report =
-            assemble_maturity_continuity_report(&references, BINDING.clone(), provenance());
+            assemble_maturity_continuity_report(&references, BINDING.clone(), provenance())
+                .expect("three sources agree on acceptance");
         let validated =
             validate_maturity_continuity_report(&report, &references, &BINDING, &provenance())
                 .expect("three-source validation");
@@ -2872,7 +2946,8 @@ mod tests {
         let render = |sources: &[ValidatedMaturityContinuity; 2]| {
             let references = [&sources[0], &sources[1]];
             let report =
-                assemble_maturity_continuity_report(&references, BINDING.clone(), provenance());
+                assemble_maturity_continuity_report(&references, BINDING.clone(), provenance())
+                    .expect("independent sources agree on acceptance");
             let validated =
                 validate_maturity_continuity_report(&report, &references, &BINDING, &provenance())
                     .expect("independent validation");
@@ -2906,6 +2981,127 @@ mod tests {
     }
 
     #[test]
+    fn a_report_over_the_three_concrete_sources_establishes_acceptance() {
+        let variable = accepted_variable_archived();
+        let sources = [&SOURCES[0], &SOURCES[1], &variable];
+        let report = assemble_maturity_continuity_report(&sources, BINDING.clone(), provenance())
+            .expect("one established source agrees with outstanding sources");
+        let corpus = maturity_variable_run_of_record().expect("accepted variable archive");
+        let expected = corpus.evidence().acceptance_obligation();
+        assert_eq!(report.acceptance(), expected);
+        let MaturityAcceptanceObligation::Established { readback, .. } = expected else {
+            panic!("archive has established acceptance")
+        };
+        let validated =
+            validate_maturity_continuity_report(&report, &sources, &BINDING, &provenance())
+                .expect("joined acceptance validates");
+        let rendered = render_maturity_continuity_report(&validated);
+        assert!(
+            rendered
+                .lines()
+                .any(|line| line == concat!("acceptance ", "established"))
+        );
+        assert!(
+            rendered
+                .lines()
+                .any(|line| line == "acceptance_schedule variable-metadata")
+        );
+        assert!(rendered.lines().any(|line| {
+            line == format!(
+                "acceptance_identity {}",
+                readback.identity().to_target_display()
+            )
+        }));
+    }
+
+    #[test]
+    fn a_report_over_sources_without_a_claim_stays_outstanding() {
+        let report = assembled();
+        assert!(matches!(
+            report.acceptance(),
+            MaturityAcceptanceObligation::Outstanding { .. }
+        ));
+        let rendered = rendered();
+        assert!(
+            rendered
+                .lines()
+                .any(|line| line == concat!("acceptance ", "outstanding"))
+        );
+        let routes: Vec<_> = rendered
+            .lines()
+            .filter(|line| line.starts_with("acceptance_route "))
+            .collect();
+        assert_eq!(
+            routes,
+            [
+                "acceptance_route RelayWitnessRestructure",
+                "acceptance_route BlockLayerSubmissionSubject",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_stated_acceptance_that_is_not_the_join_fails_validation() {
+        let corpus = maturity_variable_run_of_record().expect("accepted variable archive");
+        let mut report = assembled();
+        report.acceptance = corpus.evidence().acceptance_obligation().clone();
+        assert_eq!(
+            validate(&report).expect_err("acceptance outside the join refuses"),
+            MaturityContinuityReportRefusal::ItemDiffers {
+                item: MaturityContinuityRecomputedItem::AcceptanceDisposition,
+                source_index: None,
+            }
+        );
+    }
+
+    #[test]
+    fn two_established_sources_that_disagree_refuse_assembly() {
+        let variable = accepted_variable_archived();
+        let node = node_free();
+        let transaction = TargetTransaction::decode(node.submitted_bytes()).expect("node bytes");
+        let identities = submitted_transaction_identities(&transaction, node.submitted_bytes());
+        let claim = MaturityAcceptanceObligation::Established {
+            schedule: node.schedule(),
+            identity: identities.identity(),
+            readback: MaturityAcceptedReadback::from_parts(
+                identities.identity(),
+                identities.witness_identity(),
+                [0x42; 32],
+                1,
+                node.submitted_bytes().to_vec(),
+            ),
+        };
+        let claimed_node = project_maturity_continuity_with_acceptance(
+            MaturityProjectionInput {
+                source: node.source().clone(),
+                submitted_bytes: node.submitted_bytes(),
+                funded: node.funded(),
+                branch: node.branch(),
+                bundle: node.bundle(),
+                identity: node.identity(),
+            },
+            &claim,
+        )
+        .expect("node claim matches its own projected bytes");
+        assert_eq!(claimed_node.acceptance_obligation(), claim);
+        assert_ne!(variable.acceptance_obligation(), claim);
+        let sources = [&variable, &claimed_node];
+        let refusal = assemble_maturity_continuity_report(&sources, BINDING.clone(), provenance())
+            .expect_err("different verified acceptances refuse assembly");
+        assert_eq!(
+            refusal,
+            MaturityContinuityReportRefusal::AcceptanceDisagrees {
+                first: 0,
+                second: 1,
+            }
+        );
+        assert_eq!(
+            refusal.failed_item(),
+            MaturityContinuityRecomputedItem::AcceptanceDisposition
+        );
+    }
+
+    #[test]
     fn no_input_shape_can_produce_complete_readback() {
         let both = references();
         for sources in [
@@ -2917,7 +3113,8 @@ mod tests {
             vec![both[1], both[0]],
         ] {
             let report =
-                assemble_maturity_continuity_report(&sources, BINDING.clone(), provenance());
+                assemble_maturity_continuity_report(&sources, BINDING.clone(), provenance())
+                    .expect("outstanding sources agree on acceptance");
             let validated =
                 validate_maturity_continuity_report(&report, &sources, &BINDING, &provenance())
                     .expect("all admitted lengths");

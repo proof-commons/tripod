@@ -3681,7 +3681,8 @@ mod tests {
         .binding()
         .clone();
         let report =
-            assemble_maturity_continuity_report(&sources, binding.clone(), provenance.clone());
+            assemble_maturity_continuity_report(&sources, binding.clone(), provenance.clone())
+                .expect("two archives agree on acceptance");
         let validated =
             validate_maturity_continuity_report(&report, &sources, &binding, &provenance)
                 .expect("two-schedule report validation");

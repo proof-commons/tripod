@@ -2319,7 +2319,8 @@ pub(crate) mod tests {
                 &references,
                 binding.clone(),
                 provenance.clone(),
-            );
+            )
+            .expect("fixed sources agree on acceptance");
             let validated =
                 validate_maturity_continuity_report(&report, &references, binding, provenance)
                     .expect("independent report validation");

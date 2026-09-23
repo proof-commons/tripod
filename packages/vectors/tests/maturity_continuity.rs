@@ -8,10 +8,10 @@
 //! Each refusal changes one input axis and identifies the refusing boundary.
 //!
 //! These host comparisons run no node and submit no transaction.
-//! A projection supplies neither target acceptance nor a row standing.
+//! A projection supplies no target acceptance of its own or row standing.
 //! Caller-stated branch context supplies no root-freshness proof.
-//! Even the accepted archive's host projection retains an unmet acceptance
-//! obligation because that projection makes no target observation.
+//! The accepted archive's projection carries the acceptance established by its
+//! admitted transcript, verified against the projected bytes.
 
 use linker::{CandidateDeploymentIdentity, CandidateLinkedMaturityBundle};
 use realization::{Cycle, announce_maturity};
@@ -38,6 +38,7 @@ use vectors::maturity_closure::{
 use vectors::maturity_continuity::{
     MaturityByteSource, MaturityContinuityRefusal, MaturityFundedPredecessor,
     MaturityProjectionInput, ValidatedMaturityContinuity, project_maturity_continuity,
+    project_maturity_continuity_with_acceptance,
 };
 use vectors::maturity_continuity_report::{
     MaturityContinuityReport, MaturityContinuityReportRefusal, assemble_maturity_continuity_report,
@@ -52,7 +53,9 @@ use vectors::maturity_evidence::{
     MaturityExecutorProvenanceExpectation, MaturityTargetBinding,
     derive_maturity_evidence_plan_with,
 };
-use vectors::maturity_native::{MaturityAcceptanceObligation, MaturityAnnouncementPlanner};
+use vectors::maturity_native::{
+    MaturityAcceptanceObligation, MaturityAcceptanceRoute, MaturityAnnouncementPlanner,
+};
 use vectors::maturity_operator::{OPERATOR_HANDLE, OperatorVerifier};
 
 // --- Owned public sources ------------------------------------------------
@@ -66,6 +69,7 @@ struct Source {
     identity: CandidateDeploymentIdentity,
     branch: BranchContext,
     successor: CandidateStateConstructor,
+    acceptance: MaturityAcceptanceObligation,
 }
 
 impl Source {
@@ -83,7 +87,16 @@ impl Source {
 
     /// Run the public projector over the owned source.
     fn project(&self) -> Result<ValidatedMaturityContinuity, MaturityContinuityRefusal> {
-        project_maturity_continuity(self.input())
+        project_maturity_continuity_with_acceptance(self.input(), &self.acceptance)
+    }
+}
+
+const fn outstanding_acceptance() -> MaturityAcceptanceObligation {
+    MaturityAcceptanceObligation::Outstanding {
+        routes: [
+            MaturityAcceptanceRoute::RelayWitnessRestructure,
+            MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
+        ],
     }
 }
 
@@ -208,6 +221,7 @@ fn node_free() -> Source {
         branch,
         bundle,
         successor,
+        acceptance: outstanding_acceptance(),
     }
 }
 
@@ -263,7 +277,11 @@ fn funded_of(output: &FundedOutput) -> MaturityFundedPredecessor {
 ///
 /// Panics only if an admitted exchange differs from the planner's own next
 /// step, or if its one funding output or submission subject is absent.
-fn archived(corpus: &ValidatedMaturityCorpus, selection: MaturityWitnessSelection) -> Source {
+fn archived(
+    corpus: &ValidatedMaturityCorpus,
+    selection: MaturityWitnessSelection,
+    acceptance: MaturityAcceptanceObligation,
+) -> Source {
     let identity = corpus.evidence().identity().clone();
     let branch = corpus.evidence().branch();
     let mut planner =
@@ -295,6 +313,7 @@ fn archived(corpus: &ValidatedMaturityCorpus, selection: MaturityWitnessSelectio
         bundle: planner.bundle().clone(),
         identity,
         branch,
+        acceptance,
         successor: planner
             .announcement()
             .expect("the replayed planner has an announcement")
@@ -313,6 +332,7 @@ fn archived_whole() -> Source {
     archived(
         maturity_run_of_record().expect("the historical archive validates"),
         MaturityWitnessSelection::retained_whole_metadata(),
+        outstanding_acceptance(),
     )
 }
 
@@ -327,6 +347,7 @@ fn archived_variable() -> Source {
     archived(
         corpus,
         MaturityWitnessSelection::Retained(StateWitnessSchedule::VariableMetadata),
+        corpus.evidence().acceptance_obligation().clone(),
     )
 }
 
@@ -383,7 +404,8 @@ fn checked_report(records: &[ValidatedMaturityContinuity]) -> (MaturityContinuit
     let binding = binding();
     let provenance = provenance();
     let report =
-        assemble_maturity_continuity_report(&references, binding.clone(), provenance.clone());
+        assemble_maturity_continuity_report(&references, binding.clone(), provenance.clone())
+            .expect("three sources agree on acceptance");
     let validated =
         validate_maturity_continuity_report(&report, &references, &binding, &provenance)
             .expect("the assembled report recomputes from the sources");
@@ -609,27 +631,39 @@ fn independently_rebuilt_reports_render_identical_source_bindings() {
 }
 
 #[test]
-fn accepted_archive_projection_and_report_keep_acceptance_outstanding() {
+fn accepted_archive_projection_and_report_establish_acceptance() {
     let records = projections(&sources());
-    for record in &records {
+    for record in &records[..2] {
         assert!(matches!(
             record.acceptance_obligation(),
             MaturityAcceptanceObligation::Outstanding { .. }
         ));
     }
-    let (report, rendered) = checked_report(&records);
+    let corpus = maturity_variable_run_of_record().expect("the variable archive validates");
+    let expected = corpus.evidence().acceptance_obligation();
     assert!(matches!(
-        report.acceptance(),
-        MaturityAcceptanceObligation::Outstanding { .. }
+        records[2].acceptance_obligation(),
+        MaturityAcceptanceObligation::Established { .. }
     ));
+    assert_eq!(&records[2].acceptance_obligation(), expected);
+    let (report, rendered) = checked_report(&records);
+    assert_eq!(report.acceptance(), &records[2].acceptance_obligation());
+    let MaturityAcceptanceObligation::Established { readback, .. } = expected else {
+        panic!("accepted archive establishes acceptance")
+    };
     for exact in [
-        "acceptance outstanding",
-        "acceptance_route RelayWitnessRestructure",
-        "acceptance_route BlockLayerSubmissionSubject",
+        "acceptance established",
+        "acceptance_schedule variable-metadata",
         "completeness partial-required-rows-outstanding",
     ] {
         assert!(rendered.lines().any(|line| line == exact));
     }
+    assert!(rendered.lines().any(|line| {
+        line == format!(
+            "acceptance_identity {}",
+            readback.identity().to_target_display()
+        )
+    }));
     assert!(!rendered.contains("Accepted"));
     assert!(!rendered.contains("Observed"));
 }
@@ -730,7 +764,8 @@ fn reordered_sources_refuse_report_source_order() {
     let binding = binding();
     let provenance = provenance();
     let ordered = [&records[0], &records[1], &records[2]];
-    let report = assemble_maturity_continuity_report(&ordered, binding.clone(), provenance.clone());
+    let report = assemble_maturity_continuity_report(&ordered, binding.clone(), provenance.clone())
+        .expect("three sources agree on acceptance");
     let swapped = [&records[1], &records[0], &records[2]];
     assert_eq!(
         validate_maturity_continuity_report(&report, &swapped, &binding, &provenance),
@@ -744,7 +779,8 @@ fn omitted_source_refuses_report_source_count() {
     let binding = binding();
     let provenance = provenance();
     let ordered = [&records[0], &records[1], &records[2]];
-    let report = assemble_maturity_continuity_report(&ordered, binding.clone(), provenance.clone());
+    let report = assemble_maturity_continuity_report(&ordered, binding.clone(), provenance.clone())
+        .expect("three sources agree on acceptance");
     assert_eq!(
         validate_maturity_continuity_report(&report, &ordered[..2], &binding, &provenance),
         Err(MaturityContinuityReportRefusal::SourceCountDiffers {
