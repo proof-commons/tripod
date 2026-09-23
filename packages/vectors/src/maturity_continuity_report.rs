@@ -12,7 +12,8 @@
 //!
 //! Key order is header, acceptance routes, residuals, census, completeness,
 //! recomputed items, then source entries in input order. Within an entry: source
-//! bindings, transaction sizes, predecessor and successor constructors, leastness,
+//! bindings including the retained witness schedule, transaction sizes,
+//! predecessor and successor constructors, leastness,
 //! static results, semantic results, tweak evidence, controls, class and quantifier.
 //! Each binary operand uses lowercase hexadecimal; text provenance is hex encoded.
 
@@ -22,7 +23,8 @@ use std::fmt::Write as _;
 use linker::{CandidateDeploymentIdentity, StateLinkRefusal};
 use realization::{AnnouncementLeadBounds, Cycle, StateMetadata, StateRepresentationNonce};
 use tapscript::{
-    StateConstructorRefusal, StateControlRecipe, StateFieldCommitment, state_metadata_leaf_program,
+    StateConstructorRefusal, StateControlRecipe, StateFieldCommitment, StateWitnessSchedule,
+    state_metadata_leaf_program,
 };
 use transaction::operator_right::BranchContext;
 use transaction::taproot::leaf_hash;
@@ -375,6 +377,7 @@ impl MaturityContinuitySemanticFacts {
 pub struct MaturityContinuityReportEntry {
     position: usize,
     source: MaturityByteSource,
+    schedule: StateWitnessSchedule,
     byte_identity: [u8; 32],
     funded: MaturityFundedPredecessor,
     branch: BranchContext,
@@ -402,6 +405,11 @@ impl MaturityContinuityReportEntry {
     #[must_use]
     pub const fn source(&self) -> &MaturityByteSource {
         &self.source
+    }
+    /// The transport recipe retained by this byte source.
+    #[must_use]
+    pub const fn schedule(&self) -> StateWitnessSchedule {
+        self.schedule
     }
     /// SHA-256 identity of the exact submitted bytes.
     #[must_use]
@@ -607,6 +615,8 @@ pub enum MaturityContinuityRecomputedItem {
     ExecutorProvenanceExpectation,
     /// Recompute source class.
     SourceClass,
+    /// Recompute the retained witness schedule.
+    Schedule,
     /// Recompute byte identity.
     ByteIdentity,
     /// Recompute funded predecessor.
@@ -818,6 +828,7 @@ impl MaturityContinuityRecomputedItem {
         Self::TargetBinding,
         Self::ExecutorProvenanceExpectation,
         Self::SourceClass,
+        Self::Schedule,
         Self::ByteIdentity,
         Self::FundedPredecessor,
         Self::BranchContext,
@@ -930,6 +941,7 @@ impl MaturityContinuityRecomputedItem {
             Self::TargetBinding => "target-binding",
             Self::ExecutorProvenanceExpectation => "executor-provenance-expectation",
             Self::SourceClass => "source-class",
+            Self::Schedule => "schedule",
             Self::ByteIdentity => "byte-identity",
             Self::FundedPredecessor => "funded-predecessor",
             Self::BranchContext => "branch-context",
@@ -1151,6 +1163,7 @@ fn entry_of(
     MaturityContinuityReportEntry {
         position,
         source: source.source().clone(),
+        schedule: source.schedule(),
         byte_identity: *source.byte_identity(),
         funded: source.funded().clone(),
         branch: source.branch(),
@@ -1358,6 +1371,7 @@ fn entry_agrees_0(
     use MaturityContinuityRecomputedItem as Item;
     Some(match item {
         Item::SourceClass => stated.source == expected.source,
+        Item::Schedule => stated.schedule == expected.schedule,
         Item::ByteIdentity => stated.byte_identity == expected.byte_identity,
         Item::FundedPredecessor => stated.funded == expected.funded,
         Item::BranchContext => stated.branch == expected.branch,
@@ -2030,6 +2044,7 @@ fn render_entry_bindings(text: &mut String, entry: &MaturityContinuityReportEntr
     };
     let _ = writeln!(text, "source_class {class}");
     let _ = writeln!(text, "source_address {address}");
+    let _ = writeln!(text, "schedule {}", entry.schedule.name());
     let _ = writeln!(text, "byte_identity {}", hex(&entry.byte_identity));
     let funded = &entry.funded;
     let _ = writeln!(
@@ -2267,7 +2282,7 @@ mod tests {
         }
     }
 
-    fn node_free() -> ValidatedMaturityContinuity {
+    fn node_free_with_schedule(schedule: StateWitnessSchedule) -> ValidatedMaturityContinuity {
         let mut genesis = [0x22; 32];
         genesis[0] = 0x01;
         genesis[31] = 0xfe;
@@ -2276,7 +2291,7 @@ mod tests {
         let mut planner = MaturityAnnouncementPlanner::new(
             identity.clone(),
             branch,
-            crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+            crate::maturity_closure::MaturityWitnessSelection::Retained(schedule),
         )
         .expect("planner");
         let issue = planner.next_step(None).expect("issuance").expect("step");
@@ -2312,6 +2327,14 @@ mod tests {
         .expect("node-free projection")
     }
 
+    fn node_free() -> ValidatedMaturityContinuity {
+        node_free_with_schedule(StateWitnessSchedule::WholeMetadata)
+    }
+
+    fn variable_node_free() -> ValidatedMaturityContinuity {
+        node_free_with_schedule(StateWitnessSchedule::VariableMetadata)
+    }
+
     fn derive_sources() -> [ValidatedMaturityContinuity; 2] {
         [archived(), node_free()]
     }
@@ -2343,6 +2366,9 @@ mod tests {
             }
             Item::SourceClass => {
                 report.entries[0].source = MaturityByteSource::NodeFreeSubmitReady;
+            }
+            Item::Schedule => {
+                report.entries[0].schedule = StateWitnessSchedule::VariableMetadata;
             }
             Item::ByteIdentity => {
                 report.entries[0].byte_identity[0] ^= 1;
@@ -2762,6 +2788,70 @@ mod tests {
     }
 
     #[test]
+    fn three_sources_render_and_recompute_their_schedules() {
+        let sources = Box::new((archived(), node_free(), variable_node_free()));
+        let references = [&sources.0, &sources.1, &sources.2];
+        let report =
+            assemble_maturity_continuity_report(&references, BINDING.clone(), provenance());
+        let validated =
+            validate_maturity_continuity_report(&report, &references, &BINDING, &provenance())
+                .expect("three-source validation");
+        assert!(
+            validated
+                .recomputed_items()
+                .contains(&MaturityContinuityRecomputedItem::Schedule)
+        );
+        let schedules: Vec<_> = report
+            .entries()
+            .iter()
+            .map(MaturityContinuityReportEntry::schedule)
+            .collect();
+        assert_eq!(
+            schedules,
+            [
+                StateWitnessSchedule::WholeMetadata,
+                StateWitnessSchedule::WholeMetadata,
+                StateWitnessSchedule::VariableMetadata
+            ]
+        );
+        let rendered = render_maturity_continuity_report(&validated);
+        let lines: Vec<_> = rendered
+            .lines()
+            .filter(|line| line.starts_with("schedule "))
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "schedule whole-metadata",
+                "schedule whole-metadata",
+                "schedule variable-metadata"
+            ]
+        );
+    }
+
+    #[test]
+    fn altered_entry_schedule_refuses_schedule_item() {
+        let mut report = assembled();
+        report.entries[0].schedule = StateWitnessSchedule::VariableMetadata;
+        assert_eq!(
+            validate(&report).expect_err("altered schedule refuses"),
+            MaturityContinuityReportRefusal::ItemDiffers {
+                item: MaturityContinuityRecomputedItem::Schedule,
+                source_index: Some(0),
+            }
+        );
+    }
+
+    #[test]
+    fn recomputation_inventory_has_108_distinct_names() {
+        let items = MaturityContinuityRecomputedItem::ALL;
+        assert_eq!(items.len(), 108);
+        let names: BTreeSet<_> = items.iter().map(|item| item.name()).collect();
+        assert_eq!(names.len(), items.len());
+        assert!(names.contains("schedule"));
+    }
+
+    #[test]
     fn validation_records_the_complete_item_census() {
         let validated = validate(&assembled()).expect("validation");
         let expected: BTreeSet<_> = MaturityContinuityRecomputedItem::ALL
@@ -2769,7 +2859,7 @@ mod tests {
             .copied()
             .collect();
         assert_eq!(validated.recomputed_items(), &expected);
-        assert_eq!(expected.len(), 107);
+        assert_eq!(expected.len(), 108);
         let names: BTreeSet<_> = expected.iter().map(|item| item.name()).collect();
         assert_eq!(names.len(), expected.len());
         assert!(names.iter().all(|name| !name.is_empty()));
@@ -2872,7 +2962,7 @@ mod tests {
                 unreachable += 1;
             }
         }
-        assert_eq!((altered, unreachable), (79, 28));
+        assert_eq!((altered, unreachable), (80, 28));
     }
 
     fn compound_mutations() -> Vec<(MaturityContinuityRecomputedItem, MaturityContinuityReport)> {
@@ -3322,6 +3412,7 @@ mod tests {
             "source_index",
             "source_class",
             "source_address",
+            "schedule",
             "byte_identity",
             "funded_outpoint",
             "funded_asset",

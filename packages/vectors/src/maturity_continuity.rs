@@ -5,6 +5,11 @@
 //! Static byte bindings, whole retained-descriptor equality and semantic comparisons are separate results. Reusing one retained tree on both sides states the descriptor equality's premise; a matching root alone establishes neither descriptor identity nor hidden-subtree contents. The successor field comparison checks reconstruction consistency, not an independently observed semantic tuple. A different successor commitment is refused without attributing its cause to a semantic change or another static tree.
 //!
 //! Fixed-nonce reconstruction and host leastness are separate evidence. These projections verify no signature, authenticate no branch freshness and establish no accepted readback. Acceptance remains an outstanding obligation, and experimental byte mutations answer no matrix row.
+//!
+//! The retained witness schedule supplies the reconstruction recipe. Legalization
+//! checks its carried width against the observed item; variable metadata is
+//! rebuilt with the codec's constants before strict decoding. The same byte
+//! bindings then compare the linked leaf and control path.
 
 use linker::{
     CandidateDeploymentIdentity, CandidateLinkedMaturityBundle, StateLinkRefusal,
@@ -12,15 +17,17 @@ use linker::{
 };
 use realization::{
     AnnouncementLeadBounds, Cycle, EncodedStateMetadata, Maturity, MaturityTransitionRefusal,
-    StateField, StateMetadata, StateMetadataRefusal, StateRepresentationNonce, TransactionSide,
-    announce_maturity, decode_state_metadata, encode_state_metadata,
+    STATE_METADATA_BYTES, STATE_METADATA_LAYOUT, STATE_METADATA_VARIABLE_BYTES, StateField,
+    StateMetadata, StateMetadataRefusal, StateRepresentationNonce, TransactionSide,
+    announce_maturity, decode_state_metadata, encode_state_metadata, rebuild_state_metadata,
 };
 use tapscript::{
     CandidateStateConstructor, StateConstructorRefusal, StateControlRecipe, StateCurveCapability,
     StateFieldCommitment, StateLeafRole, StateNonceEvidence, StateStaticSubtree, StateTweakOutcome,
-    state_metadata_leaf_program, state_output_program_at_nonce,
+    StateWitnessLegalization, StateWitnessLoweringRefusal, StateWitnessSchedule,
+    legalize_state_witness_schedule, state_metadata_leaf_program, state_output_program_at_nonce,
 };
-use target_elements::ReviewedElementsTapscriptDefinition;
+use target_elements::{ResourceBound, ResourceDimension, ReviewedElementsTapscriptDefinition};
 use target_elements_conformance::constructor::tagged::sha256;
 use transaction::bytes::{AssetId, Outpoint, TargetTransaction};
 use transaction::error::TransactionRefusal;
@@ -453,6 +460,11 @@ pub enum MaturityContinuityRefusal {
         /// The observed width.
         actual: usize,
     },
+    /// The reviewed target could not lower the retained witness schedule.
+    ///
+    /// The two reviewed schedules and canonical layout fit this target's bound;
+    /// a caller cannot alter those premises.
+    WitnessLowering(Box<StateWitnessLoweringRefusal>),
     /// The decoded input spends another outpoint than the funding evidence names.
     SpentOutpoint {
         /// The input's outpoint.
@@ -531,9 +543,18 @@ impl MaturityContinuityRefusal {
 type Refusal = MaturityContinuityRefusal;
 type ProjectionResult<T> = Result<T, Refusal>;
 
-const WIDTHS: [usize; 7] = [1, 4, 8, 32, 86, 1, 64];
+const fn declared_widths(schedule: StateWitnessSchedule) -> [usize; 7] {
+    let metadata = match schedule {
+        StateWitnessSchedule::WholeMetadata => STATE_METADATA_BYTES,
+        StateWitnessSchedule::VariableMetadata => STATE_METADATA_VARIABLE_BYTES,
+    };
+    [1, 4, 8, 32, metadata, 1, 64]
+}
 
-fn witness(transaction: &TargetTransaction) -> ProjectionResult<&[Vec<u8>]> {
+fn witness(
+    transaction: &TargetTransaction,
+    schedule: StateWitnessSchedule,
+) -> ProjectionResult<&[Vec<u8>]> {
     if transaction.inputs().len() != 1 {
         return Err(Refusal::InputCount {
             actual: transaction.inputs().len(),
@@ -551,7 +572,7 @@ fn witness(transaction: &TargetTransaction) -> ProjectionResult<&[Vec<u8>]> {
             actual: stack.len(),
         });
     }
-    for (index, (item, expected)) in stack.iter().zip(WIDTHS).enumerate() {
+    for (index, (item, expected)) in stack.iter().zip(declared_widths(schedule)).enumerate() {
         if item.len() != expected {
             return Err(Refusal::WitnessWidth {
                 index,
@@ -563,10 +584,51 @@ fn witness(transaction: &TargetTransaction) -> ProjectionResult<&[Vec<u8>]> {
     Ok(stack)
 }
 
+fn carried_width(legalization: &StateWitnessLegalization) -> usize {
+    match legalization {
+        StateWitnessLegalization::Whole { width } => *width,
+        StateWitnessLegalization::ExpandFromVariable { range, .. } => range.len(),
+    }
+}
+
 fn fixed_bytes<const N: usize>(bytes: &[u8]) -> [u8; N] {
     let mut result = [0; N];
     result.copy_from_slice(bytes);
     result
+}
+
+fn decoded_witness_metadata(
+    stack: &[Vec<u8>],
+    schedule: StateWitnessSchedule,
+    target: &ReviewedElementsTapscriptDefinition,
+) -> ProjectionResult<EncodedStateMetadata> {
+    let bound = target
+        .definition()
+        .resources()
+        .policy()
+        .bounds()
+        .get(&ResourceDimension::InitialWitnessItemBytes)
+        .copied()
+        .unwrap_or(ResourceBound::Maximum(0));
+    let legalization = legalize_state_witness_schedule(schedule, &STATE_METADATA_LAYOUT, bound)
+        .map_err(|error| Refusal::WitnessLowering(Box::new(error)))?;
+    let expected = carried_width(&legalization);
+    debug_assert_eq!(expected, declared_widths(schedule)[4]);
+    if stack[4].len() != expected {
+        return Err(Refusal::WitnessWidth {
+            index: 4,
+            expected,
+            actual: stack[4].len(),
+        });
+    }
+    let metadata_bytes = match legalization {
+        StateWitnessLegalization::Whole { .. } => stack[4].clone(),
+        StateWitnessLegalization::ExpandFromVariable { .. } => {
+            rebuild_state_metadata(&fixed_bytes::<STATE_METADATA_VARIABLE_BYTES>(&stack[4]))
+                .to_vec()
+        }
+    };
+    decode_state_metadata(&metadata_bytes).map_err(|error| Refusal::MetadataDecode(Box::new(error)))
 }
 
 fn retained_context(
@@ -1532,7 +1594,8 @@ pub fn project_maturity_continuity(
 ) -> Result<ValidatedMaturityContinuity, MaturityContinuityRefusal> {
     let transaction = TargetTransaction::decode(input.submitted_bytes)
         .map_err(|error| Refusal::Decode(Box::new(error)))?;
-    let stack = witness(&transaction)?;
+    let schedule = input.bundle.record().schedule();
+    let stack = witness(&transaction, schedule)?;
     let decoded = transaction.inputs()[0].outpoint();
     if decoded != input.funded.outpoint {
         return Err(Refusal::SpentOutpoint {
@@ -1540,10 +1603,9 @@ pub fn project_maturity_continuity(
             funded: input.funded.outpoint,
         });
     }
-    let metadata = decode_state_metadata(&stack[4])
-        .map_err(|error| Refusal::MetadataDecode(Box::new(error)))?;
-    retained_context(&input, metadata)?;
     let target = closure_target().map_err(|error| Refusal::Target(Box::new(error)))?;
+    let metadata = decoded_witness_metadata(stack, schedule, &target)?;
+    retained_context(&input, metadata)?;
     let predecessor = reconstruct(&target, metadata, input.bundle, TransactionSide::Input)?;
     predecessor_program(predecessor.output_program(), &input.funded.program)?;
     let predecessor_leastness = leastness(
@@ -1892,6 +1954,11 @@ impl ValidatedMaturityContinuity {
     pub const fn bundle(&self) -> &CandidateLinkedMaturityBundle {
         &self.bundle
     }
+    /// The witness transport retained by the source's constructor recipe.
+    #[must_use]
+    pub const fn schedule(&self) -> StateWitnessSchedule {
+        self.bundle.record().schedule()
+    }
     /// The recipe's lead bounds used by the realization.
     #[must_use]
     pub const fn bounds(&self) -> AnnouncementLeadBounds {
@@ -2122,62 +2189,77 @@ mod tests {
         }
     }
 
+    fn node_free_with_schedule(schedule: StateWitnessSchedule) -> Source {
+        let mut genesis = [0x22; 32];
+        genesis[0] = 0x01;
+        genesis[31] = 0xfe;
+        let identity = CandidateDeploymentIdentity::new([0x17; 32], genesis).expect("identity");
+        let branch = BranchContext::new([0x41; 32], 7).expect("branch");
+        let mut planner = MaturityAnnouncementPlanner::new(
+            identity.clone(),
+            branch,
+            crate::maturity_closure::MaturityWitnessSelection::Retained(schedule),
+        )
+        .expect("planner");
+        let issue = planner.next_step(None).expect("issue").expect("step");
+        let issued = scripted_response(&issue);
+        issued.validate_shape().expect("issuance shape");
+        let funding = planner
+            .next_step(Some((issue.case(), &issued)))
+            .expect("funding")
+            .expect("step");
+        let response = scripted_response(&funding);
+        response.validate_shape().expect("funding shape");
+        let submission = planner
+            .next_step(Some((funding.case(), &response)))
+            .expect("submission")
+            .expect("step");
+        let OperationSubject::Submission(subject) = submission.subject() else {
+            panic!("submission")
+        };
+        assert_eq!(
+            planner.submission_bytes(),
+            Some(subject.transaction_bytes.as_slice())
+        );
+        Source {
+            origin: MaturityByteSource::NodeFreeSubmitReady,
+            bytes: subject.transaction_bytes.clone(),
+            funded: coin(&response.funded_outputs[0]),
+            bundle: planner.bundle().clone(),
+            identity,
+            branch,
+            planner_successor: planner
+                .announcement()
+                .expect("announcement")
+                .construction()
+                .successor_constructor()
+                .clone(),
+        }
+    }
+
     fn node_free() -> &'static Source {
-        static SOURCE: LazyLock<Source> = LazyLock::new(|| {
-            let mut genesis = [0x22; 32];
-            genesis[0] = 0x01;
-            genesis[31] = 0xfe;
-            let identity = CandidateDeploymentIdentity::new([0x17; 32], genesis).expect("identity");
-            let branch = BranchContext::new([0x41; 32], 7).expect("branch");
-            let mut planner = MaturityAnnouncementPlanner::new(
-                identity.clone(),
-                branch,
-                crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
-            )
-            .expect("planner");
-            let issue = planner.next_step(None).expect("issue").expect("step");
-            let issued = scripted_response(&issue);
-            issued.validate_shape().expect("issuance shape");
-            let funding = planner
-                .next_step(Some((issue.case(), &issued)))
-                .expect("funding")
-                .expect("step");
-            let response = scripted_response(&funding);
-            response.validate_shape().expect("funding shape");
-            let submission = planner
-                .next_step(Some((funding.case(), &response)))
-                .expect("submission")
-                .expect("step");
-            let OperationSubject::Submission(subject) = submission.subject() else {
-                panic!("submission")
-            };
-            assert_eq!(
-                planner.submission_bytes(),
-                Some(subject.transaction_bytes.as_slice())
-            );
-            Source {
-                origin: MaturityByteSource::NodeFreeSubmitReady,
-                bytes: subject.transaction_bytes.clone(),
-                funded: coin(&response.funded_outputs[0]),
-                bundle: planner.bundle().clone(),
-                identity,
-                branch,
-                planner_successor: planner
-                    .announcement()
-                    .expect("announcement")
-                    .construction()
-                    .successor_constructor()
-                    .clone(),
-            }
-        });
+        static SOURCE: LazyLock<Source> =
+            LazyLock::new(|| node_free_with_schedule(StateWitnessSchedule::WholeMetadata));
+        &SOURCE
+    }
+
+    fn variable_node_free() -> &'static Source {
+        static SOURCE: LazyLock<Source> =
+            LazyLock::new(|| node_free_with_schedule(StateWitnessSchedule::VariableMetadata));
         &SOURCE
     }
 
     fn positive(source: &Source) -> ValidatedMaturityContinuity {
         let record = source.project().expect("byte projection");
         let target = closure_target().expect("target");
-        let encoded = decode_state_metadata(&record.transaction().witnesses()[0].stack()[4])
-            .expect("metadata");
+        let item = &record.transaction().witnesses()[0].stack()[4];
+        let canonical = match record.schedule() {
+            StateWitnessSchedule::WholeMetadata => item.clone(),
+            StateWitnessSchedule::VariableMetadata => {
+                rebuild_state_metadata(&fixed_bytes::<STATE_METADATA_VARIABLE_BYTES>(item)).to_vec()
+            }
+        };
+        let encoded = decode_state_metadata(&canonical).expect("metadata");
         assert_eq!(record.predecessor().encoded_metadata(), &encoded);
         assert_eq!(encoded.semantic.cycle, Cycle::new(5));
         assert_eq!(
@@ -3134,6 +3216,142 @@ mod tests {
     }
 
     #[test]
+    fn variable_node_free_source_projects_with_rebuilt_metadata() {
+        let source = variable_node_free();
+        let record = positive(source);
+        assert_eq!(record.schedule(), StateWitnessSchedule::VariableMetadata);
+        assert_eq!(record.source(), &MaturityByteSource::NodeFreeSubmitReady);
+        assert_eq!(
+            record.transaction().witnesses()[0].stack()[4].len(),
+            STATE_METADATA_VARIABLE_BYTES
+        );
+        assert!(record.static_comparison().static_root().agrees());
+        assert!(record.static_comparison().control_block().agrees());
+        assert!(record.semantic_comparison().transition_agrees());
+        assert_eq!(
+            record.semantic_comparison().reconstruction_agrees(),
+            Some(true)
+        );
+        report_observed("variable-node-free", &record);
+    }
+
+    #[test]
+    fn whole_item_under_variable_bundle_refuses_witness_width() {
+        let mut source = node_free().clone();
+        source.bundle = variable_node_free().bundle.clone();
+        assert_eq!(
+            source.project(),
+            Err(Refusal::WitnessWidth {
+                index: 4,
+                expected: STATE_METADATA_VARIABLE_BYTES,
+                actual: STATE_METADATA_BYTES,
+            })
+        );
+    }
+
+    #[test]
+    fn variable_item_under_whole_bundle_refuses_witness_width() {
+        let mut source = variable_node_free().clone();
+        source.bundle = node_free().bundle.clone();
+        assert_eq!(
+            source.project(),
+            Err(Refusal::WitnessWidth {
+                index: 4,
+                expected: STATE_METADATA_BYTES,
+                actual: STATE_METADATA_VARIABLE_BYTES,
+            })
+        );
+    }
+
+    #[test]
+    fn carried_width_agrees_with_legalization_for_both_schedules() {
+        let target = closure_target().expect("target");
+        let bound = target
+            .definition()
+            .resources()
+            .policy()
+            .bounds()
+            .get(&ResourceDimension::InitialWitnessItemBytes)
+            .copied()
+            .expect("initial item bound");
+        for source in [node_free(), variable_node_free()] {
+            let schedule = source.bundle.record().schedule();
+            let legalization =
+                legalize_state_witness_schedule(schedule, &STATE_METADATA_LAYOUT, bound)
+                    .expect("reviewed legalization");
+            let observed = TargetTransaction::decode(&source.bytes)
+                .expect("transaction")
+                .witnesses()[0]
+                .stack()[4]
+                .len();
+            assert_eq!(carried_width(&legalization), declared_widths(schedule)[4]);
+            assert_eq!(observed, carried_width(&legalization));
+        }
+    }
+
+    #[test]
+    fn variable_rebuild_matches_retained_constructor_and_round_trips() {
+        let source = variable_node_free();
+        let transaction = TargetTransaction::decode(&source.bytes).expect("transaction");
+        let carried =
+            fixed_bytes::<STATE_METADATA_VARIABLE_BYTES>(&transaction.witnesses()[0].stack()[4]);
+        let rebuilt = rebuild_state_metadata(&carried);
+        assert_eq!(
+            rebuilt.as_slice(),
+            source.bundle.instances()[0].constructor().metadata_bytes()
+        );
+        assert_eq!(
+            realization::state_metadata_variable_region(&rebuilt),
+            carried
+        );
+        assert_eq!(
+            decode_state_metadata(&rebuilt).expect("strict metadata"),
+            *source.bundle.instances()[0].metadata()
+        );
+    }
+
+    #[test]
+    fn invalid_variable_maturity_tag_refuses_metadata_decode() {
+        let source = variable_node_free();
+        let mutant = changed_stack(source, "variable metadata maturity tag", |stack| {
+            let offset = STATE_METADATA_LAYOUT[7].range.start
+                - realization::STATE_METADATA_VARIABLE_RANGE.start;
+            stack[4][offset] = u8::MAX;
+        });
+        assert_eq!(
+            mutant.project(source),
+            Err(Refusal::MetadataDecode(Box::new(
+                StateMetadataRefusal::UnknownMaturityDiscriminant
+            )))
+        );
+    }
+
+    #[test]
+    fn variable_leaf_and_control_bindings_refuse_mutations() {
+        let source = variable_node_free();
+        let record = positive(source);
+        assert!(record.diagnostics().leaf_script().expect("leaf").agrees());
+        assert!(
+            record
+                .diagnostics()
+                .control_block()
+                .expect("control")
+                .agrees()
+        );
+        let leaf = changed_stack(source, "variable announcement leaf", |stack| {
+            stack[7][0] ^= 1;
+        });
+        assert!(matches!(leaf.project(source), Err(Refusal::LeafScript(_))));
+        let control = changed_stack(source, "variable announcement control", |stack| {
+            stack[8][0] ^= 1;
+        });
+        assert!(matches!(
+            control.project(source),
+            Err(Refusal::ControlBlock(_))
+        ));
+    }
+
+    #[test]
     fn submitted_bytes_round_trip_exactly() {
         for source in [archived(), node_free()] {
             let transaction = TargetTransaction::decode(&source.bytes).expect("decode");
@@ -3194,7 +3412,10 @@ mod tests {
     #[test]
     fn all_seven_witness_widths_are_checked() {
         let source = archived();
-        for (index, expected) in WIDTHS.into_iter().enumerate() {
+        for (index, expected) in declared_widths(source.bundle.record().schedule())
+            .into_iter()
+            .enumerate()
+        {
             let mutant = changed_stack(source, "fixed-width witness item", |stack| {
                 stack[index].pop();
             });
@@ -3824,6 +4045,9 @@ mod tests {
             | Refusal::OutputCount { .. }
             | Refusal::WitnessItemCount { .. } => "transaction_shape_is_refused",
             Refusal::WitnessWidth { .. } => "all_seven_witness_widths_are_checked",
+            Refusal::WitnessLowering(_) => {
+                "unreachable: the reviewed target's initial-item bound admits both retained schedules"
+            }
             Refusal::SpentOutpoint { .. } => "wrong_funded_outpoint_is_refused",
             Refusal::MetadataDecode(_) => "metadata_codec_refusal_is_preserved",
             Refusal::RetainedContext { .. } => {
@@ -3892,6 +4116,9 @@ mod tests {
                 expected: 1,
                 actual: 0,
             },
+            Refusal::WitnessLowering(Box::new(
+                StateWitnessLoweringRefusal::VariableRowsNotContiguous,
+            )),
             Refusal::SpentOutpoint {
                 decoded: source.funded.outpoint,
                 funded: source.funded.outpoint,
@@ -3927,7 +4154,7 @@ mod tests {
             Refusal::SuccessorPrefix(diagnostics),
             Refusal::SuccessorSearch(constructor),
         ];
-        assert_eq!(refusals.len(), 26);
+        assert_eq!(refusals.len(), 27);
         for refusal in refusals {
             assert_ne!(reachability(&refusal).len(), 0);
         }

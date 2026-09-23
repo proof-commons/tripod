@@ -1377,6 +1377,7 @@ const fn continuity_refusal_name(refusal: &MaturityContinuityRefusal) -> &'stati
         Refusal::OutputCount { .. } => "OutputCount",
         Refusal::WitnessItemCount { .. } => "WitnessItemCount",
         Refusal::WitnessWidth { .. } => "WitnessWidth",
+        Refusal::WitnessLowering(_) => "WitnessLowering",
         Refusal::SpentOutpoint { .. } => "SpentOutpoint",
         Refusal::MetadataDecode(_) => "MetadataDecode",
         Refusal::RetainedContext { .. } => "RetainedContext",

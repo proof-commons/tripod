@@ -74,6 +74,14 @@
 //! by those ordinals; once it keys to this matrix, the wording will have
 //! one home here and the registry will carry fixtures rather than a
 //! second copy of the names.
+//!
+//! # Metadata carrier moves
+//!
+//! Under the variable witness schedule, the witness carries neither the
+//! constant header nor reserved zeros. The leaf re-materializes them before
+//! the existing checks. The ABI still refuses non-canonical encodings at
+//! construction, so the declared boundary stays with each row even though
+//! its byte carrier moves.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -326,6 +334,62 @@ pub enum MaturityIntendedCarrier {
     /// The typed request and response records of the conformance
     /// protocol.
     TypedProtocolExchange,
+}
+
+/// The source of fixed metadata bytes restored by a variable-schedule leaf.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityReMaterializedCarrier {
+    /// The linker-resolved constant metadata header.
+    LeafHeaderSymbol,
+    /// The leaf's literal reserved zeros.
+    LeafReservedLiteral,
+}
+
+/// One metadata fault whose fixed bytes move from witness to leaf.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaturityCarrierMove {
+    row: &'static str,
+    whole_carrier: MaturityIntendedCarrier,
+    variable_carrier: MaturityReMaterializedCarrier,
+    boundary: MaturityRowBoundary,
+}
+
+impl MaturityCarrierMove {
+    const fn from_row(
+        row: &MaturitySafetyRow,
+        variable_carrier: MaturityReMaterializedCarrier,
+    ) -> Self {
+        Self {
+            row: row.name(),
+            whole_carrier: row.carrier(),
+            variable_carrier,
+            boundary: row.boundary(),
+        }
+    }
+
+    /// The matrix row whose changed bytes moved.
+    #[must_use]
+    pub const fn row(&self) -> &'static str {
+        self.row
+    }
+
+    /// The carrier named by the whole-schedule matrix row.
+    #[must_use]
+    pub const fn whole_carrier(&self) -> MaturityIntendedCarrier {
+        self.whole_carrier
+    }
+
+    /// The source of those bytes in the variable-schedule leaf.
+    #[must_use]
+    pub const fn variable_carrier(&self) -> MaturityReMaterializedCarrier {
+        self.variable_carrier
+    }
+
+    /// The unchanged declared refusal boundary copied from the row.
+    #[must_use]
+    pub const fn boundary(&self) -> MaturityRowBoundary {
+        self.boundary
+    }
 }
 
 /// The accepted control a row's mutant departs from.
@@ -3284,6 +3348,42 @@ pub const fn rows() -> &'static [MaturitySafetyRow] {
     MATURITY_SAFETY_ROWS
 }
 
+/// Read the two fixed-metadata carrier moves from their matrix rows.
+///
+/// The row table owns each whole carrier and declared boundary. The
+/// variable leaf supplies the constant header by symbol and reserved zeros
+/// by literal before the same checks run.
+#[must_use]
+pub fn carrier_moves() -> [MaturityCarrierMove; 2] {
+    let mut moves = [
+        MaturityCarrierMove::from_row(&rows()[0], MaturityReMaterializedCarrier::LeafHeaderSymbol),
+        MaturityCarrierMove::from_row(
+            &rows()[0],
+            MaturityReMaterializedCarrier::LeafReservedLiteral,
+        ),
+    ];
+    for row in rows() {
+        match row.name() {
+            "wrong-domain-separator" => {
+                moves[0] = MaturityCarrierMove::from_row(
+                    row,
+                    MaturityReMaterializedCarrier::LeafHeaderSymbol,
+                );
+            }
+            "nonzero-reserved-field" => {
+                moves[1] = MaturityCarrierMove::from_row(
+                    row,
+                    MaturityReMaterializedCarrier::LeafReservedLiteral,
+                );
+            }
+            _ => {}
+        }
+    }
+    debug_assert_eq!(moves[0].row(), "wrong-domain-separator");
+    debug_assert_eq!(moves[1].row(), "nonzero-reserved-field");
+    moves
+}
+
 /// Every row of one §16 table.
 pub fn rows_of(section: MaturitySafetySection) -> impl Iterator<Item = &'static MaturitySafetyRow> {
     rows().iter().filter(move |row| row.section() == section)
@@ -3429,7 +3529,7 @@ mod tests {
         MaturityRowLink, MaturitySafetyPolarity, MaturitySafetyRow, MaturitySafetySection,
         ObjectId, Projection, RelationId, RelationSubject, S, SponsorCase, Standing,
         TargetCoverageObligation, ValidatedMaturityAnnouncementOperationPlan, Why, boundary_admits,
-        census, resolve_row, row_count, rows, rows_of,
+        carrier_moves, census, resolve_row, row_count, rows, rows_of,
     };
     use crate::observed_boundary::{matches_boundary, observed_boundary};
     use std::collections::{BTreeMap, BTreeSet};
@@ -3608,6 +3708,46 @@ mod tests {
         assert_eq!(row_count(), 206);
         assert_eq!(census.values().sum::<usize>(), row_count());
         assert_eq!(census.len(), MaturitySafetySection::ALL.len());
+    }
+
+    #[test]
+    fn carrier_moves_copy_the_named_metadata_rows() {
+        let moves = carrier_moves();
+        let names = ["wrong-domain-separator", "nonzero-reserved-field"];
+        let variable_carriers = [
+            super::MaturityReMaterializedCarrier::LeafHeaderSymbol,
+            super::MaturityReMaterializedCarrier::LeafReservedLiteral,
+        ];
+        for ((movement, name), variable_carrier) in moves.iter().zip(names).zip(variable_carriers) {
+            let matching: Vec<_> = rows().iter().filter(|row| row.name() == name).collect();
+            assert_eq!(matching.len(), 1);
+            let row = matching[0];
+            assert_eq!(movement.row(), row.name());
+            assert_eq!(movement.whole_carrier(), row.carrier());
+            assert_eq!(movement.variable_carrier(), variable_carrier);
+            assert_eq!(movement.boundary(), row.boundary());
+            assert_eq!(movement.whole_carrier(), C::AnnouncementLeaf);
+            assert_eq!(
+                movement.boundary(),
+                Bound::Layer(B::AbiConstructionRejection)
+            );
+        }
+    }
+
+    #[test]
+    fn carrier_moves_leave_the_matrix_census_and_rendering_unchanged() {
+        let before_rows = rows().to_vec();
+        let before_rendering: Vec<_> = rows().iter().map(ToString::to_string).collect();
+        let before_census = census();
+        let _moves = carrier_moves();
+        assert_eq!(rows(), before_rows);
+        assert_eq!(
+            rows().iter().map(ToString::to_string).collect::<Vec<_>>(),
+            before_rendering
+        );
+        assert_eq!(census(), before_census);
+        assert_eq!(row_count(), 206);
+        assert_eq!(census().len(), 13);
     }
 
     #[test]
