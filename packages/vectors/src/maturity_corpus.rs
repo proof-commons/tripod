@@ -1,6 +1,8 @@
-//! Strict admission and planner replay of the maturity announcement run of record.
+//! Pinned four-file admission and planner replay of maturity announcement runs.
 //!
-//! File addresses bind the archive before its closed grammars are interpreted. The planner settles the recorded exchanges before any row standing is read. Recorded subjects are decoded before replay reconstructs and compares every request. The relay boundary answers one row while acceptance and root freshness remain outstanding.
+//! Names, sizes and addresses bind each archive before its closed grammars are interpreted. The historical refused loader is one set of pins; an accepted corpus uses the same bindings and exact replay with its own schedule and sponsorless expectation.
+//!
+//! An accepted payload carries mined readback beside the capture's request bytes, verdict, layer, target identity and detail. Replay checks the reconstructed response against the submitted transaction. This establishes transcript consistency under the schedule, not executor provenance, current-root freshness or a promoted standing.
 
 use std::fmt::Write as _;
 use std::sync::OnceLock;
@@ -9,9 +11,10 @@ use linker::CandidateDeploymentIdentity;
 use target_elements_conformance::constructor::tagged;
 use target_elements_conformance::executor::OperationStep;
 use target_elements_conformance::protocol::{
-    NativeOperationResponse, ObservedOutcomeLayer, OperationSubject, TargetFundingSubject,
-    TargetSubmissionSubject,
+    MinedFundingReadback, NativeOperationResponse, ObservedOutcomeLayer, OperationSubject,
+    TargetFundingSubject, TargetSubmissionSubject,
 };
+use transaction::bytes::Txid;
 use transaction::operator_right::BranchContext;
 
 use crate::maturity_closure::MaturityWitnessSelection;
@@ -34,31 +37,156 @@ pub const MATURITY_RUN_ADDRESS: &str =
 
 const CEREMONY_SHA256: &str = "d48e105b85708cd8edadbe423ed020c48fdbe1c0225f67724ff6f68449d25515";
 
+/// One named file supplied to the four-file maturity corpus admission.
 #[derive(Clone, Copy)]
-struct ArchiveFile<'a> {
+pub struct MaturityArchiveFile<'a> {
     name: &'a str,
     bytes: &'a [u8],
 }
 
-const FILES: [ArchiveFile<'static>; 4] = [
-    ArchiveFile {
+impl<'a> MaturityArchiveFile<'a> {
+    /// Binds a file name to its exact bytes for admission.
+    #[must_use]
+    pub const fn new(name: &'a str, bytes: &'a [u8]) -> Self {
+        Self { name, bytes }
+    }
+
+    /// The name used by the ordered census and manifest.
+    #[must_use]
+    pub const fn name(&self) -> &'a str {
+        self.name
+    }
+
+    /// The exact bytes to admit.
+    #[must_use]
+    pub const fn bytes(&self) -> &'a [u8] {
+        self.bytes
+    }
+}
+
+const FILES: [MaturityArchiveFile<'static>; 4] = [
+    MaturityArchiveFile {
         name: "3a690139.report.capture",
         bytes: include_bytes!("../fixtures/maturity-run-of-record/3a690139.report.capture"),
     },
-    ArchiveFile {
+    MaturityArchiveFile {
         name: "3a690139.report.capture.timing",
         bytes: include_bytes!("../fixtures/maturity-run-of-record/3a690139.report.capture.timing"),
     },
-    ArchiveFile {
+    MaturityArchiveFile {
         name: "MANIFEST.sha256",
         bytes: include_bytes!("../fixtures/maturity-run-of-record/MANIFEST.sha256"),
     },
-    ArchiveFile {
+    MaturityArchiveFile {
         name: "RUN-REPORT",
         bytes: include_bytes!("../fixtures/maturity-run-of-record/RUN-REPORT"),
     },
 ];
 const FILE_SIZES: [usize; 4] = [31_153, 49, 187, 1_927];
+
+/// The expected outcome of the sponsorless operation in a pinned corpus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturitySponsorlessExpectation {
+    /// A relay refusal with its exact recorded response detail.
+    RelayRefusal { detail: &'static str },
+    /// An accepted submission with a mined readback carried in the payload.
+    Acceptance,
+}
+
+/// The addresses and declaration that bind one immutable four-file corpus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaturityCorpusPins<'a> {
+    schedule: tapscript::StateWitnessSchedule,
+    names: [&'a str; 4],
+    sizes: [usize; 4],
+    manifest_sha256: &'a str,
+    run_address: &'a str,
+    ceremony_sha256: &'a str,
+    sponsorless: MaturitySponsorlessExpectation,
+}
+
+impl<'a> MaturityCorpusPins<'a> {
+    /// Collects the ordered file pins and sponsorless declaration.
+    #[must_use]
+    pub const fn new(
+        schedule: tapscript::StateWitnessSchedule,
+        names: [&'a str; 4],
+        sizes: [usize; 4],
+        manifest_sha256: &'a str,
+        run_address: &'a str,
+        ceremony_sha256: &'a str,
+        sponsorless: MaturitySponsorlessExpectation,
+    ) -> Self {
+        Self {
+            schedule,
+            names,
+            sizes,
+            manifest_sha256,
+            run_address,
+            ceremony_sha256,
+            sponsorless,
+        }
+    }
+
+    /// The schedule used for exact request replay.
+    #[must_use]
+    pub const fn schedule(&self) -> tapscript::StateWitnessSchedule {
+        self.schedule
+    }
+
+    /// The ordered file names.
+    #[must_use]
+    pub const fn names(&self) -> &[&'a str; 4] {
+        &self.names
+    }
+
+    /// The ordered file lengths.
+    #[must_use]
+    pub const fn sizes(&self) -> &[usize; 4] {
+        &self.sizes
+    }
+
+    /// SHA-256 of the manifest bytes.
+    #[must_use]
+    pub const fn manifest_sha256(&self) -> &'a str {
+        self.manifest_sha256
+    }
+
+    /// SHA-256 of the report bytes.
+    #[must_use]
+    pub const fn run_address(&self) -> &'a str {
+        self.run_address
+    }
+
+    /// SHA-256 of the capture bytes.
+    #[must_use]
+    pub const fn ceremony_sha256(&self) -> &'a str {
+        self.ceremony_sha256
+    }
+
+    /// The declared sponsorless outcome grammar.
+    #[must_use]
+    pub const fn sponsorless(&self) -> MaturitySponsorlessExpectation {
+        self.sponsorless
+    }
+}
+
+const HISTORICAL_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
+    MATURITY_RUN_SCHEDULE,
+    [
+        "3a690139.report.capture",
+        "3a690139.report.capture.timing",
+        "MANIFEST.sha256",
+        "RUN-REPORT",
+    ],
+    FILE_SIZES,
+    MATURITY_MANIFEST_SHA256,
+    MATURITY_RUN_ADDRESS,
+    CEREMONY_SHA256,
+    MaturitySponsorlessExpectation::RelayRefusal {
+        detail: "bad-witness-nonstandard",
+    },
+);
 
 /// The layer at which maturity corpus admission stopped.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -276,7 +404,7 @@ impl ValidatedMaturityCorpus {
         &self.capabilities
     }
 
-    /// The refusal detail bound to the submitted exchange and its response JSON.
+    /// The sponsorless operation's recorded response detail: a refusal reason or empty on acceptance.
     #[must_use]
     pub fn recorded_refusal_detail(&self) -> &str {
         &self.recorded_refusal_detail
@@ -425,11 +553,19 @@ const fn binding(field: &'static str, agrees: bool) -> ImportResult<()> {
     }
 }
 
-fn validate_census(files: &[ArchiveFile<'_>], sizes: &[usize; 4]) -> ImportResult<()> {
-    if files.len() != FILES.len() || files.iter().zip(FILES).any(|(a, b)| a.name != b.name) {
+fn validate_census(
+    files: &[MaturityArchiveFile<'_>],
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<()> {
+    if files.len() != pins.names.len()
+        || files
+            .iter()
+            .zip(pins.names)
+            .any(|(file, name)| file.name != name)
+    {
         return Err(Refusal::CorpusCensus);
     }
-    for (file, expected) in files.iter().zip(sizes) {
+    for (file, expected) in files.iter().zip(&pins.sizes) {
         if file.bytes.len() != *expected {
             return Err(Refusal::FileSize {
                 name: file.name.to_owned(),
@@ -441,7 +577,7 @@ fn validate_census(files: &[ArchiveFile<'_>], sizes: &[usize; 4]) -> ImportResul
     Ok(())
 }
 
-fn validate_manifest(files: &[ArchiveFile<'_>], expected_hash: &str) -> ImportResult<()> {
+fn validate_manifest(files: &[MaturityArchiveFile<'_>], expected_hash: &str) -> ImportResult<()> {
     if hex_bytes(&tagged::sha256(files[2].bytes)) != expected_hash {
         return Err(Refusal::ManifestHash);
     }
@@ -697,6 +833,8 @@ struct RecordedOperation {
     step: OperationStep,
     layer: ObservedOutcomeLayer,
     detail: String,
+    accepted_identity: Option<Txid>,
+    request_bytes: Vec<u8>,
 }
 
 // These are the two exact JSON shapes emitted by this capture's serializer.
@@ -755,6 +893,7 @@ fn parse_operation(
     cursor: &mut Cursor<'_>,
     index: usize,
     name: &'static str,
+    expectation: MaturitySponsorlessExpectation,
 ) -> ImportResult<RecordedOperation> {
     cursor.exact(&format!("operation {index} begin"))?;
     for (field, expected) in [
@@ -784,7 +923,7 @@ fn parse_operation(
     ] {
         binding(field, cursor.text(field)? == expected)?;
     }
-    let accepted = index < 2;
+    let accepted = index < 2 || expectation == MaturitySponsorlessExpectation::Acceptance;
     cursor.exact(if accepted {
         "response-verdict accepted"
     } else {
@@ -795,13 +934,24 @@ fn parse_operation(
     } else {
         "response-layer relay-policy-rejection"
     })?;
-    cursor.exact("response-target-identity none")?;
+    let accepted_identity = if index == 2 && accepted {
+        Some(
+            Txid::from_target_display(cursor.value("response-target-identity")?)
+                .map_err(|_| cursor.refusal())?,
+        )
+    } else {
+        cursor.exact("response-target-identity none")?;
+        None
+    };
     let detail = cursor.text("response-detail")?;
     if detail
         != if accepted {
             ""
         } else {
-            "bad-witness-nonstandard"
+            match expectation {
+                MaturitySponsorlessExpectation::RelayRefusal { detail } => detail,
+                MaturitySponsorlessExpectation::Acceptance => "",
+            }
         }
     {
         return Err(cursor.refusal());
@@ -819,6 +969,8 @@ fn parse_operation(
     Ok(RecordedOperation {
         step: OperationStep::new(name, subject),
         detail,
+        accepted_identity,
+        request_bytes,
         layer: if accepted {
             ObservedOutcomeLayer::Accepted
         } else {
@@ -846,20 +998,99 @@ fn parse_tail(cursor: &mut Cursor<'_>, bytes: &[u8]) -> ImportResult<Vec<u8>> {
     Ok(payload)
 }
 
+enum PayloadAcceptance {
+    Outstanding {
+        claim: String,
+        routes: [String; 2],
+    },
+    Established {
+        schedule: tapscript::StateWitnessSchedule,
+        identity: Txid,
+        witness_identity: Txid,
+        block_hash: [u8; 32],
+        block_height: u32,
+    },
+}
+
 struct Payload {
     identity: CandidateDeploymentIdentity,
     branch: BranchContext,
     exchanges: Vec<(OperationStep, NativeOperationResponse)>,
     rows: Vec<String>,
     standing: String,
-    acceptance: String,
-    routes: [String; 2],
+    acceptance: PayloadAcceptance,
+}
+
+fn parse_acceptance(
+    cursor: &mut Cursor<'_>,
+    operations: &[RecordedOperation],
+    exchanges: &mut [(OperationStep, NativeOperationResponse)],
+    expectation: MaturitySponsorlessExpectation,
+) -> ImportResult<PayloadAcceptance> {
+    let claim = cursor.value("sponsorless-acceptance")?.to_owned();
+    match expectation {
+        MaturitySponsorlessExpectation::RelayRefusal { .. } => {
+            if claim == "established" {
+                return Err(cursor.refusal());
+            }
+            Ok(PayloadAcceptance::Outstanding {
+                claim,
+                routes: [
+                    cursor.value("acceptance-route")?.to_owned(),
+                    cursor.value("acceptance-route")?.to_owned(),
+                ],
+            })
+        }
+        MaturitySponsorlessExpectation::Acceptance => {
+            if claim != "established" {
+                return Err(cursor.refusal());
+            }
+            let schedule = match cursor.value("accepted-schedule")? {
+                "whole-metadata" => tapscript::StateWitnessSchedule::WholeMetadata,
+                "variable-metadata" => tapscript::StateWitnessSchedule::VariableMetadata,
+                _ => return Err(cursor.refusal()),
+            };
+            let identity = Txid::from_target_display(cursor.value("accepted-identity")?)
+                .map_err(|_| cursor.refusal())?;
+            let witness_identity =
+                Txid::from_target_display(cursor.value("accepted-witness-identity")?)
+                    .map_err(|_| cursor.refusal())?;
+            let block = cursor.value("accepted-block")?;
+            let (block_hash, height) = block.split_once(' ').ok_or_else(|| cursor.refusal())?;
+            let block_hash = digest(block_hash).ok_or_else(|| cursor.refusal())?;
+            let block_height = number(height)
+                .and_then(|height| u32::try_from(height).ok())
+                .ok_or_else(|| cursor.refusal())?;
+            let operation = operations.last().ok_or(Refusal::CorpusCensus)?;
+            let capture_identity = operation
+                .accepted_identity
+                .ok_or_else(|| cursor.refusal())?;
+            binding("accepted-identity", capture_identity == identity)?;
+            let (_, response) = exchanges.last_mut().ok_or(Refusal::CorpusCensus)?;
+            response.accepted_txid = Some(capture_identity.to_target_display());
+            response.mined_readback = Some(MinedFundingReadback {
+                transaction_id: capture_identity.to_target_display(),
+                witness_transaction_id: witness_identity.to_target_display(),
+                block_hash: hex_bytes(&block_hash),
+                block_height,
+                raw_transaction: operation.request_bytes.clone(),
+            });
+            Ok(PayloadAcceptance::Established {
+                schedule,
+                identity,
+                witness_identity,
+                block_hash,
+                block_height,
+            })
+        }
+    }
 }
 
 fn parse_payload(
     bytes: &[u8],
     operations: &[RecordedOperation],
     report: &MaturityReportFacts,
+    expectation: MaturitySponsorlessExpectation,
 ) -> ImportResult<Payload> {
     let mut cursor = Cursor::new("maturity payload", bytes)?;
     cursor.exact("maturity-evidence-schema 1")?;
@@ -890,7 +1121,7 @@ fn parse_payload(
     .map_err(|_| cursor.refusal())?;
     cursor.exact("current-root-freshness unestablished")?;
     let mut exchanges = Vec::new();
-    for (name, operation) in ANNOUNCEMENT_STEPS.iter().zip(operations) {
+    for (index, (name, operation)) in ANNOUNCEMENT_STEPS.iter().zip(operations).enumerate() {
         cursor.exact(&format!("maturity-step {name}"))?;
         let response =
             NativeOperationResponse::from_recorded_json(&cursor.bytes("validated-response")?)
@@ -899,7 +1130,8 @@ fn parse_payload(
         binding(
             "response-summary",
             response.observed_layer == operation.layer
-                && response.accepted_txid.is_none()
+                && (index == 2 && expectation == MaturitySponsorlessExpectation::Acceptance
+                    || response.accepted_txid.is_none())
                 && response.observed_detail.as_deref().unwrap_or_default() == operation.detail,
         )?;
         exchanges.push((operation.step.clone(), response));
@@ -909,11 +1141,7 @@ fn parse_payload(
         .map(|_| cursor.value("row").map(str::to_owned))
         .collect::<ImportResult<Vec<_>>>()?;
     let standing = cursor.value("sponsorless-standing")?.to_owned();
-    let acceptance = cursor.value("sponsorless-acceptance")?.to_owned();
-    let routes = [
-        cursor.value("acceptance-route")?.to_owned(),
-        cursor.value("acceptance-route")?.to_owned(),
-    ];
+    let acceptance = parse_acceptance(&mut cursor, operations, &mut exchanges, expectation)?;
     cursor.done()?;
     Ok(Payload {
         identity,
@@ -922,7 +1150,6 @@ fn parse_payload(
         rows,
         standing,
         acceptance,
-        routes,
     })
 }
 
@@ -934,7 +1161,11 @@ const fn payload_agrees(field: &'static str, agrees: bool) -> ImportResult<()> {
     }
 }
 
-fn compare_payload(evidence: &MaturityNativeEvidence, payload: &Payload) -> ImportResult<()> {
+fn compare_payload(
+    evidence: &MaturityNativeEvidence,
+    payload: &Payload,
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<()> {
     payload_agrees("deployment", evidence.identity() == &payload.identity)?;
     payload_agrees("branch", evidence.branch() == payload.branch)?;
     payload_agrees(
@@ -955,27 +1186,69 @@ fn compare_payload(evidence: &MaturityNativeEvidence, payload: &Payload) -> Impo
         evidence.standing() == MaturityNativeStanding::AnsweredAtDeclaredBoundary
             && payload.standing == format!("{:?}", evidence.standing()),
     )?;
-    let MaturityAcceptanceObligation::Outstanding { routes } = evidence.acceptance_obligation();
-    payload_agrees(
-        "sponsorless-acceptance",
-        payload.acceptance == "outstanding",
-    )?;
-    payload_agrees(
-        "acceptance-routes",
-        routes
-            == [
-                MaturityAcceptanceRoute::RelayWitnessRestructure,
-                MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
-            ]
-            && payload.routes == routes.map(|route| format!("{route:?}")),
-    )
+    match (evidence.acceptance_obligation(), &payload.acceptance) {
+        (
+            MaturityAcceptanceObligation::Outstanding { routes },
+            PayloadAcceptance::Outstanding {
+                claim,
+                routes: recorded,
+            },
+        ) => {
+            payload_agrees("sponsorless-acceptance", claim == "outstanding")?;
+            payload_agrees(
+                "acceptance-routes",
+                *routes
+                    == [
+                        MaturityAcceptanceRoute::RelayWitnessRestructure,
+                        MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
+                    ]
+                    && *recorded == routes.map(|route| format!("{route:?}")),
+            )
+        }
+        (
+            MaturityAcceptanceObligation::Established {
+                schedule,
+                identity,
+                readback,
+            },
+            PayloadAcceptance::Established {
+                schedule: recorded_schedule,
+                identity: recorded_identity,
+                witness_identity,
+                block_hash,
+                block_height,
+            },
+        ) => {
+            payload_agrees(
+                "accepted-schedule",
+                *schedule == pins.schedule() && schedule == recorded_schedule,
+            )?;
+            payload_agrees(
+                "accepted-identity",
+                identity == recorded_identity && *identity == readback.identity(),
+            )?;
+            payload_agrees(
+                "accepted-witness-identity",
+                *witness_identity == readback.witness_identity(),
+            )?;
+            payload_agrees("accepted-block", block_hash == readback.block_hash())?;
+            payload_agrees(
+                "accepted-block-height",
+                *block_height == readback.block_height(),
+            )
+        }
+        _ => payload_agrees("sponsorless-acceptance", false),
+    }
 }
 
-fn derive(payload: &Payload) -> ImportResult<MaturityNativeEvidence> {
+fn derive(
+    payload: &Payload,
+    schedule: tapscript::StateWitnessSchedule,
+) -> ImportResult<MaturityNativeEvidence> {
     MaturityNativeEvidence::from_transcript(
         payload.identity.clone(),
         payload.branch,
-        MaturityWitnessSelection::Retained(MATURITY_RUN_SCHEDULE),
+        MaturityWitnessSelection::Retained(schedule),
         &payload.exchanges,
     )
     .map_err(Refusal::Derivation)
@@ -984,6 +1257,7 @@ fn derive(payload: &Payload) -> ImportResult<MaturityNativeEvidence> {
 fn admit_capture(
     bytes: &[u8],
     report: MaturityReportFacts,
+    pins: &MaturityCorpusPins<'_>,
 ) -> ImportResult<ValidatedMaturityCorpus> {
     binding(
         "ceremony-digest",
@@ -997,11 +1271,16 @@ fn admit_capture(
     let operations = ANNOUNCEMENT_STEPS
         .iter()
         .enumerate()
-        .map(|(index, name)| parse_operation(&mut cursor, index, name))
+        .map(|(index, name)| parse_operation(&mut cursor, index, name, pins.sponsorless()))
         .collect::<ImportResult<Vec<_>>>()?;
-    let payload = parse_payload(&parse_tail(&mut cursor, bytes)?, &operations, &report)?;
-    let evidence = derive(&payload)?;
-    compare_payload(&evidence, &payload)?;
+    let payload = parse_payload(
+        &parse_tail(&mut cursor, bytes)?,
+        &operations,
+        &report,
+        pins.sponsorless(),
+    )?;
+    let evidence = derive(&payload, pins.schedule())?;
+    compare_payload(&evidence, &payload, pins)?;
     let recorded_refusal_detail = operations
         .last()
         .ok_or(Refusal::CorpusCensus)?
@@ -1018,15 +1297,20 @@ fn admit_capture(
 }
 
 fn validate_inputs(
-    files: &[ArchiveFile<'_>],
-    sizes: &[usize; 4],
-    manifest: &str,
-    address: &str,
+    files: &[MaturityArchiveFile<'_>],
+    pins: &MaturityCorpusPins<'_>,
 ) -> ImportResult<ValidatedMaturityCorpus> {
-    validate_census(files, sizes)?;
-    validate_manifest(files, manifest)?;
-    let report = parse_report(files[3].bytes, address)?;
-    binding("manifest-sha256", report.manifest_digest == manifest)?;
+    validate_census(files, pins)?;
+    validate_manifest(files, pins.manifest_sha256())?;
+    let report = parse_report(files[3].bytes, pins.run_address())?;
+    binding(
+        "manifest-sha256",
+        report.manifest_digest == pins.manifest_sha256(),
+    )?;
+    binding(
+        "pinned-ceremony-digest",
+        report.ceremony_digest == pins.ceremony_sha256(),
+    )?;
     // The earlier admitted run exposes these deployment facts through readers.
     // Comparing them avoids a second authored network or genesis identity.
     let operator = crate::live_corpus_native_operator::run_of_record().map_err(|_| {
@@ -1047,10 +1331,27 @@ fn validate_inputs(
     timing.exact("ceremony-id report")?;
     timing.exact("status passed")?;
     timing.done()?;
-    admit_capture(files[0].bytes, report)
+    admit_capture(files[0].bytes, report, pins)
 }
 
-/// Admits the immutable maturity archive through byte bindings, closed grammars and exact planner replay.
+/// Admits four pinned maturity files through byte bindings, closed grammars and exact planner replay.
+///
+/// The payload supplies no standing by authority. A refusal and an acceptance use the same replay discipline with different pinned schedules and sponsorless grammars.
+///
+/// # Errors
+/// Returns the refusal naming the first failed admission layer, preserving planner refusals whole.
+///
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton or the public linker loses a retained constructor, which neither published input can arrange.
+#[must_use = "maturity corpus admission can refuse a file or replay binding"]
+pub fn admit_maturity_corpus<'a>(
+    files: &[MaturityArchiveFile<'a>; 4],
+    pins: &MaturityCorpusPins<'a>,
+) -> Result<ValidatedMaturityCorpus, MaturityCorpusImportRefusal> {
+    validate_inputs(files, pins)
+}
+
+/// Admits the immutable historical maturity archive through its own pins.
 ///
 /// The payload is checked against the derived evidence; it supplies no standing by authority. The admitted relay refusal answers the declared boundary and leaves acceptance outstanding through both routes.
 ///
@@ -1062,19 +1363,7 @@ fn validate_inputs(
 pub fn maturity_run_of_record()
 -> Result<&'static ValidatedMaturityCorpus, MaturityCorpusImportRefusal> {
     static CORPUS: OnceLock<ImportResult<ValidatedMaturityCorpus>> = OnceLock::new();
-    match CORPUS.get_or_init(|| {
-        let corpus = validate_inputs(
-            &FILES,
-            &FILE_SIZES,
-            MATURITY_MANIFEST_SHA256,
-            MATURITY_RUN_ADDRESS,
-        )?;
-        binding(
-            "pinned-ceremony-digest",
-            corpus.report.ceremony_digest == CEREMONY_SHA256,
-        )?;
-        Ok(corpus)
-    }) {
+    match CORPUS.get_or_init(|| admit_maturity_corpus(&FILES, &HISTORICAL_PINS)) {
         Ok(corpus) => Ok(corpus),
         Err(refusal) => Err(refusal.clone()),
     }
@@ -1109,6 +1398,12 @@ pub fn replay_maturity_run_of_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::maturity_native::MaturityAnnouncementPlanner;
+    use target_elements_conformance::executor::TargetOperationPlanner;
+    use target_elements_conformance::protocol::{
+        FundedOutput, NativeResourceObservation, WireOutpoint,
+    };
+    use transaction::bytes::TargetTransaction;
 
     #[test]
     fn retained_whole_metadata_replays_all_three_archived_requests_exactly() {
@@ -1164,20 +1459,15 @@ mod tests {
             }
         }
 
-        fn inputs(&self) -> [ArchiveFile<'_>; 4] {
-            std::array::from_fn(|index| ArchiveFile {
+        fn inputs(&self) -> [MaturityArchiveFile<'_>; 4] {
+            std::array::from_fn(|index| MaturityArchiveFile {
                 name: FILES[index].name,
                 bytes: &self.bytes[index],
             })
         }
 
         fn pinned(&self) -> ImportResult<ValidatedMaturityCorpus> {
-            validate_inputs(
-                &self.inputs(),
-                &FILE_SIZES,
-                MATURITY_MANIFEST_SHA256,
-                MATURITY_RUN_ADDRESS,
-            )
+            admit_maturity_corpus(&self.inputs(), &HISTORICAL_PINS)
         }
 
         fn replace(&mut self, index: usize, from: &str, to: &str) {
@@ -1187,6 +1477,21 @@ mod tests {
         }
 
         fn rebind(&mut self, content: bool) -> ImportResult<ValidatedMaturityCorpus> {
+            self.rebind_for(
+                content,
+                MATURITY_RUN_SCHEDULE,
+                MaturitySponsorlessExpectation::RelayRefusal {
+                    detail: "bad-witness-nonstandard",
+                },
+            )
+        }
+
+        fn rebind_for(
+            &mut self,
+            content: bool,
+            schedule: tapscript::StateWitnessSchedule,
+            sponsorless: MaturitySponsorlessExpectation,
+        ) -> ImportResult<ValidatedMaturityCorpus> {
             if content {
                 let text = std::str::from_utf8(&self.bytes[0]).expect("capture");
                 let position = text.find("capture-content-sha256 ").expect("content hash");
@@ -1220,7 +1525,16 @@ mod tests {
             self.bytes[3] = rebound.into_bytes();
             let address = hex_bytes(&tagged::sha256(&self.bytes[3]));
             let sizes = std::array::from_fn(|index| self.bytes[index].len());
-            validate_inputs(&self.inputs(), &sizes, &manifest_hash, &address)
+            let pins = MaturityCorpusPins::new(
+                schedule,
+                HISTORICAL_PINS.names,
+                sizes,
+                &manifest_hash,
+                &address,
+                &capture_hash,
+                sponsorless,
+            );
+            admit_maturity_corpus(&self.inputs(), &pins)
         }
 
         fn payload_replace(&mut self, from: &str, to: &str) {
@@ -1244,6 +1558,520 @@ mod tests {
                 ),
             );
         }
+    }
+
+    fn scripted_response(step: &OperationStep) -> NativeOperationResponse {
+        let mut response = NativeOperationResponse {
+            schema: target_elements_conformance::protocol::NATIVE_PROTOCOL_SCHEMA,
+            case: step.case().clone(),
+            observed_layer: ObservedOutcomeLayer::Accepted,
+            observed_detail: None,
+            issued_asset: None,
+            funded_outputs: Vec::new(),
+            confidential_funded_outputs: Vec::new(),
+            mined_readback: None,
+            accepted_txid: None,
+            sponsor_witness: Vec::new(),
+            script_path_witness: Vec::new(),
+            signer_public_key: None,
+            signed_profile: None,
+            signing_genesis: None,
+            signature_bound_to: None,
+            resources: NativeResourceObservation::default(),
+        };
+        match step.subject() {
+            OperationSubject::Funding(subject) => {
+                let asset = format!("01{}fe", "55".repeat(30));
+                if subject.issue_asset {
+                    response.issued_asset = Some(asset.clone());
+                }
+                response.funded_outputs.push(FundedOutput {
+                    outpoint: WireOutpoint {
+                        txid: format!("02{}fd", "66".repeat(30)),
+                        vout: if subject.issue_asset { 3 } else { 7 },
+                    },
+                    asset,
+                    amount_satoshis: subject.amount_per_output,
+                    script: hex_bytes(&subject.output_program),
+                });
+            }
+            OperationSubject::Submission(subject) => {
+                let candidate =
+                    TargetTransaction::decode(&subject.transaction_bytes).expect("decode");
+                let identity = Txid::from_internal(tagged::sha256(&tagged::sha256(
+                    &candidate.encode_without_witness(),
+                )))
+                .to_target_display();
+                response.accepted_txid = Some(identity.clone());
+                response.mined_readback = Some(MinedFundingReadback {
+                    transaction_id: identity,
+                    witness_transaction_id: Txid::from_internal(tagged::sha256(&tagged::sha256(
+                        &subject.transaction_bytes,
+                    )))
+                    .to_target_display(),
+                    block_hash: "77".repeat(32),
+                    block_height: 11,
+                    raw_transaction: subject.transaction_bytes.clone(),
+                });
+            }
+            _ => panic!("scripted maturity exchange"),
+        }
+        response.validate_shape().expect("scripted shape");
+        response
+    }
+
+    fn scripted_variable_run() -> (
+        Vec<(OperationStep, NativeOperationResponse)>,
+        MaturityNativeEvidence,
+    ) {
+        let historical = maturity_run_of_record().expect("historical corpus");
+        let identity = historical.evidence().identity().clone();
+        let branch = historical.evidence().branch();
+        let selection =
+            MaturityWitnessSelection::Retained(tapscript::StateWitnessSchedule::VariableMetadata);
+        let mut planner = MaturityAnnouncementPlanner::new(identity.clone(), branch, selection)
+            .expect("variable planner");
+        let mut current = planner.next_step(None).expect("first step");
+        while let Some(step) = current {
+            let response = scripted_response(&step);
+            current = planner
+                .next_step(Some((step.case(), &response)))
+                .expect("settled step");
+        }
+        let exchanges = planner.completed_transcript().expect("complete").to_vec();
+        let evidence =
+            MaturityNativeEvidence::from_transcript(identity, branch, selection, &exchanges)
+                .expect("exact replay");
+        (exchanges, evidence)
+    }
+
+    fn write_scripted_field(out: &mut String, name: &str, bytes: &[u8]) {
+        let _ = writeln!(out, "{name} {} {}", bytes.len(), hex_bytes(bytes));
+    }
+
+    fn scripted_operation_lines(exchanges: &[(OperationStep, NativeOperationResponse)]) -> String {
+        let mut out = String::new();
+        let _ = writeln!(out, "operation-count {}", exchanges.len());
+        for (index, (step, response)) in exchanges.iter().enumerate() {
+            let _ = writeln!(out, "operation {index} begin");
+            write_scripted_field(
+                &mut out,
+                "operation-id",
+                format!("operation-{index}").as_bytes(),
+            );
+            write_scripted_field(
+                &mut out,
+                "request-id",
+                format!("request-{index}").as_bytes(),
+            );
+            let _ = writeln!(out, "request-role auxiliary");
+            let request_bytes = match step.subject() {
+                OperationSubject::Funding(_) => &[][..],
+                OperationSubject::Submission(subject) => subject.transaction_bytes.as_slice(),
+                _ => panic!("maturity subject"),
+            };
+            write_scripted_field(&mut out, "request-bytes", request_bytes);
+            write_scripted_field(
+                &mut out,
+                "request-subject",
+                &serde_json::to_vec(step.subject()).expect("subject JSON"),
+            );
+            write_scripted_field(
+                &mut out,
+                "response-id",
+                format!("response-{index}").as_bytes(),
+            );
+            write_scripted_field(
+                &mut out,
+                "response-request-id",
+                format!("request-{index}").as_bytes(),
+            );
+            write_scripted_field(
+                &mut out,
+                "response-operation-id",
+                format!("operation-{index}").as_bytes(),
+            );
+            let _ = writeln!(out, "response-verdict accepted");
+            let _ = writeln!(out, "response-layer accepted");
+            let _ = writeln!(
+                out,
+                "response-target-identity {}",
+                response.accepted_txid.as_deref().unwrap_or("none")
+            );
+            write_scripted_field(&mut out, "response-detail", b"");
+            for line in [
+                "attribution-control-request-id none",
+                "attribution-control-identity none",
+                "mutation-kind none",
+                "mutation-locator none",
+                "projection-input none",
+            ] {
+                let _ = writeln!(out, "{line}");
+            }
+            let _ = writeln!(out, "operation {index} end");
+        }
+        out
+    }
+
+    fn scripted_payload(
+        exchanges: &[(OperationStep, NativeOperationResponse)],
+        evidence: &MaturityNativeEvidence,
+    ) -> String {
+        let mut out = String::new();
+        let _ = writeln!(out, "maturity-evidence-schema 1");
+        write_scripted_field(
+            &mut out,
+            "deployment-network-id",
+            evidence.identity().network_id(),
+        );
+        write_scripted_field(
+            &mut out,
+            "deployment-genesis-id",
+            evidence.identity().genesis_id(),
+        );
+        write_scripted_field(
+            &mut out,
+            "branch-identifier",
+            evidence.branch().identifier(),
+        );
+        let _ = writeln!(out, "branch-checkpoint {}", evidence.branch().checkpoint());
+        let _ = writeln!(out, "current-root-freshness unestablished");
+        for (step, response) in exchanges {
+            let _ = writeln!(out, "maturity-step {}", step.case().step);
+            write_scripted_field(
+                &mut out,
+                "validated-response",
+                &serde_json::to_vec(response).expect("response JSON"),
+            );
+        }
+        for observation in evidence.observations() {
+            let _ = writeln!(
+                out,
+                "row {} declared {:?} observed {:?}",
+                observation.subject(),
+                observation.declared_layer(),
+                observation.observed_layer()
+            );
+        }
+        let _ = writeln!(out, "sponsorless-standing {:?}", evidence.standing());
+        let MaturityAcceptanceObligation::Established {
+            schedule,
+            identity,
+            readback,
+        } = evidence.acceptance_obligation()
+        else {
+            panic!("variable scripted acceptance")
+        };
+        let _ = writeln!(out, "sponsorless-acceptance established");
+        let _ = writeln!(out, "accepted-schedule {}", schedule.name());
+        let _ = writeln!(out, "accepted-identity {}", identity.to_target_display());
+        let _ = writeln!(
+            out,
+            "accepted-witness-identity {}",
+            readback.witness_identity().to_target_display()
+        );
+        let _ = writeln!(
+            out,
+            "accepted-block {} {}",
+            hex_bytes(readback.block_hash()),
+            readback.block_height()
+        );
+        out
+    }
+
+    fn accepted_corpus() -> OwnedCorpus {
+        let (exchanges, evidence) = scripted_variable_run();
+        let operations = scripted_operation_lines(&exchanges);
+        let payload = scripted_payload(&exchanges, &evidence);
+        let historical = std::str::from_utf8(FILES[0].bytes).expect("historical capture");
+        let prefix = historical
+            .split_once("operation-count 3\n")
+            .expect("operations")
+            .0;
+        let after_payload = historical
+            .split_once("legacy-rendering ")
+            .expect("rendering")
+            .1;
+        let tail = after_payload.split_once('\n').expect("tail").1;
+        let mut capture = String::new();
+        capture.push_str(prefix);
+        capture.push_str(&operations);
+        let _ = writeln!(
+            capture,
+            "legacy-rendering {} {}",
+            payload.len(),
+            hex_bytes(payload.as_bytes())
+        );
+        capture.push_str(tail);
+        let mut owned = OwnedCorpus::new();
+        owned.bytes[0] = capture.into_bytes();
+        owned
+    }
+
+    fn flip_recorded_submission_request(corpus: &mut OwnedCorpus) {
+        let text = std::str::from_utf8(&corpus.bytes[0]).expect("capture");
+        let (prefix, after_begin) = text.split_once("operation 2 begin\n").expect("submission");
+        let (block, suffix) = after_begin
+            .split_once("operation 2 end\n")
+            .expect("submission end");
+        let mut changed = String::new();
+        changed.push_str(prefix);
+        changed.push_str("operation 2 begin\n");
+        let mut changed_byte = None;
+        for line in block.lines() {
+            if let Some(value) = line.strip_prefix("request-bytes ") {
+                let (_, hex) = value.split_once(' ').expect("request bytes");
+                let mut bytes = decode_hex(hex).expect("request encoding");
+                bytes[0] ^= 1;
+                changed_byte = Some(bytes[0]);
+                write_scripted_field(&mut changed, "request-bytes", &bytes);
+            } else if let Some(value) = line.strip_prefix("request-subject ") {
+                let (_, hex) = value.split_once(' ').expect("subject bytes");
+                let mut subject: serde_json::Value =
+                    serde_json::from_slice(&decode_hex(hex).expect("subject encoding"))
+                        .expect("subject JSON");
+                subject["transaction_bytes"][0] =
+                    serde_json::Value::from(changed_byte.expect("request byte"));
+                write_scripted_field(
+                    &mut changed,
+                    "request-subject",
+                    &serde_json::to_vec(&subject).expect("subject JSON"),
+                );
+            } else {
+                let _ = writeln!(changed, "{line}");
+            }
+        }
+        changed.push_str("operation 2 end\n");
+        changed.push_str(suffix);
+        corpus.bytes[0] = changed.into_bytes();
+    }
+
+    #[test]
+    fn historical_pins_and_public_admission_equal_the_record_loader() {
+        assert_eq!(HISTORICAL_PINS.schedule(), MATURITY_RUN_SCHEDULE);
+        assert_eq!(HISTORICAL_PINS.names(), &FILES.map(|file| file.name));
+        assert_eq!(HISTORICAL_PINS.sizes(), &FILE_SIZES);
+        assert_eq!(HISTORICAL_PINS.manifest_sha256(), MATURITY_MANIFEST_SHA256);
+        assert_eq!(HISTORICAL_PINS.run_address(), MATURITY_RUN_ADDRESS);
+        assert_eq!(HISTORICAL_PINS.ceremony_sha256(), CEREMONY_SHA256);
+        assert_eq!(
+            HISTORICAL_PINS.sponsorless(),
+            MaturitySponsorlessExpectation::RelayRefusal {
+                detail: "bad-witness-nonstandard"
+            }
+        );
+        assert_eq!(
+            admit_maturity_corpus(&FILES, &HISTORICAL_PINS),
+            Ok(maturity_run_of_record().expect("historical loader").clone())
+        );
+    }
+
+    #[test]
+    fn scripted_variable_corpus_admits_established_identity_and_readback() {
+        let mut files = accepted_corpus();
+        let admitted = files
+            .rebind_for(
+                true,
+                tapscript::StateWitnessSchedule::VariableMetadata,
+                MaturitySponsorlessExpectation::Acceptance,
+            )
+            .expect("accepted corpus");
+        let (_, scripted) = scripted_variable_run();
+        assert_eq!(admitted.evidence(), &scripted);
+        assert_eq!(
+            admitted.schedule(),
+            tapscript::StateWitnessSchedule::VariableMetadata
+        );
+        assert_eq!(admitted.recorded_refusal_detail(), "");
+        let MaturityAcceptanceObligation::Established {
+            identity, readback, ..
+        } = admitted.evidence().acceptance_obligation()
+        else {
+            panic!("accepted corpus obligation")
+        };
+        assert_eq!(*identity, readback.identity());
+        let OperationSubject::Submission(subject) = admitted.exchanges()[2].0.subject() else {
+            panic!("submission bytes")
+        };
+        assert_eq!(readback.bytes(), subject.transaction_bytes.as_slice());
+    }
+
+    #[test]
+    fn accepted_files_with_whole_schedule_refuse_transcript_step_mismatch_zero() {
+        let mut files = accepted_corpus();
+        assert_eq!(
+            files.rebind_for(
+                true,
+                tapscript::StateWitnessSchedule::WholeMetadata,
+                MaturitySponsorlessExpectation::Acceptance
+            ),
+            Err(Refusal::Derivation(
+                MaturityNativePlanRefusal::TranscriptStepMismatch { position: 0 }
+            ))
+        );
+    }
+
+    #[test]
+    fn historical_files_under_acceptance_refuse_transcript_grammar() {
+        let mut files = OwnedCorpus::new();
+        assert!(matches!(
+            files.rebind_for(
+                true,
+                MATURITY_RUN_SCHEDULE,
+                MaturitySponsorlessExpectation::Acceptance
+            ),
+            Err(Refusal::TranscriptGrammar { .. })
+        ));
+    }
+
+    #[test]
+    fn accepted_files_under_relay_refusal_pins_refuse_transcript_grammar() {
+        let mut files = accepted_corpus();
+        assert!(matches!(
+            files.rebind_for(
+                true,
+                tapscript::StateWitnessSchedule::VariableMetadata,
+                MaturitySponsorlessExpectation::RelayRefusal {
+                    detail: "bad-witness-nonstandard"
+                }
+            ),
+            Err(Refusal::TranscriptGrammar { .. })
+        ));
+    }
+
+    #[test]
+    fn wrong_capture_and_payload_identity_refuse_derivation_submission_readback_mismatch() {
+        let mut files = accepted_corpus();
+        let (_, evidence) = scripted_variable_run();
+        let MaturityAcceptanceObligation::Established { identity, .. } =
+            evidence.acceptance_obligation()
+        else {
+            panic!("identity")
+        };
+        let original = identity.to_target_display();
+        let wrong = "99".repeat(32);
+        files.replace(
+            0,
+            &format!("response-target-identity {original}"),
+            &format!("response-target-identity {wrong}"),
+        );
+        files.payload_replace(
+            &format!("accepted-identity {original}"),
+            &format!("accepted-identity {wrong}"),
+        );
+        assert_eq!(
+            files.rebind_for(
+                true,
+                tapscript::StateWitnessSchedule::VariableMetadata,
+                MaturitySponsorlessExpectation::Acceptance
+            ),
+            Err(Refusal::Derivation(
+                MaturityNativePlanRefusal::SubmissionReadbackMismatch
+            ))
+        );
+    }
+
+    #[test]
+    fn wrong_payload_witness_identity_refuses_derivation_submission_readback_mismatch() {
+        let mut files = accepted_corpus();
+        let (_, evidence) = scripted_variable_run();
+        let MaturityAcceptanceObligation::Established { readback, .. } =
+            evidence.acceptance_obligation()
+        else {
+            panic!("readback")
+        };
+        let original = readback.witness_identity().to_target_display();
+        files.payload_replace(
+            &format!("accepted-witness-identity {original}"),
+            &format!("accepted-witness-identity {}", "99".repeat(32)),
+        );
+        assert_eq!(
+            files.rebind_for(
+                true,
+                tapscript::StateWitnessSchedule::VariableMetadata,
+                MaturitySponsorlessExpectation::Acceptance
+            ),
+            Err(Refusal::Derivation(
+                MaturityNativePlanRefusal::SubmissionReadbackMismatch
+            ))
+        );
+    }
+
+    #[test]
+    fn payload_identity_different_from_capture_refuses_cross_file_binding() {
+        let mut files = accepted_corpus();
+        let (_, evidence) = scripted_variable_run();
+        let MaturityAcceptanceObligation::Established { identity, .. } =
+            evidence.acceptance_obligation()
+        else {
+            panic!("identity")
+        };
+        files.payload_replace(
+            &format!("accepted-identity {}", identity.to_target_display()),
+            &format!("accepted-identity {}", "99".repeat(32)),
+        );
+        assert_eq!(
+            files.rebind_for(
+                true,
+                tapscript::StateWitnessSchedule::VariableMetadata,
+                MaturitySponsorlessExpectation::Acceptance
+            ),
+            Err(Refusal::CrossFileBinding {
+                field: "accepted-identity"
+            })
+        );
+    }
+
+    #[test]
+    fn flipped_recorded_request_refuses_derivation_transcript_step_mismatch_two() {
+        let mut files = accepted_corpus();
+        flip_recorded_submission_request(&mut files);
+        assert_eq!(
+            files.rebind_for(
+                true,
+                tapscript::StateWitnessSchedule::VariableMetadata,
+                MaturitySponsorlessExpectation::Acceptance
+            ),
+            Err(Refusal::Derivation(
+                MaturityNativePlanRefusal::TranscriptStepMismatch { position: 2 }
+            ))
+        );
+    }
+
+    #[test]
+    fn incomplete_and_refused_identity_or_established_payload_refuse_transcript_grammar() {
+        let mut incomplete = accepted_corpus();
+        incomplete.replace(0, "operation-count 3", "operation-count 2");
+        assert!(matches!(
+            incomplete.rebind_for(
+                true,
+                tapscript::StateWitnessSchedule::VariableMetadata,
+                MaturitySponsorlessExpectation::Acceptance
+            ),
+            Err(Refusal::TranscriptGrammar { .. })
+        ));
+        let mut refused_identity = OwnedCorpus::new();
+        refused_identity.replace(
+            0,
+            "response-layer relay-policy-rejection\nresponse-target-identity none",
+            &format!(
+                "response-layer relay-policy-rejection\nresponse-target-identity {}",
+                "99".repeat(32)
+            ),
+        );
+        assert!(matches!(
+            refused_identity.rebind(true),
+            Err(Refusal::TranscriptGrammar { .. })
+        ));
+        let mut refused_established = OwnedCorpus::new();
+        refused_established.payload_replace(
+            "sponsorless-acceptance outstanding",
+            "sponsorless-acceptance established",
+        );
+        assert!(matches!(
+            refused_established.rebind(true),
+            Err(Refusal::TranscriptGrammar { .. })
+        ));
     }
 
     #[test]
@@ -1294,7 +2122,7 @@ mod tests {
         );
         assert_eq!(
             evidence.acceptance_obligation(),
-            MaturityAcceptanceObligation::Outstanding {
+            &MaturityAcceptanceObligation::Outstanding {
                 routes: [
                     MaturityAcceptanceRoute::RelayWitnessRestructure,
                     MaturityAcceptanceRoute::BlockLayerSubmissionSubject
@@ -1331,13 +2159,13 @@ mod tests {
     #[test]
     fn census_and_every_file_length_are_fixed() {
         assert_eq!(
-            validate_census(&FILES[..3], &FILE_SIZES),
+            validate_census(&FILES[..3], &HISTORICAL_PINS),
             Err(Refusal::CorpusCensus)
         );
         let mut files = FILES;
         files.swap(0, 1);
         assert_eq!(
-            validate_census(&files, &FILE_SIZES),
+            validate_census(&files, &HISTORICAL_PINS),
             Err(Refusal::CorpusCensus)
         );
         for (index, expected) in FILE_SIZES.iter().enumerate() {
@@ -1676,8 +2504,10 @@ mod tests {
             exchanges: corpus.exchanges().to_vec(),
             rows: Vec::new(),
             standing: String::new(),
-            acceptance: String::new(),
-            routes: [String::new(), String::new()],
+            acceptance: PayloadAcceptance::Outstanding {
+                claim: String::new(),
+                routes: [String::new(), String::new()],
+            },
         }
     }
 
@@ -1694,7 +2524,7 @@ mod tests {
             }
             *step = OperationStep::new(&step.case().step, subject);
             assert_eq!(
-                derive(&payload),
+                derive(&payload, MATURITY_RUN_SCHEDULE),
                 Err(Refusal::Derivation(
                     MaturityNativePlanRefusal::TranscriptStepMismatch { position }
                 ))
@@ -1702,7 +2532,7 @@ mod tests {
             let mut payload = self::payload();
             payload.exchanges.truncate(position);
             assert_eq!(
-                derive(&payload),
+                derive(&payload, MATURITY_RUN_SCHEDULE),
                 Err(Refusal::Derivation(
                     MaturityNativePlanRefusal::IncompleteTranscript
                 ))
@@ -1715,7 +2545,7 @@ mod tests {
         let mut payload = payload();
         payload.exchanges[0].1.funded_outputs[0].amount_satoshis += 1;
         assert_eq!(
-            derive(&payload),
+            derive(&payload, MATURITY_RUN_SCHEDULE),
             Err(Refusal::Derivation(
                 MaturityNativePlanRefusal::FundingMismatch
             ))
@@ -1723,7 +2553,7 @@ mod tests {
         let mut payload = self::payload();
         payload.exchanges[0].1.schema = 7;
         assert_eq!(
-            derive(&payload),
+            derive(&payload, MATURITY_RUN_SCHEDULE),
             Err(Refusal::Derivation(
                 MaturityNativePlanRefusal::ResponseSchema { offered: 7 }
             ))

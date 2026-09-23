@@ -2,9 +2,9 @@
 //!
 //! Issuance first discovers the singleton identifier, so its bootstrap destination cannot be the predecessor program linked for that still-unknown identifier. The returned asset is linked through the public constructor before a second funding step pays the exact predecessor program; only that response supplies the outpoint the announcement spends.
 //!
-//! The positive submission declares the relay-policy boundary because the metadata witness exceeds the reviewed standardness width before execution. The executor reports relay rejection when its block fallback accepts, which exercises the signed linked candidate without establishing the accepted positive control required by §23. This run supplies evidence rather than closing that gate, and relaxing policy would not answer it.
+//! The declaration belongs to the composed schedule: the archived whole-metadata run declares a relay-policy refusal, while the variable-metadata schedule declares acceptance. Funding has no matrix row and therefore no declared layer, although construction requires accepted funding. Transcript evidence replays the planner before comparing each observation with its declaration.
 //!
-//! The declaration stays here because a submission carries bytes alone, with no expected layer, identity or observation class. Funding has no matrix row and therefore no declared layer, although construction requires accepted funding. Transcript evidence replays the planner before comparing the recorded observation with that declaration; it authenticates no executor and leaves the accepted positive control outstanding.
+//! Established acceptance binds the accepted identity, mined readback and submitted bytes under the replayed schedule. A scripted response can establish these bindings, so the value authenticates no executor, proves no current-root freshness and promotes no row standing.
 
 use architecture::ARCHITECTURE;
 use linker::{
@@ -54,9 +54,17 @@ pub const ANNOUNCEMENT_STEPS: [&str; 3] = [
 ///
 /// Funding is infrastructure rather than a matrix row; settlement still requires acceptance.
 #[must_use]
-pub fn expected_layer(subject: &str) -> Option<ObservedOutcomeLayer> {
-    match subject {
-        "sponsorless" => Some(ObservedOutcomeLayer::RelayPolicyRejection),
+pub fn expected_layer(
+    subject: &str,
+    schedule: tapscript::StateWitnessSchedule,
+) -> Option<ObservedOutcomeLayer> {
+    match (subject, schedule) {
+        ("sponsorless", tapscript::StateWitnessSchedule::WholeMetadata) => {
+            Some(ObservedOutcomeLayer::RelayPolicyRejection)
+        }
+        ("sponsorless", tapscript::StateWitnessSchedule::VariableMetadata) => {
+            Some(ObservedOutcomeLayer::Accepted)
+        }
         _ => None,
     }
 }
@@ -163,19 +171,70 @@ pub enum MaturityAcceptanceRoute {
     BlockLayerSubmissionSubject,
 }
 
-/// The seventh conjunct of §23 remains unestablished by this transcript comparison.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A checked accepted submission and mined readback retained by the planner.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MaturityAcceptedReadback {
+    identity: Txid,
+    witness_identity: Txid,
+    block_hash: [u8; 32],
+    block_height: u32,
+    bytes: Vec<u8>,
+}
+
+impl MaturityAcceptedReadback {
+    /// The identity computed from the submitted transaction without witness.
+    #[must_use]
+    pub const fn identity(&self) -> Txid {
+        self.identity
+    }
+
+    /// The identity computed from the complete submitted transaction.
+    #[must_use]
+    pub const fn witness_identity(&self) -> Txid {
+        self.witness_identity
+    }
+
+    /// The mined block hash in the target's displayed byte order.
+    #[must_use]
+    pub const fn block_hash(&self) -> &[u8; 32] {
+        &self.block_hash
+    }
+
+    /// The height reported by the mined readback.
+    #[must_use]
+    pub const fn block_height(&self) -> u32 {
+        self.block_height
+    }
+
+    /// The exact submitted bytes also reported by the mined readback.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// The sponsorless acceptance obligation derived from exact transcript replay.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MaturityAcceptanceObligation {
     /// Neither a relay refusal nor an off-declaration observation closes this obligation.
     Outstanding {
         /// The two remaining routes, rather than a relaxed-policy acceptance claim.
         routes: [MaturityAcceptanceRoute; 2],
     },
+    /// Every accepted identity, readback and submitted-byte binding held under this schedule.
+    Established {
+        /// The schedule reconstructed by replay.
+        schedule: tapscript::StateWitnessSchedule,
+        /// The accepted identity computed from the submitted transaction.
+        identity: Txid,
+        /// The checked mined readback and submitted bytes.
+        readback: MaturityAcceptedReadback,
+    },
 }
 
 /// Settled transcript observations compared with the planner's prior declaration.
 ///
-/// This value establishes transcript consistency, not provenance or current-root freshness. A scripted response can produce it; a native-run claim additionally needs the executor and capture provenance. Even an accepted off-declaration observation leaves the accepted positive control outstanding here.
+/// This value establishes transcript consistency under the retained schedule, not provenance or current-root freshness. A scripted response can establish acceptance; a native-run claim additionally needs executor and capture provenance. Standing remains the declared-versus-observed comparison.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MaturityNativeEvidence {
     schedule: tapscript::StateWitnessSchedule,
@@ -217,16 +276,37 @@ impl MaturityNativeEvidence {
             .zip(ANNOUNCEMENT_STEPS)
             .map(|((_, response), subject)| MaturityNativeObservation {
                 subject,
-                declared_layer: expected_layer(subject),
+                declared_layer: expected_layer(subject, planner.schedule()),
                 observed_layer: response.observed_layer,
             })
             .collect();
         let (_, submission) = settled.last().ok_or(Refusal::IncompleteTranscript)?;
-        let answered = expected_layer("sponsorless")
+        let answered = expected_layer("sponsorless", planner.schedule())
             .and_then(crate::observed_boundary::observed_boundary)
             .is_some_and(|boundary| {
                 crate::observed_boundary::matches_boundary(boundary, submission.observed_layer)
             });
+        let acceptance_obligation = if planner.schedule()
+            == tapscript::StateWitnessSchedule::VariableMetadata
+            && submission.observed_layer == ObservedOutcomeLayer::Accepted
+        {
+            let readback = planner
+                .readback()
+                .cloned()
+                .ok_or(Refusal::SubmissionReadbackMismatch)?;
+            MaturityAcceptanceObligation::Established {
+                schedule: planner.schedule(),
+                identity: readback.identity(),
+                readback,
+            }
+        } else {
+            MaturityAcceptanceObligation::Outstanding {
+                routes: [
+                    MaturityAcceptanceRoute::RelayWitnessRestructure,
+                    MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
+                ],
+            }
+        };
         Ok(Self {
             schedule: planner.schedule(),
             identity,
@@ -237,12 +317,7 @@ impl MaturityNativeEvidence {
             } else {
                 MaturityNativeStanding::ObservedElsewhere
             },
-            acceptance_obligation: MaturityAcceptanceObligation::Outstanding {
-                routes: [
-                    MaturityAcceptanceRoute::RelayWitnessRestructure,
-                    MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
-                ],
-            },
+            acceptance_obligation,
         })
     }
 
@@ -276,10 +351,10 @@ impl MaturityNativeEvidence {
         self.standing
     }
 
-    /// The outstanding accepted positive control and its two routes.
+    /// The accepted binding or its outstanding routes.
     #[must_use]
-    pub const fn acceptance_obligation(&self) -> MaturityAcceptanceObligation {
-        self.acceptance_obligation
+    pub const fn acceptance_obligation(&self) -> &MaturityAcceptanceObligation {
+        &self.acceptance_obligation
     }
 }
 
@@ -321,6 +396,7 @@ pub struct MaturityAnnouncementPlanner {
     predecessor: Option<Outpoint>,
     announcement: Option<FinalizedMaturityAnnouncement>,
     submission: Option<Vec<u8>>,
+    readback: Option<MaturityAcceptedReadback>,
     refusal: Option<Refusal>,
 }
 
@@ -362,6 +438,7 @@ impl MaturityAnnouncementPlanner {
             predecessor: None,
             announcement: None,
             submission: None,
+            readback: None,
             refusal: None,
         })
     }
@@ -394,6 +471,12 @@ impl MaturityAnnouncementPlanner {
     #[must_use]
     pub fn submission_bytes(&self) -> Option<&[u8]> {
         self.submission.as_deref()
+    }
+
+    /// The accepted identity and mined readback after a checked submission.
+    #[must_use]
+    pub const fn readback(&self) -> Option<&MaturityAcceptedReadback> {
+        self.readback.as_ref()
     }
 
     /// The first reason this single-run planner stopped, unchanged on later calls.
@@ -460,7 +543,9 @@ impl MaturityAnnouncementPlanner {
                 self.exchanges.push((step.clone(), response.clone()));
                 match step.subject() {
                     OperationSubject::Funding(subject) => self.settle_funding(subject, response)?,
-                    OperationSubject::Submission(subject) => check_submission(subject, response)?,
+                    OperationSubject::Submission(_) => {
+                        self.readback = self.check_submission(response)?;
+                    }
                     _ => return Err(Refusal::UnexpectedResponse),
                 }
                 self.position += 1;
@@ -524,6 +609,47 @@ impl MaturityAnnouncementPlanner {
             self.predecessor = Some(outpoint);
         }
         Ok(())
+    }
+
+    fn check_submission(
+        &self,
+        response: &NativeOperationResponse,
+    ) -> Result<Option<MaturityAcceptedReadback>, Refusal> {
+        if response.observed_layer != ObservedOutcomeLayer::Accepted {
+            return Ok(None);
+        }
+        let bytes = self
+            .submission
+            .as_ref()
+            .ok_or(Refusal::IncompleteTranscript)?;
+        let readback = response
+            .mined_readback
+            .as_ref()
+            .ok_or(Refusal::SubmissionReadbackMismatch)?;
+        let candidate = TargetTransaction::decode(bytes).map_err(transaction)?;
+        let identity = Txid::from_internal(sha256(&sha256(&candidate.encode_without_witness())));
+        let witness_identity = Txid::from_internal(sha256(&sha256(bytes)));
+        if response
+            .accepted_txid
+            .as_deref()
+            .and_then(|value| Txid::from_target_display(value).ok())
+            != Some(identity)
+            || readback.transaction_id != identity.to_target_display()
+            || readback.raw_transaction.as_slice() != bytes
+            || readback.witness_transaction_id != witness_identity.to_target_display()
+        {
+            return Err(Refusal::SubmissionReadbackMismatch);
+        }
+        let block_hash = decode_hex(&readback.block_hash)
+            .and_then(|bytes| bytes.try_into().ok())
+            .ok_or(Refusal::SubmissionReadbackMismatch)?;
+        Ok(Some(MaturityAcceptedReadback {
+            identity,
+            witness_identity,
+            block_hash,
+            block_height: readback.block_height,
+            bytes: bytes.clone(),
+        }))
     }
 }
 
@@ -723,34 +849,6 @@ fn check_coin(
     outpoint_of(&coin.outpoint).ok_or(Refusal::FundedOutpointInvalid)
 }
 
-fn check_submission(
-    subject: &TargetSubmissionSubject,
-    response: &NativeOperationResponse,
-) -> Result<(), Refusal> {
-    if response.observed_layer != ObservedOutcomeLayer::Accepted {
-        return Ok(());
-    }
-    let readback = response
-        .mined_readback
-        .as_ref()
-        .ok_or(Refusal::SubmissionReadbackMismatch)?;
-    let candidate = TargetTransaction::decode(&subject.transaction_bytes).map_err(transaction)?;
-    let identity = Txid::from_internal(sha256(&sha256(&candidate.encode_without_witness())));
-    if response
-        .accepted_txid
-        .as_deref()
-        .and_then(|value| Txid::from_target_display(value).ok())
-        != Some(identity)
-        || readback.transaction_id != identity.to_target_display()
-        || readback.raw_transaction != subject.transaction_bytes
-        || readback.witness_transaction_id
-            != Txid::from_internal(sha256(&sha256(&subject.transaction_bytes))).to_target_display()
-    {
-        return Err(Refusal::SubmissionReadbackMismatch);
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -777,6 +875,7 @@ mod tests {
             predecessor: plan.predecessor,
             announcement: plan.announcement.clone(),
             submission: plan.submission.clone(),
+            readback: plan.readback.clone(),
             refusal: plan.refusal.clone(),
         }
     }
@@ -874,6 +973,58 @@ mod tests {
             (plan, submission)
         });
         (copy_plan(plan), step.clone())
+    }
+
+    fn variable_planner() -> MaturityAnnouncementPlanner {
+        static SEED: OnceLock<MaturityAnnouncementPlanner> = OnceLock::new();
+        copy_plan(SEED.get_or_init(|| {
+            let historical = planner();
+            MaturityAnnouncementPlanner::new(
+                historical.identity,
+                historical.branch,
+                MaturityWitnessSelection::Retained(
+                    tapscript::StateWitnessSchedule::VariableMetadata,
+                ),
+            )
+            .expect("variable planner")
+        }))
+    }
+
+    fn variable_funded() -> (MaturityAnnouncementPlanner, OperationStep) {
+        static FUNDED: OnceLock<(MaturityAnnouncementPlanner, OperationStep)> = OnceLock::new();
+        let (plan, step) = FUNDED.get_or_init(|| {
+            let mut plan = variable_planner();
+            let issue = plan.next_step(None).expect("issue").expect("step");
+            let issue_response = funding_response(&issue);
+            let funding = plan
+                .next_step(Some((issue.case(), &issue_response)))
+                .expect("funding")
+                .expect("step");
+            let funding_response = funding_response(&funding);
+            let submission = plan
+                .next_step(Some((funding.case(), &funding_response)))
+                .expect("submission")
+                .expect("step");
+            (plan, submission)
+        });
+        (copy_plan(plan), step.clone())
+    }
+
+    fn variable_settled(layer: ObservedOutcomeLayer) -> MaturityAnnouncementPlanner {
+        let (mut plan, step) = variable_funded();
+        let response = submission_response(&step, layer);
+        assert_eq!(plan.next_step(Some((step.case(), &response))), Ok(None));
+        plan
+    }
+
+    fn variable_evidence(plan: &MaturityAnnouncementPlanner) -> MaturityNativeEvidence {
+        MaturityNativeEvidence::from_transcript(
+            plan.identity.clone(),
+            plan.branch,
+            MaturityWitnessSelection::Retained(tapscript::StateWitnessSchedule::VariableMetadata),
+            plan.completed_transcript().expect("settled exchanges"),
+        )
+        .expect("variable replay")
     }
 
     fn submission_response(
@@ -1160,7 +1311,9 @@ mod tests {
     fn declared_layers_match_the_matrix_and_operator_infrastructure() {
         let rows = crate::maturity_safety::rows();
         for name in ANNOUNCEMENT_STEPS {
-            if let Some(layer) = expected_layer(name) {
+            if let Some(layer) =
+                expected_layer(name, tapscript::StateWitnessSchedule::WholeMetadata)
+            {
                 let matching: Vec<_> = rows
                     .iter()
                     .filter(|row| {
@@ -1175,20 +1328,29 @@ mod tests {
             }
         }
         assert_eq!(
-            expected_layer("sponsorless"),
+            expected_layer(
+                "sponsorless",
+                tapscript::StateWitnessSchedule::WholeMetadata
+            ),
             Some(ObservedOutcomeLayer::RelayPolicyRejection)
         );
         for (name, operator) in ANNOUNCEMENT_STEPS[..2]
             .iter()
             .zip(&crate::maturity_operator::NATIVE_STEPS[..2])
         {
-            assert_eq!(expected_layer(name), None);
             assert_eq!(
-                expected_layer(name),
+                expected_layer(name, tapscript::StateWitnessSchedule::WholeMetadata),
+                None
+            );
+            assert_eq!(
+                expected_layer(name, tapscript::StateWitnessSchedule::WholeMetadata),
                 crate::maturity_operator::expected_layer(operator)
             );
         }
-        assert_eq!(expected_layer("unknown"), None);
+        assert_eq!(
+            expected_layer("unknown", tapscript::StateWitnessSchedule::WholeMetadata),
+            None
+        );
     }
 
     const NON_ACCEPTED: [ObservedOutcomeLayer; 6] = [
@@ -1235,7 +1397,7 @@ mod tests {
             let exchanges = plan.completed_transcript().expect("complete");
             assert_eq!(exchanges.last(), Some(&(step, response)));
             assert_eq!(
-                expected_layer("sponsorless"),
+                expected_layer("sponsorless", plan.schedule()),
                 Some(ObservedOutcomeLayer::RelayPolicyRejection)
             );
         }
@@ -1461,7 +1623,10 @@ mod tests {
             }
         );
         assert_eq!(
-            expected_layer("sponsorless"),
+            expected_layer(
+                "sponsorless",
+                tapscript::StateWitnessSchedule::WholeMetadata
+            ),
             Some(ObservedOutcomeLayer::RelayPolicyRejection)
         );
     }
@@ -1529,7 +1694,7 @@ mod tests {
     fn assert_outstanding(evidence: &MaturityNativeEvidence) {
         assert_eq!(
             evidence.acceptance_obligation(),
-            MaturityAcceptanceObligation::Outstanding {
+            &MaturityAcceptanceObligation::Outstanding {
                 routes: [
                     MaturityAcceptanceRoute::RelayWitnessRestructure,
                     MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
@@ -1547,7 +1712,10 @@ mod tests {
         assert_eq!(evidence.observations().len(), ANNOUNCEMENT_STEPS.len());
         for (observation, subject) in evidence.observations().iter().zip(ANNOUNCEMENT_STEPS) {
             assert_eq!(observation.subject(), subject);
-            assert_eq!(observation.declared_layer(), expected_layer(subject));
+            assert_eq!(
+                observation.declared_layer(),
+                expected_layer(subject, evidence.schedule())
+            );
             let expected = if subject == "sponsorless" {
                 ObservedOutcomeLayer::RelayPolicyRejection
             } else {
@@ -1600,7 +1768,11 @@ mod tests {
     #[test]
     fn standing_agrees_with_matches_boundary_for_every_observed_layer() {
         let boundary = crate::observed_boundary::observed_boundary(
-            expected_layer("sponsorless").expect("declaration"),
+            expected_layer(
+                "sponsorless",
+                tapscript::StateWitnessSchedule::WholeMetadata,
+            )
+            .expect("declaration"),
         )
         .expect("target boundary");
         for observed in NON_ACCEPTED
@@ -1684,6 +1856,202 @@ mod tests {
                 &exchanges
             ),
             Err(Refusal::FundingMismatch)
+        );
+    }
+
+    #[test]
+    fn variable_schedule_declares_acceptance_and_funding_remains_undeclared() {
+        for schedule in tapscript::StateWitnessSchedule::ALL {
+            for subject in &ANNOUNCEMENT_STEPS[..2] {
+                assert_eq!(expected_layer(subject, schedule), None);
+            }
+        }
+        assert_eq!(
+            expected_layer(
+                "sponsorless",
+                tapscript::StateWitnessSchedule::WholeMetadata
+            ),
+            Some(ObservedOutcomeLayer::RelayPolicyRejection)
+        );
+        assert_eq!(
+            expected_layer(
+                "sponsorless",
+                tapscript::StateWitnessSchedule::VariableMetadata
+            ),
+            Some(ObservedOutcomeLayer::Accepted)
+        );
+    }
+
+    #[test]
+    fn variable_scripted_acceptance_establishes_every_checked_readback_field() {
+        let plan = variable_settled(ObservedOutcomeLayer::Accepted);
+        let evidence = variable_evidence(&plan);
+        assert_eq!(
+            evidence.standing(),
+            MaturityNativeStanding::AnsweredAtDeclaredBoundary
+        );
+        let MaturityAcceptanceObligation::Established {
+            schedule,
+            identity,
+            readback,
+        } = evidence.acceptance_obligation()
+        else {
+            panic!("accepted variable transcript establishes readback")
+        };
+        assert_eq!(*schedule, tapscript::StateWitnessSchedule::VariableMetadata);
+        let response = &plan.completed_transcript().expect("complete")[2].1;
+        let mined = response.mined_readback.as_ref().expect("mined readback");
+        assert_eq!(*identity, readback.identity());
+        assert_eq!(
+            identity.to_target_display(),
+            response
+                .accepted_txid
+                .as_deref()
+                .expect("accepted identity")
+        );
+        assert_eq!(
+            readback.witness_identity().to_target_display(),
+            mined.witness_transaction_id
+        );
+        assert_eq!(readback.block_hash(), &[0x77; 32]);
+        assert_eq!(readback.block_height(), mined.block_height);
+        assert_eq!(readback.bytes(), mined.raw_transaction.as_slice());
+        assert_eq!(
+            readback.bytes(),
+            plan.submission_bytes().expect("submitted bytes")
+        );
+        assert_eq!(plan.readback(), Some(readback));
+    }
+
+    #[test]
+    fn variable_relay_refusal_is_observed_elsewhere_and_outstanding() {
+        let plan = variable_settled(ObservedOutcomeLayer::RelayPolicyRejection);
+        let evidence = variable_evidence(&plan);
+        assert_eq!(
+            evidence.standing(),
+            MaturityNativeStanding::ObservedElsewhere
+        );
+        assert_eq!(
+            evidence.observations()[2].declared_layer(),
+            Some(ObservedOutcomeLayer::Accepted)
+        );
+        assert_outstanding(&evidence);
+        assert_eq!(plan.readback(), None);
+    }
+
+    #[test]
+    fn variable_readback_mutations_refuse_submission_readback_mismatch() {
+        let changes: [fn(&mut NativeOperationResponse); 4] = [
+            |response| response.accepted_txid = Some("99".repeat(32)),
+            |response| {
+                response
+                    .mined_readback
+                    .as_mut()
+                    .expect("readback")
+                    .transaction_id = "99".repeat(32);
+            },
+            |response| {
+                response
+                    .mined_readback
+                    .as_mut()
+                    .expect("readback")
+                    .witness_transaction_id = "99".repeat(32);
+            },
+            |response| {
+                response
+                    .mined_readback
+                    .as_mut()
+                    .expect("readback")
+                    .raw_transaction[0] ^= 1;
+            },
+        ];
+        for change in changes {
+            let (mut plan, step) = variable_funded();
+            let mut response = submission_response(&step, ObservedOutcomeLayer::Accepted);
+            change(&mut response);
+            assert_terminal(
+                &mut plan,
+                &step,
+                &response,
+                Refusal::SubmissionReadbackMismatch,
+            );
+            assert_eq!(plan.readback(), None);
+        }
+    }
+
+    #[test]
+    fn malformed_block_hash_refuses_submission_readback_mismatch() {
+        for block_hash in ["77".repeat(31), "77".repeat(33), "gg".repeat(32)] {
+            let (mut plan, step) = variable_funded();
+            let mut response = submission_response(&step, ObservedOutcomeLayer::Accepted);
+            response
+                .mined_readback
+                .as_mut()
+                .expect("readback")
+                .block_hash = block_hash;
+            assert_terminal(
+                &mut plan,
+                &step,
+                &response,
+                Refusal::SubmissionReadbackMismatch,
+            );
+            assert_eq!(plan.readback(), None);
+        }
+    }
+
+    #[test]
+    fn variable_refusal_carrying_accepted_fields_refuses_response_shape() {
+        let (plan, step) = variable_funded();
+        let accepted = submission_response(&step, ObservedOutcomeLayer::Accepted);
+        let mut refused = submission_response(&step, ObservedOutcomeLayer::RelayPolicyRejection);
+        refused.accepted_txid = accepted.accepted_txid;
+        assert_terminal(
+            &mut copy_plan(&plan),
+            &step,
+            &refused,
+            Refusal::ResponseShape(ResponseShapeDefect::RefusedOperationCarriesObservation),
+        );
+        refused.accepted_txid = None;
+        refused.mined_readback = accepted.mined_readback;
+        assert_terminal(
+            &mut copy_plan(&plan),
+            &step,
+            &refused,
+            Refusal::ResponseShape(ResponseShapeDefect::RefusedOperationCarriesObservation),
+        );
+    }
+
+    #[test]
+    fn variable_incomplete_prefixes_refuse_incomplete_transcript() {
+        let plan = variable_settled(ObservedOutcomeLayer::Accepted);
+        let exchanges = plan.completed_transcript().expect("complete");
+        for length in 0..exchanges.len() {
+            assert_eq!(
+                MaturityNativeEvidence::from_transcript(
+                    plan.identity.clone(),
+                    plan.branch,
+                    MaturityWitnessSelection::Retained(
+                        tapscript::StateWitnessSchedule::VariableMetadata
+                    ),
+                    &exchanges[..length],
+                ),
+                Err(Refusal::IncompleteTranscript)
+            );
+        }
+    }
+
+    #[test]
+    fn repeated_variable_replay_yields_equal_established_values() {
+        let plan = variable_settled(ObservedOutcomeLayer::Accepted);
+        let first = variable_evidence(&plan);
+        let second = variable_evidence(&plan);
+        assert!(matches!(
+            first.acceptance_obligation(),
+            MaturityAcceptanceObligation::Established { .. }
+        ));
+        assert_eq!(
+            first.acceptance_obligation(),
+            second.acceptance_obligation()
         );
     }
 }

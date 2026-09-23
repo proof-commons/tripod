@@ -549,10 +549,10 @@ impl MaturityContinuityReport {
     pub fn entries(&self) -> &[MaturityContinuityReportEntry] {
         &self.entries
     }
-    /// Unmet accepted-readback condition with both routes.
+    /// Accepted binding or unmet readback routes.
     #[must_use]
-    pub const fn acceptance(&self) -> MaturityAcceptanceObligation {
-        self.acceptance
+    pub const fn acceptance(&self) -> &MaturityAcceptanceObligation {
+        &self.acceptance
     }
     /// Limits retained beside all successful comparisons.
     #[must_use]
@@ -2086,10 +2086,20 @@ fn render_header(text: &mut String, report: &MaturityContinuityReport) {
         }
     };
     let _ = writeln!(text, "executor_provenance_expectation {provenance}");
-    let MaturityAcceptanceObligation::Outstanding { routes } = report.acceptance;
-    let _ = writeln!(text, "acceptance outstanding");
-    for route in routes {
-        let _ = writeln!(text, "acceptance_route {route:?}");
+    match &report.acceptance {
+        MaturityAcceptanceObligation::Outstanding { routes } => {
+            let _ = writeln!(text, "acceptance outstanding");
+            for route in routes {
+                let _ = writeln!(text, "acceptance_route {route:?}");
+            }
+        }
+        MaturityAcceptanceObligation::Established {
+            schedule, identity, ..
+        } => {
+            let _ = writeln!(text, "acceptance established");
+            let _ = writeln!(text, "acceptance_schedule {}", schedule.name());
+            let _ = writeln!(text, "acceptance_identity {}", identity.to_target_display());
+        }
     }
     for residual in &report.residuals {
         let _ = writeln!(text, "residual {}", residual.name());
@@ -2797,7 +2807,7 @@ mod tests {
     #[test]
     fn acceptance_stays_outstanding_with_both_routes() {
         let report = assembled();
-        assert_eq!(report.acceptance(), SOURCES[0].acceptance_obligation());
+        assert_eq!(report.acceptance(), &SOURCES[0].acceptance_obligation());
         let bytes = rendered();
         assert!(bytes.contains("acceptance outstanding\n"));
         assert!(bytes.contains("acceptance_route RelayWitnessRestructure\n"));

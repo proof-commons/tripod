@@ -204,8 +204,10 @@ pub use maturity_closure::{
     recovered_values, removed_and_kept_checks, verdict,
 };
 pub use maturity_corpus::{
-    MATURITY_MANIFEST_SHA256, MATURITY_RUN_ADDRESS, MaturityCorpusImportRefusal,
-    MaturityReportFacts, ValidatedMaturityCorpus, maturity_run_of_record,
+    MATURITY_MANIFEST_SHA256, MATURITY_RUN_ADDRESS, MaturityArchiveFile,
+    MaturityCorpusImportRefusal, MaturityCorpusPins, MaturityReportFacts,
+    MaturitySponsorlessExpectation, ValidatedMaturityCorpus, admit_maturity_corpus,
+    maturity_run_of_record,
 };
 pub use plan::{
     CompactAshEvidencePlan, NegativeObservability, PlanCensus, RequiredTargetWork,

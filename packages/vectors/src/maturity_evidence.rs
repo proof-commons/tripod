@@ -422,9 +422,9 @@ impl MaturityPresentConstructorMaterial {
         &self.mutants
     }
 
-    /// The report's outstanding acceptance obligation.
+    /// The report's acceptance obligation.
     #[must_use]
-    pub fn acceptance(&self) -> MaturityAcceptanceObligation {
+    pub fn acceptance(&self) -> &MaturityAcceptanceObligation {
         self.report.report().acceptance()
     }
 }
@@ -1841,7 +1841,20 @@ fn constructor_records(material: &MaturityConstructorMaterial) -> Vec<MaturityCo
     let MaturityConstructorMaterial::Present(present) = material else {
         return Vec::new();
     };
-    let MaturityAcceptanceObligation::Outstanding { .. } = present.acceptance();
+    match present.acceptance() {
+        MaturityAcceptanceObligation::Outstanding { .. } => {}
+        MaturityAcceptanceObligation::Established {
+            schedule,
+            identity,
+            readback,
+        } => {
+            if *schedule != tapscript::StateWitnessSchedule::VariableMetadata
+                || *identity != readback.identity()
+            {
+                return Vec::new();
+            }
+        }
+    }
     let entries =
         present
             .report()
@@ -3308,7 +3321,7 @@ pub(crate) mod tests {
         assert_eq!(PLAN.census().native_refusal_observed(), 0);
         assert_eq!(
             corpus.evidence().acceptance_obligation(),
-            crate::maturity_native::MaturityAcceptanceObligation::Outstanding {
+            &crate::maturity_native::MaturityAcceptanceObligation::Outstanding {
                 routes: [
                     crate::maturity_native::MaturityAcceptanceRoute::RelayWitnessRestructure,
                     crate::maturity_native::MaturityAcceptanceRoute::BlockLayerSubmissionSubject,

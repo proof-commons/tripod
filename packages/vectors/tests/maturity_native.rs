@@ -1,7 +1,7 @@
 //! Native capture carrier for the sponsorless maturity announcement.
 //!
 //! The loop invokes `scripts/live-native-maturity-capture.sh` with its documented adapter, deployment and toolchain environment. That driver supplies the clean suite identity and new report directory and selects only the ignored test. The ordinary tests below drive scripted responses in process and require no node.
-//! The caller's branch context is retained for replay and establishes no current-root freshness. A relay-policy refusal answers the declared row while the accepted positive control stays outstanding.
+//! The caller's branch context is retained for replay and establishes no current-root freshness. The whole-metadata schedule declares the archived relay refusal; the variable-metadata schedule declares acceptance. Exact scripted replay can establish acceptance bindings without authenticating a native run or promoting a row standing.
 
 pub mod common;
 
@@ -118,10 +118,33 @@ fn render_evidence(out: &mut String, evidence: &MaturityNativeEvidence) {
         );
     }
     let _ = writeln!(out, "sponsorless-standing {:?}", evidence.standing());
-    let MaturityAcceptanceObligation::Outstanding { routes } = evidence.acceptance_obligation();
-    let _ = writeln!(out, "sponsorless-acceptance outstanding");
-    for route in routes {
-        let _ = writeln!(out, "acceptance-route {route:?}");
+    match evidence.acceptance_obligation() {
+        MaturityAcceptanceObligation::Outstanding { routes } => {
+            let _ = writeln!(out, "sponsorless-acceptance outstanding");
+            for route in routes {
+                let _ = writeln!(out, "acceptance-route {route:?}");
+            }
+        }
+        MaturityAcceptanceObligation::Established {
+            schedule,
+            identity,
+            readback,
+        } => {
+            let _ = writeln!(out, "sponsorless-acceptance established");
+            let _ = writeln!(out, "accepted-schedule {}", schedule.name());
+            let _ = writeln!(out, "accepted-identity {}", identity.to_target_display());
+            let _ = writeln!(
+                out,
+                "accepted-witness-identity {}",
+                readback.witness_identity().to_target_display()
+            );
+            let _ = writeln!(
+                out,
+                "accepted-block {} {}",
+                common::hex_bytes(readback.block_hash()),
+                readback.block_height()
+            );
+        }
     }
 }
 
@@ -207,8 +230,9 @@ fn assert_completed(planner: &MaturityAnnouncementPlanner, evidence: &MaturityNa
         }
     }
     let (step, response) = exchanges.last().expect("submission");
-    let boundary = observed_boundary(expected_layer("sponsorless").expect("declaration"))
-        .expect("target boundary");
+    let boundary =
+        observed_boundary(expected_layer("sponsorless", planner.schedule()).expect("declaration"))
+            .expect("target boundary");
     assert!(matches_boundary(boundary, response.observed_layer));
     assert_eq!(
         evidence.standing(),
@@ -302,10 +326,17 @@ fn display_hash(bytes: &[u8]) -> String {
 }
 
 fn scripted_run(layer: ObservedOutcomeLayer) -> MaturityAnnouncementPlanner {
+    scripted_run_for(tapscript::StateWitnessSchedule::WholeMetadata, layer)
+}
+
+fn scripted_run_for(
+    schedule: tapscript::StateWitnessSchedule,
+    layer: ObservedOutcomeLayer,
+) -> MaturityAnnouncementPlanner {
     let mut planner = MaturityAnnouncementPlanner::new(
         identity(),
         branch(),
-        vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        vectors::maturity_closure::MaturityWitnessSelection::Retained(schedule),
     )
     .expect("planner");
     let mut current = planner.next_step(None).expect("initial step");
@@ -329,7 +360,7 @@ fn derive(
     MaturityNativeEvidence::from_transcript(
         identity(),
         branch(),
-        vectors::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),
+        vectors::maturity_closure::MaturityWitnessSelection::Retained(planner.schedule()),
         planner.completed_transcript()?,
     )
 }
@@ -337,7 +368,7 @@ fn derive(
 fn assert_outstanding(evidence: &MaturityNativeEvidence) {
     assert_eq!(
         evidence.acceptance_obligation(),
-        MaturityAcceptanceObligation::Outstanding {
+        &MaturityAcceptanceObligation::Outstanding {
             routes: [
                 MaturityAcceptanceRoute::RelayWitnessRestructure,
                 MaturityAcceptanceRoute::BlockLayerSubmissionSubject
@@ -354,7 +385,7 @@ fn scripted_relay_refusal_answers_the_declared_boundary() {
 }
 
 #[test]
-fn scripted_acceptance_is_off_declaration_and_does_not_claim_acceptance() {
+fn whole_metadata_scripted_acceptance_is_off_declaration_and_outstanding() {
     let planner = scripted_run(ObservedOutcomeLayer::Accepted);
     let evidence = derive(&planner).expect("settled evidence");
     assert_eq!(
@@ -363,8 +394,74 @@ fn scripted_acceptance_is_off_declaration_and_does_not_claim_acceptance() {
     );
     let submission = evidence.observations().last().expect("submission");
     assert_eq!(submission.observed_layer(), ObservedOutcomeLayer::Accepted);
-    assert_eq!(submission.declared_layer(), expected_layer("sponsorless"));
+    assert_eq!(
+        submission.declared_layer(),
+        expected_layer("sponsorless", planner.schedule())
+    );
     assert_outstanding(&evidence);
+}
+
+#[test]
+fn variable_scripted_acceptance_establishes_through_the_public_api() {
+    let planner = scripted_run_for(
+        tapscript::StateWitnessSchedule::VariableMetadata,
+        ObservedOutcomeLayer::Accepted,
+    );
+    let evidence = derive(&planner).expect("accepted replay");
+    assert_eq!(
+        evidence.standing(),
+        MaturityNativeStanding::AnsweredAtDeclaredBoundary
+    );
+    let MaturityAcceptanceObligation::Established {
+        schedule,
+        identity,
+        readback,
+    } = evidence.acceptance_obligation()
+    else {
+        panic!("variable acceptance must establish its checked readback")
+    };
+    assert_eq!(*schedule, planner.schedule());
+    assert_eq!(*identity, readback.identity());
+    assert_eq!(planner.readback(), Some(readback));
+    assert_eq!(
+        readback.bytes(),
+        planner.submission_bytes().expect("submitted bytes")
+    );
+}
+
+#[test]
+fn established_payload_renders_five_lines_in_order() {
+    let planner = scripted_run_for(
+        tapscript::StateWitnessSchedule::VariableMetadata,
+        ObservedOutcomeLayer::Accepted,
+    );
+    let evidence = derive(&planner).expect("accepted replay");
+    let MaturityAcceptanceObligation::Established {
+        schedule,
+        identity,
+        readback,
+    } = evidence.acceptance_obligation()
+    else {
+        panic!("established value")
+    };
+    let mut text = String::new();
+    render_evidence(&mut text, &evidence);
+    let lines: Vec<_> = text.lines().collect();
+    let expected = [
+        "sponsorless-acceptance established".to_owned(),
+        format!("accepted-schedule {}", schedule.name()),
+        format!("accepted-identity {}", identity.to_target_display()),
+        format!(
+            "accepted-witness-identity {}",
+            readback.witness_identity().to_target_display()
+        ),
+        format!(
+            "accepted-block {} {}",
+            common::hex_bytes(readback.block_hash()),
+            readback.block_height()
+        ),
+    ];
+    assert_eq!(&lines[lines.len() - expected.len()..], expected);
 }
 
 #[test]
