@@ -609,6 +609,12 @@ prototype's independent field arithmetic agree on the exact nonce, leaf, root,
 output, control blocks, generated cases, and NUMS derivation without making the
 prototype a production dependency (`0.6.178-dev`).
 
+The constructor's goldens are pinned separately for each witness schedule. A
+pin establishes that the constructor and an independently framed, hashed, and
+curve-derived reconstruction agree before their bytes are compared with the
+recorded value. A change to an announcement leaf therefore reaches the static
+root, outer commitment, and control recipes through the schedule's own tree.
+
 `StateConstructorRefusal` is a closed sum of eighteen refusals. Only
 `TweakAboveGroupOrder`, `TweakedPointIsIdentity`, and
 `CanonicalBranchSideNotSatisfied` are retryable; every refused lower nonce is

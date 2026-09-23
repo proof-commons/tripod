@@ -13,11 +13,14 @@ use target_elements::{LeafVersion, StackValueType};
 use crate::state_constructor::*;
 use crate::{
     AbstractLimits, AbstractStackState, InternalKeyPolicy, KeyPathPolicy, StackItem,
-    TapscriptInstruction, TapscriptProgram, validate_program,
+    StateWitnessSchedule, TapscriptInstruction, TapscriptProgram, production_static_subtree,
+    validate_program,
 };
 
 use super::reviewed_target;
-use super::state_program_tests::{fixtures, independent_leaf_hash, production_tree, tagged_hash};
+use super::state_program_tests::{
+    fixtures, independent_leaf_hash, production_tree, tagged_hash, variable_program,
+};
 
 const GOLDEN_PROGRAM: &str = "4c56747269706f642f73746174652d6d6574616461746100000001000000000000000100000000000000020000000000000003000000000000000400000000000000050000000000000000000000000000000000000000000069";
 const GOLDEN_LEAF: &str = "b4c768ef06438b3d328b54591651ce9d19e56f6cf608daa592ba3259a319b599";
@@ -26,6 +29,14 @@ const GOLDEN_ROOT: &str = "3ddf7410676048756dc1f5750474eafc14f7c2b9e7d1c846da7f2
 const GOLDEN_TWEAK: &str = "58e1a2aac2e984477073c3d510308b4089aac9d39ee88c60da2b3f99d08bfe7e";
 const GOLDEN_METADATA_CONTROL: &str = "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0cf54a9f68d066ca669c447045d01dfc15d2c6c1c33a13a2a11e8d1a52a50eb92";
 const GOLDEN_STATIC_CONTROL: &str = "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0b4c768ef06438b3d328b54591651ce9d19e56f6cf608daa592ba3259a319b599";
+
+const GOLDEN_VAR_PROGRAM: &str = "4c56747269706f642f73746174652d6d6574616461746100000001000000000000000100000000000000020000000000000003000000000000000400000000000000050000000000000000000000000100000000000000000069";
+const GOLDEN_VAR_LEAF: &str = "1dd35257bddfbf0c1c9e0eb4751e91e440cdb2e618c5b02863ffeb21987ae6a6";
+const GOLDEN_VAR_STATIC: &str = "5e139de85e6e15026296e95aba14bc08aca7ad3d5110eaa8f8e43308c81f932c";
+const GOLDEN_VAR_ROOT: &str = "b59d9ad41232829e066262931a02ae932f343f8c39504fb4592340b8a9b618f8";
+const GOLDEN_VAR_TWEAK: &str = "e3ae57ec1d9358a64d3c4eae72e1eff49a12e8a07e971c46a73b5aae33f5c18e";
+const GOLDEN_VAR_METADATA_CONTROL: &str = "c450929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac05e139de85e6e15026296e95aba14bc08aca7ad3d5110eaa8f8e43308c81f932c";
+const GOLDEN_VAR_STATIC_CONTROL: &str = "c450929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac01dd35257bddfbf0c1c9e0eb4751e91e440cdb2e618c5b02863ffeb21987ae6a6";
 
 struct ScriptedCurve {
     valid: bool,
@@ -123,17 +134,32 @@ fn derive(
     )
 }
 
-fn candidate() -> CandidateStateConstructor {
-    let curve = ScriptedCurve::new([]);
+fn tree_for_schedule(schedule: StateWitnessSchedule) -> StateStaticSubtree {
+    match schedule {
+        StateWitnessSchedule::WholeMetadata => production_tree(),
+        StateWitnessSchedule::VariableMetadata => {
+            production_static_subtree(&reviewed_target(), variable_program()).unwrap()
+        }
+    }
+}
+
+fn candidate(
+    schedule: StateWitnessSchedule,
+    curve: &impl StateCurveCapability,
+) -> CandidateStateConstructor {
     CandidateStateConstructor::derive(
         &reviewed_target(),
         &metadata(),
-        &production_tree(),
-        policy(&curve),
+        &tree_for_schedule(schedule),
+        StateInternalKeyPolicy::new(STATE_NUMS_KEY, curve).unwrap(),
         StateNonceBudget::default(),
-        &curve,
+        curve,
     )
     .unwrap()
+}
+
+fn whole_candidate() -> CandidateStateConstructor {
+    candidate(StateWitnessSchedule::WholeMetadata, &ScriptedCurve::new([]))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -151,14 +177,27 @@ struct IndependentGolden {
     static_root: [u8; 32],
     root: [u8; 32],
     tweak: [u8; 32],
+    output_key: [u8; 32],
+    parity: bool,
     metadata_control: Vec<u8>,
     static_control: Vec<u8>,
 }
 
-fn independent_golden() -> IndependentGolden {
-    let bytes = fixtures().program.program().encode(&reviewed_target());
+fn record_for_schedule(schedule: StateWitnessSchedule) -> &'static crate::StateAnnouncementProgram {
+    match schedule {
+        StateWitnessSchedule::WholeMetadata => &fixtures().program,
+        StateWitnessSchedule::VariableMetadata => variable_program(),
+    }
+}
+
+fn independent_golden(
+    schedule: StateWitnessSchedule,
+    curve: &impl StateCurveCapability,
+) -> IndependentGolden {
+    let bytes = record_for_schedule(schedule)
+        .program()
+        .encode(&reviewed_target());
     let static_root = independent_leaf_hash(&bytes);
-    let curve = ScriptedCurve::new([]);
     for attempt in 0..4096 {
         let nonce = StateRepresentationNonce::new(attempt);
         let metadata = encode_state_metadata(&metadata(), nonce);
@@ -174,7 +213,6 @@ fn independent_golden() -> IndependentGolden {
         else {
             continue;
         };
-        assert_eq!(key, [0x42; 32]);
         let tweak = tagged_hash(b"TapTweak/elements", &[STATE_NUMS_KEY, root].concat());
         let mut control = vec![0xc4 | u8::from(parity)];
         control.extend(STATE_NUMS_KEY);
@@ -188,6 +226,8 @@ fn independent_golden() -> IndependentGolden {
             static_root,
             root,
             tweak,
+            output_key: key,
+            parity,
             metadata_control,
             static_control: control,
         };
@@ -195,10 +235,14 @@ fn independent_golden() -> IndependentGolden {
     panic!("independent production fixture search exhausted");
 }
 
+fn whole_independent_golden() -> IndependentGolden {
+    independent_golden(StateWitnessSchedule::WholeMetadata, &ScriptedCurve::new([]))
+}
+
 #[test]
 fn golden_canonical_bytes_and_target_hashes() {
-    let expected = independent_golden();
-    let built = candidate();
+    let expected = whole_independent_golden();
+    let built = whole_candidate();
     assert_eq!(built.nonce(), expected.nonce);
     assert_eq!(
         built.leaf_program().encode(&reviewed_target()),
@@ -250,8 +294,8 @@ fn golden_canonical_bytes_and_target_hashes() {
 
 #[test]
 fn golden_control_blocks_are_derived_for_both_direct_leaves() {
-    let expected = independent_golden();
-    let built = candidate();
+    let expected = whole_independent_golden();
+    let built = whole_candidate();
     for (role, expected, golden) in [
         (
             StateLeafRole::MetadataCommitment,
@@ -272,6 +316,78 @@ fn golden_control_blocks_are_derived_for_both_direct_leaves() {
         assert_eq!(recipe.role, role);
         assert_eq!(recipe.siblings.len(), 1);
     }
+}
+
+#[test]
+fn variable_golden_is_independently_recomputed_before_its_pins() {
+    let curve = PublicArithmeticCurve;
+    let expected = independent_golden(StateWitnessSchedule::VariableMetadata, &curve);
+    let built = candidate(StateWitnessSchedule::VariableMetadata, &curve);
+    assert_eq!(built.nonce(), expected.nonce);
+    assert_eq!(
+        built.leaf_program().encode(&reviewed_target()),
+        expected.program
+    );
+    assert_eq!(built.static_subtree().root(), &expected.static_root);
+    assert_eq!(built.merkle_root(), &expected.root);
+    assert_eq!(built.tweak_hash(), expected.tweak);
+    assert_eq!(built.output_key(), &expected.output_key);
+    assert_eq!(built.parity(), expected.parity);
+    let whole = whole_independent_golden();
+    assert_ne!(expected.static_root, whole.static_root);
+    assert_ne!(expected.program, whole.program);
+    assert_ne!(expected.leaf, whole.leaf);
+    assert_eq!(
+        expected.program == whole.program,
+        expected.nonce == whole.nonce
+    );
+    assert_eq!(expected.leaf == whole.leaf, expected.nonce == whole.nonce);
+    assert_eq!(
+        built
+            .control_recipe(StateLeafRole::MetadataCommitment)
+            .unwrap()
+            .executing_leaf_hash,
+        expected.leaf
+    );
+    assert_eq!(
+        built
+            .control_recipe(StateLeafRole::MetadataCommitment)
+            .unwrap()
+            .control_bytes()
+            .unwrap(),
+        expected.metadata_control
+    );
+    assert_eq!(
+        built
+            .control_recipe(StateLeafRole::Announcement)
+            .unwrap()
+            .control_bytes()
+            .unwrap(),
+        expected.static_control
+    );
+    let actual = [
+        hex(&expected.program),
+        hex(&expected.leaf),
+        hex(&expected.static_root),
+        hex(&expected.root),
+        hex(&expected.tweak),
+        hex(&expected.metadata_control),
+        hex(&expected.static_control),
+    ];
+    assert_eq!(
+        actual,
+        [
+            GOLDEN_VAR_PROGRAM,
+            GOLDEN_VAR_LEAF,
+            GOLDEN_VAR_STATIC,
+            GOLDEN_VAR_ROOT,
+            GOLDEN_VAR_TWEAK,
+            GOLDEN_VAR_METADATA_CONTROL,
+            GOLDEN_VAR_STATIC_CONTROL,
+        ],
+        "variable nonce={}",
+        expected.nonce.get()
+    );
 }
 
 #[test]
@@ -311,7 +427,7 @@ fn predecessor_and_successor_recipes_preserve_the_production_subtree() {
 
 #[test]
 fn scripted_output_and_parity_do_not_claim_curve_conformance() {
-    let built = candidate();
+    let built = whole_candidate();
     assert_eq!(built.output_key(), &[0x42; 32]);
     assert!(built.parity());
     let mut expected = vec![0x51, 0x20];
@@ -324,9 +440,9 @@ fn scripted_output_and_parity_do_not_claim_curve_conformance() {
 
 #[test]
 fn deterministic_repetition_preserves_all_evidence_and_recipes() {
-    assert_eq!(candidate(), candidate());
+    assert_eq!(whole_candidate(), whole_candidate());
     assert_eq!(
-        candidate().generation(),
+        whole_candidate().generation(),
         StateConstructorGeneration::CanonicalMetadataV1
     );
 }
@@ -690,7 +806,7 @@ fn inner_path_of_128_nodes_is_refused_when_outer_sibling_is_added() {
 
 #[test]
 fn control_encoding_enforces_128_node_limit() {
-    let mut recipe = candidate()
+    let mut recipe = whole_candidate()
         .control_recipe(StateLeafRole::Announcement)
         .unwrap();
     recipe.siblings = vec![[0; 32]; 128];
@@ -704,7 +820,7 @@ fn control_encoding_enforces_128_node_limit() {
 
 #[test]
 fn metadata_pattern_protects_exact_bytes_and_only_aborts() {
-    let built = candidate();
+    let built = whole_candidate();
     let pattern = built.pattern();
     assert_eq!(pattern.protected_source, built.metadata_bytes());
     assert!(pattern.execution.success().is_empty());
@@ -727,7 +843,7 @@ fn metadata_pattern_protects_exact_bytes_and_only_aborts() {
 #[test]
 fn metadata_leaf_ignores_arbitrary_admitted_initial_stack_contents() {
     let target = reviewed_target();
-    let built = candidate();
+    let built = whole_candidate();
     for stack in [
         Vec::new(),
         vec![StackValueType::Bool],
@@ -753,7 +869,7 @@ fn metadata_leaf_ignores_arbitrary_admitted_initial_stack_contents() {
 #[test]
 fn empty_or_changed_metadata_program_is_not_admitted_as_the_pattern() {
     let target = reviewed_target();
-    let built = candidate();
+    let built = whole_candidate();
     for offered in [TapscriptProgram::new(Vec::new()).unwrap(), program(1)] {
         assert_eq!(
             StateMetadataPattern::validate(&target, built.encoded_metadata(), &offered)
@@ -778,7 +894,7 @@ fn prototype_schema_and_noncanonical_state_bytes_are_refused() {
             StateConstructorRefusal::MetadataEncodingRefused
         );
     }
-    let built = candidate();
+    let built = whole_candidate();
     assert_eq!(
         &StateMetadataPattern::from_bytes(&target, built.metadata_bytes()).unwrap(),
         built.pattern()
@@ -850,7 +966,7 @@ fn field_commitments_follow_realization_maturity_transition_on_both_sides() {
 
 #[test]
 fn continuity_refuses_static_subtree_migration() {
-    let before = candidate();
+    let before = whole_candidate();
     let after = derive(4, 4096, &ScriptedCurve::new([])).unwrap();
     assert_eq!(
         before.continuity(&after),
@@ -860,8 +976,8 @@ fn continuity_refuses_static_subtree_migration() {
 
 #[test]
 fn reference_declarations_are_deterministic_and_acyclic() {
-    let declarations = candidate().reference_declarations();
-    assert_eq!(declarations, candidate().reference_declarations());
+    let declarations = whole_candidate().reference_declarations();
+    assert_eq!(declarations, whole_candidate().reference_declarations());
     assert_eq!(declarations.len(), 7);
     let census = StateReferenceCensus::new(&declarations).unwrap();
     assert_eq!(census.components.len(), 7);
@@ -878,7 +994,7 @@ fn reference_declarations_are_deterministic_and_acyclic() {
 
 #[test]
 fn reference_census_computes_components_and_refuses_cycles_without_a_cut() {
-    let mut declarations = candidate().reference_declarations();
+    let mut declarations = whole_candidate().reference_declarations();
     let first = declarations[0].reference;
     let second = declarations[1].reference;
     declarations[0].dependencies.push(second);
@@ -907,7 +1023,7 @@ fn reference_census_computes_components_and_refuses_cycles_without_a_cut() {
 
 #[test]
 fn reference_census_accepts_dag_edges_and_bounds_graph_work() {
-    let mut declarations = candidate().reference_declarations();
+    let mut declarations = whole_candidate().reference_declarations();
     let dependency = declarations[1].reference;
     declarations[0].dependencies.push(dependency);
     StateReferenceCensus::new(&declarations)
@@ -1073,7 +1189,7 @@ impl StateCurveCapability for PublicArithmeticCurve {
 
 #[test]
 fn closure_recomputes_leaf_branch_and_real_tweak_output_with_public_arithmetic() {
-    let expected = independent_golden();
+    let expected = whole_independent_golden();
     let leaf = closure_metadata_leaf(expected.nonce);
     assert_eq!(hex(&leaf), GOLDEN_LEAF);
     assert_eq!(leaf, expected.leaf);
@@ -1161,8 +1277,8 @@ fn the_program_at_a_nonce_is_the_selected_constructors_and_differs_at_every_othe
 // the loop below is empty and the builder rejected nothing.
 #[test]
 fn the_production_golden_is_the_least_nonce_satisfying_the_branch_order() {
-    let expected = independent_golden();
-    let built = candidate();
+    let expected = whole_independent_golden();
+    let built = whole_candidate();
     assert_eq!(built.nonce(), expected.nonce);
     assert_eq!(
         built.evidence().rejected.len(),
@@ -1212,6 +1328,135 @@ fn real_transition_pair(
     })
 }
 
+fn recipe_pair(schedule: StateWitnessSchedule) -> [CandidateStateConstructor; 2] {
+    let target = reviewed_target();
+    let tree = tree_for_schedule(schedule);
+    let curve = PublicArithmeticCurve;
+    let input = metadata();
+    let output = announce_maturity(
+        &input,
+        Cycle::new(7),
+        AnnouncementLeadBounds::new(Cycle::new(2), Cycle::new(4)).unwrap(),
+    )
+    .unwrap();
+    [
+        predecessor_recipe(
+            &target,
+            &input,
+            &tree,
+            StateInternalKeyPolicy::new(STATE_NUMS_KEY, &curve).unwrap(),
+            StateNonceBudget::default(),
+            &curve,
+        )
+        .unwrap(),
+        successor_recipe(
+            &target,
+            &output,
+            &tree,
+            StateInternalKeyPolicy::new(STATE_NUMS_KEY, &curve).unwrap(),
+            StateNonceBudget::default(),
+            &curve,
+        )
+        .unwrap(),
+    ]
+}
+
+fn independently_checked_recipe_nonces(schedule: StateWitnessSchedule) -> [u32; 2] {
+    let [before, after] = recipe_pair(schedule);
+    let tree = tree_for_schedule(schedule);
+    assert_eq!(before.static_subtree(), after.static_subtree());
+    assert_ne!(before.metadata_bytes(), after.metadata_bytes());
+    assert_eq!(before.continuity(&after), Ok(()));
+    assert_eq!(after.continuity(&before), Ok(()));
+    let curve = PublicArithmeticCurve;
+    for built in [&before, &after] {
+        let semantic = built.encoded_metadata().semantic;
+        let selected = built.nonce();
+        let independent_selected = (0..StateNonceBudget::default().attempts())
+            .find(|attempt| {
+                metadata_leaf_at(&semantic, StateRepresentationNonce::new(*attempt)) <= *tree.root()
+            })
+            .unwrap();
+        assert_eq!(selected.get(), independent_selected);
+        assert_eq!(
+            built.evidence().rejected.len(),
+            usize::try_from(selected.get()).unwrap()
+        );
+        for attempt in 0..selected.get() {
+            let nonce = StateRepresentationNonce::new(attempt);
+            let rejection = StateConstructorRefusal::CanonicalBranchSideNotSatisfied;
+            assert!(metadata_leaf_at(&semantic, nonce) > *tree.root());
+            assert_eq!(
+                built.evidence().rejected[usize::try_from(attempt).unwrap()],
+                (nonce, rejection)
+            );
+            assert!(rejection.retryable());
+            assert_eq!(
+                state_output_program_at_nonce(
+                    &reviewed_target(),
+                    &EncodedStateMetadata {
+                        semantic,
+                        representation: nonce,
+                    },
+                    &tree,
+                    StateInternalKeyPolicy::new(STATE_NUMS_KEY, &curve).unwrap(),
+                    &curve,
+                ),
+                Err(rejection)
+            );
+        }
+        assert!(metadata_leaf_at(&semantic, selected) <= *tree.root());
+        assert_eq!(
+            state_output_program_at_nonce(
+                &reviewed_target(),
+                &EncodedStateMetadata {
+                    semantic,
+                    representation: selected,
+                },
+                &tree,
+                StateInternalKeyPolicy::new(STATE_NUMS_KEY, &curve).unwrap(),
+                &curve,
+            )
+            .unwrap(),
+            built.output_program()
+        );
+        assert_real_reconstruction(built, schedule);
+    }
+    [before.nonce().get(), after.nonce().get()]
+}
+
+#[test]
+fn whole_recipe_nonces_are_pinned_after_independent_leastness() {
+    let actual = independently_checked_recipe_nonces(StateWitnessSchedule::WholeMetadata);
+    assert_eq!(actual, [0, 0], "whole recipe nonces");
+}
+
+#[test]
+fn variable_recipe_nonces_are_pinned_after_independent_leastness() {
+    let actual = independently_checked_recipe_nonces(StateWitnessSchedule::VariableMetadata);
+    assert_eq!(actual, [1, 5], "variable recipe nonces");
+}
+
+#[test]
+fn whole_and_variable_trees_refuse_constructor_continuity_both_ways() {
+    let [whole_before, whole_after] = recipe_pair(StateWitnessSchedule::WholeMetadata);
+    let [variable_before, variable_after] = recipe_pair(StateWitnessSchedule::VariableMetadata);
+    assert_eq!(whole_before.continuity(&whole_after), Ok(()));
+    assert_eq!(variable_before.continuity(&variable_after), Ok(()));
+    assert_ne!(
+        whole_before.static_subtree().root(),
+        variable_before.static_subtree().root()
+    );
+    assert_eq!(
+        whole_before.continuity(&variable_after),
+        Err(StateConstructorRefusal::ConflictingLeaf)
+    );
+    assert_eq!(
+        variable_before.continuity(&whole_after),
+        Err(StateConstructorRefusal::ConflictingLeaf)
+    );
+}
+
 fn independently_framed_metadata(
     semantic: &StateMetadata,
     nonce: StateRepresentationNonce,
@@ -1227,7 +1472,7 @@ fn metadata_leaf_at(semantic: &StateMetadata, nonce: StateRepresentationNonce) -
     independent_leaf_hash(&independently_framed_metadata(semantic, nonce))
 }
 
-fn assert_real_reconstruction(built: &CandidateStateConstructor) {
+fn assert_real_reconstruction(built: &CandidateStateConstructor, schedule: StateWitnessSchedule) {
     use super::state_announcement_tests::{output_key, tagged};
 
     let encoded = built.encoded_metadata();
@@ -1247,8 +1492,11 @@ fn assert_real_reconstruction(built: &CandidateStateConstructor) {
             .executing_leaf_hash,
         leaf
     );
-    let static_root =
-        independent_leaf_hash(&fixtures().program.program().encode(&reviewed_target()));
+    let static_root = independent_leaf_hash(
+        &record_for_schedule(schedule)
+            .program()
+            .encode(&reviewed_target()),
+    );
     assert_eq!(built.static_subtree().root(), &static_root);
     assert!(leaf <= static_root);
     let root = tagged(b"TapBranch/elements", &[leaf, static_root].concat());
@@ -1304,7 +1552,7 @@ fn real_maturity_transition_reconstructs_both_sides_and_separates_static_from_se
     assert_ne!(before.merkle_root(), after.merkle_root());
     assert_ne!(before.output_program(), after.output_program());
     for built in [&before, &after] {
-        assert_real_reconstruction(built);
+        assert_real_reconstruction(built, StateWitnessSchedule::WholeMetadata);
     }
 
     let moved = real_constructor(
@@ -1611,5 +1859,5 @@ fn real_transition_control_recipes_change_only_outer_sibling_and_output_parity()
             .collect::<BTreeSet<_>>(),
         BTreeSet::from([false, true])
     );
-    assert_real_reconstruction(&other);
+    assert_real_reconstruction(&other, StateWitnessSchedule::WholeMetadata);
 }

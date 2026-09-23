@@ -33,7 +33,7 @@ use tapscript::upstream::{AnnouncementLeadBounds, Cycle, StateSingletonDeclarati
 use tapscript::{
     EstablishedOperatorProfile, StackItem, StateAnnouncementId, StateAnnouncementProgram,
     StateLeafRole, StateOperatorPatternId, StatePatternId, StateProgramComponent,
-    TapscriptInstruction, TapscriptProgram, selected_operator_profile,
+    StateWitnessSchedule, TapscriptInstruction, TapscriptProgram, selected_operator_profile,
 };
 use target_elements::EncodingClass;
 
@@ -42,7 +42,8 @@ use crate::state_deployment::{
     StateLeadBoundOrigin, StateLeadBounds, StateLinkDeploymentParameters,
 };
 use crate::tests::{
-    bridge, depth, identity, operator_key, plan, record, reviewed_target, state_constructor,
+    bridge, bridge_for_record, depth, identity, operator_key, plan, record, record_for_schedule,
+    reviewed_target, state_constructor,
 };
 use crate::{
     StateConsumerCensus, StateConsumerSites, StateDefinitionCensus, StateLinkRefusal,
@@ -104,6 +105,10 @@ pub(super) fn second_binding() -> OperatorDeploymentBinding {
 
 /// The second deployment's bound sources.
 pub(super) fn second_bridge() -> StateLinkDeploymentParameters {
+    second_bridge_for_record(&record())
+}
+
+fn second_bridge_for_record(record: &StateAnnouncementProgram) -> StateLinkDeploymentParameters {
     StateLinkDeploymentParameters::bind(
         &reviewed_target(),
         plan(),
@@ -111,9 +116,28 @@ pub(super) fn second_bridge() -> StateLinkDeploymentParameters {
         identity(0x11, 0x22),
         second_binding(),
         depth(),
-        &record(),
+        record,
     )
     .expect("the second deployment's sources bind")
+}
+
+fn variable_resolved_census(
+    record: &StateAnnouncementProgram,
+    deployment: &StateLinkDeploymentParameters,
+    singleton: &StateSingletonAsset,
+) -> StateResolvedCensus {
+    let constructor = state_constructor();
+    let definitions = collect_state_definitions(
+        &reviewed_target(),
+        deployment,
+        &constructor,
+        singleton,
+        &demonstration_declaration(),
+        StateWitnessSchedule::VariableMetadata,
+    )
+    .expect("variable definitions collect");
+    let consumers = StateConsumerCensus::from_sources(record, &constructor);
+    resolve_state_census(&definitions, &consumers).expect("variable census resolves")
 }
 
 /// Pass one over one deployment's sources.
@@ -417,6 +441,190 @@ fn rebuilding_one_key_at_a_time_moves_exactly_that_key_s_sites() {
         let expected = if moves { sites } else { BTreeSet::new() };
         assert_eq!(differing(pristine, &rebuilt), expected, "{symbol:?}");
     }
+}
+
+#[test]
+fn variable_census_covers_each_push_and_tiles_every_component() {
+    let target = reviewed_target();
+    let composed = record_for_schedule(StateWitnessSchedule::VariableMetadata);
+    let resolved = variable_resolved_census(
+        &composed,
+        &bridge_for_record(&composed),
+        &demonstration_singleton(),
+    );
+    let census = discover_state_relocations(&target, &composed, &resolved)
+        .expect("variable relocation discovery");
+    let recorded: BTreeSet<usize> = composed
+        .consumers()
+        .values()
+        .flat_map(|consumer| consumer.sites.iter().copied())
+        .collect();
+    assert_eq!(census.sites(), recorded);
+    assert_eq!(census.len(), recorded.len());
+    assert_eq!(census.len(), resolved.push_site_count());
+    assert_eq!(census.len(), 16);
+    assert_eq!(resolved.entries().len(), Key::ALL.len());
+    assert_eq!(resolved.entries().len(), 14);
+    assert_eq!(
+        resolved
+            .entries()
+            .values()
+            .filter(|entry| entry.sites().record_sites().is_empty())
+            .count(),
+        resolved.entries().len() - census.symbols().len()
+    );
+    assert_eq!(census.symbols(), resolved.program_keys());
+    assert_eq!(census.symbols().len(), composed.consumers().len());
+    assert_eq!(census.symbols().len(), 7);
+    for (&symbol, entry) in resolved.entries() {
+        assert_eq!(
+            entry.sites().record_sites().is_empty(),
+            !symbol.is_program_symbol()
+        );
+    }
+    let ordered: Vec<_> = census
+        .relocations()
+        .iter()
+        .map(StateRelocation::site)
+        .collect();
+    let mut canonical = ordered.clone();
+    canonical.sort_unstable();
+    canonical.dedup();
+    assert_eq!(ordered, canonical);
+    for relocation in census.relocations() {
+        let range = composed
+            .components()
+            .get(&relocation.component())
+            .expect("recorded component");
+        assert!(range.contains(&relocation.site()));
+        assert_eq!(relocation.leaf(), StateLeafRole::Announcement);
+        assert_eq!(
+            relocation.expected(),
+            state_declared_type(relocation.symbol())
+        );
+        assert_eq!(
+            Some(relocation.pre_value()),
+            fixture_item(&composed, relocation.symbol())
+        );
+    }
+    let mut ranges: Vec<_> = composed.components().values().collect();
+    ranges.sort_by_key(|range| range.start);
+    let mut end = 0;
+    for range in ranges {
+        assert_eq!(range.start, end);
+        end = range.end;
+    }
+    assert_eq!(end, composed.program().len());
+}
+
+#[test]
+fn variable_second_deployment_moves_changed_keys_and_keeps_the_header() {
+    let target = reviewed_target();
+    let composed = record_for_schedule(StateWitnessSchedule::VariableMetadata);
+    let resolved = variable_resolved_census(
+        &composed,
+        &second_bridge_for_record(&composed),
+        &second_singleton(),
+    );
+    let linked = substitute_state(&target, &composed, &resolved)
+        .expect("the variable second deployment links");
+    let moved = differing(
+        composed.program().instructions(),
+        linked.program().instructions(),
+    );
+    let claimed: BTreeSet<_> = linked
+        .relocations()
+        .relocations()
+        .iter()
+        .filter(|relocation| relocation.pre_value() != relocation.linked_value())
+        .map(StateRelocation::site)
+        .collect();
+    assert_eq!(moved, claimed);
+    let sites = |symbol: Key| resolved.entries()[&symbol].sites().record_sites().clone();
+    let changed: BTreeSet<_> = [
+        Key::StateAsset,
+        Key::CommittedOperatorKey,
+        Key::MaturityLeadMin,
+        Key::MaturityLeadMax,
+    ]
+    .into_iter()
+    .flat_map(sites)
+    .collect();
+    let kept: BTreeSet<_> = [Key::InternalKey, Key::StateAmount, Key::MetadataHeader]
+        .into_iter()
+        .flat_map(sites)
+        .collect();
+    assert_eq!(moved, changed);
+    assert!(moved.is_disjoint(&kept));
+    assert_eq!(moved.len() + kept.len(), linked.relocations().len());
+    assert_eq!(
+        (linked.relocations().len(), moved.len(), kept.len()),
+        (16, 9, 7)
+    );
+    assert_eq!(sites(Key::MetadataHeader).len(), 1);
+    for relocation in linked.relocations().by_symbol(Key::MetadataHeader) {
+        assert_eq!(relocation.pre_value(), relocation.linked_value());
+        assert!(kept.contains(&relocation.site()));
+    }
+}
+
+#[test]
+fn historical_sites_keep_their_keys_and_shift_after_the_variable_prologue() {
+    let target = reviewed_target();
+    let whole_record = record();
+    let whole = discover_state_relocations(&target, &whole_record, &resolved_census())
+        .expect("whole relocation discovery");
+    let variable_record = record_for_schedule(StateWitnessSchedule::VariableMetadata);
+    let variable_resolved = variable_resolved_census(
+        &variable_record,
+        &bridge_for_record(&variable_record),
+        &demonstration_singleton(),
+    );
+    let variable = discover_state_relocations(&target, &variable_record, &variable_resolved)
+        .expect("variable relocation discovery");
+    assert_eq!(
+        variable_record.program().len(),
+        whole_record.program().len() + 7
+    );
+    let mut unchanged = 0;
+    let mut shifted = 0;
+    for symbol in whole.symbols() {
+        let old: Vec<_> = whole.by_symbol(symbol).collect();
+        let new: Vec<_> = variable.by_symbol(symbol).collect();
+        assert_eq!(old.len(), new.len(), "{symbol:?}");
+        for (before, after) in old.into_iter().zip(new) {
+            assert_eq!(before.symbol(), after.symbol());
+            if matches!(
+                before.component(),
+                StateProgramComponent::Operator(_) | StateProgramComponent::Structural(_)
+            ) {
+                assert_eq!(after.site(), before.site());
+                unchanged += 1;
+            } else {
+                assert_eq!(after.site(), before.site() + 7);
+                shifted += 1;
+            }
+        }
+    }
+    assert_eq!(unchanged + shifted, whole.len());
+    assert_eq!((whole.len(), unchanged, shifted), (15, 3, 12));
+    assert_eq!(variable.len(), whole.len() + 1);
+    assert_eq!(variable.by_symbol(Key::MetadataHeader).count(), 1);
+    let header = variable.by_symbol(Key::MetadataHeader).next().unwrap();
+    assert_eq!(
+        header.component(),
+        StateProgramComponent::Semantic(StateAnnouncementId::MetadataAuthentication)
+    );
+    let authentication = variable_record.components()[&header.component()].clone();
+    assert!(header.site() < authentication.start + 7);
+    assert_eq!(
+        variable
+            .symbols()
+            .difference(&whole.symbols())
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![Key::MetadataHeader]
+    );
 }
 
 // --- (d) The checks, reached with a program the link did not build -------

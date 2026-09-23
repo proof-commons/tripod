@@ -46,13 +46,15 @@ use tapscript::upstream::{
 };
 use tapscript::{
     CandidateStateConstructor, STATE_NUMS_KEY, StateConstructorRefusal, StateCurveCapability,
-    StateLeafRole, StateNonceBudget, StateStaticNode, StateStaticSubtree, StateTweakOutcome,
+    StateInternalKeyPolicy, StateLeafRole, StateNonceBudget, StateStaticNode, StateStaticSubtree,
+    StateTweakOutcome, StateWitnessSchedule, production_static_subtree,
 };
 
 use crate::tests::state_relocate_tests::{second_bridge, second_resolved_census, second_singleton};
 use crate::tests::{
-    ScriptedCurve, bridge, declaration, linked_bundle, linked_leaf, linked_taptree, record,
-    resolved_census, reviewed_target, singleton, state_constructor, state_metadata,
+    ScriptedCurve, bridge, bridge_for_record, declaration, linked_bundle, linked_leaf,
+    linked_taptree, record, record_for_schedule, resolved_census, reviewed_target, singleton,
+    state_constructor, state_metadata,
 };
 use crate::{
     CandidateLinkedMaturityBundle, LinkRefusal, LinkedArtifactStatus, StateConsumerCensus,
@@ -113,6 +115,35 @@ fn second_bundle() -> CandidateLinkedMaturityBundle {
         ),
     )
     .expect("the second deployment's sources link")
+}
+
+fn variable_bundle() -> CandidateLinkedMaturityBundle {
+    let target = reviewed_target();
+    let record = record_for_schedule(StateWitnessSchedule::VariableMetadata);
+    let tree = production_static_subtree(&target, &record)
+        .expect("variable record yields its production subtree");
+    let constructor = CandidateStateConstructor::derive(
+        &target,
+        &state_metadata(),
+        &tree,
+        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &ScriptedCurve).unwrap(),
+        StateNonceBudget::default(),
+        &ScriptedCurve,
+    )
+    .expect("variable constructor derives over its own subtree");
+    link_state_candidate(
+        &target,
+        &StateLinkSources::new(
+            &record,
+            &bridge_for_record(&record),
+            &constructor,
+            &singleton(),
+            &declaration(),
+            &state_metadata(),
+            &ScriptedCurve,
+        ),
+    )
+    .expect("the variable record links with its own constructor")
 }
 
 /// The constructor the link itself applied.
@@ -459,6 +490,58 @@ fn two_bundles_static_subtrees_do_not_migrate() {
             successor: *second.static_subtree().root(),
         }),
     );
+}
+
+#[test]
+fn whole_and_variable_linked_trees_refuse_cross_schedule_continuity() {
+    let target = reviewed_target();
+    let whole = linked_bundle();
+    let variable = variable_bundle();
+    let input = state_metadata();
+    let output = announce_maturity(
+        &input,
+        Cycle::new(7),
+        tapscript::upstream::AnnouncementLeadBounds::new(Cycle::new(2), Cycle::new(4)).unwrap(),
+    )
+    .unwrap();
+    let whole_before = whole.instances()[0].constructor();
+    let variable_before = variable.instances()[0].constructor();
+    let whole_after = whole
+        .apply_constructor(&target, &output, &ScriptedCurve)
+        .expect("whole successor reconstructs");
+    let variable_after = variable
+        .apply_constructor(&target, &output, &ScriptedCurve)
+        .expect("variable successor reconstructs");
+    for (before, after) in [
+        (whole_before, &whole_after),
+        (variable_before, &variable_after),
+    ] {
+        assert_eq!(before.continuity(after), Ok(()));
+        assert_eq!(
+            state_bundle_continuity(before.static_subtree(), after.static_subtree()),
+            Ok(())
+        );
+    }
+    assert_ne!(
+        whole.static_subtree().root(),
+        variable.static_subtree().root()
+    );
+    for (before, after) in [
+        (whole_before, &variable_after),
+        (variable_before, &whole_after),
+    ] {
+        assert_eq!(
+            before.continuity(after),
+            Err(StateConstructorRefusal::ConflictingLeaf)
+        );
+        assert_eq!(
+            state_bundle_continuity(before.static_subtree(), after.static_subtree()),
+            Err(StateLinkRefusal::StaticSubtreeDiscontinuity {
+                predecessor: *before.static_subtree().root(),
+                successor: *after.static_subtree().root(),
+            })
+        );
+    }
 }
 
 // --- (e) Application and retention -------------------------------------

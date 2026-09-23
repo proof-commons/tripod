@@ -73,7 +73,13 @@ fn variable_semantic_values() -> BTreeMap<StateAnnouncementSymbol, StackItem> {
     values
 }
 
-fn variable_program() -> &'static StateAnnouncementProgram {
+/// The variable-witness record built from the shared fixture components.
+///
+/// # Panics
+///
+/// Panics only if the fixed fixture values or their reviewed composition are
+/// refused, which these admitted bindings cannot arrange.
+pub(super) fn variable_program() -> &'static StateAnnouncementProgram {
     static VARIABLE: OnceLock<StateAnnouncementProgram> = OnceLock::new();
     VARIABLE.get_or_init(|| {
         let target = reviewed_target();

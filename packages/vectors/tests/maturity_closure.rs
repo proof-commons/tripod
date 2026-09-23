@@ -118,6 +118,7 @@ fn variable_metadata_selections_link_distinct_leaves_and_resolve_the_header() {
                 bundle.instances()[0].constructor().output_key(),
                 whole.instances()[0].constructor().output_key()
             );
+            assert_variable_golden_from(&bundle, &leaf, deployment);
         }
     }
 }
@@ -162,6 +163,50 @@ const GOLDEN: [&str; 9] = [
     "d3b0e63ccb5b636ccede25c0d0942f0e9c969df1e5af887bbed1265855dcbd7f",
     "c96dd597d1e3f3cf3bca218b32e4f9ba4392218d50578e71f26b4b765ef822e9",
 ];
+
+const GOLDEN_VARIABLE: [&str; 9] = [
+    "5e139de85e6e15026296e95aba14bc08aca7ad3d5110eaa8f8e43308c81f932c",
+    "b59d9ad41232829e066262931a02ae932f343f8c39504fb4592340b8a9b618f8",
+    "11269bc1fc07507529ada6ba72599b130b78432bdeb4f3c22e65f924288f4df8",
+    "10b7056d6a8a7820ee709e25cdc1b1376748a41ac077098d90b0cecf5cb7dafa",
+    "a14871d49190995d4931ff7698400198a3d03d657ddee2b6e4b2cbd95b68fa3c",
+    "690816f73b29d7cd6cfd133049ceaab44c4d3f2fc62ea686c21ceedfefd258f8",
+    "71abed6b7f7d50c5c40adc54a0970f2f818721fbd7693ee75029c7bcdc4751c7",
+    "d5bf9a045d688ab63772bddb122c1710ac8c7c694bb712c2738a267c5cd5a3ce",
+    "4515fb25f78c60358c38314ebc2e619e8ebf108266b27dc13614ac9538127571",
+];
+
+fn assert_variable_golden_from(
+    bundle: &linker::CandidateLinkedMaturityBundle,
+    leaf: &DecodedAnnouncementLeaf,
+    deployment: MaturityDeployment,
+) {
+    let evidence = recompute_golden(leaf, bundle, &target(), &OracleStateCurve)
+        .expect("the variable golden independently recomputes");
+    let constructor = bundle.instances()[0].constructor();
+    let recomputed = [
+        hex(evidence.static_root()),
+        hex(evidence.merkle_root()),
+        hex(evidence.output_key()),
+    ];
+    let carried = [
+        hex(bundle.taptree().static_root()),
+        hex(bundle.taptree().merkle_root()),
+        hex(constructor.output_key()),
+    ];
+    assert_eq!(recomputed, carried);
+    let offset = match deployment {
+        MaturityDeployment::Demonstration => 0,
+        MaturityDeployment::Second => 3,
+        MaturityDeployment::PublishedSignerHeld => 6,
+    };
+    let pinned = [
+        GOLDEN_VARIABLE[offset].to_owned(),
+        GOLDEN_VARIABLE[offset + 1].to_owned(),
+        GOLDEN_VARIABLE[offset + 2].to_owned(),
+    ];
+    assert_eq!(recomputed, pinned, "deployment={}", deployment.name());
+}
 
 type Linked = (
     linker::CandidateLinkedMaturityBundle,
@@ -553,51 +598,75 @@ fn the_golden_roots_are_pinned_recomputed_and_carried_alike() {
     assert_eq!((&recomputed, &carried), (&pinned, &pinned));
 }
 
+fn assert_variable_golden(deployment: MaturityDeployment) {
+    let (bundle, leaf) = decoded_deployment(
+        deployment,
+        MaturityWitnessSelection::Retained(tapscript::StateWitnessSchedule::VariableMetadata),
+    )
+    .expect("the variable deployment links and decodes");
+    assert_variable_golden_from(&bundle, &leaf, deployment);
+}
+
+#[test]
+fn variable_demonstration_golden_is_recomputed_and_carried() {
+    assert_variable_golden(MaturityDeployment::Demonstration);
+}
+
+#[test]
+fn variable_second_deployment_golden_is_recomputed_and_carried() {
+    assert_variable_golden(MaturityDeployment::Second);
+}
+
+#[test]
+fn variable_published_signer_held_golden_is_recomputed_and_carried() {
+    assert_variable_golden(MaturityDeployment::PublishedSignerHeld);
+}
+
 #[test]
 fn a_second_deployment_moves_only_the_sites_whose_values_moved() {
     let reviewed = target();
-    let (first_bundle, first) = linked(MaturityDeployment::Demonstration);
-    let (second_bundle, second) = linked(MaturityDeployment::Second);
-
-    let moved = moved_sites(&first, &second, &reviewed).expect("the two links are comparable");
-    let census = first_bundle
-        .relocations()
-        .expect("the announcement leaf carries a relocation census")
-        .len();
-    assert_eq!(moved.count(), 9);
-    assert_eq!(census, 15);
-    assert_eq!(census - moved.count(), 6);
-
-    let sites = first_bundle
-        .relocations()
-        .expect("the census is carried")
-        .sites();
-    for site in moved.sites() {
-        assert!(sites.contains(site));
+    for (schedule, expected) in [
+        (tapscript::StateWitnessSchedule::WholeMetadata, (15, 9, 6)),
+        (
+            tapscript::StateWitnessSchedule::VariableMetadata,
+            (16, 9, 7),
+        ),
+    ] {
+        let linked_for = |deployment| match schedule {
+            tapscript::StateWitnessSchedule::WholeMetadata => linked(deployment),
+            tapscript::StateWitnessSchedule::VariableMetadata => {
+                decoded_deployment(deployment, MaturityWitnessSelection::Retained(schedule))
+                    .expect("the variable deployment links and decodes")
+            }
+        };
+        let (first_bundle, first) = linked_for(MaturityDeployment::Demonstration);
+        let (second_bundle, second) = linked_for(MaturityDeployment::Second);
+        let moved = moved_sites(&first, &second, &reviewed).expect("the two links are comparable");
+        let census = first_bundle
+            .relocations()
+            .expect("the announcement leaf carries a relocation census")
+            .len();
+        assert_eq!((census, moved.count(), census - moved.count()), expected);
+        let sites = first_bundle
+            .relocations()
+            .expect("the census is carried")
+            .sites();
+        for site in moved.sites() {
+            assert!(sites.contains(site));
+        }
+        assert_ne!(
+            first_bundle.taptree().static_root(),
+            second_bundle.taptree().static_root()
+        );
+        assert_ne!(
+            first_bundle.taptree().merkle_root(),
+            second_bundle.taptree().merkle_root()
+        );
+        assert_ne!(
+            first_bundle.instances()[0].constructor().output_key(),
+            second_bundle.instances()[0].constructor().output_key()
+        );
     }
-
-    assert_ne!(
-        first_bundle.taptree().static_root(),
-        second_bundle.taptree().static_root()
-    );
-    assert_ne!(
-        first_bundle.taptree().merkle_root(),
-        second_bundle.taptree().merkle_root()
-    );
-    assert_ne!(
-        first_bundle
-            .instances()
-            .first()
-            .expect("an application")
-            .constructor()
-            .output_key(),
-        second_bundle
-            .instances()
-            .first()
-            .expect("an application")
-            .constructor()
-            .output_key()
-    );
 }
 
 #[test]
