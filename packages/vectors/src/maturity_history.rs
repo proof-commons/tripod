@@ -4,11 +4,20 @@ use std::collections::BTreeMap;
 
 use architecture::ids::{DeallocatorId, ObjectId, OperationId, ProjectionId, RootId, RootUse};
 use architecture::spec::ARCHITECTURE;
+use linker::CandidateLinkedMaturityBundle;
 use linker::{StateLinkRefusal, state_bundle_continuity};
 use tapscript::StateStaticSubtree;
-use transaction::bytes::Outpoint;
+use target_elements_conformance::constructor::tagged::sha256;
+use transaction::bytes::{Outpoint, Txid};
+use transaction::operator_right::BranchContext;
+use transaction::state_abi::CandidateMaturityAnnouncementAbi;
+use transaction::taproot::Digest32;
 
 use crate::maturity_continuity::{ValidatedMaturityContinuity, submitted_transaction_identities};
+use crate::maturity_corpus::{
+    MaturityDeclaredPremise, MaturityPremiseProvenance, ValidatedMaturityCorpus,
+};
+use crate::maturity_native::{MaturityAcceptanceObligation, MaturityAcceptanceRoute};
 
 /// A transition certificate projected from a validated announcement.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -400,14 +409,643 @@ pub fn validate_state_root_history(
     Ok(current)
 }
 
+/// The ten facts named by Guide 14 §17.2 (`rule:guide14-exec:checkpoint`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityRootFact {
+    NetworkIdentity,
+    GenesisIdentity,
+    BlockHash,
+    BlockHeight,
+    TransactionIdentity,
+    PredecessorOutpoint,
+    SuccessorOutpoint,
+    TargetContract,
+    LinkedCandidate,
+    CandidateAbi,
+}
+
+/// How a checkpoint obtains a fact.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityRootFactKind {
+    CarriedByTheAdmittedArchive,
+    ReadFromThePublicBytes,
+    DerivedFromThePublicBytesAndTheLocator,
+    DeclaredPremise(MaturityPremiseProvenance),
+}
+
+impl MaturityRootFact {
+    /// The checkpoint facts in Guide 14 §17.2 order.
+    pub const ALL: &'static [Self; 10] = &[
+        Self::NetworkIdentity,
+        Self::GenesisIdentity,
+        Self::BlockHash,
+        Self::BlockHeight,
+        Self::TransactionIdentity,
+        Self::PredecessorOutpoint,
+        Self::SuccessorOutpoint,
+        Self::TargetContract,
+        Self::LinkedCandidate,
+        Self::CandidateAbi,
+    ];
+
+    /// Distinguish admitted facts, public-byte facts and deployment declarations.
+    #[must_use]
+    pub const fn kind(self) -> MaturityRootFactKind {
+        match self {
+            Self::NetworkIdentity
+            | Self::GenesisIdentity
+            | Self::BlockHash
+            | Self::BlockHeight
+            | Self::TransactionIdentity
+            | Self::TargetContract => MaturityRootFactKind::CarriedByTheAdmittedArchive,
+            Self::PredecessorOutpoint => MaturityRootFactKind::ReadFromThePublicBytes,
+            Self::SuccessorOutpoint => MaturityRootFactKind::DerivedFromThePublicBytesAndTheLocator,
+            Self::LinkedCandidate | Self::CandidateAbi => MaturityRootFactKind::DeclaredPremise(
+                MaturityPremiseProvenance::DeploymentDeclaration,
+            ),
+        }
+    }
+}
+
+/// A root checkpoint over the admitted announcement and its stated branch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MaturityRootCheckpoint {
+    network_identity: String,
+    genesis_identity: String,
+    block_hash: Digest32,
+    block_height: u32,
+    transaction_identity: Txid,
+    predecessor: Outpoint,
+    successor: Outpoint,
+    target_contract: String,
+    linked_candidate: MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
+    candidate_abi: MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
+    branch: BranchContext,
+}
+
+/// A disagreement found while binding the admitted checkpoint.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MaturityRootCheckpointRefusal {
+    AcceptanceIsOutstanding {
+        routes: [MaturityAcceptanceRoute; 2],
+    },
+    TransactionIdentityDisagrees {
+        checkpoint: Txid,
+        continuity: Txid,
+    },
+    SubmittedBytesDisagree {
+        checkpoint: Digest32,
+        continuity: Digest32,
+    },
+    SuccessorOutpointDisagrees {
+        checkpoint: Outpoint,
+        edge: Outpoint,
+    },
+    PredecessorOutpointDisagrees {
+        checkpoint: Outpoint,
+        continuity: Outpoint,
+    },
+}
+
+impl MaturityRootCheckpointRefusal {
+    /// The disagreeing fact, when acceptance supplied enough evidence to name one.
+    #[must_use]
+    pub const fn fact(&self) -> Option<MaturityRootFact> {
+        match self {
+            Self::AcceptanceIsOutstanding { .. } => None,
+            Self::TransactionIdentityDisagrees { .. } | Self::SubmittedBytesDisagree { .. } => {
+                Some(MaturityRootFact::TransactionIdentity)
+            }
+            Self::SuccessorOutpointDisagrees { .. } => Some(MaturityRootFact::SuccessorOutpoint),
+            Self::PredecessorOutpointDisagrees { .. } => {
+                Some(MaturityRootFact::PredecessorOutpoint)
+            }
+        }
+    }
+}
+
+/// One caller-supplied block in a modelled branch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelledBranchBlock {
+    height: u32,
+    identity: Digest32,
+    transactions: Vec<Txid>,
+}
+
+/// A modelled branch window identified by the caller's branch identifier.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelledBranchPrefix {
+    identifier: Digest32,
+    anchor_height: u32,
+    blocks: Vec<ModelledBranchBlock>,
+}
+
+/// A checkpoint projected against a modelled prefix.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MaturityRootObservation {
+    prefix: Digest32,
+    context: BranchContext,
+    block_height: u32,
+    block_identity: Digest32,
+    transaction: Txid,
+}
+
+/// A structural refusal while constructing or moving a modelled branch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MaturityModelledBranchRefusal {
+    ZeroPrefixIdentifier { anchor: u32 },
+    ZeroBlockIdentity { height: u32 },
+    NonContiguousExtension { tip: u32, offered: u32 },
+    RewoundBelowTheAnchor { anchor: u32, requested: u32 },
+    RewoundAboveTheTip { tip: u32, requested: u32 },
+}
+
+/// A checkpoint observation that a modelled prefix no longer supports.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MaturityRootObservationRefusal {
+    EvidenceFromAnotherPrefix {
+        presented: Digest32,
+        prefix: Digest32,
+    },
+    TransactionBlockIsNotInThePrefix {
+        height: u32,
+        anchor: u32,
+        tip: u32,
+    },
+    BlockAtThatHeightChanged {
+        height: u32,
+        prefix: Digest32,
+        checkpoint: Digest32,
+    },
+    TransactionAbsentFromThatBlock {
+        height: u32,
+        transaction: Txid,
+        block: Digest32,
+    },
+}
+
+impl MaturityRootCheckpoint {
+    /// Bind the admitted readback and its ten checkpoint facts to a projected edge.
+    ///
+    /// # Errors
+    /// Refuses an outstanding acceptance or the first digest, identity or outpoint disagreement.
+    ///
+    /// # Panics
+    /// Panics only if output index zero is outside the accepted identity's outpoint range, which
+    /// zero cannot arrange.
+    pub fn bind(
+        edge: &StateRootEdge,
+        continuity: &ValidatedMaturityContinuity,
+        corpus: &ValidatedMaturityCorpus,
+        linked_candidate: MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
+        candidate_abi: MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
+    ) -> Result<Self, MaturityRootCheckpointRefusal> {
+        let readback = match corpus.evidence().acceptance_obligation() {
+            MaturityAcceptanceObligation::Outstanding { routes } => {
+                return Err(MaturityRootCheckpointRefusal::AcceptanceIsOutstanding {
+                    routes: *routes,
+                });
+            }
+            MaturityAcceptanceObligation::Established { readback, .. } => readback,
+        };
+        let checkpoint_digest = sha256(readback.bytes());
+        let continuity_digest = *continuity.byte_identity();
+        if checkpoint_digest != continuity_digest {
+            return Err(MaturityRootCheckpointRefusal::SubmittedBytesDisagree {
+                checkpoint: checkpoint_digest,
+                continuity: continuity_digest,
+            });
+        }
+        let Ok(successor) = Outpoint::new(readback.identity(), 0) else {
+            unreachable!("zero is a valid output index");
+        };
+        let checkpoint = Self {
+            network_identity: corpus.report().network_id().to_owned(),
+            genesis_identity: corpus.report().genesis_id().to_owned(),
+            block_hash: *readback.block_hash(),
+            block_height: readback.block_height(),
+            transaction_identity: readback.identity(),
+            predecessor: edge.predecessor(),
+            successor,
+            target_contract: corpus.report().target_contract().to_owned(),
+            linked_candidate,
+            candidate_abi,
+            branch: continuity.branch(),
+        };
+        checkpoint.binds(edge, continuity)?;
+        Ok(checkpoint)
+    }
+
+    /// Ask the three comparisons that remain once the readback's bytes are bound at construction.
+    /// The checkpoint carries the identity those bytes hash to, rather than the bytes themselves.
+    ///
+    /// # Errors
+    /// Returns the first transaction identity, successor or predecessor disagreement.
+    pub fn binds(
+        &self,
+        edge: &StateRootEdge,
+        continuity: &ValidatedMaturityContinuity,
+    ) -> Result<(), MaturityRootCheckpointRefusal> {
+        let identity = submitted_transaction_identities(
+            continuity.transaction(),
+            continuity.submitted_bytes(),
+        )
+        .identity();
+        if self.transaction_identity != identity {
+            return Err(
+                MaturityRootCheckpointRefusal::TransactionIdentityDisagrees {
+                    checkpoint: self.transaction_identity,
+                    continuity: identity,
+                },
+            );
+        }
+        if self.successor != edge.successor() {
+            return Err(MaturityRootCheckpointRefusal::SuccessorOutpointDisagrees {
+                checkpoint: self.successor,
+                edge: edge.successor(),
+            });
+        }
+        if self.predecessor != continuity.funded().outpoint {
+            return Err(
+                MaturityRootCheckpointRefusal::PredecessorOutpointDisagrees {
+                    checkpoint: self.predecessor,
+                    continuity: continuity.funded().outpoint,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn network_identity(&self) -> &str {
+        &self.network_identity
+    }
+
+    #[must_use]
+    pub fn genesis_identity(&self) -> &str {
+        &self.genesis_identity
+    }
+
+    #[must_use]
+    pub fn target_contract(&self) -> &str {
+        &self.target_contract
+    }
+
+    #[must_use]
+    pub const fn block_hash(&self) -> &Digest32 {
+        &self.block_hash
+    }
+
+    #[must_use]
+    pub const fn block_height(&self) -> u32 {
+        self.block_height
+    }
+
+    #[must_use]
+    pub const fn transaction_identity(&self) -> Txid {
+        self.transaction_identity
+    }
+
+    #[must_use]
+    pub const fn predecessor(&self) -> Outpoint {
+        self.predecessor
+    }
+
+    #[must_use]
+    pub const fn successor(&self) -> Outpoint {
+        self.successor
+    }
+
+    #[must_use]
+    pub const fn linked_candidate(
+        &self,
+    ) -> &MaturityDeclaredPremise<CandidateLinkedMaturityBundle> {
+        &self.linked_candidate
+    }
+
+    #[must_use]
+    pub const fn candidate_abi(
+        &self,
+    ) -> &MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi> {
+        &self.candidate_abi
+    }
+
+    #[must_use]
+    pub const fn branch(&self) -> BranchContext {
+        self.branch
+    }
+}
+
+impl ModelledBranchBlock {
+    /// Admit a modelled block with a nonzero identity.
+    ///
+    /// # Errors
+    /// Refuses an all-zero block identity with the offered height.
+    pub fn new(
+        height: u32,
+        identity: Digest32,
+        transactions: Vec<Txid>,
+    ) -> Result<Self, MaturityModelledBranchRefusal> {
+        if identity == [0; 32] {
+            return Err(MaturityModelledBranchRefusal::ZeroBlockIdentity { height });
+        }
+        Ok(Self {
+            height,
+            identity,
+            transactions,
+        })
+    }
+
+    #[must_use]
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+
+    #[must_use]
+    pub const fn identity(&self) -> &Digest32 {
+        &self.identity
+    }
+
+    #[must_use]
+    pub fn transactions(&self) -> &[Txid] {
+        &self.transactions
+    }
+}
+
+impl ModelledBranchPrefix {
+    /// Admit a branch identifier and its first modelled block.
+    ///
+    /// # Errors
+    /// Refuses an all-zero prefix identifier with the anchor height.
+    pub fn anchored(
+        identifier: Digest32,
+        anchor: ModelledBranchBlock,
+    ) -> Result<Self, MaturityModelledBranchRefusal> {
+        if identifier == [0; 32] {
+            return Err(MaturityModelledBranchRefusal::ZeroPrefixIdentifier {
+                anchor: anchor.height,
+            });
+        }
+        Ok(Self {
+            identifier,
+            anchor_height: anchor.height,
+            blocks: vec![anchor],
+        })
+    }
+
+    /// Begin at the checkpoint's block under its stated branch identifier.
+    ///
+    /// # Errors
+    /// Preserves the block or prefix refusal if either identity is all zero.
+    pub fn from_checkpoint(
+        checkpoint: &MaturityRootCheckpoint,
+    ) -> Result<Self, MaturityModelledBranchRefusal> {
+        Self::anchored(
+            *checkpoint.branch().identifier(),
+            ModelledBranchBlock::new(
+                checkpoint.block_height(),
+                *checkpoint.block_hash(),
+                vec![checkpoint.transaction_identity()],
+            )?,
+        )
+    }
+
+    /// Return a new prefix with one block at the tip's successor height.
+    ///
+    /// # Errors
+    /// Refuses an offered height other than the tip's successor.
+    pub fn extend(
+        &self,
+        block: ModelledBranchBlock,
+    ) -> Result<Self, MaturityModelledBranchRefusal> {
+        let tip = self.tip_height();
+        if tip.checked_add(1) != Some(block.height) {
+            return Err(MaturityModelledBranchRefusal::NonContiguousExtension {
+                tip,
+                offered: block.height,
+            });
+        }
+        let mut extended = self.clone();
+        extended.blocks.push(block);
+        Ok(extended)
+    }
+
+    /// Return a prefix truncated at the requested block height.
+    ///
+    /// # Errors
+    /// Refuses a requested height outside the anchor-to-tip window.
+    pub fn rewind(&self, height: u32) -> Result<Self, MaturityModelledBranchRefusal> {
+        if height < self.anchor_height {
+            return Err(MaturityModelledBranchRefusal::RewoundBelowTheAnchor {
+                anchor: self.anchor_height,
+                requested: height,
+            });
+        }
+        let tip = self.tip_height();
+        if height > tip {
+            return Err(MaturityModelledBranchRefusal::RewoundAboveTheTip {
+                tip,
+                requested: height,
+            });
+        }
+        Ok(Self {
+            identifier: self.identifier,
+            anchor_height: self.anchor_height,
+            blocks: self
+                .blocks
+                .iter()
+                .take_while(|block| block.height <= height)
+                .cloned()
+                .collect(),
+        })
+    }
+
+    /// Ask whether this prefix still supports the checkpoint's transaction block.
+    ///
+    /// # Errors
+    /// Refuses another prefix, a missing block, a changed block or an absent transaction.
+    pub fn reproject(
+        &self,
+        checkpoint: &MaturityRootCheckpoint,
+    ) -> Result<MaturityRootObservation, MaturityRootObservationRefusal> {
+        let prefix = *checkpoint.branch().identifier();
+        if self.identifier != prefix {
+            return Err(MaturityRootObservationRefusal::EvidenceFromAnotherPrefix {
+                presented: self.identifier,
+                prefix,
+            });
+        }
+        let observation = MaturityRootObservation {
+            prefix,
+            context: self.context(),
+            block_height: checkpoint.block_height(),
+            block_identity: *checkpoint.block_hash(),
+            transaction: checkpoint.transaction_identity(),
+        };
+        observation.binds(self)?;
+        Ok(observation)
+    }
+
+    /// The branch identifier at this modelled tip height.
+    ///
+    /// # Panics
+    /// Panics only if the identifier is all zero, which `anchored` refuses.
+    #[must_use]
+    pub fn context(&self) -> BranchContext {
+        let Ok(context) = BranchContext::new(self.identifier, u64::from(self.tip_height())) else {
+            unreachable!("anchored refuses a zero identifier");
+        };
+        context
+    }
+
+    #[must_use]
+    pub const fn identifier(&self) -> &Digest32 {
+        &self.identifier
+    }
+
+    #[must_use]
+    pub const fn anchor_height(&self) -> u32 {
+        self.anchor_height
+    }
+
+    /// The anchor height plus the number of successor blocks.
+    #[must_use]
+    pub fn tip_height(&self) -> u32 {
+        let successors = self.blocks.len().saturating_sub(1);
+        u32::try_from(successors)
+            .map_or(u32::MAX, |offset| self.anchor_height.saturating_add(offset))
+    }
+
+    #[must_use]
+    pub fn blocks(&self) -> &[ModelledBranchBlock] {
+        &self.blocks
+    }
+}
+
+impl MaturityRootObservation {
+    /// Ask whether a modelled prefix still carries the observed transaction block.
+    ///
+    /// # Errors
+    /// Refuses another prefix, a missing block, a changed block or an absent transaction.
+    pub fn binds(
+        &self,
+        prefix: &ModelledBranchPrefix,
+    ) -> Result<(), MaturityRootObservationRefusal> {
+        if prefix.identifier != self.prefix {
+            return Err(MaturityRootObservationRefusal::EvidenceFromAnotherPrefix {
+                presented: prefix.identifier,
+                prefix: self.prefix,
+            });
+        }
+        let tip = prefix.tip_height();
+        let Some(block) = prefix
+            .blocks
+            .iter()
+            .find(|block| block.height == self.block_height)
+        else {
+            return Err(
+                MaturityRootObservationRefusal::TransactionBlockIsNotInThePrefix {
+                    height: self.block_height,
+                    anchor: prefix.anchor_height,
+                    tip,
+                },
+            );
+        };
+        if block.identity != self.block_identity {
+            return Err(MaturityRootObservationRefusal::BlockAtThatHeightChanged {
+                height: self.block_height,
+                prefix: block.identity,
+                checkpoint: self.block_identity,
+            });
+        }
+        if !block.transactions.contains(&self.transaction) {
+            return Err(
+                MaturityRootObservationRefusal::TransactionAbsentFromThatBlock {
+                    height: self.block_height,
+                    transaction: self.transaction,
+                    block: block.identity,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub const fn prefix(&self) -> &Digest32 {
+        &self.prefix
+    }
+    #[must_use]
+    pub const fn context(&self) -> BranchContext {
+        self.context
+    }
+    #[must_use]
+    pub const fn block_height(&self) -> u32 {
+        self.block_height
+    }
+    #[must_use]
+    pub const fn block_identity(&self) -> &Digest32 {
+        &self.block_identity
+    }
+    #[must_use]
+    pub const fn transaction(&self) -> Txid {
+        self.transaction
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::maturity_closure::closure_target;
     use crate::maturity_continuity::project_maturity_continuity;
-    use crate::maturity_continuity::tests::variable_archived;
+    use crate::maturity_continuity::tests::{archived, variable_archived};
+    use crate::maturity_corpus::{maturity_run_of_record, maturity_variable_run_of_record};
+    use crate::maturity_evidence::{
+        MaturityConstructorMaterial, MaturityConstructorMaterialAbsence,
+        MaturityExecutorProvenanceExpectation, derive_maturity_evidence_plan_with,
+    };
+    use std::sync::LazyLock;
     use tapscript::StateStaticNode;
     use transaction::bytes::Txid;
+
+    static ABI: LazyLock<CandidateMaturityAnnouncementAbi> = LazyLock::new(|| {
+        derive_maturity_evidence_plan_with(
+            MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            MaturityConstructorMaterial::Absent(
+                MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+            ),
+        )
+        .expect("evidence plan")
+        .abi()
+        .clone()
+    });
+
+    fn declarations(
+        continuity: &ValidatedMaturityContinuity,
+    ) -> (
+        MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
+        MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
+    ) {
+        (
+            MaturityDeclaredPremise::declared(
+                continuity.bundle().clone(),
+                MaturityPremiseProvenance::DeploymentDeclaration,
+            ),
+            MaturityDeclaredPremise::declared(
+                ABI.clone(),
+                MaturityPremiseProvenance::DeploymentDeclaration,
+            ),
+        )
+    }
+
+    fn checkpoint(
+        edge: &StateRootEdge,
+        continuity: &ValidatedMaturityContinuity,
+        corpus: &ValidatedMaturityCorpus,
+    ) -> MaturityRootCheckpoint {
+        let (linked, abi) = declarations(continuity);
+        MaturityRootCheckpoint::bind(edge, continuity, corpus, linked, abi)
+            .expect("accepted checkpoint binds")
+    }
 
     fn accepted_edge() -> StateRootEdge {
         let continuity = project_maturity_continuity(variable_archived().input())
@@ -439,6 +1077,357 @@ mod tests {
         assert_eq!(&actual, expected);
         assert_eq!(actual.clause(), clause);
         assert_eq!(actual.position(), position);
+    }
+
+    #[test]
+    fn the_checkpoint_binds_eight_facts_and_declares_two() {
+        use MaturityRootFact as F;
+        use MaturityRootFactKind as K;
+
+        let continuity =
+            project_maturity_continuity(variable_archived().input()).expect("accepted continuity");
+        let edge = StateRootEdge::from_continuity(&continuity);
+        let corpus = maturity_variable_run_of_record().expect("accepted corpus");
+        let checkpoint = checkpoint(&edge, &continuity, corpus);
+        let MaturityAcceptanceObligation::Established { readback, .. } =
+            corpus.evidence().acceptance_obligation()
+        else {
+            panic!("accepted readback")
+        };
+        assert_eq!(checkpoint.network_identity(), corpus.report().network_id());
+        assert_eq!(checkpoint.genesis_identity(), corpus.report().genesis_id());
+        assert_eq!(checkpoint.block_hash(), readback.block_hash());
+        assert_eq!(checkpoint.block_height(), readback.block_height());
+        assert_eq!(checkpoint.transaction_identity(), readback.identity());
+        assert_eq!(checkpoint.predecessor(), edge.predecessor());
+        assert_eq!(checkpoint.predecessor(), continuity.funded().outpoint);
+        assert_eq!(
+            checkpoint.successor(),
+            Outpoint::new(readback.identity(), 0).expect("outpoint")
+        );
+        assert_eq!(checkpoint.successor(), edge.successor());
+        assert_eq!(
+            checkpoint.target_contract(),
+            corpus.report().target_contract()
+        );
+        assert_eq!(checkpoint.linked_candidate().value(), continuity.bundle());
+        assert_eq!(checkpoint.candidate_abi().value(), &*ABI);
+        assert_eq!(
+            checkpoint.linked_candidate().provenance(),
+            MaturityPremiseProvenance::DeploymentDeclaration
+        );
+        assert_eq!(
+            checkpoint.candidate_abi().provenance(),
+            MaturityPremiseProvenance::DeploymentDeclaration
+        );
+        assert_eq!(checkpoint.branch(), continuity.branch());
+        assert_ne!(
+            checkpoint.candidate_abi().value().schedule(),
+            continuity.schedule()
+        );
+        assert_eq!(checkpoint.binds(&edge, &continuity), Ok(()));
+
+        let expected = [
+            (F::NetworkIdentity, K::CarriedByTheAdmittedArchive),
+            (F::GenesisIdentity, K::CarriedByTheAdmittedArchive),
+            (F::BlockHash, K::CarriedByTheAdmittedArchive),
+            (F::BlockHeight, K::CarriedByTheAdmittedArchive),
+            (F::TransactionIdentity, K::CarriedByTheAdmittedArchive),
+            (F::PredecessorOutpoint, K::ReadFromThePublicBytes),
+            (
+                F::SuccessorOutpoint,
+                K::DerivedFromThePublicBytesAndTheLocator,
+            ),
+            (F::TargetContract, K::CarriedByTheAdmittedArchive),
+            (
+                F::LinkedCandidate,
+                K::DeclaredPremise(MaturityPremiseProvenance::DeploymentDeclaration),
+            ),
+            (
+                F::CandidateAbi,
+                K::DeclaredPremise(MaturityPremiseProvenance::DeploymentDeclaration),
+            ),
+        ];
+        assert_eq!(F::ALL.len(), 10);
+        for ((fact, kind), roster_fact) in expected.into_iter().zip(F::ALL) {
+            assert_eq!(fact, *roster_fact);
+            assert_eq!(fact.kind(), kind);
+        }
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "each refusal retains a distinct binding operand"
+    )]
+    fn the_other_archives_facts_do_not_bind_the_accepted_continuity() {
+        let accepted =
+            project_maturity_continuity(variable_archived().input()).expect("accepted continuity");
+        let accepted_edge = StateRootEdge::from_continuity(&accepted);
+        let accepted_corpus = maturity_variable_run_of_record().expect("accepted corpus");
+        let historical =
+            project_maturity_continuity(archived().input()).expect("historical continuity");
+        let historical_edge = StateRootEdge::from_continuity(&historical);
+        let historical_corpus = maturity_run_of_record().expect("historical corpus");
+        let MaturityAcceptanceObligation::Outstanding { routes } =
+            historical_corpus.evidence().acceptance_obligation()
+        else {
+            panic!("historical acceptance is outstanding")
+        };
+        let (linked, abi) = declarations(&historical);
+        let outstanding = MaturityRootCheckpoint::bind(
+            &historical_edge,
+            &historical,
+            historical_corpus,
+            linked,
+            abi,
+        )
+        .expect_err("historical acceptance refuses");
+        assert_eq!(
+            outstanding,
+            MaturityRootCheckpointRefusal::AcceptanceIsOutstanding { routes: *routes }
+        );
+        assert_eq!(outstanding.fact(), None);
+
+        let checkpoint = checkpoint(&accepted_edge, &accepted, accepted_corpus);
+        let accepted_identity = checkpoint.transaction_identity();
+        let historical_identity = submitted_transaction_identities(
+            historical.transaction(),
+            historical.submitted_bytes(),
+        )
+        .identity();
+        assert_ne!(accepted_identity, historical_identity);
+        let identity_refusal = checkpoint
+            .binds(&historical_edge, &historical)
+            .expect_err("another continuity identity refuses");
+        assert_eq!(
+            identity_refusal,
+            MaturityRootCheckpointRefusal::TransactionIdentityDisagrees {
+                checkpoint: accepted_identity,
+                continuity: historical_identity,
+            }
+        );
+        assert_eq!(
+            identity_refusal.fact(),
+            Some(MaturityRootFact::TransactionIdentity)
+        );
+        let (linked, abi) = declarations(&historical);
+        let bytes_refusal = MaturityRootCheckpoint::bind(
+            &historical_edge,
+            &historical,
+            accepted_corpus,
+            linked,
+            abi,
+        )
+        .expect_err("another continuity bytes refuse");
+        let MaturityAcceptanceObligation::Established { readback, .. } =
+            accepted_corpus.evidence().acceptance_obligation()
+        else {
+            panic!("accepted readback")
+        };
+        assert_eq!(
+            bytes_refusal,
+            MaturityRootCheckpointRefusal::SubmittedBytesDisagree {
+                checkpoint: sha256(readback.bytes()),
+                continuity: *historical.byte_identity(),
+            }
+        );
+        assert_eq!(
+            bytes_refusal.fact(),
+            Some(MaturityRootFact::TransactionIdentity)
+        );
+
+        let wrong_successor = retarget(
+            &accepted_edge,
+            accepted_edge.predecessor,
+            other_outpoint(0x5b),
+        );
+        let (linked, abi) = declarations(&accepted);
+        let successor_refusal =
+            MaturityRootCheckpoint::bind(&wrong_successor, &accepted, accepted_corpus, linked, abi)
+                .expect_err("changed successor refuses");
+        assert_eq!(
+            successor_refusal,
+            MaturityRootCheckpointRefusal::SuccessorOutpointDisagrees {
+                checkpoint: accepted_edge.successor,
+                edge: wrong_successor.successor,
+            }
+        );
+        assert_eq!(
+            successor_refusal.fact(),
+            Some(MaturityRootFact::SuccessorOutpoint)
+        );
+        let wrong_predecessor = retarget(
+            &accepted_edge,
+            other_outpoint(0x5c),
+            accepted_edge.successor,
+        );
+        let (linked, abi) = declarations(&accepted);
+        let predecessor_refusal = MaturityRootCheckpoint::bind(
+            &wrong_predecessor,
+            &accepted,
+            accepted_corpus,
+            linked,
+            abi,
+        )
+        .expect_err("changed predecessor refuses");
+        assert_eq!(
+            predecessor_refusal,
+            MaturityRootCheckpointRefusal::PredecessorOutpointDisagrees {
+                checkpoint: wrong_predecessor.predecessor,
+                continuity: accepted.funded().outpoint,
+            }
+        );
+        assert_eq!(
+            predecessor_refusal.fact(),
+            Some(MaturityRootFact::PredecessorOutpoint)
+        );
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one modelled history exercises each stale outcome"
+    )]
+    fn a_rewind_stales_the_observation_and_another_prefix_refuses_its_reuse() {
+        let continuity =
+            project_maturity_continuity(variable_archived().input()).expect("accepted continuity");
+        let edge = StateRootEdge::from_continuity(&continuity);
+        let corpus = maturity_variable_run_of_record().expect("accepted corpus");
+        let checkpoint = checkpoint(&edge, &continuity, corpus);
+        let height = checkpoint.block_height();
+        let earlier_height = height
+            .checked_sub(1)
+            .expect("accepted block follows an earlier height");
+        let next_height = height.checked_add(1).expect("successor height");
+        let later_height = next_height.checked_add(1).expect("later height");
+        let branch = *checkpoint.branch().identifier();
+        let prefix = ModelledBranchPrefix::from_checkpoint(&checkpoint).expect("checkpoint prefix");
+        let observation = prefix.reproject(&checkpoint).expect("observed checkpoint");
+        assert_eq!(observation.prefix(), &branch);
+        assert_eq!(observation.block_height(), height);
+        assert_eq!(observation.block_identity(), checkpoint.block_hash());
+        assert_eq!(observation.transaction(), checkpoint.transaction_identity());
+        assert_eq!(observation.context(), prefix.context());
+        assert_eq!(observation.context().identifier(), &branch);
+        assert_eq!(observation.context().checkpoint(), u64::from(height));
+        assert_eq!(observation.binds(&prefix), Ok(()));
+        assert_eq!(prefix.anchor_height(), height);
+        assert_eq!(prefix.tip_height(), height);
+        assert_eq!(prefix.blocks().len(), 1);
+
+        let next =
+            ModelledBranchBlock::new(next_height, [0x51; 32], Vec::new()).expect("next block");
+        let extended = prefix.extend(next).expect("contiguous extension");
+        assert_eq!(extended.tip_height(), next_height);
+        let late =
+            ModelledBranchBlock::new(later_height, [0x52; 32], Vec::new()).expect("late block");
+        assert_eq!(
+            prefix.extend(late),
+            Err(MaturityModelledBranchRefusal::NonContiguousExtension {
+                tip: height,
+                offered: later_height,
+            })
+        );
+        assert_eq!(
+            prefix.rewind(earlier_height),
+            Err(MaturityModelledBranchRefusal::RewoundBelowTheAnchor {
+                anchor: height,
+                requested: earlier_height,
+            })
+        );
+        assert_eq!(
+            prefix.rewind(next_height),
+            Err(MaturityModelledBranchRefusal::RewoundAboveTheTip {
+                tip: height,
+                requested: next_height,
+            })
+        );
+
+        let earlier = ModelledBranchBlock::new(earlier_height, [0x53; 32], Vec::new())
+            .expect("earlier block");
+        assert_eq!(
+            ModelledBranchPrefix::anchored([0; 32], earlier.clone()),
+            Err(MaturityModelledBranchRefusal::ZeroPrefixIdentifier {
+                anchor: earlier_height
+            })
+        );
+        assert_eq!(
+            ModelledBranchBlock::new(height, [0; 32], Vec::new()),
+            Err(MaturityModelledBranchRefusal::ZeroBlockIdentity { height })
+        );
+        let earlier_prefix =
+            ModelledBranchPrefix::anchored(branch, earlier.clone()).expect("earlier prefix");
+        let recorded = ModelledBranchBlock::new(
+            height,
+            *checkpoint.block_hash(),
+            vec![checkpoint.transaction_identity()],
+        )
+        .expect("recorded block");
+        let two_blocks = earlier_prefix
+            .extend(recorded)
+            .expect("checkpoint extension");
+        assert_eq!(two_blocks.reproject(&checkpoint), Ok(observation.clone()));
+        let rewound = two_blocks.rewind(earlier_height).expect("rewind to anchor");
+        let removed = MaturityRootObservationRefusal::TransactionBlockIsNotInThePrefix {
+            height,
+            anchor: earlier_height,
+            tip: earlier_height,
+        };
+        assert_eq!(rewound.reproject(&checkpoint), Err(removed.clone()));
+        assert_eq!(observation.binds(&rewound), Err(removed));
+
+        let changed_identity = [0x54; 32];
+        let substituted = rewound
+            .extend(
+                ModelledBranchBlock::new(
+                    height,
+                    changed_identity,
+                    vec![checkpoint.transaction_identity()],
+                )
+                .expect("substituted block"),
+            )
+            .expect("substituted extension");
+        assert_eq!(
+            substituted.reproject(&checkpoint),
+            Err(MaturityRootObservationRefusal::BlockAtThatHeightChanged {
+                height,
+                prefix: changed_identity,
+                checkpoint: *checkpoint.block_hash(),
+            },)
+        );
+        let another_transaction = Txid::from_internal([0x55; 32]);
+        let transaction_removed = rewound
+            .extend(
+                ModelledBranchBlock::new(
+                    height,
+                    *checkpoint.block_hash(),
+                    vec![another_transaction],
+                )
+                .expect("block without transaction"),
+            )
+            .expect("replacement extension");
+        assert_eq!(
+            transaction_removed.reproject(&checkpoint),
+            Err(
+                MaturityRootObservationRefusal::TransactionAbsentFromThatBlock {
+                    height,
+                    transaction: checkpoint.transaction_identity(),
+                    block: *checkpoint.block_hash(),
+                },
+            )
+        );
+
+        let foreign = ModelledBranchPrefix::anchored([0x5a; 32], earlier)
+            .expect("foreign prefix without checkpoint height");
+        assert_eq!(foreign.tip_height(), earlier_height);
+        assert_eq!(
+            foreign.reproject(&checkpoint),
+            Err(MaturityRootObservationRefusal::EvidenceFromAnotherPrefix {
+                presented: [0x5a; 32],
+                prefix: branch,
+            },)
+        );
     }
 
     #[test]
@@ -488,8 +1477,9 @@ mod tests {
     #[test]
     fn two_predecessors_refuses_under_clause_two() {
         let edge = accepted_edge();
+        let second = retarget(&edge, edge.predecessor, other_outpoint(0x5a));
         assert_refusal(
-            &[edge.clone(), edge.clone()],
+            &[edge.clone(), second],
             edge.predecessor,
             &MaturityRootHistoryRefusal::OutpointReused {
                 position: 1,

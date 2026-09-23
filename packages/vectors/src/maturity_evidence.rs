@@ -148,7 +148,7 @@ use crate::maturity_native::{MaturityAcceptanceObligation, MaturityNativeStandin
 use crate::maturity_safety::{
     MaturityCanonicalControl, MaturityExpectedProjection, MaturityIntendedCarrier,
     MaturityMutationLocator, MaturityMutationSubject, MaturityRowBoundary, MaturityRowLink,
-    MaturitySafetyRow, MaturitySafetySection, resolve_row, rows,
+    MaturitySafetyRow, MaturitySafetySection, resolve_row, rows, rows_of,
 };
 use crate::observed_boundary::matches_boundary;
 use crate::subject::{CanonicalSubject, ExperimentalSubject};
@@ -499,53 +499,38 @@ impl MaturityContinuityRecord {
     }
 }
 
-/// The mutation registry whose branch-indexed material is outstanding.
+/// The kind of mutation registry derived from the safety matrix.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityMutationRegistryKind {
     /// The canonical root-history mutation registry.
     RootHistory,
 }
 
-/// Why the history registry carries no mutations.
-///
-/// A typed reason rather than an absence, because an absent registry makes
-/// the plan's input list shorter and its completeness claim stronger,
-/// which is the wrong direction for a plan whose purpose is to bound what
-/// has been established.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[non_exhaustive]
-pub enum MaturityRegistryOutstandingReason {
-    /// No typed branch context can be projected, rewound and reprojected,
-    /// so a root-history mutation has nothing to be relative to.
-    ///
-    /// A root-history mutation is a change to an edge sequence read
-    /// against a branch. This module states a branch binding a view
-    /// validates and can observe no branch at all, and an entry written
-    /// against a context nobody can project would be an entry against an
-    /// assumption.
-    BranchIndexedHistoryIsNotProjectable,
-}
-
-impl MaturityRegistryOutstandingReason {
-    /// The registry this reason belongs to.
-    #[must_use]
-    pub const fn kind(self) -> MaturityMutationRegistryKind {
+impl MaturityMutationRegistryKind {
+    /// The matrix section containing this registry's mutations.
+    const fn section(self) -> MaturitySafetySection {
         match self {
-            Self::BranchIndexedHistoryIsNotProjectable => MaturityMutationRegistryKind::RootHistory,
+            Self::RootHistory => MaturitySafetySection::RootHistoryFault,
+        }
+    }
+
+    /// The matrix locator admitted to this registry.
+    const fn locator(self) -> MaturityMutationLocator {
+        match self {
+            Self::RootHistory => MaturityMutationLocator::RootHistoryEdge,
         }
     }
 }
 
 /// The standing a registry census counts its mutations under.
 ///
-/// One member, read and never written, on the precedent of the candidate
-/// ABI's own single-variant status: a count with no standing beside it
-/// would read as a registry that has been surveyed and found empty, which
-/// is the opposite of what this registry records.
+/// The census derives this standing from the registry's mutation list.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityRegistryStanding {
     /// The registry is outstanding until the material it indexes exists.
     OutstandingUntilItsMaterialLands,
+    /// The registry indexes mutations of the landed validator.
+    RegisteredAgainstTheLandedMaterial,
 }
 
 /// One mutation a landed registry would carry.
@@ -554,9 +539,7 @@ pub enum MaturityRegistryStanding {
 /// vocabulary rather than in one invented here: a registry entry naming a
 /// locator this workspace does not otherwise use would be a second
 /// vocabulary for the same facts, and the two would disagree the first
-/// time a row moved. There is no public constructor and this module builds
-/// none, which is what makes the emptiness of the history registry a property
-/// of the type rather than a claim about a list.
+/// time a row moved. Construction is confined to the plan derivation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MaturityRegisteredMutation {
     section: MaturitySafetySection,
@@ -605,25 +588,27 @@ impl MaturityMutationRegistryCensus {
     }
 }
 
-/// The root-history registry whose branch-indexed material is outstanding.
-///
-/// Structurally present and explicitly outstanding: it names which
-/// registry it is, why it carries nothing, and counts its mutations under
-/// a standing. The mutation list retains the matrix's own identity vocabulary.
+/// A mutation registry derived from the matrix rows of its kind.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MaturityOutstandingMutationRegistry {
+pub struct MaturityMutationRegistry {
     kind: MaturityMutationRegistryKind,
-    reason: MaturityRegistryOutstandingReason,
     mutations: Vec<MaturityRegisteredMutation>,
 }
 
-impl MaturityOutstandingMutationRegistry {
-    /// The outstanding registry one reason describes.
-    const fn outstanding(reason: MaturityRegistryOutstandingReason) -> Self {
+impl MaturityMutationRegistry {
+    /// Collect the matrix rows whose section and locator name this registry.
+    fn registered(kind: MaturityMutationRegistryKind) -> Self {
+        let locator = kind.locator();
         Self {
-            kind: reason.kind(),
-            reason,
-            mutations: Vec::new(),
+            kind,
+            mutations: rows_of(kind.section())
+                .filter(|row| row.locator() == Some(locator))
+                .map(|row| MaturityRegisteredMutation {
+                    section: row.section(),
+                    row: row.name(),
+                    locator,
+                })
+                .collect(),
         }
     }
 
@@ -631,12 +616,6 @@ impl MaturityOutstandingMutationRegistry {
     #[must_use]
     pub const fn kind(&self) -> MaturityMutationRegistryKind {
         self.kind
-    }
-
-    /// Why it carries no mutations.
-    #[must_use]
-    pub const fn reason(&self) -> MaturityRegistryOutstandingReason {
-        self.reason
     }
 
     /// Every mutation it carries.
@@ -650,7 +629,11 @@ impl MaturityOutstandingMutationRegistry {
     pub const fn census(&self) -> MaturityMutationRegistryCensus {
         MaturityMutationRegistryCensus {
             mutations: self.mutations.len(),
-            standing: MaturityRegistryStanding::OutstandingUntilItsMaterialLands,
+            standing: if self.mutations.is_empty() {
+                MaturityRegistryStanding::OutstandingUntilItsMaterialLands
+            } else {
+                MaturityRegistryStanding::RegisteredAgainstTheLandedMaterial
+            },
         }
     }
 }
@@ -1515,7 +1498,7 @@ pub struct MaturityAnnouncementEvidencePlan {
     fixtures: Vec<CanonicalSubject<MaturitySemanticCase>>,
     material: MaturityConstructorMaterial,
     records: Vec<MaturityContinuityRecord>,
-    root_history_mutations: MaturityOutstandingMutationRegistry,
+    root_history_mutations: MaturityMutationRegistry,
     binding: MaturityTargetBinding,
     provenance: MaturityExecutorProvenanceExpectation,
     rows: Vec<MaturityEvidenceRow>,
@@ -1571,7 +1554,7 @@ impl MaturityAnnouncementEvidencePlan {
 
     /// The canonical root-history mutation registry.
     #[must_use]
-    pub const fn root_history_mutations(&self) -> &MaturityOutstandingMutationRegistry {
+    pub const fn root_history_mutations(&self) -> &MaturityMutationRegistry {
         &self.root_history_mutations
     }
 
@@ -1846,8 +1829,8 @@ pub fn derive_maturity_evidence_plan_with(
         fixtures,
         records: constructor_records(&material),
         material,
-        root_history_mutations: MaturityOutstandingMutationRegistry::outstanding(
-            MaturityRegistryOutstandingReason::BranchIndexedHistoryIsNotProjectable,
+        root_history_mutations: MaturityMutationRegistry::registered(
+            MaturityMutationRegistryKind::RootHistory,
         ),
         binding,
         provenance,
@@ -2188,13 +2171,12 @@ pub(crate) mod tests {
         MaturityBranchPoisonMarker, MaturityCarrierExecution, MaturityCarrierOutcome,
         MaturityConstructorMaterial, MaturityConstructorMaterialAbsence,
         MaturityConstructorMaterialPresence, MaturityContinuityObservation,
-        MaturityEvidenceRefusal, MaturityExecutorProvenanceExpectation,
+        MaturityEvidenceRefusal, MaturityExecutorProvenanceExpectation, MaturityMutationRegistry,
         MaturityMutationRegistryKind, MaturityMutationSite, MaturityNativeRefusal,
-        MaturityObservationClass, MaturityPresentConstructorMaterial,
-        MaturityRegistryOutstandingReason, MaturityRegistryStanding, MaturityRowBinding,
-        MaturityRowStanding, MaturitySubmittedSubject, derive_maturity_evidence_plan_with,
-        native_refusal_binds_to_row, site_names_the_rows_subject, sponsorless_acceptance_standing,
-        stated_executor_provenance,
+        MaturityObservationClass, MaturityPresentConstructorMaterial, MaturityRegisteredMutation,
+        MaturityRegistryStanding, MaturityRowBinding, MaturityRowStanding,
+        MaturitySubmittedSubject, derive_maturity_evidence_plan_with, native_refusal_binds_to_row,
+        site_names_the_rows_subject, sponsorless_acceptance_standing, stated_executor_provenance,
     };
     use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
     use crate::matrix::{EvidenceBoundary, MutationLayer};
@@ -2219,6 +2201,7 @@ pub(crate) mod tests {
     use crate::maturity_safety::{
         MaturityCanonicalControl, MaturityIntendedCarrier, MaturityMutationLocator,
         MaturityMutationSubject, MaturitySafetyRow, MaturitySafetySection, row_count, rows,
+        rows_of,
     };
     use crate::subject::ExperimentalSubject;
     use linker::CandidateDeploymentIdentity;
@@ -2911,21 +2894,60 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn absent_constructor_material_and_history_carry_their_reasons() {
+    fn absent_constructor_material_carries_its_reason_and_the_history_registry_its_rows() {
         let history = PLAN.root_history_mutations();
         assert_eq!(PLAN.constructor_material(), &absent_material(),);
         assert_eq!(history.kind(), MaturityMutationRegistryKind::RootHistory);
-        assert_eq!(
-            history.reason(),
-            MaturityRegistryOutstandingReason::BranchIndexedHistoryIsNotProjectable,
-        );
-        assert_eq!(history.mutations().len(), 0);
-        assert_eq!(history.census().mutations(), 0);
+        assert_eq!(history.mutations().len(), 16);
+        assert_eq!(history.census().mutations(), 16);
         assert_eq!(
             history.census().standing(),
-            MaturityRegistryStanding::OutstandingUntilItsMaterialLands,
+            MaturityRegistryStanding::RegisteredAgainstTheLandedMaterial,
         );
-        assert_eq!(history.reason().kind(), history.kind());
+    }
+
+    #[test]
+    fn the_root_history_registry_carries_exactly_the_matrixs_root_history_rows() {
+        use std::collections::BTreeSet;
+
+        let registry = PLAN.root_history_mutations();
+        assert_eq!(registry.mutations().len(), 16);
+        let expected: BTreeSet<_> = rows_of(MaturitySafetySection::RootHistoryFault)
+            .filter(|row| row.locator() == Some(MaturityMutationLocator::RootHistoryEdge))
+            .map(MaturitySafetyRow::name)
+            .collect();
+        let actual: BTreeSet<_> = registry
+            .mutations()
+            .iter()
+            .map(MaturityRegisteredMutation::row)
+            .collect();
+        for mutation in registry.mutations() {
+            assert_eq!(mutation.section(), MaturitySafetySection::RootHistoryFault);
+            assert_eq!(mutation.locator(), MaturityMutationLocator::RootHistoryEdge);
+        }
+        assert_eq!(actual.len(), registry.mutations().len());
+        assert!(actual.is_subset(&expected));
+        assert!(expected.is_subset(&actual));
+    }
+
+    #[test]
+    fn the_registry_standing_follows_its_mutation_list_in_both_directions() {
+        let registered = PLAN.root_history_mutations();
+        assert_eq!(registered.census().mutations(), 16);
+        assert_eq!(
+            registered.census().standing(),
+            MaturityRegistryStanding::RegisteredAgainstTheLandedMaterial
+        );
+        let empty = MaturityMutationRegistry {
+            kind: MaturityMutationRegistryKind::RootHistory,
+            mutations: Vec::new(),
+        };
+        assert_eq!(empty.kind(), registered.kind());
+        assert_eq!(empty.census().mutations(), 0);
+        assert_eq!(
+            empty.census().standing(),
+            MaturityRegistryStanding::OutstandingUntilItsMaterialLands
+        );
     }
 
     #[test]
@@ -3025,7 +3047,7 @@ pub(crate) mod tests {
             &MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
         );
         assert_eq!(plan.constructor_material(), &absent_material());
-        assert_eq!(plan.root_history_mutations().census().mutations(), 0);
+        assert_eq!(plan.root_history_mutations().census().mutations(), 16);
 
         // The same derivation under a stated expectation: the eighth input
         // is the argument, so a caller states it and the plan carries what

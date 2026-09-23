@@ -140,6 +140,35 @@ pub enum MaturityFrameworkRevision {
 pub enum MaturityPremiseProvenance {
     /// The node arguments passed by the native executor.
     ExecutorArguments,
+    /// A caller's deployment declaration, which archive admission cannot check.
+    DeploymentDeclaration,
+}
+
+/// A whole deployment value with its stated provenance.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MaturityDeclaredPremise<T> {
+    value: T,
+    provenance: MaturityPremiseProvenance,
+}
+
+impl<T> MaturityDeclaredPremise<T> {
+    /// Records a declaration without attributing it to admitted archive bytes.
+    #[must_use]
+    pub const fn declared(value: T, provenance: MaturityPremiseProvenance) -> Self {
+        Self { value, provenance }
+    }
+
+    /// The whole value stated by the caller.
+    #[must_use]
+    pub const fn value(&self) -> &T {
+        &self.value
+    }
+
+    /// The source of the declaration.
+    #[must_use]
+    pub const fn provenance(&self) -> MaturityPremiseProvenance {
+        self.provenance
+    }
 }
 
 /// Fee floors disclosed for the node that ran an admitted archive.
@@ -1632,6 +1661,10 @@ pub fn replay_maturity_variable_run_of_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::maturity_evidence::{
+        MaturityConstructorMaterial, MaturityConstructorMaterialAbsence,
+        MaturityExecutorProvenanceExpectation, derive_maturity_evidence_plan_with,
+    };
     use crate::maturity_native::MaturityAnnouncementPlanner;
     use target_elements_conformance::executor::TargetOperationPlanner;
     use target_elements_conformance::protocol::{
@@ -1662,6 +1695,45 @@ mod tests {
         assert!(driver.contains("-blockmintxfee=0"));
         assert!(driver.contains(&format!("-minrelaytxfee={}", floors.min_relay_tx_fee())));
         assert!(driver.contains(&format!("-blockmintxfee={}", floors.block_min_tx_fee())));
+    }
+
+    #[test]
+    fn the_linked_candidate_and_the_candidate_abi_are_declared_premises() {
+        let plan = derive_maturity_evidence_plan_with(
+            MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            MaturityConstructorMaterial::Absent(
+                MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+            ),
+        )
+        .expect("evidence plan");
+        let linked = MaturityDeclaredPremise::declared(
+            plan.bundle().clone(),
+            MaturityPremiseProvenance::DeploymentDeclaration,
+        );
+        let abi = MaturityDeclaredPremise::declared(
+            plan.abi().clone(),
+            MaturityPremiseProvenance::DeploymentDeclaration,
+        );
+        assert_eq!(linked.value(), plan.bundle());
+        assert_eq!(abi.value(), plan.abi());
+        assert_eq!(
+            linked.provenance(),
+            MaturityPremiseProvenance::DeploymentDeclaration
+        );
+        assert_eq!(
+            abi.provenance(),
+            MaturityPremiseProvenance::DeploymentDeclaration
+        );
+        assert_ne!(
+            linked.provenance(),
+            MaturityPremiseProvenance::ExecutorArguments
+        );
+        for archive in [&FILES, &VARIABLE_FILES] {
+            let report = std::str::from_utf8(archive[3].bytes()).expect("RUN-REPORT text");
+            assert_eq!(archive[3].name(), "RUN-REPORT");
+            assert!(!report.contains("linked-candidate"));
+            assert!(!report.contains("candidate-abi"));
+        }
     }
 
     #[test]
