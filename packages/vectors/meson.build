@@ -279,6 +279,7 @@ vectors_excluded_files = vectors_fixture_files + files(
   'tests/guide13_sponsor_signing.rs',
   'tests/maturity_abi.rs',
   'tests/maturity_closure.rs',
+  'tests/maturity_continuity.rs',
   'tests/maturity_native.rs',
   'tests/maturity_operator.rs',
   'tests/sighash_verdict.rs',
