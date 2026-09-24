@@ -1050,7 +1050,6 @@ pub const fn boundary_admits(boundary: EvidenceBoundary, layer: MutationLayer) -
         // predecessor world. The validated reports compare semantic facts
         // projected from accepted bytes; every row declaring either report
         // layer mutates that fact.
-        // EvidenceBoundary::RootHistoryReportRejection | EvidenceBoundary::PublicRecoveryReportRejection
         EvidenceBoundary::SemanticRequestRejection
         | EvidenceBoundary::CompilerPlanRejection
         | EvidenceBoundary::RootHistoryReportRejection
