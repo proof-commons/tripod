@@ -1322,6 +1322,34 @@ mod tests {
         }
     }
 
+    // §1.13 (`rule:guide14-exec:sponsor-opacity`): this checks keys, not values,
+    // in sponsorless bytes; neither report-publishes-* row is answered.
+    #[test]
+    fn the_canonical_bytes_publish_no_sponsor_key() {
+        let (handoff, report) = accepted();
+        let validated = validate(&report, &handoff).expect("accepted report validates");
+        let rendered = render_maturity_public_recovery_report(&validated);
+        assert_eq!(
+            crate::live_minimality_report::forbidden_key_in(&rendered),
+            None,
+        );
+
+        for key in crate::live_minimality_report::FORBIDDEN_KEYS {
+            let staged = format!("{rendered}{key} 1000\n");
+            assert_eq!(
+                crate::live_minimality_report::forbidden_key_in(&staged),
+                Some(*key),
+                "{key} would not have been caught",
+            );
+        }
+
+        let value_word = format!("{rendered}note sponsor_amount\n");
+        assert_eq!(
+            crate::live_minimality_report::forbidden_key_in(&value_word),
+            None,
+        );
+    }
+
     #[test]
     fn the_recomputation_inventory_is_complete_and_distinctly_named() {
         let names: BTreeSet<_> = MaturityPublicRecoveryRecomputedItem::ALL

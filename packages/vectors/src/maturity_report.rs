@@ -1894,6 +1894,34 @@ mod tests {
         }
     }
 
+    // §1.13 (`rule:guide14-exec:sponsor-opacity`): this checks keys, not values,
+    // in sponsorless bytes; neither report-publishes-* row is answered.
+    #[test]
+    fn the_canonical_bytes_publish_no_sponsor_key() {
+        for plan in [&*PLAN, &*PRESENT_PLAN] {
+            let rendered = render_maturity_safety_report(&validated_from(plan));
+            assert_eq!(
+                crate::live_minimality_report::forbidden_key_in(&rendered),
+                None,
+            );
+
+            for key in crate::live_minimality_report::FORBIDDEN_KEYS {
+                let staged = format!("{rendered}{key} 1000\n");
+                assert_eq!(
+                    crate::live_minimality_report::forbidden_key_in(&staged),
+                    Some(*key),
+                    "{key} would not have been caught",
+                );
+            }
+
+            let value_word = format!("{rendered}note sponsor_amount\n");
+            assert_eq!(
+                crate::live_minimality_report::forbidden_key_in(&value_word),
+                None,
+            );
+        }
+    }
+
     fn assert_canonical_fields(validated: &ValidatedMaturityAnnouncementSafetyReport) {
         let bytes = render_maturity_safety_report(validated);
 
