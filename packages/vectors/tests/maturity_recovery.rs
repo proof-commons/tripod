@@ -29,6 +29,9 @@ use vectors::maturity_native::MaturityAcceptanceObligation;
 use vectors::maturity_recovery::PublicAnnouncementHandoff;
 use vectors::maturity_recovery::PublicAnnouncementLocator;
 use vectors::maturity_recovery::recover_public_successor;
+use vectors::maturity_recovery_report::assemble_maturity_public_recovery_report;
+use vectors::maturity_recovery_report::render_maturity_public_recovery_report;
+use vectors::maturity_recovery_report::validate_maturity_public_recovery_report;
 
 /// The one published announcement leaf is the whole static subtree:
 /// the recipe carries every consumer within it and needs no support leaf.
@@ -51,6 +54,40 @@ fn published_subtree(
     .expect("published one-leaf subtree")
 }
 
+fn accepted_handoff() -> PublicAnnouncementHandoff {
+    let corpus = maturity_variable_run_of_record().expect("accepted archive");
+    let MaturityAcceptanceObligation::Established { readback, .. } =
+        corpus.evidence().acceptance_obligation()
+    else {
+        panic!("accepted archive has an established readback")
+    };
+    let target = closure_target().expect("reviewed contract");
+    let transaction = TargetTransaction::decode(readback.bytes()).expect("accepted transaction");
+    let stack = transaction.witnesses()[0].stack();
+    let subtree = published_subtree(&target, &stack[7]);
+    let (minimum, maximum) = MaturityDeployment::PublishedSignerHeld
+        .parameters()
+        .expect("published deployment")
+        .lead();
+    PublicAnnouncementHandoff::new(
+        PublicAnnouncementLocator::new(
+            MaturityByteSource::ArchivedSubmission {
+                run_address: corpus.report().run_address().to_owned(),
+            },
+            readback.identity(),
+        ),
+        readback.bytes().to_vec(),
+        0,
+        corpus.schedule(),
+        AnnouncementLeadBounds::new(Cycle::new(minimum), Cycle::new(maximum))
+            .expect("published lead bounds"),
+        subtree,
+        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &OracleStateCurve)
+            .expect("published internal key"),
+        TargetContractVersion::V2,
+    )
+}
+
 #[test]
 fn the_accepted_archives_handoff_recovers_output_zero_from_public_values() {
     let corpus = maturity_variable_run_of_record().expect("accepted archive");
@@ -71,24 +108,7 @@ fn the_accepted_archives_handoff_recovers_output_zero_from_public_values() {
         .lead();
     assert_eq!((minimum, maximum), (4, 6));
     assert_eq!(corpus.report().target_contract(), "elements-tapscript-v2");
-    let handoff = PublicAnnouncementHandoff::new(
-        PublicAnnouncementLocator::new(
-            MaturityByteSource::ArchivedSubmission {
-                run_address: corpus.report().run_address().to_owned(),
-            },
-            readback.identity(),
-        ),
-        readback.bytes().to_vec(),
-        0,
-        corpus.schedule(),
-        AnnouncementLeadBounds::new(Cycle::new(minimum), Cycle::new(maximum))
-            .expect("published lead bounds"),
-        subtree,
-        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &OracleStateCurve)
-            .expect("published internal key"),
-        TargetContractVersion::V2,
-    );
-    let recovered = recover_public_successor(handoff).expect("public recovery");
+    let recovered = recover_public_successor(accepted_handoff()).expect("public recovery");
     let requested = Cycle::new(u64::from_be_bytes(
         stack[2].as_slice().try_into().expect("cycle width"),
     ));
@@ -125,6 +145,18 @@ fn the_accepted_archives_handoff_recovers_output_zero_from_public_values() {
 }
 
 #[test]
+fn the_accepted_archives_public_recovery_report_validates_from_the_handoff_alone() {
+    let handoff = accepted_handoff();
+    let report = assemble_maturity_public_recovery_report(handoff).expect("report assembles");
+    let independent = accepted_handoff();
+    let validated =
+        validate_maturity_public_recovery_report(&report, &independent).expect("report validates");
+    let rendered = render_maturity_public_recovery_report(&validated);
+    assert!(rendered.contains("role state-public-recovery\n"));
+    assert!(rendered.contains("programs_agree true\n"));
+}
+
+#[test]
 fn the_binarys_import_list_excludes_the_bundle_the_identity_and_both_planners() {
     let source = include_str!("maturity_recovery.rs");
     let actual: Vec<_> = source
@@ -158,6 +190,9 @@ fn the_binarys_import_list_excludes_the_bundle_the_identity_and_both_planners() 
         "use vectors::maturity_recovery::PublicAnnouncementHandoff;",
         "use vectors::maturity_recovery::PublicAnnouncementLocator;",
         "use vectors::maturity_recovery::recover_public_successor;",
+        "use vectors::maturity_recovery_report::assemble_maturity_public_recovery_report;",
+        "use vectors::maturity_recovery_report::render_maturity_public_recovery_report;",
+        "use vectors::maturity_recovery_report::validate_maturity_public_recovery_report;",
     ];
     assert_eq!(actual, expected);
     for forbidden in [
