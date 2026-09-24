@@ -115,7 +115,7 @@ mod tests {
         ObservedOutcomeLayer::Accepted,
     ];
 
-    /// Every boundary §1.5 and this workspace's erratum name.
+    /// Every §1.5 boundary and this workspace's erratum and report layers.
     const BOUNDARIES: &[EvidenceBoundary] = &[
         EvidenceBoundary::SemanticRequestRejection,
         EvidenceBoundary::CompilerPlanRejection,
@@ -130,6 +130,8 @@ mod tests {
         EvidenceBoundary::RelayPolicyRejection,
         EvidenceBoundary::AcceptedTransaction,
         EvidenceBoundary::ReportSemanticProjectionRejection,
+        EvidenceBoundary::RootHistoryReportRejection,
+        EvidenceBoundary::PublicRecoveryReportRejection,
     ];
 
     /// The mapping-table regression: EVERY cross pair is false.

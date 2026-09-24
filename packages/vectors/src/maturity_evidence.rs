@@ -27,8 +27,9 @@
 //! context without authenticating freshness or target acceptance. Their
 //! acceptance vocabulary contains only an outstanding obligation, so they
 //! cannot mint an accepted-continuity standing. Missing constructor material
-//! is an explicit input with a typed reason. The root-history registry stays
-//! outstanding because branch-indexed history cannot be projected.
+//! is an explicit input with a typed reason. The root-history registry and
+//! both validated reports answer their own rows over the accepted archive,
+//! while their residuals retain synthetic-origin and chain-freshness limits.
 //!
 //! # What an answered standing is here
 //!
@@ -36,12 +37,12 @@
 //! observed. A row a first-party validator refused is answered because
 //! [`crate::maturity_first_party::discharge_maturity_first_party`] drove
 //! that validator here, twice, and came back with the refusal; a row whose
-//! evidence stands in another census is not answered here, because taking
-//! another census's word for a row is the discharge-by-assertion the whole
-//! classification exists to prevent. That is why
-//! [`MaturityRowStanding::OutstandingUnderTypedNonAnswer`] is outstanding
-//! even where the matrix's own reason says the row's evidence landed
-//! elsewhere: the reason names where to look, and this plan did not look.
+//! evidence stands in another census is answered only when this derivation
+//! validates the report carrying its exact section and row. Taking a
+//! different census's word for it would be the discharge-by-assertion the
+//! classification exists to prevent. The surviving
+//! [`MaturityRowStanding::OutstandingUnderTypedNonAnswer`] rows retain
+//! their own typed blockers.
 //!
 //! [`MaturityRowStanding::NativeRefusalAtUnexpectedBoundary`] is not
 //! answered either, and for a different reason: the run happened, the
@@ -110,8 +111,10 @@ use compiler::maturity_announcement_plan::{
 };
 use compiler::operation_plan::{CoverageRequirementId, SponsorCase};
 use linker::{CandidateLinkedMaturityBundle, StateLinkDeploymentParameters};
+use tapscript::StateWitnessSchedule;
 use target_elements::ReviewedElementsTapscriptDefinition;
-use target_elements_conformance::protocol::ObservedOutcomeLayer;
+use target_elements_conformance::executor::{PlanRefused, TargetOperationPlanner};
+use target_elements_conformance::protocol::{FundedOutput, ObservedOutcomeLayer, OperationSubject};
 use target_elements_conformance::provenance::{ExpectedExecutorProvenance, ProvenanceSyntaxDefect};
 use transaction::bytes::{AssetField, AssetId, Outpoint, Txid, ValueField};
 use transaction::error::TransactionRefusal;
@@ -122,21 +125,25 @@ use transaction::state_view::{
 };
 
 use crate::error::VectorError;
+use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
 use crate::matrix::EvidenceBoundary;
 use crate::maturity_closure::{
-    MaturityClosureRefusal, MaturityDeployment, OracleStateCurve, announcement_plan,
-    closure_target, linked_maturity_bundle,
+    MaturityClosureRefusal, MaturityDeployment, MaturityWitnessSelection, OracleStateCurve,
+    announcement_plan, closure_target, linked_maturity_bundle,
 };
 use crate::maturity_continuity::{
     MaturityByteComparison, MaturityByteSource, MaturityContinuityMutant,
-    MaturityContinuityRefusal, MaturityFieldComparison,
+    MaturityContinuityRefusal, MaturityFieldComparison, MaturityFundedPredecessor,
+    MaturityProjectionInput, ValidatedMaturityContinuity,
+    project_maturity_continuity_with_acceptance,
 };
 use crate::maturity_continuity_report::{
     MaturityContinuityReportEntry, ValidatedMaturityContinuityReport,
 };
 use crate::maturity_corpus::{
     MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS, MaturityCorpusImportRefusal,
-    MaturityDisclosedFeeFloors, maturity_run_of_record, maturity_variable_run_of_record,
+    MaturityDeclaredPremise, MaturityDisclosedFeeFloors, MaturityPremiseProvenance,
+    ValidatedMaturityCorpus, maturity_run_of_record, maturity_variable_run_of_record,
 };
 use crate::maturity_first_party::{
     MaturityCarriedReason, MaturityFirstPartyRefusal, MaturityFirstPartyValidator,
@@ -144,7 +151,22 @@ use crate::maturity_first_party::{
     maturity_first_party_cases,
 };
 use crate::maturity_fixture::{MaturitySemanticCase, positive_semantic_census};
-use crate::maturity_native::{MaturityAcceptanceObligation, MaturityNativeStanding};
+use crate::maturity_history::{
+    MaturityRootCheckpoint, MaturityRootCheckpointRefusal, StateRootEdge,
+};
+use crate::maturity_history_report::{
+    MaturityRootHistoryReportRefusal, ValidatedMaturityRootHistoryReport,
+    assemble_maturity_root_history_report, validate_maturity_root_history_report,
+};
+use crate::maturity_native::{
+    MaturityAcceptanceObligation, MaturityAnnouncementPlanner, MaturityNativePlanRefusal,
+    MaturityNativeStanding,
+};
+use crate::maturity_recovery_report::{
+    MaturityPublicRecoveryReportRefusal, ValidatedMaturityPublicRecoveryReport,
+    accepted_public_handoff, assemble_maturity_public_recovery_report,
+    validate_maturity_public_recovery_report,
+};
 use crate::maturity_safety::{
     MaturityCanonicalControl, MaturityExpectedProjection, MaturityIntendedCarrier,
     MaturityMutationLocator, MaturityMutationSubject, MaturityRowBoundary, MaturityRowLink,
@@ -1175,13 +1197,13 @@ pub enum MaturityRowStanding {
     ConstructorContinuityObserved,
     /// The root-history report observed the row.
     ///
-    /// The class exists because §14.2 names it, on the same argument as
-    /// the member above. No row stands here at this tip.
+    /// Guide 14 §1.14's root-history continuity class holds the sixteen
+    /// §16.8 rows observed by the validated edge-sequence report.
     RootHistoryObserved,
     /// The public-recovery report observed the row.
     ///
-    /// The class exists because §14.2 names it, on the same argument. No
-    /// row stands here at this tip.
+    /// Guide 14 §1.14's public successor recovery class holds the one
+    /// positive and thirteen §16.13 rows observed by the validated handoff report.
     PublicRecoveryObserved,
     /// Report validation observed the row's projection in the rendered
     /// bytes.
@@ -1592,7 +1614,7 @@ impl MaturityAnnouncementEvidencePlan {
 
 /// Why the evidence plan could not be derived.
 ///
-/// One member per input that can refuse, plus the two disagreements a
+/// One member per input that can refuse, plus disagreements a
 /// classification can meet. The cause each input refused with is carried
 /// rather than flattened: the layers that own these inputs answer in four
 /// different vocabularies, and a single name for all of them would tell a
@@ -1622,6 +1644,19 @@ pub enum MaturityEvidenceRefusal {
     SemanticFixtureRegistryRefused(VectorError),
     /// The first-party evidence could not be recomputed.
     FirstPartyEvidenceRefused(MaturityFirstPartyRefusal),
+    /// Replaying the admitted announcement stopped at a named reading.
+    AcceptedReplayRefused {
+        /// The first reading that refused the replay.
+        stage: Box<MaturityAcceptedReplayStage>,
+    },
+    /// The admitted bytes refused constructor-continuity projection.
+    AcceptedContinuityRefused(Box<MaturityContinuityRefusal>),
+    /// The admitted continuity could not bind its root checkpoint.
+    RootHistoryCheckpointRefused(Box<MaturityRootCheckpointRefusal>),
+    /// The root-history continuity report refused assembly or validation.
+    RootHistoryReportRefused(Box<MaturityRootHistoryReportRefusal>),
+    /// The public successor recovery report refused assembly or validation.
+    PublicRecoveryReportRefused(Box<MaturityPublicRecoveryReportRefusal>),
     /// A pre-target row has no entry in the first-party census, which is
     /// total over the pre-target rows, so the two have drifted apart.
     PreTargetRowCarriesNoFirstPartyCase {
@@ -1639,11 +1674,68 @@ pub enum MaturityEvidenceRefusal {
         /// The row's stable name.
         name: &'static str,
     },
+    /// A row declared a report boundary absent from that validated report.
+    RowAbsentFromItsReport {
+        /// The report layer the row declared.
+        layer: EvidenceBoundary,
+        /// The §16 table that owns the row.
+        section: MaturitySafetySection,
+        /// The row's stable name.
+        name: &'static str,
+    },
     /// A row's declared relation no longer resolves against the published
     /// plan.
     RowLinkUnresolved(VectorError),
     /// The operator stated an expectation the comparison cannot use.
     ExecutorProvenanceExpectationMalformed(ProvenanceSyntaxDefect),
+}
+
+/// The wire field whose admitted funding response could not be decoded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MaturityFundedCoinField {
+    /// The response's stated outpoint.
+    Outpoint,
+    /// The response's asset identity.
+    Asset,
+    /// The response's output program.
+    Program,
+}
+
+/// The first reading that stopped replay of the admitted announcement.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MaturityAcceptedReplayStage {
+    /// Planner construction refused the retained variable-metadata schedule.
+    PlannerRefused(MaturityNativePlanRefusal),
+    /// The planner refused to state its next step.
+    StepRefused {
+        /// Position in the three-exchange announcement transcript.
+        position: usize,
+        /// The executor-facing refusal returned by `next_step`.
+        refusal: PlanRefused,
+    },
+    /// A planned step differs from the archived step at this position.
+    StepDisagrees {
+        /// Position in the three-exchange announcement transcript.
+        position: usize,
+    },
+    /// The archived final step carries no submission subject.
+    SubmissionSubjectAbsent,
+    /// The planner's finalized submission bytes differ or are absent.
+    SubmissionBytesDisagree,
+    /// The second funding response does not carry one funded output.
+    FundedOutputsNotOne {
+        /// The number of funded outputs the response carried.
+        actual: usize,
+    },
+    /// A funded outpoint, asset or program cannot be read from its wire text.
+    FundedCoinUnreadable {
+        /// The field whose conversion returned no value.
+        field: MaturityFundedCoinField,
+        /// The offending wire text.
+        value: String,
+    },
+    /// Funding settled without a finalized announcement in the planner.
+    AnnouncementUnavailable,
 }
 
 /// The operator's stated expectation, read from their own environment.
@@ -1745,17 +1837,137 @@ fn sponsorless_acceptance_standing(
     })
 }
 
+fn replay_refused(stage: MaturityAcceptedReplayStage) -> MaturityEvidenceRefusal {
+    MaturityEvidenceRefusal::AcceptedReplayRefused {
+        stage: Box::new(stage),
+    }
+}
+
+fn replay_funded_coin(
+    funded: &FundedOutput,
+) -> Result<MaturityFundedPredecessor, MaturityEvidenceRefusal> {
+    use MaturityAcceptedReplayStage as Stage;
+    use MaturityFundedCoinField as Field;
+
+    let outpoint = outpoint_of(&funded.outpoint).ok_or_else(|| {
+        replay_refused(Stage::FundedCoinUnreadable {
+            field: Field::Outpoint,
+            value: format!("{}:{}", funded.outpoint.txid, funded.outpoint.vout),
+        })
+    })?;
+    let asset = asset_of(&funded.asset).ok_or_else(|| {
+        replay_refused(Stage::FundedCoinUnreadable {
+            field: Field::Asset,
+            value: funded.asset.clone(),
+        })
+    })?;
+    let program = decode_hex(&funded.script).ok_or_else(|| {
+        replay_refused(Stage::FundedCoinUnreadable {
+            field: Field::Program,
+            value: funded.script.clone(),
+        })
+    })?;
+    Ok(MaturityFundedPredecessor {
+        outpoint,
+        asset,
+        amount: funded.amount_satoshis,
+        program,
+    })
+}
+
+fn accepted_continuity(
+    corpus: &ValidatedMaturityCorpus,
+) -> Result<ValidatedMaturityContinuity, MaturityEvidenceRefusal> {
+    use MaturityAcceptedReplayStage as Stage;
+
+    let identity = corpus.evidence().identity().clone();
+    let branch = corpus.evidence().branch();
+    let mut planner = MaturityAnnouncementPlanner::new(
+        identity.clone(),
+        branch,
+        MaturityWitnessSelection::Retained(StateWitnessSchedule::VariableMetadata),
+    )
+    .map_err(|refusal| replay_refused(Stage::PlannerRefused(refusal)))?;
+    let mut next = planner.next_step(None).map_err(|refusal| {
+        replay_refused(Stage::StepRefused {
+            position: 0,
+            refusal,
+        })
+    })?;
+    for position in 0..2 {
+        let (step, response) = corpus
+            .exchanges()
+            .get(position)
+            .ok_or_else(|| replay_refused(Stage::StepDisagrees { position }))?;
+        if next.as_ref() != Some(step) {
+            return Err(replay_refused(Stage::StepDisagrees { position }));
+        }
+        next = planner
+            .next_step(Some((step.case(), response)))
+            .map_err(|refusal| {
+                replay_refused(Stage::StepRefused {
+                    position: position + 1,
+                    refusal,
+                })
+            })?;
+    }
+    let (step, _) = corpus
+        .exchanges()
+        .get(2)
+        .ok_or_else(|| replay_refused(Stage::StepDisagrees { position: 2 }))?;
+    if next.as_ref() != Some(step) {
+        return Err(replay_refused(Stage::StepDisagrees { position: 2 }));
+    }
+    let OperationSubject::Submission(submission) = step.subject() else {
+        return Err(replay_refused(Stage::SubmissionSubjectAbsent));
+    };
+    if planner.submission_bytes() != Some(submission.transaction_bytes.as_slice()) {
+        return Err(replay_refused(Stage::SubmissionBytesDisagree));
+    }
+    let (_, response) = corpus
+        .exchanges()
+        .get(1)
+        .ok_or_else(|| replay_refused(Stage::StepDisagrees { position: 1 }))?;
+    let [funded] = response.funded_outputs.as_slice() else {
+        return Err(replay_refused(Stage::FundedOutputsNotOne {
+            actual: response.funded_outputs.len(),
+        }));
+    };
+    let funded = replay_funded_coin(funded)?;
+    if planner.announcement().is_none() {
+        return Err(replay_refused(Stage::AnnouncementUnavailable));
+    }
+    project_maturity_continuity_with_acceptance(
+        MaturityProjectionInput {
+            source: MaturityByteSource::ArchivedSubmission {
+                run_address: corpus.report().run_address().to_owned(),
+            },
+            submitted_bytes: &submission.transaction_bytes,
+            funded: &funded,
+            branch,
+            bundle: planner.bundle(),
+            identity: &identity,
+        },
+        corpus.evidence().acceptance_obligation(),
+    )
+    .map_err(|refusal| MaturityEvidenceRefusal::AcceptedContinuityRefused(Box::new(refusal)))
+}
+
 /// Derive the canonical evidence plan from the eight inputs of §14.1.
 ///
 /// Six inputs are built here: the validated operation plan, the exact
 /// linked bundle, the candidate ABI over the validated view this module
 /// states, the canonical semantic fixture registry admitted after the
-/// census that validates it, the outstanding root-history registry, and
+/// census that validates it, the root-history mutation registry, and
 /// the exact target and deployment binding. Provenance and constructor
 /// material are independently supplied premises: manufacturing either
-/// here would give a comparison both its operands. Every matrix row is
-/// then classified into exactly one standing, and the census is counted
-/// from the classified rows.
+/// here would give a comparison both its operands. The accepted archive
+/// is replayed into continuity; its checkpoint binds the plan's linked
+/// bundle and ABI as declared premises. Root-history continuity and public
+/// successor recovery reports are assembled and validated from that
+/// archive before every matrix row is classified into one standing. A
+/// refusal in either report refuses this derivation, so its census is
+/// counted only from classified rows backed by validated report evidence.
 ///
 /// # Errors
 ///
@@ -1763,6 +1975,10 @@ fn sponsorless_acceptance_standing(
 /// the refusal that layer raised, or the disagreement a classification met
 /// between the matrix and the first-party census or the published plan.
 #[must_use = "the derived plan carries the evidence partition and supplied material"]
+#[expect(
+    clippy::too_many_lines,
+    reason = "The ordered accepted-report checks stay before the single row-classification loop."
+)]
 pub fn derive_maturity_evidence_plan_with(
     provenance: MaturityExecutorProvenanceExpectation,
     material: MaturityConstructorMaterial,
@@ -1790,10 +2006,58 @@ pub fn derive_maturity_evidence_plan_with(
         maturity_run_of_record().map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let accepted_corpus = maturity_variable_run_of_record()
         .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
+    let root_history_mutations =
+        MaturityMutationRegistry::registered(MaturityMutationRegistryKind::RootHistory);
+    let continuity = accepted_continuity(accepted_corpus)?;
+    let edge = StateRootEdge::from_continuity(&continuity);
+    let starting_cursor = edge.predecessor();
+    let checkpoint = MaturityRootCheckpoint::bind(
+        &edge,
+        &continuity,
+        accepted_corpus,
+        MaturityDeclaredPremise::declared(
+            bundle.clone(),
+            MaturityPremiseProvenance::DeploymentDeclaration,
+        ),
+        MaturityDeclaredPremise::declared(
+            abi.clone(),
+            MaturityPremiseProvenance::DeploymentDeclaration,
+        ),
+    )
+    .map_err(|refusal| MaturityEvidenceRefusal::RootHistoryCheckpointRefused(Box::new(refusal)))?;
+    let history_report = assemble_maturity_root_history_report(
+        std::slice::from_ref(&edge),
+        starting_cursor,
+        checkpoint,
+        root_history_mutations.clone(),
+        binding.clone(),
+        provenance.clone(),
+    )
+    .map_err(|refusal| MaturityEvidenceRefusal::RootHistoryReportRefused(Box::new(refusal)))?;
+    let history = validate_maturity_root_history_report(
+        &history_report,
+        std::slice::from_ref(&edge),
+        starting_cursor,
+        &continuity,
+        &root_history_mutations,
+        &binding,
+        &provenance,
+    )
+    .map_err(|refusal| MaturityEvidenceRefusal::RootHistoryReportRefused(Box::new(refusal)))?;
+    let handoff = accepted_public_handoff(accepted_corpus).map_err(|refusal| {
+        MaturityEvidenceRefusal::PublicRecoveryReportRefused(Box::new(refusal))
+    })?;
+    let recovery_report =
+        assemble_maturity_public_recovery_report(handoff.clone()).map_err(|refusal| {
+            MaturityEvidenceRefusal::PublicRecoveryReportRefused(Box::new(refusal))
+        })?;
+    let recovery = validate_maturity_public_recovery_report(&recovery_report, &handoff).map_err(
+        |refusal| MaturityEvidenceRefusal::PublicRecoveryReportRefused(Box::new(refusal)),
+    )?;
     let index = FirstPartyIndex::of(&discharged);
     let mut classified = Vec::with_capacity(rows().len());
     for row in rows() {
-        let standing = classify(row, &plan, &index)?;
+        let standing = classify(row, &plan, &index, &history, &recovery)?;
         let standing = if row.section() == MaturitySafetySection::Positive
             && row.name() == "sponsorless"
             && matches!(standing, MaturityRowStanding::NativeRunRequired(_))
@@ -1829,9 +2093,7 @@ pub fn derive_maturity_evidence_plan_with(
         fixtures,
         records: constructor_records(&material),
         material,
-        root_history_mutations: MaturityMutationRegistry::registered(
-            MaturityMutationRegistryKind::RootHistory,
-        ),
+        root_history_mutations,
         binding,
         provenance,
         rows: classified,
@@ -2045,10 +2307,14 @@ impl FirstPartyIndex {
 /// recomputed, never from a list kept beside the matrix: a row that starts
 /// declaring another boundary moves here without anything being
 /// remembered.
+/// Root-history continuity and public successor recovery are answered
+/// only by their own validated report's section-and-row observation.
 fn classify(
     row: &MaturitySafetyRow,
     plan: &ValidatedMaturityAnnouncementOperationPlan,
     index: &FirstPartyIndex,
+    history: &ValidatedMaturityRootHistoryReport,
+    recovery: &ValidatedMaturityPublicRecoveryReport,
 ) -> Result<MaturityRowStanding, MaturityEvidenceRefusal> {
     let Some(layer) = row.refusing_layer() else {
         return Ok(MaturityRowStanding::OutstandingUnderTypedNonAnswer(
@@ -2064,6 +2330,28 @@ fn classify(
         | EvidenceBoundary::AbiConstructionRejection => first_party_standing(row, index),
         EvidenceBoundary::ReportSemanticProjectionRejection => {
             Ok(MaturityRowStanding::ReportLayerRequired(row.projection()))
+        }
+        EvidenceBoundary::RootHistoryReportRejection => {
+            if history.observes(row.section(), row.name()) {
+                Ok(MaturityRowStanding::RootHistoryObserved)
+            } else {
+                Err(MaturityEvidenceRefusal::RowAbsentFromItsReport {
+                    layer,
+                    section: row.section(),
+                    name: row.name(),
+                })
+            }
+        }
+        EvidenceBoundary::PublicRecoveryReportRejection => {
+            if recovery.observes(row.section(), row.name()) {
+                Ok(MaturityRowStanding::PublicRecoveryObserved)
+            } else {
+                Err(MaturityEvidenceRefusal::RowAbsentFromItsReport {
+                    layer,
+                    section: row.section(),
+                    name: row.name(),
+                })
+            }
         }
         EvidenceBoundary::ExecutorInfrastructureFailure => Err(
             MaturityEvidenceRefusal::RowDeclaresTheInfrastructureBoundary {
@@ -2175,8 +2463,9 @@ pub(crate) mod tests {
         MaturityMutationRegistryKind, MaturityMutationSite, MaturityNativeRefusal,
         MaturityObservationClass, MaturityPresentConstructorMaterial, MaturityRegisteredMutation,
         MaturityRegistryStanding, MaturityRowBinding, MaturityRowStanding,
-        MaturitySubmittedSubject, derive_maturity_evidence_plan_with, native_refusal_binds_to_row,
-        site_names_the_rows_subject, sponsorless_acceptance_standing, stated_executor_provenance,
+        MaturitySubmittedSubject, accepted_continuity, derive_maturity_evidence_plan_with,
+        native_refusal_binds_to_row, site_names_the_rows_subject, sponsorless_acceptance_standing,
+        stated_executor_provenance,
     };
     use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
     use crate::matrix::{EvidenceBoundary, MutationLayer};
@@ -2191,12 +2480,22 @@ pub(crate) mod tests {
         assemble_maturity_continuity_report, validate_maturity_continuity_report,
     };
     use crate::maturity_corpus::{
-        MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS, maturity_run_of_record,
+        MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS, MaturityDeclaredPremise,
+        MaturityPremiseProvenance, maturity_run_of_record, maturity_variable_run_of_record,
     };
     use crate::maturity_first_party::maturity_first_party_cases;
     use crate::maturity_fixture::positive_semantic_census;
+    use crate::maturity_history::{MaturityRootCheckpoint, StateRootEdge};
+    use crate::maturity_history_report::{
+        ValidatedMaturityRootHistoryReport, assemble_maturity_root_history_report,
+        validate_maturity_root_history_report,
+    };
     use crate::maturity_native::{
         MaturityAcceptanceObligation, MaturityAnnouncementPlanner, MaturityNativeStanding,
+    };
+    use crate::maturity_recovery_report::{
+        ValidatedMaturityPublicRecoveryReport, accepted_public_handoff,
+        assemble_maturity_public_recovery_report, validate_maturity_public_recovery_report,
     };
     use crate::maturity_safety::{
         MaturityCanonicalControl, MaturityIntendedCarrier, MaturityMutationLocator,
@@ -2791,7 +3090,21 @@ pub(crate) mod tests {
                 row.refusing_layer().is_some_and(|layer| {
                     layer.requires_target_execution()
                         && layer != EvidenceBoundary::ReportSemanticProjectionRejection
+                        && layer != EvidenceBoundary::RootHistoryReportRejection
+                        && layer != EvidenceBoundary::PublicRecoveryReportRejection
                 })
+            })
+            .count();
+        let root_history = rows()
+            .iter()
+            .filter(|row| {
+                row.refusing_layer() == Some(EvidenceBoundary::RootHistoryReportRejection)
+            })
+            .count();
+        let public_recovery = rows()
+            .iter()
+            .filter(|row| {
+                row.refusing_layer() == Some(EvidenceBoundary::PublicRecoveryReportRejection)
             })
             .count();
         let outstanding = rows()
@@ -2812,8 +3125,8 @@ pub(crate) mod tests {
         assert_eq!(census.native_refusal_observed(), 0);
         assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
         assert_eq!(census.constructor_continuity_observed(), 0);
-        assert_eq!(census.root_history_observed(), 0);
-        assert_eq!(census.public_recovery_observed(), 0);
+        assert_eq!(census.root_history_observed(), root_history);
+        assert_eq!(census.public_recovery_observed(), public_recovery);
         assert_eq!(census.report_layer_observed(), 0);
         assert_eq!(census.infrastructure_blocked(), 0);
         assert_eq!(census.experimental(), 0);
@@ -2824,10 +3137,89 @@ pub(crate) mod tests {
                 + census.native_run_required()
                 + census.native_acceptance_observed()
                 + census.report_layer_required()
+                + census.root_history_observed()
+                + census.public_recovery_observed()
                 + census.outstanding_under_typed_non_answer(),
             row_count(),
             "the buckets partition the matrix's own denominator",
         );
+    }
+
+    #[test]
+    fn each_wave10_layer_is_answered_by_its_validated_report_and_by_nothing_else() {
+        let corpus = maturity_variable_run_of_record().expect("accepted corpus");
+        let continuity = accepted_continuity(corpus).expect("accepted continuity");
+        let edge = StateRootEdge::from_continuity(&continuity);
+        let checkpoint = MaturityRootCheckpoint::bind(
+            &edge,
+            &continuity,
+            corpus,
+            MaturityDeclaredPremise::declared(
+                PLAN.bundle().clone(),
+                MaturityPremiseProvenance::DeploymentDeclaration,
+            ),
+            MaturityDeclaredPremise::declared(
+                PLAN.abi().clone(),
+                MaturityPremiseProvenance::DeploymentDeclaration,
+            ),
+        )
+        .expect("accepted checkpoint");
+        let history_report = assemble_maturity_root_history_report(
+            std::slice::from_ref(&edge),
+            edge.predecessor(),
+            checkpoint,
+            PLAN.root_history_mutations().clone(),
+            PLAN.binding().clone(),
+            PLAN.executor_provenance().clone(),
+        )
+        .expect("history report assembles");
+        let history: ValidatedMaturityRootHistoryReport = validate_maturity_root_history_report(
+            &history_report,
+            std::slice::from_ref(&edge),
+            edge.predecessor(),
+            &continuity,
+            PLAN.root_history_mutations(),
+            PLAN.binding(),
+            PLAN.executor_provenance(),
+        )
+        .expect("history report validates");
+        let handoff = accepted_public_handoff(corpus).expect("accepted public handoff");
+        let recovery_report = assemble_maturity_public_recovery_report(handoff.clone())
+            .expect("recovery report assembles");
+        let recovery: ValidatedMaturityPublicRecoveryReport =
+            validate_maturity_public_recovery_report(&recovery_report, &handoff)
+                .expect("recovery report validates");
+
+        let mut history_rows = 0;
+        let mut recovery_rows = 0;
+        for classified in PLAN.rows() {
+            let row = classified.row();
+            match row.refusing_layer() {
+                Some(EvidenceBoundary::RootHistoryReportRejection) => {
+                    assert_eq!(
+                        classified.standing(),
+                        &MaturityRowStanding::RootHistoryObserved
+                    );
+                    assert!(history.observes(row.section(), row.name()));
+                    history_rows += 1;
+                }
+                Some(EvidenceBoundary::PublicRecoveryReportRejection) => {
+                    assert_eq!(
+                        classified.standing(),
+                        &MaturityRowStanding::PublicRecoveryObserved
+                    );
+                    assert!(recovery.observes(row.section(), row.name()));
+                    recovery_rows += 1;
+                }
+                _ => assert!(!matches!(
+                    classified.standing(),
+                    MaturityRowStanding::RootHistoryObserved
+                        | MaturityRowStanding::PublicRecoveryObserved
+                )),
+            }
+        }
+        assert_eq!(history_rows, 16);
+        assert_eq!(recovery_rows, 14);
     }
 
     #[test]
@@ -2867,8 +3259,10 @@ pub(crate) mod tests {
                     classified.standing(),
                     MaturityRowStanding::FirstPartyDischarged { .. }
                         | MaturityRowStanding::NativeAcceptanceObserved { .. }
+                        | MaturityRowStanding::RootHistoryObserved
+                        | MaturityRowStanding::PublicRecoveryObserved
                 ),
-                "answers are recomputed first-party refusals or the admitted acceptance",
+                "answers are recomputed first-party refusals, admitted acceptance or validated report rows",
             );
         }
     }
@@ -2880,7 +3274,10 @@ pub(crate) mod tests {
         assert!(!census.every_required_row_is_answered());
         assert_eq!(
             census.answered(),
-            census.first_party_discharged() + census.native_acceptance_observed()
+            census.first_party_discharged()
+                + census.native_acceptance_observed()
+                + census.root_history_observed()
+                + census.public_recovery_observed()
         );
         assert_eq!(
             census.answered() + census.outstanding(),
@@ -2889,7 +3286,11 @@ pub(crate) mod tests {
         );
         assert_eq!(
             census.outstanding(),
-            census.rows() - census.first_party_discharged() - census.native_acceptance_observed(),
+            census.rows()
+                - census.first_party_discharged()
+                - census.native_acceptance_observed()
+                - census.root_history_observed()
+                - census.public_recovery_observed(),
         );
     }
 
@@ -3285,7 +3686,7 @@ pub(crate) mod tests {
                 "{row} admits a refusal it has no boundary or no mutant for",
             );
         }
-        assert_eq!(admitting_none, 66);
+        assert_eq!(admitting_none, 37);
     }
 
     /// The classifier, walked row by row against every observed layer.
@@ -3347,7 +3748,7 @@ pub(crate) mod tests {
                 }
             }
         }
-        assert_eq!(pairs, 987);
+        assert_eq!(pairs, 1197);
         assert_eq!(at_the_boundary, 43);
         assert_eq!(bound, 42);
     }
@@ -3366,8 +3767,10 @@ pub(crate) mod tests {
         assert_eq!(census.first_party_required(), 43);
         assert_eq!(census.native_run_required(), 42);
         assert_eq!(census.report_layer_required(), 15);
-        assert_eq!(census.outstanding_under_typed_non_answer(), 65);
-        assert_eq!(census.answered(), 41);
+        assert_eq!(census.outstanding_under_typed_non_answer(), 35);
+        assert_eq!(census.answered(), 71);
+        assert_eq!(census.root_history_observed(), 16);
+        assert_eq!(census.public_recovery_observed(), 14);
         assert_eq!(census.native_declared_boundary_observed(), 0);
         assert_eq!(census.native_acceptance_observed(), 1);
         assert_eq!(census.native_refusal_observed(), 0);
@@ -3378,6 +3781,8 @@ pub(crate) mod tests {
                 + census.native_run_required()
                 + census.native_acceptance_observed()
                 + census.report_layer_required()
+                + census.root_history_observed()
+                + census.public_recovery_observed()
                 + census.outstanding_under_typed_non_answer(),
             row_count(),
         );

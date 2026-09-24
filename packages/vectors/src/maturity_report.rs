@@ -1705,7 +1705,10 @@ mod tests {
         );
         assert_eq!(
             validated.report().answered(),
-            census.first_party_discharged() + census.native_acceptance_observed()
+            census.first_party_discharged()
+                + census.native_acceptance_observed()
+                + census.root_history_observed()
+                + census.public_recovery_observed()
         );
         assert_eq!(validated.report().answered(), census.answered());
         assert_eq!(validated.report().outstanding(), census.outstanding());

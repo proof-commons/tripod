@@ -216,6 +216,15 @@ impl MutationLayer {
 /// the declared side catching up. Retyping a matrix row is an erratum
 /// owed to a recorded decision, and this one is recorded as
 /// `R5-010` in backlog §5.10.
+///
+/// # The fourteenth and fifteenth members name the report evidence classes
+///
+/// Guide 14 §1.14 (`rule:guide14-exec:evidence-separation`) keeps
+/// root-history continuity and public successor recovery separate. Their
+/// validated reports compare an accepted announcement's bytes with the
+/// stated edge sequence or public handoff. Each needs its own reachable
+/// boundary: a row naming a layer it cannot reach could otherwise be
+/// credited only with a verdict from somewhere else.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum EvidenceBoundary {
     /// The typed semantic request is refused.
@@ -244,10 +253,14 @@ pub enum EvidenceBoundary {
     AcceptedTransaction,
     /// The target accepts and the report layer refuses the projection.
     ReportSemanticProjectionRejection,
+    /// The root-history report's validation refuses the edge sequence over an accepted announcement.
+    RootHistoryReportRejection,
+    /// The public-recovery report's constrained process refuses the public handoff of an accepted announcement.
+    PublicRecoveryReportRejection,
 }
 
 impl EvidenceBoundary {
-    /// Every boundary, in §1.5 order with the twelfth in pipeline place.
+    /// Every boundary, in §1.5 order with the twelfth in pipeline place and the two report layers last.
     pub const ALL: &'static [Self] = &[
         Self::SemanticRequestRejection,
         Self::CompilerPlanRejection,
@@ -262,6 +275,8 @@ impl EvidenceBoundary {
         Self::RelayPolicyRejection,
         Self::AcceptedTransaction,
         Self::ReportSemanticProjectionRejection,
+        Self::RootHistoryReportRejection,
+        Self::PublicRecoveryReportRejection,
     ];
 
     /// Whether reaching this boundary required a complete target
@@ -279,6 +294,8 @@ impl EvidenceBoundary {
                 | Self::RelayPolicyRejection
                 | Self::AcceptedTransaction
                 | Self::ReportSemanticProjectionRejection
+                | Self::RootHistoryReportRejection
+                | Self::PublicRecoveryReportRejection
         )
     }
 
@@ -1472,16 +1489,15 @@ mod tests {
                 "{boundary:?} falls into no single §1.5 class"
             );
         }
-        // Eleven from §1.5, plus the TWO layers this workspace minted
-        // for Guide-13 §15.4's errata: the constructor-derivation layer
-        // and the key-path layer. The counts are kept apart so that a
-        // member added for one guide cannot be read as a member the
-        // other guide named, and so the minted set has to be enumerated
-        // rather than absorbed into the §1.5 figure.
-        assert_eq!(EvidenceBoundary::ALL.len(), 13);
+        // Eleven from §1.5, the two Guide-13 §15.4 errata layers, and
+        // the two Guide 14 §1.14 report layers. The minted set stays
+        // explicit so none can be mistaken for a §1.5 member.
+        assert_eq!(EvidenceBoundary::ALL.len(), 15);
         let minted = BTreeSet::from([
             EvidenceBoundary::ConstructorDerivationRejection,
             EvidenceBoundary::KeyPathRejection,
+            EvidenceBoundary::RootHistoryReportRejection,
+            EvidenceBoundary::PublicRecoveryReportRejection,
         ]);
         assert_eq!(
             EvidenceBoundary::ALL
@@ -1537,7 +1553,8 @@ mod tests {
         // matrix leaves empty is the point of this assertion. The
         // key-path boundary joins them for the same reason the
         // constructor-derivation one does: it was minted for Guide-13
-        // §15.4, and §18 never names it.
+        // §15.4, and §18 never names it. The two Guide 14 §1.14 report
+        // layers are likewise outside §18's matrix.
         let unexercised: BTreeSet<EvidenceBoundary> = EvidenceBoundary::ALL
             .iter()
             .copied()
@@ -1549,6 +1566,8 @@ mod tests {
                 EvidenceBoundary::SemanticRequestRejection,
                 EvidenceBoundary::ConstructorDerivationRejection,
                 EvidenceBoundary::KeyPathRejection,
+                EvidenceBoundary::RootHistoryReportRejection,
+                EvidenceBoundary::PublicRecoveryReportRejection,
             ]),
             "the set of boundaries §18 never reaches has changed"
         );

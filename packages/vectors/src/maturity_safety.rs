@@ -246,13 +246,6 @@ pub enum MaturityRowBoundary {
     /// Declaring one anyway would be worse than stating the standing: the
     /// layer named would never have been asked the row's question.
     SponsorArmAwaitsRegionScoping,
-    /// The row's subject is the root-history report another wave owns.
-    ///
-    /// Answering a root-history row needs a typed branch context —
-    /// projection, rewind and reprojection over the root cursor — that
-    /// this wave has no way to observe. A row answered against a context
-    /// nobody can project would be answered against an assumption.
-    RootHistoryAnsweredByAnotherWavesReport,
     /// The row is answered by landed nonce and tweak evidence.
     ///
     /// The admissible-nonce search and the tweak arithmetic were
@@ -261,13 +254,6 @@ pub enum MaturityRowBoundary {
     /// record one obligation twice, and the moment either copy moved the
     /// other would be wrong with nothing to catch it.
     TotalityAnsweredByLandedNonceEvidence,
-    /// Public recovery is another wave's deliverable.
-    ///
-    /// A recovery row reads a published transaction back and rebuilds the
-    /// successor from it alone. Nothing in this tree publishes one, so
-    /// the row's carrier does not exist yet and a declared boundary would
-    /// name a layer no candidate reaches.
-    PublicRecoveryAnsweredByAnotherWave,
     /// The row asserts a property over repeated construction.
     ///
     /// Equal typed inputs producing equal candidate bytes is a statement
@@ -286,9 +272,7 @@ impl MaturityRowBoundary {
             Self::Layer(boundary) => Some(boundary),
             Self::AcceptanceAwaitsRelayAdmissibility
             | Self::SponsorArmAwaitsRegionScoping
-            | Self::RootHistoryAnsweredByAnotherWavesReport
             | Self::TotalityAnsweredByLandedNonceEvidence
-            | Self::PublicRecoveryAnsweredByAnotherWave
             | Self::PropertyOfTheBuildRatherThanAFixture => None,
         }
     }
@@ -1062,9 +1046,15 @@ impl core::fmt::Display for MaturitySafetyRow {
 #[must_use]
 pub const fn boundary_admits(boundary: EvidenceBoundary, layer: MutationLayer) -> bool {
     match boundary {
-        // The request validator and the planner see the typed request and
-        // the predecessor world, and nothing that is built from them.
-        EvidenceBoundary::SemanticRequestRejection | EvidenceBoundary::CompilerPlanRejection => {
+        // The request validator and planner see the typed request and
+        // predecessor world. The validated reports compare semantic facts
+        // projected from accepted bytes; every row declaring either report
+        // layer mutates that fact.
+        // EvidenceBoundary::RootHistoryReportRejection | EvidenceBoundary::PublicRecoveryReportRejection
+        EvidenceBoundary::SemanticRequestRejection
+        | EvidenceBoundary::CompilerPlanRejection
+        | EvidenceBoundary::RootHistoryReportRejection
+        | EvidenceBoundary::PublicRecoveryReportRejection => {
             matches!(layer, MutationLayer::SemanticFact)
         }
         // Derivation is handed an admissible leaf schema and produces a
@@ -1459,7 +1449,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     ),
     positive(
         "public-successor-recovery",
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
     ),
     positive(
@@ -2342,18 +2332,17 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     ),
     // §16.8 — the sixteen root-history faults.
     //
-    // Every one of them is a row against the operation's root policy, and
-    // every one of them is answered by a report this wave does not own.
-    // What a root-history row needs is a typed branch context — a
-    // projection, a rewind and a reprojection over the root cursor — and
-    // a row answered against a context nobody can project would be
-    // answered against an assumption.
+    // Every row against the operation's root policy is answered by the
+    // validated root-history continuity report over the accepted
+    // announcement. For stale-predecessor and wrong-current-root-view,
+    // validation compares the predecessor with the stated cursor before
+    // the edge. Chain currency remains the report's freshness residual.
     fault(
         S::RootHistoryFault,
         "stale-predecessor",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2362,7 +2351,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "wrong-current-root-view",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2371,7 +2360,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "two-predecessors",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2380,7 +2369,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "two-successors",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2389,7 +2378,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "missing-edge",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2398,7 +2387,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "duplicate-edge",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2407,7 +2396,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "successor-cursor-restored-after-invalid-intermediate-edge",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2416,7 +2405,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "state-termination",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2425,7 +2414,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "old-static-subtree-to-new-subtree-without-migration",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2434,7 +2423,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "unrelated-state-shaped-input",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2443,7 +2432,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "root-cursor-points-to-sponsor-change",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2452,7 +2441,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "resv-edge",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2461,7 +2450,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "pace-edge",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2470,7 +2459,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "authority-edge",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2479,7 +2468,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "transition-certificate-names-another-predecessor",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -2488,7 +2477,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "transition-certificate-names-another-successor",
         L::SemanticFact,
         Loc::RootHistoryEdge,
-        Bound::RootHistoryAnsweredByAnotherWavesReport,
+        Bound::Layer(B::RootHistoryReportRejection),
         C::Report,
         names(root_policy(), Class::WrongRootEffect),
     ),
@@ -3218,18 +3207,16 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     ),
     // §16.13 — the thirteen public-recovery faults.
     //
-    // Every one of them reads a published transaction back and rebuilds
-    // the successor from it alone, which is the projection policy's
-    // question and another wave's deliverable. Nothing in this tree
-    // publishes such a transaction, so the carrier these rows intend does
-    // not exist yet and a declared boundary would name a layer no
-    // candidate reaches.
+    // The validated public successor recovery report reads the accepted
+    // announcement's public handoff and reconstructs its successor. Its
+    // constrained process answers nine faults by refusal and four by
+    // construction proof; the report retains its chain and origin limits.
     fault(
         S::RecoveryFault,
         "missing-transaction",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3238,7 +3225,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "copied-transaction-bytes",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3247,7 +3234,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "wrong-output-index",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3256,7 +3243,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "stale-successor",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3265,7 +3252,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "malformed-public-witness",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3274,7 +3261,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "metadata-from-another-successor",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3283,7 +3270,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "missing-representation-nonce",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3292,7 +3279,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "wrong-static-subtree",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3301,7 +3288,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "creator-process-memory-required",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3310,7 +3297,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "temporary-file-required",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3319,7 +3306,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "wallet-descriptor-required",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3328,7 +3315,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "unknown-publication-field",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::ForbiddenProjectionPresent),
     ),
@@ -3337,7 +3324,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "reconstructed-program-differs-from-chain-output",
         L::SemanticFact,
         Loc::PublicationRecord,
-        Bound::PublicRecoveryAnsweredByAnotherWave,
+        Bound::Layer(B::PublicRecoveryReportRejection),
         C::Report,
         names(projection_policy(), Class::MissingRequiredProjection),
     ),
@@ -3805,16 +3792,28 @@ mod tests {
         // acceptance itself.
         assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 11);
         assert_eq!(standing(Bound::SponsorArmAwaitsRegionScoping), 12);
-        assert_eq!(standing(Bound::RootHistoryAnsweredByAnotherWavesReport), 16);
         assert_eq!(standing(Bound::TotalityAnsweredByLandedNonceEvidence), 11);
-        assert_eq!(standing(Bound::PublicRecoveryAnsweredByAnotherWave), 14);
         assert_eq!(standing(Bound::PropertyOfTheBuildRatherThanAFixture), 1);
         let non_answers = rows()
             .iter()
             .filter(|row| row.boundary().is_typed_non_answer())
             .count();
-        assert_eq!(non_answers, 65);
-        assert_eq!(row_count() - non_answers, 141);
+        assert_eq!(non_answers, 35);
+        assert_eq!(row_count() - non_answers, 171);
+        assert_eq!(
+            rows()
+                .iter()
+                .filter(|row| row.refusing_layer() == Some(B::RootHistoryReportRejection))
+                .count(),
+            16,
+        );
+        assert_eq!(
+            rows()
+                .iter()
+                .filter(|row| row.refusing_layer() == Some(B::PublicRecoveryReportRejection))
+                .count(),
+            14,
+        );
         // And each reason stands only where it applies. A reason carried
         // by a row of another table would be a reason borrowed to cover a
         // row nobody had an argument for.
@@ -3827,13 +3826,6 @@ mod tests {
                 Bound::SponsorArmAwaitsRegionScoping => {
                     assert_eq!(row.section(), S::SponsorFault, "{row} is not a sponsor row");
                 }
-                Bound::RootHistoryAnsweredByAnotherWavesReport => {
-                    assert_eq!(
-                        row.section(),
-                        S::RootHistoryFault,
-                        "{row} is not a root-history row",
-                    );
-                }
                 Bound::TotalityAnsweredByLandedNonceEvidence => {
                     assert_eq!(
                         row.section(),
@@ -3841,13 +3833,18 @@ mod tests {
                         "{row} is not a totality row"
                     );
                 }
-                Bound::PublicRecoveryAnsweredByAnotherWave => {
-                    assert!(
+                Bound::Layer(layer) => match layer {
+                    B::RootHistoryReportRejection => assert_eq!(
+                        row.section(),
+                        S::RootHistoryFault,
+                        "{row} is not a root-history row",
+                    ),
+                    B::PublicRecoveryReportRejection => assert!(
                         matches!(row.section(), S::Positive | S::RecoveryFault),
                         "{row} is not a public-recovery row",
-                    );
-                }
-                Bound::Layer(_) => {}
+                    ),
+                    _ => {}
+                },
             }
         }
     }
@@ -3903,11 +3900,10 @@ mod tests {
             // by none, so a row cannot be answered by a run at a layer it
             // did not declare.
             //
-            // The report boundary is reached by none either, and
-            // deliberately: it is this workspace's comparison over an
-            // accepted transaction rather than a verdict the target
-            // reached, which is why a report row's answer is a
-            // serialization and never an observed layer.
+            // The report-semantic, root-history continuity, and public
+            // successor recovery layers are reached by none either:
+            // their comparisons over accepted bytes are report evidence,
+            // rather than observed target verdicts.
             let reachable = OBSERVED_LAYERS
                 .iter()
                 .filter(|observed| matches_boundary(boundary, **observed))
@@ -4158,7 +4154,7 @@ mod tests {
     /// no run produces, are facts of this matrix. Walking the product
     /// once per row states them as figures — and ties them to the
     /// classification's own denominators, since the rows no observation
-    /// reaches are exactly the pre-target and report-layer rows.
+    /// reaches are exactly the pre-target and three report-layer rows.
     #[test]
     fn the_observed_product_reaches_each_row_at_its_own_boundary_only() {
         let mut reachable = 0usize;
@@ -4187,22 +4183,31 @@ mod tests {
             }
         }
         assert_eq!(reachable, 43);
-        assert_eq!(unreachable, 98);
-        assert_eq!(reachable + unreachable, 141);
+        assert_eq!(unreachable, 128);
+        assert_eq!(reachable + unreachable, 171);
         let pre_target = rows()
             .iter()
             .filter(|row| row.refusing_layer().is_some_and(B::is_pre_target))
             .count();
         let report = rows()
             .iter()
-            .filter(|row| row.refusing_layer() == Some(B::ReportSemanticProjectionRejection))
+            .filter(|row| {
+                matches!(
+                    row.refusing_layer(),
+                    Some(
+                        B::ReportSemanticProjectionRejection
+                            | B::RootHistoryReportRejection
+                            | B::PublicRecoveryReportRejection
+                    )
+                )
+            })
             .count();
         assert_eq!(pre_target, 83);
-        assert_eq!(report, 15);
+        assert_eq!(report, 45);
         assert_eq!(
             pre_target + report,
             unreachable,
-            "a row no observation reaches is neither pre-target nor answered by the report",
+            "a row no observation reaches is neither pre-target nor answered by a report layer",
         );
     }
 
