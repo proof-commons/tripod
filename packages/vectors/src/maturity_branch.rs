@@ -7,6 +7,7 @@ use transaction::bytes::{Outpoint, Txid};
 use transaction::taproot::Digest32;
 
 use crate::maturity_continuity::ValidatedMaturityContinuity;
+use crate::maturity_evidence::MaturityObservationClass;
 use crate::maturity_history::{
     MaturityModelledBranchRefusal, MaturityRootHistoryRefusal, ModelledBranchBlock,
     ModelledBranchPrefix, StateRootEdge, validate_state_root_history,
@@ -431,6 +432,78 @@ impl MaturityThread {
         Ok(())
     }
 
+    /// Classify this thread's environment on one modelled branch view.
+    ///
+    /// # Errors
+    /// Carries the thread projection's root-history refusal unchanged.
+    pub fn observe(
+        &self,
+        view: &MaturityBranchView,
+        invalidations: &[MaturityRealizationSuffixInvalidation],
+    ) -> Result<MaturityThreadObservation, MaturityBranchRefusal> {
+        let projection = self.project(view)?;
+        let mut reached = vec![self.starting_cursor];
+        reached.extend(
+            projection
+                .realized()
+                .iter()
+                .map(|realization| realization.edge().successor()),
+        );
+
+        let mut environment = Vec::new();
+        for realization in view.realizations() {
+            if projection.realized().contains(realization) {
+                continue;
+            }
+            let predecessor = realization.edge().predecessor();
+            let transition = if reached.contains(&predecessor) {
+                let surfaced = invalidations.iter().any(|event| {
+                    event.invalidated().iter().any(|removed| {
+                        removed.edge().predecessor() == predecessor
+                            && self
+                                .steps
+                                .iter()
+                                .any(|step| same_root_edge(removed.edge(), step.edge()))
+                    })
+                });
+                if surfaced {
+                    Some(MaturityEnvironmentTransition::ReorganizationSurfacedRealization)
+                } else {
+                    Some(MaturityEnvironmentTransition::CompetingSpend)
+                }
+            } else if realization.operator() == self.operator() {
+                Some(MaturityEnvironmentTransition::SameKeyInstance)
+            } else {
+                None
+            };
+            if let Some(transition) = transition {
+                environment.push(MaturityEnvironmentRealization {
+                    realization: realization.clone(),
+                    transition,
+                });
+            }
+        }
+
+        let standing = if environment
+            .iter()
+            .any(|item| item.transition().standing() == MaturityThreadStanding::Lost)
+        {
+            MaturityThreadStanding::Lost
+        } else if environment
+            .iter()
+            .any(|item| item.transition().standing() == MaturityThreadStanding::Contested)
+        {
+            MaturityThreadStanding::Contested
+        } else {
+            MaturityThreadStanding::Intended
+        };
+        Ok(MaturityThreadObservation {
+            projection,
+            environment,
+            standing,
+        })
+    }
+
     /// The cursor from which a branch projection starts.
     #[must_use]
     pub const fn starting_cursor(&self) -> Outpoint {
@@ -520,6 +593,128 @@ impl MaturityBranchViewToken {
     }
 }
 
+/// The standing of one thread on one modelled branch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityThreadStanding {
+    /// The view records no classified environment realization against the thread.
+    Intended,
+    /// A same-key instance contests the thread without spending its reached outpoints.
+    Contested,
+    /// A competing or reorganization-surfaced spend loses a reached outpoint.
+    Lost,
+}
+
+impl MaturityThreadStanding {
+    /// The standing's stable name.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Intended => "intended",
+            Self::Contested => "contested",
+            Self::Lost => "lost",
+        }
+    }
+}
+
+/// A rely-conforming environment transition against one thread.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityEnvironmentTransition {
+    /// Another realization spends an outpoint the thread reached.
+    CompetingSpend,
+    /// Another instance under the thread's key continues none of its reached outpoints.
+    SameKeyInstance,
+    /// A realization spends a reached outpoint after an intended realization was invalidated there.
+    ReorganizationSurfacedRealization,
+}
+
+impl MaturityEnvironmentTransition {
+    /// Every environment transition in vocabulary order.
+    pub const ALL: &'static [Self; 3] = &[
+        Self::CompetingSpend,
+        Self::SameKeyInstance,
+        Self::ReorganizationSurfacedRealization,
+    ];
+
+    /// The transition's stable name.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::CompetingSpend => "competing-spend",
+            Self::SameKeyInstance => "same-key-instance",
+            Self::ReorganizationSurfacedRealization => "reorganization-surfaced-realization",
+        }
+    }
+
+    /// The observation class shared by every rely-conforming environment transition.
+    #[must_use]
+    pub const fn class(self) -> MaturityObservationClass {
+        MaturityObservationClass::ModeledUnintendedEnvironmentTransition
+    }
+
+    /// The thread standing this transition gives.
+    #[must_use]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "Each member names its own standing."
+    )]
+    pub const fn standing(self) -> MaturityThreadStanding {
+        match self {
+            Self::CompetingSpend => MaturityThreadStanding::Lost,
+            Self::SameKeyInstance => MaturityThreadStanding::Contested,
+            Self::ReorganizationSurfacedRealization => MaturityThreadStanding::Lost,
+        }
+    }
+}
+
+/// One classified realization on a thread's modelled branch view.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MaturityEnvironmentRealization {
+    realization: MaturityRealization,
+    transition: MaturityEnvironmentTransition,
+}
+
+impl MaturityEnvironmentRealization {
+    /// The realization classified against the thread.
+    #[must_use]
+    pub const fn realization(&self) -> &MaturityRealization {
+        &self.realization
+    }
+
+    /// The environment transition this realization records.
+    #[must_use]
+    pub const fn transition(&self) -> MaturityEnvironmentTransition {
+        self.transition
+    }
+}
+
+/// A thread's projection, environment realizations, and standing on one branch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MaturityThreadObservation {
+    projection: MaturityThreadProjection,
+    environment: Vec<MaturityEnvironmentRealization>,
+    standing: MaturityThreadStanding,
+}
+
+impl MaturityThreadObservation {
+    /// The thread's projected chain on this branch.
+    #[must_use]
+    pub const fn projection(&self) -> &MaturityThreadProjection {
+        &self.projection
+    }
+
+    /// Classified environment realizations in view placement order.
+    #[must_use]
+    pub fn environment(&self) -> &[MaturityEnvironmentRealization] {
+        &self.environment
+    }
+
+    /// The worst standing the classified transitions give.
+    #[must_use]
+    pub const fn standing(&self) -> MaturityThreadStanding {
+        self.standing
+    }
+}
+
 /// Why a branch move or a thread projection was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MaturityBranchRefusal {
@@ -567,11 +762,12 @@ mod tests {
     use super::*;
     use crate::live_capability::OracleLiveCurve;
     use crate::maturity_closure::{MaturityWitnessSelection, OracleStateCurve, closure_target};
-    use crate::maturity_continuity::tests::variable_archived;
+    use crate::maturity_continuity::tests::{node_free, variable_archived};
     use crate::maturity_continuity::{
         MaturityByteSource, MaturityProjectionInput, project_maturity_continuity,
     };
     use crate::maturity_corpus::maturity_variable_run_of_record;
+    use crate::maturity_evidence::MaturityEvidenceCensus;
     use crate::maturity_history::{EdgeSide, FirstSeen};
     use crate::maturity_native::{
         MaturityAcceptanceObligation, MaturityAcceptedReadback, MaturityAnnouncementPlanner,
@@ -601,6 +797,13 @@ mod tests {
                 .expect("accepted archive projects")
         });
         &ACCEPTED
+    }
+
+    fn node_free_continuity() -> &'static ValidatedMaturityContinuity {
+        static NODE_FREE: LazyLock<ValidatedMaturityContinuity> = LazyLock::new(|| {
+            project_maturity_continuity(node_free().input()).expect("node-free candidate projects")
+        });
+        &NODE_FREE
     }
 
     fn readback() -> &'static MaturityAcceptedReadback {
@@ -1144,6 +1347,243 @@ mod tests {
                 minted: [0xa2; 32],
                 current: [0xa3; 32],
             })
+        );
+    }
+
+    #[test]
+    fn a_competing_spend_of_the_predecessor_loses_the_thread_and_fences_its_token() {
+        let accepted_edge = StateRootEdge::from_continuity(accepted());
+        let competing_edge = StateRootEdge::from_continuity(competing());
+        let thread = MaturityThread::anchored(
+            accepted_edge.predecessor(),
+            accepted().bundle().deployment().operator().key().clone(),
+        )
+        .record(
+            MaturitySemanticEdge::from_continuity(accepted()),
+            accepted_edge.clone(),
+        );
+        let height = readback().block_height();
+        let (_, b) = forked_views(height);
+        let token = thread.token(&b).expect("B anchor token");
+        let competing_realization = realization(height, &competing_edge, competing());
+        let b = b
+            .realize(
+                ModelledBranchBlock::new(
+                    height,
+                    [0xb2; 32],
+                    vec![competing_edge.successor().txid()],
+                )
+                .expect("competing block"),
+                vec![competing_realization.clone()],
+            )
+            .expect("B realizes competing edge");
+
+        let observed = thread.observe(&b, &[]).expect("observe competing B");
+        assert_eq!(
+            observed.environment(),
+            &[MaturityEnvironmentRealization {
+                realization: competing_realization,
+                transition: MaturityEnvironmentTransition::CompetingSpend,
+            }]
+        );
+        assert_eq!(observed.standing(), MaturityThreadStanding::Lost);
+        assert_eq!(observed.projection().cursor(), thread.starting_cursor());
+        assert_eq!(observed.projection().realized().len(), 0);
+        assert_eq!(
+            thread.fence(&token, &b),
+            Err(MaturityFencingRefusal::CursorMoved {
+                minted: accepted_edge.predecessor(),
+                current: competing_edge.successor(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_same_key_instance_contests_the_thread_without_moving_its_cursor() {
+        let accepted_edge = StateRootEdge::from_continuity(accepted());
+        let node_free_edge = StateRootEdge::from_continuity(node_free_continuity());
+        let thread = MaturityThread::anchored(
+            accepted_edge.predecessor(),
+            accepted().bundle().deployment().operator().key().clone(),
+        )
+        .record(
+            MaturitySemanticEdge::from_continuity(accepted()),
+            accepted_edge.clone(),
+        );
+        let height = readback().block_height();
+        let next_height = height.checked_add(1).expect("next block height");
+        let node_free_realization =
+            realization(next_height, &node_free_edge, node_free_continuity());
+        assert_eq!(node_free_realization.operator(), thread.operator());
+        assert_ne!(node_free_edge.predecessor(), accepted_edge.predecessor());
+        assert_ne!(node_free_edge.predecessor(), accepted_edge.successor());
+
+        let (a, _) = forked_views(height);
+        let a = a
+            .realize(
+                accepted_block(&accepted_edge),
+                vec![realization(height, &accepted_edge, accepted())],
+            )
+            .expect("A realizes accepted edge");
+        let intended = thread.observe(&a, &[]).expect("observe accepted A");
+        assert_eq!(intended.environment().len(), 0);
+        assert_eq!(intended.standing(), MaturityThreadStanding::Intended);
+        assert_eq!(intended.projection().cursor(), accepted_edge.successor());
+        let a = a
+            .realize(
+                ModelledBranchBlock::new(
+                    next_height,
+                    [0xa4; 32],
+                    vec![node_free_edge.successor().txid()],
+                )
+                .expect("node-free block"),
+                vec![node_free_realization.clone()],
+            )
+            .expect("A realizes node-free edge");
+
+        let observed = thread.observe(&a, &[]).expect("observe same-key A");
+        assert_eq!(
+            observed.environment(),
+            &[MaturityEnvironmentRealization {
+                realization: node_free_realization,
+                transition: MaturityEnvironmentTransition::SameKeyInstance,
+            }]
+        );
+        assert_eq!(observed.standing(), MaturityThreadStanding::Contested);
+        assert_eq!(observed.projection().cursor(), accepted_edge.successor());
+        assert_eq!(
+            a.live_cursor(accepted_edge.predecessor()),
+            accepted_edge.successor()
+        );
+    }
+
+    #[test]
+    fn a_reorganization_surfaced_realization_loses_the_thread_and_names_the_invalidation() {
+        let accepted_edge = StateRootEdge::from_continuity(accepted());
+        let competing_edge = StateRootEdge::from_continuity(competing());
+        let accepted_semantic = MaturitySemanticEdge::from_continuity(accepted());
+        let thread = MaturityThread::anchored(
+            accepted_edge.predecessor(),
+            accepted().bundle().deployment().operator().key().clone(),
+        )
+        .record(accepted_semantic, accepted_edge.clone());
+        let steps_before = thread.steps().to_vec();
+        let height = readback().block_height();
+        let anchor_height = height.checked_sub(1).expect("anchor height");
+        let (a, _) = forked_views(height);
+        let accepted_realization = realization(height, &accepted_edge, accepted());
+        let a = a
+            .realize(
+                accepted_block(&accepted_edge),
+                vec![accepted_realization.clone()],
+            )
+            .expect("A realizes accepted edge");
+        let (rewound, event) = a.rewind(anchor_height).expect("rewind A");
+        assert_eq!(event.invalidated(), &[accepted_realization]);
+        let competing_realization = realization(height, &competing_edge, competing());
+        let re_extended = rewound
+            .realize(
+                ModelledBranchBlock::new(
+                    height,
+                    [0xb2; 32],
+                    vec![competing_edge.successor().txid()],
+                )
+                .expect("competing block"),
+                vec![competing_realization],
+            )
+            .expect("A re-extends with competing edge");
+
+        let with_event = thread
+            .observe(&re_extended, &[event])
+            .expect("observe reorganization event");
+        assert_eq!(with_event.environment().len(), 1);
+        let surfaced = with_event
+            .environment()
+            .first()
+            .expect("surfaced realization");
+        assert_eq!(
+            surfaced.realization(),
+            re_extended
+                .realizations()
+                .first()
+                .expect("placed realization")
+        );
+        assert_eq!(
+            surfaced.transition(),
+            MaturityEnvironmentTransition::ReorganizationSurfacedRealization
+        );
+        assert_eq!(with_event.standing(), MaturityThreadStanding::Lost);
+
+        let without_event = thread
+            .observe(&re_extended, &[])
+            .expect("observe without event");
+        assert_eq!(without_event.environment().len(), 1);
+        assert_eq!(
+            without_event
+                .environment()
+                .first()
+                .expect("competing realization")
+                .transition(),
+            MaturityEnvironmentTransition::CompetingSpend
+        );
+        assert_eq!(without_event.standing(), MaturityThreadStanding::Lost);
+        assert_eq!(thread.steps().len(), 1);
+        assert_eq!(
+            thread.steps().first().expect("accepted step").semantic(),
+            accepted_semantic
+        );
+        assert_eq!(thread.steps(), steps_before);
+    }
+
+    #[test]
+    fn every_environment_transition_is_class_two_under_the_quantifier() {
+        let expected = [
+            ("competing-spend", MaturityThreadStanding::Lost, "lost"),
+            (
+                "same-key-instance",
+                MaturityThreadStanding::Contested,
+                "contested",
+            ),
+            (
+                "reorganization-surfaced-realization",
+                MaturityThreadStanding::Lost,
+                "lost",
+            ),
+        ];
+        for (&transition, (name, standing, standing_name)) in
+            MaturityEnvironmentTransition::ALL.iter().zip(expected)
+        {
+            assert_eq!(
+                transition.class(),
+                MaturityObservationClass::ModeledUnintendedEnvironmentTransition
+            );
+            assert!(transition.class().is_quantified_over());
+            assert_eq!(transition.name(), name);
+            assert_eq!(transition.standing(), standing);
+            assert_eq!(transition.standing().name(), standing_name);
+        }
+        let names = MaturityEnvironmentTransition::ALL.map(MaturityEnvironmentTransition::name);
+        assert_ne!(names[0], names[1]);
+        assert_ne!(names[0], names[2]);
+        assert_ne!(names[1], names[2]);
+        assert_eq!(MaturityThreadStanding::Intended.name(), "intended");
+        assert_eq!(MaturityThreadStanding::Contested.name(), "contested");
+        assert_eq!(MaturityThreadStanding::Lost.name(), "lost");
+        assert_ne!(
+            MaturityThreadStanding::Intended.name(),
+            MaturityThreadStanding::Contested.name()
+        );
+        assert_ne!(
+            MaturityThreadStanding::Intended.name(),
+            MaturityThreadStanding::Lost.name()
+        );
+        assert_ne!(
+            MaturityThreadStanding::Contested.name(),
+            MaturityThreadStanding::Lost.name()
+        );
+        assert_eq!(
+            MaturityEvidenceCensus::default().quantifier().excluded(),
+            MaturityObservationClass::ModelFalsifyingWithNoPreimage
         );
     }
 }
