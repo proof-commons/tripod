@@ -9,7 +9,7 @@
 //! direct-mode checker refuses a terminal stdout before doing any semantic
 //! work, while build mode (with an explicit report/stamp destination) does not.
 
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 const BINARIES: [&str; 6] = [
     env!("CARGO_BIN_EXE_check-labels"),
@@ -20,10 +20,56 @@ const BINARIES: [&str; 6] = [
     env!("CARGO_BIN_EXE_generate-label-registers"),
 ];
 
+/// A stub written by one test can meet another test's child in the script exec window.
+/// Between fork and exec, a child inherits the test binary's open descriptors, so a
+/// writable stub can remain open when a checker execs it and cause an executable-busy error.
+/// One lock per test binary keeps every stub write and close separate from every spawn;
+/// repeating a failed spawn would hide the race instead of removing it.
+static STUB_PROCESS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(unix)]
+fn write_executable(path: &std::path::Path, contents: &str) -> std::path::PathBuf {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    let _guard = STUB_PROCESS_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut file = std::fs::File::create(path).expect("create script");
+    file.write_all(contents.as_bytes()).expect("write script");
+    let mut permissions = file.metadata().expect("script metadata").permissions();
+    permissions.set_mode(0o755);
+    file.set_permissions(permissions)
+        .expect("set script permissions");
+    drop(file);
+    path.to_path_buf()
+}
+
+trait SerializedCommand {
+    fn spawn_serialized(&mut self) -> std::io::Result<std::process::Child>;
+    fn output_serialized(&mut self) -> std::io::Result<std::process::Output>;
+}
+
+impl SerializedCommand for Command {
+    fn spawn_serialized(&mut self) -> std::io::Result<std::process::Child> {
+        let _guard = STUB_PROCESS_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.spawn()
+    }
+
+    fn output_serialized(&mut self) -> std::io::Result<std::process::Output> {
+        self.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        self.spawn_serialized()?.wait_with_output()
+    }
+}
+
 fn run(binary: &str, args: &[&str]) -> Output {
     Command::new(binary)
         .args(args)
-        .output()
+        .output_serialized()
         .expect("binary runs")
 }
 
@@ -117,21 +163,13 @@ fn help_and_version_exit_zero_with_empty_stdout() {
 #[cfg(unix)]
 #[test]
 fn census_audit_omits_untrusted_git_stderr() {
-    use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
-
     let secret = "SHOULD_NOT_APPEAR_git_stderr_secret";
 
     let dir = tempfile::tempdir().expect("tempdir");
-    let script = dir.path().join("fake-git.sh");
-    let mut file = std::fs::File::create(&script).expect("create script");
-    writeln!(file, "#!/bin/sh").unwrap();
-    writeln!(file, "echo '{secret}' >&2").unwrap();
-    writeln!(file, "exit 17").unwrap();
-    let mut perms = file.metadata().unwrap().permissions();
-    perms.set_mode(0o755);
-    file.set_permissions(perms).unwrap();
-    drop(file);
+    let script = write_executable(
+        &dir.path().join("fake-git.sh"),
+        &format!("#!/bin/sh\necho '{secret}' >&2\nexit 17\n"),
+    );
 
     let output = run(
         env!("CARGO_BIN_EXE_census-audit"),
@@ -173,21 +211,13 @@ fn census_audit_omits_untrusted_git_stderr() {
 #[cfg(unix)]
 #[test]
 fn check_forbidden_text_omits_untrusted_git_stderr() {
-    use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
-
     let secret = "SHOULD_NOT_APPEAR_grep_stderr_secret";
 
     let dir = tempfile::tempdir().expect("tempdir");
-    let script = dir.path().join("fake-git.sh");
-    let mut file = std::fs::File::create(&script).expect("create script");
-    writeln!(file, "#!/bin/sh").unwrap();
-    writeln!(file, "echo '{secret}' >&2").unwrap();
-    writeln!(file, "exit 2").unwrap();
-    let mut perms = file.metadata().unwrap().permissions();
-    perms.set_mode(0o755);
-    file.set_permissions(perms).unwrap();
-    drop(file);
+    let script = write_executable(
+        &dir.path().join("fake-git.sh"),
+        &format!("#!/bin/sh\necho '{secret}' >&2\nexit 2\n"),
+    );
 
     let output = run(
         env!("CARGO_BIN_EXE_check-forbidden-text"),
@@ -230,9 +260,9 @@ fn check_forbidden_text_omits_untrusted_git_stderr() {
 
 #[cfg(unix)]
 mod pty {
+    use super::{SerializedCommand, write_executable};
     use std::fs::File;
-    use std::io::{Read, Seek, Write};
-    use std::os::unix::fs::PermissionsExt;
+    use std::io::{Read, Seek};
     use std::process::{Command, ExitStatus, Stdio};
 
     /// Run `command` with its stdout attached to a real pseudo-terminal.
@@ -253,7 +283,7 @@ mod pty {
             .stdin(Stdio::null())
             .stdout(Stdio::from(child_slave))
             .stderr(Stdio::from(stderr_file))
-            .spawn()
+            .spawn_serialized()
             .expect("command spawns");
         drop(slave);
 
@@ -308,14 +338,7 @@ mod pty {
 
     /// A fake git that emits an empty `ls-files -z` listing and succeeds.
     fn empty_git(dir: &std::path::Path) -> std::path::PathBuf {
-        let script = dir.join("empty-git.sh");
-        let mut file = File::create(&script).expect("create fake git");
-        writeln!(file, "#!/bin/sh").unwrap();
-        writeln!(file, "exit 0").unwrap();
-        let mut perms = file.metadata().unwrap().permissions();
-        perms.set_mode(0o755);
-        file.set_permissions(perms).unwrap();
-        script
+        write_executable(&dir.join("empty-git.sh"), "#!/bin/sh\nexit 0\n")
     }
 
     fn census_audit() -> Command {
@@ -393,14 +416,10 @@ mod pty {
     /// host git's symlink handling; the parsing and policy are unit
     /// tested separately.
     fn symlink_git(dir: &std::path::Path) -> std::path::PathBuf {
-        let script = dir.join("symlink-git.sh");
-        let mut file = File::create(&script).expect("create fake git");
-        writeln!(file, "#!/bin/sh").unwrap();
-        writeln!(file, r"printf '120000 aaaa 0\tplans/alias.md\0'").unwrap();
-        let mut perms = file.metadata().unwrap().permissions();
-        perms.set_mode(0o755);
-        file.set_permissions(perms).unwrap();
-        script
+        write_executable(
+            &dir.join("symlink-git.sh"),
+            "#!/bin/sh\nprintf '120000 aaaa 0\\tplans/alias.md\\0'\n",
+        )
     }
 
     #[test]
@@ -427,7 +446,7 @@ mod pty {
                 stamp.to_str().unwrap(),
                 "plans/alias.md",
             ])
-            .output()
+            .output_serialized()
             .expect("census-audit runs");
 
         assert_eq!(output.status.code(), Some(1), "a non-blob entry fails");
