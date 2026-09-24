@@ -220,21 +220,17 @@ impl MaturitySafetyPolarity {
 pub enum MaturityRowBoundary {
     /// One named layer produces the verdict.
     Layer(EvidenceBoundary),
-    /// The row's answer is an acceptance, and no acceptance is reachable.
+    /// The row asks for an acceptance of its own shape.
     ///
-    /// The announcement spend meets a standardness width measured before
-    /// execution, so a node accepts the block and refuses the spend at
-    /// relay policy: the whole chain from linked bytes through the static
-    /// subtree, the output key and the control block is exercised, and
-    /// the spend is stopped by a width and by nothing else. A row whose
-    /// answer is an acceptance has two routes to one and neither has
-    /// landed — the relay restructure the candidate ABI already carries
-    /// as an unopened obligation, and a protocol revision adding a
-    /// block-layer submission subject, both sides moving together with
-    /// the schema bumped and the historical contract still parsed. A
-    /// relaxed node policy is not a third route: no deployed argument
-    /// list relaxes standardness, and an acceptance under a policy nobody
-    /// runs would have to carry that caveat wherever it went.
+    /// The constant-elision route closed on `0.6.245-dev`; its accepted
+    /// archive answers the sponsorless row. Rows standing on this reason
+    /// ask for acceptances of their own shapes that no admitted run supplies.
+    /// Their classification belongs to the first two open questions of
+    /// `plans/drafts/accepted-byte-classification-study.md`: whether the ten
+    /// other rows retype to the accepted-transaction layer, and whether
+    /// §16.1's last row is one row or four. A relaxed node policy is not a
+    /// route: no deployed argument list relaxes standardness, and an
+    /// acceptance under a policy nobody runs would carry that caveat wherever it went.
     AcceptanceAwaitsRelayAdmissibility,
     /// The sponsor relations have no region, so the row is refused by
     /// name rather than at the boundary it would declare.
@@ -1427,10 +1423,10 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Bound::AcceptanceAwaitsRelayAdmissibility,
         C::LinkedConstructor,
     ),
-    // The one §16.1 row a run answers at this tip. The chain from linked
-    // bytes through the static subtree, the output key and the control
-    // block is exercised whole, and the spend is stopped by a
-    // standardness width measured before execution and by nothing else.
+    // This is the one §16.1 row an admitted run answers. The accepted
+    // archive carries its acceptance, so its standing is
+    // `NativeAcceptanceObserved` while its declared boundary stays the
+    // relay layer the historical run observed.
     positive(
         "sponsorless",
         Bound::Layer(B::RelayPolicyRejection),
@@ -3786,9 +3782,8 @@ mod tests {
         let standing = |wanted: MaturityRowBoundary| {
             rows().iter().filter(|row| row.boundary() == wanted).count()
         };
-        // Eleven positive rows ask for an acceptance that has no route,
-        // and the twelfth such row is §16.1's last, which asks for the
-        // acceptance itself.
+        // Eleven positive rows ask for an acceptance no admitted run supplies,
+        // including §16.1's last, four-term row.
         assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 11);
         assert_eq!(standing(Bound::SponsorArmAwaitsRegionScoping), 12);
         assert_eq!(standing(Bound::TotalityAnsweredByLandedNonceEvidence), 11);
