@@ -226,21 +226,32 @@ pub enum MaturityRowBoundary {
     /// archive answers the sponsorless row. Rows standing on this reason
     /// ask for acceptances of their own shapes that no admitted run supplies.
     /// Their classification belongs to the first two open questions of
-    /// `plans/drafts/accepted-byte-classification-study.md`: whether the ten
-    /// other rows retype to the accepted-transaction layer, and whether
+    /// `plans/drafts/accepted-byte-classification-study.md`: whether the rows
+    /// standing on this reason retype to the accepted-transaction layer, and whether
     /// §16.1's last row is one row or four. A relaxed node policy is not a
     /// route: no deployed argument list relaxes standardness, and an
     /// acceptance under a policy nobody runs would carry that caveat wherever it went.
     AcceptanceAwaitsRelayAdmissibility,
-    /// The sponsor relations have no region, so the row is refused by
-    /// name rather than at the boundary it would declare.
+    /// A sponsored announcement row has no constructed control.
     ///
-    /// Until the region-scoping refit gives the sponsor relations a
-    /// region, a sponsored row's declared boundary would name a layer the
-    /// row cannot arrive at, and a row whose declared boundary is
-    /// unreachable can be passed only by a verdict from somewhere else.
-    /// Declaring one anyway would be worse than stating the standing: the
-    /// layer named would never have been asked the row's question.
+    /// Construction refuses both sponsored request forms by
+    /// `SponsoredMaturityFormHasNoCarrier`, as ruling 58 in
+    /// `plans/phases/06-state-and-maturity.md` records under
+    /// `rule:phase6:wave7-rulings`. The
+    /// `each_request_form_is_built_or_refused_by_name` test in
+    /// `packages/transaction/src/tests/state_construct_tests.rs` pins
+    /// both refusals. No control exists for the row's mutation or
+    /// acceptance, so a verdict from any layer would concern a
+    /// different transaction.
+    SponsoredControlRefusedAtConstruction,
+    /// A row about sponsor-region membership or envelope multiplicity waits
+    /// for the relation that decides that question.
+    ///
+    /// Sponsor isolation and envelope count read the observed transaction's
+    /// flows entire. The region-scoping refit `T11-064` re-scopes or
+    /// retires those relations. A construction refusal names the sponsored
+    /// request, not a mutation of membership or envelope count, and
+    /// cannot supply the row's declared boundary.
     SponsorArmAwaitsRegionScoping,
     /// The row is answered by landed nonce and tweak evidence.
     ///
@@ -267,6 +278,7 @@ impl MaturityRowBoundary {
         match self {
             Self::Layer(boundary) => Some(boundary),
             Self::AcceptanceAwaitsRelayAdmissibility
+            | Self::SponsoredControlRefusedAtConstruction
             | Self::SponsorArmAwaitsRegionScoping
             | Self::TotalityAnsweredByLandedNonceEvidence
             | Self::PropertyOfTheBuildRatherThanAFixture => None,
@@ -1375,14 +1387,13 @@ const fn report_fault(
 pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     // §16.1 — the fourteen positive cases.
     //
-    // Eleven of them ask for an acceptance. The admitted accepted run
-    // answers the sponsorless case under the variable schedule. Its
-    // declaration here remains the relay-policy layer of the whole
-    // schedule; the schedule-indexed boundary rule maps the case for
-    // both schedules. Naming the sponsorless row's layer while the
-    // other ten state their reason is not an inconsistency — it
-    // distinguishes a row answered by an admitted run from rows whose
-    // acceptance remains outstanding.
+    // Nine ask for an acceptance of their own shape that no admitted
+    // route supplies. The admitted accepted run answers the sponsorless
+    // case under the variable schedule. Its declaration here remains
+    // the relay-policy layer of the whole schedule; the schedule-indexed
+    // boundary rule maps the case for both schedules. The two sponsored
+    // rows stand on construction's named refusal of their controls,
+    // so neither has a candidate whose acceptance a layer can judge.
     positive(
         "minimum-valid-lead",
         Bound::AcceptanceAwaitsRelayAdmissibility,
@@ -1434,12 +1445,12 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     ),
     positive(
         "sponsored-without-change",
-        Bound::AcceptanceAwaitsRelayAdmissibility,
+        Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
     ),
     positive(
         "sponsored-with-change-where-supported",
-        Bound::AcceptanceAwaitsRelayAdmissibility,
+        Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
     ),
     positive(
@@ -2627,10 +2638,12 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     ),
     // §16.10 — the fourteen sponsor faults.
     //
-    // Twelve of them stand where the sponsored arm stands: the sponsor
-    // relations have no region, so a sponsored candidate is refused by
-    // name before it reaches the boundary the row would declare. The
-    // other two ask what the canonical report published, which is a
+    // Nine rows stand on the construction refusal of their sponsored
+    // controls: no sponsored candidate exists for their mutation to
+    // reach a declared boundary. Three ask about sponsor-region
+    // membership or envelope multiplicity, whose relations the
+    // region-scoping refit of `T11-064` re-scopes or retires. The other
+    // two ask what the canonical report published, which is a
     // property of bytes this workspace renders and needs no sponsor
     // region to check: no target can answer them and no relation is
     // indexed by them.
@@ -2647,7 +2660,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "state-sponsor-overlap",
         L::AbiLayout,
         Loc::SponsorEnvelope,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
         unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
@@ -2665,7 +2678,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "foreign-sponsor-asset",
         L::AbiLayout,
         Loc::SponsorEnvelope,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
         names(sponsor_recognition(), Class::WrongRecognizedAsset),
     ),
@@ -2681,7 +2694,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "missing-sponsor-authorization",
         L::WitnessProof,
         Loc::WitnessStack,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
         unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
@@ -2690,7 +2703,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "sponsor-change-at-state-output-0",
         L::TargetTransaction,
         Loc::TransactionOutput,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
         unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
@@ -2699,7 +2712,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "state-successor-in-sponsor-range",
         L::AbiLayout,
         Loc::SponsorEnvelope,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
         unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
@@ -2708,7 +2721,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "fee-change-substitution",
         L::TargetTransaction,
         Loc::TransactionOutput,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
         unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
@@ -2726,7 +2739,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "empty-sponsor-offer-for-sponsored-request",
         L::AbiLayout,
         Loc::SponsorEnvelope,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
         unlinked(Why::RelationScopedToTheWholeTransaction),
     ),
@@ -2751,7 +2764,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "balanced-state-corruption-compensated-by-sponsor-change",
         L::TargetTransaction,
         Loc::TransactionOutput,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
         names(
             substrate_conservation(),
@@ -2772,7 +2785,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "confidential-sponsor-value-where-the-selected-target-policy-claims-support",
         L::TargetTransaction,
         Loc::SponsorEnvelope,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
         unlinked(Why::NoPublishedRelationNamesIt),
     ),
@@ -3782,10 +3795,13 @@ mod tests {
         let standing = |wanted: MaturityRowBoundary| {
             rows().iter().filter(|row| row.boundary() == wanted).count()
         };
-        // Eleven positive rows ask for an acceptance no admitted run supplies,
-        // including §16.1's last, four-term row.
-        assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 11);
-        assert_eq!(standing(Bound::SponsorArmAwaitsRegionScoping), 12);
+        // Nine positive rows ask for an acceptance no admitted run supplies,
+        // including §16.1's last, four-term row. Eleven rows stand on
+        // their sponsored controls' construction refusal; three sponsor
+        // faults stand on region membership or envelope multiplicity.
+        assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 9);
+        assert_eq!(standing(Bound::SponsoredControlRefusedAtConstruction), 11);
+        assert_eq!(standing(Bound::SponsorArmAwaitsRegionScoping), 3);
         assert_eq!(standing(Bound::TotalityAnsweredByLandedNonceEvidence), 11);
         assert_eq!(standing(Bound::PropertyOfTheBuildRatherThanAFixture), 1);
         let non_answers = rows()
@@ -3816,6 +3832,12 @@ mod tests {
                 Bound::AcceptanceAwaitsRelayAdmissibility
                 | Bound::PropertyOfTheBuildRatherThanAFixture => {
                     assert_eq!(row.section(), S::Positive, "{row} is not a positive row");
+                }
+                Bound::SponsoredControlRefusedAtConstruction => {
+                    assert!(
+                        matches!(row.section(), S::Positive | S::SponsorFault),
+                        "{row} is outside the sponsored positive and sponsor-fault tables",
+                    );
                 }
                 Bound::SponsorArmAwaitsRegionScoping => {
                     assert_eq!(row.section(), S::SponsorFault, "{row} is not a sponsor row");
