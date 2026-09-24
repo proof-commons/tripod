@@ -60,15 +60,25 @@ impl MaturityPublicRecoveryReportRole {
 pub enum MaturityPublicRecoveryResidual {
     SyntheticOrigin(MaturitySyntheticOriginResidual),
     WitnessedNonceWithoutLeastness,
+    NoIndependentImplementation,
+    NoTrustAnchor,
+    NoInclusionProof,
+    NoCanonicalChainAuthentication,
+    NoStaticSubtreeDataAvailability,
 }
 
 impl MaturityPublicRecoveryResidual {
     /// Canonical residual order.
-    pub const ALL: &'static [Self; 4] = &[
+    pub const ALL: &'static [Self; 9] = &[
         Self::SyntheticOrigin(MaturitySyntheticOriginResidual::NoChainObservation),
         Self::SyntheticOrigin(MaturitySyntheticOriginResidual::NoRootCursorFreshness),
         Self::SyntheticOrigin(MaturitySyntheticOriginResidual::NoArchiveOriginBeyondAdmission),
         Self::WitnessedNonceWithoutLeastness,
+        Self::NoIndependentImplementation,
+        Self::NoTrustAnchor,
+        Self::NoInclusionProof,
+        Self::NoCanonicalChainAuthentication,
+        Self::NoStaticSubtreeDataAvailability,
     ];
 
     /// Canonical residual name.
@@ -77,6 +87,11 @@ impl MaturityPublicRecoveryResidual {
         match self {
             Self::SyntheticOrigin(residual) => residual.name(),
             Self::WitnessedNonceWithoutLeastness => "witnessed-nonce-without-leastness",
+            Self::NoIndependentImplementation => "no-independent-implementation",
+            Self::NoTrustAnchor => "no-trust-anchor",
+            Self::NoInclusionProof => "no-inclusion-proof",
+            Self::NoCanonicalChainAuthentication => "no-canonical-chain-authentication",
+            Self::NoStaticSubtreeDataAvailability => "no-static-subtree-data-availability",
         }
     }
 }
@@ -159,6 +174,7 @@ pub struct MaturityPublicRecoveryReportCensus {
     witness_items: usize,
     public_inputs: usize,
     rows: usize,
+    static_leaves: usize,
 }
 
 impl MaturityPublicRecoveryReportCensus {
@@ -173,6 +189,10 @@ impl MaturityPublicRecoveryReportCensus {
     #[must_use]
     pub const fn rows(&self) -> usize {
         self.rows
+    }
+    #[must_use]
+    pub const fn static_leaves(&self) -> usize {
+        self.static_leaves
     }
 }
 
@@ -228,15 +248,21 @@ pub enum MaturityPublicRecoveryRecomputedItem {
     CursorFreshnessResidual,
     ArchiveOriginResidual,
     LeastnessResidual,
+    IndependentImplementationResidual,
+    TrustAnchorResidual,
+    InclusionProofResidual,
+    CanonicalChainAuthenticationResidual,
+    StaticSubtreeAvailabilityResidual,
     CensusWitnessItems,
     CensusPublicInputs,
     CensusRows,
+    CensusStaticLeaves,
     Completeness,
 }
 
 impl MaturityPublicRecoveryRecomputedItem {
     /// Validation order.
-    pub const ALL: &'static [Self; 26] = &[
+    pub const ALL: &'static [Self; 32] = &[
         Self::Schema,
         Self::Role,
         Self::Recovery,
@@ -259,9 +285,15 @@ impl MaturityPublicRecoveryRecomputedItem {
         Self::CursorFreshnessResidual,
         Self::ArchiveOriginResidual,
         Self::LeastnessResidual,
+        Self::IndependentImplementationResidual,
+        Self::TrustAnchorResidual,
+        Self::InclusionProofResidual,
+        Self::CanonicalChainAuthenticationResidual,
+        Self::StaticSubtreeAvailabilityResidual,
         Self::CensusWitnessItems,
         Self::CensusPublicInputs,
         Self::CensusRows,
+        Self::CensusStaticLeaves,
         Self::Completeness,
     ];
 
@@ -291,9 +323,15 @@ impl MaturityPublicRecoveryRecomputedItem {
             Self::CursorFreshnessResidual => "cursor-freshness-residual",
             Self::ArchiveOriginResidual => "archive-origin-residual",
             Self::LeastnessResidual => "leastness-residual",
+            Self::IndependentImplementationResidual => "independent-implementation-residual",
+            Self::TrustAnchorResidual => "trust-anchor-residual",
+            Self::InclusionProofResidual => "inclusion-proof-residual",
+            Self::CanonicalChainAuthenticationResidual => "canonical-chain-authentication-residual",
+            Self::StaticSubtreeAvailabilityResidual => "static-subtree-availability-residual",
             Self::CensusWitnessItems => "census-witness-items",
             Self::CensusPublicInputs => "census-public-inputs",
             Self::CensusRows => "census-rows",
+            Self::CensusStaticLeaves => "census-static-leaves",
             Self::Completeness => "completeness",
         }
     }
@@ -531,6 +569,7 @@ pub fn assemble_maturity_public_recovery_report(
         recovered.actual_program(),
         recovered.reconstructed_program(),
     );
+    let static_leaves = handoff.static_subtree().leaves().len();
     Ok(MaturityPublicRecoveryReport {
         schema: MATURITY_PUBLIC_RECOVERY_REPORT_SCHEMA,
         role: MaturityPublicRecoveryReportRole::StatePublicRecovery,
@@ -539,6 +578,7 @@ pub fn assemble_maturity_public_recovery_report(
             witness_items: public_witness.len(),
             public_inputs: public_inputs.len(),
             rows: rows.len(),
+            static_leaves,
         },
         public_witness,
         predecessor_metadata: *recovered.predecessor_metadata(),
@@ -697,6 +737,31 @@ pub fn validate_maturity_public_recovery_report(
         &mut checked,
     )?;
     verify_item(
+        report.residuals.get(4) == MaturityPublicRecoveryResidual::ALL.get(4),
+        Item::IndependentImplementationResidual,
+        &mut checked,
+    )?;
+    verify_item(
+        report.residuals.get(5) == MaturityPublicRecoveryResidual::ALL.get(5),
+        Item::TrustAnchorResidual,
+        &mut checked,
+    )?;
+    verify_item(
+        report.residuals.get(6) == MaturityPublicRecoveryResidual::ALL.get(6),
+        Item::InclusionProofResidual,
+        &mut checked,
+    )?;
+    verify_item(
+        report.residuals.get(7) == MaturityPublicRecoveryResidual::ALL.get(7),
+        Item::CanonicalChainAuthenticationResidual,
+        &mut checked,
+    )?;
+    verify_item(
+        report.residuals.get(8) == MaturityPublicRecoveryResidual::ALL.get(8),
+        Item::StaticSubtreeAvailabilityResidual,
+        &mut checked,
+    )?;
+    verify_item(
         report.census.witness_items == public_witness.len(),
         Item::CensusWitnessItems,
         &mut checked,
@@ -709,6 +774,11 @@ pub fn validate_maturity_public_recovery_report(
     verify_item(
         report.census.rows == rows.len(),
         Item::CensusRows,
+        &mut checked,
+    )?;
+    verify_item(
+        report.census.static_leaves == handoff.static_subtree().leaves().len(),
+        Item::CensusStaticLeaves,
         &mut checked,
     )?;
     verify_item(
@@ -816,6 +886,7 @@ pub fn render_maturity_public_recovery_report(
     let _ = writeln!(text, "witness_items {}", report.census().witness_items());
     let _ = writeln!(text, "public_inputs {}", report.census().public_inputs());
     let _ = writeln!(text, "rows {}", report.census().rows());
+    let _ = writeln!(text, "static_leaves {}", report.census().static_leaves());
     let _ = writeln!(text, "completeness {}", report.completeness().name());
     for item in MaturityPublicRecoveryRecomputedItem::ALL {
         if validated.recomputed_items().contains(item) {
@@ -974,10 +1045,10 @@ mod tests {
     }
 
     #[test]
-    fn the_accepted_handoffs_recovery_report_validates_and_renders_four_residuals_in_order() {
+    fn the_accepted_handoffs_recovery_report_validates_and_renders_nine_residuals_in_order() {
         let (handoff, report) = accepted();
         let validated = validate(&report, &handoff).expect("accepted report validates");
-        assert_eq!(validated.recomputed_items().len(), 26);
+        assert_eq!(validated.recomputed_items().len(), 32);
         let rendered = render_maturity_public_recovery_report(&validated);
         let residuals: Vec<_> = rendered
             .lines()
@@ -990,7 +1061,50 @@ mod tests {
                 "residual no-root-cursor-freshness",
                 "residual no-archive-origin-beyond-admission",
                 "residual witnessed-nonce-without-leastness",
+                "residual no-independent-implementation",
+                "residual no-trust-anchor",
+                "residual no-inclusion-proof",
+                "residual no-canonical-chain-authentication",
+                "residual no-static-subtree-data-availability",
             ]
+        );
+    }
+
+    #[test]
+    fn the_static_subtree_non_claim_stands_beside_a_one_leaf_census() {
+        use MaturityPublicRecoveryRecomputedItem as Item;
+        let (handoff, report) = accepted();
+        assert_eq!(report.census().static_leaves(), 1);
+        let validated = validate(&report, &handoff).expect("accepted report validates");
+        let rendered = render_maturity_public_recovery_report(&validated);
+        assert!(rendered.contains("static_leaves 1\n"));
+        assert!(rendered.contains("residual no-static-subtree-data-availability\n"));
+
+        let mut changed = report.clone();
+        changed.census.static_leaves = 2;
+        assert_eq!(
+            validate(&changed, &handoff),
+            Err(MaturityPublicRecoveryReportRefusal::ItemDiffers {
+                item: Item::CensusStaticLeaves,
+            })
+        );
+
+        let mut changed = report.clone();
+        changed.residuals.pop();
+        assert_eq!(
+            validate(&changed, &handoff),
+            Err(MaturityPublicRecoveryReportRefusal::ItemDiffers {
+                item: Item::ChainObservationResidual,
+            })
+        );
+
+        let mut changed = report;
+        changed.residuals.swap(4, 5);
+        assert_eq!(
+            validate(&changed, &handoff),
+            Err(MaturityPublicRecoveryReportRefusal::ItemDiffers {
+                item: Item::IndependentImplementationResidual,
+            })
         );
     }
 
@@ -1214,8 +1328,8 @@ mod tests {
             .iter()
             .map(|item| item.name())
             .collect();
-        assert_eq!(MaturityPublicRecoveryRecomputedItem::ALL.len(), 26);
-        assert_eq!(names.len(), 26);
+        assert_eq!(MaturityPublicRecoveryRecomputedItem::ALL.len(), 32);
+        assert_eq!(names.len(), 32);
         let (handoff, report) = accepted();
         let validated = validate(&report, &handoff).expect("accepted report validates");
         let expected: BTreeSet<_> = MaturityPublicRecoveryRecomputedItem::ALL
@@ -1306,5 +1420,16 @@ mod tests {
         }
         assert!(recovery.contains("residual witnessed-nonce-without-leastness\n"));
         assert!(!history.contains("residual witnessed-nonce-without-leastness\n"));
+        for residual in [
+            MaturityPublicRecoveryResidual::NoIndependentImplementation,
+            MaturityPublicRecoveryResidual::NoTrustAnchor,
+            MaturityPublicRecoveryResidual::NoInclusionProof,
+            MaturityPublicRecoveryResidual::NoCanonicalChainAuthentication,
+            MaturityPublicRecoveryResidual::NoStaticSubtreeDataAvailability,
+        ] {
+            let line = format!("residual {}\n", residual.name());
+            assert!(recovery.contains(&line));
+            assert!(!history.contains(&line));
+        }
     }
 }
