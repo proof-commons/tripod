@@ -144,6 +144,17 @@ pub enum MaturityPremiseProvenance {
     DeploymentDeclaration,
 }
 
+impl MaturityPremiseProvenance {
+    /// The provenance's canonical report name.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ExecutorArguments => "executor-arguments",
+            Self::DeploymentDeclaration => "deployment-declaration",
+        }
+    }
+}
+
 /// A whole deployment value with its stated provenance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MaturityDeclaredPremise<T> {

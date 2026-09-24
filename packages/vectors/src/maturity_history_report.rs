@@ -10,15 +10,15 @@ use std::fmt::Write as _;
 
 use transaction::bytes::Outpoint;
 
-use crate::maturity_continuity::ValidatedMaturityContinuity;
 use crate::maturity_evidence::{
     MaturityExecutorProvenanceExpectation, MaturityMutationRegistry, MaturityMutationRegistryKind,
     MaturityTargetBinding,
 };
 use crate::maturity_history::{
-    MaturityRootCheckpoint, MaturityRootCheckpointRefusal, MaturityRootHistoryRefusal,
-    StateRootEdge, validate_state_root_history,
+    MaturityRootCheckpoint, MaturityRootCheckpointRefusal, MaturityRootFact, MaturityRootFactKind,
+    MaturityRootHistoryRefusal, StateRootEdge, validate_state_root_history,
 };
+use crate::maturity_recovery::PublicAnnouncementHandoff;
 use crate::maturity_report::MaturitySafetyCompleteness;
 use crate::maturity_safety::MaturitySafetySection;
 
@@ -125,6 +125,7 @@ pub enum MaturityRootHistoryRecomputedItem {
     FinalCursor,
     CheckpointBinding,
     CheckpointSuccessor,
+    CheckpointPremiseProvenance,
     RegistryKind,
     RegistryRows,
     ChainObservationResidual,
@@ -137,7 +138,7 @@ pub enum MaturityRootHistoryRecomputedItem {
 
 impl MaturityRootHistoryRecomputedItem {
     /// The order in which validation establishes each claim.
-    pub const ALL: &'static [Self; 19] = &[
+    pub const ALL: &'static [Self; 20] = &[
         Self::Schema,
         Self::Role,
         Self::TargetBinding,
@@ -149,6 +150,7 @@ impl MaturityRootHistoryRecomputedItem {
         Self::FinalCursor,
         Self::CheckpointBinding,
         Self::CheckpointSuccessor,
+        Self::CheckpointPremiseProvenance,
         Self::RegistryKind,
         Self::RegistryRows,
         Self::ChainObservationResidual,
@@ -174,6 +176,7 @@ impl MaturityRootHistoryRecomputedItem {
             Self::FinalCursor => "final-cursor",
             Self::CheckpointBinding => "checkpoint-binding",
             Self::CheckpointSuccessor => "checkpoint-successor",
+            Self::CheckpointPremiseProvenance => "checkpoint-premise-provenance",
             Self::RegistryKind => "registry-kind",
             Self::RegistryRows => "registry-rows",
             Self::ChainObservationResidual => "chain-observation-residual",
@@ -364,7 +367,7 @@ pub fn validate_maturity_root_history_report(
     report: &MaturityRootHistoryReport,
     edges: &[StateRootEdge],
     starting_cursor: Outpoint,
-    continuity: &ValidatedMaturityContinuity,
+    handoff: &PublicAnnouncementHandoff,
     registry: &MaturityMutationRegistry,
     binding: &MaturityTargetBinding,
     provenance: &MaturityExecutorProvenanceExpectation,
@@ -429,7 +432,7 @@ pub fn validate_maturity_root_history_report(
     })?;
     report
         .checkpoint
-        .binds(last_edge, continuity)
+        .binds(last_edge, handoff)
         .map_err(
             |refusal| MaturityRootHistoryReportRefusal::CheckpointRefused {
                 refusal: Box::new(refusal),
@@ -439,6 +442,15 @@ pub fn validate_maturity_root_history_report(
     verify_item(
         report.checkpoint.successor() == advanced,
         Item::CheckpointSuccessor,
+        &mut items,
+    )?;
+    verify_item(
+        MaturityRootFactKind::DeclaredPremise(report.checkpoint.linked_candidate().provenance())
+            == MaturityRootFact::LinkedCandidate.kind()
+            && MaturityRootFactKind::DeclaredPremise(
+                report.checkpoint.candidate_abi().provenance(),
+            ) == MaturityRootFact::CandidateAbi.kind(),
+        Item::CheckpointPremiseProvenance,
         &mut items,
     )?;
     verify_item(
@@ -585,11 +597,13 @@ pub fn render_maturity_root_history_report(
     );
     let _ = writeln!(
         text,
-        "checkpoint_linked_candidate declared deployment-declaration"
+        "checkpoint_linked_candidate declared {}",
+        checkpoint.linked_candidate().provenance().name()
     );
     let _ = writeln!(
         text,
-        "checkpoint_candidate_abi declared deployment-declaration"
+        "checkpoint_candidate_abi declared {}",
+        checkpoint.candidate_abi().provenance().name()
     );
     let _ = writeln!(
         text,
@@ -622,18 +636,22 @@ mod tests {
     use super::*;
     use std::sync::LazyLock;
 
-    use linker::CandidateLinkedMaturityBundle;
-    use transaction::state_abi::CandidateMaturityAnnouncementAbi;
-
-    use crate::maturity_continuity::project_maturity_continuity;
     use crate::maturity_continuity::tests::{archived, variable_archived};
+    use crate::maturity_continuity::{
+        MaturityByteSource, ValidatedMaturityContinuity, project_maturity_continuity,
+        submitted_transaction_identities,
+    };
     use crate::maturity_corpus::{
-        MaturityDeclaredPremise, MaturityPremiseProvenance, maturity_variable_run_of_record,
+        MaturityDeclaredPremise, MaturityPremiseProvenance, maturity_run_of_record,
+        maturity_variable_run_of_record,
     };
     use crate::maturity_evidence::{
         MaturityAnnouncementEvidencePlan, MaturityConstructorMaterial,
-        MaturityConstructorMaterialAbsence, derive_maturity_evidence_plan_with,
+        MaturityConstructorMaterialAbsence, checkpoint_premises_of,
+        derive_maturity_evidence_plan_with,
     };
+    use crate::maturity_recovery::PublicAnnouncementLocator;
+    use crate::maturity_recovery_report::accepted_public_handoff;
     use crate::maturity_report::MaturityVolatileField;
 
     static PLAN: LazyLock<MaturityAnnouncementEvidencePlan> = LazyLock::new(|| {
@@ -657,20 +675,12 @@ mod tests {
     fn checkpoint(
         edge: &StateRootEdge,
         continuity: &ValidatedMaturityContinuity,
+        handoff: &PublicAnnouncementHandoff,
     ) -> MaturityRootCheckpoint {
-        let linked: MaturityDeclaredPremise<CandidateLinkedMaturityBundle> =
-            MaturityDeclaredPremise::declared(
-                continuity.bundle().clone(),
-                MaturityPremiseProvenance::DeploymentDeclaration,
-            );
-        let abi: MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi> =
-            MaturityDeclaredPremise::declared(
-                PLAN.abi().clone(),
-                MaturityPremiseProvenance::DeploymentDeclaration,
-            );
+        let (linked, abi) = checkpoint_premises_of(continuity).expect("accepted premises");
         MaturityRootCheckpoint::bind(
             edge,
-            continuity,
+            handoff,
             maturity_variable_run_of_record().expect("accepted corpus"),
             linked,
             abi,
@@ -678,35 +688,62 @@ mod tests {
         .expect("accepted checkpoint binds")
     }
 
+    fn historical_handoff(accepted: &PublicAnnouncementHandoff) -> PublicAnnouncementHandoff {
+        let historical = historical_continuity();
+        let corpus = maturity_run_of_record().expect("historical corpus");
+        PublicAnnouncementHandoff::new(
+            PublicAnnouncementLocator::new(
+                MaturityByteSource::ArchivedSubmission {
+                    run_address: corpus.report().run_address().to_owned(),
+                },
+                submitted_transaction_identities(
+                    historical.transaction(),
+                    historical.submitted_bytes(),
+                )
+                .identity(),
+            ),
+            archived().input().submitted_bytes.to_vec(),
+            0,
+            accepted.schedule(),
+            accepted.bounds(),
+            accepted.static_subtree().clone(),
+            accepted.internal_key(),
+            accepted.contract(),
+        )
+    }
+
     fn assembled() -> (
         MaturityRootHistoryReport,
-        ValidatedMaturityContinuity,
+        PublicAnnouncementHandoff,
         StateRootEdge,
     ) {
         let continuity = accepted_continuity();
         let edge = StateRootEdge::from_continuity(&continuity);
+        let handoff =
+            accepted_public_handoff(maturity_variable_run_of_record().expect("accepted corpus"))
+                .expect("accepted handoff");
         let report = assemble_maturity_root_history_report(
             std::slice::from_ref(&edge),
             edge.predecessor(),
-            checkpoint(&edge, &continuity),
+            checkpoint(&edge, &continuity, &handoff),
             PLAN.root_history_mutations().clone(),
             PLAN.binding().clone(),
             PLAN.executor_provenance().clone(),
         )
         .expect("accepted report assembles");
-        (report, continuity, edge)
+        (report, handoff, edge)
     }
 
     fn validate(
         report: &MaturityRootHistoryReport,
         edges: &[StateRootEdge],
-        continuity: &ValidatedMaturityContinuity,
+        handoff: &PublicAnnouncementHandoff,
     ) -> Result<ValidatedMaturityRootHistoryReport, MaturityRootHistoryReportRefusal> {
         validate_maturity_root_history_report(
             report,
             edges,
             report.starting_cursor(),
-            continuity,
+            handoff,
             PLAN.root_history_mutations(),
             PLAN.binding(),
             PLAN.executor_provenance(),
@@ -715,8 +752,8 @@ mod tests {
 
     #[test]
     fn the_accepted_archives_history_report_validates_and_renders_three_residuals_in_order() {
-        let (report, continuity, edge) = assembled();
-        let validated = validate(&report, std::slice::from_ref(&edge), &continuity)
+        let (report, handoff, edge) = assembled();
+        let validated = validate(&report, std::slice::from_ref(&edge), &handoff)
             .expect("accepted report validates");
         assert_eq!(report.final_cursor(), edge.successor());
         assert_eq!(report.final_cursor().index(), 0);
@@ -730,6 +767,9 @@ mod tests {
                 .collect()
         );
         let rendered = render_maturity_root_history_report(&validated);
+        assert!(rendered.contains("checkpoint_linked_candidate declared deployment-declaration\n"));
+        assert!(rendered.contains("checkpoint_candidate_abi declared deployment-declaration\n"));
+        assert!(rendered.contains("recomputed checkpoint-premise-provenance\n"));
         let residuals: Vec<_> = rendered
             .lines()
             .filter(|line| line.starts_with("residual "))
@@ -746,16 +786,12 @@ mod tests {
 
     #[test]
     fn independent_assemblies_render_identical_bytes() {
-        let (first, first_continuity, first_edge) = assembled();
-        let (second, second_continuity, second_edge) = assembled();
-        let first = validate(&first, std::slice::from_ref(&first_edge), &first_continuity)
+        let (first, first_handoff, first_edge) = assembled();
+        let (second, second_handoff, second_edge) = assembled();
+        let first = validate(&first, std::slice::from_ref(&first_edge), &first_handoff)
             .expect("first report validates");
-        let second = validate(
-            &second,
-            std::slice::from_ref(&second_edge),
-            &second_continuity,
-        )
-        .expect("second report validates");
+        let second = validate(&second, std::slice::from_ref(&second_edge), &second_handoff)
+            .expect("second report validates");
         assert_eq!(
             render_maturity_root_history_report(&first),
             render_maturity_root_history_report(&second),
@@ -764,7 +800,7 @@ mod tests {
 
     #[test]
     fn a_final_cursor_equal_to_the_honest_one_does_not_hide_an_invalid_earlier_edge() {
-        let (mut report, continuity, accepted_edge) = assembled();
+        let (mut report, handoff, accepted_edge) = assembled();
         let historical_edge = StateRootEdge::from_continuity(&historical_continuity());
         let honest_final_cursor = accepted_edge.successor();
         report.edges = vec![historical_edge, accepted_edge];
@@ -775,7 +811,7 @@ mod tests {
             Some(honest_final_cursor)
         );
         assert!(matches!(
-            validate(&report, &report.edges, &continuity),
+            validate(&report, &report.edges, &handoff),
             Err(MaturityRootHistoryReportRefusal::EdgeSequenceRefused {
                 refusal,
             }) if matches!(
@@ -787,7 +823,7 @@ mod tests {
 
     #[test]
     fn a_stated_item_differing_from_its_recomputation_fails_at_that_item() {
-        let (report, continuity, edge) = assembled();
+        let (report, handoff, edge) = assembled();
         let mut changed = report.clone();
         changed.starting_cursor =
             StateRootEdge::from_continuity(&historical_continuity()).predecessor();
@@ -796,7 +832,7 @@ mod tests {
                 &changed,
                 std::slice::from_ref(&edge),
                 report.starting_cursor(),
-                &continuity,
+                &handoff,
                 PLAN.root_history_mutations(),
                 PLAN.binding(),
                 PLAN.executor_provenance(),
@@ -808,7 +844,7 @@ mod tests {
         let mut changed = report.clone();
         changed.final_cursor = edge.predecessor();
         assert!(matches!(
-            validate(&changed, std::slice::from_ref(&edge), &continuity),
+            validate(&changed, std::slice::from_ref(&edge), &handoff),
             Err(MaturityRootHistoryReportRefusal::ItemDiffers {
                 item: MaturityRootHistoryRecomputedItem::FinalCursor
             })
@@ -816,7 +852,7 @@ mod tests {
         let mut changed = report.clone();
         changed.census.edges = 2;
         assert!(matches!(
-            validate(&changed, std::slice::from_ref(&edge), &continuity),
+            validate(&changed, std::slice::from_ref(&edge), &handoff),
             Err(MaturityRootHistoryReportRefusal::ItemDiffers {
                 item: MaturityRootHistoryRecomputedItem::CensusEdges
             })
@@ -824,7 +860,7 @@ mod tests {
         let mut changed = report;
         changed.completeness = MaturitySafetyCompleteness::Failed;
         assert!(matches!(
-            validate(&changed, std::slice::from_ref(&edge), &continuity),
+            validate(&changed, std::slice::from_ref(&edge), &handoff),
             Err(MaturityRootHistoryReportRefusal::ItemDiffers {
                 item: MaturityRootHistoryRecomputedItem::Completeness
             })
@@ -833,8 +869,8 @@ mod tests {
 
     #[test]
     fn removed_and_duplicated_edges_refuse_before_payload_comparison() {
-        let (report, continuity, edge) = assembled();
-        let removed = validate(&report, &[], &continuity).expect_err("removed edge refuses");
+        let (report, handoff, edge) = assembled();
+        let removed = validate(&report, &[], &handoff).expect_err("removed edge refuses");
         assert_eq!(
             removed,
             MaturityRootHistoryReportRefusal::EdgeCountDiffers {
@@ -842,7 +878,7 @@ mod tests {
                 recomputed: 0
             }
         );
-        let duplicated = validate(&report, &[edge.clone(), edge.clone()], &continuity)
+        let duplicated = validate(&report, &[edge.clone(), edge.clone()], &handoff)
             .expect_err("duplicated edge refuses");
         assert_eq!(
             duplicated,
@@ -854,7 +890,7 @@ mod tests {
         let historical_edge = StateRootEdge::from_continuity(&historical_continuity());
         let mut stated = report;
         stated.edges = vec![historical_edge.clone(), edge.clone()];
-        let reordered = validate(&stated, &[edge, historical_edge], &continuity)
+        let reordered = validate(&stated, &[edge, historical_edge], &handoff)
             .expect_err("reordered edges refuse");
         assert_eq!(
             reordered,
@@ -863,9 +899,9 @@ mod tests {
     }
 
     #[test]
-    fn a_checkpoint_the_continuity_does_not_bind_refuses_at_the_checkpoint_item() {
-        let (report, _continuity, edge) = assembled();
-        let historical = historical_continuity();
+    fn a_checkpoint_another_handoff_does_not_bind_refuses_at_the_checkpoint_item() {
+        let (report, handoff, edge) = assembled();
+        let historical = historical_handoff(&handoff);
         assert!(matches!(
             validate(&report, std::slice::from_ref(&edge), &historical),
             Err(MaturityRootHistoryReportRefusal::CheckpointRefused { refusal })
@@ -874,20 +910,57 @@ mod tests {
     }
 
     #[test]
+    fn a_premise_declared_from_executor_arguments_refuses_at_the_provenance_item() {
+        let (report, handoff, edge) = assembled();
+        let continuity = accepted_continuity();
+        let corpus = maturity_variable_run_of_record().expect("accepted corpus");
+        let (linked, abi) = checkpoint_premises_of(&continuity).expect("accepted premises");
+        let executor_linked = MaturityDeclaredPremise::declared(
+            linked.value().clone(),
+            MaturityPremiseProvenance::ExecutorArguments,
+        );
+        let mut changed = report.clone();
+        changed.checkpoint =
+            MaturityRootCheckpoint::bind(&edge, &handoff, corpus, executor_linked, abi.clone())
+                .expect("binding checks values, not provenance");
+        assert!(matches!(
+            validate(&changed, std::slice::from_ref(&edge), &handoff),
+            Err(MaturityRootHistoryReportRefusal::ItemDiffers {
+                item: MaturityRootHistoryRecomputedItem::CheckpointPremiseProvenance
+            })
+        ));
+
+        let executor_abi = MaturityDeclaredPremise::declared(
+            abi.value().clone(),
+            MaturityPremiseProvenance::ExecutorArguments,
+        );
+        let mut changed = report;
+        changed.checkpoint =
+            MaturityRootCheckpoint::bind(&edge, &handoff, corpus, linked, executor_abi)
+                .expect("binding checks values, not provenance");
+        assert!(matches!(
+            validate(&changed, std::slice::from_ref(&edge), &handoff),
+            Err(MaturityRootHistoryReportRefusal::ItemDiffers {
+                item: MaturityRootHistoryRecomputedItem::CheckpointPremiseProvenance
+            })
+        ));
+    }
+
+    #[test]
     fn an_unread_schema_refuses_first() {
-        let (mut report, continuity, edge) = assembled();
+        let (mut report, handoff, edge) = assembled();
         report.schema = MATURITY_ROOT_HISTORY_REPORT_SCHEMA + 1;
         report.edges.clear();
         assert_eq!(
-            validate(&report, std::slice::from_ref(&edge), &continuity),
+            validate(&report, std::slice::from_ref(&edge), &handoff),
             Err(MaturityRootHistoryReportRefusal::UnsupportedSchema { stated: 2 }),
         );
     }
 
     #[test]
     fn the_canonical_bytes_carry_no_volatile_key_and_no_raw_text() {
-        let (report, continuity, edge) = assembled();
-        let validated = validate(&report, std::slice::from_ref(&edge), &continuity)
+        let (report, handoff, edge) = assembled();
+        let validated = validate(&report, std::slice::from_ref(&edge), &handoff)
             .expect("accepted report validates");
         let rendered = render_maturity_root_history_report(&validated);
         for volatile in MaturityVolatileField::ALL {
@@ -917,10 +990,10 @@ mod tests {
             .iter()
             .map(|item| item.name())
             .collect();
-        assert_eq!(MaturityRootHistoryRecomputedItem::ALL.len(), 19);
-        assert_eq!(names.len(), 19);
-        let (report, continuity, edge) = assembled();
-        let validated = validate(&report, std::slice::from_ref(&edge), &continuity)
+        assert_eq!(MaturityRootHistoryRecomputedItem::ALL.len(), 20);
+        assert_eq!(names.len(), 20);
+        let (report, handoff, edge) = assembled();
+        let validated = validate(&report, std::slice::from_ref(&edge), &handoff)
             .expect("accepted report validates");
         let expected: BTreeSet<_> = MaturityRootHistoryRecomputedItem::ALL
             .iter()

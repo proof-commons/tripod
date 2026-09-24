@@ -6,9 +6,11 @@ use architecture::ids::{DeallocatorId, ObjectId, OperationId, ProjectionId, Root
 use architecture::spec::ARCHITECTURE;
 use linker::CandidateLinkedMaturityBundle;
 use linker::{StateLinkRefusal, state_bundle_continuity};
-use tapscript::StateStaticSubtree;
+use realization::AnnouncementLeadBounds;
+use tapscript::{StateInternalKeyPolicy, StateStaticSubtree, StateWitnessSchedule};
+use target_elements::TargetContractVersion;
 use target_elements_conformance::constructor::tagged::sha256;
-use transaction::bytes::{Outpoint, Txid};
+use transaction::bytes::{Outpoint, TargetTransaction, Txid};
 use transaction::operator_right::BranchContext;
 use transaction::state_abi::CandidateMaturityAnnouncementAbi;
 use transaction::taproot::Digest32;
@@ -18,6 +20,7 @@ use crate::maturity_corpus::{
     MaturityDeclaredPremise, MaturityPremiseProvenance, ValidatedMaturityCorpus,
 };
 use crate::maturity_native::{MaturityAcceptanceObligation, MaturityAcceptanceRoute};
+use crate::maturity_recovery::PublicAnnouncementHandoff;
 
 /// A transition certificate projected from a validated announcement.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -491,19 +494,55 @@ pub enum MaturityRootCheckpointRefusal {
     },
     TransactionIdentityDisagrees {
         checkpoint: Txid,
-        continuity: Txid,
+        handoff: Txid,
     },
     SubmittedBytesDisagree {
         checkpoint: Digest32,
-        continuity: Digest32,
+        handoff: Digest32,
+    },
+    HandoffBytesUndecodable {
+        offered: usize,
     },
     SuccessorOutpointDisagrees {
         checkpoint: Outpoint,
         edge: Outpoint,
     },
+    SuccessorIsNotTheHandoffsStateOutput {
+        checkpoint: Outpoint,
+        identity: Txid,
+        index: u32,
+    },
+    HandoffCarriesNoInput,
     PredecessorOutpointDisagrees {
         checkpoint: Outpoint,
-        continuity: Outpoint,
+        handoff: Outpoint,
+    },
+    LinkedCandidateDisagrees(MaturityPremiseDisagreement),
+    CandidateAbiDisagrees(MaturityPremiseDisagreement),
+}
+
+/// The first published parameter on which a declared premise disagrees.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityPremiseDisagreement {
+    WitnessSchedule {
+        declared: StateWitnessSchedule,
+        published: StateWitnessSchedule,
+    },
+    LeadBounds {
+        declared: AnnouncementLeadBounds,
+        published: AnnouncementLeadBounds,
+    },
+    StaticRoot {
+        declared: Digest32,
+        published: Digest32,
+    },
+    InternalKey {
+        declared: StateInternalKeyPolicy,
+        published: StateInternalKeyPolicy,
+    },
+    ContractRevision {
+        declared: TargetContractVersion,
+        published: TargetContractVersion,
     },
 }
 
@@ -513,13 +552,18 @@ impl MaturityRootCheckpointRefusal {
     pub const fn fact(&self) -> Option<MaturityRootFact> {
         match self {
             Self::AcceptanceIsOutstanding { .. } => None,
-            Self::TransactionIdentityDisagrees { .. } | Self::SubmittedBytesDisagree { .. } => {
-                Some(MaturityRootFact::TransactionIdentity)
+            Self::TransactionIdentityDisagrees { .. }
+            | Self::SubmittedBytesDisagree { .. }
+            | Self::HandoffBytesUndecodable { .. } => Some(MaturityRootFact::TransactionIdentity),
+            Self::SuccessorOutpointDisagrees { .. }
+            | Self::SuccessorIsNotTheHandoffsStateOutput { .. } => {
+                Some(MaturityRootFact::SuccessorOutpoint)
             }
-            Self::SuccessorOutpointDisagrees { .. } => Some(MaturityRootFact::SuccessorOutpoint),
-            Self::PredecessorOutpointDisagrees { .. } => {
+            Self::HandoffCarriesNoInput | Self::PredecessorOutpointDisagrees { .. } => {
                 Some(MaturityRootFact::PredecessorOutpoint)
             }
+            Self::LinkedCandidateDisagrees(..) => Some(MaturityRootFact::LinkedCandidate),
+            Self::CandidateAbiDisagrees(..) => Some(MaturityRootFact::CandidateAbi),
         }
     }
 }
@@ -585,17 +629,14 @@ pub enum MaturityRootObservationRefusal {
 }
 
 impl MaturityRootCheckpoint {
-    /// Bind the admitted readback and its ten checkpoint facts to a projected edge.
+    /// Bind the admitted readback and its ten checkpoint facts to a public handoff and edge.
     ///
     /// # Errors
-    /// Refuses an outstanding acceptance or the first digest, identity or outpoint disagreement.
-    ///
-    /// # Panics
-    /// Panics only if output index zero is outside the accepted identity's outpoint range, which
-    /// zero cannot arrange.
+    /// Refuses an outstanding acceptance or the first digest, identity, outpoint or premise
+    /// disagreement.
     pub fn bind(
         edge: &StateRootEdge,
-        continuity: &ValidatedMaturityContinuity,
+        handoff: &PublicAnnouncementHandoff,
         corpus: &ValidatedMaturityCorpus,
         linked_candidate: MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
         candidate_abi: MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
@@ -609,16 +650,13 @@ impl MaturityRootCheckpoint {
             MaturityAcceptanceObligation::Established { readback, .. } => readback,
         };
         let checkpoint_digest = sha256(readback.bytes());
-        let continuity_digest = *continuity.byte_identity();
-        if checkpoint_digest != continuity_digest {
+        let handoff_digest = sha256(handoff.bytes());
+        if checkpoint_digest != handoff_digest {
             return Err(MaturityRootCheckpointRefusal::SubmittedBytesDisagree {
                 checkpoint: checkpoint_digest,
-                continuity: continuity_digest,
+                handoff: handoff_digest,
             });
         }
-        let Ok(successor) = Outpoint::new(readback.identity(), 0) else {
-            unreachable!("zero is a valid output index");
-        };
         let checkpoint = Self {
             network_identity: corpus.report().network_id().to_owned(),
             genesis_identity: corpus.report().genesis_id().to_owned(),
@@ -626,36 +664,37 @@ impl MaturityRootCheckpoint {
             block_height: readback.block_height(),
             transaction_identity: readback.identity(),
             predecessor: edge.predecessor(),
-            successor,
+            successor: edge.successor(),
             target_contract: corpus.report().target_contract().to_owned(),
             linked_candidate,
             candidate_abi,
-            branch: continuity.branch(),
+            branch: corpus.evidence().branch(),
         };
-        checkpoint.binds(edge, continuity)?;
+        checkpoint.binds(edge, handoff)?;
         Ok(checkpoint)
     }
 
-    /// Ask the three comparisons that remain once the readback's bytes are bound at construction.
-    /// The checkpoint carries the identity those bytes hash to, rather than the bytes themselves.
+    /// Compare the checkpoint with the handoff's decoded bytes and published parameters.
     ///
     /// # Errors
-    /// Returns the first transaction identity, successor or predecessor disagreement.
+    /// Returns the first undecodable bytes, identity, successor, predecessor, linked candidate
+    /// or ABI disagreement, in that order.
     pub fn binds(
         &self,
         edge: &StateRootEdge,
-        continuity: &ValidatedMaturityContinuity,
+        handoff: &PublicAnnouncementHandoff,
     ) -> Result<(), MaturityRootCheckpointRefusal> {
-        let identity = submitted_transaction_identities(
-            continuity.transaction(),
-            continuity.submitted_bytes(),
-        )
-        .identity();
+        let transaction = TargetTransaction::decode(handoff.bytes()).map_err(|_| {
+            MaturityRootCheckpointRefusal::HandoffBytesUndecodable {
+                offered: handoff.bytes().len(),
+            }
+        })?;
+        let identity = submitted_transaction_identities(&transaction, handoff.bytes()).identity();
         if self.transaction_identity != identity {
             return Err(
                 MaturityRootCheckpointRefusal::TransactionIdentityDisagrees {
                     checkpoint: self.transaction_identity,
-                    continuity: identity,
+                    handoff: identity,
                 },
             );
         }
@@ -665,13 +704,42 @@ impl MaturityRootCheckpoint {
                 edge: edge.successor(),
             });
         }
-        if self.predecessor != continuity.funded().outpoint {
+        if self.successor.txid() != identity
+            || self.successor.index() != handoff.state_output_index()
+        {
+            return Err(
+                MaturityRootCheckpointRefusal::SuccessorIsNotTheHandoffsStateOutput {
+                    checkpoint: self.successor,
+                    identity,
+                    index: handoff.state_output_index(),
+                },
+            );
+        }
+        let predecessor = transaction
+            .inputs()
+            .first()
+            .ok_or(MaturityRootCheckpointRefusal::HandoffCarriesNoInput)?
+            .outpoint();
+        if self.predecessor != predecessor {
             return Err(
                 MaturityRootCheckpointRefusal::PredecessorOutpointDisagrees {
                     checkpoint: self.predecessor,
-                    continuity: continuity.funded().outpoint,
+                    handoff: predecessor,
                 },
             );
+        }
+        if let Some(disagreement) =
+            linked_candidate_disagreement(self.linked_candidate.value(), handoff)
+        {
+            return Err(MaturityRootCheckpointRefusal::LinkedCandidateDisagrees(
+                disagreement,
+            ));
+        }
+        if let Some(disagreement) = candidate_abi_disagreement(self.candidate_abi.value(), handoff)
+        {
+            return Err(MaturityRootCheckpointRefusal::CandidateAbiDisagrees(
+                disagreement,
+            ));
         }
         Ok(())
     }
@@ -734,6 +802,76 @@ impl MaturityRootCheckpoint {
     pub const fn branch(&self) -> BranchContext {
         self.branch
     }
+}
+
+fn linked_candidate_disagreement(
+    bundle: &CandidateLinkedMaturityBundle,
+    handoff: &PublicAnnouncementHandoff,
+) -> Option<MaturityPremiseDisagreement> {
+    let declared = bundle.record().schedule();
+    let published = handoff.schedule();
+    if declared != published {
+        return Some(MaturityPremiseDisagreement::WitnessSchedule {
+            declared,
+            published,
+        });
+    }
+    let declared = bundle.deployment().lead_bounds().bounds();
+    let published = handoff.bounds();
+    if declared != published {
+        return Some(MaturityPremiseDisagreement::LeadBounds {
+            declared,
+            published,
+        });
+    }
+    let declared = *bundle.static_subtree().root();
+    let published = *handoff.static_subtree().root();
+    if declared != published {
+        return Some(MaturityPremiseDisagreement::StaticRoot {
+            declared,
+            published,
+        });
+    }
+    let declared = bundle.policy().internal_key();
+    let published = handoff.internal_key();
+    if declared != published {
+        return Some(MaturityPremiseDisagreement::InternalKey {
+            declared,
+            published,
+        });
+    }
+    let declared = bundle.contract();
+    let published = handoff.contract();
+    if declared != published {
+        return Some(MaturityPremiseDisagreement::ContractRevision {
+            declared,
+            published,
+        });
+    }
+    None
+}
+
+fn candidate_abi_disagreement(
+    abi: &CandidateMaturityAnnouncementAbi,
+    handoff: &PublicAnnouncementHandoff,
+) -> Option<MaturityPremiseDisagreement> {
+    let declared = abi.schedule();
+    let published = handoff.schedule();
+    if declared != published {
+        return Some(MaturityPremiseDisagreement::WitnessSchedule {
+            declared,
+            published,
+        });
+    }
+    let declared = abi.contract();
+    let published = handoff.contract();
+    if declared != published {
+        return Some(MaturityPremiseDisagreement::ContractRevision {
+            declared,
+            published,
+        });
+    }
+    None
 }
 
 impl ModelledBranchBlock {
@@ -996,27 +1134,42 @@ impl MaturityRootObservation {
 mod tests {
     use super::*;
     use crate::maturity_closure::closure_target;
-    use crate::maturity_continuity::project_maturity_continuity;
     use crate::maturity_continuity::tests::{archived, variable_archived};
+    use crate::maturity_continuity::{MaturityByteSource, project_maturity_continuity};
     use crate::maturity_corpus::{maturity_run_of_record, maturity_variable_run_of_record};
     use crate::maturity_evidence::{
         MaturityConstructorMaterial, MaturityConstructorMaterialAbsence,
-        MaturityExecutorProvenanceExpectation, derive_maturity_evidence_plan_with,
+        MaturityExecutorProvenanceExpectation, checkpoint_premises_of,
+        derive_maturity_evidence_plan_with,
     };
+    use crate::maturity_recovery::PublicAnnouncementLocator;
+    use crate::maturity_recovery_report::accepted_public_handoff;
+    use realization::Cycle;
     use std::sync::LazyLock;
     use tapscript::StateStaticNode;
     use transaction::bytes::Txid;
 
-    static ABI: LazyLock<CandidateMaturityAnnouncementAbi> = LazyLock::new(|| {
-        derive_maturity_evidence_plan_with(
+    static WHOLE_METADATA_PREMISES: LazyLock<(
+        MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
+        MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
+    )> = LazyLock::new(|| {
+        let plan = derive_maturity_evidence_plan_with(
             MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
             MaturityConstructorMaterial::Absent(
                 MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
             ),
         )
-        .expect("evidence plan")
-        .abi()
-        .clone()
+        .expect("evidence plan");
+        (
+            MaturityDeclaredPremise::declared(
+                plan.bundle().clone(),
+                MaturityPremiseProvenance::DeploymentDeclaration,
+            ),
+            MaturityDeclaredPremise::declared(
+                plan.abi().clone(),
+                MaturityPremiseProvenance::DeploymentDeclaration,
+            ),
+        )
     });
 
     fn declarations(
@@ -1025,26 +1178,49 @@ mod tests {
         MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
         MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
     ) {
-        (
-            MaturityDeclaredPremise::declared(
-                continuity.bundle().clone(),
-                MaturityPremiseProvenance::DeploymentDeclaration,
-            ),
-            MaturityDeclaredPremise::declared(
-                ABI.clone(),
-                MaturityPremiseProvenance::DeploymentDeclaration,
-            ),
-        )
+        checkpoint_premises_of(continuity).expect("accepted premises")
     }
 
     fn checkpoint(
         edge: &StateRootEdge,
         continuity: &ValidatedMaturityContinuity,
+        handoff: &PublicAnnouncementHandoff,
         corpus: &ValidatedMaturityCorpus,
     ) -> MaturityRootCheckpoint {
         let (linked, abi) = declarations(continuity);
-        MaturityRootCheckpoint::bind(edge, continuity, corpus, linked, abi)
+        MaturityRootCheckpoint::bind(edge, handoff, corpus, linked, abi)
             .expect("accepted checkpoint binds")
+    }
+
+    fn accepted_handoff() -> PublicAnnouncementHandoff {
+        accepted_public_handoff(maturity_variable_run_of_record().expect("accepted corpus"))
+            .expect("accepted handoff")
+    }
+
+    fn historical_handoff(
+        historical: &ValidatedMaturityContinuity,
+        accepted: &PublicAnnouncementHandoff,
+    ) -> PublicAnnouncementHandoff {
+        let corpus = maturity_run_of_record().expect("historical corpus");
+        PublicAnnouncementHandoff::new(
+            PublicAnnouncementLocator::new(
+                MaturityByteSource::ArchivedSubmission {
+                    run_address: corpus.report().run_address().to_owned(),
+                },
+                submitted_transaction_identities(
+                    historical.transaction(),
+                    historical.submitted_bytes(),
+                )
+                .identity(),
+            ),
+            archived().input().submitted_bytes.to_vec(),
+            0,
+            accepted.schedule(),
+            accepted.bounds(),
+            accepted.static_subtree().clone(),
+            accepted.internal_key(),
+            accepted.contract(),
+        )
     }
 
     fn accepted_edge() -> StateRootEdge {
@@ -1088,7 +1264,8 @@ mod tests {
             project_maturity_continuity(variable_archived().input()).expect("accepted continuity");
         let edge = StateRootEdge::from_continuity(&continuity);
         let corpus = maturity_variable_run_of_record().expect("accepted corpus");
-        let checkpoint = checkpoint(&edge, &continuity, corpus);
+        let handoff = accepted_handoff();
+        let checkpoint = checkpoint(&edge, &continuity, &handoff, corpus);
         let MaturityAcceptanceObligation::Established { readback, .. } =
             corpus.evidence().acceptance_obligation()
         else {
@@ -1111,7 +1288,15 @@ mod tests {
             corpus.report().target_contract()
         );
         assert_eq!(checkpoint.linked_candidate().value(), continuity.bundle());
-        assert_eq!(checkpoint.candidate_abi().value(), &*ABI);
+        assert_eq!(
+            checkpoint.candidate_abi().value().schedule(),
+            handoff.schedule()
+        );
+        assert_eq!(
+            checkpoint.linked_candidate().value().record().schedule(),
+            handoff.schedule()
+        );
+        assert_eq!(handoff.schedule(), StateWitnessSchedule::VariableMetadata);
         assert_eq!(
             checkpoint.linked_candidate().provenance(),
             MaturityPremiseProvenance::DeploymentDeclaration
@@ -1121,11 +1306,7 @@ mod tests {
             MaturityPremiseProvenance::DeploymentDeclaration
         );
         assert_eq!(checkpoint.branch(), continuity.branch());
-        assert_ne!(
-            checkpoint.candidate_abi().value().schedule(),
-            continuity.schedule()
-        );
-        assert_eq!(checkpoint.binds(&edge, &continuity), Ok(()));
+        assert_eq!(checkpoint.binds(&edge, &handoff), Ok(()));
 
         let expected = [
             (F::NetworkIdentity, K::CarriedByTheAdmittedArchive),
@@ -1160,7 +1341,7 @@ mod tests {
         clippy::too_many_lines,
         reason = "each refusal retains a distinct binding operand"
     )]
-    fn the_other_archives_facts_do_not_bind_the_accepted_continuity() {
+    fn the_other_archives_facts_do_not_bind_the_accepted_handoff() {
         let accepted =
             project_maturity_continuity(variable_archived().input()).expect("accepted continuity");
         let accepted_edge = StateRootEdge::from_continuity(&accepted);
@@ -1169,6 +1350,8 @@ mod tests {
             project_maturity_continuity(archived().input()).expect("historical continuity");
         let historical_edge = StateRootEdge::from_continuity(&historical);
         let historical_corpus = maturity_run_of_record().expect("historical corpus");
+        let handoff = accepted_handoff();
+        let historical_handoff = historical_handoff(&historical, &handoff);
         let MaturityAcceptanceObligation::Outstanding { routes } =
             historical_corpus.evidence().acceptance_obligation()
         else {
@@ -1177,7 +1360,7 @@ mod tests {
         let (linked, abi) = declarations(&historical);
         let outstanding = MaturityRootCheckpoint::bind(
             &historical_edge,
-            &historical,
+            &historical_handoff,
             historical_corpus,
             linked,
             abi,
@@ -1189,22 +1372,23 @@ mod tests {
         );
         assert_eq!(outstanding.fact(), None);
 
-        let checkpoint = checkpoint(&accepted_edge, &accepted, accepted_corpus);
+        let checkpoint = checkpoint(&accepted_edge, &accepted, &handoff, accepted_corpus);
         let accepted_identity = checkpoint.transaction_identity();
         let historical_identity = submitted_transaction_identities(
             historical.transaction(),
             historical.submitted_bytes(),
         )
         .identity();
-        assert_ne!(accepted_identity, historical_identity);
+        let identities_differ = accepted_identity != historical_identity;
+        assert!(identities_differ);
         let identity_refusal = checkpoint
-            .binds(&historical_edge, &historical)
-            .expect_err("another continuity identity refuses");
+            .binds(&historical_edge, &historical_handoff)
+            .expect_err("another handoff identity refuses");
         assert_eq!(
             identity_refusal,
             MaturityRootCheckpointRefusal::TransactionIdentityDisagrees {
                 checkpoint: accepted_identity,
-                continuity: historical_identity,
+                handoff: historical_identity,
             }
         );
         assert_eq!(
@@ -1214,12 +1398,12 @@ mod tests {
         let (linked, abi) = declarations(&historical);
         let bytes_refusal = MaturityRootCheckpoint::bind(
             &historical_edge,
-            &historical,
+            &historical_handoff,
             accepted_corpus,
             linked,
             abi,
         )
-        .expect_err("another continuity bytes refuse");
+        .expect_err("another handoff's bytes refuse");
         let MaturityAcceptanceObligation::Established { readback, .. } =
             accepted_corpus.evidence().acceptance_obligation()
         else {
@@ -1229,7 +1413,7 @@ mod tests {
             bytes_refusal,
             MaturityRootCheckpointRefusal::SubmittedBytesDisagree {
                 checkpoint: sha256(readback.bytes()),
-                continuity: *historical.byte_identity(),
+                handoff: sha256(historical_handoff.bytes()),
             }
         );
         assert_eq!(
@@ -1244,17 +1428,32 @@ mod tests {
         );
         let (linked, abi) = declarations(&accepted);
         let successor_refusal =
-            MaturityRootCheckpoint::bind(&wrong_successor, &accepted, accepted_corpus, linked, abi)
+            MaturityRootCheckpoint::bind(&wrong_successor, &handoff, accepted_corpus, linked, abi)
                 .expect_err("changed successor refuses");
         assert_eq!(
             successor_refusal,
+            MaturityRootCheckpointRefusal::SuccessorIsNotTheHandoffsStateOutput {
+                checkpoint: wrong_successor.successor,
+                identity: accepted_identity,
+                index: 0,
+            }
+        );
+        assert_eq!(
+            successor_refusal.fact(),
+            Some(MaturityRootFact::SuccessorOutpoint)
+        );
+        let edge_refusal = checkpoint
+            .binds(&wrong_successor, &handoff)
+            .expect_err("another edge successor refuses");
+        assert_eq!(
+            edge_refusal,
             MaturityRootCheckpointRefusal::SuccessorOutpointDisagrees {
                 checkpoint: accepted_edge.successor,
                 edge: wrong_successor.successor,
             }
         );
         assert_eq!(
-            successor_refusal.fact(),
+            edge_refusal.fact(),
             Some(MaturityRootFact::SuccessorOutpoint)
         );
         let wrong_predecessor = retarget(
@@ -1265,22 +1464,106 @@ mod tests {
         let (linked, abi) = declarations(&accepted);
         let predecessor_refusal = MaturityRootCheckpoint::bind(
             &wrong_predecessor,
-            &accepted,
+            &handoff,
             accepted_corpus,
             linked,
             abi,
         )
         .expect_err("changed predecessor refuses");
+        let transaction = TargetTransaction::decode(handoff.bytes()).expect("accepted bytes");
+        let input_zero = transaction.inputs().first().expect("accepted input zero");
         assert_eq!(
             predecessor_refusal,
             MaturityRootCheckpointRefusal::PredecessorOutpointDisagrees {
                 checkpoint: wrong_predecessor.predecessor,
-                continuity: accepted.funded().outpoint,
+                handoff: input_zero.outpoint(),
             }
         );
         assert_eq!(
             predecessor_refusal.fact(),
             Some(MaturityRootFact::PredecessorOutpoint)
+        );
+    }
+
+    #[test]
+    fn a_premise_that_did_not_produce_the_accepted_bytes_refuses_the_binding() {
+        let continuity =
+            project_maturity_continuity(variable_archived().input()).expect("accepted continuity");
+        let edge = StateRootEdge::from_continuity(&continuity);
+        let corpus = maturity_variable_run_of_record().expect("accepted corpus");
+        let handoff = accepted_handoff();
+        let (linked, abi) = declarations(&continuity);
+
+        let linked_refusal = MaturityRootCheckpoint::bind(
+            &edge,
+            &handoff,
+            corpus,
+            WHOLE_METADATA_PREMISES.0.clone(),
+            abi.clone(),
+        )
+        .expect_err("whole-metadata linked candidate refuses");
+        assert_eq!(
+            linked_refusal,
+            MaturityRootCheckpointRefusal::LinkedCandidateDisagrees(
+                MaturityPremiseDisagreement::WitnessSchedule {
+                    declared: StateWitnessSchedule::WholeMetadata,
+                    published: StateWitnessSchedule::VariableMetadata,
+                }
+            )
+        );
+        assert_eq!(
+            linked_refusal.fact(),
+            Some(MaturityRootFact::LinkedCandidate)
+        );
+
+        let abi_refusal = MaturityRootCheckpoint::bind(
+            &edge,
+            &handoff,
+            corpus,
+            linked.clone(),
+            WHOLE_METADATA_PREMISES.1.clone(),
+        )
+        .expect_err("whole-metadata ABI refuses");
+        assert_eq!(
+            abi_refusal,
+            MaturityRootCheckpointRefusal::CandidateAbiDisagrees(
+                MaturityPremiseDisagreement::WitnessSchedule {
+                    declared: StateWitnessSchedule::WholeMetadata,
+                    published: StateWitnessSchedule::VariableMetadata,
+                }
+            )
+        );
+        assert_eq!(abi_refusal.fact(), Some(MaturityRootFact::CandidateAbi));
+
+        let changed_bounds = AnnouncementLeadBounds::new(Cycle::new(4), Cycle::new(7))
+            .expect("changed lead bounds are valid");
+        let bounds_differ = changed_bounds != handoff.bounds();
+        assert!(bounds_differ);
+        let changed_handoff = PublicAnnouncementHandoff::new(
+            handoff.locator().clone(),
+            handoff.bytes().to_vec(),
+            handoff.state_output_index(),
+            handoff.schedule(),
+            changed_bounds,
+            handoff.static_subtree().clone(),
+            handoff.internal_key(),
+            handoff.contract(),
+        );
+        let bounds_refusal =
+            MaturityRootCheckpoint::bind(&edge, &changed_handoff, corpus, linked, abi)
+                .expect_err("changed published lead bounds refuse");
+        assert_eq!(
+            bounds_refusal,
+            MaturityRootCheckpointRefusal::LinkedCandidateDisagrees(
+                MaturityPremiseDisagreement::LeadBounds {
+                    declared: handoff.bounds(),
+                    published: changed_bounds,
+                }
+            )
+        );
+        assert_eq!(
+            bounds_refusal.fact(),
+            Some(MaturityRootFact::LinkedCandidate)
         );
     }
 
@@ -1294,7 +1577,8 @@ mod tests {
             project_maturity_continuity(variable_archived().input()).expect("accepted continuity");
         let edge = StateRootEdge::from_continuity(&continuity);
         let corpus = maturity_variable_run_of_record().expect("accepted corpus");
-        let checkpoint = checkpoint(&edge, &continuity, corpus);
+        let handoff = accepted_handoff();
+        let checkpoint = checkpoint(&edge, &continuity, &handoff, corpus);
         let height = checkpoint.block_height();
         let earlier_height = height
             .checked_sub(1)
@@ -1607,7 +1891,8 @@ mod tests {
             }),
         )
         .expect("second descriptor");
-        assert_ne!(original, &rebuilt);
+        let subtrees_differ = original != &rebuilt;
+        assert!(subtrees_differ);
         let predecessor_root = *original.root();
         let successor_root = *rebuilt.root();
         edge.certificate.successor_static = rebuilt;

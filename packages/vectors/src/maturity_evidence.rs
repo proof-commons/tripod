@@ -1962,8 +1962,9 @@ fn accepted_continuity(
 /// the exact target and deployment binding. Provenance and constructor
 /// material are independently supplied premises: manufacturing either
 /// here would give a comparison both its operands. The accepted archive
-/// is replayed into continuity; its checkpoint binds the plan's linked
-/// bundle and ABI as declared premises. Root-history continuity and public
+/// is replayed into continuity; its checkpoint declares the bundle that
+/// continuity was projected under and the ABI derived over that bundle's
+/// view, and binds both against the public handoff. Root-history continuity and public
 /// successor recovery reports are assembled and validated from that
 /// archive before every matrix row is classified into one standing. A
 /// refusal in either report refuses this derivation, so its census is
@@ -2011,20 +2012,15 @@ pub fn derive_maturity_evidence_plan_with(
     let continuity = accepted_continuity(accepted_corpus)?;
     let edge = StateRootEdge::from_continuity(&continuity);
     let starting_cursor = edge.predecessor();
-    let checkpoint = MaturityRootCheckpoint::bind(
-        &edge,
-        &continuity,
-        accepted_corpus,
-        MaturityDeclaredPremise::declared(
-            bundle.clone(),
-            MaturityPremiseProvenance::DeploymentDeclaration,
-        ),
-        MaturityDeclaredPremise::declared(
-            abi.clone(),
-            MaturityPremiseProvenance::DeploymentDeclaration,
-        ),
-    )
-    .map_err(|refusal| MaturityEvidenceRefusal::RootHistoryCheckpointRefused(Box::new(refusal)))?;
+    let handoff = accepted_public_handoff(accepted_corpus).map_err(|refusal| {
+        MaturityEvidenceRefusal::PublicRecoveryReportRefused(Box::new(refusal))
+    })?;
+    let checkpoint = {
+        let (linked, abi) = checkpoint_premises_of(&continuity)?;
+        MaturityRootCheckpoint::bind(&edge, &handoff, accepted_corpus, linked, abi).map_err(
+            |refusal| MaturityEvidenceRefusal::RootHistoryCheckpointRefused(Box::new(refusal)),
+        )?
+    };
     let history_report = assemble_maturity_root_history_report(
         std::slice::from_ref(&edge),
         starting_cursor,
@@ -2038,15 +2034,12 @@ pub fn derive_maturity_evidence_plan_with(
         &history_report,
         std::slice::from_ref(&edge),
         starting_cursor,
-        &continuity,
+        &handoff,
         &root_history_mutations,
         &binding,
         &provenance,
     )
     .map_err(|refusal| MaturityEvidenceRefusal::RootHistoryReportRefused(Box::new(refusal)))?;
-    let handoff = accepted_public_handoff(accepted_corpus).map_err(|refusal| {
-        MaturityEvidenceRefusal::PublicRecoveryReportRefused(Box::new(refusal))
-    })?;
     let recovery_report =
         assemble_maturity_public_recovery_report(handoff.clone()).map_err(|refusal| {
             MaturityEvidenceRefusal::PublicRecoveryReportRefused(Box::new(refusal))
@@ -2234,6 +2227,32 @@ fn validated_view(
         .map_err(MaturityEvidenceRefusal::ValidatedViewRefused)?
         .validate(target, &OracleStateCurve)
         .map_err(MaturityEvidenceRefusal::ValidatedViewRefused)
+}
+
+/// Declare the accepted continuity's linked bundle and the ABI over its view.
+///
+/// # Errors
+/// Returns `TargetBindingUnavailable` when the reviewed target refuses,
+/// a refusal from `validated_view` when the bundle's view refuses, or
+/// `CandidateAbiRefused` when deriving the ABI refuses.
+pub(crate) fn checkpoint_premises_of(
+    continuity: &ValidatedMaturityContinuity,
+) -> Result<
+    (
+        MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
+        MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
+    ),
+    MaturityEvidenceRefusal,
+> {
+    let target = closure_target().map_err(MaturityEvidenceRefusal::TargetBindingUnavailable)?;
+    let view = validated_view(&target, continuity.bundle())?;
+    let abi = derive_maturity_announcement_abi(&target, &view)
+        .map_err(MaturityEvidenceRefusal::CandidateAbiRefused)?;
+    let linked_value = continuity.bundle().clone();
+    let provenance = MaturityPremiseProvenance::DeploymentDeclaration;
+    let linked = MaturityDeclaredPremise::declared(linked_value, provenance);
+    let candidate_abi = MaturityDeclaredPremise::declared(abi, provenance);
+    Ok((linked, candidate_abi))
 }
 
 /// The canonical semantic fixtures, admitted after the census validates
@@ -2463,9 +2482,9 @@ pub(crate) mod tests {
         MaturityMutationRegistryKind, MaturityMutationSite, MaturityNativeRefusal,
         MaturityObservationClass, MaturityPresentConstructorMaterial, MaturityRegisteredMutation,
         MaturityRegistryStanding, MaturityRowBinding, MaturityRowStanding,
-        MaturitySubmittedSubject, accepted_continuity, derive_maturity_evidence_plan_with,
-        native_refusal_binds_to_row, site_names_the_rows_subject, sponsorless_acceptance_standing,
-        stated_executor_provenance,
+        MaturitySubmittedSubject, accepted_continuity, checkpoint_premises_of,
+        derive_maturity_evidence_plan_with, native_refusal_binds_to_row,
+        site_names_the_rows_subject, sponsorless_acceptance_standing, stated_executor_provenance,
     };
     use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
     use crate::matrix::{EvidenceBoundary, MutationLayer};
@@ -2480,8 +2499,8 @@ pub(crate) mod tests {
         assemble_maturity_continuity_report, validate_maturity_continuity_report,
     };
     use crate::maturity_corpus::{
-        MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS, MaturityDeclaredPremise,
-        MaturityPremiseProvenance, maturity_run_of_record, maturity_variable_run_of_record,
+        MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS, maturity_run_of_record,
+        maturity_variable_run_of_record,
     };
     use crate::maturity_first_party::maturity_first_party_cases;
     use crate::maturity_fixture::positive_semantic_census;
@@ -3150,20 +3169,10 @@ pub(crate) mod tests {
         let corpus = maturity_variable_run_of_record().expect("accepted corpus");
         let continuity = accepted_continuity(corpus).expect("accepted continuity");
         let edge = StateRootEdge::from_continuity(&continuity);
-        let checkpoint = MaturityRootCheckpoint::bind(
-            &edge,
-            &continuity,
-            corpus,
-            MaturityDeclaredPremise::declared(
-                PLAN.bundle().clone(),
-                MaturityPremiseProvenance::DeploymentDeclaration,
-            ),
-            MaturityDeclaredPremise::declared(
-                PLAN.abi().clone(),
-                MaturityPremiseProvenance::DeploymentDeclaration,
-            ),
-        )
-        .expect("accepted checkpoint");
+        let handoff = accepted_public_handoff(corpus).expect("accepted public handoff");
+        let (linked, abi) = checkpoint_premises_of(&continuity).expect("accepted premises");
+        let checkpoint = MaturityRootCheckpoint::bind(&edge, &handoff, corpus, linked, abi)
+            .expect("accepted checkpoint");
         let history_report = assemble_maturity_root_history_report(
             std::slice::from_ref(&edge),
             edge.predecessor(),
@@ -3177,13 +3186,12 @@ pub(crate) mod tests {
             &history_report,
             std::slice::from_ref(&edge),
             edge.predecessor(),
-            &continuity,
+            &handoff,
             PLAN.root_history_mutations(),
             PLAN.binding(),
             PLAN.executor_provenance(),
         )
         .expect("history report validates");
-        let handoff = accepted_public_handoff(corpus).expect("accepted public handoff");
         let recovery_report = assemble_maturity_public_recovery_report(handoff.clone())
             .expect("recovery report assembles");
         let recovery: ValidatedMaturityPublicRecoveryReport =

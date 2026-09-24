@@ -927,14 +927,9 @@ pub fn accepted_public_handoff(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use linker::CandidateLinkedMaturityBundle;
-    use transaction::state_abi::CandidateMaturityAnnouncementAbi;
-
     use crate::maturity_continuity::project_maturity_continuity;
     use crate::maturity_continuity::tests::variable_archived;
-    use crate::maturity_corpus::{
-        MaturityDeclaredPremise, MaturityPremiseProvenance, maturity_variable_run_of_record,
-    };
+    use crate::maturity_corpus::maturity_variable_run_of_record;
     use crate::maturity_evidence::{
         MaturityConstructorMaterial, MaturityConstructorMaterialAbsence,
         MaturityExecutorProvenanceExpectation, derive_maturity_evidence_plan_with,
@@ -1258,19 +1253,11 @@ mod tests {
         let continuity =
             project_maturity_continuity(variable_archived().input()).expect("accepted projection");
         let edge = StateRootEdge::from_continuity(&continuity);
-        let linked: MaturityDeclaredPremise<CandidateLinkedMaturityBundle> =
-            MaturityDeclaredPremise::declared(
-                continuity.bundle().clone(),
-                MaturityPremiseProvenance::DeploymentDeclaration,
-            );
-        let abi: MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi> =
-            MaturityDeclaredPremise::declared(
-                plan.abi().clone(),
-                MaturityPremiseProvenance::DeploymentDeclaration,
-            );
+        let (linked, abi) = crate::maturity_evidence::checkpoint_premises_of(&continuity)
+            .expect("accepted premises");
         let checkpoint = MaturityRootCheckpoint::bind(
             &edge,
-            &continuity,
+            &handoff,
             maturity_variable_run_of_record().expect("accepted corpus"),
             linked,
             abi,
@@ -1289,7 +1276,7 @@ mod tests {
             &history_report,
             std::slice::from_ref(&edge),
             edge.predecessor(),
-            &continuity,
+            &handoff,
             plan.root_history_mutations(),
             plan.binding(),
             plan.executor_provenance(),
