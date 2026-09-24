@@ -391,15 +391,15 @@ pub enum StateLinkRefusal {
     /// A checked total and the record's diagnostic projection disagree.
     ///
     /// The projection saturates by design, so a pinned figure is admitted
-    /// beside a checked one; any other difference means the two are
-    /// measuring different programs.
+    /// beside a checked one; an unpinned difference means the two are
+    /// measuring different programs. A projected dimension the totals do not measure is refused with no checked figure, because not measured is not equal.
     ResourceProjectionDisagreement {
         /// The dimension they disagree on.
         dimension: ResourceDimension,
         /// What the record's projection carries.
         diagnostic: u64,
-        /// What the checked arithmetic yields.
-        checked: u64,
+        /// What the checked arithmetic yields, or nothing where this module measures no total for the dimension.
+        checked: Option<u64>,
     },
 
     // --- Carrier closure ---

@@ -12,7 +12,8 @@
 //! record's projection stands beside them as the diagnostic it is. The
 //! two are compared rather than assumed to agree: for every dimension
 //! the projection carries, the checked total must equal it or the
-//! projection must be pinned at the saturating maximum.
+//! projection must be pinned at the saturating maximum over a measured total.
+//! A projected dimension nothing measured is refused, not read as zero.
 //!
 //! # Exact tables, and no shape axis to index them by
 //!
@@ -665,14 +666,40 @@ impl StateLinkedResources {
     }
 }
 
+/// Compare measured totals with every dimension in the record's projection.
+/// A pinned projection is admitted only where this module measured a total.
+///
+/// # Errors
+///
+/// [`StateLinkRefusal::ResourceProjectionDisagreement`] for unequal unpinned figures or a projected dimension this module does not measure.
+pub(crate) fn projection_disagreement(
+    totals: &StateLinkedResourceTotals,
+    projection: &BTreeMap<ResourceDimension, u64>,
+) -> Result<(), StateLinkRefusal> {
+    for (&dimension, &projected) in projection {
+        let checked = totals.total(dimension);
+        let pinned = projected == u64::MAX;
+        let admitted = checked.is_some_and(|measured| measured == projected || pinned);
+        if !admitted {
+            return Err(StateLinkRefusal::ResourceProjectionDisagreement {
+                dimension,
+                diagnostic: projected,
+                checked,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Measure one linked leaf exactly, beside its schedule and its gaps.
 ///
 /// The comparison against the record's projection admits exactly two
-/// outcomes per dimension: equal figures, or a projection pinned at the
-/// saturating maximum where the checked arithmetic would have refused.
-/// The tests observe the first for every dimension the record carries
-/// and never the second, which is what makes the pinned case a stated
-/// admission rather than a hole.
+/// outcomes per measured dimension: equal figures, or a projection pinned at
+/// the saturating maximum over a measured total.
+/// A projected dimension this module does not measure is refused with no
+/// checked figure, including when the projection is zero or pinned.
+/// The tests observe equality for every dimension the record carries and
+/// never the pinned case, which is a stated admission.
 ///
 /// # Errors
 ///
@@ -684,7 +711,8 @@ impl StateLinkedResources {
 /// [`StateLinkRefusal::InitialArgumentNotAdmitted`] when a non-replay
 /// schedule has an initial argument policy does not admit, and
 /// [`StateLinkRefusal::ResourceProjectionDisagreement`] when a checked
-/// total and an unpinned diagnostic figure differ.
+/// total and an unpinned diagnostic figure differ, or when no total is measured
+/// for a projected dimension.
 pub fn measure_state_resources(
     target: &ReviewedElementsTapscriptDefinition,
     record: &StateAnnouncementProgram,
@@ -728,19 +756,7 @@ pub fn measure_state_resources(
     }
 
     let diagnostic = record.resources().clone();
-    for (&dimension, &projected) in &diagnostic {
-        // A dimension the projection carries and this module does not
-        // measure is a disagreement rather than an agreement: not
-        // measured is not the same as equal.
-        let measured = totals.total(dimension).unwrap_or_default();
-        if measured != projected && projected != u64::MAX {
-            return Err(StateLinkRefusal::ResourceProjectionDisagreement {
-                dimension,
-                diagnostic: projected,
-                checked: measured,
-            });
-        }
-    }
+    projection_disagreement(&totals, &diagnostic)?;
 
     Ok(StateLinkedResources {
         totals,

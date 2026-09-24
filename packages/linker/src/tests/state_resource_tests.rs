@@ -14,7 +14,7 @@
 //! because a resource measurement needs a linked program and the link is
 //! what produces one.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
 use realization::{STATE_METADATA_LAYOUT, STATE_METADATA_VARIABLE_BYTES};
@@ -31,7 +31,7 @@ use target_elements::{
 };
 
 use super::state_relocate_tests::{resolved_census, second_resolved_census};
-use crate::state_resource::compare_initial_arguments;
+use crate::state_resource::{compare_initial_arguments, projection_disagreement};
 use crate::tests::{
     bridge_for_record, declaration, record, record_for_schedule, reviewed_target, singleton,
     state_constructor,
@@ -791,7 +791,7 @@ fn every_resource_refusal_is_reached_or_declared() {
         StateLinkRefusal::ResourceProjectionDisagreement {
             dimension: ResourceDimension::ScriptBytes,
             diagnostic: 0,
-            checked: 1,
+            checked: Some(1),
         },
     ];
 
@@ -802,6 +802,39 @@ fn every_resource_refusal_is_reached_or_declared() {
             .iter()
             .all(|account| account.starts_with("unreachable"))
     );
+}
+
+#[test]
+fn an_unmeasured_projected_dimension_refuses_with_no_checked_figure() {
+    let resources = demonstration_resources();
+    let totals = resources.totals();
+    let mut projection = BTreeMap::new();
+    projection.insert(ResourceDimension::WitnessBytes, 0);
+    assert_eq!(
+        projection_disagreement(totals, &projection),
+        Err(StateLinkRefusal::ResourceProjectionDisagreement {
+            dimension: ResourceDimension::WitnessBytes,
+            diagnostic: 0,
+            checked: None,
+        })
+    );
+
+    projection.insert(ResourceDimension::WitnessBytes, u64::MAX);
+    assert_eq!(
+        projection_disagreement(totals, &projection),
+        Err(StateLinkRefusal::ResourceProjectionDisagreement {
+            dimension: ResourceDimension::WitnessBytes,
+            diagnostic: u64::MAX,
+            checked: None,
+        })
+    );
+
+    projection.clear();
+    projection.insert(ResourceDimension::ScriptBytes, u64::MAX);
+    let measured_pinned = projection_disagreement(totals, &projection);
+    assert_eq!(measured_pinned, Ok(()));
+    let record_projection = projection_disagreement(totals, record().resources());
+    assert_eq!(record_projection, Ok(()));
 }
 
 // The measurement is over a linked program and says so in its type: a
