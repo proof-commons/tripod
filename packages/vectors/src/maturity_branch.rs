@@ -212,6 +212,18 @@ impl MaturityBranchView {
         ))
     }
 
+    /// Follow every placed realization that spends the running outpoint.
+    #[must_use]
+    pub fn live_cursor(&self, from: Outpoint) -> Outpoint {
+        let mut cursor = from;
+        for realization in &self.realizations {
+            if realization.edge().predecessor() == cursor {
+                cursor = realization.edge().successor();
+            }
+        }
+        cursor
+    }
+
     /// The caller-stated modelled branch prefix.
     #[must_use]
     pub const fn prefix(&self) -> &ModelledBranchPrefix {
@@ -349,6 +361,76 @@ impl MaturityThread {
         })
     }
 
+    /// Bind this thread's live cursor to a branch and its tip block.
+    ///
+    /// # Errors
+    /// Refuses a prefix carrying no block as `PrefixCarriesNoBlock`.
+    pub fn token(
+        &self,
+        view: &MaturityBranchView,
+    ) -> Result<MaturityBranchViewToken, MaturityBranchRefusal> {
+        let prefix = view.prefix();
+        let tip =
+            prefix
+                .blocks()
+                .last()
+                .ok_or_else(|| MaturityBranchRefusal::PrefixCarriesNoBlock {
+                    branch: *prefix.identifier(),
+                })?;
+        Ok(MaturityBranchViewToken {
+            branch: *prefix.identifier(),
+            checkpoint_height: tip.height(),
+            checkpoint_block: *tip.identity(),
+            cursor: view.live_cursor(self.starting_cursor),
+        })
+    }
+
+    /// Fence this thread's token against the view current at submission.
+    ///
+    /// # Errors
+    /// Refuses `AnotherBranch`, `CheckpointBlockRemoved`, `CheckpointBlockChanged`, or
+    /// `CursorMoved`, in that order. A submitter calls this fence immediately before handing
+    /// bytes to a target.
+    pub fn fence(
+        &self,
+        token: &MaturityBranchViewToken,
+        view: &MaturityBranchView,
+    ) -> Result<(), MaturityFencingRefusal> {
+        let prefix = view.prefix();
+        if prefix.identifier() != token.branch() {
+            return Err(MaturityFencingRefusal::AnotherBranch {
+                minted: *token.branch(),
+                presented: *prefix.identifier(),
+            });
+        }
+        let Some(block) = prefix
+            .blocks()
+            .iter()
+            .find(|block| block.height() == token.checkpoint_height())
+        else {
+            return Err(MaturityFencingRefusal::CheckpointBlockRemoved {
+                height: token.checkpoint_height(),
+                minted: *token.checkpoint_block(),
+                tip: prefix.tip_height(),
+            });
+        };
+        if block.identity() != token.checkpoint_block() {
+            return Err(MaturityFencingRefusal::CheckpointBlockChanged {
+                height: token.checkpoint_height(),
+                minted: *token.checkpoint_block(),
+                current: *block.identity(),
+            });
+        }
+        let current = view.live_cursor(self.starting_cursor);
+        if current != token.cursor() {
+            return Err(MaturityFencingRefusal::CursorMoved {
+                minted: token.cursor(),
+                current,
+            });
+        }
+        Ok(())
+    }
+
     /// The cursor from which a branch projection starts.
     #[must_use]
     pub const fn starting_cursor(&self) -> Outpoint {
@@ -403,6 +485,41 @@ impl MaturityThreadProjection {
     }
 }
 
+/// A branch view's checkpoint block and the live cursor reached by one thread.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaturityBranchViewToken {
+    branch: Digest32,
+    checkpoint_height: u32,
+    checkpoint_block: Digest32,
+    cursor: Outpoint,
+}
+
+impl MaturityBranchViewToken {
+    /// The branch on which the token was minted.
+    #[must_use]
+    pub const fn branch(&self) -> &Digest32 {
+        &self.branch
+    }
+
+    /// The checkpoint block's height when the token was minted.
+    #[must_use]
+    pub const fn checkpoint_height(&self) -> u32 {
+        self.checkpoint_height
+    }
+
+    /// The checkpoint block's identity when the token was minted.
+    #[must_use]
+    pub const fn checkpoint_block(&self) -> &Digest32 {
+        &self.checkpoint_block
+    }
+
+    /// The live cursor when the token was minted.
+    #[must_use]
+    pub const fn cursor(&self) -> Outpoint {
+        self.cursor
+    }
+}
+
 /// Why a branch move or a thread projection was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MaturityBranchRefusal {
@@ -414,6 +531,33 @@ pub enum MaturityBranchRefusal {
     RealizationAbsentFromItsBlock { height: u32, transaction: Txid },
     /// The collected realized edges did not form a valid root-history sequence.
     ThreadSequenceRefused(Box<MaturityRootHistoryRefusal>),
+    /// A prefix reached through `anchored`, `extend` and `rewind` always carries its anchor;
+    /// this impossible missing-block case is typed rather than asserted.
+    PrefixCarriesNoBlock { branch: Digest32 },
+}
+
+/// Why a token no longer fences the view current at submission.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityFencingRefusal {
+    /// The presented view belongs to another branch.
+    AnotherBranch {
+        minted: Digest32,
+        presented: Digest32,
+    },
+    /// The presented view no longer carries the checkpoint block.
+    CheckpointBlockRemoved {
+        height: u32,
+        minted: Digest32,
+        tip: u32,
+    },
+    /// The checkpoint height carries another block identity.
+    CheckpointBlockChanged {
+        height: u32,
+        minted: Digest32,
+        current: Digest32,
+    },
+    /// A realization moved the thread's live cursor.
+    CursorMoved { minted: Outpoint, current: Outpoint },
 }
 
 #[cfg(test)]
@@ -914,5 +1058,92 @@ mod tests {
         );
         assert_eq!(view.prefix(), original.prefix());
         assert_eq!(view.realizations().len(), 0);
+    }
+
+    #[test]
+    fn a_token_fences_another_branch_a_lost_checkpoint_and_a_moved_cursor() {
+        let edge = StateRootEdge::from_continuity(accepted());
+        let semantic = MaturitySemanticEdge::from_continuity(accepted());
+        let thread = MaturityThread::anchored(
+            edge.predecessor(),
+            accepted().bundle().deployment().operator().key().clone(),
+        )
+        .record(semantic, edge.clone());
+        let height = readback().block_height();
+        let anchor_height = height.checked_sub(1).expect("anchor height");
+        let (a, b) = forked_views(height);
+
+        let token = thread.token(&a).expect("A anchor token");
+        assert_eq!(token.branch(), a.prefix().identifier());
+        assert_eq!(token.checkpoint_height(), anchor_height);
+        assert_eq!(
+            token.checkpoint_block(),
+            a.prefix()
+                .blocks()
+                .first()
+                .expect("anchor block")
+                .identity()
+        );
+        assert_eq!(token.cursor(), thread.starting_cursor());
+        assert_eq!(thread.fence(&token, &a), Ok(()));
+
+        let empty_a = a
+            .realize(
+                ModelledBranchBlock::new(height, [0xa2; 32], Vec::new())
+                    .expect("first empty block"),
+                Vec::new(),
+            )
+            .expect("A extends without a realization");
+        assert_eq!(thread.fence(&token, &empty_a), Ok(()));
+
+        let realized_a = a
+            .realize(
+                accepted_block(&edge),
+                vec![realization(height, &edge, accepted())],
+            )
+            .expect("A realizes accepted edge");
+        assert_eq!(
+            thread.fence(&token, &realized_a),
+            Err(MaturityFencingRefusal::CursorMoved {
+                minted: edge.predecessor(),
+                current: edge.successor(),
+            })
+        );
+        assert_eq!(
+            thread.fence(&token, &b),
+            Err(MaturityFencingRefusal::AnotherBranch {
+                minted: *a.prefix().identifier(),
+                presented: *b.prefix().identifier(),
+            })
+        );
+
+        let second = thread.token(&empty_a).expect("A empty-block token");
+        assert_eq!(second.checkpoint_height(), height);
+        assert_eq!(second.checkpoint_block(), &[0xa2; 32]);
+        let (rewound, _) = empty_a.rewind(anchor_height).expect("A rewinds to anchor");
+        assert_eq!(
+            thread.fence(&second, &rewound),
+            Err(MaturityFencingRefusal::CheckpointBlockRemoved {
+                height,
+                minted: [0xa2; 32],
+                tip: anchor_height,
+            })
+        );
+
+        let changed = rewound
+            .realize(
+                ModelledBranchBlock::new(height, [0xa3; 32], Vec::new())
+                    .expect("changed empty block"),
+                Vec::new(),
+            )
+            .expect("A extends with changed block");
+        assert_eq!(
+            thread.fence(&second, &changed),
+            Err(MaturityFencingRefusal::CheckpointBlockChanged {
+                height,
+                minted: [0xa2; 32],
+                current: [0xa3; 32],
+            })
+        );
     }
 }
