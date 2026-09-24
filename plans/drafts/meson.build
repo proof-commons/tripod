@@ -8,4 +8,5 @@ plans_drafts_files = files(
   'relay-witness-split-study.md',
   'wave10-register-closure-study.md',
   'wave10-root-history-and-recovery-study.md',
+  'wave11-sponsored-forms-study.md',
 )
