@@ -48,6 +48,7 @@ pub mod live_sponsored_owner_signing_negatives;
 pub mod live_sponsored_private;
 pub mod materialize;
 pub mod matrix;
+pub mod maturity_branch;
 pub mod maturity_closure;
 pub mod maturity_continuity;
 pub mod maturity_continuity_report;

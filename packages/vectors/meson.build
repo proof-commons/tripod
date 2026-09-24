@@ -51,6 +51,7 @@ vectors_source_files = files(
   'src/live_sponsored_private.rs',
   'src/materialize.rs',
   'src/matrix.rs',
+  'src/maturity_branch.rs',
   'src/maturity_closure.rs',
   'src/maturity_continuity.rs',
   'src/maturity_continuity_report.rs',
