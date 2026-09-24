@@ -383,6 +383,110 @@ fn announcement_unclaimed_sponsor_members_reject() {
 }
 
 #[test]
+fn sponsorship_moves_no_announcement_relation_outside_the_sponsor_family() {
+    use super::announce_maturity_tests as announcement;
+    use crate::{RelationKind, RelationSubject, TransactionSide};
+
+    // The 26 declared identities compare two observation models: sponsorship leaves
+    // the 20 outside its six-member family unchanged. This answers no transaction
+    // matrix row and decides no refit treatment of the sponsor-family relations.
+    let excluded = [TransactionSide::Input, TransactionSide::Output]
+        .into_iter()
+        .flat_map(|side| {
+            [RelationKind::Cardinality, RelationKind::Recognition].map(|kind| {
+                announcement::id(
+                    kind,
+                    RelationSubject::ObjectFamily {
+                        side,
+                        object: ObjectId::PlainLbtc,
+                    },
+                )
+            })
+        })
+        .chain([
+            announcement::id(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
+            announcement::id(
+                RelationKind::SponsorEnvelopeMultiplicity,
+                RelationSubject::Sponsor,
+            ),
+        ])
+        .collect::<BTreeSet<_>>();
+    assert_eq!(excluded.len(), 6);
+    let sponsorless = announcement::observation();
+    let sponsored = announcement_sponsored();
+    let realization = announcement::realization();
+    let mut excluded_seen = BTreeSet::new();
+    let mut compared = 0;
+
+    for declaration in realization.relations() {
+        if excluded.contains(&declaration.id) {
+            excluded_seen.insert(declaration.id.clone());
+            continue;
+        }
+        assert_eq!(
+            announcement::status(&sponsored, &declaration.id),
+            announcement::status(&sponsorless, &declaration.id),
+            "sponsorship changed announcement relation {:?}",
+            declaration.id,
+        );
+        compared += 1;
+    }
+
+    assert_eq!(excluded_seen, excluded);
+    assert_eq!(compared, 20);
+}
+
+#[test]
+fn a_state_corruption_fails_the_same_state_relation_with_or_without_a_sponsor() {
+    use super::announce_maturity_tests as announcement;
+
+    // These observations model a STATE fault without a visible sponsor amount;
+    // they are not transactions and answer no balanced-corruption matrix row.
+    // They decide no refit treatment of the sponsor-family relations.
+    let mut sponsorless = announcement::observation();
+    let mut sponsored = announcement_sponsored();
+    for observed in [&mut sponsorless, &mut sponsored] {
+        observed
+            .objects
+            .iter_mut()
+            .find(|object| object.reference == output(0))
+            .expect("the announcement has an output STATE object at ordinal zero")
+            .asset = ObservedAsset::Declared(AssetId::Lbtc);
+    }
+
+    let state_recognition = announcement::id(
+        crate::RelationKind::Recognition,
+        crate::RelationSubject::ObjectFamily {
+            side: crate::TransactionSide::Output,
+            object: ObjectId::State,
+        },
+    );
+    let sponsorless_status = announcement::status(&sponsorless, &state_recognition);
+    let sponsored_status = announcement::status(&sponsored, &state_recognition);
+    assert!(matches!(
+        &sponsorless_status,
+        crate::RelationStatus::Failed { .. }
+    ));
+    assert!(matches!(
+        &sponsored_status,
+        crate::RelationStatus::Failed { .. }
+    ));
+    assert_eq!(sponsorless_status, sponsored_status);
+
+    let sponsor_members = sponsored
+        .objects
+        .iter()
+        .filter(|object| object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc))
+        .collect::<Vec<_>>();
+    assert_eq!(sponsor_members.len(), 2);
+    assert!(
+        sponsor_members
+            .iter()
+            .all(|object| object.value == ObservedValue::SponsorOpaque)
+    );
+}
+
+#[test]
 fn announcement_non_sponsor_open_flows_reject() {
     use super::announce_maturity_tests as announcement;
     for kind in architecture::OpenFlowKind::ALL
