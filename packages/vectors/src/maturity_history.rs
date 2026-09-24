@@ -20,7 +20,9 @@ use crate::maturity_corpus::{
     MaturityDeclaredPremise, MaturityPremiseProvenance, ValidatedMaturityCorpus,
 };
 use crate::maturity_native::{MaturityAcceptanceObligation, MaturityAcceptanceRoute};
-use crate::maturity_recovery::PublicAnnouncementHandoff;
+use crate::maturity_recovery::{
+    MaturityRecoveryRefusal, PublicAnnouncementHandoff, recover_public_successor,
+};
 
 /// A transition certificate projected from a validated announcement.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,6 +124,33 @@ impl StateRootEdge {
             operation: certificate.operation(),
             certificate,
         }
+    }
+
+    /// Build the STATE root edge from one public announcement handoff.
+    ///
+    /// # Errors
+    /// Refuses exactly when public recovery refuses the handoff.
+    pub fn from_public_handoff(
+        handoff: PublicAnnouncementHandoff,
+    ) -> Result<Self, MaturityRecoveryRefusal> {
+        let static_subtree = handoff.static_subtree().clone();
+        let recovered = recover_public_successor(handoff)?;
+        let certificate = MaturityTransitionCertificate {
+            projection: ProjectionId::TransitionCertificate,
+            operation: OperationId::AnnounceMaturity,
+            root: RootId::State,
+            use_kind: RootUse::Succession,
+            predecessor: recovered.predecessor(),
+            successor: recovered.successor(),
+            predecessor_static: static_subtree.clone(),
+            successor_static: static_subtree,
+        };
+        Ok(Self {
+            predecessor: certificate.predecessor(),
+            successor: certificate.successor(),
+            operation: certificate.operation(),
+            certificate,
+        })
     }
 
     #[must_use]
@@ -1227,6 +1256,63 @@ mod tests {
         let continuity = project_maturity_continuity(variable_archived().input())
             .expect("accepted archive projects");
         StateRootEdge::from_continuity(&continuity)
+    }
+
+    #[test]
+    fn the_handoff_built_edge_agrees_with_the_projected_edge_field_by_field() {
+        let handoff = accepted_handoff();
+        let projected = accepted_edge();
+        let edge = StateRootEdge::from_public_handoff(handoff.clone())
+            .expect("accepted handoff recovers a root edge");
+        assert_eq!(edge.predecessor(), projected.predecessor());
+        assert_eq!(edge.successor(), projected.successor());
+        assert_eq!(edge.operation(), projected.operation());
+
+        let certificate = edge.certificate();
+        let projected_certificate = projected.certificate();
+        assert_eq!(certificate.projection(), projected_certificate.projection());
+        assert_eq!(certificate.operation(), projected_certificate.operation());
+        assert_eq!(certificate.root(), projected_certificate.root());
+        assert_eq!(certificate.use_kind(), projected_certificate.use_kind());
+        assert_eq!(
+            certificate.predecessor(),
+            projected_certificate.predecessor()
+        );
+        assert_eq!(certificate.successor(), projected_certificate.successor());
+        assert_eq!(
+            *certificate.predecessor_static().root(),
+            *projected_certificate.predecessor_static().root()
+        );
+        assert_eq!(
+            *certificate.successor_static().root(),
+            *projected_certificate.successor_static().root()
+        );
+
+        let cursor = validate_state_root_history(std::slice::from_ref(&edge), edge.predecessor())
+            .expect("handoff edge validates");
+        assert_eq!(cursor, edge.successor());
+        assert_eq!(cursor.index(), 0);
+
+        let build: fn(PublicAnnouncementHandoff) -> Result<StateRootEdge, MaturityRecoveryRefusal> =
+            StateRootEdge::from_public_handoff;
+        assert!(build(accepted_handoff()).is_ok());
+        let wrong_index = PublicAnnouncementHandoff::new(
+            handoff.locator().clone(),
+            handoff.bytes().to_vec(),
+            1,
+            handoff.schedule(),
+            handoff.bounds(),
+            handoff.static_subtree().clone(),
+            handoff.internal_key(),
+            handoff.contract(),
+        );
+        assert_eq!(
+            build(wrong_index),
+            Err(MaturityRecoveryRefusal::WrongOutputIndex {
+                stated: 1,
+                declared: 0,
+            })
+        );
     }
 
     fn other_outpoint(byte: u8) -> Outpoint {

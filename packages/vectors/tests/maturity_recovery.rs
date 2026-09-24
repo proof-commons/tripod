@@ -25,6 +25,8 @@ use vectors::maturity_closure::OracleStateCurve;
 use vectors::maturity_closure::closure_target;
 use vectors::maturity_continuity::MaturityByteSource;
 use vectors::maturity_corpus::maturity_variable_run_of_record;
+use vectors::maturity_history::StateRootEdge;
+use vectors::maturity_history::validate_state_root_history;
 use vectors::maturity_native::MaturityAcceptanceObligation;
 use vectors::maturity_recovery::PublicAnnouncementHandoff;
 use vectors::maturity_recovery::PublicAnnouncementLocator;
@@ -157,6 +159,24 @@ fn the_accepted_archives_public_recovery_report_validates_from_the_handoff_alone
 }
 
 #[test]
+fn the_accepted_archives_root_edge_is_built_from_the_handoff_alone() {
+    let handoff = accepted_handoff();
+    let identity = handoff.locator().identity();
+    let transaction = TargetTransaction::decode(handoff.bytes()).expect("accepted transaction");
+    let predecessor = transaction
+        .inputs()
+        .first()
+        .expect("accepted announcement input")
+        .outpoint();
+    let edge = StateRootEdge::from_public_handoff(handoff).expect("handoff root edge");
+    let cursor = validate_state_root_history(std::slice::from_ref(&edge), edge.predecessor())
+        .expect("handoff edge validates");
+    assert_eq!(cursor.txid(), identity);
+    assert_eq!(cursor.index(), 0);
+    assert_eq!(edge.predecessor(), predecessor);
+}
+
+#[test]
 fn the_binarys_import_list_excludes_the_bundle_the_identity_and_both_planners() {
     let source = include_str!("maturity_recovery.rs");
     let actual: Vec<_> = source
@@ -186,6 +206,8 @@ fn the_binarys_import_list_excludes_the_bundle_the_identity_and_both_planners() 
         "use vectors::maturity_closure::closure_target;",
         "use vectors::maturity_continuity::MaturityByteSource;",
         "use vectors::maturity_corpus::maturity_variable_run_of_record;",
+        "use vectors::maturity_history::StateRootEdge;",
+        "use vectors::maturity_history::validate_state_root_history;",
         "use vectors::maturity_native::MaturityAcceptanceObligation;",
         "use vectors::maturity_recovery::PublicAnnouncementHandoff;",
         "use vectors::maturity_recovery::PublicAnnouncementLocator;",

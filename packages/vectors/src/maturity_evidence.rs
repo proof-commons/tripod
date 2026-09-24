@@ -162,6 +162,7 @@ use crate::maturity_native::{
     MaturityAcceptanceObligation, MaturityAnnouncementPlanner, MaturityNativePlanRefusal,
     MaturityNativeStanding,
 };
+use crate::maturity_recovery::MaturityRecoveryRefusal;
 use crate::maturity_recovery_report::{
     MaturityPublicRecoveryReportRefusal, ValidatedMaturityPublicRecoveryReport,
     accepted_public_handoff, assemble_maturity_public_recovery_report,
@@ -1651,6 +1652,8 @@ pub enum MaturityEvidenceRefusal {
     },
     /// The admitted bytes refused constructor-continuity projection.
     AcceptedContinuityRefused(Box<MaturityContinuityRefusal>),
+    /// The public handoff refused the root-history edge's recovery.
+    RootHistoryEdgeRefused(Box<MaturityRecoveryRefusal>),
     /// The admitted continuity could not bind its root checkpoint.
     RootHistoryCheckpointRefused(Box<MaturityRootCheckpointRefusal>),
     /// The root-history continuity report refused assembly or validation.
@@ -2010,11 +2013,12 @@ pub fn derive_maturity_evidence_plan_with(
     let root_history_mutations =
         MaturityMutationRegistry::registered(MaturityMutationRegistryKind::RootHistory);
     let continuity = accepted_continuity(accepted_corpus)?;
-    let edge = StateRootEdge::from_continuity(&continuity);
-    let starting_cursor = edge.predecessor();
     let handoff = accepted_public_handoff(accepted_corpus).map_err(|refusal| {
         MaturityEvidenceRefusal::PublicRecoveryReportRefused(Box::new(refusal))
     })?;
+    let edge = StateRootEdge::from_public_handoff(handoff.clone())
+        .map_err(|refusal| MaturityEvidenceRefusal::RootHistoryEdgeRefused(Box::new(refusal)))?;
+    let starting_cursor = edge.predecessor();
     let checkpoint = {
         let (linked, abi) = checkpoint_premises_of(&continuity)?;
         MaturityRootCheckpoint::bind(&edge, &handoff, accepted_corpus, linked, abi).map_err(

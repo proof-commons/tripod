@@ -16,7 +16,7 @@ use tapscript::{
     state_metadata_leaf_program, state_output_program_at_nonce,
 };
 use target_elements::TargetContractVersion;
-use transaction::bytes::{TargetTransaction, Txid};
+use transaction::bytes::{Outpoint, TargetInput, TargetTransaction, Txid};
 use transaction::taproot::{Digest32, leaf_hash};
 
 use crate::maturity_closure::{MaturityClosureRefusal, OracleStateCurve, closure_target};
@@ -208,6 +208,8 @@ pub struct RecoveredSuccessor {
     requested_cycle: Cycle,
     program: MaturityByteComparison,
     contract: TargetContractVersion,
+    predecessor: Outpoint,
+    successor: Outpoint,
 }
 
 impl RecoveredSuccessor {
@@ -257,6 +259,18 @@ impl RecoveredSuccessor {
     #[must_use]
     pub const fn contract(&self) -> TargetContractVersion {
         self.contract
+    }
+
+    /// Input 0 of the published transaction.
+    #[must_use]
+    pub const fn predecessor(&self) -> Outpoint {
+        self.predecessor
+    }
+
+    /// The recomputed identity at the stated STATE output index.
+    #[must_use]
+    pub const fn successor(&self) -> Outpoint {
+        self.successor
     }
 }
 
@@ -393,6 +407,8 @@ pub fn recover_public_successor(
     if stated != declared {
         return Err(Refusal::WrongOutputIndex { stated, declared });
     }
+    let successor = Outpoint::new(recomputed, stated)
+        .map_err(|_| Refusal::WrongOutputIndex { stated, declared })?;
 
     let stack = witness(&transaction, handoff.schedule()).map_err(|refusal| match refusal {
         MaturityContinuityRefusal::WitnessWidth {
@@ -404,6 +420,13 @@ pub fn recover_public_successor(
             refusal: Box::new(other),
         },
     })?;
+    let predecessor = transaction
+        .inputs()
+        .first()
+        .map(TargetInput::outpoint)
+        .ok_or_else(|| Refusal::MalformedPublicWitness {
+            refusal: Box::new(MaturityContinuityRefusal::InputCount { actual: 0 }),
+        })?;
     let [
         _,
         nonce_bytes,
@@ -515,6 +538,8 @@ pub fn recover_public_successor(
         requested_cycle,
         program: comparison,
         contract: handoff.contract(),
+        predecessor,
+        successor,
     })
 }
 
