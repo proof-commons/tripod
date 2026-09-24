@@ -318,6 +318,71 @@ fn a_sponsored_request_is_refused_for_the_carrier_it_would_need() {
     );
 }
 
+// The four request forms have named dispositions: sponsorless without change
+// constructs, sponsorless with change is refused by the request, and both
+// sponsored forms have explicit unsupported status naming the absent carrier.
+// No sponsored byte exists; the refusal is the host's, nothing reaches a
+// node, and no row of the §16 matrix is answered.
+#[test]
+fn each_request_form_is_built_or_refused_by_name() {
+    use std::collections::BTreeSet;
+
+    let validated = validated_view();
+    let abi = abi_over(&validated);
+    let sponsorless = RequestedForm::Sponsorless;
+    let sponsored = RequestedForm::Sponsored;
+    let no_change = SponsorChangeRequest::NotRequested;
+    let change = SponsorChangeRequest::Requested;
+    let forms = [
+        (sponsorless, no_change),
+        (sponsorless, change),
+        (sponsored, no_change),
+        (sponsored, change),
+    ];
+    let distinct: BTreeSet<_> = forms.iter().copied().collect();
+    assert_eq!(distinct.len(), 4);
+
+    let (form, change) = forms[0];
+    let request = MaturityAnnouncementRequest::new(ANNOUNCED, form, change)
+        .expect("the sponsorless form without change is admitted");
+    let construction = construct_over(&abi, &validated, &request)
+        .expect("the sponsorless form without change constructs");
+    let transaction = construction.transaction();
+    assert_eq!(transaction.inputs().len(), 1);
+    assert_eq!(transaction.outputs().len(), 1);
+    let input = &transaction.inputs()[0];
+    assert_eq!(input.outpoint(), validated.view().current_state_outpoint());
+    assert_eq!(input.sequence(), abi.sequence().sequence());
+    let output = &transaction.outputs()[0];
+    assert_eq!(
+        output.asset(),
+        AssetField::Explicit(AssetId::from_internal([0x11; 32])),
+    );
+    assert_eq!(output.value(), ValueField::Explicit(1));
+    assert_eq!(output.nonce(), NonceField::Null);
+    assert_eq!(
+        output.program(),
+        construction.successor_constructor().output_program(),
+    );
+
+    let (form, change) = forms[1];
+    assert_eq!(
+        MaturityAnnouncementRequest::new(ANNOUNCED, form, change)
+            .expect_err("a sponsorless form has no residual for change"),
+        TransactionRefusal::SponsorChangeWithoutSponsoredForm,
+    );
+
+    for (form, change) in [forms[2], forms[3]] {
+        let request = MaturityAnnouncementRequest::new(ANNOUNCED, form, change)
+            .expect("both sponsored forms are well-formed requests");
+        assert_eq!(
+            construct_over(&abi, &validated, &request)
+                .expect_err("neither sponsored form has a carrier"),
+            TransactionRefusal::SponsoredMaturityFormHasNoCarrier,
+        );
+    }
+}
+
 #[test]
 fn a_cycle_outside_the_window_carries_the_transitions_own_refusal() {
     let validated = validated_view();
