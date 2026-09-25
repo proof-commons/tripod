@@ -1460,4 +1460,19 @@ mod tests {
             assert!(!history.contains(&line));
         }
     }
+
+    #[test]
+    fn independent_assemblies_render_identical_bytes() {
+        let (first_handoff, first) = accepted();
+        let (second_handoff, second) = accepted();
+
+        let first = validate(&first, &first_handoff).expect("first report validates");
+        let second = validate(&second, &second_handoff).expect("second report validates");
+
+        let first = render_maturity_public_recovery_report(&first);
+        let second = render_maturity_public_recovery_report(&second);
+
+        assert_eq!(first, second);
+        assert!(first.lines().any(|line| line == "programs_agree true"));
+    }
 }

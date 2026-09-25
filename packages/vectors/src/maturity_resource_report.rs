@@ -983,4 +983,21 @@ mod tests {
         let second = render_maturity_resource_report(&validated);
         assert_eq!(first, second);
     }
+
+    #[test]
+    fn independent_assemblies_render_identical_bytes() {
+        let (first, _) = assemble_maturity_resource_report(Some(Duration::from_millis(424_242)))
+            .expect("first assembly");
+        let (second, _) = assemble_maturity_resource_report(Some(Duration::from_millis(424_242)))
+            .expect("second assembly");
+
+        let first = validate_maturity_resource_report(&first).expect("first report validates");
+        let second = validate_maturity_resource_report(&second).expect("second report validates");
+
+        let first = render_maturity_resource_report(&first);
+        let second = render_maturity_resource_report(&second);
+
+        assert_eq!(first, second);
+        assert_eq!(first.lines().next(), Some("schema 1"));
+    }
 }
