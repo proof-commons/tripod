@@ -208,7 +208,7 @@ pub fn measure_maturity_cases() -> Result<Vec<MaturityMeasuredCandidate>, Maturi
     Ok(candidates)
 }
 
-fn replay_candidate(
+pub(crate) fn replay_candidate(
     submission: MaturitySubmission,
     corpus: &ValidatedMaturityCorpus,
     lead: MaturityLead,
