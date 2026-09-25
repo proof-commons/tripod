@@ -69,6 +69,7 @@ vectors_source_files = files(
   'src/maturity_recovery.rs',
   'src/maturity_recovery_report.rs',
   'src/maturity_report.rs',
+  'src/maturity_resource_report.rs',
   'src/maturity_resources.rs',
   'src/maturity_safety.rs',
   'src/mutation.rs',
