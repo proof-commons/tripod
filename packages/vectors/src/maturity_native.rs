@@ -403,9 +403,34 @@ fn link_refusal(refusal: linker::LinkRefusal) -> Refusal {
     closure(MaturityClosureRefusal::LinkRefused(refusal))
 }
 
+/// The announcement cycle selected from the predecessor's inclusive lead window.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MaturityLead {
+    /// The earliest admissible announcement cycle.
+    Minimum,
+    /// One cycle after the earliest, capped at the latest cycle.
+    Interior,
+    /// The latest admissible announcement cycle.
+    Maximum,
+}
+
+impl MaturityLead {
+    /// Choose the cycle this lead announces within the inclusive window.
+    #[must_use]
+    pub fn announced(self, window: (Cycle, Cycle)) -> Cycle {
+        let (earliest, latest) = window;
+        match self {
+            Self::Minimum => earliest,
+            Self::Interior => Cycle::new(earliest.get().saturating_add(1)).min(latest),
+            Self::Maximum => latest,
+        }
+    }
+}
+
 /// One run retaining the exact linked subject and every settled exchange.
 pub struct MaturityAnnouncementPlanner {
     schedule: tapscript::StateWitnessSchedule,
+    lead: MaturityLead,
     identity: CandidateDeploymentIdentity,
     branch: BranchContext,
     position: usize,
@@ -437,6 +462,21 @@ impl MaturityAnnouncementPlanner {
         branch: BranchContext,
         selection: MaturityWitnessSelection,
     ) -> Result<Self, MaturityNativePlanRefusal> {
+        Self::at_lead(identity, branch, selection, MaturityLead::Interior)
+    }
+
+    /// Starts the published-signer ceremony at a selected admissible lead.
+    ///
+    /// # Errors
+    /// Preserves refusals from the public closure, deployment binding and singleton declaration.
+    ///
+    #[must_use = "planner construction can refuse the selected schedule or deployment"]
+    pub fn at_lead(
+        identity: CandidateDeploymentIdentity,
+        branch: BranchContext,
+        selection: MaturityWitnessSelection,
+        lead: MaturityLead,
+    ) -> Result<Self, MaturityNativePlanRefusal> {
         let parameters = MaturityDeployment::PublishedSignerHeld
             .parameters()
             .map_err(closure)?;
@@ -448,6 +488,7 @@ impl MaturityAnnouncementPlanner {
         )?;
         Ok(Self {
             schedule,
+            lead,
             identity,
             branch,
             position: 0,
@@ -624,6 +665,7 @@ impl MaturityAnnouncementPlanner {
                 outpoint,
                 self.branch,
                 self.amount,
+                self.lead,
             )?;
             self.submission = Some(sign_announcement(&finalized)?);
             self.announcement = Some(finalized);
@@ -779,6 +821,7 @@ fn build_announcement(
     outpoint: Outpoint,
     branch: BranchContext,
     amount: u64,
+    lead: MaturityLead,
 ) -> Result<FinalizedMaturityAnnouncement, Refusal> {
     let target = closure_target().map_err(closure)?;
     let predecessor = bundle
@@ -810,7 +853,7 @@ fn build_announcement(
         .map_err(|refusal| {
             transaction(TransactionRefusal::MaturitySuccessorTransitionRefused { refusal })
         })?;
-    let announced = Cycle::new(earliest.get().saturating_add(1)).min(latest);
+    let announced = lead.announced((earliest, latest));
     let request = MaturityAnnouncementRequest::new(
         announced,
         RequestedForm::Sponsorless,
@@ -885,6 +928,7 @@ mod tests {
     fn copy_plan(plan: &MaturityAnnouncementPlanner) -> MaturityAnnouncementPlanner {
         MaturityAnnouncementPlanner {
             schedule: plan.schedule,
+            lead: plan.lead,
             identity: plan.identity.clone(),
             branch: plan.branch,
             position: plan.position,

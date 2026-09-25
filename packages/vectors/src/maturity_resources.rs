@@ -760,6 +760,31 @@ fn predict_submission(
     })
 }
 
+/// Predict a candidate from its exact bundle and bytes without a target response.
+///
+/// No run judged this candidate's bytes, so no field has an observation.
+///
+/// # Errors
+/// Returns the typed refusal if the bundle or transaction cannot supply a prediction.
+pub(crate) fn predict_unjudged_submission(
+    submission: MaturitySubmission,
+    bundle: &CandidateLinkedMaturityBundle,
+    transaction: &TargetTransaction,
+    target: &ReviewedElementsTapscriptDefinition,
+) -> Result<MaturitySubmissionResources, MaturityResourcesRefusal> {
+    let measured = MeasuredSubmission::derive(submission, bundle, transaction, target)?;
+    let standings = MaturityResourceField::ALL
+        .iter()
+        .map(|&field| (field, MaturityObservationStanding::NoObservationInThisRun))
+        .collect();
+    Ok(MaturitySubmissionResources {
+        submission,
+        fields: measured.fields(),
+        roster: measured.roster(),
+        standings,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
