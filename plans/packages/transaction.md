@@ -1,10 +1,10 @@
 # Transaction and Witness ABI · `pkg:transaction:contract`
 
-> **Status:** Candidate — Guide-12 §15 compact-ASH ABI delivered
+> **Status:** Candidate — the compact-ASH ABI and the maturity-announcement `CandidateMaturityAnnouncementAbi` with `MaturityConstruction`, finalization and operator-signing states are delivered under Guide-12 §15 and Guide-14 §12
 > **Phase:** [Phase 4](../phases/04-compact-ash.md) onward
 > **Package:** `tripod-transaction`
 > **Library:** `transaction`
-> **Direct dependencies:** `linker`, `target-elements`
+> **Direct dependencies:** `linker`, `realization`, `sha2`, `tapscript`, `target-elements`
 > **Decision:** [D006](../decisions/006-transaction-abi.md)
 
 ## Purpose · `sec:transaction:purpose`

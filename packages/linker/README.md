@@ -1,19 +1,10 @@
 # `tripod-linker`
 
-Resolves the typed relocatable backend bundle `tapscript` emits into a
-deterministic candidate linked bundle (Guide-12 §14).
+Resolves typed relocatable backend bundles into three candidate links: `CandidateLinkedBundle` for compact ASH (Guide-12 §14), `CandidateLinkedLiveTransferBundle` for live transfer (Guide-13 §11), and `CandidateLinkedMaturityBundle` for the maturity announcement (Guide-14 Wave 6).
 
-The linker owns symbol resolution, the typed reference graph and its
-cycle policy, structured relocation, deterministic taptree assembly,
-relation-carrier closure, and the linked resource projection. It does
-not construct complete transactions, and it does not decide semantics:
-every semantic fact it uses arrives inside the validated operation plan
-the bundle carries.
+The linker owns symbol resolution, typed reference graphs and cycle policy, structured relocation, deterministic taptree assembly, relation-carrier closure, and linked resource projection; it constructs no complete transaction and decides no semantics, since its semantic facts arrive in the validated operation plans carried by the bundles.
 
-Nothing here is final. The output is a `CandidateLinkedBundle`, whose
-status is read-only and whose outstanding obligations are structurally
-non-empty, because Guide-12 §1.9 keeps the candidate and final states
-distinct and the evidence a final bundle would bind does not exist.
+Nothing here is final. `CandidateLinkedBundle`, `CandidateLinkedLiveTransferBundle`, and `CandidateLinkedMaturityBundle` expose read-only candidate status and carry their respective outstanding obligations; linking alone supplies no final deployment bundle.
 
 ## The live-transfer link (Guide-13 §11)
 

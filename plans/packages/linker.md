@@ -1,10 +1,10 @@
 # Linker · `pkg:linker:contract`
 
-> **Status:** Candidate — first bundle delivered, exit gate partly met
+> **Status:** Candidate — the compact-ASH `CandidateLinkedBundle`, live-transfer `CandidateLinkedLiveTransferBundle`, and maturity-announcement `CandidateLinkedMaturityBundle` are delivered with candidate status and outstanding obligations
 > **Phase:** [Phase 4](../phases/04-compact-ash.md) onward
 > **Package:** `tripod-linker`
 > **Library:** `linker`
-> **Direct dependencies:** `tapscript`, `target-elements`
+> **Direct dependencies:** `petgraph`, `tapscript`, `target-elements`
 > **Decisions:** [D004](../decisions/004-translation-validation.md),
 > [D006](../decisions/006-transaction-abi.md)
 

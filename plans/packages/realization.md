@@ -1,9 +1,10 @@
 # Typed Realization Package · `pkg:realization:contract`
 
-> **Status:** Active
+> **Status:** Active — `compact-ash`, `transfer-live-receipts`, and `announce-maturity` have typed declarations; `RealizationScope::phase1_pilots()` retains the two-operation pilot scope and `RealizationScope::from_operations` reaches the announcement through `derive`
 > **Phase:** [Phase 1](../phases/01-realization.md)
 > **Package:** `tripod-realization`
 > **Library:** `realization`
+> **Direct dependencies:** `architecture`, `petgraph`, `thiserror`
 > **Decisions:** [D001](../decisions/001-typed-rust-source.md),
 > [D002](../decisions/002-realization-layer.md),
 > [D005](../decisions/005-value-representation.md),

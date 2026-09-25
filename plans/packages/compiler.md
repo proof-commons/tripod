@@ -1,14 +1,10 @@
 # Target-Independent Compiler · `pkg:compiler:contract`
 
-> **Status:** Active — input, graph, folding, source, constructibility, disclosure,
-> lifecycle, exact proof-planning, execution-case placement, layout-requirement,
-> relation-indexed coverage, and complete scoped analyzed-pilot foundations
-> implemented internally; the validated target-operation boundary is public
-> (backlog section 2.12); no public complete-analysis result beyond it is
-> exposed and no compiler identity exists
+> **Status:** Active — typed input, graph, folding, source, constructibility, disclosure, lifecycle, proof-planning, placement, layout and coverage foundations and the public validated target-operation boundary are delivered; `maturity_announcement_plan` projects `AnnounceMaturity` under Guide-14 Wave 2; no public complete-analysis result or compiler identity is exposed
 > **Phase:** [Phase 2](../phases/02-compiler.md)
 > **Package:** `tripod-compiler`
 > **Library:** `compiler`
+> **Direct dependencies:** `architecture`, `petgraph`, `realization`, `thiserror`
 > **Decisions:** [D001](../decisions/001-typed-rust-source.md),
 > [D002](../decisions/002-realization-layer.md),
 > [D003](../decisions/003-tapscript-first.md),

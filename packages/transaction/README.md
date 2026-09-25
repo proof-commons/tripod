@@ -1,8 +1,6 @@
 # `tripod-transaction`
 
-Derives the candidate compact-ASH transaction ABI from a candidate
-linked bundle and the exact reviewed target, and constructs ABI-valid
-target transactions from it (Guide-12 §15).
+Derives the compact-ASH candidate transaction ABI from a candidate linked bundle and the exact reviewed target (Guide-12 §15), and the maturity-announcement candidate ABI from a validated current-STATE view of its linked bundle and the exact reviewed target (Guide-14 §12), then constructs ABI-valid target transactions from those ABIs.
 
 The package owns the canonical role layout, the typed operation request
 and the public construction view, sponsor signing *requests*, witness
@@ -17,12 +15,7 @@ performs no RPC, wallet lookup, or network submission. A sponsor
 supplies signatures through a capability adapter, and every signing
 request names a finalized transaction rather than a template.
 
-Nothing here is final. The output is a `CandidateTransactionAbi` and a
-`CandidateCompleteTransaction`, both of which carry a read-only
-candidate status and a structurally non-empty obligation set, because
-Guide-12 §1.9 keeps the candidate and final states distinct and the
-taproot output key this crate's control blocks depend on is pinned
-rather than recomputed.
+Nothing here is final. Compact ASH yields `CandidateTransactionAbi` and `CandidateCompleteTransaction`, both with read-only candidate status and structurally non-empty obligations; the maturity announcement yields `CandidateMaturityAnnouncementAbi` and `MaturityConstruction` within its candidate construction path. Guide-12 §1.9 keeps candidate and final states distinct, and the taproot output key on which the compact-ASH control blocks depend is pinned rather than recomputed.
 
 ## The live-transfer surface (Guide-13 §12)
 

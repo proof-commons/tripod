@@ -1,19 +1,10 @@
 # Elements Tapscript Backend · `pkg:tapscript:contract`
 
-> **Status:** Active — static capability and evidence-role adapter over the
-> reviewed contract, typed instruction values, canonical opcode/push
-> encoding, the supported-subset parser, and the abstract stack and
-> failure-state validator implemented; the concrete shape policy, the
-> backend selection policy, eight machine-checked compact-ASH proof
-> patterns, and the operation-plan assessment implemented; the static
-> ASH constructor over nine shapes and the candidate relocatable
-> bundle delivered under Guide 12 (backlog gate record section 2.8)
+> **Status:** Active — reviewed-target adaptation, typed instruction encoding and validation, compact-ASH proof patterns and relocatable bundle, and the candidate STATE constructor with its records and programs are delivered
 > **Phases:** [Phase 3](../phases/03-target-foundation.md) onward
 > **Package:** `tripod-tapscript`
 > **Library:** `tapscript`
-> **Direct dependencies:** `compiler`, `target-elements`
-> (`architecture` remains test-only; `realization` is a production dependency
-> for the STATE constructor)
+> **Direct dependencies:** `compiler`, `realization`, `sha2`, `target-elements`, `thiserror`
 > **Decisions:** [D003](../decisions/003-tapscript-first.md),
 > [D004](../decisions/004-translation-validation.md),
 > [D005](../decisions/005-value-representation.md),

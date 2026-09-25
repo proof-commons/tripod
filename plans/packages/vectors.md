@@ -1,11 +1,10 @@
 # Translation-Validation Vectors · `pkg:vectors:contract`
 
-> **Status:** Candidate — fixtures, evidence plan, target execution, focused mutations, and both the compact-ASH and Wave 12 live-transfer resource studies implemented; negative relation coverage outstanding at 1 of 72
+> **Status:** Candidate — compact-ASH fixtures, evidence plan and target execution, the live-transfer safety, minimality and resource studies, and the maturity run-of-record corpora, continuity, recovery, resource and refinement checks and five candidate-scope reports are delivered; one of 72 compact-ASH negative coverage rows is discharged and 71 remain outstanding
 > **Phase:** [Phase 4](../phases/04-compact-ash.md) onward
 > **Package:** `tripod-vectors`
 > **Library:** `vectors`
-> **Direct dependencies:** `architecture`, `realization`, `model`, `compiler`,
-> `target-elements`, `linker`, `transaction`
+> **Direct dependencies:** `architecture`, `compiler`, `linker`, `realization`, `tapscript`, `target-elements`, `target-elements-conformance`, `transaction`
 > **Decision:** [D004](../decisions/004-translation-validation.md)
 
 ## Purpose · `sec:vectors:purpose`

@@ -1,6 +1,6 @@
 [package]
 name = "tripod-transaction"
-description = "Derives the candidate compact-ASH transaction ABI and constructs exact target transaction bytes"
+description = "Derives candidate transaction ABIs for compact ASH and the maturity announcement and constructs exact target transaction bytes"
 
 authors.workspace = true
 edition.workspace = true

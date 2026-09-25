@@ -1,16 +1,10 @@
 # Elements Target Contract · `pkg:target-elements:contract`
 
-> **Status:** Active — reviewed-trust-state separation, complete
-> success/failure stack contracts, cross-contract welds, transitive
-> capability-status closure, push contract, and development binding
-> implemented; the reviewed primitive subset carries development
-> target-native evidence recorded with the Guide-9 gate, and the census is
-> now at revision 2 with the compound-proof substrate; commitment
-> equality and authenticated opening remain unsupported and production
-> support is not claimed
+> **Status:** Active — the reviewed V2 target contract, its primitive, encoding, push, capability and resource censuses, development binding, reviewed `TransactionForm::MaturityAnnouncement`, and `TAPSCRIPT_STACK_ITEM_RELAY_LIMIT` are implemented; commitment equality and authenticated opening remain unsupported, and production support is unclaimed
 > **Phase:** [Phase 3](../phases/03-target-foundation.md)
 > **Package:** `tripod-target-elements`
 > **Library:** `target_elements`
+> **Direct dependencies:** none
 > **Decisions:** [D001](../decisions/001-typed-rust-source.md),
 > [D003](../decisions/003-tapscript-first.md),
 > [D004](../decisions/004-translation-validation.md),

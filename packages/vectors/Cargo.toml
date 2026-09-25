@@ -1,6 +1,6 @@
 [package]
 name = "tripod-vectors"
-description = "Canonical compact-ASH semantic and target fixtures, and the evidence plan that indexes them by relation-case"
+description = "Carries canonical semantic and target fixtures for compact ASH, live transfer, and the maturity announcement, the relation-case evidence plan, and STATE run-of-record corpora with five candidate reports"
 
 authors.workspace = true
 edition.workspace = true

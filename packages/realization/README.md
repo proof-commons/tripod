@@ -4,7 +4,7 @@
 attestation architecture and two separate consumers:
 
 - executable-model conformance; and
-- future compiler analysis.
+- analysis by the `compiler` crate.
 
 It fills the gap between the architecture's finite registries and the formulas,
 dependencies, constructibility, lifecycle, representation, and observables
@@ -28,17 +28,11 @@ It does not parse:
 - target programs;
 - filesystem or environment state.
 
-## Phase-1 scope
+## Declared operations
 
-The initial scope contains exactly:
+The declaration set covers `compact-ash`, `transfer-live-receipts`, and `announce-maturity`. `RealizationScope::phase1_pilots()` retains the two-operation compact-ASH and live-transfer pilot scope; an explicit `RealizationScope::from_operations` scope reaches `announce-maturity` through the public `derive` entry point.
 
-```text
-compact-ash
-transfer-live-receipts
-```
-
-A Phase-1 value is explicitly partial. It cannot be converted into a complete
-realization until every operation in the validated architecture is present.
+A scope containing fewer than all operations in the validated architecture is explicitly partial and cannot be converted into a complete realization until every operation is present.
 
 ## Ownership
 
@@ -403,9 +397,7 @@ conformance comparison circular.
 
 ## Compiler boundary
 
-The future compiler consumes validated realization relations, proof
-alternatives, constructibility, lifecycle, representation, disclosure
-provenance, and evidence requirements.
+The `compiler` crate consumes validated realization relations, proof alternatives, constructibility, lifecycle, representation, disclosure provenance, and evidence requirements.
 
 The realization crate contains no target opcodes, stack indexes, target
 transaction positions, tapleaves, control blocks, target commitment prefixes,

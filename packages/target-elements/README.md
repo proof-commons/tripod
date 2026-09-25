@@ -189,10 +189,7 @@ digest comparison. See *Identity* below.
 
 ## Public-API tour
 
-Fourteen public modules. Every type and function named below is re-exported at
-the crate root, with three exceptions that must be reached by module path:
-`definition::encoding_dependencies`, `opcode::VALIDATION_BUDGET_PER_CHECK`, and
-`opcode::MAX_STACK_ELEMENT_BYTES`.
+Sixteen public modules are declared; this tour covers fourteen, while `ceremony` and `error` are described at their boundaries elsewhere in this README. Every type and function named below is re-exported at the crate root, with three exceptions that must be reached by module path: `definition::encoding_dependencies`, `opcode::VALIDATION_BUDGET_PER_CHECK`, and `opcode::MAX_STACK_ELEMENT_BYTES`.
 
 ### Entry points
 
@@ -434,6 +431,14 @@ disposition, and dispositions live in the conformance package.
 `TargetError` variants. An absent policy bound is not looser than consensus, so
 `PolicyResourceLimits::new([])` validates.
 
+### `transaction_form` — the reviewed transaction forms
+
+`reviewed_transaction_forms()` returns a `TransactionFormReview` for each candidate `TransactionForm`, including `TransactionForm::MaturityAnnouncement`; `review_maturity_announcement_form` reviews that form against the supplied witness-item widths and `ResourceContract`.
+
+`FormAdmission` records separate consensus and relay verdicts, `RelayCondition` names relay conditions or direct submission to a block producer, and `FeeOutputContract` states the reviewed fee-output role.
+
+`TAPSCRIPT_STACK_ITEM_RELAY_LIMIT` is the reviewed 80-byte default relay-policy bound per tapscript witness stack item: an 86-byte whole-metadata item exceeds it before execution, while the form remains consensus-admitted and a block may judge its script; the variable-region schedule is reviewed at its own supplied width.
+
 ### `evidence` and `evidence_registry`
 
 `TargetEvidenceRequirementId` is a vocabulary of **24** identities, censused in
@@ -665,6 +670,7 @@ Implemented:
 - signature, sighash, and relative-timelock dimensions;
 - confidential-value and issuance capability descriptions;
 - separate consensus and policy resource interfaces;
+- the reviewed `TransactionForm` candidates and their `FormAdmission` and `RelayCondition` verdicts, the `FeeOutputContract`, and the 80-byte `TAPSCRIPT_STACK_ITEM_RELAY_LIMIT`;
 - the capability registry with an acyclic prerequisite relation;
 - the evidence-requirement registry;
 - the target validator, which reports every defect rather than the first;
@@ -755,11 +761,7 @@ Each of these is a design decision, not a gap awaiting an implementation.
 - **It serializes, hashes, parses nothing, and opens no file.** The
   no-dependency rule is what enforces this: there is nothing available to do it
   with.
-- **It names no attestation-contract concept.** No operation, object, relation,
-  proof plan, authorization policy, batch bound, or transaction layout. It does
-  not know which assets are protocol closed assets, it does not select a sighash
-  profile, and it does not choose a cadence band or a batch bound. Those are
-  downstream decisions.
+- **It names reviewed candidate transaction forms but no attestation-contract semantics.** It names `TransactionForm::MaturityAnnouncement` as a reviewed target form, but owns no attestation-contract operation semantics, object, relation, proof plan, authorization policy, batch bound, or transaction layout; it selects no protocol-closed asset, sighash profile, cadence band, or batch bound.
 - **It does not read its own review provenance.** The upstream repository,
   revision, source paths, and review date live in a human reference that no
   package parses.
