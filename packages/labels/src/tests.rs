@@ -3672,6 +3672,222 @@ fn a_backticked_cell_after_the_first_is_not_an_identifier() {
     assert_eq!(crate::plans::duplicate_row_ids(markdown), [] as [String; 0]);
 }
 
+/// Put a stated gate-record section ahead of another second-level heading.
+fn gate_record(status: &str, section: &str) -> String {
+    format!(
+        "# Phase 6 — STATE\n\n> **Status:** {status}\n\n{section}## Exit gate · `gate:phase6:exit`\n\nThe exit gate.\n"
+    )
+}
+
+/// A candidate-only record with twenty-three cited conjuncts and the register row.
+fn complete_record() -> String {
+    use std::fmt::Write as _;
+
+    let mut record = String::from(concat!(
+        "## Gate record · `sec:phase6:gate-record`\n\n",
+        "only maturity announcement is compiled\n\n",
+        "later STATE operations and constructor migration remain unavailable\n\n",
+        "the successor may be intentionally inert\n\n",
+        "no release-complete state-machine or lifecycle-wide coinduction claim is made\n\n",
+        "| Key | Value |\n|---|---|\n",
+        "| `release-complete` | false |\n",
+        "| `final calibration claim` | none |\n",
+        "| `production key claim` | none |\n",
+        "| `Phase-6 verdict` | accepted candidate |\n",
+        "| `§23 verdict` | NOT PASSED |\n\n",
+        "| # | Conjunct | Standing | Evidence | Note |\n",
+        "|---|---|---|---|---|\n",
+    ));
+    for id in 1..=23 {
+        let standing = if id == 7 { "CONDITIONALLY MET" } else { "MET" };
+        writeln!(
+            record,
+            "| {id} | Conjunct {id}. | {standing} | `T11-143` | Candidate scope. |"
+        )
+        .expect("writing a String");
+    }
+    record.push_str("| R | Register discharge. | MET | `G14C-15` | Candidate scope. |\n\n");
+    record
+}
+
+#[test]
+fn a_complete_gate_record_passes() {
+    let failures = crate::plans::gate_record_failures(&gate_record("Active", &complete_record()));
+    assert_eq!(failures.len(), 0, "{failures:?}");
+    let absent = crate::plans::gate_record_failures(&gate_record("Active", ""));
+    assert_eq!(absent.len(), 0, "{absent:?}");
+}
+
+#[test]
+fn a_gate_record_omitting_the_compiled_operation_clause_fails() {
+    let section = complete_record().replace("only maturity announcement is compiled", "");
+    let failures = crate::plans::gate_record_failures(&gate_record("Active", &section));
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].contains("the non-claim \"only maturity announcement is compiled\" is missing"),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn a_gate_record_omitting_the_unavailable_operations_clause_fails() {
+    let section = complete_record().replace(
+        "later STATE operations and constructor migration remain unavailable",
+        "",
+    );
+    let failures = crate::plans::gate_record_failures(&gate_record("Active", &section));
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].contains(
+            "the non-claim \"later STATE operations and constructor migration remain unavailable\" is missing"
+        ),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn a_gate_record_omitting_the_inert_successor_clause_fails() {
+    let section = complete_record().replace("the successor may be intentionally inert", "");
+    let failures = crate::plans::gate_record_failures(&gate_record("Active", &section));
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0]
+            .contains("the non-claim \"the successor may be intentionally inert\" is missing"),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn a_gate_record_omitting_the_coinduction_clause_fails() {
+    let section = complete_record().replace(
+        "no release-complete state-machine or lifecycle-wide coinduction claim is made",
+        "",
+    );
+    let failures = crate::plans::gate_record_failures(&gate_record("Active", &section));
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].contains(
+            "the non-claim \"no release-complete state-machine or lifecycle-wide coinduction claim is made\" is missing"
+        ),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn a_conjunct_row_without_evidence_fails() {
+    let section = complete_record().replace(
+        "| 12 | Conjunct 12. | MET | `T11-143` | Candidate scope. |",
+        "| 12 | Conjunct 12. | MET | | Candidate scope. |",
+    );
+    let failures = crate::plans::gate_record_failures(&gate_record("Active", &section));
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].contains("conjunct 12 cites no evidence"),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn a_card_that_is_not_active_without_a_gate_record_fails() {
+    let failures = crate::plans::gate_record_failures(&gate_record("Exited", ""));
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].contains("the Phase-6 card reads Exited without a gate record"),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn release_complete_true_is_refused() {
+    let section = complete_record().replace(
+        "| `release-complete` | false |",
+        "| `release-complete` | true |",
+    );
+    let failures = crate::plans::gate_record_failures(&gate_record("Active", &section));
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].contains("release-complete reads true; expected false"),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn a_final_calibration_claim_is_refused() {
+    let section = complete_record().replace(
+        "| `final calibration claim` | none |",
+        "| `final calibration claim` | none within the reviewed budget |",
+    );
+    let failures = crate::plans::gate_record_failures(&gate_record("Active", &section));
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].contains(
+            "final calibration claim reads none within the reviewed budget; expected none"
+        ),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn a_production_key_claim_is_refused() {
+    let section = complete_record().replace(
+        "| `production key claim` | none |",
+        "| `production key claim` | held by the published signer |",
+    );
+    let failures = crate::plans::gate_record_failures(&gate_record("Active", &section));
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0]
+            .contains("production key claim reads held by the published signer; expected none"),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn a_verdict_outside_the_report_template_is_refused() {
+    let section = complete_record().replace(
+        "| `Phase-6 verdict` | accepted candidate |",
+        "| `Phase-6 verdict` | accepted final |",
+    );
+    let failures = crate::plans::gate_record_failures(&gate_record("Active", &section));
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].contains("Phase-6 verdict reads accepted final; expected one of"),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn a_final_artifact_name_is_refused() {
+    for name in [
+        "FinalStateConstructor",
+        "FinalLinkedBundle",
+        "FinalTransactionAbi",
+        "ProductionOperatorService",
+        "ProductionStateDeployment",
+        "ValidatedDeploymentRelease",
+    ] {
+        let section = format!("{}\n{name}\n", complete_record());
+        let failures = crate::plans::gate_record_failures(&gate_record("Active", &section));
+        let expected = format!("the final name {name} is written");
+        assert_eq!(failures.len(), 1, "{failures:?}");
+        assert!(failures[0].contains(expected.as_str()), "{failures:?}");
+    }
+}
+
+#[test]
+fn passed_over_a_conditional_conjunct_is_refused() {
+    let section = complete_record().replace(
+        "| `§23 verdict` | NOT PASSED |",
+        "| `§23 verdict` | PASSED |",
+    );
+    let failures = crate::plans::gate_record_failures(&gate_record("Active", &section));
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].contains("§23 verdict reads PASSED over conjunct 7 CONDITIONALLY MET"),
+        "{failures:?}"
+    );
+}
+
 // ---------------------------------------------------------------------
 // The Python front-end and the script-tree carrier (ADR-023).
 // ---------------------------------------------------------------------

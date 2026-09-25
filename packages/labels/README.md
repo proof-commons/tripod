@@ -343,6 +343,8 @@ check_plans(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOutcome>
 faults such as an unreadable file; every tree defect is a `failures` entry
 instead. `PLANS_REPORT_SCHEMA` is 3, advanced for the root-ADR class's `adr_hard_cap_bytes` field.
 
+When the Phase-6 card's gate record section is present, `check_plans` requires the register's four candidate-only non-claims, a cited standing for every §23 conjunct and the register conjunct, and the report template's five keys; it refuses release completeness, final calibration, production key custody, a verdict outside the template, a final artifact name, or `PASSED` over any conjunct that is not `MET`, and also refuses a card that is not `Active` without the section.
+
 ### `repository` — harvest, graph, and the writing entry point
 
 ```text

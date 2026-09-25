@@ -217,6 +217,46 @@ const PROHIBITED_SOURCE_IDENTITY: [&str; 4] = [
     "target identity binds the upstream implementation commit",
 ];
 
+/// The one card whose gate record discharges register row G14C-15.
+const PHASE_SIX_CARD: &str = "plans/phases/06-state-and-maturity.md";
+/// The Phase-6 gate-record section label under ruling 108.
+const GATE_RECORD_LABEL: &str = "sec:phase6:gate-record";
+/// Candidate-only handoff clauses required by register row G14C-15.
+const HANDOFF_NON_CLAIMS: [&str; 4] = [
+    "only maturity announcement is compiled",
+    "later STATE operations and constructor migration remain unavailable",
+    "the successor may be intentionally inert",
+    "no release-complete state-machine or lifecycle-wide coinduction claim is made",
+];
+/// Final artifact names forbidden by Guide 14 §1.16, even inside a negation.
+/// The record states their absence in words without naming an artifact.
+const FORBIDDEN_FINAL_ARTIFACTS: [&str; 6] = [
+    "FinalStateConstructor",
+    "FinalLinkedBundle",
+    "FinalTransactionAbi",
+    "ProductionOperatorService",
+    "ProductionStateDeployment",
+    "ValidatedDeploymentRelease",
+];
+/// The closed Phase-6 verdict vocabulary of Guide 14 §25.
+const REPORT_TEMPLATE_VERDICTS: [&str; 5] = [
+    "accepted candidate",
+    "typed stopped",
+    "constructor deferred",
+    "target path rejected",
+    "blocked",
+];
+/// The three standings of Guide 14 §23's gate record.
+const CONJUNCT_STANDINGS: [&str; 3] = ["MET", "CONDITIONALLY MET", "OUTSTANDING"];
+/// Structured gate-record keys bound by register row G14C-15 and Guide 14 §25.
+const GATE_RECORD_KEYS: [&str; 5] = [
+    "release-complete",
+    "final calibration claim",
+    "production key claim",
+    "Phase-6 verdict",
+    "§23 verdict",
+];
+
 const PLACEHOLDERS: [&str; 4] = ["example.invalid", "TODO_URL", "INSERT_HASH", "TBD_PATH"];
 
 static LINK: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -304,6 +344,7 @@ pub fn check_plans(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOut
     verify_phase_gate(&root, &mut failures)?;
     verify_task_status_agreement(&root, &mut failures)?;
     verify_unique_row_ids(&root, &mut failures)?;
+    verify_gate_record(&root, &mut failures)?;
 
     let TreeBytes {
         adr: adr_bytes,
@@ -1024,6 +1065,212 @@ pub(crate) fn duplicate_row_ids(markdown: &str) -> Vec<String> {
     failures
 }
 
+/// Read the Phase-6 card only when it exists; other cards are outside G14C-15.
+fn verify_gate_record(root: &Path, failures: &mut Vec<String>) -> anyhow::Result<()> {
+    let card = root.join(PHASE_SIX_CARD);
+    if !card.exists() {
+        return Ok(());
+    }
+    let markdown = read_text(&card)?;
+    failures.extend(gate_record_failures(&markdown));
+    Ok(())
+}
+
+/// Audit the first `##` or `###` heading carrying
+/// `` · `sec:phase6:gate-record` ``; the section runs to the next heading
+/// of equal or higher level.
+///
+/// A key row has a backticked key in its first cell and its value in the
+/// second: ``| `release-complete` | false |``. Each of the five keys occurs
+/// once. A conjunct row has a plain identifier (`1` through `23`, or `R`)
+/// in the first cell, its standing in the third, and cited evidence in the
+/// fourth: ``| 7 | Positive control | CONDITIONALLY MET | `T11-143` |``.
+/// Every conjunct occurs once. The section states all four register clauses,
+/// uses the closed verdict and standing vocabularies, omits all six final
+/// names, and says `PASSED` exactly when numbered conjuncts are all `MET`.
+/// The card may omit this section only while its status reads `Active`.
+///
+/// Split from the file read so the G14C-15 scan is testable over stated text.
+pub(crate) fn gate_record_failures(markdown: &str) -> Vec<String> {
+    let mut failures = Vec::new();
+    let prose = without_fenced_lines(markdown);
+    let lines: Vec<_> = prose.lines().collect();
+    let label = format!(" · `{GATE_RECORD_LABEL}`");
+    let start = lines.iter().enumerate().find_map(|(index, line)| {
+        let level = if line.starts_with("## ") {
+            2
+        } else if line.starts_with("### ") {
+            3
+        } else {
+            return None;
+        };
+        line.contains(&label).then_some((index, level))
+    });
+    let Some((start, level)) = start else {
+        if phase_card_status(markdown) != Some("Active") {
+            failures.push(format!(
+                "gate record: the Phase-6 card reads {} without a gate record",
+                phase_card_status(markdown).unwrap_or("no status")
+            ));
+        }
+        return failures;
+    };
+    let end = lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find_map(|(index, line)| {
+            let heading_level = line.bytes().take_while(|mark| *mark == b'#').count();
+            (heading_level > 0
+                && heading_level <= level
+                && line.as_bytes().get(heading_level) == Some(&b' '))
+            .then_some(index)
+        })
+        .unwrap_or(lines.len());
+    let section = &lines[start + 1..end];
+    let section_text = section.join("\n");
+
+    for clause in HANDOFF_NON_CLAIMS {
+        if !section_text.contains(clause) {
+            failures.push(format!(
+                "gate record: the non-claim \"{clause}\" is missing"
+            ));
+        }
+    }
+
+    let mut key_rows: [Vec<&str>; 5] = std::array::from_fn(|_| Vec::new());
+    let mut conjunct_rows: BTreeMap<String, Vec<(&str, &str)>> = BTreeMap::new();
+    for line in section {
+        let Some(cells) = table_cells(line) else {
+            continue;
+        };
+        let Some(first) = cells.first() else {
+            continue;
+        };
+        if let Some(key) = first
+            .strip_prefix('`')
+            .and_then(|key| key.strip_suffix('`'))
+        {
+            if let Some(index) = GATE_RECORD_KEYS
+                .iter()
+                .position(|candidate| *candidate == key)
+            {
+                key_rows[index].push(cells.get(1).copied().unwrap_or(""));
+            }
+            continue;
+        }
+        let numbered = first
+            .parse::<u8>()
+            .is_ok_and(|number| (1..=23).contains(&number) && number.to_string() == *first);
+        if numbered || *first == "R" {
+            conjunct_rows.entry((*first).to_owned()).or_default().push((
+                cells.get(2).copied().unwrap_or(""),
+                cells.get(3).copied().unwrap_or(""),
+            ));
+        }
+    }
+
+    for (index, key) in GATE_RECORD_KEYS.iter().enumerate() {
+        let values = &key_rows[index];
+        if values.is_empty() {
+            failures.push(format!("gate record: the key `{key}` is missing"));
+            continue;
+        }
+        if values.len() > 1 {
+            failures.push(format!(
+                "gate record: the key `{key}` is stated more than once"
+            ));
+            continue;
+        }
+        let value = values[0];
+        match index {
+            0 if value != "false" => failures.push(format!(
+                "gate record: release-complete reads {value}; expected false"
+            )),
+            1 if value != "none" => failures.push(format!(
+                "gate record: final calibration claim reads {value}; expected none"
+            )),
+            2 if value != "none" => failures.push(format!(
+                "gate record: production key claim reads {value}; expected none"
+            )),
+            3 if !REPORT_TEMPLATE_VERDICTS.contains(&value) => failures.push(format!(
+                "gate record: Phase-6 verdict reads {value}; expected one of {}",
+                REPORT_TEMPLATE_VERDICTS.join(", ")
+            )),
+            4 if value != "PASSED" && value != "NOT PASSED" => failures.push(format!(
+                "gate record: §23 verdict reads {value}; expected PASSED or NOT PASSED"
+            )),
+            _ => {}
+        }
+    }
+
+    let mut all_numbered_met = true;
+    for id in (1..=23)
+        .map(|number| number.to_string())
+        .chain(std::iter::once("R".to_owned()))
+    {
+        let Some(rows) = conjunct_rows.get(&id) else {
+            failures.push(format!("gate record: conjunct {id} has no row"));
+            if id != "R" {
+                all_numbered_met = false;
+            }
+            continue;
+        };
+        if rows.len() > 1 {
+            failures.push(format!("gate record: conjunct {id} has more than one row"));
+            if id != "R" {
+                all_numbered_met = false;
+            }
+        }
+        for &(standing, evidence) in rows {
+            if !CONJUNCT_STANDINGS.contains(&standing) {
+                failures.push(format!("gate record: conjunct {id} reads {standing}"));
+            }
+            if evidence.is_empty() || evidence == "—" {
+                failures.push(format!("gate record: conjunct {id} cites no evidence"));
+            }
+            if id != "R" && standing != "MET" {
+                all_numbered_met = false;
+            }
+        }
+    }
+
+    if let Some(verdict) = key_rows[4]
+        .first()
+        .copied()
+        .filter(|_| key_rows[4].len() == 1)
+    {
+        if verdict == "PASSED" {
+            for id in 1..=23 {
+                let id = id.to_string();
+                if let Some(rows) = conjunct_rows.get(&id) {
+                    for &(standing, _) in rows {
+                        if standing != "MET" {
+                            failures.push(format!(
+                                "gate record: §23 verdict reads PASSED over conjunct {id} {standing}"
+                            ));
+                        }
+                    }
+                }
+            }
+        } else if verdict == "NOT PASSED" && all_numbered_met {
+            failures.push(
+                "gate record: §23 verdict reads NOT PASSED over twenty-three MET rows".to_owned(),
+            );
+        }
+    }
+
+    let mut found_names = FORBIDDEN_FINAL_ARTIFACTS
+        .iter()
+        .filter_map(|name| section_text.find(name).map(|offset| (offset, *name)))
+        .collect::<Vec<_>>();
+    found_names.sort_by_key(|(offset, _)| *offset);
+    for (_, name) in found_names {
+        failures.push(format!("gate record: the final name {name} is written"));
+    }
+    failures
+}
+
 /// Markdown bytes for the `adr/` and `plans/` trees, split into the
 /// root-ADR, core maintained-plans, and archive budgets.
 struct TreeBytes {
@@ -1202,6 +1449,33 @@ mod tests {
         assert!(outcome.report.combined_bytes > 0);
         assert_eq!(outcome.report.combined_bytes, outcome.report.plans_bytes);
         assert_eq!(outcome.report.adr_hard_cap_bytes, ADR_HARD_CAP_BYTES);
+    }
+
+    #[test]
+    fn the_gate_record_rule_runs_under_check_plans() {
+        let dir = fixture();
+        let root = dir.path();
+        fs::write(
+            root.join(PHASE_SIX_CARD),
+            "# STATE\n\n> **Status:** Exited\n",
+        )
+        .expect("Phase-6 card");
+        write_phase_index(
+            root,
+            &[
+                ("02-pilot.md", "Active", "Pilot."),
+                ("06-state-and-maturity.md", "Exited", "STATE."),
+            ],
+        );
+
+        let outcome = check_plans(root, &subjects(root)).expect("check runs");
+        let gate_failures: Vec<_> = outcome
+            .failures
+            .iter()
+            .filter(|failure| failure.starts_with("gate record: "))
+            .collect();
+        assert_eq!(gate_failures.len(), 1, "{:#?}", outcome.failures);
+        assert!(gate_failures[0].contains("Exited"), "{gate_failures:?}");
     }
 
     #[test]
