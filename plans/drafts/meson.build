@@ -11,4 +11,5 @@ plans_drafts_files = files(
   'wave11-sponsored-forms-study.md',
   'wave12-resource-study.md',
   'wave13-gate-and-handoff-study.md',
+  'wave13-native-mutant-ceremony-study.md',
 )
