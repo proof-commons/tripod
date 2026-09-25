@@ -12,7 +12,7 @@
 //!
 //! # One clause, stated in its own type
 //!
-//! [`MaturityRefinementClause`] has one member, and the omission is the point. The clause this report witnesses is soundness — every refused concrete step corresponds to no allowed semantic step at its declared boundary — and the forward clause is a different statement over an accepted step nobody has observed. A member named for a clause nobody has written would be weaker than witnessing one, because a reader could not tell a clause that is owned and outstanding from a clause that is merely named.
+//! `MaturityRefinementClause` has one member because this report witnesses soundness of refused steps; `maturity_refinement` states the forward clause and checks it over the admitted accepted step.
 //!
 //! # A partial witness is stated as partial, never omitted
 //!
@@ -163,7 +163,7 @@ impl MaturityVolatileField {
 
 /// The clause of the refinement question this report witnesses.
 ///
-/// One member. Soundness is the half an unaccepted matrix can answer: a refusal is a concrete step somebody drove, and whether it corresponds to no allowed semantic step at its declared boundary is decidable from the refusal and the row together. The forward half — that an accepted concrete step corresponds to exactly one allowed semantic step — wants an acceptance and the constructor projections on both sides of it, and a member named for it here would be a name standing in place of a statement.
+/// One member: this report witnesses soundness at declared refusal boundaries, while the refinement module states and checks forward simulation over the admitted accepted step using acceptance and constructor projections on both sides.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityRefinementClause {
     /// Every refused concrete step corresponds to no allowed semantic step at its declared boundary.
