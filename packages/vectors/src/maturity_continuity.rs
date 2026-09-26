@@ -754,7 +754,7 @@ fn transition_comparison(
     }
 }
 
-fn fixed_projection(
+pub(crate) fn fixed_projection(
     target: &ReviewedElementsTapscriptDefinition,
     encoded: EncodedStateMetadata,
     bundle: &CandidateLinkedMaturityBundle,
@@ -1167,7 +1167,7 @@ fn tweak_evidence(
     Ok(result)
 }
 
-const fn prefix(odd: bool) -> u8 {
+pub(crate) const fn prefix(odd: bool) -> u8 {
     if odd { 0x03 } else { 0x02 }
 }
 
