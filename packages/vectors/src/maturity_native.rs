@@ -40,6 +40,7 @@ use crate::maturity_closure::{
     MaturityClosureRefusal, MaturityDeployment, MaturityWitnessSelection, OracleStateCurve,
     closure_target, decode_announcement_leaf, linked_announcement_bytes, maturity_sources,
 };
+use crate::maturity_mutants::MaturityMutantStageRefusal;
 use crate::maturity_operator::{OPERATOR_HANDLE, OperatorVerifier};
 pub use crate::observed_boundary::{matches_boundary, observed_boundary};
 
@@ -85,6 +86,8 @@ pub enum MaturityNativePlanRefusal {
     Tapscript(Box<TapscriptError>),
     /// The published signing material refused to produce a signature.
     Signing(TestSigningDefect),
+    /// An exact mutant could not be staged for a native offer.
+    MutantStage(Box<MaturityMutantStageRefusal>),
     /// The construction-right registry refused the frozen candidate.
     ConstructionRight(Box<RightRefusal>),
     /// A response was missing, unsolicited, or named a different pending case.

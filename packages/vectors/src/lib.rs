@@ -59,6 +59,7 @@ pub mod maturity_fixture;
 pub mod maturity_history;
 pub mod maturity_history_report;
 pub mod maturity_measurements;
+pub mod maturity_mutant_ceremony;
 pub mod maturity_mutants;
 pub mod maturity_native;
 pub mod maturity_negative_half;
