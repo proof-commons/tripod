@@ -1,6 +1,6 @@
 # Phase 6 — STATE Constructor and Maturity Announcement · `phase:roadmap:state-maturity`
 
-> **Status:** Active — opened 2026-08-27 as the roadmap's current phase when Phase 5 exited; both entry conditions hold through the countersigned Phase-5 exit assessment and the accepted STATE-constructor research decision. Guide 14 is archived verbatim (`T6-001`); Wave 0 closed the tenth-review disposition and Phase-5 handoff revalidation (`T6-002`, `T6-031`); the conceptual preflight register binds Waves 1–13 (`T8-001`); Wave 1's deliverables and architecture-owned lead-bound adapter landed through `0.6.152-dev`; Wave 2 closed under `T11-013` through `T11-020`; Wave 3 closed under `T11-024` through `T11-032`, with its six questions discharged by rulings 16–21 at (`rule:phase6:wave3-rulings`) and R-4 adopted in `plans/guides/guide_fourteen_conceptual_register.md`; Wave 4 closed under `T11-033` through `T11-040`, with its twelve decisions ruled at (`rule:phase6:wave4-rulings`) and R-1 and R-3 adopted in `plans/guides/guide_fourteen_conceptual_register.md`; Wave 5 closed under `T11-041` through `T11-048` in `0.6.186-dev`, with its six decisions ruled at (`rule:phase6:wave5-rulings`); and Wave 6 closed under `T11-049` through `T11-061`, with its thirteen decisions ruled at (`rule:phase6:wave6-rulings`) and `R-7 CLOSURE-EXACT` adopted in `plans/guides/guide_fourteen_conceptual_register.md`, while `T11-062` closed on `0.6.200-dev` and `T11-063` and `T11-064` are scheduled beyond the wave; and Wave 7 closed under `T11-065` through `T11-075`, with its nine decisions ruled at (`rule:phase6:wave7-rulings`), `G14C-07` closed and the Wave-7 clause of `G14C-03` discharged in `plans/guides/guide_fourteen_conceptual_register.md`, while the sponsored arm on which its second exit is conditional is `T11-064`'s; and Wave 8 closed under `T11-090`, its evidence recorded at (`sec:phase6:wave8-findings`) and §23's seventh conjunct outstanding with its two routes named; and Wave 9 opened under `T11-091`, with its nine decisions ruled at (`rule:phase6:wave9-rulings`); the constant-elision route of ruling 79 opened under `T11-100` and closed under `T11-109` on `0.6.245-dev`; and Wave 9 closed under `T11-099`, its evidence recorded at (`sec:phase6:wave9-findings`), its three exits met on the accepted bytes admitted on `0.6.245-dev` and carried end to end on `0.6.247-dev`, and §23's seventh conjunct conditionally met under the disclosed zero fee floors with positive-fee-floor relayability outstanding; the accepted-byte classification of `T11-111` landed on `0.6.251-dev` (the projector's verified claim), `0.6.252-dev` (the standing and the census recount) and `0.6.253-dev` (the report's join) under the study at (`sec:phase6:accepted-byte-classification`); and Wave 10 opened under `T11-113`, with its nine decisions and two open questions ruled at (`rule:phase6:wave10-rulings`); and Wave 10 stopped under `T11-118` and closed under `T11-126` on `0.6.276-dev` at (`sec:phase6:wave10-findings`): its task rows `T11-119` through `T11-126` were disposed on `0.6.268-dev` through `0.6.275-dev`, its first and second exits met, its third conditionally met, its fourth met for public recovery and conditionally met for root history, `R-5 RECOVERY` adopted with its condition in `plans/guides/guide_fourteen_conceptual_register.md`, and `G14C-11`, `G14C-13` and its clause of `G14C-12` closed with its register exit passed; and Wave 11 opened under `T11-128` and closed under `T11-133` on `0.6.282-dev` at (`sec:phase6:wave11-findings`): its task rows `T11-129` through `T11-132` were disposed on `0.6.278-dev` through `0.6.281-dev`, its first exit conditionally met, its second and third met with §23's eighth conjunct, no register row owned and no status cell changed, with its eight decisions and three open questions ruled at (`rule:phase6:wave11-rulings`); and Wave 12 opened under `T11-134` and closed under `T11-140` on `0.6.291-dev` at (`sec:phase6:wave12-findings`): its task rows `T11-135` through `T11-139` were disposed on `0.6.286-dev` through `0.6.290-dev`, its three exits met at their stated scopes with §23's fifteenth, seventeenth and nineteenth conjuncts, `G14C-03` closed on the bounded nonce corpus, with its nine decisions and three open questions ruled at (`rule:phase6:wave12-rulings`); and Wave 13 opened under `T11-142`, with its ten decisions and three of its four open questions ruled at (`rule:phase6:wave13-rulings`) and the fourth left with the owner-reviewed closeout.
+> **Status:** Active — opened 2026-08-27 as the roadmap's current phase when Phase 5 exited; both entry conditions hold through the countersigned Phase-5 exit assessment and the accepted STATE-constructor research decision. Guide 14 is archived verbatim (`T6-001`); Wave 0 closed the tenth-review disposition and Phase-5 handoff revalidation (`T6-002`, `T6-031`); the conceptual preflight register binds Waves 1–13 (`T8-001`); Wave 1's deliverables and architecture-owned lead-bound adapter landed through `0.6.152-dev`; Wave 2 closed under `T11-013` through `T11-020`; Wave 3 closed under `T11-024` through `T11-032`, with its six questions discharged by rulings 16–21 at (`rule:phase6:wave3-rulings`) and R-4 adopted in `plans/guides/guide_fourteen_conceptual_register.md`; Wave 4 closed under `T11-033` through `T11-040`, with its twelve decisions ruled at (`rule:phase6:wave4-rulings`) and R-1 and R-3 adopted in `plans/guides/guide_fourteen_conceptual_register.md`; Wave 5 closed under `T11-041` through `T11-048` in `0.6.186-dev`, with its six decisions ruled at (`rule:phase6:wave5-rulings`); and Wave 6 closed under `T11-049` through `T11-061`, with its thirteen decisions ruled at (`rule:phase6:wave6-rulings`) and `R-7 CLOSURE-EXACT` adopted in `plans/guides/guide_fourteen_conceptual_register.md`, while `T11-062` closed on `0.6.200-dev` and `T11-063` and `T11-064` are scheduled beyond the wave; and Wave 7 closed under `T11-065` through `T11-075`, with its nine decisions ruled at (`rule:phase6:wave7-rulings`), `G14C-07` closed and the Wave-7 clause of `G14C-03` discharged in `plans/guides/guide_fourteen_conceptual_register.md`, while the sponsored arm on which its second exit is conditional is `T11-064`'s; and Wave 8 closed under `T11-090`, its evidence recorded at (`sec:phase6:wave8-findings`) and §23's seventh conjunct outstanding with its two routes named; and Wave 9 opened under `T11-091`, with its nine decisions ruled at (`rule:phase6:wave9-rulings`); the constant-elision route of ruling 79 opened under `T11-100` and closed under `T11-109` on `0.6.245-dev`; and Wave 9 closed under `T11-099`, its evidence recorded at (`sec:phase6:wave9-findings`), its three exits met on the accepted bytes admitted on `0.6.245-dev` and carried end to end on `0.6.247-dev`, and §23's seventh conjunct conditionally met under the disclosed zero fee floors with positive-fee-floor relayability outstanding; the accepted-byte classification of `T11-111` landed on `0.6.251-dev` (the projector's verified claim), `0.6.252-dev` (the standing and the census recount) and `0.6.253-dev` (the report's join) under the study at (`sec:phase6:accepted-byte-classification`); and Wave 10 opened under `T11-113`, with its nine decisions and two open questions ruled at (`rule:phase6:wave10-rulings`); and Wave 10 stopped under `T11-118` and closed under `T11-126` on `0.6.276-dev` at (`sec:phase6:wave10-findings`): its task rows `T11-119` through `T11-126` were disposed on `0.6.268-dev` through `0.6.275-dev`, its first and second exits met, its third conditionally met, its fourth met for public recovery and conditionally met for root history, `R-5 RECOVERY` adopted with its condition in `plans/guides/guide_fourteen_conceptual_register.md`, and `G14C-11`, `G14C-13` and its clause of `G14C-12` closed with its register exit passed; and Wave 11 opened under `T11-128` and closed under `T11-133` on `0.6.282-dev` at (`sec:phase6:wave11-findings`): its task rows `T11-129` through `T11-132` were disposed on `0.6.278-dev` through `0.6.281-dev`, its first exit conditionally met, its second and third met with §23's eighth conjunct, no register row owned and no status cell changed, with its eight decisions and three open questions ruled at (`rule:phase6:wave11-rulings`); and Wave 12 opened under `T11-134` and closed under `T11-140` on `0.6.291-dev` at (`sec:phase6:wave12-findings`): its task rows `T11-135` through `T11-139` were disposed on `0.6.286-dev` through `0.6.290-dev`, its three exits met at their stated scopes with §23's fifteenth, seventeenth and nineteenth conjuncts, `G14C-03` closed on the bounded nonce corpus, with its nine decisions and three open questions ruled at (`rule:phase6:wave12-rulings`); and Wave 13 opened under `T11-142`, with its ten decisions and three of its four open questions ruled at (`rule:phase6:wave13-rulings`) and the fourth left with the owner-reviewed closeout, and closed under `T11-147` on `0.6.306-dev` at (`sec:phase6:wave13-findings`): its task rows `T11-141` through `T11-152` and `T11-112` were disposed on `0.6.249-dev` and `0.6.293-dev` through `0.6.305-dev`, its first exit not met with §23 NOT PASSED on five conditional conjuncts, its second and third met, `G14C-02` closed on its scoped cell and `G14C-06`, `G14C-14` and `G14C-15` closed in the gate record at (`sec:phase6:gate-record`), with rulings 105 through 127 at (`rule:phase6:wave13-rulings`).
 > **Entry:** (`gate:phase5:exit`) and accepted STATE-constructor decision
 > **Packages:** tapscript, linker, transaction, vectors
 > **Operation:** `announce-maturity`
@@ -1399,6 +1399,42 @@ This record opens Wave 13 with rulings, rows and a relocated, recounted baseline
 
 The five existing bites receive the gate-record audit rule, independent report reproduction, scoped refinement relation, package-documents sweep and evidenced gate record at (`task:guide14-exec:wave13`); N1's `T11-148` through `T11-152` receive four host bites and the two-run ceremony, with the admission carrying its captures into the gate record, while N2 retains its condition (`plans/drafts/wave13-gate-and-handoff-study.md:561–787`, `plans/drafts/wave13-native-mutant-ceremony-study.md:557–563`).
 
+Row `T11-142` is DONE on `0.6.293-dev` and `0.6.299-dev`. Its opening record and amendment give Wave 13 its rulings, findings, rows, baseline and node-bound ceremony, while this gate record disposes its reserved closure.
+
+Row `T11-143` is DONE on `0.6.294-dev`. Its gate asked for a section-scoped plans-validator rule and thirteen stated-text tests; `gate_record_failures` under `check_plans` and `the_gate_record_rule_runs_under_check_plans` pin the rule applied here.
+
+Row `T11-144` is DONE on `0.6.295-dev`. Its gate asked for independent assemblies before byte comparison; `independent_assemblies_render_identical_bytes` in the recovery and resource reports pins that result with fourteen and seven tests respectively.
+
+Row `T11-145` is DONE on `0.6.296-dev`. Its six refinement tests pin the typed relation, admitted accepted-step forward comparison, finite supported-step completeness under six assumptions, report-to-clause map and four finite-corpus non-claims.
+
+Row `T11-146` is DONE on `0.6.297-dev`. Its fifteen-file sweep aligns the named crate READMEs, package contracts and two manifest descriptions with their carried Phase-6 scope and direct dependencies under its full gate.
+
+Row `T11-141` is DONE on `0.6.305-dev`. Its whole root README rewrite records the sixteen-crate roster, current contracts, version registry and 54-lane gate from the tree after the documents sweep.
+
+Row `T11-148` is DONE on `0.6.300-dev`. Its staging module and nine tests pin seven offerable mutant positions, signed-field rebuilding, host clauses and the absence of an announcement position for a successor control recipe.
+
+Row `T11-149` is DONE on `0.6.301-dev`. Its ceremony planner and two separate test targets pin the predecessor and successor rosters, declared layers, row-bearing refusals and scripted eligibility checks.
+
+Row `T11-150` is DONE on `0.6.302-dev`. Its shared capture driver and two Meson capture-contract lanes bring the gate to 54 lanes and retain the existing maturity capture path.
+
+Row `T11-151` is DONE on `0.6.303-dev`. Its two four-file capture directories record separate predecessor and successor runs of eight and six exchanges, seven bound refusals, accepted honest controls and concluding `eligible yes`.
+
+Row `T11-152` is DONE on `0.6.303-dev` and `0.6.304-dev`. Its importer admits both mutant runs; the classification binds seven refusals, removes their required register entries and renders them in safety-report schema 2, moving answered rows from 71 to 78 and outstanding rows from 135 to 128.
+
+Row `T11-112` is DONE on `0.6.249-dev`. `commitment_premises_name_constructor_hash_domains`, `tweak_evidence_recomputes_both_sides` and `a_tag_separates_domains` pin the premise-to-domain association; the first two live in `packages/vectors/src/maturity_continuity.rs`, beside the premise type, rather than the conformance file named by the backlog row.
+
+Row `T11-147` is DONE on this row's label gate. Its plans-validator, documentation, generated, lint and labels gates check the evidenced §23 table, complete matrix and named outstanding rows, four impact tables, candidate handoff, register discharge, backlog dispositions and unchanged Active phase status.
+
+The first exit at (`task:guide14-exec:wave13`)—§23 passes—is NOT MET. Eighteen numbered conjuncts are MET, five are CONDITIONALLY MET, R is MET, and §23 is NOT PASSED on conjuncts 5, 7, 11, 13 and 14.
+
+The second exit—no stronger claim than the reports support—is MET under ruling 108's scan. The four required non-claims, candidate-only keys, conditional standings, report boundaries and absence of final artifacts prevent the gate record from promoting its evidence.
+
+The third exit—Phase 6 exits only after the record is reviewed—is MET by construction. The card remains `Active`, none of the welded declarations moves, and the scan refuses a non-Active card without the record; the owner-reviewed closeout retains the exit and OQ4.
+
+The remaining obligations retain their carriers: N2 keeps its Elements-provisioned-node condition and dependence on Wave 11's C1; positive-fee-floor relayability remains with that fee-paying form and deployment; OQ4 and the welded phase exit stay with the owner-reviewed closeout; Wave-12's typed source-wrapping, unknown resource-dimension validation and other stated residuals remain in their recorded scopes.
+
+This record closes Wave 13 on its landed bites, disposes its rows and `T11-112`, records the Phase-6 gate at (`sec:phase6:gate-record`) with §23 NOT PASSED, closes the register's four remaining rows, and performs no part of the exit and adopts no candidate.
+
 ### Handed up for a ruling, Wave 3 · `rem:phase6:wave3-questions`
 
 1. Ruling 16 at (`rule:phase6:wave3-rulings`) assigns the operator profile and deployment binding while keeping semantic requests free of deployment identity; this item is discharged.
@@ -1489,6 +1525,466 @@ The dependency split is vocabulary, then declaration, then executed-model confor
 The declaration sits at the Wave-1/Wave-2 boundary: it closes Wave 1's realization semantics and supplies Wave 2's declaration-derived exact relation census (`plans/guides/guide_fourteen.md:2873-2892`, `:2900-2917`). Wave 3 still owns operator-key encoding, message recomputation and target-native signature control (`plans/guides/guide_fourteen.md:2925-2935`), separated by ruling 6's external requirement.
 
 The three declaration-prerequisite gaps are closed by the vocabulary landing in `0.6.147-dev`; the announce-maturity declaration, its dependency-release follow-up, and its executed-model conformance landed in `0.6.148-dev`.
+
+## Gate record · `sec:phase6:gate-record`
+
+This record reads Guide 14 §23 as one conjunction under ruling 108's plans-validator scan (`rule:phase6:wave13-rulings`). Its evidence base is `0.6.305-dev`, and its repository gate of record is the 54-lane run over that tag: Ok 54, Fail 0, `ci-rc` 0, wall 1,505 s, with the advisory lane passed. The record moves no conjunct by prose, performs no phase exit, and adopts no candidate.
+
+| Key | Value |
+|---|---|
+| `release-complete` | false |
+| `final calibration claim` | none |
+| `production key claim` | none |
+| `Phase-6 verdict` | accepted candidate |
+| `§23 verdict` | NOT PASSED |
+
+### Guide 14 §23
+
+| # | Conjunct | Standing | Evidence | Condition, and what carries it |
+|---|---|---|---|---|
+| 1 | the Phase-5 handoff has been revalidated and every confirmed preflight blocker is closed | MET | `T6-031`, `T6-032`, `plans/history/backlog-history.md:2219` and Guide 14 §4.1 | — |
+| 2 | the exact typed maturity-announcement semantics are implemented | MET | `announce_maturity` in `packages/realization/src/state.rs:315`; ruling 14; `G14C-01` | — |
+| 3 | canonical STATE metadata and representation separation are complete | MET | Wave-9 codec and slicing tests at (`sec:phase6:wave9-findings`); ruling 74 | — |
+| 4 | predecessor and successor authenticate one exact static subtree | MET | `accepted_variable_archive_projects_both_constructors_and_transition` in `packages/vectors/tests/maturity_continuity.rs`; Wave-9 exits | — |
+| 5 | metadata leaf, key path, wrong-key, wrong-root, wrong-parity, and wrong-control escapes reject | CONDITIONALLY MET | Both admitted mutant accessors in `packages/vectors/src/maturity_corpus.rs`, seven bound refusals classified on `0.6.304-dev`, `every_outstanding_row_is_registered` and the first-party cases in `packages/vectors/src/maturity_first_party.rs`; rulings 123, 124 and 127 | The refusals narrow the condition; `wrong-control-recipe` has no announcement-byte position and the key-path residual remains. The alternative MET reading treats the recipe as outside these bytes and the discrete-log limit as a non-claim. |
+| 6 | operator authorization binds one exact finalized transaction | MET | Revision-8 operator run on `0.6.169-dev`; Wave-7 fourth exit at (`sec:phase6:wave7-findings`) | — |
+| 7 | one sponsorless positive control is accepted by a real target | CONDITIONALLY MET | Variable-schedule accepted run on `0.6.245-dev`; `variable_archive_admits_established_identity_and_exact_mined_readback` | Acceptance disclosed zero relay and block fee floors. Positive-floor relayability remains with Wave 11's C1, `T11-064` and deployment; ruling 115 states the alternative MET reading and its paired handoff obligation. |
+| 8 | every claimed sponsored form has an explicit disposition | MET | Wave-11 sponsor refusals on `0.6.278-dev`; (`sec:phase6:wave11-findings`) | — |
+| 9 | every accepted transaction matches the expected semantic STATE | MET | `transition_agrees` over the accepted variable archive in `packages/vectors/tests/maturity_continuity.rs`; Wave-9 first exit | — |
+| 10 | every accepted transaction matches constructor continuity | MET | Wave-9 second and third exits; `packages/vectors/tests/maturity_continuity.rs` | — |
+| 11 | exactly one STATE root edge is independently recovered | CONDITIONALLY MET | `accepted_archive_single_edge_validates_and_advances_the_cursor` and `the_accepted_archives_root_edge_is_built_from_the_handoff_alone`; (`sec:phase6:wave10-findings`) | The zero-fee-floor environment and declared linked candidate remain with the checkpoint-bound edge. |
+| 12 | no invalid intermediate root edge can be hidden by final cursor equality | MET | Wave-10 invalid-intermediate-edge test at (`sec:phase6:wave10-findings`) | — |
+| 13 | an unrelated process reconstructs the successor from public chain data | CONDITIONALLY MET | Public recovery on `0.6.264-dev`; (`sec:phase6:wave10-findings`) | The process has a pinned import boundary and consumes archived mined readback; it does not independently observe a chain. |
+| 14 | no RESV, issuance, destruction, economic flow, or specialized event appears | CONDITIONALLY MET | One-input, one-output accepted announcement, `FeeRoleAbsent`, `packages/compiler/src/tests/maturity_announcement_plan_tests.rs:473` and fifteen §16.9 ABI-construction rows in `packages/vectors/src/maturity_safety.rs` | R-7's region scope leaves a composed on-chain transaction outside the model; `T11-064` carries the refit. |
+| 15 | safety, continuity, history, recovery, and resources remain separate reports | MET | Five distinct validated report modules in `packages/vectors/src/`; Wave-12 third exit | — |
+| 16 | every negative row is answered at its declared boundary or remains explicitly outstanding | MET | `the_plan_classifies_every_row_of_the_matrix_exactly_once`, the census in `packages/vectors/src/maturity_evidence.rs` and the 128 named rows below | — |
+| 17 | resource prediction equals target observation | MET | `the_target_observed_one_dimension_and_it_agrees` on `0.6.287-dev`; weights 2,084 and 2,091 | At the stated scope of transaction weight over the two archived submissions. |
+| 18 | lifecycle incompleteness remains explicit | MET | `packages/compiler/src/tests/maturity_announcement_plan_tests.rs:483` and `packages/linker/src/tests/state_bundle_tests.rs:238` | — |
+| 19 | no production key custody, deployment, calibration, release, or universal security claim is made | MET | `SECURITY.md:7`, `SECURITY.md:74`, `packages/architecture/README.md:25`, `packages/transaction/src/state_abi.rs:125` and the Wave-12 calibration finding | — |
+| 20 | no speculative identity is minted | MET | ADR-021 at `adr/021-identity-adjudication.md:38`, the continuity byte digest at `packages/vectors/src/maturity_continuity_report.rs:2095` and ruling 117 | Under §24.1 the digest locates evidence. Reading it as a minted identity instead leaves this conjunct OUTSTANDING pending admission or removal and a report-byte change. |
+| 21 | canonical report bytes reproduce | MET | `independent_assemblies_render_identical_bytes` in the recovery and resource reports on `0.6.295-dev`, beside safety, continuity and history reproduction tests | — |
+| 22 | the full repository gate passes | MET | Gate of record over `0.6.305-dev`: Ok 54, Fail 0, `ci-rc` 0, wall 1,505 s; advisory lane passed | The gate is over the tip below this record; this record also passes its own documentation gate. |
+| 23 | the final working tree is clean | MET | That gate's `clean-tree` lane, `scripts/gate-clean-tree.sh:29`, over `0.6.305-dev` | — |
+| R | the conceptual register is fully discharged | MET | `G14C-02` on ruling 116's scoped cell; `G14C-06`, `G14C-14` and `G14C-15` on ruling 112's pointers in `plans/guides/guide_fourteen_conceptual_register.md` | — |
+
+Eighteen numbered conjuncts are MET and five—5, 7, 11, 13 and 14—are CONDITIONALLY MET; none is OUTSTANDING, and R is MET. The §23 verdict is NOT PASSED because those five conditions remain.
+
+### The card's ten conditions
+
+| Condition | Standing | Evidence and condition |
+|---|---|---|
+| accepted constructor research is implemented exactly | MET | Wave-4 candidate constructor and adopted R-1 and R-3 in `plans/guides/guide_fourteen_conceptual_register.md` |
+| metadata encoding is canonical | MET | §23 row 3 |
+| predecessor and successor share one authenticated static code identity | MET | §23 row 4 |
+| no key-path or metadata path bypass remains | CONDITIONALLY MET | §23 row 5; the admitted refusals narrow the condition, while `wrong-control-recipe` and the key-path residual remain. Rulings 124 and 127 state the MET reading beside this reading. |
+| announce-maturity matches the model relation | MET | `announce_maturity` and the accepted-step projection at (`sec:phase6:wave9-findings`) |
+| all wrong-code-subtree vectors reject | CONDITIONALLY MET | Admitted predecessor and successor mutant refusals on `0.6.303-dev` and `0.6.304-dev`; `wrong-static-subtree` remains a carried first-party case, not an observed rejection (`packages/vectors/src/maturity_first_party.rs:3402`). |
+| root-history continuity tests pass | MET | Wave-10 root-history tests and the gate verdict |
+| target and policy resources fit | MET | Accepted 53-byte variable item and observed weight 2,091; the whole schedule's 86-byte item remains replay-only; OQ4 retains the literal-gate question. |
+| bundle/ABI/report identities are deterministic | MET | Complete-input bundle and ABI equality and §23 row 21's reproduction tests |
+| relation coverage is complete and the repository remains clean | NOT MET on its literal text | `every_required_row_is_answered` is false, and ninety rows remain unlinked to a published relation; OQ4 belongs to the owner-reviewed closeout. |
+
+### Result matrix — Safety
+
+| Key | Value | Evidence |
+|---|---|---|
+| row count | 206 | `packages/vectors/src/maturity_safety.rs`; `the_census_figures_are_unmoved_by_the_binding_readers` |
+| answered | 78: forty first-party discharges, one native acceptance, seven native refusals, sixteen root-history and fourteen public-recovery observations | `packages/vectors/src/maturity_evidence.rs`; `0.6.304-dev` |
+| outstanding | 128: 43 first-party required, 35 native-run required, 15 report-layer required, 35 typed non-answers | Classified evidence plan rendered for this record |
+| first-party | Forty discharged and 43 required | `packages/vectors/src/maturity_first_party.rs`; `packages/vectors/src/maturity_evidence.rs` |
+| native acceptances | One sponsorless acceptance | `0.6.245-dev`; `packages/vectors/src/maturity_corpus.rs` |
+| native refusals | Seven bound constructor refusals | `0.6.303-dev`; `0.6.304-dev` |
+| unexpected-boundary refusals | zero | `the_census_figures_are_unmoved_by_the_binding_readers` |
+| infrastructure errors | zero in the evidence-plan census | `the_census_figures_are_unmoved_by_the_binding_readers` |
+| accepted semantic projections | Accepted variable archive projected to `announce_maturity`; historical archive projected without an acceptance claim | `packages/vectors/tests/maturity_continuity.rs` |
+| `every_required_row_is_answered` | false | `packages/vectors/src/maturity_evidence.rs` census test |
+| native declared-boundary / unexpected-boundary | 0 / 0 | Same census test |
+| relation links | fourteen every-published, 102 declared, ninety unlinked | `packages/vectors/src/maturity_safety.rs:4458` |
+| canonical bytes | Safety-report schema 2 | `packages/vectors/src/maturity_report.rs` |
+
+The 35 `waiting` and 15 `report_layer` rows are also named by the rendered safety report. The 43 first-party-required and 35 typed-non-answer names come from the evidence plan's classified rows; the safety report does not render those two buckets by name.
+
+| §20.5 matrix | Run of record or absence | Evidence |
+|---|---|---|
+| maturity semantic safety | Whole-schedule run on `0.6.227-dev` and accepted variable-schedule run on `0.6.245-dev` | Archived corpora under `packages/vectors/fixtures/` |
+| operator authorization | Revision-8 operator run on `0.6.169-dev` | Operator corpus |
+| predecessor constructor | Eight-exchange mutant run admitted on `0.6.303-dev` | `maturity_predecessor_mutant_run_of_record()` |
+| successor constructor | Six-exchange mutant run admitted on `0.6.303-dev` | `maturity_successor_mutant_run_of_record()` |
+| branch-order and totality | No target run; eleven rows carry `TotalityAnsweredByLandedNonceEvidence` | Safety matrix and bounded nonce corpus |
+| root history | No target run; host report over the accepted archive | `0.6.263-dev`, with no-chain-observation residual |
+| public recovery | No target run; host report over the accepted archive | `0.6.264-dev`, with no-chain-observation residual |
+| sponsor forms | No target run; both forms refused at construction | `0.6.278-dev` |
+| resources | Node weights from both archived runs compared host-side | `0.6.287-dev` |
+
+### Outstanding safety rows — first-party required, 43
+
+- §16.2 malformed-cycle-encoding (FirstPartyRequired(TheTypedInputAdmitsNoMalformedEncoding))
+- §16.2 request-cycle-differs-from-successor (FirstPartyRequired(TheValueIsDerivedNotAccepted))
+- §16.3 correct-semantic-metadata-with-noncanonical-representation-nonce (FirstPartyRequired(LeastnessIsAPropertyOfTheSearchNotOfAnOffer))
+- §16.5 wrong-static-subtree (FirstPartyRequired(TheOwnerHasNoRetainedObjectToCompareTheOfferAgainst))
+- §16.5 metadata-leaf-missing (FirstPartyRequired(TheValueIsDerivedNotAccepted))
+- §16.5 extra-escape-leaf (FirstPartyRequired(TheOwnerHasNoRetainedObjectToCompareTheOfferAgainst))
+- §16.7 caller-supplied-branch-order (FirstPartyRequired(TheOfferedOrderIsNormalizedBeforeItIsCommitted))
+- §16.7 source-order-dependent-tree (FirstPartyRequired(TheOfferedOrderIsNormalizedBeforeItIsCommitted))
+- §16.9 add-live-receipt-input-or-output (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-time-locked-receipt (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-ash (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-entitlement (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-request (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-distribution-control-or-vault (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-resv-input-or-output (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-pace (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-authority-object (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-issuance (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-destruction (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-burn-record (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-clear-event (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 add-residue-projection (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.9 introduce-canonical-u-ent-or-dist-ctl-flow (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.11 wrong-coordinator (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.11 duplicate-coordinator (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.11 no-coordinator (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.11 state-and-sponsor-positions-exchanged (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.11 wrong-input-count (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.11 wrong-output-count (FirstPartyRequired(LayoutIsNotAcceptedFromACaller))
+- §16.11 unresolved-metadata-schema-symbol (FirstPartyRequired(TheResolvedCensusIsResolvedByTheOwnerItself))
+- §16.11 unresolved-lead-bound-symbol (FirstPartyRequired(TheResolvedCensusIsResolvedByTheOwnerItself))
+- §16.11 unresolved-operator-symbol (FirstPartyRequired(TheResolvedCensusIsResolvedByTheOwnerItself))
+- §16.11 conflicting-leaf-weight (FirstPartyRequired(TheTypedInputCarriesNoTermTheChangeNames))
+- §16.11 candidate-outside-bounds (FirstPartyRequired(TheBoundIsMeasuredOverWhatTheOwnerBuilt))
+- §16.12 blank-request (FirstPartyRequired(TheOwningValidatorHasNoPublicEntry))
+- §16.12 oversized-request (FirstPartyRequired(TheOwningValidatorHasNoPublicEntry))
+- §16.12 unterminated-request (FirstPartyRequired(TheOwningValidatorHasNoPublicEntry))
+- §16.12 malformed-json (FirstPartyRequired(TheOwningValidatorHasNoPublicEntry))
+- §16.12 unknown-request-field (FirstPartyRequired(TheOwningValidatorHasNoPublicEntry))
+- §16.12 wrong-schema (FirstPartyRequired(TheOwningValidatorHasNoPublicEntry))
+- §16.12 wrong-environment (FirstPartyRequired(TheOwningValidatorHasNoPublicEntry))
+- §16.12 wrong-provenance (FirstPartyRequired(TheOwningValidatorHasNoPublicEntry))
+- §16.12 signing-response-bound-to-other-bytes (FirstPartyRequired(TheOwningValidatorHasNoPublicEntry))
+
+### Outstanding safety rows — native-run required, 35
+
+- §16.2 successor-remains-unannounced (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Lifecycle, subject: LifecycleExit { object: State, exit: AnnounceMaturity } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: CompilerStatic, purpose: FocusedReject(RequiredLifecycleExitMissing) })))
+- §16.2 successor-becomes-complete (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Lifecycle, subject: LifecycleExit { object: State, exit: AnnounceMaturity } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: CompilerStatic, purpose: FocusedReject(RequiredLifecycleExitMissing) })))
+- §16.3 metadata-from-another-state-object (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Recognition, subject: ObjectFamily { side: Input, object: State } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: RuntimeCarrier, purpose: FocusedReject(WrongRecognizedObject) })))
+- §16.4 empty-signature (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Authorization, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceFailed } })))
+- §16.4 malformed-signature (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Authorization, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceFailed } })))
+- §16.4 wrong-operator (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Authorization, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceIdentityMismatch } })))
+- §16.4 stale-operator (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Authorization, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceIdentityMismatch } })))
+- §16.4 valid-signature-under-another-key (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Authorization, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceIdentityMismatch } })))
+- §16.4 valid-signature-over-another-candidate (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Authorization, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceIdentityMismatch } })))
+- §16.4 successor-metadata-changed-after-signing (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Authorization, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceIdentityMismatch } })))
+- §16.4 successor-program-changed-after-signing (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Authorization, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceIdentityMismatch } })))
+- §16.4 sponsor-input-added-after-signing (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Authorization, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceIdentityMismatch } })))
+- §16.4 fee-output-changed-after-signing (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Authorization, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceIdentityMismatch } })))
+- §16.5 wrong-state-asset (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Recognition, subject: ObjectFamily { side: Input, object: State } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: RuntimeCarrier, purpose: FocusedReject(WrongRecognizedAsset) })))
+- §16.5 wrong-singleton-amount (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Recognition, subject: ObjectFamily { side: Input, object: State } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: RuntimeCarrier, purpose: FocusedReject(WrongRecognizedObject) })))
+- §16.5 wrong-predecessor-program (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Recognition, subject: ObjectFamily { side: Input, object: State } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: RuntimeCarrier, purpose: FocusedReject(WrongRecognizedObject) })))
+- §16.5 predecessor-metadata-reconstructs-another-program (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Constructibility, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceIdentityMismatch } })))
+- §16.5 wrong-leaf-version (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Constructibility, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceFailed } })))
+- §16.6 successor-from-wrong-semantic-metadata (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Recognition, subject: ObjectFamily { side: Output, object: State } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: RuntimeCarrier, purpose: FocusedReject(WrongRecognizedObject) })))
+- §16.6 successor-from-predecessor-metadata-unchanged (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Recognition, subject: ObjectFamily { side: Output, object: State } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: RuntimeCarrier, purpose: FocusedReject(WrongRecognizedObject) })))
+- §16.6 wrong-announcement-cycle (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Recognition, subject: ObjectFamily { side: Output, object: State } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: RuntimeCarrier, purpose: FocusedReject(WrongRecognizedObject) })))
+- §16.6 wrong-representation-nonce (NativeRunRequired(None))
+- §16.6 later-admissible-nonce-instead-of-first (NativeRunRequired(None))
+- §16.6 wrong-leaf-version (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Constructibility, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceFailed } })))
+- §16.6 wrong-control-recipe (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Constructibility, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceFailed } })))
+- §16.6 arbitrary-caller-supplied-output-program (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Constructibility, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceIdentityMismatch } })))
+- §16.6 no-state-successor (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Cardinality, subject: ObjectFamily { side: Output, object: State } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: RuntimeCarrier, purpose: FocusedReject(CardinalityBelowMinimum) })))
+- §16.6 two-state-successors (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Cardinality, subject: ObjectFamily { side: Output, object: State } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: RuntimeCarrier, purpose: FocusedReject(CardinalityAboveMaximum { ceiling: Declared(Count(1)) }) })))
+- §16.6 extra-state-like-output (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Cardinality, subject: ObjectFamily { side: Output, object: State } }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: RuntimeCarrier, purpose: FocusedReject(CardinalityAboveMaximum { ceiling: Declared(Count(1)) }) })))
+- §16.11 wrong-transaction-version (NativeRunRequired(None))
+- §16.11 wrong-sequence (NativeRunRequired(None))
+- §16.11 witness-item-reorder (NativeRunRequired(None))
+- §16.11 predecessor-and-successor-metadata-witnesses-exchanged (NativeRunRequired(None))
+- §16.11 control-block-from-another-program (NativeRunRequired(Some(CoverageRequirementId { relation: RelationId { operation: AnnounceMaturity, kind: Constructibility, subject: Operation }, case: ExecutionCaseId { operation: AnnounceMaturity, sponsor: Absent, representations: {State: Explicit} }, boundary: ExternalEvidence, purpose: ExternalEvidenceRejected { requirement: OperatorAuthorization { operation: AnnounceMaturity }, mutation: ExternalEvidenceIdentityMismatch } })))
+- §16.11 target-bytes-changed-after-abi-validation (NativeRunRequired(None))
+
+### Outstanding safety rows — report-layer required, 15
+
+- §16.3 unaffected-field-omega-changed-alone (ReportLayerRequired(TermDiffers(Semantic)))
+- §16.3 unaffected-field-y-l-changed-alone (ReportLayerRequired(TermDiffers(Semantic)))
+- §16.3 unaffected-field-y-t-changed-alone (ReportLayerRequired(TermDiffers(Semantic)))
+- §16.3 unaffected-field-q-changed-alone (ReportLayerRequired(TermDiffers(Semantic)))
+- §16.3 unaffected-field-cycle-changed-alone (ReportLayerRequired(TermDiffers(Semantic)))
+- §16.3 semantic-field-changes-compensated-by-another-field (ReportLayerRequired(TermDiffers(Semantic)))
+- §16.10 report-publishes-sponsor-amount (ReportLayerRequired(ForbiddenPublicationRefused))
+- §16.10 report-publishes-sponsor-opening (ReportLayerRequired(ForbiddenPublicationRefused))
+- §16.12 caller-authored-evidence-standing (ReportLayerRequired(ForbiddenPublicationRefused))
+- §16.12 report-summary-edited (ReportLayerRequired(ForbiddenPublicationRefused))
+- §16.12 failed-row-removed (ReportLayerRequired(ForbiddenPublicationRefused))
+- §16.12 duplicate-passing-row (ReportLayerRequired(ForbiddenPublicationRefused))
+- §16.12 observed-target-layer-differs-from-declared-row-boundary (ReportLayerRequired(ForbiddenPublicationRefused))
+- §16.12 canonical-report-includes-wall-time (ReportLayerRequired(ForbiddenPublicationRefused))
+- §16.12 typed-diagnostic-contains-a-caller-path-or-injected-line (ReportLayerRequired(ForbiddenPublicationRefused))
+
+### Outstanding safety rows — typed non-answer, 35
+
+- §16.1 minimum-valid-lead (OutstandingUnderTypedNonAnswer(AcceptanceAwaitsRelayAdmissibility))
+- §16.1 maximum-valid-lead (OutstandingUnderTypedNonAnswer(AcceptanceAwaitsRelayAdmissibility))
+- §16.1 representative-interior-lead (OutstandingUnderTypedNonAnswer(AcceptanceAwaitsRelayAdmissibility))
+- §16.1 smallest-current-cycle (OutstandingUnderTypedNonAnswer(AcceptanceAwaitsRelayAdmissibility))
+- §16.1 current-cycle-near-checked-upper-domain (OutstandingUnderTypedNonAnswer(AcceptanceAwaitsRelayAdmissibility))
+- §16.1 nontrivial-unaffected-fields (OutstandingUnderTypedNonAnswer(AcceptanceAwaitsRelayAdmissibility))
+- §16.1 representation-nonce-zero (OutstandingUnderTypedNonAnswer(AcceptanceAwaitsRelayAdmissibility))
+- §16.1 representation-nonce-nonzero (OutstandingUnderTypedNonAnswer(AcceptanceAwaitsRelayAdmissibility))
+- §16.1 sponsored-without-change (OutstandingUnderTypedNonAnswer(SponsoredControlRefusedAtConstruction))
+- §16.1 sponsored-with-change-where-supported (OutstandingUnderTypedNonAnswer(SponsoredControlRefusedAtConstruction))
+- §16.1 repeated-equal-construction-producing-equal-candidate-bytes (OutstandingUnderTypedNonAnswer(PropertyOfTheBuildRatherThanAFixture))
+- §16.1 accepted-target-transaction-with-semantic-constructor-root-and-recovery-projections-all-matching (OutstandingUnderTypedNonAnswer(AcceptanceAwaitsRelayAdmissibility))
+- §16.7 nonce-starts-at-one (OutstandingUnderTypedNonAnswer(TotalityAnsweredByLandedNonceEvidence))
+- §16.7 nonce-skips-an-admissible-value (OutstandingUnderTypedNonAnswer(TotalityAnsweredByLandedNonceEvidence))
+- §16.7 nonce-search-exceeds-bound (OutstandingUnderTypedNonAnswer(TotalityAnsweredByLandedNonceEvidence))
+- §16.7 invalid-internal-key-retried (OutstandingUnderTypedNonAnswer(TotalityAnsweredByLandedNonceEvidence))
+- §16.7 malformed-metadata-retried (OutstandingUnderTypedNonAnswer(TotalityAnsweredByLandedNonceEvidence))
+- §16.7 missing-leaf-retried (OutstandingUnderTypedNonAnswer(TotalityAnsweredByLandedNonceEvidence))
+- §16.7 zero-tweak-rejected-merely-for-zero (OutstandingUnderTypedNonAnswer(TotalityAnsweredByLandedNonceEvidence))
+- §16.7 tweak-at-or-above-group-order-accepted (OutstandingUnderTypedNonAnswer(TotalityAnsweredByLandedNonceEvidence))
+- §16.7 identity-result-accepted (OutstandingUnderTypedNonAnswer(TotalityAnsweredByLandedNonceEvidence))
+- §16.7 target-and-oracle-parity-disagree (OutstandingUnderTypedNonAnswer(TotalityAnsweredByLandedNonceEvidence))
+- §16.7 repeated-hashing-used-as-fixed-point-search (OutstandingUnderTypedNonAnswer(TotalityAnsweredByLandedNonceEvidence))
+- §16.10 state-sponsor-overlap (OutstandingUnderTypedNonAnswer(SponsoredControlRefusedAtConstruction))
+- §16.10 two-sponsor-envelopes (OutstandingUnderTypedNonAnswer(SponsorArmAwaitsRegionScoping))
+- §16.10 foreign-sponsor-asset (OutstandingUnderTypedNonAnswer(SponsoredControlRefusedAtConstruction))
+- §16.10 missing-sponsor-authorization (OutstandingUnderTypedNonAnswer(SponsoredControlRefusedAtConstruction))
+- §16.10 sponsor-change-at-state-output-0 (OutstandingUnderTypedNonAnswer(SponsoredControlRefusedAtConstruction))
+- §16.10 state-successor-in-sponsor-range (OutstandingUnderTypedNonAnswer(SponsoredControlRefusedAtConstruction))
+- §16.10 fee-change-substitution (OutstandingUnderTypedNonAnswer(SponsoredControlRefusedAtConstruction))
+- §16.10 sponsor-member-unclassified (OutstandingUnderTypedNonAnswer(SponsorArmAwaitsRegionScoping))
+- §16.10 empty-sponsor-offer-for-sponsored-request (OutstandingUnderTypedNonAnswer(SponsoredControlRefusedAtConstruction))
+- §16.10 balanced-state-corruption-compensated-by-sponsor-change (OutstandingUnderTypedNonAnswer(SponsoredControlRefusedAtConstruction))
+- §16.10 zero-valued-sponsor-member-under-exact-role-structure (OutstandingUnderTypedNonAnswer(SponsorArmAwaitsRegionScoping))
+- §16.10 confidential-sponsor-value-where-the-selected-target-policy-claims-support (OutstandingUnderTypedNonAnswer(SponsoredControlRefusedAtConstruction))
+
+### Result matrix — Constructor continuity
+
+| Key | Value | Evidence |
+|---|---|---|
+| predecessor reconstructed | Accepted archive host projection | `packages/vectors/tests/maturity_continuity.rs`; `0.6.247-dev` |
+| successor reconstructed | The one accepted successor matches the semantic transition | `packages/vectors/tests/maturity_continuity.rs` |
+| static subtree equal | One exact authenticated singleton subtree on both sides | Wave-9 second exit; `packages/vectors/tests/maturity_continuity.rs` |
+| metadata continuity | Predecessor and successor records match transition and constructor premises | `packages/vectors/src/maturity_continuity.rs` |
+| representation nonce canonical | Bounded host leastness with exhaustion residual | `0.6.289-dev`; `packages/vectors/src/maturity_nonce_corpus.rs` |
+| tweak/parity | Host reconstruction and admitted control paths check both sides | `packages/vectors/src/maturity_continuity.rs`; `0.6.303-dev` |
+| control paths | The admitted mutant refusals bind seven declared constructor rows | `0.6.304-dev`; `packages/vectors/src/maturity_evidence.rs` |
+| residual assumptions | NUMS key path, host leastness, modelled branches and singleton subtree remain explicit | Rulings 107, 116 and 127 |
+| canonical bytes | Validated continuity report has independent-assembly reproduction | `packages/vectors/src/maturity_continuity_report.rs` |
+
+### Result matrix — Root history
+
+| Key | Value | Evidence |
+|---|---|---|
+| checkpoint | Branch-bound accepted-archive checkpoint | `0.6.263-dev`; `packages/vectors/src/maturity_history_report.rs` |
+| predecessor cursor | Starting cursor from the accepted archive's public handoff | `packages/vectors/src/maturity_evidence.rs` |
+| successor cursor | Output-zero successor after one validated edge | (`sec:phase6:wave10-findings`) |
+| edge count | one | `accepted_archive_single_edge_validates_and_advances_the_cursor` |
+| edge sequence | Every supplied edge checked in order | `packages/vectors/src/maturity_history.rs` |
+| stale predecessor | refused | Sixteen §16.8 report observations |
+| duplicate successor | refused | Sixteen §16.8 report observations |
+| invalid intermediate edge | refused before final cursor equality can hide it | Wave-10 root-history test |
+| STATE termination | separately classified | `packages/vectors/src/maturity_history_report.rs` |
+| RESV edge | separately classified | `packages/vectors/src/maturity_history_report.rs` |
+| other root edges | no additional accepted edge claimed | Validated root-history report |
+| canonical bytes | Independent assemblies reproduce | `packages/vectors/src/maturity_history_report.rs` |
+
+### Result matrix — Public recovery
+
+| Key | Value | Evidence |
+|---|---|---|
+| independent process | Bounded process with thirty-one pinned imports | `0.6.264-dev`; `the_binarys_import_list_excludes_the_bundle_the_identity_and_both_planners` in `packages/vectors/tests/maturity_recovery.rs:180–223` |
+| transaction located | Accepted archive's mined readback supplied | Validated public handoff |
+| exact bytes matched | Archive identity and output bytes matched | `packages/vectors/tests/maturity_recovery.rs` |
+| witness decoded | Public witness fields decoded | `packages/vectors/src/maturity_recovery.rs` |
+| predecessor metadata recovered | From public handoff fields | `packages/vectors/src/maturity_recovery.rs` |
+| successor metadata derived | `announce_maturity` from recovered predecessor | `packages/vectors/tests/maturity_recovery.rs` |
+| representation nonce recovered | Public successor construction input recovered | `packages/vectors/src/maturity_recovery.rs` |
+| successor constructor reconstructed | From public values without creator-private state | `packages/vectors/tests/maturity_recovery.rs` |
+| output program matched | Output zero reconstructed byte-for-byte | `0.6.264-dev` |
+| creator-private dependency | none in the bounded reconstruction | `packages/vectors/tests/maturity_recovery.rs` |
+| canonical bytes | Independent assemblies reproduce | `0.6.295-dev`; `packages/vectors/src/maturity_recovery_report.rs` |
+
+### Result matrix — Sponsor
+
+| Key | Value | Evidence |
+|---|---|---|
+| sponsorless | Accepted on the variable schedule with disclosed zero fee floors | `0.6.245-dev` |
+| sponsored | Both forms refused at construction; no target run claimed | `0.6.278-dev`; (`sec:phase6:wave11-findings`) |
+| sponsor change absent | Construction refuses the sponsored arm | `0.6.278-dev` |
+| sponsor change present | Construction refuses the sponsored arm | `0.6.278-dev` |
+| missing authorization | No sponsored candidate reaches target authorization | Wave-11 first exit |
+| STATE overlap | Region-scoping condition retained | `T11-064`; R-7 |
+| balanced corruption | No target verdict; sponsored control refused at construction | §16.10 typed non-answers |
+| amount disclosure | none claimed | Validated safety and sponsor disposition |
+
+### Result matrix — Resources
+
+| Key | Value | Evidence |
+|---|---|---|
+| metadata bytes | Whole and variable schedules are separately reported | `0.6.290-dev`; `packages/vectors/src/maturity_resource_report.rs` |
+| metadata leaf bytes | Candidate measurement with typed absence where unobserved | `packages/vectors/src/maturity_resources.rs` |
+| announcement leaf bytes | Candidate measurement with typed absence where unobserved | `packages/vectors/src/maturity_resources.rs` |
+| static subtree bytes | Singleton subtree measurement | `packages/vectors/src/maturity_resources.rs` |
+| constructor bytes | Candidate measurement with typed absence where unobserved | `packages/vectors/src/maturity_resources.rs` |
+| tree depth | Candidate measurement with typed absence where unobserved | `packages/vectors/src/maturity_resources.rs` |
+| control bytes | Archived candidate projection | `packages/vectors/src/maturity_resources.rs` |
+| witness bytes | Whole and variable schedules remain distinct | `packages/vectors/src/maturity_resources.rs` |
+| operator signature bytes | Archived candidate projection | `packages/vectors/src/maturity_resources.rs` |
+| sponsor witness bytes | Absent with construction refusal of both forms | `0.6.278-dev`; `packages/vectors/src/maturity_resource_report.rs` |
+| peak main stack | Absent target observation carries a reason | `0.6.290-dev` resource report |
+| peak alternate stack | Absent target observation carries a reason | `0.6.290-dev` resource report |
+| largest element | 53 bytes accepted under the variable schedule; 86-byte whole item replay-only against the 80-byte relay bound | (`sec:phase6:wave12-findings`) |
+| hash work | Absent target observation carries a reason | `0.6.290-dev` resource report |
+| tweak work | Absent target observation carries a reason | `0.6.290-dev` resource report |
+| validation budget | Candidate prediction with typed absent target dimension | `packages/vectors/src/maturity_resources.rs` |
+| transaction weight | 2,084 and 2,091 predicted and observed | `0.6.287-dev` |
+| virtual size | Candidate prediction with typed absent target dimension | `packages/vectors/src/maturity_resources.rs` |
+| nonce attempts | Eight derivations independently checked within the bounded search; later-admissible residual retained | `0.6.289-dev` |
+| prediction/observation | Transaction weights 2,084 and 2,091 agree for the two archived submissions | `0.6.287-dev`; `0.6.290-dev` resource report |
+| schedule | Accepted 53-byte variable item; 86-byte whole-schedule item replay-only against the 80-byte relay bound | (`sec:phase6:wave12-findings`) |
+| absent observations encoded as zero | no; typed reasons preserve each absence | `0.6.290-dev`; `no_absent_figure_renders_as_zero` |
+| final calibration claim | none | Separate resource report and typed absences |
+
+### Result matrix — Lifecycle
+
+| Key | Value | Evidence |
+|---|---|---|
+| announce-maturity | candidate implemented | Candidate operation plan and accepted run |
+| burn | outstanding | Guide 14 §2.7; `packages/compiler/src/tests/maturity_announcement_plan_tests.rs:483` |
+| clear | outstanding | Guide 14 §2.7; candidate plan |
+| redemption | outstanding | Candidate plan's five STATE mutator exits |
+| admission | outstanding | Candidate plan's five STATE mutator exits |
+| settlement | outstanding outside the five STATE mutator exits | Guide 14 §2.7; finding 231 |
+| cycle | outstanding | Candidate plan's five STATE mutator exits |
+| migration | outstanding as a constructor change outside the five STATE mutator exits | Guide 14 §17.3 and the candidate plan |
+| release-complete | false | §25 key and candidate-only ABI |
+
+### Result matrix — Security
+
+| Key | Value | Evidence |
+|---|---|---|
+| public disposable operator | Published test material only | `SECURITY.md:74`; `packages/target-elements-conformance/src/test_material.rs:15` |
+| production operator keys accepted | no | `SECURITY.md:7`; §25 key |
+| production wallets accepted | no | `SECURITY.md:7` |
+| diagnostics path-safe | Canonical report bytes exclude volatile paths; arbitrary diagnostics have no path-safe claim | `packages/vectors/src/maturity_report.rs`; `SECURITY.md:24` |
+| arbitrary child output quarantined | no; `execwrap` relays unsanitized child output | `SECURITY.md:24` |
+| future secret-bearing review required | yes for any secret-bearing deployment | `SECURITY.md` |
+
+### Result matrix — Identity
+
+| Key | Value | Evidence |
+|---|---|---|
+| Attestation | Existing ADR-021 identity unchanged | `adr/021-identity-adjudication.md:38` |
+| realization | `0.6.0-dev` binding | `README.md:163`; `Cargo.toml:28` |
+| architecture | Schema 18 with generated semantic and behavioural hashes | `packages/architecture/src/spec.rs:20`; `docs/attestation/realization.md:2155` |
+| compiler | none minted for this candidate | `adr/021-identity-adjudication.md:38` |
+| constructor | none minted for this candidate | `adr/021-identity-adjudication.md:38` |
+| bundle | none minted for this candidate | `adr/021-identity-adjudication.md:38` |
+| ABI | none minted for this candidate | `adr/021-identity-adjudication.md:38` |
+| reports | none minted; continuity byte digest is an evidence locator under §24.1 | Ruling 117; `packages/vectors/src/maturity_continuity_report.rs:2095` |
+| deployment profile | dormant | `packages/architecture/README.md:25` |
+
+### Result matrix — Dependencies
+
+| Key | Value | Evidence |
+|---|---|---|
+| first-party changes | `tapscript` to `realization`; `transaction` to `tapscript` and `realization` | `plans/packages/tapscript.md:63`; `plans/packages/transaction.md:56` |
+| third-party additions | No new workspace dependency for this phase | Workspace and package manifests |
+| Cargo.lock | No tracked lockfile | ADR-011; `.gitignore:6` |
+| licences | Workspace licence remains AGPL-3.0-only | `Cargo.toml:25` |
+| MSRV | 1.88 in the workspace manifest | `Cargo.toml:27` |
+| unsafe/FFI | No new unsafe or FFI dependency in this documentation bite | Three-file diff under `T11-147` |
+| advisories | passed on the gate of record | Gate over `0.6.305-dev` |
+
+### Result matrix — Verification
+
+| Key | Value | Evidence |
+|---|---|---|
+| cargo fmt | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| workspace clippy | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| workspace tests | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| architecture | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| model | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| realization | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| compiler | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| target-elements | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| tapscript | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| constructor oracle | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| linker | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| transaction | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| vectors | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| target-elements-conformance | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| Rustdoc | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| protocol cross-language | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| maturity native matrix | Whole and variable archived runs admitted | `0.6.227-dev`; `0.6.245-dev` |
+| operator native matrix | Revision-8 operator run admitted | `0.6.169-dev` |
+| constructor native matrix | Predecessor and successor mutant runs admitted separately | `0.6.303-dev`; `0.6.304-dev` |
+| root-history native matrix | No target run; host report over accepted archive | `0.6.263-dev` |
+| public-recovery native matrix | No target run; host report over accepted archive | `0.6.264-dev` |
+| sponsor native matrix | No target run; both forms refused at construction | `0.6.278-dev` |
+| resource native matrix | Both archived node weights compared host-side | `0.6.287-dev` |
+| scripts/check-plans.sh | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| meson lint | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| scripts/ci.sh | Ok 54, Fail 0, `ci-rc` 0, wall 1,505 s | Gate of record over `0.6.305-dev` |
+| meson compile | passed in the gate of record | `0.6.305-dev`; 54-lane verdict |
+| meson test | Ok 54, Fail 0 | Gate of record over `0.6.305-dev` |
+| document reproducibility | Separate manual/release check, outside the mocked gate | `scripts/check-document-reproducibility.sh` |
+| cargo audit | passed on the gate of record | `0.6.305-dev`; advisory lane verdict |
+| git diff --check | passed on the gate of record and this record's lane gate | `0.6.305-dev`; `0.6.306-dev` |
+| final git status | clean on the gate of record and this record's lane gate | `0.6.305-dev`; `0.6.306-dev` |
+| this record | The documentation, generated and lint suites and the labels tests pass on the landed tip's lane gate | `0.6.306-dev` |
+
+### Identity impact
+
+| Field | Standing | Evidence |
+|---|---|---|
+| specification and realization versions | Specification `v1.0.0`; realization `0.6.0-dev` | `README.md:162`, `README.md:163`; `Cargo.toml:28` |
+| ADR-021 identities | No new listed identity | `adr/021-identity-adjudication.md:38` |
+| report digest | Evidence locator under §24.1 | Ruling 117 |
+
+### Schema impact
+
+| Field | Standing | Evidence |
+|---|---|---|
+| architecture | Schema 17 to 18 under the maturity representation change; generated semantic and behavioural hashes moved with it | `packages/architecture/src/spec.rs:20`; `docs/attestation/realization.md:2155`; rulings 11 and 15 |
+| attestation / deployment | 13 / 2 | `packages/model/src/ledger.rs:173`; `packages/architecture/src/deployment.rs:68` |
+| native protocol | Revision 8 | `packages/target-elements-conformance/src/protocol.rs:229` |
+| reports | Safety schema 2; other four report schemas 1 | Five report modules in `packages/vectors/src/` |
+| STATE metadata | Schema 1 | `packages/realization/src/state_codec.rs:22` |
+
+### Security impact
+
+| Field | Standing | Evidence |
+|---|---|---|
+| key material | Public disposable test material, with no production key claim | `SECURITY.md`; `packages/target-elements-conformance/src/test_material.rs:15` |
+| deployment | Production release refused by dormant profile schema 2 | `packages/architecture/README.md:25` |
+| candidate limit | No universal security or final calibration claim | §23 row 19 and the resource report |
+
+### Dependency impact
+
+| Field | Standing | Evidence |
+|---|---|---|
+| first-party edges | Three recorded production edges | `plans/packages/tapscript.md:63`; `plans/packages/transaction.md:56` |
+| third-party workspace dependencies | No new workspace dependency | Package manifests |
+| lockfile | No tracked `Cargo.lock` | ADR-011; `.gitignore:6` |
+| advisories | The gate of record's advisory lane passed | Gate over `0.6.305-dev` |
+
+### Handoff and register discharge
+
+The handoff states that only maturity announcement is compiled; later STATE operations and constructor migration remain unavailable; the successor may be intentionally inert; and no release-complete state-machine or lifecycle-wide coinduction claim is made. These are `G14C-15`'s four clauses, audited by ruling 108's section scan on `0.6.294-dev`; the six final artifacts of Guide 14 §1.16 are absent.
+
+Guide 14 §26's conditional Phase-6 handoff has one canonical typed STATE metadata representation in `packages/realization/`; one candidate metadata-dependent constructor in `packages/tapscript/` and `packages/linker/`; one operator-authorized announcement path in `packages/transaction/` and the revision-8 operator run; one target-accepted mutable-root transaction on `0.6.245-dev`; one independently checked succession edge in the root-history report; one bounded unrelated-process successor reconstruction in the public-recovery report; and one candidate-specific safety and resource disposition in their separate reports. Because §23 is NOT PASSED, this is carried candidate evidence, not a completed Phase-6 exit.
+
+The named construction guarantee is a recursive covenant over a commitment-chained single-use seal using authenticated persistent path-copying and a branch-bound predecessor version token. Its nonce leastness is host policy, the NUMS internal key retains its key-path residual, competing branches are modelled, and the static subtree here is a singleton. `G14C-02` closes on the typed relation, forward simulation for every accepted step in the admitted corpus, exhaustive supported-step completeness over one predecessor's window under six named assumptions and the report-to-clause map (`0.6.296-dev`; ruling 116). A general forward-simulation theorem is a typed handoff non-claim, not a result of that finite corpus.
+
+Phase 7 inherits those candidate boundaries as Guide 14 §26 states and adds owner-authorized burn, fresh ASH construction, public ASH maintenance, permissionless clear, STATE mutation by a permissionless operation, `tag-recon` destruction, residual ASH, burn and clear projections, and interaction between mutable STATE and public amount-dependent semantics. Guide 14 makes none of those additions a Phase-6 claim.
+
+`G14C-06` closes on the explicitly composed metadata-decode, transition and constructor refusals under `project_maturity_continuity` and its four preservation tests. `G14C-14` closes on the three premise-to-domain tests landed on `0.6.249-dev`. `G14C-15` closes on this gate record under the plans-validator scan. Together with `G14C-02`'s scoped closure, the register has no OPEN row and fifteen CLOSED rows over 26 wave-ownership assignments, so R is MET.
+
+### Open rows and reserved closeout
+
+`T4-009` retains Guide 12's compact-ASH negative half and its three filed guide gaps; `T11-063` retains the closure-exact audit after Phase 6; `T11-064` carries the region-scoping refit, §23 row 14 and Wave 11's C1; `T11-110` carries test-performance measurement. Their backlog rows remain open.
+
+The owner-reviewed closeout's unperformed change moves this card's status to `Exited`, `plans/phases/07-burn-and-clear.md:3` to `Active`, the phase index at `plans/phases/README.md:18`, the roadmap at `plans/roadmap.md:42`, the plans README at `plans/README.md:31` and the backlog's current gate at `plans/backlog.md:4`, and decides OQ4. `packages/labels/src/plans.rs:859` welds those declarations into one change. This record leaves each declaration in place and makes no exit or candidate adoption.
 
 ## Exit gate · `gate:phase6:exit`
 
