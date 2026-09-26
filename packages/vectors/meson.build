@@ -107,6 +107,16 @@ vectors_fixture_files = files(
   'fixtures/maturity-variable-run-of-record/MANIFEST.sha256',
   'fixtures/maturity-variable-run-of-record/RUN-REPORT',
 ) + files(
+  'fixtures/maturity-predecessor-mutant-run-of-record/f933b376.report.capture',
+  'fixtures/maturity-predecessor-mutant-run-of-record/f933b376.report.capture.timing',
+  'fixtures/maturity-predecessor-mutant-run-of-record/MANIFEST.sha256',
+  'fixtures/maturity-predecessor-mutant-run-of-record/RUN-REPORT',
+) + files(
+  'fixtures/maturity-successor-mutant-run-of-record/f933b376.report.capture',
+  'fixtures/maturity-successor-mutant-run-of-record/f933b376.report.capture.timing',
+  'fixtures/maturity-successor-mutant-run-of-record/MANIFEST.sha256',
+  'fixtures/maturity-successor-mutant-run-of-record/RUN-REPORT',
+) + files(
   'fixtures/native-operator-run-of-record/353e698f.report.capture',
   'fixtures/native-operator-run-of-record/353e698f.report.capture.timing',
   'fixtures/native-operator-run-of-record/MANIFEST.sha256',

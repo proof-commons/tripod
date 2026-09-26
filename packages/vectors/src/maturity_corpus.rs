@@ -3,6 +3,8 @@
 //! Names, sizes and addresses bind each archive before its closed grammars are interpreted. The historical refused loader is one set of pins; the second immutable corpus binds a variable-metadata acceptance with its own schedule and sponsorless expectation. Each corpus also pins the cargo path, framework revision mode and funding advertisement of the host that ran it.
 //!
 //! An accepted payload carries mined readback beside the capture's request bytes, verdict, layer, target identity and detail. Replay checks the reconstructed response against the submitted transaction. This establishes transcript consistency under the schedule, not executor provenance, current-root freshness or a promoted standing.
+//!
+//! Two constructor-mutant archives use the same byte bindings and replay each recorded offer through the mutant ceremony planner. Their report phase walls are recorded facts, while the replayed offer records establish only the submitted requests and observed responses under the pinned target.
 
 use std::fmt::Write as _;
 use std::sync::OnceLock;
@@ -18,6 +20,8 @@ use transaction::bytes::Txid;
 use transaction::operator_right::BranchContext;
 
 use crate::maturity_closure::MaturityWitnessSelection;
+use crate::maturity_mutant_ceremony::{self, MaturityMutantEvidence};
+use crate::maturity_mutants::MaturityMutantTable;
 use crate::maturity_native::{
     ANNOUNCEMENT_STEPS, MaturityAcceptanceObligation, MaturityAcceptanceRoute,
     MaturityNativeEvidence, MaturityNativePlanRefusal, MaturityNativeStanding,
@@ -45,7 +49,24 @@ pub const MATURITY_VARIABLE_MANIFEST_SHA256: &str =
 pub const MATURITY_VARIABLE_RUN_ADDRESS: &str =
     "b624e245fcdfe839ff9bb3e94285165ab0c9fbdd606748fd115ae8b02dc87b0c";
 
+/// SHA-256 of the predecessor mutant archive's manifest.
+pub const MATURITY_PREDECESSOR_MUTANT_MANIFEST_SHA256: &str =
+    "46ba2aa5cc29720a9a8fced865cd46876dc51de985f47642f05e8571c50cc883";
+/// SHA-256 of the predecessor mutant archive's report.
+pub const MATURITY_PREDECESSOR_MUTANT_RUN_ADDRESS: &str =
+    "26793148fc96436e2267ab5b39382a0bb38d23551c799e6c89571b71a1da63f0";
+/// SHA-256 of the successor mutant archive's manifest.
+pub const MATURITY_SUCCESSOR_MUTANT_MANIFEST_SHA256: &str =
+    "a6567865310a1c1b6427e3c51f187caf383af05f4554f4d74bc53fe6b6bc7c98";
+/// SHA-256 of the successor mutant archive's report.
+pub const MATURITY_SUCCESSOR_MUTANT_RUN_ADDRESS: &str =
+    "206c8e1262af5c1ea8ef541e9753961df15101884cc6ee451957019cdccca1a7";
+
 const CEREMONY_SHA256: &str = "d48e105b85708cd8edadbe423ed020c48fdbe1c0225f67724ff6f68449d25515";
+const PREDECESSOR_MUTANT_CEREMONY_SHA256: &str =
+    "730a0670d76a59e4640726ef54f0d40853987c35792a4329401abd485d42f319";
+const SUCCESSOR_MUTANT_CEREMONY_SHA256: &str =
+    "fd935b26cb1ea57943834473a83398249bd772aca8ab3e8840779624da3016e5";
 
 /// One named file supplied to the four-file maturity corpus admission.
 #[derive(Clone, Copy)]
@@ -116,6 +137,72 @@ const VARIABLE_FILES: [MaturityArchiveFile<'static>; 4] = [
         bytes: include_bytes!("../fixtures/maturity-variable-run-of-record/RUN-REPORT"),
     },
 ];
+
+#[rustfmt::skip]
+const PREDECESSOR_MUTANT_FILES: [MaturityArchiveFile<'static>; 4] = [
+    MaturityArchiveFile {
+        name: "f933b376.report.capture",
+        bytes: include_bytes!("../fixtures/maturity-predecessor-mutant-run-of-record/f933b376.report.capture"),
+    },
+    MaturityArchiveFile {
+        name: "f933b376.report.capture.timing",
+        bytes: include_bytes!("../fixtures/maturity-predecessor-mutant-run-of-record/f933b376.report.capture.timing"),
+    },
+    MaturityArchiveFile {
+        name: "MANIFEST.sha256",
+        bytes: include_bytes!("../fixtures/maturity-predecessor-mutant-run-of-record/MANIFEST.sha256"),
+    },
+    MaturityArchiveFile {
+        name: "RUN-REPORT",
+        bytes: include_bytes!("../fixtures/maturity-predecessor-mutant-run-of-record/RUN-REPORT"),
+    },
+];
+#[rustfmt::skip]
+const SUCCESSOR_MUTANT_FILES: [MaturityArchiveFile<'static>; 4] = [
+    MaturityArchiveFile {
+        name: "f933b376.report.capture",
+        bytes: include_bytes!("../fixtures/maturity-successor-mutant-run-of-record/f933b376.report.capture"),
+    },
+    MaturityArchiveFile {
+        name: "f933b376.report.capture.timing",
+        bytes: include_bytes!("../fixtures/maturity-successor-mutant-run-of-record/f933b376.report.capture.timing"),
+    },
+    MaturityArchiveFile {
+        name: "MANIFEST.sha256",
+        bytes: include_bytes!("../fixtures/maturity-successor-mutant-run-of-record/MANIFEST.sha256"),
+    },
+    MaturityArchiveFile {
+        name: "RUN-REPORT",
+        bytes: include_bytes!("../fixtures/maturity-successor-mutant-run-of-record/RUN-REPORT"),
+    },
+];
+
+/// The Rust test target and test name bound by one capture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaturityCaptureTarget<'a> {
+    target: &'a str,
+    test: &'a str,
+}
+
+impl<'a> MaturityCaptureTarget<'a> {
+    /// Declares both executable test identities.
+    #[must_use]
+    pub const fn new(target: &'a str, test: &'a str) -> Self {
+        Self { target, test }
+    }
+
+    /// The Cargo test target.
+    #[must_use]
+    pub const fn target(&self) -> &'a str {
+        self.target
+    }
+
+    /// The Rust test name carried by the capture.
+    #[must_use]
+    pub const fn test(&self) -> &'a str {
+        self.test
+    }
+}
 
 /// The expected outcome of the sponsorless operation in a pinned corpus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -238,6 +325,7 @@ pub struct MaturityCorpusPins<'a> {
     run_address: &'a str,
     ceremony_sha256: &'a str,
     sponsorless: MaturitySponsorlessExpectation,
+    capture_target: MaturityCaptureTarget<'a>,
     cargo_path: &'a str,
     framework_revision: MaturityFrameworkRevision,
     funding_count: usize,
@@ -249,13 +337,14 @@ impl<'a> MaturityCorpusPins<'a> {
     #[must_use]
     #[expect(
         clippy::too_many_arguments,
-        reason = "all eight pins are declared at every call site rather than defaulted"
+        reason = "all nine pins are declared at every call site rather than defaulted"
     )]
     pub const fn new(
         schedule: tapscript::StateWitnessSchedule,
         files: ([&'a str; 4], [usize; 4]),
         addresses: (&'a str, &'a str, &'a str),
         sponsorless: MaturitySponsorlessExpectation,
+        capture_target: MaturityCaptureTarget<'a>,
         cargo_path: &'a str,
         framework_revision: MaturityFrameworkRevision,
         funding_count: usize,
@@ -271,6 +360,7 @@ impl<'a> MaturityCorpusPins<'a> {
             run_address,
             ceremony_sha256,
             sponsorless,
+            capture_target,
             cargo_path,
             framework_revision,
             funding_count,
@@ -320,6 +410,12 @@ impl<'a> MaturityCorpusPins<'a> {
         self.sponsorless
     }
 
+    /// The Rust target and test admitted by the archive.
+    #[must_use]
+    pub const fn capture_target(&self) -> MaturityCaptureTarget<'a> {
+        self.capture_target
+    }
+
     /// The executable path recorded at the start of the report's cargo argv.
     #[must_use]
     pub const fn cargo_path(&self) -> &'a str {
@@ -345,6 +441,7 @@ impl<'a> MaturityCorpusPins<'a> {
     }
 }
 
+#[rustfmt::skip]
 const HISTORICAL_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
     MATURITY_RUN_SCHEDULE,
     (
@@ -364,12 +461,14 @@ const HISTORICAL_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
     MaturitySponsorlessExpectation::RelayRefusal {
         detail: "bad-witness-nonstandard",
     },
+    MaturityCaptureTarget::new("maturity_native", "the_maturity_announcement_runs_against_a_real_target"),
     "/workspace/toolchains/cargo/bin/cargo",
     MaturityFrameworkRevision::Unrecorded,
     0,
     MATURITY_DISCLOSED_FEE_FLOORS,
 );
 
+#[rustfmt::skip]
 const VARIABLE_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
     MATURITY_VARIABLE_RUN_SCHEDULE,
     (
@@ -387,10 +486,106 @@ const VARIABLE_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
         "fa474763a165c60d4e48b7c0c06f01ce79204a1fc4f9020bd7612c82e22bb3ee",
     ),
     MaturitySponsorlessExpectation::Acceptance,
+    MaturityCaptureTarget::new("maturity_native", "the_maturity_announcement_runs_against_a_real_target"),
     "/workspace/toolchains/cargo/bin/cargo",
     MaturityFrameworkRevision::IntendedTip,
     0,
     MATURITY_DISCLOSED_FEE_FLOORS,
+);
+
+/// The ordinary archive pins and constructor table for one mutant run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaturityMutantCorpusPins<'a> {
+    pins: MaturityCorpusPins<'a>,
+    table: MaturityMutantTable,
+}
+
+impl<'a> MaturityMutantCorpusPins<'a> {
+    /// Pairs the four-file pins with the ceremony's table.
+    #[must_use]
+    pub const fn new(pins: MaturityCorpusPins<'a>, table: MaturityMutantTable) -> Self {
+        Self { pins, table }
+    }
+
+    /// The archive's ordered files, addresses, and environment declarations.
+    #[must_use]
+    pub const fn pins(&self) -> &MaturityCorpusPins<'a> {
+        &self.pins
+    }
+
+    /// The ceremony table reconstructed during replay.
+    #[must_use]
+    pub const fn table(&self) -> MaturityMutantTable {
+        self.table
+    }
+
+    /// The report's constructor profile for this table.
+    #[must_use]
+    pub const fn profile(&self) -> &'static str {
+        match self.table {
+            MaturityMutantTable::PredecessorConstructor => "predecessor-constructor",
+            MaturityMutantTable::SuccessorConstructor => "successor-constructor",
+        }
+    }
+}
+
+const PREDECESSOR_MUTANT_PINS: MaturityMutantCorpusPins<'static> = MaturityMutantCorpusPins::new(
+    MaturityCorpusPins::new(
+        MATURITY_VARIABLE_RUN_SCHEDULE,
+        (
+            [
+                "f933b376.report.capture",
+                "f933b376.report.capture.timing",
+                "MANIFEST.sha256",
+                "RUN-REPORT",
+            ],
+            [107_644, 49, 187, 2_116],
+        ),
+        (
+            MATURITY_PREDECESSOR_MUTANT_MANIFEST_SHA256,
+            MATURITY_PREDECESSOR_MUTANT_RUN_ADDRESS,
+            PREDECESSOR_MUTANT_CEREMONY_SHA256,
+        ),
+        MaturitySponsorlessExpectation::Acceptance,
+        MaturityCaptureTarget::new(
+            "maturity_predecessor_mutants",
+            "the_maturity_predecessor_mutants_are_refused_before_their_control_is_accepted",
+        ),
+        "/workspace/toolchains/cargo/bin/cargo",
+        MaturityFrameworkRevision::IntendedTip,
+        0,
+        MATURITY_DISCLOSED_FEE_FLOORS,
+    ),
+    MaturityMutantTable::PredecessorConstructor,
+);
+const SUCCESSOR_MUTANT_PINS: MaturityMutantCorpusPins<'static> = MaturityMutantCorpusPins::new(
+    MaturityCorpusPins::new(
+        MATURITY_VARIABLE_RUN_SCHEDULE,
+        (
+            [
+                "f933b376.report.capture",
+                "f933b376.report.capture.timing",
+                "MANIFEST.sha256",
+                "RUN-REPORT",
+            ],
+            [109_614, 49, 187, 2_108],
+        ),
+        (
+            MATURITY_SUCCESSOR_MUTANT_MANIFEST_SHA256,
+            MATURITY_SUCCESSOR_MUTANT_RUN_ADDRESS,
+            SUCCESSOR_MUTANT_CEREMONY_SHA256,
+        ),
+        MaturitySponsorlessExpectation::Acceptance,
+        MaturityCaptureTarget::new(
+            "maturity_successor_mutants",
+            "the_maturity_successor_mutants_are_refused_before_their_control_is_accepted",
+        ),
+        "/workspace/toolchains/cargo/bin/cargo",
+        MaturityFrameworkRevision::IntendedTip,
+        0,
+        MATURITY_DISCLOSED_FEE_FLOORS,
+    ),
+    MaturityMutantTable::SuccessorConstructor,
 );
 
 /// The layer at which maturity corpus admission stopped.
@@ -629,6 +824,66 @@ impl ValidatedMaturityCorpus {
     }
 }
 
+/// Replay-validated mutant ceremony together with its pinned report facts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValidatedMaturityMutantCorpus {
+    evidence: MaturityMutantEvidence,
+    report: MaturityReportFacts,
+    fee_floors: MaturityDisclosedFeeFloors,
+    capture_suite: [String; 2],
+    exchanges: Vec<(OperationStep, NativeOperationResponse)>,
+    capabilities: Vec<String>,
+    phase_walls: [u64; 4],
+}
+
+impl ValidatedMaturityMutantCorpus {
+    /// The evidence reconstructed from the exact recorded requests and responses.
+    #[must_use]
+    pub const fn evidence(&self) -> &MaturityMutantEvidence {
+        &self.evidence
+    }
+    /// The closed report's cross-checked facts.
+    #[must_use]
+    pub const fn report(&self) -> &MaturityReportFacts {
+        &self.report
+    }
+    /// The declared fee floors of the executor environment.
+    #[must_use]
+    pub const fn fee_floors(&self) -> MaturityDisclosedFeeFloors {
+        self.fee_floors
+    }
+    /// Source commit read independently from the capture.
+    #[must_use]
+    pub fn capture_suite_commit(&self) -> &str {
+        &self.capture_suite[0]
+    }
+    /// Source tree read independently from the capture.
+    #[must_use]
+    pub fn capture_suite_tree(&self) -> &str {
+        &self.capture_suite[1]
+    }
+    /// Recorded exchanges whose requests were rebuilt by the ceremony planner.
+    #[must_use]
+    pub fn exchanges(&self) -> &[(OperationStep, NativeOperationResponse)] {
+        &self.exchanges
+    }
+    /// The exact ordered environment capability roster.
+    #[must_use]
+    pub fn capabilities(&self) -> &[String] {
+        &self.capabilities
+    }
+    /// Reported preflight, cargo, census, and manifest wall times in milliseconds.
+    #[must_use]
+    pub const fn phase_walls(&self) -> &[u64; 4] {
+        &self.phase_walls
+    }
+    /// The constructor table used for exact replay.
+    #[must_use]
+    pub const fn table(&self) -> MaturityMutantTable {
+        self.evidence.table()
+    }
+}
+
 struct Cursor<'a> {
     name: &'static str,
     lines: Vec<&'a str>,
@@ -817,8 +1072,13 @@ fn validate_manifest(files: &[MaturityArchiveFile<'_>], expected_hash: &str) -> 
 fn parse_report_suite(
     cursor: &mut Cursor<'_>,
     pins: &MaturityCorpusPins<'_>,
+    mutant_profile: Option<&str>,
 ) -> ImportResult<[String; 5]> {
-    cursor.exact("run-report-schema native-maturity-run-report 1")?;
+    cursor.exact(if mutant_profile.is_some() {
+        "run-report-schema native-maturity-mutant-run-report 1"
+    } else {
+        "run-report-schema native-maturity-run-report 1"
+    })?;
     cursor.exact("capture-format-schema native-maturity-capture 1")?;
     let suite_commit = cursor.value("suite-commit")?.to_owned();
     let suite_tree = cursor.value("suite-tree")?.to_owned();
@@ -826,11 +1086,18 @@ fn parse_report_suite(
         return Err(cursor.refusal());
     }
     cursor.exact("suite-clean yes")?;
-    cursor.exact("rust-test-target maturity_native")?;
+    cursor.exact(&format!(
+        "rust-test-target {}",
+        pins.capture_target().target()
+    ))?;
+    if let Some(profile) = mutant_profile {
+        cursor.exact(&format!("capture-profile {profile}"))?;
+    }
     if cursor.text("cargo-argv")?
         != format!(
-            "{} test -p tripod-vectors --test maturity_native -- --ignored --test-threads=1",
-            pins.cargo_path()
+            "{} test -p tripod-vectors --test {} -- --ignored --test-threads=1",
+            pins.cargo_path(),
+            pins.capture_target().target()
         )
     {
         return Err(cursor.refusal());
@@ -872,7 +1139,8 @@ fn parse_report_suite(
 fn parse_report_body(
     bytes: &[u8],
     pins: &MaturityCorpusPins<'_>,
-) -> ImportResult<MaturityReportFacts> {
+    mutant_profile: Option<&str>,
+) -> ImportResult<(MaturityReportFacts, [u64; 4])> {
     let mut cursor = Cursor::new("RUN-REPORT", bytes)?;
     let [
         suite_commit,
@@ -880,7 +1148,7 @@ fn parse_report_body(
         expected_tip,
         binary_revision,
         intended_tip,
-    ] = parse_report_suite(&mut cursor, pins)?;
+    ] = parse_report_suite(&mut cursor, pins, mutant_profile)?;
     let adapter_name = cursor.text("executor-adapter-name")?;
     let adapter_version = cursor.text("executor-adapter-version")?;
     let node_name = cursor.text("node-name")?;
@@ -905,6 +1173,23 @@ fn parse_report_body(
     {
         return Err(cursor.refusal());
     }
+    let mut phase_walls = [0; 4];
+    if mutant_profile.is_some() {
+        for (index, phase) in ["preflight", "cargo", "census", "manifest"]
+            .iter()
+            .enumerate()
+        {
+            let wall = cursor.value("phase-wall-ms")?;
+            let digits = wall
+                .strip_prefix(phase)
+                .and_then(|tail| tail.strip_prefix(' '))
+                .ok_or_else(|| cursor.refusal())?;
+            if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(cursor.refusal());
+            }
+            phase_walls[index] = digits.parse().map_err(|_| cursor.refusal())?;
+        }
+    }
     cursor.exact("ceremony-roster begin")?;
     let ceremony_digest = cursor.value("ceremony report")?.to_owned();
     cursor.exact("ceremony-roster end")?;
@@ -914,32 +1199,54 @@ fn parse_report_body(
     }
     cursor.exact("eligible yes")?;
     cursor.done()?;
-    Ok(MaturityReportFacts {
-        suite_commit,
-        suite_tree,
-        expected_tip,
-        binary_revision,
-        intended_tip,
-        adapter_name,
-        adapter_version,
-        node_name,
-        node_version,
-        environment,
-        network_id,
-        genesis_id,
-        target_contract,
-        ceremony_digest,
-        manifest_digest,
-        run_address: hex_bytes(&tagged::sha256(bytes)),
-    })
+    Ok((
+        MaturityReportFacts {
+            suite_commit,
+            suite_tree,
+            expected_tip,
+            binary_revision,
+            intended_tip,
+            adapter_name,
+            adapter_version,
+            node_name,
+            node_version,
+            environment,
+            network_id,
+            genesis_id,
+            target_contract,
+            ceremony_digest,
+            manifest_digest,
+            run_address: hex_bytes(&tagged::sha256(bytes)),
+        },
+        phase_walls,
+    ))
 }
 
 fn parse_report(bytes: &[u8], pins: &MaturityCorpusPins<'_>) -> ImportResult<MaturityReportFacts> {
-    let report = parse_report_body(bytes, pins).map_err(|_| Refusal::RunReportGrammar)?;
+    let (report, _) =
+        parse_report_body(bytes, pins, None).map_err(|_| Refusal::RunReportGrammar)?;
+    check_report_address(&report, pins)?;
+    Ok(report)
+}
+
+fn check_report_address(
+    report: &MaturityReportFacts,
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<()> {
     if report.run_address != pins.run_address() {
         return Err(Refusal::RunReportAddress);
     }
-    Ok(report)
+    Ok(())
+}
+
+fn parse_mutant_report(
+    bytes: &[u8],
+    pins: &MaturityMutantCorpusPins<'_>,
+) -> ImportResult<(MaturityReportFacts, [u64; 4])> {
+    let (report, walls) = parse_report_body(bytes, pins.pins(), Some(pins.profile()))
+        .map_err(|_| Refusal::RunReportGrammar)?;
+    check_report_address(&report, pins.pins())?;
+    Ok((report, walls))
 }
 
 const CAPABILITIES: [&str; 12] = [
@@ -1006,7 +1313,7 @@ fn parse_header(
 ) -> ImportResult<[String; 2]> {
     cursor.exact("native-capture-schema 2")?;
     cursor.exact("ceremony-id report")?;
-    if cursor.text("rust-test-name")? != "the_maturity_announcement_runs_against_a_real_target" {
+    if cursor.text("rust-test-name")? != pins.capture_target().test() {
         return Err(cursor.refusal());
     }
     let suite_commit = cursor.value("suite-commit")?.to_owned();
@@ -1083,8 +1390,24 @@ fn json_bytes(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-fn parse_subject(text: &str, index: usize) -> Option<OperationSubject> {
-    if index == 2 {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SubjectKind {
+    Funding,
+    Submission,
+}
+
+impl From<usize> for SubjectKind {
+    fn from(index: usize) -> Self {
+        if index == 2 {
+            Self::Submission
+        } else {
+            Self::Funding
+        }
+    }
+}
+
+fn parse_subject(text: &str, kind: impl Into<SubjectKind>) -> Option<OperationSubject> {
+    if kind.into() == SubjectKind::Submission {
         let array = text
             .strip_prefix("{\"transaction_bytes\":")?
             .strip_suffix('}')?;
@@ -1128,6 +1451,51 @@ fn parse_operation(
     name: &'static str,
     expectation: MaturitySponsorlessExpectation,
 ) -> ImportResult<RecordedOperation> {
+    let kind = SubjectKind::from(index);
+    let operation = parse_operation_block(cursor, index, name, kind)?;
+    let accepted = index < 2 || expectation == MaturitySponsorlessExpectation::Acceptance;
+    let expected_layer = if accepted {
+        ObservedOutcomeLayer::Accepted
+    } else {
+        ObservedOutcomeLayer::RelayPolicyRejection
+    };
+    let expected_detail = if accepted {
+        ""
+    } else {
+        match expectation {
+            MaturitySponsorlessExpectation::RelayRefusal { detail } => detail,
+            MaturitySponsorlessExpectation::Acceptance => "",
+        }
+    };
+    if operation.layer != expected_layer
+        || operation.detail != expected_detail
+        || (index < 2 && operation.accepted_identity.is_some())
+        || (index == 2 && accepted != operation.accepted_identity.is_some())
+    {
+        return Err(cursor.refusal());
+    }
+    Ok(operation)
+}
+
+fn recorded_layer(text: &str) -> Option<ObservedOutcomeLayer> {
+    Some(match text {
+        "accepted" => ObservedOutcomeLayer::Accepted,
+        "script-path-rejection" => ObservedOutcomeLayer::ScriptPathRejection,
+        "key-path-rejection" => ObservedOutcomeLayer::KeyPathRejection,
+        "relay-policy-rejection" => ObservedOutcomeLayer::RelayPolicyRejection,
+        "consensus-rejection-before-script" => ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+        "fixture-construction-failure" => ObservedOutcomeLayer::FixtureConstructionFailure,
+        "executor-infrastructure-failure" => ObservedOutcomeLayer::ExecutorInfrastructureFailure,
+        _ => return None,
+    })
+}
+
+fn parse_operation_block(
+    cursor: &mut Cursor<'_>,
+    index: usize,
+    name: &'static str,
+    kind: SubjectKind,
+) -> ImportResult<RecordedOperation> {
     cursor.exact(&format!("operation {index} begin"))?;
     for (field, expected) in [
         ("operation-id", format!("operation-{index}")),
@@ -1138,7 +1506,7 @@ fn parse_operation(
     cursor.exact("request-role auxiliary")?;
     let request_bytes = cursor.bytes("request-bytes")?;
     let subject =
-        parse_subject(&cursor.text("request-subject")?, index).ok_or_else(|| cursor.refusal())?;
+        parse_subject(&cursor.text("request-subject")?, kind).ok_or_else(|| cursor.refusal())?;
     binding(
         "request-bytes",
         match &subject {
@@ -1156,39 +1524,25 @@ fn parse_operation(
     ] {
         binding(field, cursor.text(field)? == expected)?;
     }
-    let accepted = index < 2 || expectation == MaturitySponsorlessExpectation::Acceptance;
-    cursor.exact(if accepted {
-        "response-verdict accepted"
-    } else {
-        "response-verdict refused"
-    })?;
-    cursor.exact(if accepted {
-        "response-layer accepted"
-    } else {
-        "response-layer relay-policy-rejection"
-    })?;
-    let accepted_identity = if index == 2 && accepted {
-        Some(
-            Txid::from_target_display(cursor.value("response-target-identity")?)
-                .map_err(|_| cursor.refusal())?,
-        )
-    } else {
-        cursor.exact("response-target-identity none")?;
-        None
+    let accepted = match cursor.value("response-verdict")? {
+        "accepted" => true,
+        "refused" => false,
+        _ => return Err(cursor.refusal()),
     };
-    let detail = cursor.text("response-detail")?;
-    if detail
-        != if accepted {
-            ""
-        } else {
-            match expectation {
-                MaturitySponsorlessExpectation::RelayRefusal { detail } => detail,
-                MaturitySponsorlessExpectation::Acceptance => "",
-            }
-        }
-    {
+    let layer = recorded_layer(cursor.value("response-layer")?).ok_or_else(|| cursor.refusal())?;
+    if accepted != (layer == ObservedOutcomeLayer::Accepted) {
         return Err(cursor.refusal());
     }
+    let identity = cursor.value("response-target-identity")?;
+    let accepted_identity = if identity == "none" {
+        None
+    } else {
+        Some(Txid::from_target_display(identity).map_err(|_| cursor.refusal())?)
+    };
+    if !accepted && accepted_identity.is_some() {
+        return Err(cursor.refusal());
+    }
+    let detail = cursor.text("response-detail")?;
     for line in [
         "attribution-control-request-id none",
         "attribution-control-identity none",
@@ -1204,11 +1558,7 @@ fn parse_operation(
         detail,
         accepted_identity,
         request_bytes,
-        layer: if accepted {
-            ObservedOutcomeLayer::Accepted
-        } else {
-            ObservedOutcomeLayer::RelayPolicyRejection
-        },
+        layer,
     })
 }
 fn parse_tail(cursor: &mut Cursor<'_>, bytes: &[u8]) -> ImportResult<Vec<u8>> {
@@ -1327,31 +1677,7 @@ fn parse_payload(
 ) -> ImportResult<Payload> {
     let mut cursor = Cursor::new("maturity payload", bytes)?;
     cursor.exact("maturity-evidence-schema 1")?;
-    let network = cursor.bytes("deployment-network-id")?;
-    let genesis = cursor.bytes("deployment-genesis-id")?;
-    binding(
-        "payload-network-id",
-        hex_bytes(&network) == report.network_id,
-    )?;
-    binding(
-        "payload-genesis-id",
-        hex_bytes(&genesis) == report.genesis_id,
-    )?;
-    let identity = CandidateDeploymentIdentity::new(
-        network.try_into().map_err(|_| cursor.refusal())?,
-        genesis.try_into().map_err(|_| cursor.refusal())?,
-    )
-    .map_err(|_| cursor.refusal())?;
-    let identifier = cursor.bytes("branch-identifier")?;
-    let checkpoint = cursor.value("branch-checkpoint")?;
-    if identifier != [0x41; 32] || checkpoint != "7" {
-        return Err(cursor.refusal());
-    }
-    let branch = BranchContext::new(
-        identifier.try_into().map_err(|_| cursor.refusal())?,
-        checkpoint.parse().map_err(|_| cursor.refusal())?,
-    )
-    .map_err(|_| cursor.refusal())?;
+    let (identity, branch) = parse_payload_context(&mut cursor, report)?;
     cursor.exact("current-root-freshness unestablished")?;
     let mut exchanges = Vec::new();
     for (index, (name, operation)) in ANNOUNCEMENT_STEPS.iter().zip(operations).enumerate() {
@@ -1384,6 +1710,38 @@ fn parse_payload(
         standing,
         acceptance,
     })
+}
+
+fn parse_payload_context(
+    cursor: &mut Cursor<'_>,
+    report: &MaturityReportFacts,
+) -> ImportResult<(CandidateDeploymentIdentity, BranchContext)> {
+    let network = cursor.bytes("deployment-network-id")?;
+    let genesis = cursor.bytes("deployment-genesis-id")?;
+    binding(
+        "payload-network-id",
+        hex_bytes(&network) == report.network_id,
+    )?;
+    binding(
+        "payload-genesis-id",
+        hex_bytes(&genesis) == report.genesis_id,
+    )?;
+    let identity = CandidateDeploymentIdentity::new(
+        network.try_into().map_err(|_| cursor.refusal())?,
+        genesis.try_into().map_err(|_| cursor.refusal())?,
+    )
+    .map_err(|_| cursor.refusal())?;
+    let identifier = cursor.bytes("branch-identifier")?;
+    let checkpoint = cursor.value("branch-checkpoint")?;
+    if identifier != [0x41; 32] || checkpoint != "7" {
+        return Err(cursor.refusal());
+    }
+    let branch = BranchContext::new(
+        identifier.try_into().map_err(|_| cursor.refusal())?,
+        checkpoint.parse().map_err(|_| cursor.refusal())?,
+    )
+    .map_err(|_| cursor.refusal())?;
+    Ok((identity, branch))
 }
 
 const fn payload_agrees(field: &'static str, agrees: bool) -> ImportResult<()> {
@@ -1537,6 +1895,15 @@ fn validate_inputs(
     validate_census(files, pins)?;
     validate_manifest(files, pins.manifest_sha256())?;
     let report = parse_report(files[3].bytes, pins)?;
+    validate_common_bindings(files, pins, &report)?;
+    admit_capture(files[0].bytes, report, pins)
+}
+
+fn validate_common_bindings(
+    files: &[MaturityArchiveFile<'_>],
+    pins: &MaturityCorpusPins<'_>,
+    report: &MaturityReportFacts,
+) -> ImportResult<()> {
     binding(
         "manifest-sha256",
         report.manifest_digest == pins.manifest_sha256(),
@@ -1565,7 +1932,273 @@ fn validate_inputs(
     timing.exact("ceremony-id report")?;
     timing.exact("status passed")?;
     timing.done()?;
-    admit_capture(files[0].bytes, report, pins)
+    Ok(())
+}
+
+struct MutantPayload {
+    identity: CandidateDeploymentIdentity,
+    branch: BranchContext,
+    exchanges: Vec<(OperationStep, NativeOperationResponse)>,
+    records: Vec<String>,
+    control: String,
+}
+
+fn parse_mutant_operation(
+    cursor: &mut Cursor<'_>,
+    index: usize,
+    name: &'static str,
+    last: usize,
+) -> ImportResult<RecordedOperation> {
+    let kind = if name.starts_with("mutant-") || index == last {
+        SubjectKind::Submission
+    } else {
+        SubjectKind::Funding
+    };
+    let operation = parse_operation_block(cursor, index, name, kind)?;
+    if (kind == SubjectKind::Funding
+        && (operation.layer != ObservedOutcomeLayer::Accepted
+            || operation.accepted_identity.is_some()
+            || !operation.detail.is_empty()))
+        || (kind == SubjectKind::Submission
+            && (operation.layer == ObservedOutcomeLayer::Accepted)
+                != operation.accepted_identity.is_some())
+        || (index == last
+            && operation.layer == ObservedOutcomeLayer::Accepted
+            && !operation.detail.is_empty())
+    {
+        return Err(cursor.refusal());
+    }
+    Ok(operation)
+}
+
+fn parse_mutant_payload(
+    bytes: &[u8],
+    operations: &[RecordedOperation],
+    roster: &[&'static str],
+    report: &MaturityReportFacts,
+    offer_count: usize,
+) -> ImportResult<MutantPayload> {
+    let mut cursor = Cursor::new("maturity mutant payload", bytes)?;
+    cursor.exact("maturity-mutant-evidence-schema 1")?;
+    let (identity, branch) = parse_payload_context(&mut cursor, report)?;
+    let mut exchanges = Vec::with_capacity(roster.len());
+    for (name, operation) in roster.iter().zip(operations) {
+        cursor.exact(&format!("maturity-step {name}"))?;
+        let response =
+            NativeOperationResponse::from_recorded_json(&cursor.bytes("validated-response")?)
+                .map_err(|_| cursor.refusal())?;
+        binding("response-case", response.case == *operation.step.case())?;
+        binding(
+            "response-summary",
+            response.observed_layer == operation.layer
+                && response.observed_detail.as_deref().unwrap_or_default() == operation.detail
+                && match operation.accepted_identity {
+                    Some(identity) => {
+                        response.accepted_txid.as_deref()
+                            == Some(identity.to_target_display().as_str())
+                    }
+                    None => response.accepted_txid.is_none(),
+                },
+        )?;
+        exchanges.push((operation.step.clone(), response));
+    }
+    let records = (0..offer_count)
+        .map(|_| cursor.value("mutant-record").map(str::to_owned))
+        .collect::<ImportResult<Vec<_>>>()?;
+    let control = cursor.value("mutant-control")?.to_owned();
+    cursor.done()?;
+    Ok(MutantPayload {
+        identity,
+        branch,
+        exchanges,
+        records,
+        control,
+    })
+}
+
+fn compare_mutant_payload(
+    payload: &MutantPayload,
+    evidence: &MaturityMutantEvidence,
+    roster: &[&'static str],
+) -> ImportResult<()> {
+    payload_agrees(
+        "mutant-record-count",
+        payload.records.len() == evidence.offers().len(),
+    )?;
+    for ((offer, recorded), step) in evidence.offers().iter().zip(&payload.records).zip(
+        roster
+            .iter()
+            .copied()
+            .filter(|step| step.starts_with("mutant-")),
+    ) {
+        let expected = format!(
+            "{} declared {:?} observed {:?} carrier {:?} binding {:?}",
+            offer.step(),
+            offer.declared_boundary(),
+            offer.observed_layer(),
+            offer.carrier().execution(),
+            evidence.binding(offer)
+        );
+        payload_agrees(step, *recorded == expected)?;
+    }
+    let control = evidence.control().map_or_else(
+        || "none".to_owned(),
+        |control| control.identity().to_target_display(),
+    );
+    payload_agrees("mutant-control", payload.control == control)
+}
+
+fn admit_mutant_capture(
+    bytes: &[u8],
+    report: MaturityReportFacts,
+    walls: [u64; 4],
+    pins: &MaturityMutantCorpusPins<'_>,
+) -> ImportResult<ValidatedMaturityMutantCorpus> {
+    binding(
+        "ceremony-digest",
+        hex_bytes(&tagged::sha256(bytes)) == report.ceremony_digest,
+    )?;
+    let mut cursor = Cursor::new("maturity mutant capture", bytes)?;
+    let capture_suite = parse_header(&mut cursor, &report, pins.pins())?;
+    let capabilities = parse_environment(&mut cursor, &report, pins.pins())?;
+    cursor.exact("digest-count 1")?;
+    let submission_digest = cursor
+        .value("digest")?
+        .strip_prefix("0 maturity-submission forward-v2 ")
+        .filter(|hash| digest(hash).is_some())
+        .ok_or_else(|| cursor.refusal())?
+        .to_owned();
+    let roster = maturity_mutant_ceremony::roster(pins.table());
+    cursor.exact(&format!("operation-count {}", roster.len()))?;
+    let last = roster.len() - 1;
+    let operations = roster
+        .iter()
+        .enumerate()
+        .map(|(index, name)| parse_mutant_operation(&mut cursor, index, name, last))
+        .collect::<ImportResult<Vec<_>>>()?;
+    let payload = parse_mutant_payload(
+        &parse_tail(&mut cursor, bytes)?,
+        &operations,
+        roster,
+        &report,
+        pins.table().rows().len(),
+    )?;
+    let evidence = MaturityMutantEvidence::from_transcript(
+        payload.identity.clone(),
+        payload.branch,
+        pins.table(),
+        &payload.exchanges,
+    )
+    .map_err(Refusal::Derivation)?;
+    let control_bytes = &operations
+        .last()
+        .ok_or(Refusal::CorpusCensus)?
+        .request_bytes;
+    binding(
+        "maturity-submission-digest",
+        submission_digest == hex_bytes(&tagged::sha256(control_bytes)),
+    )?;
+    compare_mutant_payload(&payload, &evidence, roster)?;
+    Ok(ValidatedMaturityMutantCorpus {
+        evidence,
+        report,
+        fee_floors: pins.pins().fee_floors(),
+        capture_suite,
+        exchanges: payload.exchanges,
+        capabilities,
+        phase_walls: walls,
+    })
+}
+
+/// Admits one four-file mutant archive through shared bindings and exact ceremony replay.
+///
+/// # Errors
+/// Returns the first byte, grammar, binding, payload, or planner refusal.
+///
+/// # Panics
+/// Panics only if the fixed constructor architecture omits its singleton or linker bundle,
+/// which these published inputs cannot arrange.
+#[must_use = "mutant corpus admission can refuse a file or replay binding"]
+pub fn admit_maturity_mutant_corpus<'a>(
+    files: &[MaturityArchiveFile<'a>; 4],
+    pins: &MaturityMutantCorpusPins<'a>,
+) -> Result<ValidatedMaturityMutantCorpus, MaturityCorpusImportRefusal> {
+    validate_census(files, pins.pins())?;
+    validate_manifest(files, pins.pins().manifest_sha256())?;
+    let (report, walls) = parse_mutant_report(files[3].bytes, pins)?;
+    validate_common_bindings(files, pins.pins(), &report)?;
+    admit_mutant_capture(files[0].bytes, report, walls, pins)
+}
+
+/// Admits the pinned predecessor-constructor mutant archive once.
+///
+/// # Errors
+/// Returns the first refused admission or replay layer.
+///
+/// # Panics
+/// Panics only if the fixed constructor architecture omits its singleton or linker bundle,
+/// which these published inputs cannot arrange.
+pub fn maturity_predecessor_mutant_run_of_record()
+-> Result<&'static ValidatedMaturityMutantCorpus, MaturityCorpusImportRefusal> {
+    static CORPUS: OnceLock<ImportResult<ValidatedMaturityMutantCorpus>> = OnceLock::new();
+    match CORPUS.get_or_init(|| {
+        admit_maturity_mutant_corpus(&PREDECESSOR_MUTANT_FILES, &PREDECESSOR_MUTANT_PINS)
+    }) {
+        Ok(corpus) => Ok(corpus),
+        Err(refusal) => Err(refusal.clone()),
+    }
+}
+
+/// Admits the pinned successor-constructor mutant archive once.
+///
+/// # Errors
+/// Returns the first refused admission or replay layer.
+///
+/// # Panics
+/// Panics only if the fixed constructor architecture omits its singleton or linker bundle,
+/// which these published inputs cannot arrange.
+pub fn maturity_successor_mutant_run_of_record()
+-> Result<&'static ValidatedMaturityMutantCorpus, MaturityCorpusImportRefusal> {
+    static CORPUS: OnceLock<ImportResult<ValidatedMaturityMutantCorpus>> = OnceLock::new();
+    match CORPUS.get_or_init(|| {
+        admit_maturity_mutant_corpus(&SUCCESSOR_MUTANT_FILES, &SUCCESSOR_MUTANT_PINS)
+    }) {
+        Ok(corpus) => Ok(corpus),
+        Err(refusal) => Err(refusal.clone()),
+    }
+}
+
+/// Replays a selected admitted mutant archive through the ceremony planner.
+///
+/// # Errors
+/// Preserves admission and exact replay refusals.
+///
+/// # Panics
+/// Panics only if the fixed constructor architecture omits its singleton or linker bundle,
+/// which these published inputs cannot arrange.
+pub fn replay_maturity_mutant_run_of_record(
+    table: MaturityMutantTable,
+) -> Result<MaturityMutantEvidence, MaturityCorpusImportRefusal> {
+    let corpus = match table {
+        MaturityMutantTable::PredecessorConstructor => maturity_predecessor_mutant_run_of_record()?,
+        MaturityMutantTable::SuccessorConstructor => maturity_successor_mutant_run_of_record()?,
+    };
+    let report = corpus.report();
+    let identity = CandidateDeploymentIdentity::new(
+        digest(report.network_id()).ok_or(Refusal::CrossFileBinding {
+            field: "development-network-id",
+        })?,
+        digest(report.genesis_id()).ok_or(Refusal::CrossFileBinding {
+            field: "development-genesis-id",
+        })?,
+    )
+    .map_err(|_| Refusal::CrossFileBinding {
+        field: "operator-deployment",
+    })?;
+    let branch = BranchContext::new([0x41; 32], 7)
+        .map_err(|_| Refusal::CrossFileBinding { field: "branch" })?;
+    MaturityMutantEvidence::from_transcript(identity, branch, table, corpus.exchanges())
+        .map_err(Refusal::Derivation)
 }
 
 /// Admits four pinned maturity files through byte bindings, closed grammars and exact planner replay.
@@ -1872,6 +2505,7 @@ mod tests {
                 (HISTORICAL_PINS.names, sizes),
                 (&manifest_hash, &address, &capture_hash),
                 sponsorless,
+                HISTORICAL_PINS.capture_target,
                 HISTORICAL_PINS.cargo_path,
                 HISTORICAL_PINS.framework_revision,
                 HISTORICAL_PINS.funding_count,
@@ -2306,8 +2940,9 @@ mod tests {
         assert_eq!(
             std::str::from_utf8(&argv).expect("cargo text"),
             format!(
-                "{} test -p tripod-vectors --test maturity_native -- --ignored --test-threads=1",
-                VARIABLE_PINS.cargo_path()
+                "{} test -p tripod-vectors --test {} -- --ignored --test-threads=1",
+                VARIABLE_PINS.cargo_path(),
+                VARIABLE_PINS.capture_target().target()
             )
         );
         let capture = std::str::from_utf8(VARIABLE_FILES[0].bytes()).expect("capture text");
@@ -3136,5 +3771,358 @@ mod tests {
                 MaturityNativePlanRefusal::ResponseSchema { offered: 7 }
             ))
         );
+    }
+
+    struct OwnedMutantCorpus {
+        bytes: [Vec<u8>; 4],
+        pins: MaturityMutantCorpusPins<'static>,
+    }
+
+    impl OwnedMutantCorpus {
+        fn new(
+            files: &[MaturityArchiveFile<'static>; 4],
+            pins: &MaturityMutantCorpusPins<'static>,
+        ) -> Self {
+            Self {
+                bytes: files.map(|file| file.bytes().to_vec()),
+                pins: *pins,
+            }
+        }
+
+        fn inputs(&self) -> [MaturityArchiveFile<'_>; 4] {
+            std::array::from_fn(|index| {
+                MaturityArchiveFile::new(self.pins.pins().names()[index], &self.bytes[index])
+            })
+        }
+
+        fn pinned(&self) -> ImportResult<ValidatedMaturityMutantCorpus> {
+            admit_maturity_mutant_corpus(&self.inputs(), &self.pins)
+        }
+
+        fn replace(&mut self, index: usize, from: &str, to: &str) {
+            let text = std::str::from_utf8(&self.bytes[index]).expect("mutant fixture text");
+            assert!(text.contains(from), "missing mutant mutation operand");
+            self.bytes[index] = text.replacen(from, to, 1).into_bytes();
+        }
+
+        fn payload_replace(&mut self, from: &str, to: &str) {
+            let text = std::str::from_utf8(&self.bytes[0]).expect("mutant capture text");
+            let line = text
+                .lines()
+                .find(|line| line.starts_with("legacy-rendering "))
+                .expect("mutant payload line")
+                .to_owned();
+            let hex = line.split(' ').nth(2).expect("mutant payload hex");
+            let payload = String::from_utf8(decode_hex(hex).expect("mutant payload bytes"))
+                .expect("mutant payload text");
+            assert!(payload.contains(from), "missing mutant payload operand");
+            let changed = payload.replacen(from, to, 1);
+            self.replace(
+                0,
+                &line,
+                &format!(
+                    "legacy-rendering {} {}",
+                    changed.len(),
+                    hex_bytes(changed.as_bytes())
+                ),
+            );
+        }
+
+        fn rebind(&mut self, content: bool) -> ImportResult<ValidatedMaturityMutantCorpus> {
+            if content {
+                let text = std::str::from_utf8(&self.bytes[0]).expect("mutant capture");
+                let position = text
+                    .find("capture-content-sha256 ")
+                    .expect("capture content hash");
+                let hash = hex_bytes(&tagged::sha256(&self.bytes[0][..position]));
+                let start = position + "capture-content-sha256 ".len();
+                self.bytes[0][start..start + 64].copy_from_slice(hash.as_bytes());
+            }
+            let capture_hash = hex_bytes(&tagged::sha256(&self.bytes[0]));
+            let mut manifest = String::new();
+            for index in 0..2 {
+                let _ = writeln!(
+                    manifest,
+                    "{}  {}",
+                    hex_bytes(&tagged::sha256(&self.bytes[index])),
+                    self.pins.pins().names()[index]
+                );
+            }
+            self.bytes[2] = manifest.into_bytes();
+            let manifest_hash = hex_bytes(&tagged::sha256(&self.bytes[2]));
+            let report = std::str::from_utf8(&self.bytes[3]).expect("mutant report");
+            let mut rebound = String::new();
+            for line in report.lines() {
+                if line.starts_with("ceremony report ") {
+                    let _ = writeln!(rebound, "ceremony report {capture_hash}");
+                } else if line.starts_with("manifest-sha256 ") {
+                    let _ = writeln!(rebound, "manifest-sha256 {manifest_hash}");
+                } else {
+                    let _ = writeln!(rebound, "{line}");
+                }
+            }
+            self.bytes[3] = rebound.into_bytes();
+            let address = hex_bytes(&tagged::sha256(&self.bytes[3]));
+            let sizes = std::array::from_fn(|index| self.bytes[index].len());
+            let original = self.pins.pins();
+            let pins = MaturityMutantCorpusPins::new(
+                MaturityCorpusPins::new(
+                    original.schedule(),
+                    (*original.names(), sizes),
+                    (&manifest_hash, &address, &capture_hash),
+                    original.sponsorless(),
+                    original.capture_target(),
+                    original.cargo_path(),
+                    original.framework_revision(),
+                    original.funding_count(),
+                    original.fee_floors(),
+                ),
+                self.pins.table(),
+            );
+            admit_maturity_mutant_corpus(&self.inputs(), &pins)
+        }
+    }
+
+    fn flip_mutant_request(corpus: &mut OwnedMutantCorpus, position: usize) {
+        let text = std::str::from_utf8(&corpus.bytes[0]).expect("mutant capture");
+        let begin = format!("operation {position} begin\n");
+        let end = format!("operation {position} end\n");
+        let (prefix, after_begin) = text.split_once(&begin).expect("mutant operation");
+        let (block, suffix) = after_begin.split_once(&end).expect("mutant operation end");
+        let mut changed = String::new();
+        changed.push_str(prefix);
+        changed.push_str(&begin);
+        let mut changed_byte = None;
+        for line in block.lines() {
+            if let Some(value) = line.strip_prefix("request-bytes ") {
+                let (_, hex) = value.split_once(' ').expect("request bytes");
+                let mut bytes = decode_hex(hex).expect("request encoding");
+                bytes[0] ^= 1;
+                changed_byte = Some(bytes[0]);
+                let _ = writeln!(
+                    changed,
+                    "request-bytes {} {}",
+                    bytes.len(),
+                    hex_bytes(&bytes)
+                );
+            } else if let Some(value) = line.strip_prefix("request-subject ") {
+                let (_, hex) = value.split_once(' ').expect("subject bytes");
+                let mut subject: serde_json::Value =
+                    serde_json::from_slice(&decode_hex(hex).expect("subject encoding"))
+                        .expect("subject JSON");
+                subject["transaction_bytes"][0] =
+                    serde_json::Value::from(changed_byte.expect("request byte"));
+                let bytes = serde_json::to_vec(&subject).expect("subject JSON");
+                let _ = writeln!(
+                    changed,
+                    "request-subject {} {}",
+                    bytes.len(),
+                    hex_bytes(&bytes)
+                );
+            } else {
+                let _ = writeln!(changed, "{line}");
+            }
+        }
+        changed.push_str(&end);
+        changed.push_str(suffix);
+        corpus.bytes[0] = changed.into_bytes();
+    }
+
+    #[test]
+    fn both_mutant_runs_admit_through_their_pins() {
+        for (files, pins, count) in [
+            (&PREDECESSOR_MUTANT_FILES, &PREDECESSOR_MUTANT_PINS, 4),
+            (&SUCCESSOR_MUTANT_FILES, &SUCCESSOR_MUTANT_PINS, 3),
+        ] {
+            let base = pins.pins();
+            assert_eq!(base.names(), &files.map(|file| file.name()));
+            assert_eq!(base.sizes(), &files.map(|file| file.bytes().len()));
+            assert_eq!(
+                base.ceremony_sha256(),
+                hex_bytes(&tagged::sha256(files[0].bytes()))
+            );
+            assert_eq!(
+                base.manifest_sha256(),
+                hex_bytes(&tagged::sha256(files[2].bytes()))
+            );
+            assert_eq!(
+                base.run_address(),
+                hex_bytes(&tagged::sha256(files[3].bytes()))
+            );
+            assert_eq!(
+                base.sponsorless(),
+                MaturitySponsorlessExpectation::Acceptance
+            );
+            assert_eq!(
+                base.framework_revision(),
+                MaturityFrameworkRevision::IntendedTip
+            );
+            assert_eq!(base.funding_count(), 0);
+            assert_eq!(base.fee_floors(), MATURITY_DISCLOSED_FEE_FLOORS);
+            let report = std::str::from_utf8(files[3].bytes()).expect("mutant report");
+            assert!(report.contains(&format!(
+                "rust-test-target {}\n",
+                base.capture_target().target()
+            )));
+            assert!(report.contains(&format!("capture-profile {}\n", pins.profile())));
+            let argv_hex = report
+                .lines()
+                .find_map(|line| line.strip_prefix("cargo-argv "))
+                .expect("cargo argv")
+                .split_whitespace()
+                .nth(1)
+                .expect("cargo hex");
+            assert_eq!(
+                String::from_utf8(decode_hex(argv_hex).expect("cargo bytes")).expect("cargo text"),
+                format!(
+                    "{} test -p tripod-vectors --test {} -- --ignored --test-threads=1",
+                    base.cargo_path(),
+                    base.capture_target().target()
+                )
+            );
+            let corpus = admit_maturity_mutant_corpus(files, pins).expect("mutant admission");
+            assert_eq!(corpus.evidence().offers().len(), count);
+            assert!(
+                corpus
+                    .evidence()
+                    .offers()
+                    .iter()
+                    .all(|offer| corpus.evidence().binding(offer)
+                        == Some(crate::maturity_evidence::MaturityRowBinding::Bound))
+            );
+            assert_eq!(corpus.evidence().escapes().count(), 0);
+            assert!(corpus.evidence().control().is_some());
+            assert_eq!(
+                replay_maturity_mutant_run_of_record(pins.table()),
+                Ok(corpus.evidence().clone())
+            );
+        }
+    }
+
+    #[test]
+    fn a_moved_byte_is_refused_at_its_layer_in_each_mutant_run() {
+        for (files, pins) in [
+            (&PREDECESSOR_MUTANT_FILES, PREDECESSOR_MUTANT_PINS),
+            (&SUCCESSOR_MUTANT_FILES, SUCCESSOR_MUTANT_PINS),
+        ] {
+            let mut names = *files;
+            names[0] = MaturityArchiveFile::new("other.capture", files[0].bytes());
+            assert_eq!(
+                admit_maturity_mutant_corpus(&names, &pins),
+                Err(Refusal::CorpusCensus)
+            );
+            let mut corpus = OwnedMutantCorpus::new(files, &pins);
+            corpus.bytes[0].pop();
+            assert!(matches!(corpus.pinned(), Err(Refusal::FileSize { .. })));
+            let mut corpus = OwnedMutantCorpus::new(files, &pins);
+            corpus.bytes[2][0] ^= 1;
+            assert_eq!(corpus.pinned(), Err(Refusal::ManifestHash));
+            let mut corpus = OwnedMutantCorpus::new(files, &pins);
+            corpus.bytes[3][0] ^= 1;
+            assert_eq!(corpus.pinned(), Err(Refusal::RunReportGrammar));
+            let mut corpus = OwnedMutantCorpus::new(files, &pins);
+            corpus.bytes[0][0] ^= 1;
+            assert!(matches!(
+                corpus.pinned(),
+                Err(Refusal::ManifestDigest { .. })
+            ));
+            let mut corpus = OwnedMutantCorpus::new(files, &pins);
+            corpus.payload_replace("mutant-record mutant-", "mutant-record altered-mutant-");
+            assert!(matches!(
+                corpus.rebind(true),
+                Err(Refusal::PayloadDisagreement { .. })
+            ));
+            let mut corpus = OwnedMutantCorpus::new(files, &pins);
+            let position = if pins.table() == MaturityMutantTable::PredecessorConstructor {
+                3
+            } else {
+                2
+            };
+            flip_mutant_request(&mut corpus, position);
+            assert_eq!(
+                corpus.rebind(true),
+                Err(Refusal::Derivation(
+                    MaturityNativePlanRefusal::TranscriptStepMismatch { position }
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn the_earlier_runs_admit_under_their_restated_targets() {
+        for (files, pins) in [
+            (&FILES, &HISTORICAL_PINS),
+            (&VARIABLE_FILES, &VARIABLE_PINS),
+        ] {
+            assert_eq!(
+                pins.capture_target(),
+                MaturityCaptureTarget::new(
+                    "maturity_native",
+                    "the_maturity_announcement_runs_against_a_real_target"
+                )
+            );
+            assert!(admit_maturity_corpus(files, pins).is_ok());
+        }
+        let report = std::str::from_utf8(FILES[3].bytes()).expect("historical report");
+        assert!(report.contains(&format!(
+            "rust-test-target {}\n",
+            HISTORICAL_PINS.capture_target().target()
+        )));
+    }
+
+    #[test]
+    fn phase_walls_are_read_and_bind_nothing() {
+        for (files, pins) in [
+            (&PREDECESSOR_MUTANT_FILES, PREDECESSOR_MUTANT_PINS),
+            (&SUCCESSOR_MUTANT_FILES, SUCCESSOR_MUTANT_PINS),
+        ] {
+            let corpus = admit_maturity_mutant_corpus(files, &pins).expect("mutant archive");
+            let report = std::str::from_utf8(files[3].bytes()).expect("mutant report");
+            let walls: Vec<u64> = report
+                .lines()
+                .filter_map(|line| line.strip_prefix("phase-wall-ms "))
+                .map(|line| {
+                    line.split_once(' ')
+                        .expect("phase wall")
+                        .1
+                        .parse()
+                        .expect("wall digits")
+                })
+                .collect();
+            assert_eq!(corpus.phase_walls().as_slice(), walls);
+            let mut reordered = OwnedMutantCorpus::new(files, &pins);
+            let first = report
+                .lines()
+                .find(|line| line.starts_with("phase-wall-ms preflight "))
+                .expect("preflight wall");
+            let second = report
+                .lines()
+                .find(|line| line.starts_with("phase-wall-ms cargo "))
+                .expect("cargo wall");
+            reordered.replace(
+                3,
+                &format!("{first}\n{second}\n"),
+                &format!("{second}\n{first}\n"),
+            );
+            assert_eq!(reordered.rebind(false), Err(Refusal::RunReportGrammar));
+            let mut missing = OwnedMutantCorpus::new(files, &pins);
+            missing.replace(3, &format!("{first}\n"), "");
+            assert_eq!(missing.rebind(false), Err(Refusal::RunReportGrammar));
+            let mut nondigit = OwnedMutantCorpus::new(files, &pins);
+            nondigit.replace(3, first, "phase-wall-ms preflight absent");
+            assert_eq!(nondigit.rebind(false), Err(Refusal::RunReportGrammar));
+            let mut changed = OwnedMutantCorpus::new(files, &pins);
+            for (phase, value) in ["preflight", "cargo", "census", "manifest"]
+                .iter()
+                .zip([1, 2, 3, 4])
+            {
+                let original = report
+                    .lines()
+                    .find(|line| line.starts_with(&format!("phase-wall-ms {phase} ")))
+                    .expect("phase wall");
+                changed.replace(3, original, &format!("phase-wall-ms {phase} {value}"));
+            }
+            assert!(changed.rebind(false).is_ok());
+        }
     }
 }

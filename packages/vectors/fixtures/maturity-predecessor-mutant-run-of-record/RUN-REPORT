@@ -1,0 +1,41 @@
+run-report-schema native-maturity-mutant-run-report 1
+capture-format-schema native-maturity-capture 1
+suite-commit f933b3767f5d520a49cbf96299c8880e561e964a
+suite-tree 512f6ea2c4161798326a7a59e36b8e9bbc5df8ea
+suite-clean yes
+rust-test-target maturity_predecessor_mutants
+capture-profile predecessor-constructor
+cargo-argv 126 2f776f726b73706163652f746f6f6c636861696e732f636172676f2f62696e2f636172676f2074657374202d7020747269706f642d766563746f7273202d2d74657374206d617475726974795f7072656465636573736f725f6d7574616e7473202d2d202d2d69676e6f726564202d2d746573742d746872656164733d31
+expected-test-count 1
+observed-test-count 1
+expected-ceremony-count 1
+observed-ceremony-count 1
+expected-setup-count 0
+observed-setup-count 0
+diagnostics-present yes
+test-passed-count 1
+test-failed-count 0
+test-ignored-count 0
+cargo-exit-code 0
+elementsd-expected-tip b7fc5d080a7e9ccc0ef48c3ba11db243e794bdb0
+elementsd-binary-reported-revision 12 623766633564303830613765
+elementsd-intended-executed-tip 40 62376663356430383061376539636363306566343863336261313164623234336537393462646230
+executor-adapter-name 24 656c656d656e74732d6e61746976652d6578656375746f72
+executor-adapter-version 5 322e312e30
+node-name 8 456c656d656e7473
+node-version 50 456c656d656e747320436f7265206461656d6f6e2076657273696f6e207632382e39392e302d623766633564303830613765
+protocol-revision 8
+fixture-digest-algorithm forward-v2
+deployment-environment development
+deployment-network-id 64 37356538323366376335633730646466626439353834663930663637323938663235373039303739343738323938323830363663373034376232316235336231
+deployment-genesis-id 64 32303935373762646136626634623538303462643436663836323135383064643664346538626661326431393065316335306539333234393262616361303764
+deployment-target-contract 21 656c656d656e74732d7461707363726970742d7632
+phase-wall-ms preflight 45
+phase-wall-ms cargo 17595
+phase-wall-ms census 71
+phase-wall-ms manifest 14
+ceremony-roster begin
+ceremony report 730a0670d76a59e4640726ef54f0d40853987c35792a4329401abd485d42f319
+ceremony-roster end
+manifest-sha256 46ba2aa5cc29720a9a8fced865cd46876dc51de985f47642f05e8571c50cc883
+eligible yes
