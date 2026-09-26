@@ -36,7 +36,10 @@ because Guide-13 §13.6 forbids either satisfying the other:
   class. Of the target half, most rows are answered by an acceptance of
   the row's own shape; one is answered by a determinism observation,
   which is counted in its own bucket and never added to the acceptance
-  figure; and the rest are waiting on a run, with the plan saying which.
+  figure. Seven negative rows in the two constructor tables are answered
+  by target refusals at their declared boundaries, each bound to its row
+  through the subject, carrier, control and boundary rule. The remaining
+  target rows wait on a run, with the plan saying which.
 - **Disclosure minimality.** Five pairs, each grown from one semantic
   fixture with both members built by the same function, scored one §16.2
   condition at a time. Its verdict is per pair rather than one token for
@@ -48,9 +51,10 @@ because Guide-13 §13.6 forbids either satisfying the other:
 - **Resources.** Prediction and observation as separate figures over the
   same exact bytes, never one constant used twice.
 
-The run of record is a transcription and not evidence. It records what
-one real node did once, so that a reader without a node can see the
-target's own words, and it discharges no row.
+The runs of record, including the two mutant runs, transcribe what one
+real node did once in each run, so a reader without a node can see the
+target's own words. A run answers a row only through an exact refusal
+bound to that row's declared facts; its text alone answers none.
 
 Three rows of §15 are answered by neither a validator nor a target. The
 two sponsor-report rows ask what this workspace's own canonical bytes

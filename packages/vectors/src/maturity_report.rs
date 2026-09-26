@@ -33,14 +33,15 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::time::Duration;
+use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
 use crate::matrix::EvidenceBoundary;
 use crate::maturity_continuity::{MaturityByteSource, MaturityContinuityRefusal};
 use crate::maturity_evidence::{
-    MaturityAnnouncementEvidencePlan, MaturityConstructorMaterialPresence,
-    MaturityContinuityObservation, MaturityContinuityRecord, MaturityEvidenceCensus,
-    MaturityExecutorProvenanceExpectation, MaturityGuaranteeQuantifier, MaturityRowStanding,
-    MaturityTargetBinding,
+    MaturityAnnouncementEvidencePlan, MaturityCarrierExecution,
+    MaturityConstructorMaterialPresence, MaturityContinuityObservation, MaturityContinuityRecord,
+    MaturityEvidenceCensus, MaturityExecutorProvenanceExpectation, MaturityGuaranteeQuantifier,
+    MaturityRowStanding, MaturityTargetBinding,
 };
 use crate::maturity_first_party::MaturityFirstPartyValidator;
 use crate::maturity_negative_half::{
@@ -50,8 +51,8 @@ use crate::maturity_safety::{MaturityExpectedProjection, MaturitySafetySection};
 
 /// The schema of the canonical rendered safety report.
 ///
-/// Stated in the bytes so a reader never infers which revision a document is. Revision 1 is the first: no earlier field set was ever rendered, so there is no historical reader to strand and no earlier revision this one must decline.
-pub const MATURITY_SAFETY_REPORT_SCHEMA: u32 = 1;
+/// Revision 2 adds a `native_refusal` row block to revision 1's grammar. A revision-1 reader sees no such line, while a revision-2 reader requires the block, so the new line kind has its own schema.
+pub const MATURITY_SAFETY_REPORT_SCHEMA: u32 = 2;
 
 /// What kind of report this is, said in the bytes.
 ///
@@ -249,6 +250,49 @@ impl MaturityWitnessedRefusal {
     }
 }
 
+/// One answered native refusal, stated without diagnostic text or archived address.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MaturityNativeRefusalRow {
+    /// The constructor table that declares the row.
+    section: MaturitySafetySection,
+    /// The row's name within its table.
+    row: &'static str,
+    /// The boundary the row declared before the run.
+    declared_boundary: EvidenceBoundary,
+    /// The layer at which the target refused the offer.
+    observed_layer: ObservedOutcomeLayer,
+    /// Whether the intended carrier executed.
+    carrier: MaturityCarrierExecution,
+}
+
+impl MaturityNativeRefusalRow {
+    /// The table that declares the row.
+    #[must_use]
+    pub const fn section(&self) -> MaturitySafetySection {
+        self.section
+    }
+    /// The row's name within its table.
+    #[must_use]
+    pub const fn row(&self) -> &'static str {
+        self.row
+    }
+    /// The row's declared refusal boundary.
+    #[must_use]
+    pub const fn declared_boundary(&self) -> EvidenceBoundary {
+        self.declared_boundary
+    }
+    /// The target layer actually observed.
+    #[must_use]
+    pub const fn observed_layer(&self) -> ObservedOutcomeLayer {
+        self.observed_layer
+    }
+    /// Execution reading of the intended carrier.
+    #[must_use]
+    pub const fn carrier(&self) -> MaturityCarrierExecution {
+        self.carrier
+    }
+}
+
 /// The clause this report witnesses, and what it is still owed.
 ///
 /// The counts are figures rather than prose so a reader can hold the witness against the matrix it is stated over. The owed figure counts every row this report has not answered, which is deliberately the larger of the two readings available: a row answered by an acceptance would belong to the forward clause rather than to this one, and a witness that shrank its own denominator to the rows it might eventually cover would look nearer to total than it is.
@@ -405,6 +449,7 @@ pub struct MaturityAnnouncementSafetyReport {
     provenance: MaturityExecutorProvenanceExpectation,
     quantifier: MaturityGuaranteeQuantifier,
     witnessed: Vec<MaturityWitnessedRefusal>,
+    native_refusals: Vec<MaturityNativeRefusalRow>,
     waiting: Vec<MaturityWaitingRow>,
     material: MaturityConstructorMaterialPresence,
     records: Vec<MaturityContinuityRecord>,
@@ -451,6 +496,12 @@ impl MaturityAnnouncementSafetyReport {
     #[must_use]
     pub fn witnessed(&self) -> &[MaturityWitnessedRefusal] {
         &self.witnessed
+    }
+
+    /// Answered native refusals in the matrix's order.
+    #[must_use]
+    pub fn native_refusals(&self) -> &[MaturityNativeRefusalRow] {
+        &self.native_refusals
     }
 
     /// The rows waiting on a target run, in the matrix's order.
@@ -531,6 +582,8 @@ pub enum MaturityRecomputedItem {
     Completeness,
     /// The refusals the witness stands on.
     WitnessedRefusals,
+    /// The answered native refusals and their declared facts.
+    NativeRefusals,
     /// The register's set equality with the plan's waiting rows.
     RegisterSetEquality,
     /// Material presence and exact-row continuity records.
@@ -542,7 +595,7 @@ pub enum MaturityRecomputedItem {
 }
 
 impl MaturityRecomputedItem {
-    /// All thirteen, in the order the validation performs them.
+    /// All fourteen, in the order the validation performs them.
     pub const ALL: &'static [Self] = &[
         Self::Schema,
         Self::Role,
@@ -553,6 +606,7 @@ impl MaturityRecomputedItem {
         Self::AnsweredAndOutstanding,
         Self::Completeness,
         Self::WitnessedRefusals,
+        Self::NativeRefusals,
         Self::RegisterSetEquality,
         Self::ConstructorContinuityMaterial,
         Self::ReportLayerRequirements,
@@ -572,6 +626,7 @@ impl MaturityRecomputedItem {
             Self::AnsweredAndOutstanding => "answered-and-outstanding",
             Self::Completeness => "completeness",
             Self::WitnessedRefusals => "witnessed-refusals",
+            Self::NativeRefusals => "native-refusals",
             Self::RegisterSetEquality => "register-set-equality",
             Self::ConstructorContinuityMaterial => "constructor-continuity-material",
             Self::ReportLayerRequirements => "report-layer-requirements",
@@ -651,6 +706,20 @@ pub enum MaturitySafetyReportRefusal {
         /// What the report carried.
         stated: usize,
         /// What the plan recomputes to.
+        recomputed: usize,
+    },
+    /// One native refusal row differs from the plan at its position.
+    NativeRefusalDiffers {
+        /// The table of the expected row.
+        section: MaturitySafetySection,
+        /// The expected row's name.
+        name: &'static str,
+    },
+    /// The native refusal block differs from the plan or its census count.
+    NativeRefusalCountDiffers {
+        /// The count being checked.
+        stated: usize,
+        /// The count the plan supports.
         recomputed: usize,
     },
     /// A row the report carries as waiting has no entry in the register.
@@ -747,6 +816,9 @@ impl MaturitySafetyReportRefusal {
             Self::CompletenessDiffers { .. } => Some(MaturityRecomputedItem::Completeness),
             Self::WitnessedRefusalDiffers { .. } | Self::WitnessedRefusalCountDiffers { .. } => {
                 Some(MaturityRecomputedItem::WitnessedRefusals)
+            }
+            Self::NativeRefusalDiffers { .. } | Self::NativeRefusalCountDiffers { .. } => {
+                Some(MaturityRecomputedItem::NativeRefusals)
             }
             Self::WaitingRowIsNotRegistered { .. }
             | Self::RegisteredRowIsNotWaiting { .. }
@@ -899,6 +971,23 @@ fn witnessed_refusals(plan: &MaturityAnnouncementEvidencePlan) -> Vec<MaturityWi
         .collect()
 }
 
+/// Answered native refusals in the plan's matrix order.
+fn native_refusal_rows(plan: &MaturityAnnouncementEvidencePlan) -> Vec<MaturityNativeRefusalRow> {
+    plan.rows()
+        .iter()
+        .filter_map(|classified| match classified.standing() {
+            MaturityRowStanding::NativeRefusalObserved(refusal) => Some(MaturityNativeRefusalRow {
+                section: classified.row().section(),
+                row: classified.row().name(),
+                declared_boundary: refusal.declared_boundary(),
+                observed_layer: refusal.observed_layer(),
+                carrier: refusal.carrier_execution(),
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The rows waiting on a target run, each joined to its registered gap.
 fn waiting_rows(
     plan: &MaturityAnnouncementEvidencePlan,
@@ -989,6 +1078,7 @@ pub fn assemble_maturity_safety_report(
         provenance: plan.executor_provenance().clone(),
         quantifier: census.quantifier(),
         witnessed,
+        native_refusals: native_refusal_rows(plan),
         waiting: waiting_rows(plan)?,
         material: plan.constructor_material().presence(),
         records: plan.continuity_records().to_vec(),
@@ -1160,6 +1250,37 @@ fn validate_witnessed(
     Ok(())
 }
 
+/// Recompute the ordered native refusal block and its census figure.
+fn validate_native_refusals(
+    report: &MaturityAnnouncementSafetyReport,
+    plan: &MaturityAnnouncementEvidencePlan,
+    done: &mut BTreeSet<MaturityRecomputedItem>,
+) -> Result<(), MaturitySafetyReportRefusal> {
+    let recomputed = native_refusal_rows(plan);
+    if report.native_refusals.len() != recomputed.len() {
+        return Err(MaturitySafetyReportRefusal::NativeRefusalCountDiffers {
+            stated: report.native_refusals.len(),
+            recomputed: recomputed.len(),
+        });
+    }
+    if recomputed.len() != plan.census().native_refusal_observed() {
+        return Err(MaturitySafetyReportRefusal::NativeRefusalCountDiffers {
+            stated: recomputed.len(),
+            recomputed: plan.census().native_refusal_observed(),
+        });
+    }
+    for (stated, expected) in report.native_refusals.iter().zip(&recomputed) {
+        if stated != expected {
+            return Err(MaturitySafetyReportRefusal::NativeRefusalDiffers {
+                section: expected.section,
+                name: expected.row,
+            });
+        }
+    }
+    done.insert(MaturityRecomputedItem::NativeRefusals);
+    Ok(())
+}
+
 /// Recompute the register's set equality with the plan's waiting rows.
 fn validate_register(
     report: &MaturityAnnouncementSafetyReport,
@@ -1297,7 +1418,7 @@ fn validate_clause(
 
 /// Validate one safety report against the plan it claims to be about.
 ///
-/// Twelve recomputations, each recorded only after its comparison ran, in the order [`MaturityRecomputedItem::ALL`] lists them. Nothing is taken from the report: every figure it carries is recomputed here from the evidence plan, the register and the matrix, and the first disagreement refuses with the item that found it.
+/// Fourteen recomputations, each recorded only after its comparison ran, in the order [`MaturityRecomputedItem::ALL`] lists them. Every figure is recomputed from the evidence plan, the register and the matrix; the first disagreement refuses with the item that found it.
 ///
 /// # Errors
 ///
@@ -1310,6 +1431,7 @@ pub fn validate_maturity_safety_report(
     validate_envelope(&report, plan, &mut done)?;
     validate_census(&report, plan, &mut done)?;
     validate_witnessed(&report, plan, &mut done)?;
+    validate_native_refusals(&report, plan, &mut done)?;
     validate_register(&report, plan, &mut done)?;
     validate_constructor_material(&report, plan, &mut done)?;
     validate_report_layer(&report, plan, &mut done)?;
@@ -1445,7 +1567,7 @@ fn render_recomputed(text: &mut String, items: &BTreeSet<MaturityRecomputedItem>
     }
 }
 
-/// The three row blocks, each in the matrix's own order.
+/// The four row blocks, each in the matrix's own order.
 fn render_rows(text: &mut String, report: &MaturityAnnouncementSafetyReport) {
     for witness in &report.witnessed {
         let _ = writeln!(
@@ -1456,6 +1578,17 @@ fn render_rows(text: &mut String, report: &MaturityAnnouncementSafetyReport) {
             witness.validator.entry_point(),
             witness.declared_boundary,
             witness.class
+        );
+    }
+    for refusal in &report.native_refusals {
+        let _ = writeln!(
+            text,
+            "native_refusal {} {} {:?} {:?} {:?}",
+            refusal.section.section(),
+            refusal.row,
+            refusal.declared_boundary,
+            refusal.observed_layer,
+            refusal.carrier
         );
     }
     for waiting in &report.waiting {
@@ -1528,6 +1661,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::LazyLock;
     use std::time::Duration;
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
 
     /// Every key the canonical renderer writes, and no other.
     ///
@@ -1569,6 +1703,7 @@ mod tests {
         "clause_rows_still_owed",
         "recomputed",
         "witness",
+        "native_refusal",
         "waiting",
         "report_layer",
     ];
@@ -1633,13 +1768,13 @@ mod tests {
             MaturitySafetyReportRole::MaturityAnnouncementSafety,
         );
 
-        // Every one of the thirteen recomputations ran. The set is what the
+        // Every one of the fourteen recomputations ran. The set is what the
         // wrapper is, so a validation that skipped one could not produce
         // this value at all.
         let every: BTreeSet<MaturityRecomputedItem> =
             MaturityRecomputedItem::ALL.iter().copied().collect();
         assert_eq!(validated.recomputed_items(), &every);
-        assert_eq!(MaturityRecomputedItem::ALL.len(), 13);
+        assert_eq!(MaturityRecomputedItem::ALL.len(), 14);
         assert_eq!(validated_from(&PRESENT_PLAN).recomputed_items(), &every);
     }
 
@@ -1707,6 +1842,7 @@ mod tests {
             validated.report().answered(),
             census.first_party_discharged()
                 + census.native_acceptance_observed()
+                + census.native_refusal_observed()
                 + census.root_history_observed()
                 + census.public_recovery_observed()
         );
@@ -1860,6 +1996,104 @@ mod tests {
     }
 
     #[test]
+    fn the_native_refusal_block_names_every_observed_refusal() {
+        let validated = validated();
+        let reported = validated.report().native_refusals();
+        assert_eq!(reported.len(), 7);
+        assert_eq!(reported.len(), PLAN.census().native_refusal_observed());
+        let observed: Vec<_> = PLAN
+            .rows()
+            .iter()
+            .filter_map(|classified| match classified.standing() {
+                MaturityRowStanding::NativeRefusalObserved(refusal) => {
+                    Some((classified.row(), refusal))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(reported.len(), observed.len());
+        let rendered = render_maturity_safety_report(&validated);
+        let lines: Vec<_> = rendered.lines().collect();
+        let native: Vec<_> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.starts_with("native_refusal "))
+            .collect();
+        assert_eq!(native.len(), 7);
+        let last_witness = lines
+            .iter()
+            .rposition(|line| line.starts_with("witness "))
+            .expect("witness block");
+        let first_waiting = lines
+            .iter()
+            .position(|line| line.starts_with("waiting "))
+            .expect("waiting block");
+        assert!(last_witness < native[0].0);
+        assert!(native.last().expect("native refusal block").0 < first_waiting);
+        for ((reported, (row, refusal)), (_, line)) in reported.iter().zip(observed).zip(native) {
+            assert_eq!(
+                (reported.section(), reported.row()),
+                (row.section(), row.name())
+            );
+            assert_eq!(reported.declared_boundary(), refusal.declared_boundary());
+            assert_eq!(reported.observed_layer(), refusal.observed_layer());
+            assert_eq!(reported.carrier(), refusal.carrier_execution());
+            assert_eq!(
+                *line,
+                &format!(
+                    concat!("native_refusal {} {} ", "{:?} {:?} {:?}"),
+                    reported.section().section(),
+                    reported.row(),
+                    reported.declared_boundary(),
+                    reported.observed_layer(),
+                    reported.carrier()
+                )
+            );
+        }
+        assert!(
+            !lines
+                .iter()
+                .any(|line| line.contains("mandatory-script-verify-flag-failed"))
+        );
+    }
+
+    #[test]
+    fn the_validation_refuses_an_altered_native_refusal_line() {
+        let mut altered = assembled();
+        let expected = altered.native_refusals[0];
+        altered.native_refusals[0].observed_layer = ObservedOutcomeLayer::RelayPolicyRejection;
+        let refusal = validate_maturity_safety_report(altered, &PLAN)
+            .expect_err("an altered native refusal line is refused");
+        assert_eq!(
+            refusal,
+            MaturitySafetyReportRefusal::NativeRefusalDiffers {
+                section: expected.section(),
+                name: expected.row(),
+            }
+        );
+        assert_eq!(
+            refusal.failed_item(),
+            Some(MaturityRecomputedItem::NativeRefusals)
+        );
+
+        let mut shortened = assembled();
+        shortened.native_refusals.pop();
+        let refusal = validate_maturity_safety_report(shortened, &PLAN)
+            .expect_err("a missing native refusal line is refused");
+        assert_eq!(
+            refusal,
+            MaturitySafetyReportRefusal::NativeRefusalCountDiffers {
+                stated: 6,
+                recomputed: 7,
+            }
+        );
+        assert_eq!(
+            refusal.failed_item(),
+            Some(MaturityRecomputedItem::NativeRefusals)
+        );
+    }
+
+    #[test]
     fn the_validation_refuses_an_unread_schema() {
         let mut report = assembled();
         report.schema = MATURITY_SAFETY_REPORT_SCHEMA + 1;
@@ -1940,6 +2174,10 @@ mod tests {
             "every recomputed item renders",
         );
         assert_eq!(key_count("witness"), validated.report().witnessed().len());
+        assert_eq!(
+            key_count("native_refusal"),
+            validated.report().native_refusals().len()
+        );
         assert_eq!(key_count("waiting"), validated.report().waiting().len());
         assert_eq!(key_count("constructor_material"), 1);
         assert_eq!(
@@ -2003,9 +2241,12 @@ mod tests {
         assert_eq!(clause.refusals_witnessed(), PLAN.discharged().len());
         assert_eq!(validated.report().witnessed().len(), discharged);
 
-        // No target refusal exists yet, and the owed figure is the rows
-        // this report has not answered.
-        assert_eq!(clause.native_refusals_witnessed(), 0);
+        // The native witness count follows the plan's observed refusal bucket.
+        assert_eq!(
+            clause.native_refusals_witnessed(),
+            census.native_refusal_observed()
+        );
+        assert_eq!(clause.native_refusals_witnessed(), 7);
         assert_eq!(clause.rows_still_owed(), census.rows() - census.answered());
 
         // Every witnessed refusal names the boundary its row declared and
@@ -2237,7 +2478,7 @@ mod tests {
 
     #[test]
     fn material_keys_are_exact_and_in_canonical_block_order() {
-        assert_eq!(RENDERED_KEYS.len(), 38);
+        assert_eq!(RENDERED_KEYS.len(), 39);
         for plan in [&*PLAN, &*PRESENT_PLAN] {
             let bytes = rendered_from(plan);
             let keys: Vec<_> = bytes

@@ -41,41 +41,26 @@
 //!
 //! # What keeps a STATE row waiting, and what does not
 //!
-//! Two facts are true of all forty-three rows and therefore name none of
-//! them. No module of this crate plans a target operation for the
-//! announcement or submits bytes to one, and the two mutation registries
-//! the evidence plan carries stand explicitly outstanding with a census
-//! of zero, so neither "no run" nor "no stager" separates one row from
-//! another. Each row's gap is instead the obstacle that OUTLIVES those
-//! two: what would still keep the row waiting on the day a planner and a
-//! run exist. That is what makes the vocabulary a plan rather than a
-//! restatement of the wave's position, and it is why the largest member
-//! is the one a single stager discharges while the smallest are walls.
+//! Each of the thirty-five rows still waits on the obstacle its gap names.
+//! An admitted run answers a row only when its exact refusal binds to the
+//! row's declared facts. The largest member names a stager's work, while
+//! the smallest members name walls.
 //!
 //! # A row's identity is its table and its name
 //!
-//! Three names repeat across §16's tables and two of the three repeat
-//! INSIDE the waiting set: `wrong-leaf-version` and `wrong-internal-key`
-//! each stand in the predecessor-constructor table and again in the
-//! successor-constructor table, with different mutation layers, different
-//! locators and different grounds. A register keyed by name alone would
-//! hold one of each pair and drop the other, and set equality against the
-//! classifier would still pass. So an entry's identity is the section and
-//! the name together, and the comparison is made on that pair.
+//! `wrong-leaf-version` stands in both constructor tables inside the
+//! waiting set, with different mutation layers, locators and grounds.
+//! A register keyed by name alone would drop one entry even while its
+//! comparison appeared complete. Each entry therefore uses its section
+//! and name together as its identity.
 //!
 //! # One published requirement, many rows
 //!
-//! Thirty-three of the forty-three rows share their declared relation and
-//! published class with at least one other waiting row, and the
-//! resolution selects on relation, case, boundary and class — so a
-//! cluster of rows resolves to ONE requirement identity, and eight rows
-//! of the operator table resolve together. This is a fact about the
-//! matrix and the plan rather than about any row, which is why it is
-//! recorded here and is not a member of the vocabulary: turning it into a
-//! gap would give thirty-three rows one word and say nothing about what
-//! each of them needs. It does bound what a first run can conclude,
-//! because an observation filed against a shared requirement cannot say
-//! which of its rows it answered.
+//! Twenty-eight of the thirty-five rows carry a published relation; seven
+//! name none. Resolution selects on relation, case, boundary and class,
+//! so several rows can resolve to one requirement identity. The gap still
+//! belongs to each row: a shared requirement does not identify the fault
+//! that a particular refusal answered.
 //!
 //! # What this register is not
 //!
@@ -144,7 +129,7 @@ pub enum MaturityNegativeHalfGap {
     /// Not a missing stager but a missing SUBJECT. The announcement is
     /// built at one fixed shape — sponsorless, script-path, one state
     /// successor — and these rows name a sponsor input, a second or
-    /// absent state output, or a key-path witness, none of which that
+    /// absent state output, neither of which that
     /// shape has anywhere to put. Work, and larger than a stager: the row
     /// needs a transaction built differently rather than a value written
     /// differently.
@@ -152,8 +137,7 @@ pub enum MaturityNegativeHalfGap {
     /// The fault is in a value the linker derives, and no entry point
     /// emits a wrong one.
     ///
-    /// The row mutates an internal key, a parity, a leaf version, a
-    /// control recipe, a static subtree or a whole program — values the
+    /// The row mutates a leaf version or a whole program — values the
     /// emission computes from typed inputs rather than accepts from a
     /// caller. Staging the row therefore needs a second linker that emits
     /// the wrong value on purpose, which is work, and work no surgery on
@@ -282,7 +266,7 @@ use MaturitySafetySection as S;
 /// routing and the test below is what keeps the writing and the routing
 /// one list.
 ///
-/// The waiting set contains forty-two faults after the admitted accepted run answers the sponsorless positive row with an acceptance under the variable schedule. The historical whole-schedule run reached its declared relay boundary. The other positive rows state typed non-answers and do not enter this target-run register.
+/// The waiting set contains thirty-five faults after the accepted run answers the sponsorless positive row and the two admitted mutant runs answer seven constructor rows at their declared boundaries. Other positive rows state typed non-answers and do not enter this register.
 pub const STILL_REQUIRED: &[MaturityNegativeHalfEntry] = &[
     // §16.2 — the two window faults, both a write at the successor's own
     // metadata field.
@@ -381,9 +365,8 @@ pub const STILL_REQUIRED: &[MaturityNegativeHalfEntry] = &[
         K::FiledAgainstAPublishedRequirement,
         "the shape carries a fee output of its own, so the row's change is a substitution at a position the candidate already has rather than an added one",
     ),
-    // §16.5 — the predecessor-constructor faults. Four are writes, three
-    // ask the linker for a value it derives, one presents an uncommitted
-    // control block and one asks for a witness with no leaf at all.
+    // §16.5 — five predecessor-constructor faults: three writes and two
+    // values the linker derives.
     entry(
         S::PredecessorConstructorFault,
         "wrong-state-asset",
@@ -419,38 +402,9 @@ pub const STILL_REQUIRED: &[MaturityNegativeHalfEntry] = &[
         K::FiledAgainstAPublishedRequirement,
         "the leaf version the predecessor's program commits to is fixed by the emission, which exposes no way to build a bundle at another version",
     ),
-    entry(
-        S::PredecessorConstructorFault,
-        "wrong-internal-key",
-        G::ProgramDerivationHasNoKnobForTheFault,
-        K::FiledAgainstAPublishedRequirement,
-        "the internal key the predecessor's output key is tweaked from is derived in that emission too, and no caller-chosen key reaches it",
-    ),
-    entry(
-        S::PredecessorConstructorFault,
-        "wrong-control-block",
-        G::RefusalIsProgramGeneric,
-        K::FiledAgainstAPublishedRequirement,
-        "a control block that does not commit to the spent output key is refused by the commitment rule before an opcode runs, and every such block draws that one verdict whatever the row was about",
-    ),
-    entry(
-        S::PredecessorConstructorFault,
-        "metadata-leaf-selected-for-execution",
-        G::MutationStagingOwedOnTheLinkedCandidate,
-        K::FiledAgainstAPublishedRequirement,
-        "the taptree commits the metadata leaf beside the static root, so revealing it is a control block the bundle's own hashes determine and the leaf then runs on its own terms",
-    ),
-    entry(
-        S::PredecessorConstructorFault,
-        "key-path-spend-attempt",
-        G::NoAdmittedShapeCarriesTheFault,
-        K::FiledAgainstAPublishedRequirement,
-        "the ceremony builds a script-path witness, and a key-path spend carries no leaf and no control block at all, so the row asks for a witness of another shape rather than a changed item of this one",
-    ),
-    // §16.6 — the successor-constructor faults. Three are metadata
-    // writes, two name no published relation, six ask the emission for a
-    // value it derives, and three need an output cardinality this shape
-    // does not have.
+    // §16.6 — eleven successor-constructor faults: three writes, two
+    // without a published relation, two derivations, one program-generic
+    // wall and three output cardinalities this shape does not have.
     entry(
         S::SuccessorConstructorFault,
         "successor-from-wrong-semantic-metadata",
@@ -488,27 +442,6 @@ pub const STILL_REQUIRED: &[MaturityNegativeHalfEntry] = &[
     ),
     entry(
         S::SuccessorConstructorFault,
-        "successor-under-another-static-subtree",
-        G::ProgramDerivationHasNoKnobForTheFault,
-        K::FiledAgainstAPublishedRequirement,
-        "the static subtree the successor is built under belongs to the emission, and nothing here emits a bundle under a subtree supplied from outside",
-    ),
-    entry(
-        S::SuccessorConstructorFault,
-        "wrong-internal-key",
-        G::ProgramDerivationHasNoKnobForTheFault,
-        K::FiledAgainstAPublishedRequirement,
-        "the successor's internal key is computed in that same emission, so the row needs a linker that accepts a wrong key rather than a write on the candidate",
-    ),
-    entry(
-        S::SuccessorConstructorFault,
-        "wrong-parity",
-        G::ProgramDerivationHasNoKnobForTheFault,
-        K::FiledAgainstAPublishedRequirement,
-        "the output key's parity falls out of the tweak the emission computes, so there is no position on the candidate at which a wrong parity could be written",
-    ),
-    entry(
-        S::SuccessorConstructorFault,
         "wrong-leaf-version",
         G::ProgramDerivationHasNoKnobForTheFault,
         K::FiledAgainstAPublishedRequirement,
@@ -517,9 +450,9 @@ pub const STILL_REQUIRED: &[MaturityNegativeHalfEntry] = &[
     entry(
         S::SuccessorConstructorFault,
         "wrong-control-recipe",
-        G::ProgramDerivationHasNoKnobForTheFault,
+        G::RefusalIsProgramGeneric,
         K::FiledAgainstAPublishedRequirement,
-        "the control recipe is computed from the taptree the emission built, so a wrong recipe is a derivation this workspace does not expose rather than a value to substitute",
+        "the successor control recipe appears in no announcement byte and is read only when the successor is spent, where every non-committing recipe draws the commitment rule's verdict before an opcode runs",
     ),
     entry(
         S::SuccessorConstructorFault,
@@ -753,7 +686,7 @@ mod tests {
             census.get(&MaturityNegativeHalfGap::TargetRunNotYetPlanned),
             None
         );
-        assert_eq!(census.values().sum::<usize>(), 42);
+        assert_eq!(census.values().sum::<usize>(), 35);
         assert_eq!(
             census.values().sum::<usize>(),
             STILL_REQUIRED.len(),
@@ -772,7 +705,7 @@ mod tests {
     #[test]
     fn the_register_length_is_the_figure_the_plan_recomputes() {
         let plan = plan().expect("the evidence plan derives");
-        assert_eq!(STILL_REQUIRED.len(), 42);
+        assert_eq!(STILL_REQUIRED.len(), 35);
         assert!(
             !STILL_REQUIRED
                 .iter()

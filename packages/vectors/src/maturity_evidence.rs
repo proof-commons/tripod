@@ -143,7 +143,8 @@ use crate::maturity_continuity_report::{
 use crate::maturity_corpus::{
     MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS, MaturityCorpusImportRefusal,
     MaturityDeclaredPremise, MaturityDisclosedFeeFloors, MaturityPremiseProvenance,
-    ValidatedMaturityCorpus, maturity_run_of_record, maturity_variable_run_of_record,
+    ValidatedMaturityCorpus, maturity_predecessor_mutant_run_of_record, maturity_run_of_record,
+    maturity_successor_mutant_run_of_record, maturity_variable_run_of_record,
 };
 use crate::maturity_first_party::{
     MaturityCarriedReason, MaturityFirstPartyRefusal, MaturityFirstPartyValidator,
@@ -158,6 +159,7 @@ use crate::maturity_history_report::{
     MaturityRootHistoryReportRefusal, ValidatedMaturityRootHistoryReport,
     assemble_maturity_root_history_report, validate_maturity_root_history_report,
 };
+use crate::maturity_mutant_ceremony::MaturityMutantEvidence;
 use crate::maturity_native::{
     MaturityAcceptanceObligation, MaturityAnnouncementPlanner, MaturityNativePlanRefusal,
     MaturityNativeStanding,
@@ -2010,6 +2012,10 @@ pub fn derive_maturity_evidence_plan_with(
         maturity_run_of_record().map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let accepted_corpus = maturity_variable_run_of_record()
         .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
+    let predecessor_mutants = maturity_predecessor_mutant_run_of_record()
+        .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
+    let successor_mutants = maturity_successor_mutant_run_of_record()
+        .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let root_history_mutations =
         MaturityMutationRegistry::registered(MaturityMutationRegistryKind::RootHistory);
     let continuity = accepted_continuity(accepted_corpus)?;
@@ -2079,7 +2085,15 @@ pub fn derive_maturity_evidence_plan_with(
         } else {
             standing
         };
-        classified.push(MaturityEvidenceRow { row, standing });
+        let refusal = mutant_refusal(
+            row,
+            predecessor_mutants.evidence(),
+            successor_mutants.evidence(),
+        );
+        classified.push(MaturityEvidenceRow {
+            row,
+            standing: mutant_standing(row, standing, refusal),
+        });
     }
     let census = census_from_rows(&classified);
 
@@ -2437,6 +2451,45 @@ fn native_standing(
     }))
 }
 
+/// Find the first admitted offer that names the matrix row by section and name.
+fn mutant_refusal<'a>(
+    row: &MaturitySafetyRow,
+    predecessor: &'a MaturityMutantEvidence,
+    successor: &'a MaturityMutantEvidence,
+) -> Option<&'a MaturityNativeRefusal> {
+    [predecessor, successor]
+        .into_iter()
+        .flat_map(MaturityMutantEvidence::offers)
+        .find(|offer| {
+            let offered = offer.row().matrix_row();
+            (offered.section(), offered.name()) == (row.section(), row.name())
+        })
+        .and_then(|offer| offer.refusal())
+}
+
+/// Apply an admitted refusal only where the row's existing standing awaits a native run.
+fn mutant_standing(
+    row: &MaturitySafetyRow,
+    standing: MaturityRowStanding,
+    refusal: Option<&MaturityNativeRefusal>,
+) -> MaturityRowStanding {
+    if !matches!(standing, MaturityRowStanding::NativeRunRequired(_)) {
+        return standing;
+    }
+    let Some(refusal) = refusal else {
+        return standing;
+    };
+    match native_refusal_binds_to_row(row, refusal) {
+        MaturityRowBinding::Bound | MaturityRowBinding::ObservedElsewhere => {
+            MaturityRowStanding::from_native_refusal(refusal.clone())
+        }
+        MaturityRowBinding::RowAdmitsNoRefusal
+        | MaturityRowBinding::AnotherSubject
+        | MaturityRowBinding::CarrierDeparted
+        | MaturityRowBinding::AnotherControl => standing,
+    }
+}
+
 /// Count the classified rows into one bucket per standing.
 fn census_from_rows(classified: &[MaturityEvidenceRow]) -> MaturityEvidenceCensus {
     let mut census = MaturityEvidenceCensus {
@@ -2487,7 +2540,7 @@ pub(crate) mod tests {
         MaturityObservationClass, MaturityPresentConstructorMaterial, MaturityRegisteredMutation,
         MaturityRegistryStanding, MaturityRowBinding, MaturityRowStanding,
         MaturitySubmittedSubject, accepted_continuity, checkpoint_premises_of,
-        derive_maturity_evidence_plan_with, native_refusal_binds_to_row,
+        derive_maturity_evidence_plan_with, mutant_standing, native_refusal_binds_to_row,
         site_names_the_rows_subject, sponsorless_acceptance_standing, stated_executor_provenance,
     };
     use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
@@ -2503,8 +2556,9 @@ pub(crate) mod tests {
         assemble_maturity_continuity_report, validate_maturity_continuity_report,
     };
     use crate::maturity_corpus::{
-        MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS, maturity_run_of_record,
-        maturity_variable_run_of_record,
+        MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS,
+        maturity_predecessor_mutant_run_of_record, maturity_run_of_record,
+        maturity_successor_mutant_run_of_record, maturity_variable_run_of_record,
     };
     use crate::maturity_first_party::maturity_first_party_cases;
     use crate::maturity_fixture::positive_semantic_census;
@@ -3138,14 +3192,17 @@ pub(crate) mod tests {
         assert_eq!(census.first_party_discharged(), discharged);
         assert_eq!(census.first_party_discharged(), PLAN.discharged().len());
         assert_eq!(census.first_party_required(), pre_target - discharged);
-        assert_eq!(census.native_run_required(), run_required - 1);
+        assert_eq!(
+            census.native_run_required(),
+            run_required - 1 - census.native_refusal_observed()
+        );
         assert_eq!(census.native_declared_boundary_observed(), 0);
         assert_eq!(census.report_layer_required(), report_required);
         assert_eq!(census.outstanding_under_typed_non_answer(), outstanding);
 
-        // Host records do not change the standing partition.
+        // The accepted run and bound mutant refusals change the standing partition.
         assert_eq!(census.native_acceptance_observed(), 1);
-        assert_eq!(census.native_refusal_observed(), 0);
+        assert_eq!(census.native_refusal_observed(), 7);
         assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
         assert_eq!(census.constructor_continuity_observed(), 0);
         assert_eq!(census.root_history_observed(), root_history);
@@ -3159,6 +3216,7 @@ pub(crate) mod tests {
                 + census.first_party_required()
                 + census.native_run_required()
                 + census.native_acceptance_observed()
+                + census.native_refusal_observed()
                 + census.report_layer_required()
                 + census.root_history_observed()
                 + census.public_recovery_observed()
@@ -3271,10 +3329,11 @@ pub(crate) mod tests {
                     classified.standing(),
                     MaturityRowStanding::FirstPartyDischarged { .. }
                         | MaturityRowStanding::NativeAcceptanceObserved { .. }
+                        | MaturityRowStanding::NativeRefusalObserved(_)
                         | MaturityRowStanding::RootHistoryObserved
                         | MaturityRowStanding::PublicRecoveryObserved
                 ),
-                "answers are recomputed first-party refusals, admitted acceptance or validated report rows",
+                "answers are recomputed first-party refusals, bound native refusals, admitted acceptance or validated report rows",
             );
         }
     }
@@ -3288,6 +3347,7 @@ pub(crate) mod tests {
             census.answered(),
             census.first_party_discharged()
                 + census.native_acceptance_observed()
+                + census.native_refusal_observed()
                 + census.root_history_observed()
                 + census.public_recovery_observed()
         );
@@ -3301,6 +3361,7 @@ pub(crate) mod tests {
             census.rows()
                 - census.first_party_discharged()
                 - census.native_acceptance_observed()
+                - census.native_refusal_observed()
                 - census.root_history_observed()
                 - census.public_recovery_observed(),
         );
@@ -3777,21 +3838,22 @@ pub(crate) mod tests {
         assert_eq!(census.rows(), 206);
         assert_eq!(census.first_party_discharged(), 40);
         assert_eq!(census.first_party_required(), 43);
-        assert_eq!(census.native_run_required(), 42);
+        assert_eq!(census.native_run_required(), 35);
         assert_eq!(census.report_layer_required(), 15);
         assert_eq!(census.outstanding_under_typed_non_answer(), 35);
-        assert_eq!(census.answered(), 71);
+        assert_eq!(census.answered(), 78);
         assert_eq!(census.root_history_observed(), 16);
         assert_eq!(census.public_recovery_observed(), 14);
         assert_eq!(census.native_declared_boundary_observed(), 0);
         assert_eq!(census.native_acceptance_observed(), 1);
-        assert_eq!(census.native_refusal_observed(), 0);
+        assert_eq!(census.native_refusal_observed(), 7);
         assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
         assert_eq!(
             census.first_party_discharged()
                 + census.first_party_required()
                 + census.native_run_required()
                 + census.native_acceptance_observed()
+                + census.native_refusal_observed()
                 + census.report_layer_required()
                 + census.root_history_observed()
                 + census.public_recovery_observed()
@@ -3845,7 +3907,7 @@ pub(crate) mod tests {
         );
         assert_eq!(PLAN.census().native_declared_boundary_observed(), 0);
         assert_eq!(PLAN.census().native_acceptance_observed(), 1);
-        assert_eq!(PLAN.census().native_refusal_observed(), 0);
+        assert_eq!(PLAN.census().native_refusal_observed(), 7);
         assert_eq!(
             historical.evidence().acceptance_obligation(),
             &crate::maturity_native::MaturityAcceptanceObligation::Outstanding {
@@ -3854,6 +3916,148 @@ pub(crate) mod tests {
                     crate::maturity_native::MaturityAcceptanceRoute::BlockLayerSubmissionSubject,
                 ],
             }
+        );
+    }
+
+    #[test]
+    fn each_admitted_mutant_refusal_answers_its_row_at_its_declared_boundary() {
+        use std::collections::BTreeSet;
+
+        let predecessor = maturity_predecessor_mutant_run_of_record().expect("predecessor run");
+        let successor = maturity_successor_mutant_run_of_record().expect("successor run");
+        let mut offered = BTreeSet::new();
+        for corpus in [predecessor, successor] {
+            for offer in corpus.evidence().offers() {
+                let row = offer.row().matrix_row();
+                let refusal = offer.refusal().expect("admitted offer has a refusal");
+                assert_eq!(
+                    corpus.evidence().binding(offer),
+                    Some(MaturityRowBinding::Bound)
+                );
+                let classified = PLAN
+                    .rows()
+                    .iter()
+                    .find(|classified| {
+                        (classified.row().section(), classified.row().name())
+                            == (row.section(), row.name())
+                    })
+                    .expect("offered matrix row is classified");
+                assert_eq!(
+                    classified.standing(),
+                    &MaturityRowStanding::NativeRefusalObserved(refusal.clone())
+                );
+                assert_eq!(
+                    refusal.declared_boundary(),
+                    row.refusing_layer().expect("mutant row declares a refusal")
+                );
+                offered.insert((row.section(), row.name()));
+            }
+        }
+        let expected: BTreeSet<_> = [
+            (
+                MaturitySafetySection::PredecessorConstructorFault,
+                "wrong-internal-key",
+            ),
+            (
+                MaturitySafetySection::PredecessorConstructorFault,
+                "wrong-control-block",
+            ),
+            (
+                MaturitySafetySection::PredecessorConstructorFault,
+                "metadata-leaf-selected-for-execution",
+            ),
+            (
+                MaturitySafetySection::PredecessorConstructorFault,
+                "key-path-spend-attempt",
+            ),
+            (
+                MaturitySafetySection::SuccessorConstructorFault,
+                "successor-under-another-static-subtree",
+            ),
+            (
+                MaturitySafetySection::SuccessorConstructorFault,
+                "wrong-internal-key",
+            ),
+            (
+                MaturitySafetySection::SuccessorConstructorFault,
+                "wrong-parity",
+            ),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(offered, expected);
+        let observed: BTreeSet<_> = PLAN
+            .rows()
+            .iter()
+            .filter(|classified| {
+                matches!(
+                    classified.standing(),
+                    MaturityRowStanding::NativeRefusalObserved(_)
+                )
+            })
+            .map(|classified| (classified.row().section(), classified.row().name()))
+            .collect();
+        assert_eq!(observed, expected);
+        assert!(!PLAN.rows().iter().any(|classified| matches!(
+            classified.standing(),
+            MaturityRowStanding::NativeRefusalAtUnexpectedBoundary(_)
+        )));
+    }
+
+    #[test]
+    fn an_unbound_refusal_leaves_its_row_waiting() {
+        let corpus = maturity_predecessor_mutant_run_of_record().expect("predecessor run");
+        let offer = corpus
+            .evidence()
+            .offers()
+            .first()
+            .expect("first mutant offer");
+        let row = offer.row().matrix_row();
+        let refusal = offer.refusal().expect("first offer has a refusal");
+        let departed = with_carrier(
+            refusal,
+            MaturityCarrierOutcome::new(
+                refusal.intended_carrier(),
+                MaturityCarrierExecution::NotReached,
+            ),
+        );
+        let other_site = with_site(
+            refusal,
+            MaturityMutationSite::Locator(MaturityMutationLocator::WitnessStack),
+        );
+        assert_eq!(
+            native_refusal_binds_to_row(row, &departed),
+            MaturityRowBinding::CarrierDeparted
+        );
+        assert_eq!(
+            native_refusal_binds_to_row(row, &other_site),
+            MaturityRowBinding::AnotherSubject
+        );
+        for changed in [&departed, &other_site] {
+            assert_eq!(
+                mutant_standing(
+                    row,
+                    MaturityRowStanding::NativeRunRequired(None),
+                    Some(changed)
+                ),
+                MaturityRowStanding::NativeRunRequired(None)
+            );
+        }
+        assert_eq!(
+            mutant_standing(
+                row,
+                MaturityRowStanding::NativeRunRequired(None),
+                Some(refusal)
+            ),
+            MaturityRowStanding::NativeRefusalObserved(refusal.clone())
+        );
+        assert_eq!(
+            mutant_standing(row, MaturityRowStanding::NativeRunRequired(None), None),
+            MaturityRowStanding::NativeRunRequired(None)
+        );
+        assert_eq!(
+            mutant_standing(row, MaturityRowStanding::RootHistoryObserved, Some(refusal)),
+            MaturityRowStanding::RootHistoryObserved
         );
     }
 
