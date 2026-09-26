@@ -1,6 +1,6 @@
 # Phase 7 — Burn, ASH, and Clear · `phase:roadmap:burn-clear`
 
-> **Status:** Planned
+> **Status:** Active — opened 2026-09-26 as the roadmap's current phase when Phase 6 exited; both entry conditions hold: the Phase-6 exit gate is met on its amended text at (`sec:phase6:exit-assessment`), and the public-declassification policy is the initial policy selected at (`sec:public-opening:result`) under the Guide-11 declassification gate (`gate:backlog:guide11`). No execution guide is chartered: Guide 15 stands as the concept draft at `plans/guides/guide_fifteen_concept.md`, and its admission as the execution guide is the phase's first gate.
 > **Entry:** (`gate:phase6:exit`) and accepted public-declassification policy
 > **Packages:** tapscript, linker, transaction, vectors
 > **Operations:** `burn`, `compact-ash`, `clear`

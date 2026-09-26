@@ -15,8 +15,8 @@ card owns its entry conditions, deliverables, evidence, and exit gate.
 | [03-target-foundation.md](03-target-foundation.md) | Exited | Typed target and foundational prototypes. |
 | [04-compact-ash.md](04-compact-ash.md) | Exited | First complete backend operation. |
 | [05-live-transfer.md](05-live-transfer.md) | Exited | Owner authorization and value-representation evidence. |
-| [06-state-and-maturity.md](06-state-and-maturity.md) | Active | STATE constructor and maturity announcement. |
-| [07-burn-and-clear.md](07-burn-and-clear.md) | Planned | Burn, ASH, and clear pipeline. |
+| [06-state-and-maturity.md](06-state-and-maturity.md) | Exited | STATE constructor and maturity announcement. |
+| [07-burn-and-clear.md](07-burn-and-clear.md) | Active | Burn, ASH, and clear pipeline. |
 | [08-redemption.md](08-redemption.md) | Planned | Wide arithmetic and redemption. |
 | [09-requests-and-admission.md](09-requests-and-admission.md) | Planned | Request, cancellation, and admission. |
 | [10-settlement.md](10-settlement.md) | Planned | Settlement prototype and implementation. |

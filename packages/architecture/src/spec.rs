@@ -405,7 +405,7 @@ pub const DOCUMENT: DocumentSpec = DocumentSpec {
     // The realization follows the compiler line's tracked binding. The
     // field is outside both hashes, and the versioning gate derives the
     // expected value from the workspace version.
-    realization_version: "0.6.0-dev",
+    realization_version: "0.7.0-dev",
     // Schema 17: lifts the version fields into the publication
     // envelope, adds the behavioural hash, and splits the
     // explicit-values dependency into its four proof-method components.

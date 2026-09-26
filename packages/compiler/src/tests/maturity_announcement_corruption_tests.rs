@@ -126,7 +126,7 @@ fn corrupt_source(change: impl FnOnce(&mut ScopedAnalyzedProgram)) {
 #[test]
 fn architecture_binding_mismatch_is_rejected() {
     let mut architecture = architecture::ARCHITECTURE;
-    architecture.document.realization_version = "0.5.0-dev";
+    architecture.document.realization_version = "0.6.0-dev";
     let binding = ArchitectureBinding::from_architecture(&architecture).unwrap();
     corrupt_source(|analyzed| analyzed.source.architecture = binding);
 }
