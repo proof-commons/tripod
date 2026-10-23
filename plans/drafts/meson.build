@@ -4,6 +4,7 @@
 plans_drafts_files = files(
   'README.md',
   'accepted-byte-classification-study.md',
+  'destruction-lineage-exemplar-study.md',
   'guide15-admission-study.md',
   'relay-witness-constant-elision-proposal.md',
   'relay-witness-split-study.md',
