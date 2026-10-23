@@ -9,7 +9,7 @@
 
 Phase 7 carries destruction lineage as a second compiled contract for independence evidence inside Guide 15, with no change to phase order or dependencies; inherited debt and preflight close in Wave 0, the second contract runs in Wave 1, and burn, ASH, and clear follow in Waves 2–14 (`rule:roadmap:change`); (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`).
 
-The supporting evidence is `plans/drafts/guide15-admission-study.md` and `plans/drafts/destruction-lineage-exemplar-study.md`; the latter states the contract's own BURN and MERGE laws, six measurement obligations, package responsibilities, and nine decisions, with no assumed positive relay minimum or input bound.
+The supporting evidence is `plans/drafts/guide15-admission-study.md` and (`abst:lineage:scope`), (`sec:lineage:requirements`), (`sec:lineage:measurements`) and (`sec:lineage:decisions`); the latter states the contract's own BURN and MERGE laws, six measurement obligations, package responsibilities, and nine decisions, with no assumed positive relay minimum or input bound.
 
 Affected package contracts are architecture, realization, compiler, target-elements, tapscript, linker, transaction, and vectors, as mapped in the exemplar study's §5; labels retains registration and citation checking, target-elements-conformance changes only for a demonstrated target-generic evidence need, and model evidence remains independent of compiler-facing semantics.
 

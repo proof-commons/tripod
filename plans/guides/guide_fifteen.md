@@ -8,7 +8,7 @@
 > **Supersedes as execution direction:** `plans/guides/guide_fifteen_concept.md`; its rules, gates, questions, and semantic chapters remain the cited semantic reference, and its artifact remains unchanged.
 > **Does not implement:** Redemption, request admission, attestation settlement, cycle, entitlement issuance, distribution construction, RESV or PACE succession, production custody, production deployment, final calibration, or release.
 > **Required result:** The Phase-7 exit gate met on its text (`gate:phase7:exit`), with a second compiled contract carried through the same pipeline as independence evidence.
-> **Authority:** Attestation, Realization, typed architecture, implemented ADRs, accepted decisions, and accepted research and phase results take precedence as in `plans/guides/guide_fourteen.md`; the Phase-6 closeout is accepted only at its amended scope (`sec:phase6:exit-assessment`); `plans/drafts/guide15-admission-study.md` and `plans/drafts/destruction-lineage-exemplar-study.md` supply planning input.
+> **Authority:** Attestation, Realization, typed architecture, implemented ADRs, accepted decisions, and accepted research and phase results take precedence as in `plans/guides/guide_fourteen.md`; the Phase-6 closeout is accepted only at its amended scope (`sec:phase6:exit-assessment`); `plans/drafts/guide15-admission-study.md` and (`abst:lineage:scope`) supply planning input.
 > **Trust boundary:** Repository source and selected executors run only within the established execution trust boundary; public disposable fixtures retain the security requirements of `adr/015-public-data-and-execution-trust.md`.
 
 ## 1. Why this order · `sec:guide15-exec:order`
@@ -21,7 +21,7 @@ The 35 native-run-required rows and the second exemplar's measurements need the 
 
 A debt wave with its own exit turns the inherited figures into an explicit baseline; later waves compare their figures against that baseline instead of treating a historical green gate as an answer to a new question.
 
-The second exemplar's two declarations test the architecture-to-realization boundary with the smallest contract before the larger Phase-7 declarations; its requirements and package mapping are stated in `plans/drafts/destruction-lineage-exemplar-study.md` §§2–6.
+The second exemplar's two declarations test the architecture-to-realization boundary with the smallest contract before the larger Phase-7 declarations; its requirements and package mapping are stated in (`sec:lineage:contract`), (`sec:lineage:requirements`), (`sec:lineage:traps`), (`sec:lineage:pipeline`) and (`sec:lineage:measurements`).
 
 Its measured carrier forms supply concrete precedent for the burn-record carrier question without choosing an attestation record law by analogy (`q:guide15:burn-record-carrier`).
 
@@ -322,13 +322,13 @@ The full repository gate, including the required document and lint surfaces, run
 
 ## 4. Wave 1 — The second exemplar: destruction lineage · `task:guide15-exec:wave1`
 
-Wave 1 opens only on the Wave-0 exit and carries the contract in `plans/drafts/destruction-lineage-exemplar-study.md` §§2–6 and §9 through declaration, analysis, emission, linking, construction, and translation-validation evidence.
+Wave 1 opens only on the Wave-0 exit and carries the contract in (`sec:lineage:contract`), (`sec:lineage:requirements`), (`sec:lineage:traps`), (`sec:lineage:pipeline`), (`sec:lineage:measurements`) and (`sec:lineage:decisions`) through declaration, analysis, emission, linking, construction, and translation-validation evidence.
 
 The contract destroys a positive explicit native amount in an OP_RETURN output containing exactly one opaque 32-byte address; its magnitude is consensus value, not a quantity encoded in the address data.
 
-BURN creates the minimal-value claim token at output 0 beside the destruction output at output 1; the pair fixes association without constraining unrelated inputs, outputs, authorization, or carrier purpose beyond target validity.
+BURN creates the minimal-value claim token at output 0 beside the destruction output at output 1; the pair fixes association without constraining unrelated inputs, outputs, authorization, or carrier purpose beyond target validity. (`op:lineage:burn`); (`def:lineage:claim-token`).
 
-MERGE consumes one or more outputs carrying the fixed covenant and produces output 0 carrying the same covenant; each covenant input checks only that successor script, without a signature, value comparison, asset comparison, or closure over other outputs.
+MERGE consumes one or more outputs carrying the fixed covenant and produces output 0 carrying the same covenant; each covenant input checks only that successor script, without a signature, value comparison, asset comparison, or closure over other outputs. (`op:lineage:merge`).
 
 The designated genesis outpoint contributes no destruction record; a descendant lineage point settles the set of valid token-outpoint records in its ancestry, including a newly valid pair when BURN and MERGE coincide.
 
@@ -340,39 +340,39 @@ The covenant carries no amount accumulator, count, index, aggregate commitment, 
 
 ### 1.0 Measure the six target obligations
 
-**Deliverables:** Perform the six measurements from §6 of the exemplar study on the Wave-0 pinned target using isolated target experiments permitted by (`rule:roadmap:parallel`), before selecting stable declarations or ABI bounds.
+**Deliverables:** Perform the six measurements from (`sec:lineage:measurements`) on the Wave-0 pinned target using isolated target experiments permitted by (`rule:roadmap:parallel`), before selecting stable declarations or ABI bounds.
 
 The experiments may prototype the recurrence and carrier forms without claiming a delivered compiler path; bite 1.6 re-executes the final compiled forms and no prototype observation certifies a later artifact.
 
 **Files and packages:** Experimental fixtures and evidence in `packages/vectors/`, reviewed assessments in `packages/target-elements/`, isolated recurrence work in `packages/tapscript/`, and retained measurement records in the wave's backlog gate record.
 
-**Measurement (a), relay funding floor:** Measure exact token and successor constructor admission immediately below and at the positive relay minimum, deciding incidental funding and the selected relay route.
+**Measurement (a), relay funding floor:** Measure exact token and successor constructor admission immediately below and at the positive relay minimum, deciding incidental funding and the selected relay route. (`expt:lineage:relay-floor`).
 
 Explicit zero-valued spendable outputs are already refused by the reviewed target's `ExplicitZeroValueRule::SpendableRefused`; this experiment measures the positive relay floor, not an unresolved consensus zero-value question.
 
-**Measurement (b), destruction data-output admission:** Measure the exact explicit positive native OP_RETURN output with its 32-byte datum and encoding overhead, deciding whether the BURN pair relays and which carrier limits must be published.
+**Measurement (b), destruction data-output admission:** Measure the exact explicit positive native OP_RETURN output with its 32-byte datum and encoding overhead, deciding whether the BURN pair relays and which carrier limits must be published. (`expt:lineage:data-output`).
 
 The data-output limit is independent of the reviewed 80-byte tapscript witness-item limit; reader refusal of malformed data is distinguished from target consensus or relay refusal.
 
-**Measurement (c), conflicting head spends:** Establish exact replacement conditions and fee increments or first-seen behavior, deciding the admitted per-head contention argument under the observed policy.
+**Measurement (c), conflicting head spends:** Establish exact replacement conditions and fee increments or first-seen behavior, deciding the admitted per-head contention argument under the observed policy. (`expt:lineage:head-conflicts`).
 
 Replacement admission never proves eventual inclusion or a universal censorship bound; block inclusion, historical availability, and finality remain declared assumptions with exact limits.
 
-**Measurement (d), mixed representations:** Execute explicit native destruction and token funding with confidential unrelated outputs, binding encodings, balance proofs, and fee outputs to decide which mixed carrier forms are admitted.
+**Measurement (d), mixed representations:** Execute explicit native destruction and token funding with confidential unrelated outputs, binding encodings, balance proofs, and fee outputs to decide which mixed carrier forms are admitted. (`expt:lineage:mixed-representations`).
 
 The result cannot substitute a disclosed scalar for authenticated destruction value or claim a confidential-opening primitive absent from the reviewed target.
 
-**Measurement (e), one-check implementation:** Execute script introspection and equality with authenticated current-program reference, constructor control path, final stack, and wrong-script/wrong-version controls, deciding faithful target recurrence.
+**Measurement (e), one-check implementation:** Execute script introspection and equality with authenticated current-program reference, constructor control path, final stack, and wrong-script/wrong-version controls, deciding faithful target recurrence. (`expt:lineage:one-check`).
 
 Record program bytes, witness items, control depth, stack peaks, and available execution costs; primitive vocabulary alone does not prove the composed recurrence pattern.
 
-**Measurement (f), transaction weight and N:** Measure BURN and MERGE carriers over a proposed input range with fee funding, optional confidential outputs, and worst-case witnesses, deciding the construction bound and sweep costs.
+**Measurement (f), transaction weight and N:** Measure BURN and MERGE carriers over a proposed input range with fee funding, optional confidential outputs, and worst-case witnesses, deciding the construction bound and sweep costs. (`expt:lineage:weight-bound`).
 
 Compare backend/linker predictions with observed weight and resources, state absent dimensions as absent, and retain prediction mismatches as findings rather than rewriting predictions to match observations.
 
-**Decision 2 — incidental funding:** Choose the measured default-relay floor or a separately admitted positive-value route with its deployment dependence stated; no draft minimum enters code as a fact.
+**Decision 2 — incidental funding:** Choose the measured default-relay floor or a separately admitted positive-value route with its deployment dependence stated; no draft minimum enters code as a fact. (`q:lineage:funding-floor`).
 
-**Decision 4 — input bound:** Choose measured N as an ABI construction bound unless an independently justified contract change requires a covenant count check; report the aggregation and worst-case-cost tradeoff.
+**Decision 4 — input bound:** Choose measured N as an ABI construction bound unless an independently justified contract change requires a covenant count check; report the aggregation and worst-case-cost tradeoff. (`q:lineage:input-bound`).
 
 **Gate:** Six distinct measurement records bind target, policy, exact subject, accepted controls, negative outcomes, and deciding consequences; unresolved forms block the consuming bite.
 
@@ -382,7 +382,7 @@ Compare backend/linker predictions with observed weight and resources, state abs
 
 **Files and packages:** `packages/architecture/src/`, `packages/realization/src/`, their contracts and tests, and any separately admitted realization interface required by the selected home.
 
-**Decision 1 — realization home:** Another declaration set shares infrastructure but broadens identifier assumptions; a semantic profile needs a selector of semantics beyond deployment evidence; a second realization crate makes separation explicit but requires a shared typed compiler input interface and maintenance.
+**Decision 1 — realization home:** Another declaration set shares infrastructure but broadens identifier assumptions; a semantic profile needs a selector of semantics beyond deployment evidence; a second realization crate makes separation explicit but requires a shared typed compiler input interface and maintenance. (`q:lineage:realization-home`).
 
 The choice must demonstrate the current attestation-specific manifest boundary, validate the new operation/object/observable vocabulary, and state the smallest necessary generalization; existing deployment profiles are not a second-contract selector.
 
@@ -390,7 +390,7 @@ BURN declarations separate pair recognition, fixed positions, positive explicit 
 
 MERGE declares successor-at-0 for every covenant input and an ancestry-set projection owned by its reader; the emitted leaf neither traverses history nor computes the union of records.
 
-**Decision 3 — value preservation:** Adopt the contract's default of no value-preservation rule; incidental inputs may fund fees, the successor, or other outputs, and the sweep bounty is the disposition of incidental value available to a permitted sweep, not record credit or a new entitlement.
+**Decision 3 — value preservation:** Adopt the contract's default of no value-preservation rule; incidental inputs may fund fees, the successor, or other outputs, and the sweep bounty is the disposition of incidental value available to a permitted sweep, not record credit or a new entitlement. (`q:lineage:value-preservation`).
 
 Greater-or-equal or equality rules would change the one-check contract by adding a comparison base and introspection without authenticating record magnitude; neither is imported into these declarations.
 
@@ -422,7 +422,7 @@ The output-script comparison binds the full reviewed program representation, inc
 
 The leaf checks output 0 against the actual authenticated covenant program, never an unauthenticated caller-supplied script; it performs no output-value or output-asset comparison.
 
-**Decision 7 — recurrence strategy:** An authenticated current-input program reference avoids an assumed literal fixed point but needs an exact introspection/control-path proof; a linker reference strategy must instead prove supported closure and its resource cost.
+**Decision 7 — recurrence strategy:** An authenticated current-input program reference avoids an assumed literal fixed point but needs an exact introspection/control-path proof; a linker reference strategy must instead prove supported closure and its resource cost. (`q:lineage:recurrence-strategy`).
 
 Either strategy must exclude alternative spend paths that bypass recurrence, including a usable key path, while retaining the stated NUMS non-claim where applicable; no finite refusal is promoted into a discrete-log proof.
 
@@ -440,7 +440,7 @@ The BURN ABI fixes token output 0 and destruction output 1, while the MERGE ABI 
 
 The predecessor's input ordering is a builder choice rather than a protocol rule; funding signatures and optional consumer signatures remain separate witness roles and introduce no covenant authorization.
 
-**Decision 5 — genesis designation:** Choose a publicly distributed designated outpoint or a reproducible deployment procedure with chain binding, stating the distribution or reconstruction cost; neither longest history nor arbitrary same-script outputs can designate genesis.
+**Decision 5 — genesis designation:** Choose a publicly distributed designated outpoint or a reproducible deployment procedure with chain binding, stating the distribution or reconstruction cost; neither longest history nor arbitrary same-script outputs can designate genesis. (`q:lineage:genesis-designation`).
 
 The genesis output uses the same script but has no destruction sibling and contributes no record; token creation and successor recognition must use the same authenticated constructor.
 
@@ -462,11 +462,11 @@ Ancestry evidence covers a single token, many tokens, side-pile sweep, combined 
 
 Replacement-history evidence binds competing spends and alternative histories to the exact pinned lineage point and policy, retaining explicit finality and availability assumptions.
 
-**Decision 8 — consumer publication:** Choose acceptance equal to L or a published monotone subset rule, and pins-only or earlier readings with their additional evidence and downward-revision behavior; enforce the consumer's own inclusion bound.
+**Decision 8 — consumer publication:** Choose acceptance equal to L or a published monotone subset rule, and pins-only or earlier readings with their additional evidence and downward-revision behavior; enforce the consumer's own inclusion bound. (`q:lineage:consumer-publication`).
 
 Consumer-rule evidence rejects accepted records outside the settled set and a decrease of previously accepted records along the selected history, without moving eligibility or timing into the covenant.
 
-**Decision 9 — evidence consumption:** Use internal fixture reports unless an actual external ancestry/record consumer requires a maintained format and availability contract under `adr/022-interchange-conventions.md`; a cache remains non-authoritative either way.
+**Decision 9 — evidence consumption:** Use internal fixture reports unless an actual external ancestry/record consumer requires a maintained format and availability contract under `adr/022-interchange-conventions.md`; a cache remains non-authoritative either way. (`q:lineage:evidence-consumption`).
 
 Resource evidence binds exact bundle, ABI, target, policy, and input bound; an unavailable dimension is absent, a failed child is infrastructure failure, and a policy refusal is not automatically a consensus refusal.
 
@@ -487,7 +487,7 @@ The realization's own documentation must argue each of the four traps using its 
 
 Re-execute all six measurement obligations on the actual emitted, linked, and constructed artifacts; changed bytes, control depth, funding, input bound, or policy invalidate any unqualified transfer of prototype observations.
 
-**Decision 6 — admission and first gate:** This charter admits the second contract inside Phase 7 without changing phase order; the first gate requires both typed declarations, authenticated recurrence, separately assessed forms, and all six measurement obligations disposed on final subjects.
+**Decision 6 — admission and first gate:** This charter admits the second contract inside Phase 7 without changing phase order; the first gate requires both typed declarations, authenticated recurrence, separately assessed forms, and all six measurement obligations disposed on final subjects. (`q:lineage:admission`).
 
 Record the exact seams that moved in architecture, realization, compiler, target, tapscript, linker, transaction, and vectors, with a reason and regression evidence for each change; unchanged seams need concrete reuse evidence.
 
