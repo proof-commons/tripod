@@ -1,6 +1,6 @@
 # Compiler Roadmap
 
-The roadmap orders the build-out of Tripod, the contract closure compiler, along its exemplar: each phase carries one slice of the attestation contract from realization to target bytes, and the compiler is accepted only as far as the exemplar proves it. Phase details live under [phases/](phases/README.md).
+The roadmap orders the build-out of Tripod, the contract closure compiler, along its exemplar: each phase carries one slice of the attestation contract from realization to target bytes, and the compiler is accepted only as far as the exemplar proves it. Phase details live under [phases/](phases/README.md). Phase 7 carries a second contract inside its execution guide as independence evidence under (`sec:phase7:change-statement`).
 
 ## Sequence · `rule:roadmap:sequence`
 
