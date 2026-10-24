@@ -1226,7 +1226,7 @@ The Phase-7 task state opens with the Guide-15 document import; each wave lands 
 
 | ID | Status | Task |
 |---|---|---|
-| `T12-001` | TODO | Bite 0.1 verifies the provisioned pinned target and records Wave-0 entry, exact candidates, protocol, policy, and the inherited census; supplies the target prerequisite for closing `T11-064`, without provisioning as bite work. Gate: exact entry record and reproduced accepted control or a blocking finding (`task:guide15-exec:wave0`). |
+| `T12-001` | DONE | Bite 0.1 records verified pinned-target provenance and binding, the reproduced accepted sponsorless maturity control, all ten repository-entry fields, and the reproduced inherited censuses (`rec:backlog:wave0-entry`). It supplies the target prerequisite for `T11-064` and the native portions of `T12-005`; it closes neither row, the region-scoping refit, sponsored construction, positive-floor relayability, the outstanding Safety obligations, nor Wave-0 preflight. |
 | `T12-002` | TODO | Bite 0.2 refits operation regions before any new operation and closes the structural portion of `T11-064`. Gate: composed existing operations accepted, a foreign object inside the claimed region refused, and six affected relation identities scoped or retired; positive-floor closure stays with `T12-005`. |
 | `T12-003` | TODO | Bite 0.3 closes `T11-063` through the compact/live closure-exact audit. Gate: each retained check has its closure reason, each surplus check is removed, all censuses reconcile, and focused regressions pass. |
 | `T12-004` | TODO | Bite 0.4 closes `T4-009` by remedying all three Guide-13 feature requests and disposing the compact matrix's 71 remaining negative rows. Gate: all 72 rows carry exact evidence or typed formal closure, with observed answers counted separately. |
@@ -1234,6 +1234,74 @@ The Phase-7 task state opens with the Guide-15 document import; each wave lands 
 | `T12-006` | TODO | Bite 0.6 closes `T11-110` through `plans/research/test-performance.md`. Gate: required measurements and evidence for adopted remedies retained, unavailable dimensions stated, and the row DONE or formally closed with a typed reason. |
 | `T12-007` | TODO | Bite 0.7 closes preflight and consolidates closure of `T11-064`, `T11-063`, `T4-009`, and `T11-110`. Gate: twelve questions dispositioned, 65 entry rows tracked, (`gate:guide15:preflight`) passed, and the full clean-tree repository gate and before/after figures recorded as the baseline (`gate:guide15-exec:wave0`). |
 | `T12-008` | DONE | Charter import: `plans/guides/guide_fifteen.md` supersedes the unchanged concept as execution direction, registers the controlling entry table and fifteen waves, reconciles current status, and admits the second contract inside Phase 7 under (`sec:phase7:change-statement`); no implementation wave is claimed executed. |
+
+**Record (Wave 0 entry)** · `rec:backlog:wave0-entry`
+
+Bite 0.1 verifies the provisioned pinned Elements target, reproduces the accepted variable-schedule sponsorless maturity control, and reproduces the inherited typed censuses under (`gate:guide15-exec:bite-0-1-gate`) and (`gate:wave0:bite-0-1-packet`). The retained evidence home is `/workspace/loops/tripod/evidence/wave0/entry/20261024T194326Z-maturity-control`; its `RUN-REPORT` binds `MANIFEST.sha256`, which binds the report capture and timing sidecar. Five of five installed binary digests match the selected toolchain's adjacent `PROVENANCE.txt`; the executable version matches its version-string field, the source checkout matches its tip field, and the functional framework is present. The provenance retains the Release build configuration and SQLite-only descriptor-wallet restriction; the caveats below delimit environment comparison and inherited scope.
+
+**Data (Starting revision)** · `data:backlog:entry-starting-revision`
+
+The starting revision for (`data:guide15:starting-revision`) is the clean entry tree at tag `0.7.9-dev`, workspace version `0.7.0-dev`, containing the completion strategy (`sec:wave0:bite-0-1`), after the Guide-15 formal rewrite and admission study; the exact entry source is retained in the capture's `RUN-REPORT` fields `suite-commit` and `suite-tree`, with `suite-clean yes`. This identifies the actual entry tree rather than the admission study's older starting tree.
+
+**Data (Phase-6 result revision)** · `data:backlog:entry-phase6-revision`
+
+The Phase-6 result for (`data:guide15:phase6-revision`) retains evidence base `0.6.305-dev`, gate-record landing `0.6.306-dev`, and amended closeout carried at `0.7.0-dev` (`sec:phase6:gate-record`); (`sec:phase6:exit-assessment`). Its accepted candidate and conditional evidence retain their recorded scope.
+
+**Data (Architecture schema and semantic hashes)** · `data:backlog:entry-architecture-values`
+
+The architecture values for (`data:guide15:architecture-values`) are schema 18 in `packages/architecture/src/spec.rs`, with `architecture_schema_version`, `semantic_hash`, `semantic_hash_algorithm`, `behavioural_hash`, and `behavioural_hash_algorithm` in `packages/model/generated/architecture.json` under (`reg:identities:ownership`). No architecture value changes in this entry.
+
+**Data (Realization version)** · `data:backlog:entry-realization-version`
+
+The realization version for (`data:guide15:realization-version`) is `0.7.0-dev`, derived from the workspace version in `Cargo.toml` and retained by `packages/architecture/src/spec.rs` and the `realization_version` field of `packages/model/generated/architecture.json`; this entry allocates no new realization identity.
+
+**Data (Target contract revision)** · `data:backlog:entry-target-revision`
+
+The target for (`data:guide15:target-revision`) is reviewed `TargetContractVersion::V2` from `packages/target-elements/src/definition.rs`, bound through the development validation in `packages/target-elements/src/deployment.rs`. The report capture's deployment identity fields, `deployment-genesis-id`, and `deployment-target-contract` select the inherited development deployment; `environment-chain` decodes to `elementsregtest`, with active tapscript and leaf version 196. Its `handshake-node-version`, `handshake-binary-reported-revision`, `handshake-intended-executed-tip`, and `handshake-framework-revision` bind the verified executable and source to the selected toolchain's `PROVENANCE.txt`; each matches the inherited capture's corresponding field.
+
+**Data (Executor protocol revision)** · `data:backlog:entry-executor-revision`
+
+The executor revision for (`data:guide15:executor-revision`) is `NATIVE_PROTOCOL_SCHEMA = 8` in `packages/target-elements-conformance/src/protocol.rs`, with `elements-native-executor` version `2.1.0` in the report capture's handshake. `scripts/elements-native-executor.sh` supplies the existing adapter configuration and preserves its two diagnostic destinations; `scripts/live-native-maturity-capture.sh` invokes the ignored `maturity_native` target serially with its documented environment. Archived revisions retain their own scope.
+
+**Data (Compact-ASH candidate revision)** · `data:backlog:entry-compact-revision`
+
+The compact candidate for (`data:guide15:compact-revision`) is PROPOSED: the `0.4.1-dev` candidate named by `plans/history/guide-12-completion-report.md`, with its deterministic twelve-leaf bundle of nine coordinator leaves and three recomputation-shared member leaves. The completion record admits no bundle identity without separate admission. Selection and acceptance remain a numbered ruling before the first compact control of bite 0.4; no new position ruling is needed for the inherited maturity control (`judg:wave0:early-rulings`).
+
+**Data (STATE-constructor generation)** · `data:backlog:entry-state-generation`
+
+The constructor generation for (`data:guide15:state-generation`) is the inherited maturity-only candidate in `packages/tapscript/src/state_constructor.rs` and (`sec:phase6:gate-record`), with the variable-metadata witness schedule retained by the accepted control. No maturity-plus-clear generation is accepted here; its distinct generation and origin disposition remain with (`task:guide15-exec:disposition-9`).
+
+**Data (Selected public-value policy)** · `data:backlog:entry-public-policy`
+
+The policy for (`data:guide15:public-policy`) remains explicit-only at the boundary, normalized-first with private change, with public-committed opening deferred (`sec:public-opening:result`). The maturity control reproduces that inherited candidate scope and supplies no compact, burn, or clear acceptance.
+
+**Data (Clean-tree result)** · `data:backlog:entry-clean-result`
+
+The base result for (`data:guide15:clean-result`) is the supplied gate of record `/workspace/loops/tripod/evidence/gate-side-20261024T183000Z.log` over the entry base `0.7.9-dev` (workspace version `0.7.0-dev`): Ok 54, Fail 0, chain-rc 0, wall 893.7 s. The capture independently records a clean entry source in `RUN-REPORT`; this field preserves the base result and does not substitute for the full clean-tree baseline required by bite 0.7.
+
+**Result (Accepted control reproduced)** · `result:backlog:entry-control`
+
+The clean base was published and captured before any entry-record edit or commit; the captured tree is the entry tree without a code difference, and the later change is this record. In `/workspace/loops/tripod/evidence/wave0/entry/20261024T194326Z-maturity-control`, `RUN-REPORT` records one test passed, zero failed or ignored, one ceremony, zero setup artifacts, cargo exit 0, and `eligible yes`. The test `the_maturity_announcement_runs_against_a_real_target` accepts singleton issuance, predecessor funding, and the sponsorless submission; its exact replay and mined-readback assertions bind the variable-metadata submission bytes to the accepted identity. The manifest-listed report capture retains operation 2's `request-id`, `request-bytes`, `request-subject`, `response-id`, `response-request-id`, and `response-verdict`, and `legacy-rendering` retains the accepted schedule, identity and mined readback. Request bytes and the deployment identities, chain, node revision, framework revision, adapter and protocol match `packages/vectors/fixtures/maturity-variable-run-of-record/`, whose acceptance is admitted by `variable_archive_admits_established_identity_and_exact_mined_readback` in `packages/vectors/src/maturity_corpus.rs`; fresh block provenance remains in the new capture rather than replacing the inherited fixture.
+
+**Result (Inherited censuses reproduced)** · `result:backlog:entry-censuses`
+
+At the published clean entry base, `the_census_figures_are_unmoved_by_the_binding_readers`, `the_whole_transaction_scoped_rows_are_exactly_the_recounted_set`, and `maturity_negative_half::tests::every_outstanding_row_is_registered` each passed. Their 31 assertion sites are `packages/vectors/src/maturity_evidence.rs:3838-3863`, `packages/vectors/src/maturity_safety.rs:4427-4461`, and `packages/vectors/src/maturity_negative_half.rs:621-632`: they retain the source claims of 206 rows, 78 answered and the required buckets 43 / 35 / 15 / 35, the relation partition 14 / 102 / 90 and unlinked reasons 55 / 9 / 9 / 17, and exact outstanding-register equality. The prescribed filters also selected `live_negative_half::tests::every_outstanding_row_is_registered`; the invocation passed four tests with zero failures, and that additional pass is not a maturity census claim. These executions reproduce inherited classifications without adding row evidence (`verif:guide15-exec:entry-census-check`).
+
+**Caveat (Fee-floor scope)** · `cav:backlog:entry-fee-floors`
+
+The control's acceptance was observed under zero relay and block floors, as the inherited evidence was: `scripts/elements-native-executor.py` sets `-minrelaytxfee=0` and `-blockmintxfee=0`, beside `-validatepegin=0`. The retained `diagnostics/executor-diagnostics.txt` and `diagnostics/executor-child-output.txt` record startup and completion; the capture header carries no fee-floor fields. Positive-floor relayability stays with bite 0.5 and `T12-005`, and this acceptance does not discharge it.
+
+**Caveat (Single-node scope)** · `cav:backlog:entry-single-node`
+
+This evidence is one disposable development node executing the inherited sponsorless control. It establishes neither production readiness, independent observer acquisition, current-root freshness, nor sponsored composition; the caller branch context and declared-boundary scope remain those of `packages/vectors/tests/maturity_native.rs`.
+
+**Caveat (Inherited evidence remains scoped)** · `cav:backlog:entry-inherited-evidence`
+
+The inherited 128 outstanding Safety rows and five conditional Guide-14 conjuncts retain their Phase-6 standing (`sec:phase6:exit-assessment`); the typed census tests reproduce their source classifications, not fresh observations for those obligations. The compact candidate remains proposed, and `T11-064`, `T12-005`, and the twelve-question preflight remain open beyond the target prerequisite supplied here.
+
+**Caveat (Execution-environment differences)** · `cav:backlog:entry-environment-differences`
+
+The source provenance and evidence home differ from the inherited capture; the declared deployment identities, chain, active domain, leaf version, advertised capabilities, executable version, framework revision, adapter, protocol and zero fee policy match. The current provenance records SQLite-only descriptor wallets and Python 3.12.3; the inherited header does not establish those build-environment details. Current diagnostics retain two transient startup RPC failures followed by node readiness in 0.5 s and report the confidential materializer unavailable; the accepted explicit control requires no confidential materialization. No external capture retry occurred, and no inherited environment fact is inferred from an absent field.
 
 The Guide-8 target foundation is complete; the gate record is §2.12.
 
