@@ -1448,23 +1448,25 @@ mod tests {
         // The exact figure, pinned. §1.11 asks for exact finite sets;
         // a `> 0` assertion here would pass just as happily on a census
         // that had quietly lost two hundred rows.
-        assert_eq!(plan.census().coverage_requirements(), 211);
+        // SponsorMemberUnclaimed adds one negative requirement per sponsor case.
+        assert_eq!(plan.census().coverage_requirements(), 213);
         assert_eq!(plan.census().positive_requirements(), 139);
-        assert_eq!(plan.census().negative_requirements(), 72);
+        assert_eq!(plan.census().negative_requirements(), 74);
     }
 
     #[test]
     fn the_negative_half_splits_into_three_kinds_that_sum_to_it() {
-        // The Wave-13 classification, pinned. Forty-eight requirements
+        // The classification, pinned. Fifty requirements
         // a live target must refuse, eighteen first-party code refuses
         // before any transaction exists, and six whose evidence is an
         // external report nobody has written.
         //
         // The sum is asserted against the negative total rather than
-        // against 72 alone, so a requirement that gained a new kind of
+        // against 74 alone, so a requirement that gained a new kind of
         // role fails here instead of quietly leaving one column short.
         let census = plan().census();
-        assert_eq!(census.negative_target_executable(), 48);
+        // SponsorMemberUnclaimed adds one negative requirement per sponsor case.
+        assert_eq!(census.negative_target_executable(), 50);
         assert_eq!(census.negative_first_party(), 18);
         assert_eq!(census.negative_unreachable(), 6);
         assert_eq!(

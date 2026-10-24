@@ -84,33 +84,38 @@ fn fee_sponsor_flow(
 /// A compact-ASH shaped observation with two sponsor inputs and two
 /// sponsor outputs, so every structural mutation below has room.
 fn observation() -> OperationObservation {
+    let objects: Vec<crate::ObservedObject> = vec![
+        ash(ObservedSide::Input, 0, 40),
+        ash(ObservedSide::Input, 1, 60),
+        ash(ObservedSide::Output, 0, 100),
+        sponsor(ObservedSide::Input, 2),
+        sponsor(ObservedSide::Input, 3),
+        sponsor(ObservedSide::Output, 1),
+        sponsor(ObservedSide::Output, 2),
+    ];
     OperationObservation {
         operation: OperationId::CompactAsh,
-        objects: vec![
-            ash(ObservedSide::Input, 0, 40),
-            ash(ObservedSide::Input, 1, 60),
-            ash(ObservedSide::Output, 0, 100),
-            sponsor(ObservedSide::Input, 2),
-            sponsor(ObservedSide::Input, 3),
-            sponsor(ObservedSide::Output, 1),
-            sponsor(ObservedSide::Output, 2),
-        ],
         protocol_signers: BTreeSet::new(),
         sponsor_signers: BTreeSet::from([CAROL]),
-        canonical_partition: ObservedCanonicalPartition {
-            issuances: Vec::new(),
-            flows: vec![ObservedCanonicalFlow {
-                asset: AssetId::U,
-                sources: vec![input(0), input(1)],
-                destinations: vec![output(0)],
-                movement_kind: Some(DeltaKind::OwnerlessLateral),
-                destructions: Vec::new(),
-            }],
+        region: crate::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition {
+                issuances: Vec::new(),
+                flows: vec![ObservedCanonicalFlow {
+                    asset: AssetId::U,
+                    sources: vec![input(0), input(1)],
+                    destinations: vec![output(0)],
+                    movement_kind: Some(DeltaKind::OwnerlessLateral),
+                    destructions: Vec::new(),
+                }],
+            },
+            open_flows: vec![fee_sponsor_flow(
+                vec![input(2), input(3)],
+                vec![output(1), output(2)],
+            )],
         },
-        open_flows: vec![fee_sponsor_flow(
-            vec![input(2), input(3)],
-            vec![output(1), output(2)],
-        )],
+        other_regions: Vec::new(),
+        objects,
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
         bounds: BTreeMap::from([
@@ -132,7 +137,7 @@ fn the_fixture_is_structurally_valid() {
 #[test]
 fn an_output_reference_may_not_be_an_open_flow_source() {
     let mut observed = observation();
-    observed.open_flows[0].sources = vec![output(1)];
+    observed.region.open_flows[0].sources = vec![output(1)];
 
     rejects(
         observed,
@@ -143,7 +148,7 @@ fn an_output_reference_may_not_be_an_open_flow_source() {
 #[test]
 fn an_input_reference_may_not_be_an_open_flow_destination() {
     let mut observed = observation();
-    observed.open_flows[0].destinations = vec![input(2)];
+    observed.region.open_flows[0].destinations = vec![input(2)];
 
     rejects(
         observed,
@@ -154,8 +159,9 @@ fn an_input_reference_may_not_be_an_open_flow_destination() {
 #[test]
 fn a_source_may_not_be_claimed_by_two_open_flows() {
     let mut observed = observation();
-    observed.open_flows[0].sources = vec![input(2)];
+    observed.region.open_flows[0].sources = vec![input(2)];
     observed
+        .region
         .open_flows
         .push(fee_sponsor_flow(vec![input(2)], Vec::new()));
 
@@ -168,8 +174,9 @@ fn a_source_may_not_be_claimed_by_two_open_flows() {
 #[test]
 fn a_destination_may_not_be_claimed_by_two_open_flows() {
     let mut observed = observation();
-    observed.open_flows[0].destinations = vec![output(1)];
+    observed.region.open_flows[0].destinations = vec![output(1)];
     observed
+        .region
         .open_flows
         .push(fee_sponsor_flow(Vec::new(), vec![output(1)]));
 
@@ -199,8 +206,8 @@ fn a_reference_may_not_be_claimed_by_both_regions() {
     // so a reference cannot be sponsor and protocol at once. It would
     // have to be erased and readable in the same projection.
     let mut observed = observation();
-    observed.open_flows[0].sources = vec![input(2)];
-    observed.open_flows.push(protocol_flow(
+    observed.region.open_flows[0].sources = vec![input(2)];
+    observed.region.open_flows.push(protocol_flow(
         architecture::OpenFlowKind::Redemption,
         vec![input(2)],
         Vec::new(),
@@ -218,9 +225,9 @@ fn the_flow_role_of_a_reference_is_its_claiming_flow() {
     // L-BTC family resolves to whichever region claims it, and to no
     // region at all when nothing does.
     let mut observed = observation();
-    observed.open_flows[0].sources = vec![input(2)];
-    observed.open_flows[0].destinations = vec![output(1)];
-    observed.open_flows.push(protocol_flow(
+    observed.region.open_flows[0].sources = vec![input(2)];
+    observed.region.open_flows[0].destinations = vec![output(1)];
+    observed.region.open_flows.push(protocol_flow(
         architecture::OpenFlowKind::Redemption,
         vec![input(3)],
         Vec::new(),
@@ -280,7 +287,7 @@ fn an_unclaimed_sponsor_member_is_a_relation_verdict_not_a_parse_error() {
     // would say the observation could not be read, and would remove
     // the obligation from the relation census the compiler consumes.
     let mut observed = observation();
-    observed.open_flows[0].sources = vec![input(2)];
+    observed.region.open_flows[0].sources = vec![input(2)];
 
     let normalized = validate_observation(observed).expect("an unclaimed member still normalizes");
 
@@ -308,11 +315,14 @@ fn an_unclaimed_sponsor_member_is_a_relation_verdict_not_a_parse_error() {
 
 fn announcement_sponsored() -> OperationObservation {
     let mut observed = super::announce_maturity_tests::observation();
-    observed.objects.extend([
+    for object in [
         sponsor(ObservedSide::Input, 1),
         sponsor(ObservedSide::Output, 1),
-    ]);
+    ] {
+        observed.claim_object(object);
+    }
     observed
+        .region
         .open_flows
         .push(fee_sponsor_flow(vec![input(1)], vec![output(1)]));
     observed.sponsor_signers.insert(CAROL);
@@ -375,11 +385,81 @@ fn announcement_sponsor_amounts_must_be_erased() {
 #[test]
 fn announcement_unclaimed_sponsor_members_reject() {
     let mut observed = announcement_sponsored();
-    observed.open_flows.clear();
+    observed.region.open_flows.clear();
     assert!(matches!(
         announcement_sponsor_status(&observed),
         crate::RelationStatus::Failed { .. }
     ));
+}
+
+#[test]
+fn other_region_flows_and_same_family_objects_do_not_change_facts() {
+    use super::announce_maturity_tests as announcement;
+    let mut observed = announcement::observation();
+    let expected = announcement::realization()
+        .evaluate_operation(&observed)
+        .unwrap();
+    let mut other = announcement_sponsored();
+    for object in &mut other.objects {
+        object.reference.ordinal += 10;
+    }
+    other.region.members = other
+        .objects
+        .iter()
+        .map(|object| object.reference)
+        .collect();
+    for flow in &mut other.region.open_flows {
+        for reference in flow.sources.iter_mut().chain(&mut flow.destinations) {
+            reference.ordinal += 10;
+        }
+    }
+    other.region.open_flows.push(protocol_flow(
+        architecture::OpenFlowKind::Redemption,
+        vec![],
+        vec![],
+    ));
+    other
+        .region
+        .open_flows
+        .push(fee_sponsor_flow(vec![], vec![]));
+    observed.objects.extend(other.objects);
+    observed.other_regions.push(other.region);
+    assert_eq!(
+        expected,
+        announcement::realization()
+            .evaluate_operation(&observed)
+            .unwrap()
+    );
+}
+
+#[test]
+fn operation_regions_reject_unknown_overlapping_and_cross_region_references() {
+    let observed = observation();
+    let mut unknown = observed.clone();
+    unknown.region.members.insert(input(100));
+    assert_eq!(
+        unknown.validate_and_normalize(),
+        Err(RealizationError::UnknownObservedObject(input(100)))
+    );
+    let mut overlap = observed.clone();
+    overlap.other_regions.push(crate::ObservedOperationRegion {
+        members: BTreeSet::from([input(0)]),
+        ..Default::default()
+    });
+    assert_eq!(
+        overlap.validate_and_normalize(),
+        Err(RealizationError::ObservedRegionOverlap(input(0)))
+    );
+    let mut cross = observed;
+    cross.region.members.remove(&input(2));
+    cross.other_regions.push(crate::ObservedOperationRegion {
+        members: BTreeSet::from([input(2)]),
+        ..Default::default()
+    });
+    assert_eq!(
+        cross.validate_and_normalize(),
+        Err(RealizationError::UnknownObservedObject(input(2)))
+    );
 }
 
 #[test]
@@ -494,7 +574,7 @@ fn announcement_non_sponsor_open_flows_reject() {
         .filter(|kind| **kind != architecture::OpenFlowKind::FeeSponsor)
     {
         let mut observed = announcement::observation();
-        observed.open_flows.push(ObservedOpenFlow {
+        observed.region.open_flows.push(ObservedOpenFlow {
             kind: *kind,
             sources: Vec::new(),
             destinations: Vec::new(),

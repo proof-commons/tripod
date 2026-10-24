@@ -473,11 +473,15 @@ fn receipt_observation(output_values: &[u64]) -> crate::OperationObservation {
 
     crate::OperationObservation {
         operation: OperationId::TransferLive,
-        objects,
         protocol_signers: std::collections::BTreeSet::from([alice]),
         sponsor_signers: std::collections::BTreeSet::new(),
-        canonical_partition: crate::ObservedCanonicalPartition::default(),
-        open_flows: Vec::new(),
+        region: crate::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: crate::ObservedCanonicalPartition::default(),
+            open_flows: Vec::new(),
+        },
+        other_regions: Vec::new(),
+        objects,
         root_effects: Vec::new(),
         projections: std::collections::BTreeSet::from([ProjectionId::TransitionCertificate]),
         bounds: BTreeMap::new(),

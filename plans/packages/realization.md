@@ -179,6 +179,8 @@ canonical-order domains.
 
 A count is not an amount merely because both are integers.
 
+An operation region explicitly claims object references and owns its canonical partition and open flows; claims are disjoint, their union is the transaction's claimed portion, and catalog objects claimed by no region contribute to no operation's relations.
+
 Arithmetic is checked and fail-closed.
 
 ## Derivation · `rule:realization:derive`
@@ -200,6 +202,8 @@ Derivation performs:
 9. explicit scope validation.
 
 A pilot-scoped value must not be accepted as a full realization.
+
+Transaction-side relation evaluation and primitive fact selection use the same selected operation region, with membership supplied by the observation producer rather than inferred from family or amount.
 
 ## Pilot A — compact ASH · `op:realization:compact-ash`
 
@@ -265,6 +269,8 @@ It does not establish:
 - deployment evidence.
 
 Model conformance is a separate test boundary.
+
+Conformance over combined observations establishes the relations of their selected regions, without establishing combined execution or target acceptance.
 
 ## Milestones · `tab:realization:milestones`
 

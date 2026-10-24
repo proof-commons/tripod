@@ -77,26 +77,31 @@ fn valid_observation() -> OperationObservation {
         ordinal: 0,
     };
 
+    let objects: Vec<crate::ObservedObject> = vec![
+        ash(ObservedSide::Input, 0, 40),
+        ash(ObservedSide::Input, 1, 60),
+        ash(ObservedSide::Output, 0, 100),
+    ];
     OperationObservation {
         operation: OperationId::CompactAsh,
-        objects: vec![
-            ash(ObservedSide::Input, 0, 40),
-            ash(ObservedSide::Input, 1, 60),
-            ash(ObservedSide::Output, 0, 100),
-        ],
         protocol_signers: BTreeSet::new(),
         sponsor_signers: BTreeSet::new(),
-        canonical_partition: ObservedCanonicalPartition {
-            issuances: Vec::new(),
-            flows: vec![ObservedCanonicalFlow {
-                asset: AssetId::U,
-                sources: vec![input0, input1],
-                destinations: vec![output0],
-                movement_kind: Some(DeltaKind::OwnerlessLateral),
-                destructions: Vec::new(),
-            }],
+        region: crate::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition {
+                issuances: Vec::new(),
+                flows: vec![ObservedCanonicalFlow {
+                    asset: AssetId::U,
+                    sources: vec![input0, input1],
+                    destinations: vec![output0],
+                    movement_kind: Some(DeltaKind::OwnerlessLateral),
+                    destructions: Vec::new(),
+                }],
+            },
+            open_flows: Vec::new(),
         },
-        open_flows: Vec::new(),
+        other_regions: Vec::new(),
+        objects,
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
         bounds: BTreeMap::from([
@@ -117,13 +122,9 @@ fn valid_sponsored_observation() -> OperationObservation {
         ordinal: 1,
     };
 
-    observation
-        .objects
-        .push(lbtc_owned(ObservedSide::Input, 2, CAROL));
-    observation
-        .objects
-        .push(lbtc_owned(ObservedSide::Output, 1, CAROL));
-    observation.open_flows.push(ObservedOpenFlow {
+    observation.claim_object(lbtc_owned(ObservedSide::Input, 2, CAROL));
+    observation.claim_object(lbtc_owned(ObservedSide::Output, 1, CAROL));
+    observation.region.open_flows.push(ObservedOpenFlow {
         kind: architecture::OpenFlowKind::FeeSponsor,
         sources: vec![sponsor_input],
         destinations: vec![sponsor_change],
@@ -311,7 +312,7 @@ fn an_empty_sponsor_flow_with_nonzero_fee_cannot_appear_fully_proven() {
     // carry the undischarged conservation requirement rather than
     // claiming the transaction proven.
     let mut observation = valid_observation();
-    observation.open_flows.push(ObservedOpenFlow {
+    observation.region.open_flows.push(ObservedOpenFlow {
         kind: architecture::OpenFlowKind::FeeSponsor,
         sources: Vec::new(),
         destinations: Vec::new(),
@@ -347,7 +348,7 @@ fn two_sponsor_envelopes_fail_multiplicity() {
     let mut observation = valid_sponsored_observation();
     // A second, disjoint, individually balanced fee-sponsor envelope: the
     // count rises to two, which the one-envelope rule forbids.
-    observation.open_flows.push(ObservedOpenFlow {
+    observation.region.open_flows.push(ObservedOpenFlow {
         kind: architecture::OpenFlowKind::FeeSponsor,
         sources: Vec::new(),
         destinations: Vec::new(),
@@ -463,6 +464,7 @@ fn empty_flow_fails_policy() {
     let mut observation = valid_observation();
 
     observation
+        .region
         .canonical_partition
         .flows
         .push(ObservedCanonicalFlow {
@@ -497,29 +499,34 @@ fn a_mixed_movement_and_destruction_flow_is_representable() {
         ordinal: 0,
     };
 
+    let objects: Vec<crate::ObservedObject> = vec![
+        ash(ObservedSide::Input, 0, 40),
+        ash(ObservedSide::Input, 1, 60),
+        ash(ObservedSide::Output, 0, 50),
+    ];
     let observation = OperationObservation {
         operation: OperationId::CompactAsh,
-        objects: vec![
-            ash(ObservedSide::Input, 0, 40),
-            ash(ObservedSide::Input, 1, 60),
-            ash(ObservedSide::Output, 0, 50),
-        ],
         protocol_signers: BTreeSet::new(),
         sponsor_signers: BTreeSet::new(),
-        canonical_partition: ObservedCanonicalPartition {
-            issuances: Vec::new(),
-            flows: vec![ObservedCanonicalFlow {
-                asset: AssetId::U,
-                sources: vec![input0, input1],
-                destinations: vec![output0],
-                movement_kind: Some(DeltaKind::OwnerlessLateral),
-                destructions: vec![crate::ObservedDestructionLeg {
-                    tag: architecture::TagId::Recon,
-                    amount: ProtocolAmount::new(50).unwrap(),
+        region: crate::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition {
+                issuances: Vec::new(),
+                flows: vec![ObservedCanonicalFlow {
+                    asset: AssetId::U,
+                    sources: vec![input0, input1],
+                    destinations: vec![output0],
+                    movement_kind: Some(DeltaKind::OwnerlessLateral),
+                    destructions: vec![crate::ObservedDestructionLeg {
+                        tag: architecture::TagId::Recon,
+                        amount: ProtocolAmount::new(50).unwrap(),
+                    }],
                 }],
-            }],
+            },
+            open_flows: Vec::new(),
         },
-        open_flows: Vec::new(),
+        other_regions: Vec::new(),
+        objects,
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
         bounds: BTreeMap::from([
@@ -530,7 +537,7 @@ fn a_mixed_movement_and_destruction_flow_is_representable() {
 
     let normalized =
         crate::validate_observation(observation).expect("mixed flow is structurally valid");
-    let flow = &normalized.canonical_partition.flows[0];
+    let flow = &normalized.region.canonical_partition.flows[0];
     assert!(flow.movement_kind.is_some());
     assert_eq!(flow.destructions.len(), 1);
 }
@@ -562,20 +569,25 @@ fn reusing_a_source_across_flows_is_a_partition_overlap() {
         destructions: Vec::new(),
     };
 
+    let objects: Vec<crate::ObservedObject> = vec![
+        ash(ObservedSide::Input, 0, 100),
+        ash(ObservedSide::Output, 0, 60),
+        ash(ObservedSide::Output, 1, 40),
+    ];
     let observation = OperationObservation {
         operation: OperationId::CompactAsh,
-        objects: vec![
-            ash(ObservedSide::Input, 0, 100),
-            ash(ObservedSide::Output, 0, 60),
-            ash(ObservedSide::Output, 1, 40),
-        ],
         protocol_signers: BTreeSet::new(),
         sponsor_signers: BTreeSet::new(),
-        canonical_partition: ObservedCanonicalPartition {
-            issuances: Vec::new(),
-            flows: vec![flow(output0), flow(output1)],
+        region: crate::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition {
+                issuances: Vec::new(),
+                flows: vec![flow(output0), flow(output1)],
+            },
+            open_flows: Vec::new(),
         },
-        open_flows: Vec::new(),
+        other_regions: Vec::new(),
+        objects,
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
         bounds: BTreeMap::from([
@@ -599,7 +611,7 @@ fn an_unwitnessed_distribution_vault_output_fails_partition_membership() {
     // the policy regardless of which object family carries it.
     let mut observation = valid_observation();
 
-    observation.objects.push(ObservedObject {
+    observation.claim_object(ObservedObject {
         reference: ObservedObjectRef {
             side: ObservedSide::Output,
             ordinal: 1,
@@ -657,13 +669,9 @@ fn zero_sidecar_observation() -> OperationObservation {
         ordinal: 1,
     };
 
-    observation
-        .objects
-        .push(lbtc_owned(ObservedSide::Input, 2, CAROL));
-    observation
-        .objects
-        .push(lbtc_owned(ObservedSide::Output, 1, CAROL));
-    observation.open_flows.push(ObservedOpenFlow {
+    observation.claim_object(lbtc_owned(ObservedSide::Input, 2, CAROL));
+    observation.claim_object(lbtc_owned(ObservedSide::Output, 1, CAROL));
+    observation.region.open_flows.push(ObservedOpenFlow {
         kind: architecture::OpenFlowKind::FeeSponsor,
         sources: vec![sponsor_input],
         destinations: vec![sponsor_change],
@@ -696,10 +704,8 @@ fn mixed_zero_and_positive_sponsor_members_are_accepted() {
         side: ObservedSide::Input,
         ordinal: 3,
     };
-    observation
-        .objects
-        .push(lbtc_owned(ObservedSide::Input, 3, CAROL));
-    observation.open_flows[0].sources.push(zero_input);
+    observation.claim_object(lbtc_owned(ObservedSide::Input, 3, CAROL));
+    observation.region.open_flows[0].sources.push(zero_input);
 
     let report = evaluate(&observation);
 
@@ -789,7 +795,7 @@ fn unclaimed_zero_sponsor_members_fail_isolation() {
             ObservedSide::Input => 2,
             ObservedSide::Output => 1,
         };
-        observation.objects.push(lbtc_owned(side, ordinal, CAROL));
+        observation.claim_object(lbtc_owned(side, ordinal, CAROL));
         observation.sponsor_signers.insert(CAROL);
 
         let report = evaluate(&observation);
@@ -806,9 +812,7 @@ fn zero_value_ownerless_plain_lbtc_still_fails_recognition() {
     // ownerless PLAIN_LBTC is malformed whatever its amount, and the
     // anchor is a different declared family entirely.
     let mut observation = valid_observation();
-    observation
-        .objects
-        .push(unclaimed_lbtc(ObservedSide::Input, 2));
+    observation.claim_object(unclaimed_lbtc(ObservedSide::Input, 2));
 
     let report = evaluate(&observation);
     assert!(failed(&report, &sponsor_input_recognition()));
@@ -820,7 +824,7 @@ fn declared_anchor_fails_the_pilot_family_closure() {
     // is recognized structurally and rejected here because the pilot's
     // family closure has no anchor slot — not because of its value.
     let mut observation = valid_observation();
-    observation.objects.push(crate::ObservedObject {
+    observation.claim_object(crate::ObservedObject {
         reference: ObservedObjectRef {
             side: ObservedSide::Output,
             ordinal: 1,
@@ -889,10 +893,8 @@ fn sponsor_shapes_do_not_interfere_with_protocol_verdicts() {
         side: ObservedSide::Input,
         ordinal: 3,
     };
-    mixed
-        .objects
-        .push(lbtc_owned(ObservedSide::Input, 3, CAROL));
-    mixed.open_flows[0].sources.push(zero_input);
+    mixed.claim_object(lbtc_owned(ObservedSide::Input, 3, CAROL));
+    mixed.region.open_flows[0].sources.push(zero_input);
 
     let shapes = [
         ("no sponsor", valid_observation()),
@@ -929,9 +931,7 @@ fn sponsor_shapes_do_not_interfere_with_protocol_verdicts() {
 #[test]
 fn ownerless_plain_lbtc_fails_recognition() {
     let mut observation = valid_observation();
-    observation
-        .objects
-        .push(unclaimed_lbtc(ObservedSide::Input, 2));
+    observation.claim_object(unclaimed_lbtc(ObservedSide::Input, 2));
 
     let report = evaluate(&observation);
     assert!(failed(&report, &sponsor_input_recognition()));
@@ -977,7 +977,7 @@ fn relation_cases() -> Vec<RelationCase> {
         ),
         (
             "two ash outputs",
-            Box::new(|observation| observation.objects.push(ash(ObservedSide::Output, 1, 0))),
+            Box::new(|observation| observation.claim_object(ash(ObservedSide::Output, 1, 0))),
             output_cardinality(),
         ),
         (
@@ -1005,14 +1005,15 @@ fn relation_cases() -> Vec<RelationCase> {
         (
             "wrong canonical delta kind",
             Box::new(|observation| {
-                observation.canonical_partition.flows[0].movement_kind = Some(DeltaKind::Lateral);
+                observation.region.canonical_partition.flows[0].movement_kind =
+                    Some(DeltaKind::Lateral);
             }),
             canonical_delta_policy(),
         ),
         (
             "undeclared open flow role",
             Box::new(|observation| {
-                observation.open_flows.push(ObservedOpenFlow {
+                observation.region.open_flows.push(ObservedOpenFlow {
                     kind: architecture::OpenFlowKind::RequestCreation,
                     sources: Vec::new(),
                     destinations: Vec::new(),
@@ -1127,7 +1128,7 @@ fn sponsor_cases() -> Vec<SponsorCase> {
         (
             "u mixed into open flow",
             Box::new(move |observation| {
-                observation.open_flows.push(ObservedOpenFlow {
+                observation.region.open_flows.push(ObservedOpenFlow {
                     kind: architecture::OpenFlowKind::FeeSponsor,
                     sources: vec![ObservedObjectRef {
                         side: ObservedSide::Input,
@@ -1141,21 +1142,15 @@ fn sponsor_cases() -> Vec<SponsorCase> {
         (
             "unclaimed lbtc",
             Box::new(|observation| {
-                observation
-                    .objects
-                    .push(unclaimed_lbtc(ObservedSide::Input, 2));
+                observation.claim_object(unclaimed_lbtc(ObservedSide::Input, 2));
             }),
         ),
         (
             "duplicate sponsor source",
             Box::new(move |observation| {
-                observation
-                    .objects
-                    .push(unclaimed_lbtc(ObservedSide::Input, 2));
-                observation
-                    .objects
-                    .push(lbtc_owned(ObservedSide::Input, 3, CAROL));
-                observation.open_flows.push(ObservedOpenFlow {
+                observation.claim_object(unclaimed_lbtc(ObservedSide::Input, 2));
+                observation.claim_object(lbtc_owned(ObservedSide::Input, 3, CAROL));
+                observation.region.open_flows.push(ObservedOpenFlow {
                     kind: architecture::OpenFlowKind::FeeSponsor,
                     sources: vec![
                         source,
@@ -1172,13 +1167,9 @@ fn sponsor_cases() -> Vec<SponsorCase> {
         (
             "unowned sponsor source",
             Box::new(move |observation| {
-                observation
-                    .objects
-                    .push(unclaimed_lbtc(ObservedSide::Input, 2));
-                observation
-                    .objects
-                    .push(lbtc_owned(ObservedSide::Output, 1, CAROL));
-                observation.open_flows.push(ObservedOpenFlow {
+                observation.claim_object(unclaimed_lbtc(ObservedSide::Input, 2));
+                observation.claim_object(lbtc_owned(ObservedSide::Output, 1, CAROL));
+                observation.region.open_flows.push(ObservedOpenFlow {
                     kind: architecture::OpenFlowKind::FeeSponsor,
                     sources: vec![source],
                     destinations: vec![destination],
@@ -1924,7 +1915,7 @@ fn lbtc_protocol(side: ObservedSide, ordinal: u32, owner: OwnerId, value: u64) -
 /// region instead of the sponsor one.
 fn protocol_role_observation() -> OperationObservation {
     let mut observation = valid_sponsored_observation();
-    observation.open_flows[0].kind = architecture::OpenFlowKind::Redemption;
+    observation.region.open_flows[0].kind = architecture::OpenFlowKind::Redemption;
 
     observation
 }
@@ -1935,12 +1926,8 @@ fn protocol_role_ordinary_lbtc_keeps_its_amount() {
     observation
         .objects
         .retain(|object| object.kind != ObservedObjectKind::Declared(ObjectId::PlainLbtc));
-    observation
-        .objects
-        .push(lbtc_protocol(ObservedSide::Input, 2, CAROL, 30));
-    observation
-        .objects
-        .push(lbtc_protocol(ObservedSide::Output, 1, CAROL, 27));
+    observation.claim_object(lbtc_protocol(ObservedSide::Input, 2, CAROL, 30));
+    observation.claim_object(lbtc_protocol(ObservedSide::Output, 1, CAROL, 27));
 
     let report = evaluate(&observation);
 
@@ -1993,9 +1980,7 @@ fn a_readable_amount_in_the_sponsor_region_still_fails_recognition() {
         observation
             .objects
             .retain(|object| object.reference != ObservedObjectRef { side, ordinal });
-        observation
-            .objects
-            .push(lbtc_protocol(side, ordinal, CAROL, 7));
+        observation.claim_object(lbtc_protocol(side, ordinal, CAROL, 7));
 
         let report = evaluate(&observation);
         let recognition = match side {
@@ -2022,6 +2007,7 @@ fn protocol_role_ordinary_lbtc_does_not_make_the_operation_sponsored() {
 
     assert_eq!(
         observation
+            .region
             .open_flows
             .iter()
             .filter(|flow| flow.kind == architecture::OpenFlowKind::FeeSponsor)

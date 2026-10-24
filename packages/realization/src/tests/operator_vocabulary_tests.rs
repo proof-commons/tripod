@@ -25,20 +25,25 @@ fn declaration(kind: RelationKind, relation: Relation) -> RelationDeclaration {
 }
 
 fn operator_observation(signed: bool) -> OperationObservation {
+    let objects: Vec<crate::ObservedObject> = Vec::new();
     OperationObservation {
         operation: OperationId::AnnounceMaturity,
-        objects: Vec::new(),
         protocol_signers: if signed {
             BTreeSet::from([OwnerId([7; 32])])
         } else {
             BTreeSet::new()
         },
         sponsor_signers: BTreeSet::new(),
-        canonical_partition: ObservedCanonicalPartition {
-            issuances: Vec::new(),
-            flows: Vec::new(),
+        region: crate::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition {
+                issuances: Vec::new(),
+                flows: Vec::new(),
+            },
+            open_flows: Vec::new(),
         },
-        open_flows: Vec::new(),
+        other_regions: Vec::new(),
+        objects,
         root_effects: Vec::new(),
         projections: BTreeSet::new(),
         bounds: BTreeMap::new(),
@@ -687,16 +692,21 @@ fn observations_reject_cycle_bounds_in_the_count_map() {
         architecture::BoundId::MaturityLeadMin,
         architecture::BoundId::MaturityLeadMax,
     ] {
+        let objects: Vec<crate::ObservedObject> = Vec::new();
         let observation = OperationObservation {
             operation: OperationId::AnnounceMaturity,
-            objects: Vec::new(),
             protocol_signers: BTreeSet::new(),
             sponsor_signers: BTreeSet::new(),
-            canonical_partition: ObservedCanonicalPartition {
-                issuances: Vec::new(),
-                flows: Vec::new(),
+            region: crate::ObservedOperationRegion {
+                members: objects.iter().map(|object| object.reference).collect(),
+                canonical_partition: ObservedCanonicalPartition {
+                    issuances: Vec::new(),
+                    flows: Vec::new(),
+                },
+                open_flows: Vec::new(),
             },
-            open_flows: Vec::new(),
+            other_regions: Vec::new(),
+            objects,
             root_effects: Vec::new(),
             projections: BTreeSet::new(),
             bounds: BTreeMap::from([(bound, crate::Count::ONE)]),

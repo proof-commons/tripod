@@ -129,6 +129,7 @@ fn stable_projection_exposes_typed_graph_shape_without_local_handles() {
 }
 
 fn compact_ash_observation() -> OperationObservation {
+    // The public observation interface requires explicit operation membership.
     let input0 = ObservedObjectRef {
         side: ObservedSide::Input,
         ordinal: 0,
@@ -142,26 +143,31 @@ fn compact_ash_observation() -> OperationObservation {
         ordinal: 0,
     };
 
+    let objects: Vec<realization::ObservedObject> = vec![
+        ash(ObservedSide::Input, 0, 40),
+        ash(ObservedSide::Input, 1, 60),
+        ash(ObservedSide::Output, 0, 100),
+    ];
     OperationObservation {
         operation: OperationId::CompactAsh,
-        objects: vec![
-            ash(ObservedSide::Input, 0, 40),
-            ash(ObservedSide::Input, 1, 60),
-            ash(ObservedSide::Output, 0, 100),
-        ],
         protocol_signers: BTreeSet::new(),
         sponsor_signers: BTreeSet::new(),
-        canonical_partition: ObservedCanonicalPartition {
-            issuances: Vec::new(),
-            flows: vec![ObservedCanonicalFlow {
-                asset: AssetId::U,
-                sources: vec![input0, input1],
-                destinations: vec![output0],
-                movement_kind: Some(DeltaKind::OwnerlessLateral),
-                destructions: Vec::new(),
-            }],
+        region: realization::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition {
+                issuances: Vec::new(),
+                flows: vec![ObservedCanonicalFlow {
+                    asset: AssetId::U,
+                    sources: vec![input0, input1],
+                    destinations: vec![output0],
+                    movement_kind: Some(DeltaKind::OwnerlessLateral),
+                    destructions: Vec::new(),
+                }],
+            },
+            open_flows: Vec::new(),
         },
-        open_flows: Vec::new(),
+        other_regions: Vec::new(),
+        objects,
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
         bounds: BTreeMap::from([

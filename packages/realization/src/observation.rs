@@ -207,6 +207,17 @@ pub struct ObservedRootEffect {
     pub effect: ObservedRootEffectKind,
 }
 
+/// Explicit claims of one operation within a transaction.
+///
+/// Membership is supplied by the observation producer, independently of
+/// family and amount. Owned flows refer only to members of this region.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ObservedOperationRegion {
+    pub members: BTreeSet<ObservedObjectRef>,
+    pub canonical_partition: ObservedCanonicalPartition,
+    pub open_flows: Vec<ObservedOpenFlow>,
+}
+
 /// Complete primitive observation of one operation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OperationObservation {
@@ -214,8 +225,8 @@ pub struct OperationObservation {
     pub objects: Vec<ObservedObject>,
     pub protocol_signers: BTreeSet<OwnerId>,
     pub sponsor_signers: BTreeSet<OwnerId>,
-    pub canonical_partition: ObservedCanonicalPartition,
-    pub open_flows: Vec<ObservedOpenFlow>,
+    pub region: ObservedOperationRegion,
+    pub other_regions: Vec<ObservedOperationRegion>,
     pub root_effects: Vec<ObservedRootEffect>,
     pub projections: BTreeSet<ProjectionId>,
     pub bounds: BTreeMap<BoundId, Count>,
@@ -280,8 +291,98 @@ impl OperationObservation {
             .map(|object| object.reference)
             .collect::<BTreeSet<_>>();
 
+        let anchors = self
+            .objects
+            .iter()
+            .filter(|object| object.kind == ObservedObjectKind::Declared(ObjectId::CpfpAnchor))
+            .map(|object| object.reference)
+            .collect();
+        let mut claimed = BTreeSet::new();
+        for region in std::iter::once(&mut self.region).chain(&mut self.other_regions) {
+            for reference in &region.members {
+                check_reference(*reference, reference.side, &known)?;
+                if !claimed.insert(*reference) {
+                    return Err(RealizationError::ObservedRegionOverlap(*reference));
+                }
+            }
+            region.normalize(&anchors)?;
+        }
+
+        self.root_effects.sort_by_key(|effect| effect.root.code());
+
+        for pair in self.root_effects.windows(2) {
+            if pair[0].root == pair[1].root {
+                return Err(RealizationError::DuplicateObservedRoot(pair[0].root));
+            }
+        }
+
+        Ok(self)
+    }
+
+    /// Objects explicitly claimed by the selected operation.
+    pub fn region_objects(&self) -> impl Iterator<Item = &ObservedObject> {
+        self.objects
+            .iter()
+            .filter(|object| self.region.members.contains(&object.reference))
+    }
+
+    /// Add an object and explicitly claim it for the selected operation.
+    pub fn claim_object(&mut self, object: ObservedObject) {
+        self.region.members.insert(object.reference);
+        self.objects.push(object);
+    }
+
+    /// Resolve one semantic object reference in the selected region.
+    #[must_use]
+    pub fn object(&self, reference: ObservedObjectRef) -> Option<&ObservedObject> {
+        self.region_objects()
+            .find(|object| object.reference == reference)
+    }
+
+    /// The open-flow region that claims one reference.
+    ///
+    /// Normalization has already established that no reference is
+    /// claimed by two open flows, so the first claimant is the only
+    /// one. An unnormalized observation with an overlap resolves to
+    /// its first flow in declaration order and still fails isolation,
+    /// which is why erasure decisions never rest on this alone.
+    #[must_use]
+    pub fn flow_role(&self, reference: ObservedObjectRef) -> ObservedFlowRole {
+        for flow in &self.region.open_flows {
+            let claimed = match reference.side {
+                ObservedSide::Input => flow.sources.contains(&reference),
+                ObservedSide::Output => flow.destinations.contains(&reference),
+            };
+
+            if claimed {
+                return if flow.kind == OpenFlowKind::FeeSponsor {
+                    ObservedFlowRole::Sponsor
+                } else {
+                    ObservedFlowRole::Protocol(flow.kind)
+                };
+            }
+        }
+
+        ObservedFlowRole::Unclaimed
+    }
+
+    /// Declared objects on one side and in one family.
+    pub fn declared_objects(
+        &self,
+        side: ObservedSide,
+        kind: ObjectId,
+    ) -> impl Iterator<Item = &ObservedObject> {
+        self.region_objects().filter(move |object| {
+            object.reference.side == side && object.kind == ObservedObjectKind::Declared(kind)
+        })
+    }
+}
+
+impl ObservedOperationRegion {
+    fn normalize(&mut self, anchors: &BTreeSet<ObservedObjectRef>) -> Result<(), RealizationError> {
+        let known = &self.members;
         for issuance in &mut self.canonical_partition.issuances {
-            check_reference(issuance.authority_input, ObservedSide::Input, &known)?;
+            check_reference(issuance.authority_input, ObservedSide::Input, known)?;
 
             issuance.destinations.sort();
 
@@ -290,7 +391,7 @@ impl OperationObservation {
             }
 
             for destination in &issuance.destinations {
-                check_reference(*destination, ObservedSide::Output, &known)?;
+                check_reference(*destination, ObservedSide::Output, known)?;
             }
         }
 
@@ -303,11 +404,11 @@ impl OperationObservation {
             }
 
             for source in &flow.sources {
-                check_reference(*source, ObservedSide::Input, &known)?;
+                check_reference(*source, ObservedSide::Input, known)?;
             }
 
             for destination in &flow.destinations {
-                check_reference(*destination, ObservedSide::Output, &known)?;
+                check_reference(*destination, ObservedSide::Output, known)?;
             }
 
             flow.destructions.sort_by_key(|leg| leg.tag.code());
@@ -340,17 +441,7 @@ impl OperationObservation {
 
         validate_partition_reference_layout(&self.canonical_partition)?;
 
-        // The CPFP anchor family stands outside every open-value
-        // partition, for every flow kind, so it is collected once here
-        // rather than decided per operation.
-        let anchors = self
-            .objects
-            .iter()
-            .filter(|object| object.kind == ObservedObjectKind::Declared(ObjectId::CpfpAnchor))
-            .map(|object| object.reference)
-            .collect::<BTreeSet<_>>();
-
-        normalize_open_flows(&mut self.open_flows, &known, &anchors)?;
+        normalize_open_flows(&mut self.open_flows, known, anchors)?;
 
         self.open_flows.sort_by(|left, right| {
             (
@@ -367,61 +458,7 @@ impl OperationObservation {
                 ))
         });
 
-        self.root_effects.sort_by_key(|effect| effect.root.code());
-
-        for pair in self.root_effects.windows(2) {
-            if pair[0].root == pair[1].root {
-                return Err(RealizationError::DuplicateObservedRoot(pair[0].root));
-            }
-        }
-
-        Ok(self)
-    }
-
-    /// Resolve one semantic object reference.
-    #[must_use]
-    pub fn object(&self, reference: ObservedObjectRef) -> Option<&ObservedObject> {
-        self.objects
-            .iter()
-            .find(|object| object.reference == reference)
-    }
-
-    /// The open-flow region that claims one reference.
-    ///
-    /// Normalization has already established that no reference is
-    /// claimed by two open flows, so the first claimant is the only
-    /// one. An unnormalized observation with an overlap resolves to
-    /// its first flow in declaration order and still fails isolation,
-    /// which is why erasure decisions never rest on this alone.
-    #[must_use]
-    pub fn flow_role(&self, reference: ObservedObjectRef) -> ObservedFlowRole {
-        for flow in &self.open_flows {
-            let claimed = match reference.side {
-                ObservedSide::Input => flow.sources.contains(&reference),
-                ObservedSide::Output => flow.destinations.contains(&reference),
-            };
-
-            if claimed {
-                return if flow.kind == OpenFlowKind::FeeSponsor {
-                    ObservedFlowRole::Sponsor
-                } else {
-                    ObservedFlowRole::Protocol(flow.kind)
-                };
-            }
-        }
-
-        ObservedFlowRole::Unclaimed
-    }
-
-    /// Declared objects on one side and in one family.
-    pub fn declared_objects(
-        &self,
-        side: ObservedSide,
-        kind: ObjectId,
-    ) -> impl Iterator<Item = &ObservedObject> {
-        self.objects.iter().filter(move |object| {
-            object.reference.side == side && object.kind == ObservedObjectKind::Declared(kind)
-        })
+        Ok(())
     }
 }
 

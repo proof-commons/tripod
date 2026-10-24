@@ -198,6 +198,7 @@ fn oracle_mutations(
 
         Relation::SponsorIsolation => runtime(vec![
             Mutation::SponsorProtocolOverlap,
+            Mutation::SponsorMemberUnclaimed,
             Mutation::MissingSponsorAuthorization,
         ]),
 

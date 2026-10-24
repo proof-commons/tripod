@@ -59,7 +59,8 @@ use architecture::{
 };
 use realization::{
     Count, ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition, ObservedObject,
-    ObservedObjectKind, ObservedObjectRef, ObservedSide, ObservedValue, OperationObservation,
+    ObservedObjectKind, ObservedObjectRef, ObservedOperationRegion, ObservedSide, ObservedValue,
+    OperationObservation,
     ProtocolAmount, RealizationScope, RepresentationMode, derive,
 };
 
@@ -109,17 +110,22 @@ let observation = OperationObservation {
     // Compact ASH is permissionless: no protocol signer is required.
     protocol_signers: BTreeSet::new(),
     sponsor_signers: BTreeSet::new(),
-    canonical_partition: ObservedCanonicalPartition {
-        issuances: Vec::new(),
-        flows: vec![ObservedCanonicalFlow {
-            asset: AssetId::U,
-            sources: vec![input0, input1],
-            destinations: vec![output0],
-            movement_kind: Some(DeltaKind::OwnerlessLateral),
-            destructions: Vec::new(),
-        }],
+    // The observation interface explicitly claims the operation's objects.
+    region: ObservedOperationRegion {
+        members: BTreeSet::from([input0, input1, output0]),
+        canonical_partition: ObservedCanonicalPartition {
+            issuances: Vec::new(),
+            flows: vec![ObservedCanonicalFlow {
+                asset: AssetId::U,
+                sources: vec![input0, input1],
+                destinations: vec![output0],
+                movement_kind: Some(DeltaKind::OwnerlessLateral),
+                destructions: Vec::new(),
+            }],
+        },
+        open_flows: Vec::new(),
     },
-    open_flows: Vec::new(),
+    other_regions: Vec::new(),
     root_effects: Vec::new(),
     projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
     bounds: BTreeMap::from([

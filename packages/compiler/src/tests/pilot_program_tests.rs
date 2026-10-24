@@ -757,6 +757,8 @@ struct FactorCensus {
 }
 
 const fn factor_census(operation: OperationId, committed: bool) -> FactorCensus {
+    // Membership omission adds two nodes and collateral for each case:
+    // five descendants for compact ASH, six for live transfer.
     match (operation, committed) {
         (OperationId::CompactAsh, _) => FactorCensus {
             relations: 23,
@@ -764,8 +766,8 @@ const fn factor_census(operation: OperationId, committed: bool) -> FactorCensus 
             relation_cases: 46,
             placements: 216,
             layout_requirements: 69,
-            coverage_nodes: 344,
-            coverage_edges: 365,
+            coverage_nodes: 346,
+            coverage_edges: 375,
         },
         (OperationId::TransferLive, false) => FactorCensus {
             relations: 24,
@@ -773,8 +775,8 @@ const fn factor_census(operation: OperationId, committed: bool) -> FactorCensus 
             relation_cases: 48,
             placements: 216,
             layout_requirements: 69,
-            coverage_nodes: 362,
-            coverage_edges: 489,
+            coverage_nodes: 364,
+            coverage_edges: 501,
         },
         (OperationId::TransferLive, true) => FactorCensus {
             relations: 24,
@@ -782,8 +784,8 @@ const fn factor_census(operation: OperationId, committed: bool) -> FactorCensus 
             relation_cases: 48,
             placements: 216,
             layout_requirements: 61,
-            coverage_nodes: 359,
-            coverage_edges: 475,
+            coverage_nodes: 361,
+            coverage_edges: 487,
         },
         _ => panic!("not a pilot"),
     }

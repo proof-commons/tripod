@@ -494,6 +494,7 @@ fn policy_catalogue() -> Catalogue {
             relation(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
             vec![
                 Mutation::SponsorProtocolOverlap,
+                Mutation::SponsorMemberUnclaimed,
                 Mutation::MissingSponsorAuthorization,
             ],
         ),

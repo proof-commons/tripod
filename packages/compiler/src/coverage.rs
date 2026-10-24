@@ -100,6 +100,7 @@ pub enum RelationMutation {
     MissingRequiredOwner,
     UnexpectedProtocolSecret,
     SponsorProtocolOverlap,
+    SponsorMemberUnclaimed,
     MissingSponsorAuthorization,
     SponsorEnvelopeMultiplicityExceeded,
     WrongRootEffect,
@@ -773,6 +774,7 @@ fn runtime_mutations(relation: &Relation) -> Vec<RelationMutation> {
 
         Relation::SponsorIsolation => vec![
             Mutation::SponsorProtocolOverlap,
+            Mutation::SponsorMemberUnclaimed,
             Mutation::MissingSponsorAuthorization,
         ],
 

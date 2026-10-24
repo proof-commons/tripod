@@ -296,11 +296,15 @@ fn observe_transition(
 
     let observation = OperationObservation {
         operation: crate::manifest::branch_operation(certificate.branch),
-        objects,
         protocol_signers,
         sponsor_signers,
-        canonical_partition: observe_canonical_partition(certificate, &reference_by_outpoint)?,
-        open_flows,
+        region: realization::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: observe_canonical_partition(certificate, &reference_by_outpoint)?,
+            open_flows,
+        },
+        other_regions: Vec::new(),
+        objects,
         root_effects: observe_root_effects(certificate),
         projections: observe_projections(certificate),
         bounds: observe_bounds(&before.constants)?,

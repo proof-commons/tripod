@@ -17,13 +17,18 @@ use crate::{
 
 /// A root-free observation carrying only the given root effects.
 fn observation(effects: Vec<ObservedRootEffect>) -> OperationObservation {
+    let objects: Vec<crate::ObservedObject> = Vec::new();
     OperationObservation {
         operation: OperationId::Redeem,
-        objects: Vec::new(),
         protocol_signers: BTreeSet::new(),
         sponsor_signers: BTreeSet::new(),
-        canonical_partition: ObservedCanonicalPartition::default(),
-        open_flows: Vec::new(),
+        region: crate::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition::default(),
+            open_flows: Vec::new(),
+        },
+        other_regions: Vec::new(),
+        objects,
         root_effects: effects,
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
         bounds: BTreeMap::new(),

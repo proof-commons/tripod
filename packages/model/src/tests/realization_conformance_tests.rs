@@ -534,6 +534,7 @@ fn sponsored_compact_ash_erases_exactly_the_fee_sponsor_region() {
     let observation = observation.observation().clone();
 
     let sponsor_refs = observation
+        .region
         .open_flows
         .iter()
         .filter(|flow| flow.kind == architecture::OpenFlowKind::FeeSponsor)
@@ -861,6 +862,119 @@ fn announce_maturity_model_transition_satisfies_realization() {
     assert_announcement_census(&observation);
 }
 
+fn composed_announcement_and_compact() -> (
+    realization::OperationObservation,
+    realization::OperationObservation,
+    realization::ObservedObjectRef,
+) {
+    let world = test_fixtures::world();
+    let execution = execute_bound(
+        &world,
+        announcement_request(&world, FeeEnvelope::default()),
+        next_order(&world),
+    )
+    .unwrap();
+    let mut announcement = observe_announce_maturity(&execution)
+        .unwrap()
+        .observation()
+        .clone();
+    let world = world_with_two_ash();
+    let execution = execute_bound(
+        &world,
+        CompactAsh {
+            ash_inputs: find_ash(&world),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    )
+    .unwrap();
+    let mut compact = observe_compact_ash(&execution)
+        .unwrap()
+        .observation()
+        .clone();
+    let rebase = |reference: &mut realization::ObservedObjectRef| reference.ordinal += 100;
+    for object in &mut compact.objects {
+        rebase(&mut object.reference);
+    }
+    compact.region.members = compact
+        .region
+        .members
+        .iter()
+        .map(|reference| {
+            let mut reference = *reference;
+            rebase(&mut reference);
+            reference
+        })
+        .collect();
+    for flow in &mut compact.region.canonical_partition.flows {
+        for reference in flow.sources.iter_mut().chain(&mut flow.destinations) {
+            rebase(reference);
+        }
+    }
+    assert_eq!(
+        compact.region.canonical_partition.issuances,
+        [] as [realization::ObservedIssuance; 0]
+    );
+    assert_eq!(
+        compact.region.open_flows,
+        [] as [realization::ObservedOpenFlow; 0]
+    );
+    announcement.objects.extend(compact.objects.clone());
+    let mut foreign = compact.objects[0].clone();
+    foreign.reference.ordinal = 200;
+    let foreign_reference = foreign.reference;
+    // Catalog presence alone makes no claim for either operation.
+    announcement.objects.push(foreign);
+    compact.objects = announcement.objects.clone();
+    announcement.other_regions.push(compact.region.clone());
+    compact.other_regions.push(announcement.region.clone());
+    (announcement, compact, foreign_reference)
+}
+
+#[test]
+fn announcement_beside_compact_ash_is_conformant() {
+    let (announcement, compact, _) = composed_announcement_and_compact();
+    assert!(
+        announcement_realization()
+            .evaluate_operation(&announcement)
+            .unwrap()
+            .is_conformant()
+    );
+    assert!(evaluate(&compact).is_conformant());
+    assert_eq!(
+        announcement.region.canonical_partition,
+        realization::ObservedCanonicalPartition::default()
+    );
+    assert_eq!(
+        announcement.other_regions[0]
+            .canonical_partition
+            .flows
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn foreign_object_claimed_by_announcement_is_refused() {
+    let (mut announcement, mut compact, foreign) = composed_announcement_and_compact();
+    let before = evaluate(&compact);
+    announcement.region.members.insert(foreign);
+    compact.other_regions[0] = announcement.region.clone();
+    let report = announcement_realization()
+        .evaluate_operation(&announcement)
+        .unwrap();
+    assert!(failed(
+        &report,
+        &announcement_id(
+            realization::RelationKind::AllowedObjectFamilies,
+            realization::RelationSubject::TransactionSide {
+                side: realization::TransactionSide::Input,
+            },
+        )
+    ));
+    assert_eq!(before, evaluate(&compact));
+}
+
 #[test]
 fn announcement_declassification_matches_model_owned_artifact_row() {
     let spec = announcement_realization();
@@ -923,6 +1037,7 @@ fn sponsored_announcement_observes_an_isolated_sponsor_region() {
     let observation = observe_announce_maturity(&execution).unwrap();
     let observed = observation.observation();
     let sponsor_refs = observed
+        .region
         .open_flows
         .iter()
         .filter(|flow| flow.kind == architecture::OpenFlowKind::FeeSponsor)

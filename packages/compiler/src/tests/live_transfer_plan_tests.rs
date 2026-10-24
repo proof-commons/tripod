@@ -1049,6 +1049,7 @@ fn every_published_census_is_complete_by_construction() {
 /// private plan still scripted the arithmetic it must not perform.
 #[test]
 fn the_published_censuses_have_the_measured_pilot_sizes() {
+    // Explicit membership omission adds one negative in each sponsor case.
     let plan = corruption_subject().plan;
     let mut seen = 0_usize;
 
@@ -1063,13 +1064,13 @@ fn the_published_censuses_have_the_measured_pilot_sizes() {
         let expected = match projection.plan() {
             LiveTransferRepresentationPlan::Explicit => BTreeMap::from([
                 ("cases", 2),
-                ("coverage", 223),
+                ("coverage", 225),
                 ("layout", 69),
                 ("relations", 24),
             ]),
             LiveTransferRepresentationPlan::PrivateCommitted => BTreeMap::from([
                 ("cases", 2),
-                ("coverage", 225),
+                ("coverage", 227),
                 ("layout", 61),
                 ("relations", 24),
             ]),

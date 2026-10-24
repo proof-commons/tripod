@@ -43,6 +43,10 @@ pub enum ArchitectureMismatchField {
 /// realization values.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum RealizationError {
+    /// Two operation regions claim the same object.
+    #[error("operation regions overlap at {0:?}")]
+    ObservedRegionOverlap(ObservedObjectRef),
+
     /// The architecture failed its own structural validation.
     #[error("architecture validation failed with {} error(s)", errors.len())]
     ArchitectureValidationFailed { errors: Vec<ManifestError> },

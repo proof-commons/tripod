@@ -614,22 +614,27 @@ fn declaration_is_permutation_stable() {
 }
 
 pub(super) fn observation() -> OperationObservation {
+    let objects: Vec<crate::ObservedObject> = [ObservedSide::Input, ObservedSide::Output]
+        .map(|side| ObservedObject {
+            reference: ObservedObjectRef { side, ordinal: 0 },
+            kind: ObservedObjectKind::Declared(ObjectId::State),
+            asset: ObservedAsset::Declared(AssetId::Pid),
+            value: ObservedValue::Protocol(ProtocolAmount::ONE),
+            owner: None,
+            representation: RepresentationMode::Explicit,
+        })
+        .to_vec();
     OperationObservation {
         operation: OP,
-        objects: [ObservedSide::Input, ObservedSide::Output]
-            .map(|side| ObservedObject {
-                reference: ObservedObjectRef { side, ordinal: 0 },
-                kind: ObservedObjectKind::Declared(ObjectId::State),
-                asset: ObservedAsset::Declared(AssetId::Pid),
-                value: ObservedValue::Protocol(ProtocolAmount::ONE),
-                owner: None,
-                representation: RepresentationMode::Explicit,
-            })
-            .to_vec(),
         protocol_signers: BTreeSet::new(),
         sponsor_signers: BTreeSet::new(),
-        canonical_partition: ObservedCanonicalPartition::default(),
-        open_flows: Vec::new(),
+        region: crate::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition::default(),
+            open_flows: Vec::new(),
+        },
+        other_regions: Vec::new(),
+        objects,
         root_effects: vec![ObservedRootEffect {
             root: RootId::State,
             effect: ObservedRootEffectKind::Succession,
@@ -683,7 +688,7 @@ fn two_state_outputs_reject() {
     let mut observed = observation();
     let mut extra = observed.objects[1].clone();
     extra.reference.ordinal = 1;
-    observed.objects.push(extra);
+    observed.claim_object(extra);
     assert_eq!(
         status(&observed, &output_cardinality()),
         RelationStatus::Failed {
@@ -698,6 +703,11 @@ fn zero_state_outputs_reject() {
     observed
         .objects
         .retain(|object| object.reference.side != ObservedSide::Output);
+    // The removed successor also leaves the explicit operation region.
+    observed
+        .region
+        .members
+        .retain(|reference| reference.side != ObservedSide::Output);
     assert_eq!(
         observed.root_effects[0].effect,
         ObservedRootEffectKind::Succession
@@ -909,26 +919,31 @@ fn compact_ash_pilot_observation() -> OperationObservation {
         representation: RepresentationMode::Explicit,
     };
 
+    let objects: Vec<crate::ObservedObject> = vec![
+        ash(ObservedSide::Input, 0, 40),
+        ash(ObservedSide::Input, 1, 60),
+        ash(ObservedSide::Output, 0, 100),
+    ];
     OperationObservation {
         operation: OperationId::CompactAsh,
-        objects: vec![
-            ash(ObservedSide::Input, 0, 40),
-            ash(ObservedSide::Input, 1, 60),
-            ash(ObservedSide::Output, 0, 100),
-        ],
         protocol_signers: BTreeSet::new(),
         sponsor_signers: BTreeSet::new(),
-        canonical_partition: ObservedCanonicalPartition {
-            issuances: Vec::new(),
-            flows: vec![ObservedCanonicalFlow {
-                asset: AssetId::U,
-                sources: vec![input0, input1],
-                destinations: vec![output0],
-                movement_kind: Some(DeltaKind::OwnerlessLateral),
-                destructions: Vec::new(),
-            }],
+        region: crate::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition {
+                issuances: Vec::new(),
+                flows: vec![ObservedCanonicalFlow {
+                    asset: AssetId::U,
+                    sources: vec![input0, input1],
+                    destinations: vec![output0],
+                    movement_kind: Some(DeltaKind::OwnerlessLateral),
+                    destructions: Vec::new(),
+                }],
+            },
+            open_flows: Vec::new(),
         },
-        open_flows: Vec::new(),
+        other_regions: Vec::new(),
+        objects,
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
         bounds: BTreeMap::from([
@@ -960,26 +975,31 @@ fn live_transfer_pilot_observation() -> OperationObservation {
         representation: RepresentationMode::Explicit,
     };
 
+    let objects: Vec<crate::ObservedObject> = vec![
+        receipt(ObservedSide::Input, 0, 100, OwnerId([1; 32])),
+        receipt(ObservedSide::Output, 0, 40, OwnerId([2; 32])),
+        receipt(ObservedSide::Output, 1, 60, OwnerId([3; 32])),
+    ];
     OperationObservation {
         operation: OperationId::TransferLive,
-        objects: vec![
-            receipt(ObservedSide::Input, 0, 100, OwnerId([1; 32])),
-            receipt(ObservedSide::Output, 0, 40, OwnerId([2; 32])),
-            receipt(ObservedSide::Output, 1, 60, OwnerId([3; 32])),
-        ],
         protocol_signers: BTreeSet::from([OwnerId([1; 32])]),
         sponsor_signers: BTreeSet::new(),
-        canonical_partition: ObservedCanonicalPartition {
-            issuances: Vec::new(),
-            flows: vec![ObservedCanonicalFlow {
-                asset: AssetId::U,
-                sources: vec![input0],
-                destinations: vec![output0, output1],
-                movement_kind: Some(DeltaKind::Lateral),
-                destructions: Vec::new(),
-            }],
+        region: crate::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition {
+                issuances: Vec::new(),
+                flows: vec![ObservedCanonicalFlow {
+                    asset: AssetId::U,
+                    sources: vec![input0],
+                    destinations: vec![output0, output1],
+                    movement_kind: Some(DeltaKind::Lateral),
+                    destructions: Vec::new(),
+                }],
+            },
+            open_flows: Vec::new(),
         },
-        open_flows: Vec::new(),
+        other_regions: Vec::new(),
+        objects,
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
         bounds: BTreeMap::from([

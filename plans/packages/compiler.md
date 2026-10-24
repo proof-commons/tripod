@@ -140,6 +140,8 @@ must preserve:
 
 A relation absent from the analyzed result is a compile failure.
 
+`SponsorEnvelopeMultiplicity` remains MODEL-SCOPE resource policy over the operation's own fee-sponsor flows, with its declared maximum unchanged and enforced by no leaf.
+
 ## Proof planning · `rule:compiler:proofs`
 
 The compiler separates:
@@ -244,7 +246,7 @@ Compiler core derives requirements such as:
 - family count must be authenticated;
 - repeated family is bounded;
 - protocol output families are complete and disjoint;
-- sponsor region is isolated;
+- the fee-sponsor region inside the operation's explicitly claimed region is isolated;
 - optional family presence follows one semantic condition;
 - target ABI exposes required witnesses.
 

@@ -413,8 +413,7 @@ fn evaluate_relation(
         }
         Relation::AllowedObjectFamilies { side, allowed } => status(
             observation
-                .objects
-                .iter()
+                .region_objects()
                 .filter(|object| object.reference.side == *side)
                 .all(|object| matches!(object.kind, ObservedObjectKind::Declared(kind) if allowed.contains(&kind))),
             RelationFailure::UndeclaredObjectFamily,
@@ -462,6 +461,7 @@ fn evaluate_relation(
             let count = Count::new(
                 u64::try_from(
                     observation
+                        .region
                         .open_flows
                         .iter()
                         .filter(|flow| flow.kind == architecture::OpenFlowKind::FeeSponsor)
@@ -487,6 +487,7 @@ fn evaluate_relation(
         ),
         Relation::OpenFlowPolicy { allowed } => status(
             observation
+                .region
                 .open_flows
                 .iter()
                 .all(|flow| allowed.contains(&flow.kind)),
@@ -510,7 +511,7 @@ fn evaluate_relation(
             }
         },
         Relation::Representation { object, allowed } => status(
-            observation.objects.iter().all(|observed| {
+            observation.region_objects().all(|observed| {
                 observed.kind != ObservedObjectKind::Declared(*object)
                     || allowed.contains(&observed.representation)
             }),
@@ -707,7 +708,7 @@ fn canonical_delta_policy_holds(
     expected: &BTreeSet<ExpectedCanonicalDelta>,
     observation: &OperationObservation,
 ) -> Result<bool, RealizationError> {
-    let partition = &observation.canonical_partition;
+    let partition = &observation.region.canonical_partition;
 
     // 1. The active family set implied by the exact partition equals the
     //    manifest's expected family set.
@@ -871,7 +872,7 @@ fn sum_partition_side(
 /// derives from the architecture object table, never from a
 /// per-operation object-family map inside the evaluator.
 fn partition_membership_holds(observation: &OperationObservation) -> bool {
-    let partition = &observation.canonical_partition;
+    let partition = &observation.region.canonical_partition;
     let mut cited_sources = BTreeSet::new();
     let mut cited_destinations = BTreeSet::new();
 
@@ -900,7 +901,7 @@ fn partition_membership_holds(observation: &OperationObservation) -> bool {
     let mut expected_sources = BTreeSet::new();
     let mut expected_destinations = BTreeSet::new();
 
-    for observed in &observation.objects {
+    for observed in observation.region_objects() {
         let ObservedObjectKind::Declared(object) = observed.kind else {
             continue;
         };
@@ -926,7 +927,7 @@ fn declared_objects(
     side: ObservedSide,
     object: ObjectId,
 ) -> impl Iterator<Item = &ObservedObject> {
-    observation.objects.iter().filter(move |observed| {
+    observation.region_objects().filter(move |observed| {
         observed.reference.side == side && observed.kind == ObservedObjectKind::Declared(object)
     })
 }
@@ -936,9 +937,8 @@ fn declared_objects(
 ///
 /// Ordinary L-BTC is the one family whose required shape depends on
 /// *where* the reference sits (S2-01): the fee-sponsor region carries
-/// no readable amount, and a protocol open flow carries one. The whole
-/// observation is therefore in scope, because the region is a property
-/// of the open flows rather than of the object.
+/// no readable amount, and a protocol open flow carries one. The selected
+/// operation's flows establish that role independently of the family.
 fn observed_object_shape_holds(
     observation: &OperationObservation,
     object: ObjectId,
@@ -1027,7 +1027,7 @@ fn sum_selected_amounts(
     // an erased sponsor amount as zero is exactly the read the
     // projection removes.
     let mut amounts = Vec::new();
-    for observed in observation.objects.iter().filter(|observed| {
+    for observed in observation.region_objects().filter(|observed| {
         observed.reference.side == side
             && observed.asset == ObservedAsset::Declared(asset)
             && matches!(observed.kind, ObservedObjectKind::Declared(kind) if objects.contains(&kind))
@@ -1051,6 +1051,7 @@ fn sponsor_is_isolated(observation: &OperationObservation) -> Result<bool, Reali
     // forbids it is already rejected under its own name rather than
     // reported as a sponsor-isolation failure.
     for flow in observation
+        .region
         .open_flows
         .iter()
         .filter(|flow| flow.kind == architecture::OpenFlowKind::FeeSponsor)
@@ -1082,7 +1083,7 @@ fn sponsor_is_isolated(observation: &OperationObservation) -> Result<bool, Reali
     // sponsor region or by a protocol open flow. Membership is decided
     // by the declared family, never by the amount; which region claims
     // it is decided by the flow, never by the family (S2-01).
-    for object in &observation.objects {
+    for object in observation.region_objects() {
         if object.kind != ObservedObjectKind::Declared(ObjectId::PlainLbtc) {
             continue;
         }

@@ -67,26 +67,31 @@ fn valid_split_observation() -> OperationObservation {
         ordinal: 1,
     };
 
+    let objects: Vec<crate::ObservedObject> = vec![
+        receipt(ObservedSide::Input, 0, 100, ALICE),
+        receipt(ObservedSide::Output, 0, 40, BOB),
+        receipt(ObservedSide::Output, 1, 60, CAROL),
+    ];
     OperationObservation {
         operation: OperationId::TransferLive,
-        objects: vec![
-            receipt(ObservedSide::Input, 0, 100, ALICE),
-            receipt(ObservedSide::Output, 0, 40, BOB),
-            receipt(ObservedSide::Output, 1, 60, CAROL),
-        ],
         protocol_signers: BTreeSet::from([ALICE]),
         sponsor_signers: BTreeSet::new(),
-        canonical_partition: ObservedCanonicalPartition {
-            issuances: Vec::new(),
-            flows: vec![ObservedCanonicalFlow {
-                asset: AssetId::U,
-                sources: vec![input0],
-                destinations: vec![output0, output1],
-                movement_kind: Some(DeltaKind::Lateral),
-                destructions: Vec::new(),
-            }],
+        region: crate::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition {
+                issuances: Vec::new(),
+                flows: vec![ObservedCanonicalFlow {
+                    asset: AssetId::U,
+                    sources: vec![input0],
+                    destinations: vec![output0, output1],
+                    movement_kind: Some(DeltaKind::Lateral),
+                    destructions: Vec::new(),
+                }],
+            },
+            open_flows: Vec::new(),
         },
-        open_flows: Vec::new(),
+        other_regions: Vec::new(),
+        objects,
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
         bounds: BTreeMap::from([
@@ -108,13 +113,9 @@ fn valid_sponsored_observation() -> OperationObservation {
         ordinal: 2,
     };
 
-    observation
-        .objects
-        .push(lbtc_owned(ObservedSide::Input, 1, CAROL));
-    observation
-        .objects
-        .push(lbtc_owned(ObservedSide::Output, 2, CAROL));
-    observation.open_flows.push(ObservedOpenFlow {
+    observation.claim_object(lbtc_owned(ObservedSide::Input, 1, CAROL));
+    observation.claim_object(lbtc_owned(ObservedSide::Output, 2, CAROL));
+    observation.region.open_flows.push(ObservedOpenFlow {
         kind: architecture::OpenFlowKind::FeeSponsor,
         sources: vec![sponsor_input],
         destinations: vec![sponsor_change],
@@ -140,12 +141,14 @@ fn multi_owner_sponsor_observation() -> OperationObservation {
         ordinal: 2,
     };
 
-    observation.objects.extend([
+    for object in [
         lbtc_owned(ObservedSide::Input, 1, CAROL),
         lbtc_owned(ObservedSide::Input, 2, DAVE),
         lbtc_owned(ObservedSide::Output, 2, CAROL),
-    ]);
-    observation.open_flows.push(ObservedOpenFlow {
+    ] {
+        observation.claim_object(object);
+    }
+    observation.region.open_flows.push(ObservedOpenFlow {
         kind: architecture::OpenFlowKind::FeeSponsor,
         sources: vec![carol_input, dave_input],
         destinations: vec![sponsor_change],
@@ -292,7 +295,7 @@ fn two_sponsor_envelopes_fail_multiplicity() {
     let mut observation = valid_sponsored_observation();
     // A second, disjoint, individually balanced fee-sponsor envelope: the
     // count rises to two, which the one-envelope rule forbids.
-    observation.open_flows.push(ObservedOpenFlow {
+    observation.region.open_flows.push(ObservedOpenFlow {
         kind: architecture::OpenFlowKind::FeeSponsor,
         sources: Vec::new(),
         destinations: Vec::new(),
@@ -412,7 +415,7 @@ fn an_unwitnessed_time_locked_receipt_fails_partition_membership() {
     // issuance is unwitnessed and fails the policy.
     let mut observation = valid_split_observation();
 
-    observation.objects.push(ObservedObject {
+    observation.claim_object(ObservedObject {
         reference: ObservedObjectRef {
             side: ObservedSide::Output,
             ordinal: 2,
@@ -494,13 +497,9 @@ fn zero_sidecar_observation() -> OperationObservation {
         ordinal: 2,
     };
 
-    observation
-        .objects
-        .push(lbtc_owned(ObservedSide::Input, 1, CAROL));
-    observation
-        .objects
-        .push(lbtc_owned(ObservedSide::Output, 2, CAROL));
-    observation.open_flows.push(ObservedOpenFlow {
+    observation.claim_object(lbtc_owned(ObservedSide::Input, 1, CAROL));
+    observation.claim_object(lbtc_owned(ObservedSide::Output, 2, CAROL));
+    observation.region.open_flows.push(ObservedOpenFlow {
         kind: architecture::OpenFlowKind::FeeSponsor,
         sources: vec![sponsor_input],
         destinations: vec![sponsor_change],
@@ -530,10 +529,8 @@ fn mixed_zero_and_positive_sponsor_members_are_accepted() {
         side: ObservedSide::Input,
         ordinal: 3,
     };
-    observation
-        .objects
-        .push(lbtc_owned(ObservedSide::Input, 3, CAROL));
-    observation.open_flows[0].sources.push(zero_input);
+    observation.claim_object(lbtc_owned(ObservedSide::Input, 3, CAROL));
+    observation.region.open_flows[0].sources.push(zero_input);
 
     let report = evaluate(&observation);
 
@@ -616,9 +613,7 @@ fn unclaimed_zero_sponsor_member_fails_isolation() {
     // Opacity is not omission: an owned zero-valued sponsor member
     // outside every sponsor flow fails exact membership.
     let mut observation = valid_split_observation();
-    observation
-        .objects
-        .push(lbtc_owned(ObservedSide::Input, 1, CAROL));
+    observation.claim_object(lbtc_owned(ObservedSide::Input, 1, CAROL));
     observation.sponsor_signers.insert(CAROL);
 
     let report = evaluate(&observation);
@@ -630,7 +625,7 @@ fn zero_value_ownerless_plain_lbtc_still_fails_recognition() {
     // Value zero does not turn an ordinary object into an anchor: an
     // ownerless PLAIN_LBTC is malformed whatever its amount.
     let mut observation = valid_split_observation();
-    observation.objects.push(ObservedObject {
+    observation.claim_object(ObservedObject {
         reference: ObservedObjectRef {
             side: ObservedSide::Input,
             ordinal: 1,
@@ -649,7 +644,7 @@ fn zero_value_ownerless_plain_lbtc_still_fails_recognition() {
 #[test]
 fn canonical_delta_empty_duplicate_fails() {
     let mut missing = valid_split_observation();
-    missing.canonical_partition.flows.clear();
+    missing.region.canonical_partition.flows.clear();
 
     let missing_report = evaluate(&missing);
 
@@ -661,9 +656,10 @@ fn canonical_delta_empty_duplicate_fails() {
     let realization = pilot_realization();
     let mut duplicated = valid_split_observation();
     duplicated
+        .region
         .canonical_partition
         .flows
-        .push(duplicated.canonical_partition.flows[0].clone());
+        .push(duplicated.region.canonical_partition.flows[0].clone());
 
     let error = evaluate_operation(
         &realization.relation_graph,
@@ -828,7 +824,7 @@ fn relation_cases() -> Vec<RelationCase> {
         (
             "wrong canonical delta kind",
             Box::new(|observation| {
-                observation.canonical_partition.flows[0].movement_kind =
+                observation.region.canonical_partition.flows[0].movement_kind =
                     Some(DeltaKind::OwnerlessLateral);
             }),
             canonical_delta_policy(),
@@ -897,9 +893,9 @@ fn live_transfer_sponsor_isolation_is_load_bearing() {
         (
             "unbalanced sponsor flow",
             Box::new(move |observation| {
-                observation.objects.push(lbtc(ObservedSide::Input, 1));
-                observation.objects.push(lbtc(ObservedSide::Output, 2));
-                observation.open_flows.push(ObservedOpenFlow {
+                observation.claim_object(lbtc(ObservedSide::Input, 1));
+                observation.claim_object(lbtc(ObservedSide::Output, 2));
+                observation.region.open_flows.push(ObservedOpenFlow {
                     kind: architecture::OpenFlowKind::FeeSponsor,
                     sources: vec![source],
                     destinations: vec![destination],
@@ -910,7 +906,7 @@ fn live_transfer_sponsor_isolation_is_load_bearing() {
         (
             "sponsor U mixed into open flow",
             Box::new(|observation| {
-                observation.open_flows.push(ObservedOpenFlow {
+                observation.region.open_flows.push(ObservedOpenFlow {
                     kind: architecture::OpenFlowKind::FeeSponsor,
                     sources: vec![ObservedObjectRef {
                         side: ObservedSide::Input,

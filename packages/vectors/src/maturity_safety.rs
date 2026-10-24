@@ -244,14 +244,11 @@ pub enum MaturityRowBoundary {
     /// acceptance, so a verdict from any layer would concern a
     /// different transaction.
     SponsoredControlRefusedAtConstruction,
-    /// A row about sponsor-region membership or envelope multiplicity waits
-    /// for the relation that decides that question.
+    /// Inherited waiting boundary for the three sponsor-region rows.
     ///
-    /// Sponsor isolation and envelope count read the observed transaction's
-    /// flows entire. The region-scoping refit `T11-064` re-scopes or
-    /// retires those relations. A construction refusal names the sponsored
-    /// request, not a mutation of membership or envelope count, and
-    /// cannot supply the row's declared boundary.
+    /// The region refit supplies their relation dispositions; admission of
+    /// their exact subjects remains with `T12-005`. A construction refusal
+    /// cannot supply membership or envelope-count mutation evidence.
     SponsorArmAwaitsRegionScoping,
     /// The row is answered by landed nonce and tweak evidence.
     ///
@@ -715,6 +712,11 @@ pub enum MaturityExpectedProjection {
 /// invention; the census tests refuse both.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityMutationClass {
+    UnexpectedCanonicalDeltaFamily,
+    SponsorProtocolOverlap,
+    SponsorEnvelopeMultiplicityExceeded,
+    MissingSponsorAuthorization,
+    SponsorMemberUnclaimed,
     /// Fewer members of the relation's family than its minimum.
     CardinalityBelowMinimum,
     /// More members of the relation's family than its maximum.
@@ -754,6 +756,11 @@ pub enum MaturityMutationClass {
 impl MaturityMutationClass {
     /// Every class the matrix's rows stage.
     pub const ALL: &'static [Self] = &[
+        Self::UnexpectedCanonicalDeltaFamily,
+        Self::SponsorProtocolOverlap,
+        Self::SponsorEnvelopeMultiplicityExceeded,
+        Self::MissingSponsorAuthorization,
+        Self::SponsorMemberUnclaimed,
         Self::CardinalityBelowMinimum,
         Self::CardinalityAboveMaximum,
         Self::WrongRecognizedAsset,
@@ -771,6 +778,11 @@ impl MaturityMutationClass {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
+            Self::UnexpectedCanonicalDeltaFamily => "UnexpectedCanonicalDeltaFamily",
+            Self::SponsorProtocolOverlap => "SponsorProtocolOverlap",
+            Self::SponsorEnvelopeMultiplicityExceeded => "SponsorEnvelopeMultiplicityExceeded",
+            Self::MissingSponsorAuthorization => "MissingSponsorAuthorization",
+            Self::SponsorMemberUnclaimed => "SponsorMemberUnclaimed",
             Self::CardinalityBelowMinimum => "CardinalityBelowMinimum",
             Self::CardinalityAboveMaximum => "CardinalityAboveMaximum",
             Self::WrongRecognizedAsset => "WrongRecognizedAsset",
@@ -789,7 +801,12 @@ impl MaturityMutationClass {
     #[must_use]
     pub const fn boundary(self) -> CoverageBoundary {
         match self {
-            Self::CardinalityBelowMinimum
+            Self::UnexpectedCanonicalDeltaFamily
+            | Self::SponsorProtocolOverlap
+            | Self::SponsorEnvelopeMultiplicityExceeded
+            | Self::MissingSponsorAuthorization
+            | Self::SponsorMemberUnclaimed
+            | Self::CardinalityBelowMinimum
             | Self::CardinalityAboveMaximum
             | Self::WrongRecognizedAsset
             | Self::WrongRecognizedObject
@@ -807,6 +824,24 @@ impl MaturityMutationClass {
     #[must_use]
     pub const fn matches(self, mutation: &RelationMutation) -> bool {
         match self {
+            Self::UnexpectedCanonicalDeltaFamily => {
+                matches!(mutation, RelationMutation::UnexpectedCanonicalDeltaFamily)
+            }
+            Self::SponsorProtocolOverlap => {
+                matches!(mutation, RelationMutation::SponsorProtocolOverlap)
+            }
+            Self::SponsorEnvelopeMultiplicityExceeded => {
+                matches!(
+                    mutation,
+                    RelationMutation::SponsorEnvelopeMultiplicityExceeded
+                )
+            }
+            Self::MissingSponsorAuthorization => {
+                matches!(mutation, RelationMutation::MissingSponsorAuthorization)
+            }
+            Self::SponsorMemberUnclaimed => {
+                matches!(mutation, RelationMutation::SponsorMemberUnclaimed)
+            }
             Self::CardinalityBelowMinimum => {
                 matches!(mutation, RelationMutation::CardinalityBelowMinimum)
             }
@@ -844,8 +879,7 @@ impl MaturityMutationClass {
 
 /// Why one §16 row names no published relation.
 ///
-/// Four distinct situations, kept apart because they call for four
-/// different repairs and only some of them are this workspace's to make.
+/// Distinct reasons preserve the subject and the scope of each missing link.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum MaturityUnlinkedReason {
@@ -868,31 +902,11 @@ pub enum MaturityUnlinkedReason {
     /// serialization, and the evidence is a property of the bytes a
     /// report renders rather than of anything an announcement did.
     TheReportIsTheSubject,
-    /// The relation the row's fault belongs to is published, and is
-    /// evaluated over the whole observed transaction.
-    ///
-    /// Five of the announcement's relations quantify over everything the
-    /// observed transaction carries rather than over the positions the
-    /// operation claims: the object-family closures of both sides, the
-    /// sponsor isolation, the canonical delta partition, the open-flow
-    /// policy and the sponsor envelope count. No leaf enforces any of
-    /// them, and the realization that does enforce them reads a whole
-    /// transaction, so linking such a row to a published requirement
-    /// would claim the plan constrains the region this operation occupies
-    /// when what it constrains is every operation the transaction
-    /// happens to carry. A link here would be a guess in the one
-    /// direction the closure principle forbids as firmly as the other:
-    /// the model would refuse what the covenant accepts.
-    ///
-    /// What would have to land for the row to link is the region-scoping
-    /// refit: region membership becomes part of the observation, a
-    /// transaction becomes the union of its operations' regions, and each
-    /// of those relations becomes a statement about one region. After
-    /// that the relation publishes a class about this operation and the
-    /// row returns to [`MaturityRelationStanding::Declared`] and
-    /// resolves, with the sponsor envelope count retired or re-scoped
-    /// with the rest because it is resource policy rather than semantics.
+    /// Legacy whole-transaction scope; retained for the before census.
     RelationScopedToTheWholeTransaction,
+    /// The subject lies outside the re-scoped relation's operation region
+    /// or its observed semantic domain; each row states the exact exclusion.
+    SubjectOutsideTheRelationsRegion,
 }
 
 /// What one §16 row intends to violate, or to preserve.
@@ -1592,51 +1606,50 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     // either of two layers, and a row two layers can pass is a row
     // neither was asked.
     //
-    // The fault they stage belongs to the canonical-delta policy
-    // relation: the announcement's expected canonical delta is empty
-    // because the transition moves the maturity status and copies every
-    // other semantic quantity through, so a change to a copied quantity
-    // is a fault against that policy rather than against a field. That
-    // relation compares the whole observed transaction's partition, so
-    // these rows state the reason and name no requirement.
+    // Metadata fields are not canonical asset-flow witnesses.
+    // Metadata copy-through lies outside the region canonical asset partition.
     report_fault(
         S::MetadataFault,
         "unaffected-field-omega-changed-alone",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        unlinked(Why::SubjectOutsideTheRelationsRegion),
         Projection::TermDiffers(Term::Semantic),
     ),
+    // Metadata copy-through lies outside the region canonical asset partition.
     report_fault(
         S::MetadataFault,
         "unaffected-field-y-l-changed-alone",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        unlinked(Why::SubjectOutsideTheRelationsRegion),
         Projection::TermDiffers(Term::Semantic),
     ),
+    // Metadata copy-through lies outside the region canonical asset partition.
     report_fault(
         S::MetadataFault,
         "unaffected-field-y-t-changed-alone",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        unlinked(Why::SubjectOutsideTheRelationsRegion),
         Projection::TermDiffers(Term::Semantic),
     ),
+    // Metadata copy-through lies outside the region canonical asset partition.
     report_fault(
         S::MetadataFault,
         "unaffected-field-q-changed-alone",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        unlinked(Why::SubjectOutsideTheRelationsRegion),
         Projection::TermDiffers(Term::Semantic),
     ),
+    // Metadata copy-through lies outside the region canonical asset partition.
     report_fault(
         S::MetadataFault,
         "unaffected-field-cycle-changed-alone",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        unlinked(Why::SubjectOutsideTheRelationsRegion),
         Projection::TermDiffers(Term::Semantic),
     ),
     fault(
@@ -1733,12 +1746,13 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     // every field individually admissible, so it reaches the target for
     // the same reason the per-field rows do and is answered where they
     // are.
+    // Metadata compensation lies outside the region canonical asset partition.
     report_fault(
         S::MetadataFault,
         "semantic-field-changes-compensated-by-another-field",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        unlinked(Why::SubjectOutsideTheRelationsRegion),
         Projection::TermDiffers(Term::Semantic),
     ),
     // §16.4 — the eighteen operator faults.
@@ -2624,9 +2638,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         C::CoordinatorStructure,
         names(projection_policy(), Class::ForbiddenProjectionPresent),
     ),
-    // The fault belongs to the open-flow policy relation, which
-    // quantifies over every open flow the observed transaction carries
-    // rather than over the ones this operation opens.
+    // Canonical asset flows belong to CanonicalDeltaPolicy in this region.
     fault(
         S::AbsenceFault,
         "introduce-canonical-u-ent-or-dist-ctl-flow",
@@ -2634,27 +2646,26 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::Layer(B::AbiConstructionRejection),
         C::CoordinatorStructure,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        names(
+            relation(
+                RelationKind::CanonicalDeltaPolicy,
+                RelationSubject::Operation,
+            ),
+            Class::UnexpectedCanonicalDeltaFamily,
+        ),
     ),
     // §16.10 — the fourteen sponsor faults.
     //
     // Nine rows stand on the construction refusal of their sponsored
     // controls: no sponsored candidate exists for their mutation to
     // reach a declared boundary. Three ask about sponsor-region
-    // membership or envelope multiplicity, whose relations the
-    // region-scoping refit of `T11-064` re-scopes or retires. The other
+    // membership or envelope multiplicity, whose region dispositions are
+    // stated below without supplying their admission evidence. The other
     // two ask what the canonical report published, which is a
     // property of bytes this workspace renders and needs no sponsor
     // region to check: no target can answer them and no relation is
     // indexed by them.
     //
-    // The isolation and envelope-count relations that most of these rows
-    // would name read the observed transaction's flows entire, so nine
-    // rows of this table state that reason rather than a link. The two
-    // that name a relation about this operation's own positions — the
-    // sponsor family's recognition by its asset, and the substrate
-    // asset's conservation — keep naming it, because a region gives
-    // neither of them anything it lacks.
     fault(
         S::SponsorFault,
         "state-sponsor-overlap",
@@ -2662,7 +2673,10 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        names(
+            relation(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
+            Class::SponsorProtocolOverlap,
+        ),
     ),
     fault(
         S::SponsorFault,
@@ -2671,7 +2685,13 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        names(
+            relation(
+                RelationKind::SponsorEnvelopeMultiplicity,
+                RelationSubject::Sponsor,
+            ),
+            Class::SponsorEnvelopeMultiplicityExceeded,
+        ),
     ),
     fault(
         S::SponsorFault,
@@ -2682,13 +2702,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         C::CoordinatorStructure,
         names(sponsor_recognition(), Class::WrongRecognizedAsset),
     ),
-    // The fault is the sponsor's own authorization missing, and the class
-    // published for it belongs to the sponsor isolation relation rather
-    // than to the operator's: that relation is one of the five evaluated
-    // over the whole observed transaction, so the row cannot link yet.
-    // Naming the operator's authorization relation instead would file a
-    // sponsor fault under the nearest published name, which is the
-    // guessed link every other row here refuses.
+    // Sponsor authorization belongs to the region's SponsorIsolation relation.
     fault(
         S::SponsorFault,
         "missing-sponsor-authorization",
@@ -2696,8 +2710,12 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::WitnessStack,
         Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        names(
+            relation(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
+            Class::MissingSponsorAuthorization,
+        ),
     ),
+    // Absolute output position lies outside SponsorIsolation flow membership.
     fault(
         S::SponsorFault,
         "sponsor-change-at-state-output-0",
@@ -2705,7 +2723,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        unlinked(Why::SubjectOutsideTheRelationsRegion),
     ),
     fault(
         S::SponsorFault,
@@ -2714,8 +2732,12 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        names(
+            relation(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
+            Class::SponsorProtocolOverlap,
+        ),
     ),
+    // Fee/change allocation lies outside value-blind SponsorIsolation.
     fault(
         S::SponsorFault,
         "fee-change-substitution",
@@ -2723,7 +2745,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::TransactionOutput,
         Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        unlinked(Why::SubjectOutsideTheRelationsRegion),
     ),
     fault(
         S::SponsorFault,
@@ -2732,8 +2754,12 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        names(
+            relation(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
+            Class::SponsorMemberUnclaimed,
+        ),
     ),
+    // Request/offer presence lies outside SponsorIsolation observed membership.
     fault(
         S::SponsorFault,
         "empty-sponsor-offer-for-sponsored-request",
@@ -2741,7 +2767,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsoredControlRefusedAtConstruction,
         C::CoordinatorStructure,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        unlinked(Why::SubjectOutsideTheRelationsRegion),
     ),
     report_fault(
         S::SponsorFault,
@@ -2771,6 +2797,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
             Class::ExternalReportSubjectMismatch,
         ),
     ),
+    // Erased amount zero lies outside SponsorIsolation role checks.
     fault(
         S::SponsorFault,
         "zero-valued-sponsor-member-under-exact-role-structure",
@@ -2778,7 +2805,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::SponsorArmAwaitsRegionScoping,
         C::CoordinatorStructure,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        unlinked(Why::SubjectOutsideTheRelationsRegion),
     ),
     fault(
         S::SponsorFault,
@@ -2828,6 +2855,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     // sponsor isolation relation, which reads the observed transaction's
     // flows entire and so indexes nothing about this operation's
     // positions yet.
+    // Position ordering lies outside SponsorIsolation explicit membership.
     fault(
         S::AbiLinkerFault,
         "state-and-sponsor-positions-exchanged",
@@ -2835,7 +2863,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Loc::SponsorEnvelope,
         Bound::Layer(B::AbiConstructionRejection),
         C::CoordinatorStructure,
-        unlinked(Why::RelationScopedToTheWholeTransaction),
+        unlinked(Why::SubjectOutsideTheRelationsRegion),
     ),
     fault(
         S::AbiLinkerFault,
@@ -3520,10 +3548,10 @@ pub fn resolve_row(
 #[cfg(test)]
 mod tests {
     use super::{
-        B, Bound, C, Control, CoverageRequirementId, L, Loc, MaturityMutationClass,
+        B, Bound, C, Class, Control, CoverageRequirementId, L, Loc, MaturityMutationClass,
         MaturityMutationSubject as Subj, MaturityRelationStanding, MaturityRowBoundary,
         MaturityRowLink, MaturitySafetyPolarity, MaturitySafetyRow, MaturitySafetySection,
-        ObjectId, Projection, RelationId, RelationSubject, S, SponsorCase, Standing,
+        ObjectId, Projection, RelationId, RelationKind, RelationSubject, S, SponsorCase, Standing,
         TargetCoverageObligation, ValidatedMaturityAnnouncementOperationPlan, Why, boundary_admits,
         carrier_moves, census, resolve_row, row_count, rows, rows_of,
     };
@@ -4240,8 +4268,8 @@ mod tests {
     ///
     /// The sponsor family's own relations, and not the relations subjected
     /// to the sponsor envelope: the isolation and envelope-count relations
-    /// are activated in every case and quantify over whatever the observed
-    /// transaction carries, so an inactive answer from one of them would
+    /// are activated in every case and quantify over the selected operation
+    /// region, so an inactive answer from one of them would
     /// say nothing about a sponsor.
     fn sponsor_conditional(relation: &RelationId) -> bool {
         matches!(
@@ -4305,12 +4333,12 @@ mod tests {
                     }
                 }
             }
-            // The hundred and two declared rows, less the one naming the
+            // Six region links raise the declared count to 108, less the one naming the
             // sponsor family's recognition, which a sponsorless case does
             // not exercise at all.
             assert_eq!(
                 resolved,
-                101,
+                107,
                 "{:?} resolves a different census",
                 projection.plan()
             );
@@ -4360,7 +4388,7 @@ mod tests {
 
     #[test]
     fn two_rows_share_a_requirement_only_by_sharing_their_declaration() {
-        // Eighteen distinct declarations stand on the hundred and two
+        // Twenty-three distinct declarations stand on the 108
         // declared rows, because §16 states many wordings of one published
         // class: sixteen root-history rows are sixteen ways to disturb the
         // one root effect the operation declares. Rows sharing a
@@ -4368,7 +4396,7 @@ mod tests {
         // making is the other one — that the resolution distinguishes rows
         // exactly as far as their declarations do, so two rows meeting at
         // one requirement have met by declaring the same thing.
-        assert_eq!(declarations().len(), 18);
+        assert_eq!(declarations().len(), 23);
         let plan = announcement_plan();
         for projection in plan.representations() {
             let mut by_requirement: BTreeMap<
@@ -4396,43 +4424,15 @@ mod tests {
                     id.relation,
                 );
             }
-            // Seventeen of the eighteen resolve here; the eighteenth is
+            // Twenty-two of the twenty-three resolve here; the remaining one is
             // the sponsor family's recognition, inactive in this case.
-            assert_eq!(by_requirement.len(), 17);
+            assert_eq!(by_requirement.len(), 22);
         }
     }
 
     #[test]
     fn the_whole_transaction_scoped_rows_are_exactly_the_recounted_set() {
-        let scoped: Vec<&MaturitySafetyRow> = rows()
-            .iter()
-            .filter(|row| {
-                matches!(
-                    row.relation(),
-                    Standing::Unlinked(Why::RelationScopedToTheWholeTransaction)
-                )
-            })
-            .collect();
-        // Six report-layer metadata rows against the canonical delta, one
-        // absence row against the open-flow policy, one ABI row and nine
-        // sponsor rows against the isolation, the envelope count and the
-        // sponsor's own authorization. Each names a relation the
-        // realization evaluates over the whole observed transaction, and
-        // none of them is a row this workspace could link by choosing a
-        // nearer published name.
-        let mut per_section: BTreeMap<MaturitySafetySection, usize> = BTreeMap::new();
-        for row in &scoped {
-            *per_section.entry(row.section()).or_insert(0) += 1;
-        }
-        assert_eq!(scoped.len(), 17);
-        assert_eq!(per_section[&S::MetadataFault], 6);
-        assert_eq!(per_section[&S::AbsenceFault], 1);
-        assert_eq!(per_section[&S::SponsorFault], 9);
-        assert_eq!(per_section[&S::AbiLinkerFault], 1);
-        assert_eq!(per_section.len(), 4);
-        // The three reasons that stood before stand on the same rows, so a
-        // row was re-standinged and none was reclassified: a relation
-        // standing is not a boundary and the census does not move.
+        // Before: 55 / 9 / 9 / 17; all seventeen subjects retain their rows.
         let reason = |wanted: Why| {
             rows()
                 .iter()
@@ -4442,7 +4442,77 @@ mod tests {
         assert_eq!(reason(Why::NoPublishedRelationNamesIt), 55);
         assert_eq!(reason(Why::SeveralPublishedRelationsFit), 9);
         assert_eq!(reason(Why::TheReportIsTheSubject), 9);
-        // And the three standings partition the matrix.
+        assert_eq!(reason(Why::RelationScopedToTheWholeTransaction), 0);
+        assert_eq!(reason(Why::SubjectOutsideTheRelationsRegion), 11);
+        for (name, kind, subject, class) in [
+            (
+                "introduce-canonical-u-ent-or-dist-ctl-flow",
+                RelationKind::CanonicalDeltaPolicy,
+                RelationSubject::Operation,
+                Class::UnexpectedCanonicalDeltaFamily,
+            ),
+            (
+                "state-sponsor-overlap",
+                RelationKind::SponsorIsolation,
+                RelationSubject::Sponsor,
+                Class::SponsorProtocolOverlap,
+            ),
+            (
+                "two-sponsor-envelopes",
+                RelationKind::SponsorEnvelopeMultiplicity,
+                RelationSubject::Sponsor,
+                Class::SponsorEnvelopeMultiplicityExceeded,
+            ),
+            (
+                "missing-sponsor-authorization",
+                RelationKind::SponsorIsolation,
+                RelationSubject::Sponsor,
+                Class::MissingSponsorAuthorization,
+            ),
+            (
+                "state-successor-in-sponsor-range",
+                RelationKind::SponsorIsolation,
+                RelationSubject::Sponsor,
+                Class::SponsorProtocolOverlap,
+            ),
+            (
+                "sponsor-member-unclassified",
+                RelationKind::SponsorIsolation,
+                RelationSubject::Sponsor,
+                Class::SponsorMemberUnclaimed,
+            ),
+        ] {
+            let row = rows().iter().find(|row| row.name() == name).unwrap();
+            assert_eq!(
+                row.relation(),
+                &super::names(super::relation(kind, subject), class)
+            );
+        }
+        let outside: BTreeSet<_> = rows()
+            .iter()
+            .filter(|row| {
+                row.relation() == &Standing::Unlinked(Why::SubjectOutsideTheRelationsRegion)
+            })
+            .map(MaturitySafetyRow::name)
+            .collect();
+        assert_eq!(
+            outside,
+            BTreeSet::from([
+                "unaffected-field-omega-changed-alone",
+                "unaffected-field-y-l-changed-alone",
+                "unaffected-field-y-t-changed-alone",
+                "unaffected-field-q-changed-alone",
+                "unaffected-field-cycle-changed-alone",
+                "semantic-field-changes-compensated-by-another-field",
+                "sponsor-change-at-state-output-0",
+                "fee-change-substitution",
+                "empty-sponsor-offer-for-sponsored-request",
+                "zero-valued-sponsor-member-under-exact-role-structure",
+                "state-and-sponsor-positions-exchanged",
+            ])
+        );
+        // Before: 14 / 102 / 90; six exact links and eleven domain exclusions.
+
         let positive = rows()
             .iter()
             .filter(|row| row.relation() == &Standing::EveryPublishedRelation)
@@ -4456,9 +4526,32 @@ mod tests {
             .filter(|row| matches!(row.relation(), Standing::Unlinked(_)))
             .count();
         assert_eq!(positive, 14);
-        assert_eq!(declared, 102);
-        assert_eq!(unlinked, 90);
+        assert_eq!(declared, 108);
+        assert_eq!(unlinked, 84);
         assert_eq!(positive + declared + unlinked, row_count());
+        print_region_census(positive, declared, unlinked);
+    }
+
+    fn print_region_census(positive: usize, declared: usize, unlinked: usize) {
+        use std::io::Write as _;
+        let reasons = [
+            Why::NoPublishedRelationNamesIt,
+            Why::SeveralPublishedRelationsFit,
+            Why::TheReportIsTheSubject,
+            Why::RelationScopedToTheWholeTransaction,
+            Why::SubjectOutsideTheRelationsRegion,
+        ]
+        .map(|reason| {
+            rows()
+                .iter()
+                .filter(|row| row.relation() == &Standing::Unlinked(reason))
+                .count()
+        });
+        writeln!(
+            std::io::stdout(),
+            "census region links: {positive} / {declared} / {unlinked}; reasons {reasons:?}"
+        )
+        .expect("census output");
     }
 
     #[test]

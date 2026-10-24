@@ -631,13 +631,14 @@ fn the_live_transfer_plan_comes_only_from_a_completed_analysis() {
         // carrier for conservation, so it states neither the layout that
         // would route family totals to one nor that carrier's runtime
         // coverage, and it answers at the evidence boundary instead.
+        // One new exact coverage class, SponsorMemberUnclaimed, is instantiated once per sponsor case.
         let (layout, coverage, evidence) = match projection.plan() {
             LiveTransferRepresentationPlan::Explicit => {
-                (69, 223, vec![ExternalEvidenceRole::SubstrateConservation])
+                (69, 225, vec![ExternalEvidenceRole::SubstrateConservation])
             }
             LiveTransferRepresentationPlan::PrivateCommitted => (
                 61,
-                225,
+                227,
                 vec![
                     ExternalEvidenceRole::ConfidentialValueConservation,
                     ExternalEvidenceRole::SubstrateConservation,
