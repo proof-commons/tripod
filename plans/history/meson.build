@@ -10,4 +10,5 @@ plans_history_files = files(
   'ctf-guide-wave-7-closeout.md',
   'guide-12-completion-report.md',
   'notation-semantic-census.md',
+  'phase-6-closed-records.md',
 )

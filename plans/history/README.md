@@ -22,6 +22,7 @@ Archived history is excluded from the load-bearing documentation weight budget a
 | [ctf-guide-wave-7-closeout.md](ctf-guide-wave-7-closeout.md) | The confidential-funding shape wave's exit record: the multi-output and multi-input fixtures built, three remaining positive private shapes accepted against a real node and their rows moved, the one-output shapes typed at the registry floor, and the order typed-stopped at step six on the sponsor signer. |
 | [guide-12-completion-report.md](guide-12-completion-report.md) | The Guide-12 exit record at tree 0.4.1-dev: the §29 checklist audited item by item, and the §30 completion report. |
 | [notation-semantic-census.md](notation-semantic-census.md) | Resolved research, closed as over-scoped: the existing label graph is sufficient, and the surviving work was attestation label minting and editorial repair. |
+| [phase-6-closed-records.md](phase-6-closed-records.md) | Closed Phase-6 plan findings, route and classification records, questions, carrier and declaration records, moved verbatim from the Phase-6 card. |
 
 ## Archive rule · `rule:history:authority`
 
