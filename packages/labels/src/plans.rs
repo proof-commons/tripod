@@ -3,6 +3,8 @@
 //! Non-semantic documentation checks over `adr/` and `plans/`: census
 //! reconciliation, README ownership indexing, heading/link/scaffolding
 //! hygiene, phase-gate consistency, and the Markdown weight budget.
+//! Maintained prose has a 1920 KiB hard cap and a 1728 KiB advisory
+//! target; root ADRs retain a 2 MiB backstop and archives an 8 MiB backstop.
 //!
 //! The weight budget has three classes because the tree holds three
 //! kinds of document. Load-bearing planning prose under `plans/` is
@@ -50,7 +52,28 @@ use serde::Serialize;
 /// `combined_bytes` and added `adr_hard_cap_bytes` to [`PlansReport`].
 pub const PLANS_REPORT_SCHEMA: u32 = 3;
 
-/// Ceiling for the maintained-prose budget (1536 KiB, 1.5 MiB).
+/// Ceiling for the maintained-prose budget (1920 KiB).
+///
+/// Raised from 1536 KiB using measured phase growth and class ordering.
+///
+/// The maintained tree measured 1492640 bytes against the 1572864-byte cap
+/// before the closed Phase-6 records moved into history, leaving `1572864 -
+/// 1492640 = 80224` bytes of headroom; a 138101-byte labeled study could
+/// not fit in the maintained class and was placed in the archive class.
+/// After the move, the plans check at `0.7.11-dev` measured 1154811 bytes.
+/// One phase's recorded growth is about 540 KiB, or 552960 bytes, so
+/// `1154811 + 552960 = 1707771` bytes allows for that growth. The next
+/// phase has fourteen waves and a seven-bite Wave 0; the soft target
+/// reserves a further allowance for two extra waves: `1728 * 1024 =
+/// 1769472` bytes leaves `1769472 - 1707771 = 61701` bytes. The target is a
+/// whole number of KiB and a multiple of 64 KiB (`1728 = 27 * 64`). The
+/// hard cap is `1920 * 1024 = 1966080` bytes, `1920 - 1728 = 192` KiB above
+/// the warning target and `2048 - 1920 = 128` KiB below the unchanged 2 MiB
+/// ADR backstop. This preserves the strict class ordering and permits the
+/// exclusion test's root-ADR fixture to exceed the core cap while remaining
+/// below its own backstop; the 8 MiB archive backstop is unchanged.
+///
+/// The previous raises, kept as provenance.
 ///
 /// Raised from 1180 KiB on 2026-09-12. The preliminary maintained-tree
 /// measurement was 1207998 bytes against the 1208320-byte cap — 322
@@ -93,8 +116,29 @@ pub const PLANS_REPORT_SCHEMA: u32 = 3;
 /// soft target rose by the same ratio, after the maintained tree measured
 /// 787489 bytes against the 768 KiB cap on 2026-08-25 — over it, reached
 /// while recording one routine gate paragraph.
-const HARD_CAP_BYTES: u64 = 1536 * 1024;
-/// Advisory target for the maintained-prose budget (1200 KiB).
+const HARD_CAP_BYTES: u64 = 1920 * 1024;
+/// Advisory target for the maintained-prose budget (1728 KiB).
+///
+/// Raised from 1200 KiB using measured phase growth and warning headroom.
+///
+/// The maintained tree measured 1492640 bytes against the 1572864-byte cap
+/// before the closed Phase-6 records moved into history, leaving `1572864 -
+/// 1492640 = 80224` bytes of headroom; a 138101-byte labeled study could
+/// not fit in the maintained class and was placed in the archive class.
+/// After the move, the plans check at `0.7.11-dev` measured 1154811 bytes.
+/// One phase's recorded growth is about 540 KiB, or 552960 bytes, so
+/// `1154811 + 552960 = 1707771` bytes allows for that growth. The next
+/// phase has fourteen waves and a seven-bite Wave 0; the soft target
+/// reserves a further allowance for two extra waves: `1728 * 1024 =
+/// 1769472` bytes leaves `1769472 - 1707771 = 61701` bytes. The target is a
+/// whole number of KiB and a multiple of 64 KiB (`1728 = 27 * 64`). The
+/// hard cap is `1920 * 1024 = 1966080` bytes, `1920 - 1728 = 192` KiB above
+/// the warning target and `2048 - 1920 = 128` KiB below the unchanged 2 MiB
+/// ADR backstop. This preserves the strict class ordering and permits the
+/// exclusion test's root-ADR fixture to exceed the core cap while remaining
+/// below its own backstop; the 8 MiB archive backstop is unchanged.
+///
+/// The previous raise to 1200 KiB, kept as provenance.
 ///
 /// 1200 KiB is 1228800 bytes, a whole number of KiB like every other
 /// constant in this budget. It is not scaled from the hard cap the way
@@ -121,7 +165,7 @@ const HARD_CAP_BYTES: u64 = 1536 * 1024;
 /// Exceeding this is a warning and never a failure: it is the tree
 /// saying it is getting heavy, which is a thing an author should know
 /// and not a thing that should stop a commit.
-const SOFT_TARGET_BYTES: u64 = 1200 * 1024;
+const SOFT_TARGET_BYTES: u64 = 1728 * 1024;
 
 /// Ceiling for the root-ADR budget (2 MiB).
 ///
@@ -1480,8 +1524,8 @@ mod tests {
 
     #[test]
     fn weight_class_caps_match_the_budget_rule() {
-        assert_eq!(SOFT_TARGET_BYTES, 1200 * 1024);
-        assert_eq!(HARD_CAP_BYTES, 1536 * 1024);
+        assert_eq!(SOFT_TARGET_BYTES, 1728 * 1024);
+        assert_eq!(HARD_CAP_BYTES, 1920 * 1024);
         assert_eq!(ADR_HARD_CAP_BYTES, 2 * 1024 * 1024);
         assert_eq!(ARCHIVE_HARD_CAP_BYTES, 8 * 1024 * 1024);
         assert_eq!(ADR_HARD_CAP_BYTES * 4, ARCHIVE_HARD_CAP_BYTES);
