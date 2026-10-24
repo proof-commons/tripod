@@ -652,16 +652,46 @@ The implementation must not:
 
 Required:
 
-- Phase 6 has exited on the current tree;
-- maturity announcement remains green under its candidate constructor generation;
-- canonical STATE metadata has one typed owner;
-- predecessor and successor constructor reconstruction are implemented;
-- operator signing is finalized-byte bound;
-- root-history evidence is edge-based;
-- public successor reconstruction is implemented;
-- target, deployment, request, response, and provenance bindings remain exact;
-- candidate and final states remain distinct;
-- the tree is clean.
+**Condition (Phase-6 exit)** · `cond:guide15:phase6-exited`
+
+Phase 6 has exited on the current tree.
+
+**Condition (Maturity candidate acceptance)** · `cond:guide15:maturity-green`
+
+Maturity announcement remains green under its candidate constructor generation.
+
+**Condition (Canonical STATE metadata owner)** · `cond:guide15:state-owner`
+
+Canonical STATE metadata has one typed owner.
+
+**Condition (Constructor reconstruction)** · `cond:guide15:constructor-reconstruction`
+
+Predecessor and successor constructor reconstruction are implemented.
+
+**Condition (Finalized operator signing)** · `cond:guide15:operator-signing`
+
+Operator signing is finalized-byte bound.
+
+**Condition (Edge-based root history)** · `cond:guide15:edge-history`
+
+Root-history evidence is edge-based.
+
+**Condition (Public successor reconstruction)** · `cond:guide15:public-successor`
+
+Public successor reconstruction is implemented.
+
+**Condition (Exact evidence bindings)** · `cond:guide15:exact-bindings`
+
+Target, deployment, request, response, and provenance bindings remain exact.
+
+**Condition (Candidate and final distinction)** · `cond:guide15:candidate-distinction`
+
+Candidate and final states remain distinct.
+
+**Condition (Clean checkout)** · `cond:guide15:clean-tree`
+
+The tree is clean.
+
 
 A Phase-6 concept, typed stopped result, or unreviewed local branch is not entry.
 
@@ -669,76 +699,211 @@ A Phase-6 concept, typed stopped result, or unreviewed local branch is not entry
 
 Required:
 
-- `burn`, `compact-ash`, and `clear` remain in architecture and realization scope under their exact existing identifiers;
-- burn, compact, and clear relations validate against architecture;
-- the complete STATE clear assignment is known;
-- `tag-recon` is architecture-owned and exact;
-- burn record and event semantics are typed;
-- compact ASH remains event-silent;
-- sponsor-value opacity remains enforced;
-- no target-specific type enters realization;
-- lifecycle obligations remain explicit.
+**Condition (Architecture and realization scope)** · `cond:guide15:operation-scope`
+
+`burn`, `compact-ash`, and `clear` remain in architecture and realization scope under their exact existing identifiers.
+
+**Condition (Validated operation relations)** · `cond:guide15:validated-relations`
+
+Burn, compact, and clear relations validate against architecture.
+
+**Condition (Complete clear assignment)** · `cond:guide15:clear-assignment`
+
+The complete STATE clear assignment is known.
+
+**Condition (Architecture-owned destruction tag)** · `cond:guide15:recon-tag`
+
+`tag-recon` is architecture-owned and exact.
+
+**Condition (Typed burn records and events)** · `cond:guide15:typed-records`
+
+Burn record and event semantics are typed.
+
+**Condition (Compact event silence)** · `cond:guide15:compact-silence`
+
+Compact ASH remains event-silent.
+
+**Condition (Sponsor-value opacity)** · `cond:guide15:sponsor-opacity`
+
+Sponsor-value opacity remains enforced.
+
+**Condition (Target-independent realization)** · `cond:guide15:target-independent`
+
+No target-specific type enters realization.
+
+**Condition (Explicit lifecycle obligations)** · `cond:guide15:lifecycle-obligations`
+
+Lifecycle obligations remain explicit.
+
 
 ## 2.3 Public-declassification entry · `gate:guide15:declassification-entry`
 
 Required:
 
-- the accepted public boundary is revalidated;
-- the initial ASH representation is explicitly selected;
-- any private-receipt burn path is classified as normalized-first or separately admitted direct-private;
-- no unauthenticated opening is accepted;
-- public ASH remains constructible by an unrelated process;
-- no report attachment substitutes for chain-public value.
+**Condition (Public-boundary revalidation)** · `cond:guide15:public-revalidation`
+
+The accepted public boundary is revalidated.
+
+**Condition (Initial ASH representation)** · `cond:guide15:ash-selection`
+
+The initial ASH representation is explicitly selected.
+
+**Condition (Private-receipt route classification)** · `cond:guide15:private-route`
+
+Any private-receipt burn path is classified as normalized-first or separately admitted direct-private.
+
+**Condition (Authenticated opening boundary)** · `cond:guide15:authenticated-opening`
+
+No unauthenticated opening is accepted.
+
+**Condition (Unrelated-process ASH construction)** · `cond:guide15:public-ash`
+
+Public ASH remains constructible by an unrelated process.
+
+**Condition (Chain-public value authority)** · `cond:guide15:public-value`
+
+No report attachment substitutes for chain-public value.
+
 
 ## 2.4 Compact-ASH entry · `gate:guide15:compact-entry`
 
 Required:
 
-- the Phase-4 compact-ASH operation still builds;
-- its compiler plan, patterns, linker, ABI, vectors, and resource study remain green;
-- its ASH constructor is compatible with burn-created and clear-residual ASH, or the incompatibility is explicitly dispositioned;
-- the inherited operation emits no authorization primitive;
-- no stale candidate limit is treated as final calibration.
+**Condition (Compact candidate build)** · `cond:guide15:compact-build`
+
+The Phase-4 compact-ASH operation still builds.
+
+**Condition (Compact pipeline regression)** · `cond:guide15:compact-regression`
+
+Its compiler plan, patterns, linker, ABI, vectors, and resource study remain green.
+
+**Condition (ASH constructor compatibility)** · `cond:guide15:ash-compatibility`
+
+Its ASH constructor is compatible with burn-created and clear-residual ASH, or the incompatibility is explicitly dispositioned.
+
+**Condition (Absence of compact authorization)** · `cond:guide15:compact-authorization`
+
+The inherited operation emits no authorization primitive.
+
+**Condition (Candidate calibration boundary)** · `cond:guide15:candidate-limits`
+
+No stale candidate limit is treated as final calibration.
+
 
 ## 2.5 STATE-constructor generation entry · `gate:guide15:state-generation-entry`
 
 Required:
 
-- the Phase-6 constructor generation is identified exactly;
-- adding clear is recognized as a static-subtree change;
-- the Phase-7 generation policy of §1.14 is accepted or replaced by an explicit migration decision;
-- no test attempts to spend a Phase-6 STATE with an uncommitted Phase-7 leaf;
-- synthetic Phase-7 origin non-claims are agreed in advance.
+**Condition (Phase-6 constructor generation)** · `cond:guide15:generation-identity`
+
+The Phase-6 constructor generation is identified exactly.
+
+**Condition (Clear static-subtree change)** · `cond:guide15:clear-subtree`
+
+Adding clear is recognized as a static-subtree change.
+
+**Condition (Phase-7 generation policy)** · `cond:guide15:generation-policy`
+
+The Phase-7 generation policy of §1.14 is accepted or replaced by an explicit migration decision.
+
+**Condition (Committed generation boundary)** · `cond:guide15:committed-leaf`
+
+No test attempts to spend a Phase-6 STATE with an uncommitted Phase-7 leaf.
+
+**Condition (Synthetic-origin non-claims)** · `cond:guide15:origin-nonclaims`
+
+Synthetic Phase-7 origin non-claims are agreed in advance.
+
 
 ## 2.6 Target entry · `gate:guide15:target-entry`
 
 Required:
 
-- reviewed target definition validates;
-- development binding is welded to the exact target;
-- explicit `U` and explicit value introspection are reviewed;
-- checked fixed-width addition, subtraction, and comparison are reviewed;
-- target transaction conservation remains external evidence;
-- selected owner and sponsor sighash profiles are reviewed;
-- STATE constructor hashing and tweak requirements remain reviewed;
-- execution domain and leaf version are observed;
-- consensus and relay policy remain separate;
-- no mock is gate-eligible.
+**Condition (Reviewed target definition)** · `cond:guide15:target-definition`
+
+Reviewed target definition validates.
+
+**Condition (Exact development binding)** · `cond:guide15:development-binding`
+
+Development binding is welded to the exact target.
+
+**Condition (Explicit asset and value introspection)** · `cond:guide15:value-introspection`
+
+Explicit `U` and explicit value introspection are reviewed.
+
+**Condition (Reviewed fixed-width arithmetic)** · `cond:guide15:fixed-arithmetic`
+
+Checked fixed-width addition, subtraction, and comparison are reviewed.
+
+**Condition (External target conservation)** · `cond:guide15:target-conservation`
+
+Target transaction conservation remains external evidence.
+
+**Condition (Reviewed signing profiles)** · `cond:guide15:signing-profiles`
+
+Selected owner and sponsor sighash profiles are reviewed.
+
+**Condition (Reviewed constructor hashing and tweak)** · `cond:guide15:constructor-hashing`
+
+STATE constructor hashing and tweak requirements remain reviewed.
+
+**Condition (Observed execution domain and leaf version)** · `cond:guide15:execution-domain`
+
+Execution domain and leaf version are observed.
+
+**Condition (Consensus and relay separation)** · `cond:guide15:relay-separation`
+
+Consensus and relay policy remain separate.
+
+**Condition (Native gate eligibility)** · `cond:guide15:native-eligibility`
+
+No mock is gate-eligible.
+
 
 ## 2.7 Evidence entry · `gate:guide15:evidence-entry`
 
 Required:
 
-- canonical evidence plans have no unchecked constructors;
-- coverage changes only from validated report wrappers;
-- native refusals retain observed layers and exact subjects;
-- wrong-boundary refusals are not counted as answers;
-- report-layer answerability is not counted as observed evidence;
-- accepted controls ground negative target observations;
-- target rejection carries no accepted artifact;
-- response-shape validation is exact;
-- canonical reports retain their generic execution transcripts;
-- safety, event, continuity, history, accounting, and resources remain separate.
+**Condition (Validated evidence-plan construction)** · `cond:guide15:validated-plans`
+
+Canonical evidence plans have no unchecked constructors.
+
+**Condition (Validated coverage updates)** · `cond:guide15:validated-coverage`
+
+Coverage changes only from validated report wrappers.
+
+**Condition (Observed refusal layers and subjects)** · `cond:guide15:observed-refusals`
+
+Native refusals retain observed layers and exact subjects.
+
+**Condition (Exact refusing boundary)** · `cond:guide15:exact-refusals`
+
+Wrong-boundary refusals are not counted as answers.
+
+**Condition (Observed evidence and answerability)** · `cond:guide15:observed-evidence`
+
+Report-layer answerability is not counted as observed evidence.
+
+**Condition (Accepted negative controls)** · `cond:guide15:accepted-controls`
+
+Accepted controls ground negative target observations.
+
+**Condition (No accepted artifact on rejection)** · `cond:guide15:rejection-artifacts`
+
+Target rejection carries no accepted artifact.
+
+**Condition (Exact response validation)** · `cond:guide15:response-shape`
+
+Response-shape validation is exact.
+
+**Condition (Retained execution transcripts)** · `cond:guide15:retained-transcripts`
+
+Canonical reports retain their generic execution transcripts.
+
+**Condition (Separate evidence roles)** · `cond:guide15:separate-evidence`
+
+Safety, event, continuity, history, accounting, and resources remain separate.
+
 
 ## 2.8 Repository entry · `rule:guide15:repository-entry`
 
@@ -751,18 +916,45 @@ git log -1 --oneline
 
 Record:
 
-```text
-starting revision
-Phase-6 result revision
-architecture schema and semantic hashes
-realization version
-target contract revision
-executor protocol revision
-compact-ASH candidate revision
-STATE-constructor generation
-selected public-value policy
-clean-tree result
-```
+**Data (Starting revision)** · `data:guide15:starting-revision`
+
+This field records the starting revision for repository entry.
+
+**Data (Phase-6 result revision)** · `data:guide15:phase6-revision`
+
+This field records the Phase-6 result revision for repository entry.
+
+**Data (Architecture schema and semantic hashes)** · `data:guide15:architecture-values`
+
+This field records the architecture schema and semantic hashes for repository entry.
+
+**Data (Realization version)** · `data:guide15:realization-version`
+
+This field records the realization version for repository entry.
+
+**Data (Target contract revision)** · `data:guide15:target-revision`
+
+This field records the target contract revision for repository entry.
+
+**Data (Executor protocol revision)** · `data:guide15:executor-revision`
+
+This field records the executor protocol revision for repository entry.
+
+**Data (Compact-ASH candidate revision)** · `data:guide15:compact-revision`
+
+This field records the compact-ASH candidate revision for repository entry.
+
+**Data (STATE-constructor generation)** · `data:guide15:state-generation`
+
+This field records the STATE-constructor generation for repository entry.
+
+**Data (Selected public-value policy)** · `data:guide15:public-policy`
+
+This field records the selected public-value policy for repository entry.
+
+**Data (Clean-tree result)** · `data:guide15:clean-result`
+
+This field records the clean-tree result for repository entry.
 
 If the tree is not clean, stop and classify every change.
 
