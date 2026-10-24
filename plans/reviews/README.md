@@ -29,6 +29,7 @@ weight rule in [the plans README](../README.md).
 | [guide_fourteen_conceptual_review_a.md](guide_fourteen_conceptual_review_a.md) | Guide 14 at 0.6.145-dev | [Guide-14 conceptual register](../guides/guide_fourteen_conceptual_register.md) | Guide 14 Waves 1–13 |
 | [guide_fourteen_conceptual_review_b.md](guide_fourteen_conceptual_review_b.md) | Guide 14 at 0.6.145-dev | [Guide-14 conceptual register](../guides/guide_fourteen_conceptual_register.md) | Guide 14 Waves 1–13 |
 | [guide_fourteen_conceptual_review_c.md](guide_fourteen_conceptual_review_c.md) | Guide 14 at 0.6.145-dev | [Guide-14 conceptual register](../guides/guide_fourteen_conceptual_register.md) | Guide 14 Waves 1–13 |
+| [guide_fifteen_execution_review.md](guide_fifteen_execution_review.md) | Guide 15 execution guide at its charter on the side branch above 0.7.0-dev | the guide's formal rewrite | the Guide-15 formal rewrite |
 
 ## Review rule · `rule:reviews:authority`
 
