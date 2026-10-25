@@ -2304,8 +2304,10 @@ mod tests {
 
     fn archived() -> ValidatedMaturityContinuity {
         let corpus = maturity_run_of_record().expect("validated archive");
-        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
-            corpus.historical_standing();
+        let _historical = corpus
+            .historical_standing()
+            .historical_candidate()
+            .expect("historical standing");
         archived_from(
             corpus,
             crate::maturity_closure::MaturityWitnessSelection::retained_whole_metadata(),

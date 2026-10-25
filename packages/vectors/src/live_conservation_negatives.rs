@@ -878,7 +878,11 @@ pub fn assert_conservation_matches_current_corpus(record: &ConservationNegativeR
     let corpus = crate::live_corpus_native_v2_r7::run_of_record()
         .expect("the reviewed native-v2/revision-7 corpus validates");
     assert_eq!(
-        corpus.standing().candidate().replay,
+        corpus
+            .standing()
+            .historical_candidate()
+            .expect("historical standing")
+            .replay,
         crate::historical_candidate::HistoricalReplay::NotReplayableForCurrentCandidate
     );
     let current = corpus

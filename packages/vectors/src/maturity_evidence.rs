@@ -2876,8 +2876,10 @@ pub(crate) mod tests {
 
     fn archived() -> ValidatedMaturityContinuity {
         let corpus = maturity_run_of_record().expect("validated archive");
-        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
-            corpus.historical_standing();
+        let _historical = corpus
+            .historical_standing()
+            .historical_candidate()
+            .expect("historical standing");
         let identity = corpus.evidence().identity().clone();
         let branch = corpus.evidence().branch();
         let mut planner = MaturityAnnouncementPlanner::new(

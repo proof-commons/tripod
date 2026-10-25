@@ -453,8 +453,10 @@ mod tests {
 
     fn accepted_projection() -> ValidatedMaturityContinuity {
         let corpus = maturity_variable_run_of_record().expect("accepted corpus");
-        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
-            corpus.historical_standing();
+        let _historical = corpus
+            .historical_standing()
+            .historical_candidate()
+            .expect("historical standing");
         project_maturity_continuity_with_acceptance(
             variable_archived().input(),
             corpus.evidence().acceptance_obligation(),

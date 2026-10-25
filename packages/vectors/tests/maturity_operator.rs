@@ -900,8 +900,10 @@ fn the_live_transfer_candidate_runs_against_a_real_target() {
 
 fn admitted_operator() -> &'static vectors::ValidatedNativeOperatorCorpus {
     let corpus = vectors::native_operator_run_of_record().expect("reviewed operator corpus admits");
-    let vectors::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
-        corpus.standing();
+    let _historical = corpus
+        .standing()
+        .historical_candidate()
+        .expect("historical standing");
     corpus
 }
 

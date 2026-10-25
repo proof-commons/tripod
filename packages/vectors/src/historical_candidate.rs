@@ -34,6 +34,81 @@ pub struct HistoricalCandidate {
 pub enum CandidateStanding {
     /// Observations remain bound to this producing candidate.
     HistoricalCandidate(HistoricalCandidate),
+    /// Current observations require replay against the selected compact pins.
+    CurrentCandidate(CurrentCandidate),
+}
+
+/// The selected compact program, independent of source provenance.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CurrentCandidate {
+    /// Canonical merkle root, output key and constructor program.
+    pub pins: [[u8; 32]; 3],
+    /// Deployment identities and target contract in report order.
+    pub deployment: [String; 3],
+    /// Programs reconstructed with the observed issuance and reserve assets.
+    pub programs: BTreeSet<[u8; 32]>,
+    /// Source provenance does not establish program identity.
+    pub source_revision: Option<[String; 2]>,
+}
+
+impl CurrentCandidate {
+    /// Bind replay to the selected compact pins, independently of source identity.
+    #[must_use]
+    pub const fn selected(
+        deployment: [String; 3],
+        programs: BTreeSet<[u8; 32]>,
+        source_revision: Option<[String; 2]>,
+    ) -> Self {
+        Self {
+            pins: [
+                target_elements_conformance::reference::FIXTURE_MERKLE_ROOT,
+                target_elements_conformance::reference::FIXTURE_REFERENCE_OUTPUT_KEY,
+                crate::bundle::PINNED_PROGRAM,
+            ],
+            deployment,
+            programs,
+            source_revision,
+        }
+    }
+}
+
+#[cfg(test)]
+mod standing_tests {
+    use super::*;
+
+    #[test]
+    fn current_standing_names_selected_pins_without_historical_access() {
+        let current = CandidateStanding::CurrentCandidate(CurrentCandidate::selected(
+            [String::new(), String::new(), String::new()],
+            BTreeSet::new(),
+            None,
+        ));
+        assert!(current.historical_candidate().is_none());
+        let selected = current.current_candidate().expect("current");
+        assert_eq!(
+            selected.pins[0],
+            target_elements_conformance::reference::FIXTURE_MERKLE_ROOT
+        );
+        assert_eq!(
+            selected.pins[1],
+            target_elements_conformance::reference::FIXTURE_REFERENCE_OUTPUT_KEY
+        );
+        assert_eq!(selected.pins[2], crate::bundle::PINNED_PROGRAM);
+        let historical = CandidateStanding::HistoricalCandidate(HistoricalCandidate {
+            source_revision: None,
+            deployment: selected.deployment.clone(),
+            programs: BTreeSet::new(),
+            replay: HistoricalReplay::NotReplayableForCurrentCandidate,
+        });
+        assert!(historical.current_candidate().is_none());
+        assert_eq!(
+            historical
+                .historical_candidate()
+                .expect("historical")
+                .replay,
+            HistoricalReplay::NotReplayableForCurrentCandidate
+        );
+    }
 }
 
 // Independent pins for revision-seven observations, in PrivateShape::ALL order.
@@ -62,9 +137,19 @@ pub(crate) const PRIVATE_RESTART_FIXTURES: [&str; 3] = [
 impl CandidateStanding {
     /// The producing candidate, including any explicit replay limitation.
     #[must_use]
-    pub const fn candidate(&self) -> &HistoricalCandidate {
+    pub const fn historical_candidate(&self) -> Option<&HistoricalCandidate> {
         match self {
-            Self::HistoricalCandidate(candidate) => candidate,
+            Self::HistoricalCandidate(candidate) => Some(candidate),
+            Self::CurrentCandidate(_) => None,
+        }
+    }
+
+    /// Current standing never supplies a historical candidate.
+    #[must_use]
+    pub const fn current_candidate(&self) -> Option<&CurrentCandidate> {
+        match self {
+            Self::CurrentCandidate(candidate) => Some(candidate),
+            Self::HistoricalCandidate(_) => None,
         }
     }
 }

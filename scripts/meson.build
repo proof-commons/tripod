@@ -14,3 +14,11 @@ script_source_files = files(
   'test-executor-boundaries.py',
   'test-executor-classification.py',
 )
+
+test(
+  'compact-native-capture-contract',
+  find_program('compact-native-capture-test.sh'),
+  args: [meson.project_source_root()],
+  suite: 'lint',
+  timeout: 120,
+)

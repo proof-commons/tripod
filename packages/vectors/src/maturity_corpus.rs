@@ -1961,8 +1961,10 @@ fn validate_common_bindings(
         }
     })?;
     // Deployment agreement borrows historical facts and establishes no current acceptance.
-    let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_) =
-        operator.standing();
+    let _ = operator
+        .standing()
+        .historical_candidate()
+        .expect("historical standing");
     binding(
         "development-network-id",
         report.network_id == operator.report().network_id(),
@@ -2366,8 +2368,20 @@ mod tests {
         let accepted = maturity_variable_run_of_record().expect("accepted archive");
         for corpus in [historical, accepted] {
             let standing = corpus.historical_standing();
-            assert!(standing.candidate().source_revision.is_some());
-            assert!(!standing.candidate().programs.is_empty());
+            assert!(
+                standing
+                    .historical_candidate()
+                    .expect("historical standing")
+                    .source_revision
+                    .is_some()
+            );
+            assert!(
+                !standing
+                    .historical_candidate()
+                    .expect("historical standing")
+                    .programs
+                    .is_empty()
+            );
             assert_eq!(corpus.fee_floors(), MATURITY_DISCLOSED_FEE_FLOORS);
             assert_eq!(
                 corpus.fee_floors().provenance(),

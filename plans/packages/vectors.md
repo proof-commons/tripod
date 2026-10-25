@@ -282,6 +282,8 @@ The package establishes finite bundle-specific translation evidence.
 
 An earlier candidate's capture has typed historical standing for that candidate; retained producing programs support exact replay, and unavailable current-candidate replay is explicit, without promoting archived acceptance to changed bytes.
 
+The compact archive admits once through `compact_corpus::run_of_record` with current-candidate standing bound to `FIXTURE_MERKLE_ROOT`, `FIXTURE_REFERENCE_OUTPUT_KEY` and `PINNED_PROGRAM` under ruling 128 (`rule:phase7:wave0-rulings`), replaying the same schedule that produced the capture and crediting a row only after its paired control and an exact boundary match. The admitted dispositions bind the record's table (`tab:backlog:compact-dispositions`) through `record_dispositions_bind_exactly_to_the_current_manifest`; changed candidate bytes reopen admission rather than inherit its credit.
+
 It does not prove universal compiler correctness, cryptographic hardness,
 target implementation correctness, or final deployment release.
 

@@ -343,8 +343,10 @@ fn archived_whole() -> Source {
 /// Panics only if the admitted archive ceases to validate or replay.
 fn archived_variable() -> Source {
     let corpus = maturity_variable_run_of_record().expect("the variable archive validates");
-    let vectors::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
-        corpus.historical_standing();
+    let _historical = corpus
+        .historical_standing()
+        .historical_candidate()
+        .expect("historical standing");
     assert_eq!(corpus.report().run_address(), MATURITY_VARIABLE_RUN_ADDRESS);
     archived(
         corpus,

@@ -1905,7 +1905,11 @@ mod byte_identity_tests {
         let corpus = crate::live_corpus_native_v2_r7::run_of_record()
             .expect("the historical corpus validates");
         assert_eq!(
-            corpus.standing().candidate().replay,
+            corpus
+                .standing()
+                .historical_candidate()
+                .expect("historical standing")
+                .replay,
             crate::historical_candidate::HistoricalReplay::NotReplayableForCurrentCandidate
         );
         let recorded = corpus

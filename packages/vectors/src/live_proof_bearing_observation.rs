@@ -1882,14 +1882,19 @@ fn mint_forward_corpus_record(
 /// This is the selection point N1-F uses instead of the schema-1 surface,
 /// whose recorded instance now lives only in git history. Both members mint
 /// together from the validated corpus or both remain Pending.
+///
+/// # Panics
+/// Panics only if the historical corpus changes its standing arm, which callers cannot arrange.
 #[must_use]
 pub fn forward_v2_proof_bearing_run_of_record() -> &'static ForwardV2ProofBearingRunOfRecord {
     static RECORD: OnceLock<ForwardV2ProofBearingRunOfRecord> = OnceLock::new();
     RECORD.get_or_init(|| {
         let input = validated_corpus().ok().and_then(|corpus| {
             // Both recorded members retain the producing candidate's historical scope.
-            let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_) =
-                corpus.standing();
+            let _ = corpus
+                .standing()
+                .historical_candidate()
+                .expect("historical standing");
             corpus
                 .mint_ceremony("proof-bearing-observation")
                 .map(ForwardProofBearingMintInput::from_corpus)

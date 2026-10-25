@@ -2083,9 +2083,20 @@ fn adapter_schema_and_committed_signer_scalars_match_rust() {
 fn the_historical_revision_seven_corpus_still_uses_its_own_parser() {
     let corpus =
         vectors::run_of_record().expect("the immutable revision-seven corpus still validates");
-    assert!(corpus.standing().candidate().source_revision.is_none());
+    assert!(
+        corpus
+            .standing()
+            .historical_candidate()
+            .expect("historical standing")
+            .source_revision
+            .is_none()
+    );
     assert_eq!(
-        corpus.standing().candidate().replay,
+        corpus
+            .standing()
+            .historical_candidate()
+            .expect("historical standing")
+            .replay,
         vectors::historical_candidate::HistoricalReplay::NotReplayableForCurrentCandidate
     );
 }

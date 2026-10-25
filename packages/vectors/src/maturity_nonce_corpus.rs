@@ -169,6 +169,9 @@ fn archive_derivations(
 ///
 /// # Errors
 /// Returns a typed archive, planner, target or linked-constructor refusal.
+///
+/// # Panics
+/// Panics only if a historical corpus changes its standing arm, which callers cannot arrange.
 pub fn maturity_nonce_corpus() -> Result<MaturityNonceCorpus, MaturityNonceCorpusRefusal> {
     let whole = maturity_run_of_record().map_err(|refusal| {
         MaturityNonceCorpusRefusal::Measurement(MaturityMeasurementRefusal::Corpus(refusal))
@@ -176,10 +179,14 @@ pub fn maturity_nonce_corpus() -> Result<MaturityNonceCorpus, MaturityNonceCorpu
     let variable = maturity_variable_run_of_record().map_err(|refusal| {
         MaturityNonceCorpusRefusal::Measurement(MaturityMeasurementRefusal::Corpus(refusal))
     })?;
-    let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_whole) =
-        whole.historical_standing();
-    let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_variable) =
-        variable.historical_standing();
+    let _whole = whole
+        .historical_standing()
+        .historical_candidate()
+        .expect("historical standing");
+    let _variable = variable
+        .historical_standing()
+        .historical_candidate()
+        .expect("historical standing");
     let target = closure_target().map_err(|refusal| {
         MaturityNonceCorpusRefusal::Measurement(MaturityMeasurementRefusal::Target(refusal))
     })?;

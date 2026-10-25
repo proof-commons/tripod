@@ -121,9 +121,7 @@ tapscript = { workspace = true }
 target-elements = { workspace = true }
 target-elements-conformance = { workspace = true }
 transaction = { workspace = true }
-
-[dev-dependencies]
-# Protocol serializer used by the shared capture writer to retain each request's subject.
+# The archive admission root decodes the retained subjects and responses.
 serde_json = { workspace = true }
 
 [lints]

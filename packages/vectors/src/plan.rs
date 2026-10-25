@@ -633,6 +633,53 @@ pub struct CompactAshEvidencePlan {
 }
 
 impl CompactAshEvidencePlan {
+    /// Current native dispositions joined to this plan's exact manifest keys.
+    /// Historical observations remain in their original candidate scope.
+    ///
+    /// # Errors
+    /// Returns an archive refusal or a manifest-key mismatch.
+    pub fn current_campaign(
+        &self,
+    ) -> Result<
+        &'static crate::compact_corpus::CompactCorpus,
+        crate::compact_corpus::CompactImportRefusal,
+    > {
+        let corpus = crate::compact_corpus::run_of_record()?;
+        let native = self
+            .negative_manifest
+            .iter()
+            .filter(|(_, row)| {
+                row.class == crate::compact_negative_manifest::NegativeClass::TargetExecutable
+            })
+            .map(|(key, _)| key)
+            .collect::<BTreeSet<_>>();
+        if native != corpus.rows().keys().collect() {
+            return Err(crate::compact_corpus::CompactImportRefusal::Census);
+        }
+        Ok(corpus)
+    }
+
+    /// Current native census, separately counting formal arguments and observations.
+    ///
+    /// # Errors
+    /// Returns the current archive's refusal or a manifest-key mismatch.
+    pub fn current_campaign_census(
+        &self,
+    ) -> Result<[usize; 4], crate::compact_corpus::CompactImportRefusal> {
+        use crate::compact_corpus::NativeDisposition;
+        let mut counts = [0; 4];
+        for disposition in self.current_campaign()?.rows().values() {
+            let index = match disposition {
+                NativeDisposition::Observed { .. } => 0,
+                NativeDisposition::FormallyClosed(_) => 1,
+                NativeDisposition::Unresolved(_) => 2,
+                NativeDisposition::Suspended(_) => 3,
+            };
+            counts[index] += 1;
+        }
+        Ok(counts)
+    }
+
     /// Two supplemental ABI rows with four sponsor-case identities.
     /// These do not change the compiler-derived coverage census.
     #[must_use]

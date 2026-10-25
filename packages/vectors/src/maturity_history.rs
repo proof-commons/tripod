@@ -1231,8 +1231,10 @@ mod tests {
         accepted: &PublicAnnouncementHandoff,
     ) -> PublicAnnouncementHandoff {
         let corpus = maturity_run_of_record().expect("historical corpus");
-        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
-            corpus.historical_standing();
+        let _historical = corpus
+            .historical_standing()
+            .historical_candidate()
+            .expect("historical standing");
         PublicAnnouncementHandoff::new(
             PublicAnnouncementLocator::new(
                 MaturityByteSource::ArchivedSubmission {

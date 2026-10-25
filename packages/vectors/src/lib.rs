@@ -3,6 +3,8 @@
 
 pub mod abi_validation;
 pub mod bundle;
+pub mod compact_campaign;
+pub mod compact_corpus;
 pub mod compact_negative_manifest;
 pub mod comparison;
 pub mod confidential_materializer;

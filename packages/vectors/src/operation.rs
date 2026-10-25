@@ -197,9 +197,17 @@ pub struct SubmissionOutcome {
     observed_weight: Option<u64>,
     witness_bytes: u64,
     virtual_size: u64,
+    mined_readback: Option<target_elements_conformance::protocol::MinedFundingReadback>,
 }
 
 impl SubmissionOutcome {
+    /// Exact mined bytes retained for independent archive admission.
+    #[must_use]
+    pub const fn mined_readback(
+        &self,
+    ) -> Option<&target_elements_conformance::protocol::MinedFundingReadback> {
+        self.mined_readback.as_ref()
+    }
     /// The vector that was submitted.
     #[must_use]
     pub const fn vector(&self) -> TargetVectorId {
@@ -635,6 +643,7 @@ impl SubmissionOutcome {
             observed_weight,
             witness_bytes: 0,
             virtual_size: 0,
+            mined_readback: None,
         }
     }
 }
@@ -1655,6 +1664,7 @@ impl CompactAshOperationPlanner {
                 observed_weight,
                 witness_bytes: vector.witness_bytes(),
                 virtual_size: vector.virtual_size(),
+                mined_readback: response.mined_readback.clone(),
             });
 
             // §20.5: a resource mismatch fails the resource report even

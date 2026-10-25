@@ -1139,8 +1139,10 @@ mod tests {
         use MaturityObservationStanding as Standing;
         use MaturityResourceField as Field;
         let corpus = maturity_run_of_record().expect("whole archive admitted");
-        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
-            corpus.historical_standing();
+        let _historical = corpus
+            .historical_standing()
+            .historical_candidate()
+            .expect("historical standing");
         let (_, archived) = corpus
             .exchanges()
             .iter()

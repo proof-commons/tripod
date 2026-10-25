@@ -583,8 +583,10 @@ mod tests {
 
     fn accepted_handoff() -> PublicAnnouncementHandoff {
         let corpus = maturity_variable_run_of_record().expect("accepted archive");
-        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
-            corpus.historical_standing();
+        let _historical = corpus
+            .historical_standing()
+            .historical_candidate()
+            .expect("historical standing");
         let MaturityAcceptanceObligation::Established { readback, .. } =
             corpus.evidence().acceptance_obligation()
         else {

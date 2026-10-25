@@ -1396,7 +1396,11 @@ fn historical_native_v2_corpus()
     let corpus = vectors::live_corpus_native_v2_r7::run_of_record()
         .expect("the historical native-v2/revision-7 corpus validates");
     assert_eq!(
-        corpus.standing().candidate().replay,
+        corpus
+            .standing()
+            .historical_candidate()
+            .expect("historical standing")
+            .replay,
         vectors::historical_candidate::HistoricalReplay::NotReplayableForCurrentCandidate
     );
     corpus

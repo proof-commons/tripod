@@ -40,8 +40,10 @@ use vectors::live_corpus_native_v2_r7;
 fn current_owner_observation_accepted_txid() -> &'static str {
     let corpus = live_corpus_native_v2_r7::run_of_record()
         .expect("the reviewed native-v2/revision-7 corpus validates");
-    let vectors::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
-        corpus.standing();
+    let _historical = corpus
+        .standing()
+        .historical_candidate()
+        .expect("historical standing");
     let acceptances = corpus
         .acceptance_projections("owner-observation")
         .expect("the corpus projects the current owner-observation ceremony");
