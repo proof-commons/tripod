@@ -1064,14 +1064,16 @@ fn the_published_censuses_have_the_measured_pilot_sizes() {
         let expected = match projection.plan() {
             LiveTransferRepresentationPlan::Explicit => BTreeMap::from([
                 ("cases", 2),
-                ("coverage", 225),
-                ("layout", 69),
+                // Before scope-only multiplicity: coverage 225, layout 69.
+                ("coverage", 221),
+                ("layout", 63),
                 ("relations", 24),
             ]),
             LiveTransferRepresentationPlan::PrivateCommitted => BTreeMap::from([
                 ("cases", 2),
-                ("coverage", 227),
-                ("layout", 61),
+                // Before scope-only multiplicity: coverage 227, layout 61.
+                ("coverage", 223),
+                ("layout", 55),
                 ("relations", 24),
             ]),
         };

@@ -1,6 +1,6 @@
 //! What discharges a negative requirement no target can answer.
 //!
-//! Eighteen of the plan's seventy-two negative requirements are answered
+//! Twenty of the plan's seventy-four negative requirements are answered
 //! by first-party code refusing a condition, because their boundary is
 //! the compiler's own analysis or the emitted structure and no
 //! transaction exists at either. §19.2's conditions — a complete mutated
@@ -499,7 +499,7 @@ pub fn compact_first_party_dispositions(
 /// Stable display name derived from the exact first-party requirement key.
 ///
 /// # Errors
-/// Refuses a requirement outside the admitted nine first-party relation classes.
+/// Refuses a requirement outside the admitted ten first-party relation classes.
 pub fn compact_first_party_name(
     id: &CoverageRequirementId,
 ) -> Result<String, FirstPartyEvidenceRefusal> {
@@ -518,6 +518,7 @@ pub fn compact_first_party_name(
         RelationMutation::UnsupportedRepresentation => "unsupported-representation",
         RelationMutation::UnexpectedProtocolSecret => "unexpected-protocol-secret",
         RelationMutation::UnauthenticatedRepresentation => "unauthenticated-representation",
+        RelationMutation::SponsorEnvelopeMultiplicityExceeded => "sponsor-multiplicity-exceeded",
         RelationMutation::RequiredLifecycleExitMissing => {
             match (id.relation.subject(), id.boundary) {
                 (
@@ -575,11 +576,12 @@ mod tests {
     use realization::{AvailabilityClass, ConstructibilityNodeId};
 
     #[test]
-    fn compact_first_party_dispositions_retain_all_eighteen_subjects() {
+    fn compact_first_party_dispositions_retain_all_twenty_subjects() {
         use super::{CompactFirstPartyDisposition as D, CompactFirstPartySubject as S};
         let bundle = fixture_bundle().expect("bundle");
         let rows = super::compact_first_party_dispositions(&bundle).expect("dispositions");
-        assert_eq!(rows.len(), 18);
+        // Before scope-only multiplicity: 18 rows, with 16 retained.
+        assert_eq!(rows.len(), 20);
         assert_eq!(
             rows.values()
                 .filter(|r| matches!(r, D::Discharged(_)))
@@ -590,7 +592,7 @@ mod tests {
             rows.values()
                 .filter(|r| matches!(r, D::Retained { .. }))
                 .count(),
-            16
+            18
         );
         let mut names = std::collections::BTreeSet::new();
         for (id, disposition) in &rows {
@@ -614,6 +616,7 @@ mod tests {
                 "unsupported-representation",
                 "unexpected-protocol-secret",
                 "unauthenticated-representation",
+                "sponsor-multiplicity-exceeded",
                 "missing-compact-exit-analysis",
                 "missing-clear-exit-analysis",
                 "missing-compact-exit-emitted",

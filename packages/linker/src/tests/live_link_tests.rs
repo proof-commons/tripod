@@ -341,8 +341,13 @@ fn the_two_plans_differ_by_exactly_the_conservation_of_the_protocol_asset() {
         .plan(LiveTransferRepresentationPlan::PrivateCommitted)
         .expect("the private plan is linked");
 
-    assert_eq!(explicit.required().len(), 32);
-    assert_eq!(private.required().len(), 30);
+    // Before scope-only multiplicity: 32 explicit and 30 private runtime carriers.
+    assert_eq!(explicit.required().len(), 30);
+    assert_eq!(private.required().len(), 28);
+    assert_eq!(explicit.model_scope().len(), 2);
+    assert_eq!(private.model_scope().len(), 2);
+    assert!(explicit.model_scope().is_disjoint(explicit.required()));
+    assert!(private.model_scope().is_disjoint(private.required()));
     assert_eq!(
         closure
             .plan_only()

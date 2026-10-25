@@ -142,6 +142,8 @@ A relation absent from the analyzed result is a compile failure.
 
 `SponsorEnvelopeMultiplicity` remains MODEL-SCOPE resource policy over the operation's own fee-sponsor flows, with its declared maximum unchanged and enforced by no leaf.
 
+The compact and live plans publish its `ModelScope` boundary explicitly, with scope-evaluation coverage and no runtime carrier, carrier layout, or target projection.
+
 ## Proof planning · `rule:compiler:proofs`
 
 The compiler separates:

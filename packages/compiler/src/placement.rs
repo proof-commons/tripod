@@ -97,6 +97,8 @@ use crate::{
 /// a future backend, not completed evidence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DischargeBoundary {
+    /// Scope evaluation requires this policy; no leaf carries it (`rule:compiler:relations`).
+    ModelScope,
     CompilerStatic,
     BackendStructural,
     RuntimeCarrier,
@@ -255,6 +257,29 @@ struct RelationDischarge {
     runtime: Option<(SemanticScope, CarrierMultiplicity)>,
 }
 
+/// Closure retains scope-only resource policy without a leaf (`rule:compiler:relations`).
+fn classify_declared_discharge(
+    declaration: &RelationDeclaration,
+    ordinary_lbtc: OrdinaryLbtcRole,
+    amounts: ConservedAmountVisibility,
+) -> RelationDischarge {
+    if matches!(
+        declaration.id.operation(),
+        OperationId::CompactAsh | OperationId::TransferLive
+    ) && matches!(
+        declaration.relation,
+        Relation::SponsorEnvelopeMultiplicity { .. }
+    ) {
+        RelationDischarge {
+            boundaries: BTreeSet::from([DischargeBoundary::ModelScope]),
+            activation: ActivationCondition::Always,
+            runtime: None,
+        }
+    } else {
+        classify_discharge(&declaration.relation, ordinary_lbtc, amounts)
+    }
+}
+
 /// Classify one relation in one execution case.
 ///
 /// The match over relation variants is exhaustive with no wildcard arm,
@@ -272,7 +297,7 @@ pub fn classify_relation_case(
 ) -> Result<RelationCasePlan, CompileError> {
     let operation = declaration.id.operation();
     let amounts = conserved_amount_visibility(declaration, &case.id)?;
-    let discharge = classify_discharge(&declaration.relation, ordinary_lbtc, amounts);
+    let discharge = classify_declared_discharge(declaration, ordinary_lbtc, amounts);
     let activity = resolve_activity(discharge.activation, &case.id);
 
     let mut compiler_requirements = Vec::new();

@@ -46,29 +46,53 @@ pub fn derive(architecture: &Architecture) -> Result<OperationRealization, Reali
 }
 
 struct Ids {
+    /// Closure needs the bounded live input family (`op:realization:live-transfer`).
     input_cardinality: RelationId,
+    /// Closure needs an independent destination count for redistribution (`rem:closure:consequences`).
     output_cardinality: RelationId,
+    /// Closure needs the declared sponsor input region's bound (`sec:realization:domains`).
     sponsor_input_cardinality: RelationId,
+    /// Closure permits at most one sponsor change role (`sec:realization:domains`).
     sponsor_output_cardinality: RelationId,
+    /// Closure needs authenticated live input membership (`op:realization:live-transfer`).
     input_recognition: RelationId,
+    /// Closure requires live-class destinations (`op:realization:live-transfer`).
     output_recognition: RelationId,
+    /// Closure requires ordinary L-BTC sponsor inputs (`sec:realization:domains`).
     sponsor_input_recognition: RelationId,
+    /// Closure requires ordinary L-BTC sponsor change (`sec:realization:domains`).
     sponsor_output_recognition: RelationId,
+    /// Closure requires every consumed receipt's owner authorization (`op:realization:live-transfer`).
     authorization: RelationId,
+    /// Closure excludes undeclared input families within the region (`sec:realization:domains`).
     input_closure: RelationId,
+    /// Closure excludes undeclared output families within the region (`sec:realization:domains`).
     output_closure: RelationId,
+    /// Closure preserves U across split, merge and redistribution (`op:realization:live-transfer`).
     conservation: RelationId,
+    /// Closure requires disjoint sponsor claims and owned flows (`rule:realization:derive`).
     sponsor: RelationId,
+    /// Closure records a resource policy with no leaf enforcement (`rule:compiler:relations`).
     sponsor_multiplicity: RelationId,
+    /// Closure needs target conservation evidence for L-BTC (`pkg:realization:contract`).
     substrate_conservation: RelationId,
+    /// Closure permits only the declared regional open flows (`sec:realization:domains`).
     open_flow_policy: RelationId,
+    /// Closure requires the lateral canonical partition (`op:realization:live-transfer`).
     canonical_delta_policy: RelationId,
+    /// Closure excludes undeclared root effects (`op:realization:live-transfer`).
     roots: RelationId,
+    /// Closure requires exactly the declared projections (`pkg:realization:contract`).
     projections: RelationId,
+    /// Closure needs constructible live successors (`op:realization:live-transfer`).
     constructibility: RelationId,
+    /// Closure requires an authenticated supported representation (`pkg:realization:contract`).
     representation: RelationId,
+    /// Closure preserves the transfer exit (`op:realization:live-transfer`).
     transfer_exit: RelationId,
+    /// Closure preserves the burn exit (`op:realization:live-transfer`).
     burn_exit: RelationId,
+    /// Closure preserves the redemption exit (`op:realization:live-transfer`).
     redeem_exit: RelationId,
 }
 

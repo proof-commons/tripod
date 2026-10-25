@@ -195,6 +195,17 @@ fn compact_ash_conservation_and_policies_are_transaction_global() {
         assert_eq!(plans.len(), 2, "{relation:?}");
 
         for plan in plans {
+            if relation.kind() == RelationKind::SponsorEnvelopeMultiplicity {
+                assert_eq!(
+                    plan.boundaries,
+                    BTreeSet::from([DischargeBoundary::ModelScope])
+                );
+                assert_eq!(
+                    plan.runtime_requirements,
+                    [] as [crate::placement::RuntimePlacementRequirement; 0]
+                );
+                continue;
+            }
             assert_eq!(
                 runtime_only(plan),
                 (
@@ -520,6 +531,7 @@ fn every_disposition_class_is_represented_in_the_pilot_census() {
     assert_eq!(
         boundaries,
         BTreeSet::from([
+            DischargeBoundary::ModelScope,
             DischargeBoundary::CompilerStatic,
             DischargeBoundary::BackendStructural,
             DischargeBoundary::RuntimeCarrier,
@@ -624,6 +636,13 @@ fn every_relation_variant_of_the_pilots_is_classified() {
                 // A vacuous relation states its disposition and carries
                 // no requirement in this case.
                 (_, RelationActivity::Vacuous) => assert_eq!(requirement_count, 0),
+                (Relation::SponsorEnvelopeMultiplicity { .. }, _) => {
+                    assert_eq!(requirement_count, 0);
+                    assert_eq!(
+                        plan.boundaries,
+                        BTreeSet::from([DischargeBoundary::ModelScope])
+                    );
+                }
                 (Relation::Representation { .. } | Relation::LifecycleExit { .. }, _) => {
                     assert_eq!(requirement_count, 2);
                 }

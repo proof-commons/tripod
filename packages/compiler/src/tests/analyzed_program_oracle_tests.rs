@@ -305,6 +305,14 @@ fn oracle_relation_case_keys(
 fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<CoverageBoundary> {
     use CoverageBoundary as Boundary;
 
+    if matches!(relation, Relation::SponsorEnvelopeMultiplicity { .. })
+        && matches!(
+            case.operation,
+            OperationId::CompactAsh | OperationId::TransferLive
+        )
+    {
+        return BTreeSet::from([Boundary::ModelScope]);
+    }
     if oracle_committed_amounts(relation, case) {
         return BTreeSet::from([Boundary::ExternalEvidence]);
     }
@@ -745,6 +753,7 @@ fn the_oracle_reproduces_the_boundary_key_partitions() {
                 let factor = &plan.operations[&operation];
 
                 for boundary in [
+                    CoverageBoundary::ModelScope,
                     CoverageBoundary::CompilerStatic,
                     CoverageBoundary::BackendStructural,
                     CoverageBoundary::ExternalEvidence,
@@ -758,7 +767,12 @@ fn the_oracle_reproduces_the_boundary_key_partitions() {
                         .map(|(key, _)| key.clone())
                         .collect::<BTreeSet<_>>();
 
-                    assert!(!expected.is_empty(), "{operation:?} {boundary:?}");
+                    assert_eq!(
+                        expected.is_empty(),
+                        operation == OperationId::AnnounceMaturity
+                            && boundary == CoverageBoundary::ModelScope,
+                        "{operation:?} {boundary:?}"
+                    );
                     assert_eq!(stored, expected, "{operation:?} {boundary:?}");
                 }
 

@@ -343,6 +343,7 @@ fn every_discharge_disposition_is_represented_in_each_pilot() {
         assert_eq!(
             boundaries,
             BTreeSet::from([
+                DischargeBoundary::ModelScope,
                 DischargeBoundary::CompilerStatic,
                 DischargeBoundary::BackendStructural,
                 DischargeBoundary::RuntimeCarrier,

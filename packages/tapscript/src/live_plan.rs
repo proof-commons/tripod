@@ -851,6 +851,7 @@ const FEE_ROLE_VERSION_MARKER: i64 = -1;
 /// pushes is outside what the reviewed contract admits, and
 /// [`TapscriptError::InstructionLimitExceeded`] when the fragment exceeds
 /// the instruction bound.
+/// The leaf observes transaction-wide issuance absence; the contract's regional form requires the first composed operation's replacement proof (`sec:realization:domains`).
 pub fn issuance_absence_fragment(
     target: &ReviewedElementsTapscriptDefinition,
     shape: LiveTransferShape,

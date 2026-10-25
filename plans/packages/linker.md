@@ -215,6 +215,8 @@ linked reachable carriers
 
 A uniquely carrying program cannot be removed or made unreachable.
 
+Compact and live `ModelScope` obligations remain visible separately from executable carrier censuses; sponsor-envelope multiplicity receives no leaf site (`rule:compiler:relations`).
+
 Initial linking performs no semantic dead-code elimination beyond explicitly
 out-of-scope artifacts.
 

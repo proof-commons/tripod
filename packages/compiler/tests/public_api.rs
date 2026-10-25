@@ -383,7 +383,8 @@ fn the_operation_plan_comes_only_from_a_completed_analysis() {
     assert_eq!(plan.operation(), OperationId::CompactAsh);
     assert_eq!(plan.relations().count(), 23);
     assert_eq!(plan.cases().count(), 2);
-    assert_eq!(plan.layout().count(), 69);
+    // Before scope-only multiplicity: 69 layout requirements.
+    assert_eq!(plan.layout().count(), 63);
     assert!(plan.carriers().count() > 0 && plan.coverage().count() > 0);
 }
 
@@ -634,11 +635,13 @@ fn the_live_transfer_plan_comes_only_from_a_completed_analysis() {
         // One new exact coverage class, SponsorMemberUnclaimed, is instantiated once per sponsor case.
         let (layout, coverage, evidence) = match projection.plan() {
             LiveTransferRepresentationPlan::Explicit => {
-                (69, 225, vec![ExternalEvidenceRole::SubstrateConservation])
+                // Before scope-only multiplicity: layout 69, coverage 225.
+                (63, 221, vec![ExternalEvidenceRole::SubstrateConservation])
             }
             LiveTransferRepresentationPlan::PrivateCommitted => (
-                61,
-                227,
+                // Before scope-only multiplicity: layout 61, coverage 227.
+                55,
+                223,
                 vec![
                     ExternalEvidenceRole::ConfidentialValueConservation,
                     ExternalEvidenceRole::SubstrateConservation,

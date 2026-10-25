@@ -881,6 +881,7 @@ pub fn successor_recognition_fragment(
 /// pushes is outside what the reviewed contract admits, and
 /// [`TapscriptError::InstructionLimitExceeded`] when the fragment
 /// exceeds the instruction bound.
+/// The leaf observes transaction-wide counts; the contract's regional count requires the first composed operation's replacement proof (`sec:realization:domains`).
 pub fn cardinality_fragment(
     target: &ReviewedElementsTapscriptDefinition,
     shape: CompactAshShape,

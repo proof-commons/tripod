@@ -188,6 +188,8 @@ impl CoverageRequirementId {
 /// obligation with a target execution report or the reverse.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EvidenceRole {
+    /// Scope evaluation answers the policy without target execution (`rule:compiler:relations`).
+    ModelScope,
     /// The compiler's own typed analysis result.
     CompilerAnalysisResult,
     /// A structural fact of the emitted bundle or ABI.
@@ -456,10 +458,15 @@ pub fn derive_relation_coverage(
 ) -> Result<RelationCoveragePlan, CompileError> {
     let operands = relation_operands(declaration)?;
     let representation = relation_representation(&declaration.relation, &plan.case);
-    let mutations = relation_mutations(
+    let mut mutations = relation_mutations(
         &declaration.relation,
         conserved_amount_visibility(declaration, &plan.case)?,
     );
+    if plan.boundaries.contains(&CoverageBoundary::ModelScope) {
+        for (boundary, _) in &mut mutations {
+            *boundary = CoverageBoundary::ModelScope;
+        }
+    }
 
     let mut positive = Vec::new();
     let mut negative = Vec::new();
@@ -947,6 +954,7 @@ fn boundary_subjects(
     plan: &RelationCasePlan,
 ) -> Vec<(EvidenceRole, Option<ExternalEvidenceRequirement>)> {
     match boundary {
+        CoverageBoundary::ModelScope => vec![(EvidenceRole::ModelScope, None)],
         CoverageBoundary::CompilerStatic => vec![(EvidenceRole::CompilerAnalysisResult, None)],
         CoverageBoundary::BackendStructural => vec![(EvidenceRole::EmittedStructure, None)],
         CoverageBoundary::RuntimeCarrier => vec![(EvidenceRole::TargetExecution, None)],
@@ -1018,7 +1026,8 @@ fn negative_purpose(
 const fn collateral_policy(boundary: CoverageBoundary) -> CollateralPolicy {
     match boundary {
         CoverageBoundary::RuntimeCarrier => CollateralPolicy::RequireIntendedAndDependencyClosure,
-        CoverageBoundary::CompilerStatic
+        CoverageBoundary::ModelScope
+        | CoverageBoundary::CompilerStatic
         | CoverageBoundary::BackendStructural
         | CoverageBoundary::ExternalEvidence => CollateralPolicy::ReportAdditional,
     }
@@ -1320,6 +1329,7 @@ fn projection_subject(
     plan: &RelationCoveragePlan,
 ) -> Option<ProjectionSubject> {
     match boundary {
+        CoverageBoundary::ModelScope => None,
         CoverageBoundary::RuntimeCarrier => Some(ProjectionSubject::RuntimeRelationVerdict),
         CoverageBoundary::CompilerStatic => Some(ProjectionSubject::CompilerSelectionResult),
         CoverageBoundary::BackendStructural => Some(ProjectionSubject::EmittedStructuralFact),

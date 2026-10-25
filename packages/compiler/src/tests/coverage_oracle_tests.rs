@@ -82,6 +82,14 @@ fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<Co
     if oracle_committed_amounts(relation, case) {
         return BTreeSet::from([Boundary::ExternalEvidence]);
     }
+    if matches!(relation, Relation::SponsorEnvelopeMultiplicity { .. })
+        && matches!(
+            case.operation,
+            OperationId::CompactAsh | OperationId::TransferLive
+        )
+    {
+        return BTreeSet::from([Boundary::ModelScope]);
+    }
 
     match relation {
         Relation::SubstrateConservation { .. }
@@ -202,9 +210,17 @@ fn oracle_mutations(
             Mutation::MissingSponsorAuthorization,
         ]),
 
-        Relation::SponsorEnvelopeMultiplicity { .. } => {
-            runtime(vec![Mutation::SponsorEnvelopeMultiplicityExceeded])
-        }
+        Relation::SponsorEnvelopeMultiplicity { .. } => BTreeSet::from([(
+            if matches!(
+                case.operation,
+                OperationId::CompactAsh | OperationId::TransferLive
+            ) {
+                Boundary::ModelScope
+            } else {
+                Boundary::RuntimeCarrier
+            },
+            Mutation::SponsorEnvelopeMultiplicityExceeded,
+        )]),
 
         Relation::RootPolicy { .. } => runtime(vec![Mutation::WrongRootEffect]),
 
@@ -362,6 +378,7 @@ fn oracle_subjects(
 ) -> Vec<(EvidenceRole, Option<ExternalEvidenceRequirement>)> {
     match boundary {
         CoverageBoundary::CompilerStatic => vec![(EvidenceRole::CompilerAnalysisResult, None)],
+        CoverageBoundary::ModelScope => vec![(EvidenceRole::ModelScope, None)],
         CoverageBoundary::BackendStructural => vec![(EvidenceRole::EmittedStructure, None)],
         CoverageBoundary::RuntimeCarrier => vec![(EvidenceRole::TargetExecution, None)],
         CoverageBoundary::ExternalEvidence => external
@@ -429,7 +446,8 @@ fn oracle_negative_purpose(
 const fn oracle_collateral_policy(boundary: CoverageBoundary) -> CollateralPolicy {
     match boundary {
         CoverageBoundary::RuntimeCarrier => CollateralPolicy::RequireIntendedAndDependencyClosure,
-        CoverageBoundary::CompilerStatic
+        CoverageBoundary::ModelScope
+        | CoverageBoundary::CompilerStatic
         | CoverageBoundary::BackendStructural
         | CoverageBoundary::ExternalEvidence => CollateralPolicy::ReportAdditional,
     }
@@ -442,6 +460,7 @@ fn oracle_projection_subject(
 ) -> Option<ProjectionSubject> {
     match boundary {
         CoverageBoundary::RuntimeCarrier => Some(ProjectionSubject::RuntimeRelationVerdict),
+        CoverageBoundary::ModelScope => None,
         CoverageBoundary::CompilerStatic => Some(ProjectionSubject::CompilerSelectionResult),
         CoverageBoundary::BackendStructural => Some(ProjectionSubject::EmittedStructuralFact),
         CoverageBoundary::ExternalEvidence => {

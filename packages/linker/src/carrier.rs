@@ -29,6 +29,7 @@ use crate::error::LinkRefusal;
 /// The linked carrier census (§14.6).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CarrierClosure {
+    model_scope: BTreeSet<RelationCaseKey>,
     required: BTreeSet<RelationCaseKey>,
     emitted: BTreeSet<RelationCaseKey>,
     reachable: BTreeMap<RelationCaseKey, BTreeSet<ConcreteCarrierSite>>,
@@ -36,6 +37,12 @@ pub struct CarrierClosure {
 }
 
 impl CarrierClosure {
+    /// Closure records scope-only policy without inventing a leaf (`rule:compiler:relations`).
+    #[must_use]
+    pub const fn model_scope(&self) -> &BTreeSet<RelationCaseKey> {
+        &self.model_scope
+    }
+
     /// Every relation-case the compiler required a carrier for.
     #[must_use]
     pub const fn required(&self) -> &BTreeSet<RelationCaseKey> {
@@ -176,6 +183,16 @@ pub fn close(
     }
 
     Ok(CarrierClosure {
+        model_scope: bundle
+            .plan()
+            .relations()
+            .flat_map(|relation| relation.cases.values())
+            .filter(|case| {
+                case.boundaries
+                    .contains(&tapscript::upstream::DischargeBoundary::ModelScope)
+            })
+            .map(|case| case.key.clone())
+            .collect(),
         required,
         emitted,
         reachable,

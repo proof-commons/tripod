@@ -693,7 +693,8 @@ fn the_relation_placement_census_is_exactly_the_plans_carrier_census() {
     let placed: BTreeSet<_> = bundle.placements().keys().cloned().collect();
 
     assert_eq!(placed, expected);
-    assert_eq!(bundle.placements().len(), 30);
+    // Before scope-only multiplicity: 30 runtime placements.
+    assert_eq!(bundle.placements().len(), 28);
 
     for placement in bundle.placements().values() {
         assert!(placement.realizable() <= placement.offered());
@@ -782,7 +783,8 @@ fn the_bundle_carries_the_assessment_it_was_gated_by_and_the_assumptions_it_rest
     // are still stated here rather than dropped at the boundary.
     let bundle = bundle();
 
-    assert_eq!(bundle.assessment().len(), 79);
+    // Before scope-only multiplicity: 79 verdicts.
+    assert_eq!(bundle.assessment().len(), 73);
     assert_eq!(bundle.selected_patterns().len(), 8);
     assert_eq!(
         bundle.selected_patterns(),
@@ -828,6 +830,19 @@ fn the_relocation_multiplicities_add_up_to_the_program_sites() {
     }
     assert_eq!(stated, counted);
     assert!(stated > bundle.symbols().len());
+}
+
+#[test]
+fn the_compact_demonstration_has_exactly_sixty_six_pushed_symbol_sites() {
+    let sites: usize = bundle()
+        .relocations()
+        .iter()
+        .map(|relocation| match relocation.site() {
+            RelocationSite::ProgramInstructions { indices, .. } => indices.len(),
+            RelocationSite::ConstructorBinding => 0,
+        })
+        .sum();
+    assert_eq!(sites, 66);
 }
 
 #[test]

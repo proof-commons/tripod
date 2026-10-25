@@ -765,27 +765,30 @@ const fn factor_census(operation: OperationId, committed: bool) -> FactorCensus 
             cases: 2,
             relation_cases: 46,
             placements: 216,
-            layout_requirements: 69,
-            coverage_nodes: 346,
-            coverage_edges: 375,
+            // Before scope-only multiplicity: layout 69, nodes 346, edges 375.
+            layout_requirements: 63,
+            coverage_nodes: 338,
+            coverage_edges: 355,
         },
         (OperationId::TransferLive, false) => FactorCensus {
             relations: 24,
             cases: 2,
             relation_cases: 48,
             placements: 216,
-            layout_requirements: 69,
-            coverage_nodes: 364,
-            coverage_edges: 501,
+            // Before scope-only multiplicity: layout 69, nodes 364, edges 501.
+            layout_requirements: 63,
+            coverage_nodes: 356,
+            coverage_edges: 479,
         },
         (OperationId::TransferLive, true) => FactorCensus {
             relations: 24,
             cases: 2,
             relation_cases: 48,
             placements: 216,
-            layout_requirements: 61,
-            coverage_nodes: 361,
-            coverage_edges: 487,
+            // Before scope-only multiplicity: layout 61, nodes 361, edges 487.
+            layout_requirements: 55,
+            coverage_nodes: 353,
+            coverage_edges: 465,
         },
         _ => panic!("not a pilot"),
     }
@@ -1297,6 +1300,8 @@ fn every_pilot_places_aggregate_conservation_on_one_operation_global_carrier() {
 
 #[test]
 fn every_pilot_factor_is_exactly_its_measured_census() {
+    let mut measured = Vec::new();
+    let mut expected = Vec::new();
     for pilot in pilots() {
         let operation = pilot.operation();
         for analysis in pilot.program.proof_plans.values() {
@@ -1319,11 +1324,20 @@ fn every_pilot_factor_is_exactly_its_measured_census() {
                 census.placements,
                 "{operation:?}",
             );
-            assert_eq!(
+            measured.push((
+                operation,
+                plan_is_committed(analysis, operation),
                 factor.layout_requirements.len(),
+                factor.coverage_dependencies.nodes.len(),
+                factor.coverage_dependencies.edges.len(),
+            ));
+            expected.push((
+                operation,
+                plan_is_committed(analysis, operation),
                 census.layout_requirements,
-                "{operation:?}",
-            );
+                census.coverage_nodes,
+                census.coverage_edges,
+            ));
 
             // Coverage is keyed by exactly the relation-cases, and the
             // dependency graph is the one those requirements imply.
@@ -1335,16 +1349,6 @@ fn every_pilot_factor_is_exactly_its_measured_census() {
             assert_eq!(
                 factor.coverage.cases, factor.execution_cases,
                 "{operation:?}"
-            );
-            assert_eq!(
-                factor.coverage_dependencies.nodes.len(),
-                census.coverage_nodes,
-                "{operation:?}",
-            );
-            assert_eq!(
-                factor.coverage_dependencies.edges.len(),
-                census.coverage_edges,
-                "{operation:?}",
             );
 
             // Every carrier alternative's layout obligation is part of
@@ -1360,6 +1364,7 @@ fn every_pilot_factor_is_exactly_its_measured_census() {
             }
         }
     }
+    assert_eq!(measured, expected);
 }
 
 #[test]

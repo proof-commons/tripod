@@ -346,7 +346,7 @@ fn compact_ash_matrix() -> Vec<MatrixRow> {
         at(
             Kind::SponsorEnvelopeMultiplicity,
             RelationSubject::Sponsor,
-            &runtime,
+            &[At::ModelScope],
             All,
         ),
         // Public permissionless constructibility is compiler-static;
@@ -521,7 +521,7 @@ fn transfer_live_matrix() -> Vec<MatrixRow> {
         at(
             Kind::SponsorEnvelopeMultiplicity,
             RelationSubject::Sponsor,
-            &runtime,
+            &[At::ModelScope],
             All,
         ),
         at(
@@ -717,8 +717,9 @@ fn every_pilot_relation_covers_exactly_its_acceptance_matrix_row() {
                                 "{:?} at {boundary:?}",
                                 row.relation,
                             );
-                            assert!(
+                            assert_eq!(
                                 plan.projections.contains_key(boundary),
+                                *boundary != CoverageBoundary::ModelScope,
                                 "{:?} at {boundary:?}",
                                 row.relation,
                             );

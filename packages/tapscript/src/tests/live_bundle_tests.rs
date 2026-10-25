@@ -221,6 +221,33 @@ fn the_private_constructor_emits_a_bundle_of_its_own() {
 // --- Symbols and relocations ------------------------------------------
 
 #[test]
+fn each_live_demonstration_has_exactly_two_hundred_forty_seven_pushed_symbol_sites() {
+    for representation in [
+        LiveTransferRepresentationPlan::Explicit,
+        LiveTransferRepresentationPlan::PrivateCommitted,
+    ] {
+        let bundle = emit_candidate_live_bundle(
+            &reviewed_target(),
+            &live_transfer_plan(),
+            &constructor(representation),
+            live_transfer_symbols(&reviewed_target()),
+        )
+        .expect("the candidate bundle emits");
+        let sites: usize = bundle
+            .relocations()
+            .iter()
+            .map(|relocation| match relocation.site() {
+                LiveRelocationSite::ProgramInstructions { indices, .. } => indices.len(),
+                LiveRelocationSite::ConstructorBinding => 0,
+            })
+            .sum();
+        assert_eq!(sites, 247, "{representation:?}");
+        assert_eq!(bundle.symbols().len(), 42, "{representation:?}");
+        assert_eq!(bundle.relocations().len(), 218, "{representation:?}");
+    }
+}
+
+#[test]
 fn every_relocation_names_a_symbol_the_table_describes() {
     let bundle = bundle();
 

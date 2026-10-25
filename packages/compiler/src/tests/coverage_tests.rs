@@ -313,7 +313,11 @@ fn every_pilot_relation_covers_exactly_its_acceptance_matrix_boundaries() {
 
                 assert_eq!(
                     plan.boundaries,
-                    expected_boundaries(&declaration.relation, amounts),
+                    if relation.kind() == RelationKind::SponsorEnvelopeMultiplicity {
+                        BTreeSet::from([CoverageBoundary::ModelScope])
+                    } else {
+                        expected_boundaries(&declaration.relation, amounts)
+                    },
                     "{relation:?} {:?}",
                     plan.case,
                 );
@@ -369,6 +373,9 @@ fn each_boundary_is_answered_by_its_own_evidence_role() {
                 }
 
                 match requirement.id.boundary {
+                    CoverageBoundary::ModelScope => {
+                        assert_eq!(requirement.role, EvidenceRole::ModelScope);
+                    }
                     CoverageBoundary::CompilerStatic => {
                         assert_eq!(requirement.role, EvidenceRole::CompilerAnalysisResult);
                     }
@@ -865,7 +872,8 @@ fn a_runtime_negative_requires_its_dependency_closure_and_never_claims_isolation
                     CoverageBoundary::RuntimeCarrier => {
                         CollateralPolicy::RequireIntendedAndDependencyClosure
                     }
-                    CoverageBoundary::CompilerStatic
+                    CoverageBoundary::ModelScope
+                    | CoverageBoundary::CompilerStatic
                     | CoverageBoundary::BackendStructural
                     | CoverageBoundary::ExternalEvidence => CollateralPolicy::ReportAdditional,
                 };
@@ -1563,6 +1571,9 @@ fn each_boundary_projects_its_own_subject() {
                 seen.insert(*boundary);
 
                 match boundary {
+                    CoverageBoundary::ModelScope => {
+                        panic!("scope policy must not claim an emitted projection");
+                    }
                     CoverageBoundary::RuntimeCarrier => {
                         assert_eq!(
                             requirement.subject,
@@ -1640,6 +1651,9 @@ fn an_accepted_projection_is_answered_by_the_evidence_role_of_its_boundary() {
                 checked.insert(requirement.id.boundary);
 
                 match requirement.id.boundary {
+                    CoverageBoundary::ModelScope => {
+                        assert_eq!(requirement.role, EvidenceRole::ModelScope);
+                    }
                     CoverageBoundary::CompilerStatic => {
                         assert_eq!(requirement.role, EvidenceRole::CompilerAnalysisResult);
                     }

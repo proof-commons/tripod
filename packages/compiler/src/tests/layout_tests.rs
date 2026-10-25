@@ -1,5 +1,7 @@
 //! Target-independent layout requirement tests (Guide-5 §16.5–§16.7).
 
+use std::collections::BTreeSet;
+
 use architecture::{AssetId, ObjectId, OperationId};
 use realization::{RelationId, RelationKind, RelationSubject, TransactionSide};
 
@@ -289,14 +291,36 @@ fn sponsor_envelope_multiplicity_and_disjointness_are_required() {
             RelationSubject::Sponsor,
         );
 
+        // The policy remains required, but its scope evaluation needs no leaf layout.
+        for plan in pilot
+            .plans
+            .iter()
+            .filter(|plan| plan.relation == multiplicity)
+        {
+            assert_eq!(
+                plan.boundaries,
+                BTreeSet::from([crate::placement::DischargeBoundary::ModelScope])
+            );
+        }
+
         for side in [TransactionSide::Input, TransactionSide::Output] {
+            assert!(!pilot.requirements.contains(
+                &LayoutRequirement::CompleteAndDisjointFamilies {
+                    relation: multiplicity.clone(),
+                    side,
+                }
+            ),);
             assert!(
                 pilot
                     .requirements
                     .contains(&LayoutRequirement::CompleteAndDisjointFamilies {
-                        relation: multiplicity.clone(),
+                        relation: id(
+                            operation,
+                            RelationKind::SponsorIsolation,
+                            RelationSubject::Sponsor,
+                        ),
                         side,
-                    }),
+                    })
             );
         }
     }

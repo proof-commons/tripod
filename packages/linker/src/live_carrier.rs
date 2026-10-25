@@ -138,6 +138,7 @@ impl PlanNeutralRelationCase {
 /// One representation plan's carrier closure (§11.5).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlanCarrierClosure {
+    model_scope: BTreeSet<RelationCaseKey>,
     plan: LiveTransferRepresentationPlan,
     cases: BTreeSet<ExecutionCaseId>,
     required: BTreeSet<RelationCaseKey>,
@@ -149,6 +150,12 @@ pub struct PlanCarrierClosure {
 }
 
 impl PlanCarrierClosure {
+    /// Closure records scope-only policy without inventing a leaf (`rule:compiler:relations`).
+    #[must_use]
+    pub const fn model_scope(&self) -> &BTreeSet<RelationCaseKey> {
+        &self.model_scope
+    }
+
     /// The representation plan this closure is for.
     #[must_use]
     pub const fn plan(&self) -> LiveTransferRepresentationPlan {
@@ -441,6 +448,15 @@ fn close_one_plan(
     }
 
     Ok(PlanCarrierClosure {
+        model_scope: projection
+            .relations()
+            .flat_map(|relation| relation.cases.values())
+            .filter(|case| {
+                case.boundaries
+                    .contains(&tapscript::upstream::DischargeBoundary::ModelScope)
+            })
+            .map(|case| case.key.clone())
+            .collect(),
         plan,
         cases: projection.cases().map(|case| case.id.clone()).collect(),
         required,

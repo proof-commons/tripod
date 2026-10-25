@@ -270,7 +270,8 @@ fn the_published_layout_census_is_the_analyzed_operation_census() {
             assert_eq!(published, factor.layout_requirements, "scope {scope:?}");
         }
 
-        assert_eq!(published.len(), 69, "scope {scope:?}");
+        // Before scope-only multiplicity: 69 layout requirements.
+        assert_eq!(published.len(), 63, "scope {scope:?}");
 
         // Every relation-owned layout requirement names a relation of
         // this operation. A requirement about another operation would
@@ -864,7 +865,8 @@ fn the_published_censuses_have_the_measured_pilot_sizes() {
 
     assert_eq!(
         counts,
-        BTreeMap::from([("cases", 2), ("layout", 69), ("relations", 23)]),
+        // Before scope-only multiplicity: 69 layout requirements.
+        BTreeMap::from([("cases", 2), ("layout", 63), ("relations", 23)]),
     );
 
     // The relation-case census is the product only because every

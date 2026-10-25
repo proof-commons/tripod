@@ -43,6 +43,8 @@ pub enum OwnerEntryMissing {
     CompilerRepresentation,
     /// Private compiler lifecycle validator and private analysis inputs.
     CompilerLifecycle,
+    /// Scope classification exists, but no malformed-envelope validation entry exists.
+    CompilerSponsorMultiplicity,
     /// A predicate exists, but no typed emitted-path refusal entry exists.
     EmittedSecretFreePath,
     /// No malformed emitted-representation validation entry exists.
@@ -63,6 +65,9 @@ impl OwnerEntryMissing {
                 "compiler::operation_plan::validate_target_operation_plan"
             }
             Self::CompilerLifecycle => "compiler::lifecycle::build_lifecycle_analysis",
+            Self::CompilerSponsorMultiplicity => {
+                "required: compiler::validate_sponsor_envelope_multiplicity"
+            }
             Self::EmittedSecretFreePath => "required: tapscript::validate_compact_secret_free_path",
             Self::EmittedRepresentation => {
                 "required: tapscript::validate_compact_emitted_representation"
@@ -205,7 +210,9 @@ pub fn compact_negative_manifest(
                     },
                 )
             }
-            EvidenceRole::CompilerAnalysisResult | EvidenceRole::EmittedStructure => {
+            EvidenceRole::CompilerAnalysisResult
+            | EvidenceRole::EmittedStructure
+            | EvidenceRole::ModelScope => {
                 let emitted = requirement.role == EvidenceRole::EmittedStructure;
                 let (boundary, owner) = first_party_owner(negative.mutation, emitted)?;
                 (NegativeClass::FirstParty, boundary, owner)
@@ -270,6 +277,9 @@ const fn first_party_owner(
         }
         (R::UnsupportedRepresentation, false) => (B::CompilerAnalysis, M::CompilerRepresentation),
         (R::RequiredLifecycleExitMissing, false) => (B::CompilerAnalysis, M::CompilerLifecycle),
+        (R::SponsorEnvelopeMultiplicityExceeded, false) => {
+            (B::CompilerAnalysis, M::CompilerSponsorMultiplicity)
+        }
         (R::UnexpectedProtocolSecret, true) => (B::EmittedStructure, M::EmittedSecretFreePath),
         (R::UnauthenticatedRepresentation, true) => (B::EmittedStructure, M::EmittedRepresentation),
         (R::RequiredLifecycleExitMissing, true) => (B::EmittedStructure, M::EmittedLifecycle),
@@ -295,8 +305,9 @@ mod tests {
         assert_eq!(rows.keys().cloned().collect::<BTreeSet<_>>(), expected);
         assert_eq!(rows.len(), 74);
         let count = |class| rows.values().filter(|r| r.class == class).count();
-        assert_eq!(count(NegativeClass::TargetExecutable), 50);
-        assert_eq!(count(NegativeClass::FirstParty), 18);
+        // Before scope-only multiplicity: 50 target and 18 first-party rows.
+        assert_eq!(count(NegativeClass::TargetExecutable), 48);
+        assert_eq!(count(NegativeClass::FirstParty), 20);
         assert_eq!(count(NegativeClass::Unreachable), 6);
         let added = rows
             .values()
@@ -304,9 +315,23 @@ mod tests {
             .count();
         assert_eq!(added, 2);
         assert_eq!(rows.len() - added, 72);
-        assert_eq!(count(NegativeClass::TargetExecutable) - added, 48);
-        assert_eq!(count(NegativeClass::TargetExecutable) - added - 1, 47);
-        assert_eq!(count(NegativeClass::TargetExecutable) - 1, 49);
+        // Before scope-only multiplicity: 48, 47, 49 respectively.
+        assert_eq!(count(NegativeClass::TargetExecutable) - added, 46);
+        assert_eq!(count(NegativeClass::TargetExecutable) - added - 1, 45);
+        assert_eq!(count(NegativeClass::TargetExecutable) - 1, 47);
+        let scope: Vec<_> = rows
+            .values()
+            .filter(|r| r.mutation == RelationMutation::SponsorEnvelopeMultiplicityExceeded)
+            .collect();
+        assert_eq!(scope.len(), 2);
+        for row in scope {
+            assert_eq!(row.class, NegativeClass::FirstParty);
+            assert_eq!(row.boundary, CompactNegativeBoundary::CompilerAnalysis);
+            assert_eq!(
+                row.owner,
+                NegativeOwner::OwnerEntryMissing(OwnerEntryMissing::CompilerSponsorMultiplicity)
+            );
+        }
     }
 
     #[test]
@@ -317,13 +342,14 @@ mod tests {
             .values()
             .filter(|r| matches!(r.owner, NegativeOwner::OwnerEntryMissing(_)))
             .collect();
-        assert_eq!(missing.len(), 22);
+        // Before scope-only multiplicity: 22 missing owners, 16 first-party.
+        assert_eq!(missing.len(), 24);
         assert_eq!(
             missing
                 .iter()
                 .filter(|r| r.class == NegativeClass::FirstParty)
                 .count(),
-            16
+            18
         );
         assert_eq!(
             missing

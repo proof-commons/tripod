@@ -77,15 +77,17 @@ fn the_verdict_census_is_exactly_the_plans_three_censuses() {
     // The measured Wave-4 sizes, restated so a plan that silently grew
     // or shrank fails here rather than being assessed quietly.
     assert_eq!(plan.capabilities().count(), 9);
-    assert_eq!(plan.layout().count(), 69);
+    // Before scope-only multiplicity: 69 layout requirements.
+    assert_eq!(plan.layout().count(), 63);
     assert_eq!(plan.external_evidence().count(), 1);
-    assert_eq!(assessment.len(), 79);
+    // Before scope-only multiplicity: 79 verdicts.
+    assert_eq!(assessment.len(), 73);
     assert!(!assessment.is_empty());
 }
 
 #[test]
 fn the_support_state_census_is_exactly_this() {
-    // §8.2's multi-state census, written out. Sixty-nine layout rows,
+    // §8.2's multi-state census, written out. Sixty-three layout rows,
     // nine capabilities, one evidence role; every one of them lands in
     // a state, and the states are the six the rule fixes.
     let target = reviewed_target();
@@ -94,7 +96,8 @@ fn the_support_state_census_is_exactly_this() {
     assert_eq!(
         assessment.state_census(),
         BTreeMap::from([
-            (AssessmentDisposition::CompleteBackendPattern, 74),
+            // Before scope-only multiplicity: 74 complete patterns.
+            (AssessmentDisposition::CompleteBackendPattern, 68),
             (AssessmentDisposition::BackendStructural, 3),
             (AssessmentDisposition::ExternalEvidenceRequired, 2),
         ]),
@@ -145,7 +148,8 @@ fn every_verdict_states_its_ground_and_the_absences_are_named_as_absences() {
     assert_eq!(
         assessment.ground_census(),
         BTreeMap::from([
-            (VerdictGround::ApprovedPattern, 74),
+            // Before scope-only multiplicity: 74 approved patterns.
+            (VerdictGround::ApprovedPattern, 68),
             (VerdictGround::StructuralAbsence, 2),
             (VerdictGround::CompilerOrAbiObligation, 1),
             (VerdictGround::ExternalTargetClaim, 2),

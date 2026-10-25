@@ -46,28 +46,51 @@ pub fn derive(architecture: &Architecture) -> Result<OperationRealization, Reali
 }
 
 struct Ids {
+    /// Closure needs the fixed aggregate's bounded input family (`op:realization:compact-ash`).
     input_cardinality: RelationId,
+    /// Closure requires one aggregate successor (`op:realization:compact-ash`).
     output_cardinality: RelationId,
+    /// Closure needs the declared sponsor input region's bound (`sec:realization:domains`).
     sponsor_input_cardinality: RelationId,
+    /// Closure permits at most one sponsor change role (`sec:realization:domains`).
     sponsor_output_cardinality: RelationId,
+    /// Closure needs authenticated ASH input membership (`op:realization:compact-ash`).
     input_recognition: RelationId,
+    /// Closure needs an ASH aggregate successor (`op:realization:compact-ash`).
     output_recognition: RelationId,
+    /// Closure requires ordinary L-BTC sponsor inputs (`sec:realization:domains`).
     sponsor_input_recognition: RelationId,
+    /// Closure requires ordinary L-BTC sponsor change (`sec:realization:domains`).
     sponsor_output_recognition: RelationId,
+    /// Closure preserves the aggregate's U amount (`op:realization:compact-ash`).
     conservation: RelationId,
+    /// Closure requires an ownerless execution path (`op:realization:compact-ash`).
     permissionless: RelationId,
+    /// Closure excludes undeclared input families within the region (`sec:realization:domains`).
     input_closure: RelationId,
+    /// Closure excludes undeclared output families within the region (`sec:realization:domains`).
     output_closure: RelationId,
+    /// Closure requires disjoint sponsor claims and owned flows (`rule:realization:derive`).
     sponsor: RelationId,
+    /// Closure records a resource policy with no leaf enforcement (`rule:compiler:relations`).
     sponsor_multiplicity: RelationId,
+    /// Closure needs target conservation evidence for L-BTC (`pkg:realization:contract`).
     substrate_conservation: RelationId,
+    /// Closure permits only the declared regional open flows (`sec:realization:domains`).
     open_flow_policy: RelationId,
+    /// Closure requires the ownerless lateral canonical partition (`op:realization:compact-ash`).
     canonical_delta_policy: RelationId,
+    /// Closure excludes undeclared root effects (`op:realization:compact-ash`).
     roots: RelationId,
+    /// Closure requires exactly the declared projections (`pkg:realization:contract`).
     projections: RelationId,
+    /// Closure needs a constructible aggregate successor (`op:realization:compact-ash`).
     constructibility: RelationId,
+    /// Closure requires an authenticated supported representation (`pkg:realization:contract`).
     representation: RelationId,
+    /// Closure preserves the compact exit (`op:realization:compact-ash`).
     compact_lifecycle: RelationId,
+    /// Closure preserves the clear exit (`op:realization:compact-ash`).
     clear_lifecycle: RelationId,
 }
 

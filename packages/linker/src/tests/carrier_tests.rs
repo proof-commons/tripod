@@ -29,8 +29,9 @@ fn the_three_censuses_are_one_set_and_every_case_stays_reachable() {
     let closure = close(&bundle, &every_leaf()).expect("the carrier census closes");
 
     assert_eq!(closure.required(), closure.emitted());
-    assert_eq!(closure.required().len(), 30);
-    assert_eq!(closure.reachable().len(), 30);
+    // Before scope-only multiplicity: 30 required and reachable carriers.
+    assert_eq!(closure.required().len(), 28);
+    assert_eq!(closure.reachable().len(), 28);
     for (key, sites) in closure.reachable() {
         assert!(!sites.is_empty(), "{key:?} has no reachable site");
     }
@@ -46,7 +47,10 @@ fn every_case_of_this_candidate_is_carried_by_exactly_one_site() {
     let bundle = relocatable_bundle();
     let closure = close(&bundle, &every_leaf()).expect("the carrier census closes");
 
-    assert_eq!(closure.uniquely_carried().len(), 30);
+    // Before scope-only multiplicity: 30 runtime carriers.
+    assert_eq!(closure.uniquely_carried().len(), 28);
+    assert_eq!(closure.model_scope().len(), 2);
+    assert!(closure.model_scope().is_disjoint(closure.required()));
     assert_eq!(closure.uniquely_carried().len(), closure.required().len());
 }
 

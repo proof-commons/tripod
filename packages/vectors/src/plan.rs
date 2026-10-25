@@ -104,9 +104,9 @@ pub enum NegativeObservability {
 const fn negative_observability(role: &EvidenceRole) -> Option<NegativeObservability> {
     match role {
         EvidenceRole::TargetExecution => Some(NegativeObservability::TargetExecutable),
-        EvidenceRole::CompilerAnalysisResult | EvidenceRole::EmittedStructure => {
-            Some(NegativeObservability::FirstPartyRefusal)
-        }
+        EvidenceRole::ModelScope
+        | EvidenceRole::CompilerAnalysisResult
+        | EvidenceRole::EmittedStructure => Some(NegativeObservability::FirstPartyRefusal),
         EvidenceRole::ExternalReport { .. } => Some(NegativeObservability::UnreachableInCandidate),
         // A vacuous relation-case states an acceptance obligation and
         // never a mutation, so this role reaching a negative row would
@@ -1011,9 +1011,9 @@ const fn outstanding_reason(requirement: &TargetCoverageRequirement) -> Outstand
             OutstandingReason::NoTargetHasExecuted
         }
         EvidenceRole::ExternalReport { .. } => OutstandingReason::ExternalReportAbsent,
-        EvidenceRole::CompilerAnalysisResult | EvidenceRole::EmittedStructure => {
-            OutstandingReason::StructuralEvidenceNotAssembled
-        }
+        EvidenceRole::ModelScope
+        | EvidenceRole::CompilerAnalysisResult
+        | EvidenceRole::EmittedStructure => OutstandingReason::StructuralEvidenceNotAssembled,
     }
 }
 
@@ -1469,15 +1469,16 @@ mod tests {
         // a `> 0` assertion here would pass just as happily on a census
         // that had quietly lost two hundred rows.
         // SponsorMemberUnclaimed adds one negative requirement per sponsor case.
-        assert_eq!(plan.census().coverage_requirements(), 213);
-        assert_eq!(plan.census().positive_requirements(), 139);
+        // Before scope-only multiplicity: 213 requirements, 139 positive.
+        assert_eq!(plan.census().coverage_requirements(), 209);
+        assert_eq!(plan.census().positive_requirements(), 135);
         assert_eq!(plan.census().negative_requirements(), 74);
     }
 
     #[test]
     fn the_negative_half_splits_into_three_kinds_that_sum_to_it() {
-        // The classification, pinned. Fifty requirements
-        // a live target must refuse, eighteen first-party code refuses
+        // The classification, pinned. Forty-eight requirements
+        // a live target must refuse, twenty first-party code refuses
         // before any transaction exists, and six whose evidence is an
         // external report nobody has written.
         //
@@ -1486,8 +1487,9 @@ mod tests {
         // role fails here instead of quietly leaving one column short.
         let census = plan().census();
         // SponsorMemberUnclaimed adds one negative requirement per sponsor case.
-        assert_eq!(census.negative_target_executable(), 50);
-        assert_eq!(census.negative_first_party(), 18);
+        // Before scope-only multiplicity: 50 target refusals, 18 first-party refusals.
+        assert_eq!(census.negative_target_executable(), 48);
+        assert_eq!(census.negative_first_party(), 20);
         assert_eq!(census.negative_unreachable(), 6);
         assert_eq!(
             census.negative_target_executable()
@@ -1534,9 +1536,9 @@ mod tests {
             };
             let expected = match row.role() {
                 EvidenceRole::TargetExecution => super::NegativeObservability::TargetExecutable,
-                EvidenceRole::CompilerAnalysisResult | EvidenceRole::EmittedStructure => {
-                    super::NegativeObservability::FirstPartyRefusal
-                }
+                EvidenceRole::ModelScope
+                | EvidenceRole::CompilerAnalysisResult
+                | EvidenceRole::EmittedStructure => super::NegativeObservability::FirstPartyRefusal,
                 EvidenceRole::ExternalReport { .. } => {
                     super::NegativeObservability::UnreachableInCandidate
                 }
