@@ -181,6 +181,10 @@ const AUXILIARY: [u8; 32] = [0; 32];
 /// member has to say.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyValidator {
+    /// Constructor continuity against a retained constructor.
+    ConstructorContinuity,
+    /// Consumed symbols against offered definitions.
+    SymbolResolution,
     /// Announcement construction over a validated view and a request.
     SemanticConstruction,
     /// The operator authorization over a frozen signing request.
@@ -213,7 +217,8 @@ pub enum MaturityFirstPartyValidator {
 }
 
 impl MaturityFirstPartyValidator {
-    /// Every owning entry point this census drives.
+    /// Every owning entry point the historical census drives.
+    /// Supplementary comparisons retain their entries separately.
     pub const ALL: &'static [Self] = &[
         Self::SemanticConstruction,
         Self::OperatorAuthorization,
@@ -235,6 +240,8 @@ impl MaturityFirstPartyValidator {
     #[must_use]
     pub const fn entry_point(self) -> &'static str {
         match self {
+            Self::ConstructorContinuity => "CandidateStateConstructor::continuity",
+            Self::SymbolResolution => "resolve_state_census",
             Self::SemanticConstruction => "construct_maturity_announcement",
             Self::OperatorAuthorization => "OperatorSigningStarted::authorize",
             Self::OperatorKeyEncoding => "OperatorKey::new",
@@ -259,13 +266,16 @@ impl MaturityFirstPartyValidator {
             Self::SemanticConstruction
             | Self::OperatorAuthorization
             | Self::OfferedTransactionCheck => "transaction",
-            Self::OperatorKeyEncoding
+            Self::ConstructorContinuity
+            | Self::OperatorKeyEncoding
             | Self::OperatorRequestFreeze
             | Self::MetadataPatternDecode
             | Self::MetadataLeafPattern
             | Self::StaticSubtreeValidation
             | Self::CanonicalBranchSide => "tapscript",
-            Self::StateCandidateLink | Self::LinkedProgramCheck => "linker",
+            Self::SymbolResolution | Self::StateCandidateLink | Self::LinkedProgramCheck => {
+                "linker"
+            }
             Self::ResponseShapeValidation
             | Self::OperationResponseShape
             | Self::ConservationResponseShape => "target-elements-conformance",
@@ -289,6 +299,16 @@ impl MaturityFirstPartyValidator {
 /// else.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyChange {
+    /// Change one static leaf against the retained constructor.
+    ChangeRetainedStaticLeaf,
+    /// Add a static leaf against the retained constructor.
+    AddRetainedStaticLeaf,
+    /// Remove the consumed metadata schema definition.
+    OmitConsumedMetadataSchema,
+    /// Remove the consumed minimum lead definition.
+    OmitConsumedMinimumLead,
+    /// Remove the consumed operator definition.
+    OmitConsumedOperator,
     /// State a predecessor whose maturity is already announced.
     AnnouncePredecessorThatAlreadyAnnounced,
     /// State a predecessor whose maturity is complete.
@@ -777,9 +797,15 @@ pub struct ValidatedMaturityFirstPartyEvidence {
     change: MaturityFirstPartyChange,
     control: MaturityCanonicalControl,
     observed: MaturityFirstPartyObservation,
+    comparison: Option<MaturityRetainedComparison>,
 }
 
 impl ValidatedMaturityFirstPartyEvidence {
+    /// Exact objects retained by a supplementary comparison.
+    #[must_use]
+    pub const fn comparison(&self) -> Option<&MaturityRetainedComparison> {
+        self.comparison.as_ref()
+    }
     /// The §16 table the discharged row comes from.
     #[must_use]
     pub const fn section(&self) -> MaturitySafetySection {
@@ -3163,7 +3189,18 @@ pub fn validate_maturity_first_party(
         MaturityFirstPartyDisposition::Discharge(discharge) => discharge,
     };
     let substrate = substrate()?;
+    if matches!(
+        discharge.validator,
+        MaturityFirstPartyValidator::ConstructorContinuity
+            | MaturityFirstPartyValidator::SymbolResolution
+    ) {
+        return validate_supplementary_comparison(case, row, discharge);
+    }
     let observed = match discharge.validator {
+        MaturityFirstPartyValidator::ConstructorContinuity
+        | MaturityFirstPartyValidator::SymbolResolution => {
+            return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+        }
         MaturityFirstPartyValidator::SemanticConstruction => {
             discharge_construction(substrate, discharge.change)
         }
@@ -3219,6 +3256,7 @@ pub fn validate_maturity_first_party(
         change: discharge.change,
         control: row.control(),
         observed,
+        comparison: None,
     })
 }
 
@@ -3244,6 +3282,1055 @@ pub fn discharge_maturity_first_party()
         .filter(|case| case.discharge().is_some())
         .map(validate_maturity_first_party)
         .collect()
+}
+
+/// Test staging for constructor continuity; never a production constructor bypass.
+/// Both subjects are derived normally, with a changed static tree on the offered side.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturityConstructorComparisonTestStaging {
+    control: CandidateStateConstructor,
+    malformed: CandidateStateConstructor,
+}
+
+impl MaturityConstructorComparisonTestStaging {
+    /// The retained constructor used as the accepted control.
+    #[must_use]
+    pub const fn control(&self) -> &CandidateStateConstructor {
+        &self.control
+    }
+
+    /// The constructor whose static tree disagrees with the retained one.
+    #[must_use]
+    pub const fn malformed(&self) -> &CandidateStateConstructor {
+        &self.malformed
+    }
+
+    fn new(change: MaturityFirstPartyChange) -> Result<Self, MaturityFirstPartyRefusal> {
+        let substrate = substrate()?;
+        let control = retained_constructor(substrate)?.clone();
+        let subtree = control.static_subtree();
+        let first = subtree
+            .leaves()
+            .first()
+            .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        let identity = subtree
+            .leaves()
+            .iter()
+            .map(|entry| entry.identity)
+            .max()
+            .and_then(|value| value.checked_add(1))
+            .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        let mut leaf = first.leaf.clone();
+        let tree = match change {
+            MaturityFirstPartyChange::ChangeRetainedStaticLeaf => {
+                let mut instructions = leaf.program.instructions().to_vec();
+                instructions.push(TapscriptInstruction::Push(
+                    StackItem::new(&substrate.target, vec![1])
+                        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?,
+                ));
+                leaf.program = TapscriptProgram::new(instructions)
+                    .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+                replace_static_leaf(subtree.tree(), first.identity, &leaf)
+            }
+            MaturityFirstPartyChange::AddRetainedStaticLeaf => {
+                leaf.role = StateLeafRole::Support(identity);
+                leaf.program = TapscriptProgram::new(vec![TapscriptInstruction::Push(
+                    StackItem::new(&substrate.target, vec![1])
+                        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?,
+                )])
+                .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+                StateStaticNode::Branch(
+                    Box::new(subtree.tree().clone()),
+                    Box::new(StateStaticNode::Leaf { identity, leaf }),
+                )
+            }
+            _ => return Err(MaturityFirstPartyRefusal::ChangeChangedNothing),
+        };
+        let changed = StateStaticSubtree::new(&substrate.target, Some(tree))
+            .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        let malformed = CandidateStateConstructor::derive(
+            &substrate.target,
+            &control.encoded_metadata().semantic,
+            &changed,
+            substrate.bundle.policy().internal_key(),
+            StateNonceBudget::default(),
+            &OracleStateCurve,
+        )
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        Ok(Self { control, malformed })
+    }
+
+    fn observe(&self) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+        if self.control.static_subtree().root() == self.malformed.static_subtree().root() {
+            return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+        }
+        self.control.continuity(&self.control).map_err(|refusal| {
+            MaturityFirstPartyRefusal::ControlWasRefused(
+                MaturityFirstPartyObservation::Constructor(refusal),
+            )
+        })?;
+        let observed = self
+            .control
+            .continuity(&self.malformed)
+            .err()
+            .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+        let observed = MaturityFirstPartyObservation::Constructor(observed);
+        if observed
+            != MaturityFirstPartyObservation::Constructor(StateConstructorRefusal::ConflictingLeaf)
+        {
+            return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
+                observed,
+            ));
+        }
+        Ok(observed)
+    }
+}
+
+fn replace_static_leaf(
+    tree: &StateStaticNode,
+    wanted: u32,
+    replacement: &StateStaticLeaf,
+) -> StateStaticNode {
+    match tree {
+        StateStaticNode::Leaf { identity, .. } if *identity == wanted => StateStaticNode::Leaf {
+            identity: *identity,
+            leaf: replacement.clone(),
+        },
+        StateStaticNode::Leaf { .. } => tree.clone(),
+        StateStaticNode::Branch(left, right) => StateStaticNode::Branch(
+            Box::new(replace_static_leaf(left, wanted, replacement)),
+            Box::new(replace_static_leaf(right, wanted, replacement)),
+        ),
+    }
+}
+
+/// Test staging for symbol resolution using only public definition constructors.
+/// The malformed census omits exactly one consumed definition; consumers stay fixed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturitySymbolResolutionTestStaging {
+    control: linker::StateDefinitionCensus,
+    malformed: linker::StateDefinitionCensus,
+    consumers: StateConsumerCensus,
+    missing: linker::StateLinkSymbol,
+}
+
+impl MaturitySymbolResolutionTestStaging {
+    /// The complete definitions offered to resolution.
+    #[must_use]
+    pub const fn control(&self) -> &linker::StateDefinitionCensus {
+        &self.control
+    }
+
+    /// The same definitions with one consumed symbol omitted.
+    #[must_use]
+    pub const fn malformed(&self) -> &linker::StateDefinitionCensus {
+        &self.malformed
+    }
+
+    /// The exact symbol whose absence must be reported.
+    #[must_use]
+    pub const fn missing(&self) -> linker::StateLinkSymbol {
+        self.missing
+    }
+
+    fn new(missing: linker::StateLinkSymbol) -> Result<Self, MaturityFirstPartyRefusal> {
+        let substrate = substrate()?;
+        let (singleton, declaration) = link_deployment_values()?;
+        let constructor = substrate.sources.constructor();
+        let control = collect_state_definitions(
+            &substrate.target,
+            substrate.bundle.deployment(),
+            constructor,
+            &singleton,
+            &declaration,
+            substrate.sources.record().schedule(),
+        )
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        let consumers = StateConsumerCensus::from_sources(substrate.sources.record(), constructor);
+        let mut malformed = linker::StateDefinitionCensus::default();
+        for (&symbol, definition) in control.definitions() {
+            if symbol != missing {
+                malformed
+                    .define(symbol, definition.value().clone(), definition.origin())
+                    .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+            }
+        }
+        Ok(Self {
+            control,
+            malformed,
+            consumers,
+            missing,
+        })
+    }
+
+    fn observe(&self) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+        if self.control == self.malformed {
+            return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+        }
+        resolve_state_census(&self.control, &self.consumers).map_err(|refusal| {
+            MaturityFirstPartyRefusal::ControlWasRefused(MaturityFirstPartyObservation::StateLink(
+                Box::new(refusal),
+            ))
+        })?;
+        let observed = resolve_state_census(&self.malformed, &self.consumers)
+            .err()
+            .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)?;
+        let observed = MaturityFirstPartyObservation::StateLink(Box::new(observed));
+        let expected = MaturityFirstPartyObservation::StateLink(Box::new(
+            StateLinkRefusal::MissingDefinition(self.missing),
+        ));
+        if observed != expected {
+            return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
+                observed,
+            ));
+        }
+        Ok(observed)
+    }
+}
+
+/// Actual paired subjects, retained beside the checked refusal rather than a success flag.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MaturityRetainedComparison {
+    /// Static-root continuity over normally derived constructors.
+    Constructor(Box<MaturityConstructorComparisonTestStaging>),
+    /// Completeness of definitions against the same consumed symbols.
+    Symbols(Box<MaturitySymbolResolutionTestStaging>),
+}
+
+impl MaturityRetainedComparison {
+    fn observe(&self) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+        match self {
+            Self::Constructor(pair) => pair.observe(),
+            Self::Symbols(pair) => pair.observe(),
+        }
+    }
+}
+
+fn supplemental_discharge(
+    section: MaturitySafetySection,
+    name: &str,
+) -> Option<MaturityFirstPartyDischarge> {
+    use MaturityFirstPartyChange as Change;
+    use MaturityFirstPartyValidator as Validator;
+    use MaturitySafetySection as Section;
+    let (validator, change, expected_name) = match (section, name) {
+        (Section::PredecessorConstructorFault, "wrong-static-subtree") => (
+            Validator::ConstructorContinuity,
+            Change::ChangeRetainedStaticLeaf,
+            "ConflictingLeaf",
+        ),
+        (Section::PredecessorConstructorFault, "extra-escape-leaf") => (
+            Validator::ConstructorContinuity,
+            Change::AddRetainedStaticLeaf,
+            "ConflictingLeaf",
+        ),
+        (Section::AbiLinkerFault, "unresolved-metadata-schema-symbol") => (
+            Validator::SymbolResolution,
+            Change::OmitConsumedMetadataSchema,
+            "MissingDefinition(MetadataSchema)",
+        ),
+        (Section::AbiLinkerFault, "unresolved-lead-bound-symbol") => (
+            Validator::SymbolResolution,
+            Change::OmitConsumedMinimumLead,
+            "MissingDefinition(MaturityLeadMin)",
+        ),
+        (Section::AbiLinkerFault, "unresolved-operator-symbol") => (
+            Validator::SymbolResolution,
+            Change::OmitConsumedOperator,
+            "MissingDefinition(CommittedOperatorKey)",
+        ),
+        _ => return None,
+    };
+    Some(discharge(
+        validator,
+        change,
+        supplemental_refusal,
+        expected_name,
+    ))
+}
+
+fn supplemental_refusal(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(
+        observation,
+        MaturityFirstPartyObservation::Constructor(StateConstructorRefusal::ConflictingLeaf)
+    ) || matches!(observation,
+        MaturityFirstPartyObservation::StateLink(refusal)
+            if matches!(refusal.as_ref(), StateLinkRefusal::MissingDefinition(_))
+    )
+}
+
+fn validate_supplementary_comparison(
+    case: &MaturityFirstPartyCase,
+    row: &MaturitySafetyRow,
+    discharge: MaturityFirstPartyDischarge,
+) -> Result<ValidatedMaturityFirstPartyEvidence, MaturityFirstPartyRefusal> {
+    use MaturityFirstPartyChange as Change;
+    use linker::StateLinkSymbol as Symbol;
+    if supplemental_discharge(case.section, case.name) != Some(discharge) {
+        return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+    }
+    let comparison = match discharge.change {
+        Change::ChangeRetainedStaticLeaf | Change::AddRetainedStaticLeaf => {
+            MaturityRetainedComparison::Constructor(Box::new(
+                MaturityConstructorComparisonTestStaging::new(discharge.change)?,
+            ))
+        }
+        change => {
+            let symbol = match change {
+                Change::OmitConsumedMetadataSchema => Symbol::MetadataSchema,
+                Change::OmitConsumedMinimumLead => Symbol::MaturityLeadMin,
+                Change::OmitConsumedOperator => Symbol::CommittedOperatorKey,
+                _ => return Err(MaturityFirstPartyRefusal::ChangeChangedNothing),
+            };
+            MaturityRetainedComparison::Symbols(Box::new(MaturitySymbolResolutionTestStaging::new(
+                symbol,
+            )?))
+        }
+    };
+    let observed = comparison.observe()?;
+    if !(discharge.expected)(&observed) {
+        return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
+            observed,
+        ));
+    }
+    Ok(ValidatedMaturityFirstPartyEvidence {
+        section: case.section,
+        name: case.name,
+        validator: discharge.validator,
+        change: discharge.change,
+        control: row.control(),
+        observed,
+        comparison: Some(comparison),
+    })
+}
+
+/// A boundary retaining an observable obligation, including entries still required.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MaturityRetainedBoundary {
+    /// Decode the request's offered cycle encoding.
+    RequestDecoding,
+    /// Compare an offered successor with the finalized successor.
+    SuccessorComparison,
+    /// Compare the selected nonce with the canonical search result.
+    NonceSearch,
+    /// Reconstruct the complete tree including the metadata leaf.
+    CompleteTree,
+    /// Classify the objects and flows offered to the ABI.
+    AbiClassification,
+    /// Validate the offered coordinator, positions and cardinalities.
+    AbiRoleValidation,
+    /// Validate weighted leaf declarations.
+    WeightedTreeInput,
+    /// Check the complete linked tree and resource bounds.
+    LinkedBounds,
+    /// Read bounded newline-terminated requests.
+    RequestFraming,
+    /// Decode the offered JSON record.
+    RequestJson,
+    /// Refuse unknown request fields.
+    RequestFields,
+    /// Bind the offered protocol revision.
+    SchemaBinding,
+    /// Bind the observed environment.
+    EnvironmentBinding,
+    /// Bind the expected provenance.
+    ProvenanceBinding,
+    /// Bind the signing response to the requested transaction.
+    SigningBinding,
+    /// Compare static roots when staging cannot produce a usable pair.
+    ConstructorContinuity,
+    /// Resolve symbols when staging cannot produce a usable pair.
+    SymbolResolution,
+}
+
+impl MaturityRetainedBoundary {
+    /// The observable boundary; an absent entry is explicitly marked required.
+    #[must_use]
+    pub const fn entry_point(self) -> &'static str {
+        match self {
+            Self::RequestDecoding => "request decoding: required typed cycle decoder",
+            Self::SuccessorComparison => "OperatorAuthorizedMaturityAnnouncement::check_offered",
+            Self::NonceSearch => "CandidateStateConstructor::derive: canonical search comparison",
+            Self::CompleteTree => {
+                "PublicMaturityStateView::validate: complete program reconstruction"
+            }
+            Self::AbiClassification => {
+                "ABI classification: required transaction::validate_maturity_abi_classification"
+            }
+            Self::AbiRoleValidation => {
+                "ABI role validation: required transaction::validate_maturity_abi_roles"
+            }
+            Self::WeightedTreeInput => "TaptreeInput<StateLeafRole>::new",
+            Self::LinkedBounds => "StateLinkedTaptree::bind: complete tree and resource bounds",
+            Self::RequestFraming => "RequestReader.read",
+            Self::RequestJson => "request JSON decoding",
+            Self::RequestFields => "require_execution_request_fields",
+            Self::SchemaBinding => "compare_environment: protocol schema binding",
+            Self::EnvironmentBinding => "compare_environment: environment binding",
+            Self::ProvenanceBinding => "ExecutionTranscript::provenance_agreement",
+            Self::SigningBinding => "bind_script_path_response",
+            Self::ConstructorContinuity => "CandidateStateConstructor::continuity",
+            Self::SymbolResolution => "resolve_state_census",
+        }
+    }
+}
+
+/// A formal absence-of-coordinate closure, limited to ordering of unchanged contents.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MaturityAbsenceOfCoordinate {
+    /// Exchanging children leaves the committed branch and paths unchanged.
+    BranchOrder,
+    /// Reordering declarations leaves canonical assembly unchanged.
+    SourceDeclarationOrder,
+}
+
+impl MaturityAbsenceOfCoordinate {
+    /// Why no malformed committed coordinate exists, and the argument's limit.
+    #[must_use]
+    pub const fn argument(self) -> &'static str {
+        match self {
+            Self::BranchOrder => {
+                "absence of coordinate: sorted child hashes erase offered order; topology and leaf changes excluded"
+            }
+            Self::SourceDeclarationOrder => {
+                "absence of coordinate: canonical assembly erases declaration order; topology and leaf changes excluded"
+            }
+        }
+    }
+}
+
+/// Actual order variants and their canonical assembly, retained for the scope argument.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturityOrderNormalization {
+    first: StateStaticSubtree,
+    reversed: StateStaticSubtree,
+    declarations: Vec<StateLeafRole>,
+    assembly: linker::DeterministicTaptree<StateLeafRole>,
+    reversed_assembly: linker::DeterministicTaptree<StateLeafRole>,
+}
+
+impl MaturityOrderNormalization {
+    fn new() -> Result<Self, MaturityFirstPartyRefusal> {
+        let staged = MaturityConstructorComparisonTestStaging::new(
+            MaturityFirstPartyChange::AddRetainedStaticLeaf,
+        )?;
+        let first = staged.malformed.static_subtree().clone();
+        let StateStaticNode::Branch(left, right) = first.tree() else {
+            return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+        };
+        let target = &substrate()?.target;
+        let reversed = StateStaticSubtree::new(
+            target,
+            Some(StateStaticNode::Branch(right.clone(), left.clone())),
+        )
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        let declarations: Vec<_> = first.leaves().iter().map(|entry| entry.leaf.role).collect();
+        let build_tree = |roles: Vec<StateLeafRole>| {
+            let input = linker::state_static_taptree_input(
+                roles,
+                target.definition().leaf_version(),
+                std::num::NonZeroU32::MIN.saturating_add(127),
+            )
+            .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+            linker::assemble_state_static(&input)
+                .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)
+        };
+        let assembly = build_tree(declarations.clone())?;
+        let reversed_assembly = build_tree(declarations.iter().rev().copied().collect())?;
+        let proof = Self {
+            first,
+            reversed,
+            declarations,
+            assembly,
+            reversed_assembly,
+        };
+        proof.validate()?;
+        Ok(proof)
+    }
+
+    fn validate(&self) -> Result<(), MaturityFirstPartyRefusal> {
+        let leaves = |tree: &StateStaticSubtree| {
+            tree.leaves()
+                .iter()
+                .map(|entry| {
+                    (
+                        entry.identity,
+                        (entry.leaf.clone(), entry.hash, entry.siblings.clone()),
+                    )
+                })
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        if self.first.tree() == self.reversed.tree()
+            || self.first.root() != self.reversed.root()
+            || leaves(&self.first) != leaves(&self.reversed)
+            || self.declarations.len() < 2
+            || self.assembly != self.reversed_assembly
+        {
+            return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+        }
+        Ok(())
+    }
+}
+
+/// A valid retained construction and protocol opening, without a claimed malformed sibling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturityRetainedSubject {
+    announcement: Box<FinalizedMaturityAnnouncement>,
+    opening: target_elements_conformance::protocol::HandshakeRequest,
+}
+
+impl MaturityRetainedSubject {
+    /// Construction retaining its request, view, ABI and successor.
+    #[must_use]
+    pub const fn announcement(&self) -> &FinalizedMaturityAnnouncement {
+        &self.announcement
+    }
+
+    /// The typed protocol opening retained for request-boundary work.
+    #[must_use]
+    pub const fn opening(&self) -> &target_elements_conformance::protocol::HandshakeRequest {
+        &self.opening
+    }
+}
+
+/// The supplementary standing, separate from the historical evidence-plan classification.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MaturitySupplementaryDisposition {
+    /// The exact pair was accepted and refused at its owning entry.
+    Discharged(Box<ValidatedMaturityFirstPartyEvidence>),
+    /// Canonical assembly leaves no coordinate for the stated order fault.
+    OutOfContract {
+        /// Typed formal closure, never an absent-entry argument.
+        reason: MaturityAbsenceOfCoordinate,
+        /// Retained inputs and canonical outputs supporting the argument.
+        proof: Box<MaturityOrderNormalization>,
+    },
+    /// Observable work remains at the named boundary.
+    Retained {
+        /// Where the exact fault must be compared.
+        boundary: MaturityRetainedBoundary,
+        /// The valid subject retained for subsequent staging.
+        subject: Box<MaturityRetainedSubject>,
+        /// A failed attempted comparison, preserved rather than converted into credit.
+        attempted: Option<Box<MaturityFirstPartyRefusal>>,
+    },
+}
+
+/// One keyed disposition preserving the original mechanism and relation link.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturitySupplementaryRow {
+    section: MaturitySafetySection,
+    name: &'static str,
+    previous: MaturityCarriedReason,
+    relation: MaturityRelationStanding,
+    disposition: MaturitySupplementaryDisposition,
+}
+
+impl MaturitySupplementaryRow {
+    /// The complete identity; row names alone are not unique.
+    #[must_use]
+    pub const fn key(&self) -> (MaturitySafetySection, &'static str) {
+        (self.section, self.name)
+    }
+
+    /// The inherited reason, including the distinct deferred-owner variant.
+    #[must_use]
+    pub const fn previous(&self) -> MaturityCarriedReason {
+        self.previous
+    }
+
+    /// The existing published relation or its explicit non-link.
+    #[must_use]
+    pub const fn relation(&self) -> &MaturityRelationStanding {
+        &self.relation
+    }
+
+    /// Evidence, formal argument, or retained observable obligation.
+    #[must_use]
+    pub const fn disposition(&self) -> &MaturitySupplementaryDisposition {
+        &self.disposition
+    }
+}
+
+fn retained_boundary(case: &MaturityFirstPartyCase) -> MaturityRetainedBoundary {
+    use MaturityRetainedBoundary as Boundary;
+    use MaturitySafetySection as Section;
+    match (case.section, case.name) {
+        (Section::WindowFault, "malformed-cycle-encoding") => Boundary::RequestDecoding,
+        (Section::WindowFault, _) => Boundary::SuccessorComparison,
+        (Section::MetadataFault, _) => Boundary::NonceSearch,
+        (Section::PredecessorConstructorFault, "metadata-leaf-missing") => Boundary::CompleteTree,
+        (Section::PredecessorConstructorFault, _) => Boundary::ConstructorContinuity,
+        (Section::AbsenceFault, _) => Boundary::AbiClassification,
+        (Section::AbiLinkerFault, "conflicting-leaf-weight") => Boundary::WeightedTreeInput,
+        (Section::AbiLinkerFault, "candidate-outside-bounds") => Boundary::LinkedBounds,
+        (Section::AbiLinkerFault, name) if name.starts_with("unresolved-") => {
+            Boundary::SymbolResolution
+        }
+        (Section::AbiLinkerFault, _) => Boundary::AbiRoleValidation,
+        (_, "blank-request" | "oversized-request" | "unterminated-request") => {
+            Boundary::RequestFraming
+        }
+        (_, "malformed-json") => Boundary::RequestJson,
+        (_, "unknown-request-field") => Boundary::RequestFields,
+        (_, "wrong-schema") => Boundary::SchemaBinding,
+        (_, "wrong-environment") => Boundary::EnvironmentBinding,
+        (_, "wrong-provenance") => Boundary::ProvenanceBinding,
+        _ => Boundary::SigningBinding,
+    }
+}
+
+/// Derive dispositions for exactly the inherited first-party-required keys.
+///
+/// Comparison discharges do not enter the historical 78 admitted answers.
+/// Reconciliation into that census belongs to the close-safety step.
+///
+/// # Errors
+/// Returns failure to retain a valid subject or validate a normalization argument.
+/// Failed comparison attempts instead retain their boundary and exact failure.
+///
+/// # Panics
+/// Panics only under the finalized construction invariants documented by
+/// [`validate_maturity_first_party`], which a linked bundle cannot violate.
+pub fn maturity_first_party_dispositions()
+-> Result<Vec<MaturitySupplementaryRow>, MaturityFirstPartyRefusal> {
+    let subject = MaturityRetainedSubject {
+        announcement: Box::new(honest_finalized(substrate()?)?),
+        opening: target_elements_conformance::protocol::HandshakeRequest::default(),
+    };
+    let normalization = MaturityOrderNormalization::new()?;
+    maturity_first_party_cases()
+        .into_iter()
+        .filter_map(|case| case.carried_reason().map(|previous| (case, previous)))
+        .map(|(case, previous)| {
+            let row = matrix_row(case.section, case.name).ok_or(
+                MaturityFirstPartyRefusal::RowNotInTheMatrix(case.section, case.name),
+            )?;
+            let retain = |attempted| MaturitySupplementaryDisposition::Retained {
+                boundary: retained_boundary(&case),
+                subject: Box::new(subject.clone()),
+                attempted,
+            };
+            let disposition =
+                if let Some(discharge) = supplemental_discharge(case.section, case.name) {
+                    let offered = MaturityFirstPartyCase {
+                        disposition: MaturityFirstPartyDisposition::Discharge(discharge),
+                        ..case
+                    };
+                    match validate_maturity_first_party(&offered) {
+                        Ok(evidence) => {
+                            MaturitySupplementaryDisposition::Discharged(Box::new(evidence))
+                        }
+                        Err(refusal) => retain(Some(Box::new(refusal))),
+                    }
+                } else if case.section == MaturitySafetySection::TotalityFault {
+                    let reason = match case.name {
+                        "caller-supplied-branch-order" => MaturityAbsenceOfCoordinate::BranchOrder,
+                        "source-order-dependent-tree" => {
+                            MaturityAbsenceOfCoordinate::SourceDeclarationOrder
+                        }
+                        _ => return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible),
+                    };
+                    MaturitySupplementaryDisposition::OutOfContract {
+                        reason,
+                        proof: Box::new(normalization.clone()),
+                    }
+                } else {
+                    retain(None)
+                };
+            Ok(MaturitySupplementaryRow {
+                section: case.section,
+                name: case.name,
+                previous,
+                relation: row.relation().clone(),
+                disposition,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod supplementary_tests {
+    use super::*;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn ledger() -> Vec<MaturitySupplementaryRow> {
+        maturity_first_party_dispositions().expect("valid retained subjects")
+    }
+
+    #[test]
+    fn safety_disposition_record_matches_the_typed_ledger() {
+        let backlog = include_str!("../../../plans/backlog.md");
+        let table = backlog
+            .split("**Table (First-party Safety rows)**")
+            .nth(1)
+            .expect("record table")
+            .split("**Result (First-party census)**")
+            .next()
+            .expect("table end");
+        let recorded: BTreeMap<_, _> = table
+            .lines()
+            .filter(|line| line.starts_with("| `"))
+            .map(|line| {
+                let columns: Vec<_> = line.split('|').map(str::trim).collect();
+                assert_eq!(columns.len(), 7);
+                assert_ne!(columns[3], "");
+                assert_ne!(columns[5], "");
+                (
+                    columns[1].trim_matches('`').to_owned(),
+                    (columns[2].trim_matches('`'), columns[4]),
+                )
+            })
+            .collect();
+        let rows = ledger();
+        assert_eq!(recorded.len(), 43);
+        assert_eq!(
+            table.lines().filter(|line| line.starts_with("| `")).count(),
+            43
+        );
+        for row in &rows {
+            let key = format!("{} / {}", row.section.section(), row.name);
+            let (entry, disposition) = recorded.get(&key).expect("exact row key");
+            match row.disposition() {
+                MaturitySupplementaryDisposition::Discharged(evidence) => {
+                    assert_eq!(*disposition, "comparison");
+                    assert_eq!(*entry, evidence.validator().entry_point());
+                }
+                MaturitySupplementaryDisposition::OutOfContract { reason, .. } => {
+                    assert_eq!(*disposition, "absence of coordinate");
+                    assert_eq!(
+                        *entry,
+                        match reason {
+                            MaturityAbsenceOfCoordinate::BranchOrder => "StateStaticSubtree::new",
+                            MaturityAbsenceOfCoordinate::SourceDeclarationOrder =>
+                                "assemble_state_static",
+                        }
+                    );
+                }
+                MaturitySupplementaryDisposition::Retained { boundary, .. } => {
+                    assert_eq!(*disposition, "retained");
+                    assert_eq!(*entry, boundary.entry_point());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn supplementary_safety_keys_and_census_are_exact() {
+        let rows = ledger();
+        let inherited: BTreeMap<_, _> = maturity_first_party_cases()
+            .into_iter()
+            .filter_map(|case| {
+                case.carried_reason()
+                    .map(|reason| ((case.section(), case.name()), reason))
+            })
+            .collect();
+        let actual: BTreeMap<_, _> = rows.iter().map(|row| (row.key(), row.previous())).collect();
+        assert_eq!(actual, inherited);
+        assert_eq!(actual.len(), rows.len());
+        assert_eq!(rows.len(), 43);
+        let mut census = [0; 3];
+        for row in &rows {
+            assert_eq!(
+                row.relation(),
+                matrix_row(row.section, row.name).expect("row").relation()
+            );
+            match row.disposition() {
+                MaturitySupplementaryDisposition::Discharged(_) => census[0] += 1,
+                MaturitySupplementaryDisposition::OutOfContract { .. } => census[1] += 1,
+                MaturitySupplementaryDisposition::Retained { .. } => census[2] += 1,
+            }
+        }
+        assert_eq!(census, [5, 2, 36]);
+        assert_eq!(census.iter().sum::<usize>(), 43);
+        assert_eq!(
+            inherited
+                .values()
+                .filter(|reason| matches!(
+                    reason,
+                    MaturityCarriedReason::OwnerLocatedDischargeDeferred(_)
+                ))
+                .count(),
+            0
+        );
+        assert_eq!(
+            inherited
+                .values()
+                .filter(|reason| !matches!(
+                    reason,
+                    MaturityCarriedReason::OwnerLocatedDischargeDeferred(_)
+                ))
+                .count(),
+            43
+        );
+    }
+
+    #[test]
+    fn supplementary_comparisons_retain_exact_objects_and_refusals() {
+        let rows = ledger();
+        let mut constructors = 0;
+        let mut symbols = BTreeSet::new();
+        for row in &rows {
+            let MaturitySupplementaryDisposition::Discharged(evidence) = row.disposition() else {
+                continue;
+            };
+            assert_eq!((evidence.section(), evidence.name()), row.key());
+            let comparison = evidence.comparison().expect("an actual retained pair");
+            assert_eq!(
+                &comparison.observe().expect("pair admission"),
+                evidence.observed()
+            );
+            match comparison {
+                MaturityRetainedComparison::Constructor(pair) => {
+                    constructors += 1;
+                    assert_ne!(pair.control(), pair.malformed());
+                    assert_ne!(
+                        pair.control().static_subtree().root(),
+                        pair.malformed().static_subtree().root()
+                    );
+                    assert_eq!(
+                        pair.control().encoded_metadata().semantic,
+                        pair.malformed().encoded_metadata().semantic
+                    );
+                    assert_eq!(
+                        evidence.validator(),
+                        MaturityFirstPartyValidator::ConstructorContinuity
+                    );
+                    assert_eq!(
+                        evidence.observed(),
+                        &MaturityFirstPartyObservation::Constructor(
+                            StateConstructorRefusal::ConflictingLeaf,
+                        )
+                    );
+                    let before = pair.control().static_subtree().leaves();
+                    let after = pair.malformed().static_subtree().leaves();
+                    if row.name == "extra-escape-leaf" {
+                        assert_eq!(after.len(), before.len() + 1);
+                        for leaf in before {
+                            assert!(
+                                after.iter().any(|other| other.identity == leaf.identity
+                                    && other.leaf == leaf.leaf)
+                            );
+                        }
+                    } else {
+                        assert_eq!(after.len(), before.len());
+                        assert_eq!(
+                            before
+                                .iter()
+                                .zip(after)
+                                .filter(|(left, right)| left.leaf != right.leaf)
+                                .count(),
+                            1
+                        );
+                    }
+                }
+                MaturityRetainedComparison::Symbols(pair) => {
+                    assert!(symbols.insert(pair.missing()));
+                    assert_eq!(pair.control().len(), pair.malformed().len() + 1);
+                    assert!(pair.control().definition(pair.missing()).is_some());
+                    assert!(pair.malformed().definition(pair.missing()).is_none());
+                    for (&key, definition) in pair.malformed().definitions() {
+                        assert_eq!(pair.control().definition(key), Some(definition));
+                    }
+                    assert_eq!(
+                        evidence.validator(),
+                        MaturityFirstPartyValidator::SymbolResolution
+                    );
+                    assert_eq!(
+                        evidence.observed(),
+                        &MaturityFirstPartyObservation::StateLink(Box::new(
+                            StateLinkRefusal::MissingDefinition(pair.missing()),
+                        ))
+                    );
+                }
+            }
+        }
+        assert_eq!(constructors, 2);
+        assert_eq!(
+            symbols,
+            BTreeSet::from([
+                linker::StateLinkSymbol::MetadataSchema,
+                linker::StateLinkSymbol::MaturityLeadMin,
+                linker::StateLinkSymbol::CommittedOperatorKey,
+            ])
+        );
+    }
+
+    #[test]
+    fn supplementary_admission_refuses_copied_pairs_and_wrong_bindings() {
+        let mut constructor = MaturityConstructorComparisonTestStaging::new(
+            MaturityFirstPartyChange::ChangeRetainedStaticLeaf,
+        )
+        .expect("staging");
+        constructor.malformed = constructor.control.clone();
+        assert_eq!(
+            constructor.observe(),
+            Err(MaturityFirstPartyRefusal::ChangeChangedNothing)
+        );
+        let pair =
+            MaturitySymbolResolutionTestStaging::new(linker::StateLinkSymbol::MetadataSchema)
+                .expect("staging");
+        let mut copied = pair.clone();
+        copied.malformed = copied.control.clone();
+        assert_eq!(
+            copied.observe(),
+            Err(MaturityFirstPartyRefusal::ChangeChangedNothing)
+        );
+        let mut refused_control = pair.clone();
+        refused_control.control = pair.malformed.clone();
+        refused_control.malformed = pair.control.clone();
+        assert!(matches!(
+            refused_control.observe(),
+            Err(MaturityFirstPartyRefusal::ControlWasRefused(_))
+        ));
+        let mut wrong_symbol = pair;
+        wrong_symbol.missing = linker::StateLinkSymbol::CommittedOperatorKey;
+        assert!(matches!(
+            wrong_symbol.observe(),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_))
+        ));
+        let mut accepted =
+            MaturitySymbolResolutionTestStaging::new(linker::StateLinkSymbol::MetadataSchema)
+                .expect("staging");
+        accepted.malformed = linker::StateDefinitionCensus::default();
+        for (&symbol, definition) in accepted.control.definitions() {
+            let value = match definition.value() {
+                linker::StateSymbolValue::MetadataSchema(value) => {
+                    linker::StateSymbolValue::MetadataSchema(value + 1)
+                }
+                value => value.clone(),
+            };
+            accepted
+                .malformed
+                .define(symbol, value, definition.origin())
+                .expect("unique definition");
+        }
+        assert_eq!(
+            accepted.observe(),
+            Err(MaturityFirstPartyRefusal::ChangedInputWasAccepted)
+        );
+        let section = MaturitySafetySection::AbiLinkerFault;
+        let mut case = MaturityFirstPartyCase {
+            section,
+            name: "unresolved-metadata-schema-symbol",
+            disposition: MaturityFirstPartyDisposition::Discharge(
+                supplemental_discharge(section, "unresolved-operator-symbol").expect("case"),
+            ),
+        };
+        assert_eq!(
+            validate_maturity_first_party(&case),
+            Err(MaturityFirstPartyRefusal::ScenarioNotConstructible)
+        );
+        case.section = MaturitySafetySection::PredecessorConstructorFault;
+        case.name = "wrong-static-subtree";
+        assert_eq!(
+            validate_maturity_first_party(&case),
+            Err(MaturityFirstPartyRefusal::ScenarioNotConstructible)
+        );
+    }
+
+    #[test]
+    fn absence_of_coordinate_is_only_unchanged_content_ordering() {
+        let rows = ledger();
+        let mut names = BTreeSet::new();
+        for row in &rows {
+            let MaturitySupplementaryDisposition::OutOfContract { reason, proof } =
+                row.disposition()
+            else {
+                continue;
+            };
+            names.insert(row.key());
+            assert!(reason.argument().contains("absence of coordinate"));
+            assert!(
+                reason
+                    .argument()
+                    .contains("topology and leaf changes excluded")
+            );
+            assert_ne!(proof.first.tree(), proof.reversed.tree());
+            assert_eq!(proof.first.root(), proof.reversed.root());
+            for leaf in proof.first.leaves() {
+                let reversed = proof
+                    .reversed
+                    .leaves()
+                    .iter()
+                    .find(|other| other.identity == leaf.identity)
+                    .expect("same leaf");
+                assert_eq!(leaf.leaf, reversed.leaf);
+                assert_eq!(leaf.hash, reversed.hash);
+                assert_eq!(leaf.siblings, reversed.siblings);
+            }
+            assert_eq!(proof.assembly, proof.reversed_assembly);
+            assert_eq!(proof.assembly.recipes(), proof.reversed_assembly.recipes());
+            proof.validate().expect("normalization");
+            let mut altered = proof.as_ref().clone();
+            altered.reversed = retained_constructor(substrate().expect("substrate"))
+                .expect("constructor")
+                .static_subtree()
+                .clone();
+            assert!(altered.validate().is_err());
+        }
+        assert_eq!(
+            names,
+            BTreeSet::from([
+                (
+                    MaturitySafetySection::TotalityFault,
+                    "caller-supplied-branch-order"
+                ),
+                (
+                    MaturitySafetySection::TotalityFault,
+                    "source-order-dependent-tree"
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn retained_obligations_have_valid_subjects_and_named_boundaries() {
+        let rows = ledger();
+        let mut retained = 0;
+        let mut classification = 0;
+        let mut roles = 0;
+        for row in &rows {
+            let MaturitySupplementaryDisposition::Retained {
+                boundary,
+                subject,
+                attempted,
+            } = row.disposition()
+            else {
+                continue;
+            };
+            retained += 1;
+            assert!(attempted.is_none(), "failed staging: {attempted:?}");
+            assert_ne!(boundary.entry_point(), "");
+            subject
+                .announcement()
+                .check_offered(subject.announcement().protected())
+                .expect("valid retained construction");
+            assert_ne!(subject.announcement().protected_bytes().len(), 0);
+            assert_eq!(subject.opening().schema, NATIVE_PROTOCOL_SCHEMA);
+            match row.section {
+                MaturitySafetySection::AbsenceFault => {
+                    classification += 1;
+                    assert_eq!(*boundary, MaturityRetainedBoundary::AbiClassification);
+                    assert!(boundary.entry_point().contains("required transaction::"));
+                }
+                MaturitySafetySection::AbiLinkerFault
+                    if matches!(
+                        row.previous,
+                        MaturityCarriedReason::LayoutIsNotAcceptedFromACaller
+                    ) =>
+                {
+                    roles += 1;
+                    assert_eq!(*boundary, MaturityRetainedBoundary::AbiRoleValidation);
+                    assert!(boundary.entry_point().contains("required transaction::"));
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(retained, 36);
+        assert_eq!(classification, 15);
+        assert_eq!(roles, 6);
+    }
 }
 
 #[cfg(test)]

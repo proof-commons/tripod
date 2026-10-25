@@ -3868,6 +3868,43 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn supplementary_dispositions_join_required_keys_without_promoting_historical_answers() {
+        use crate::maturity_first_party::{
+            MaturitySupplementaryDisposition, MaturitySupplementaryRow,
+            maturity_first_party_dispositions,
+        };
+        let ledger = maturity_first_party_dispositions().expect("supplementary dispositions");
+        let keys: std::collections::BTreeSet<_> =
+            ledger.iter().map(MaturitySupplementaryRow::key).collect();
+        let required: std::collections::BTreeSet<_> = PLAN
+            .rows()
+            .iter()
+            .filter(|row| matches!(row.standing(), MaturityRowStanding::FirstPartyRequired(_)))
+            .map(|row| (row.row().section(), row.row().name()))
+            .collect();
+        assert_eq!(keys, required);
+        assert_eq!(keys.len(), 43);
+        assert_eq!(
+            ledger
+                .iter()
+                .filter(|row| matches!(
+                    row.disposition(),
+                    MaturitySupplementaryDisposition::Discharged(_)
+                ))
+                .count(),
+            5
+        );
+        assert_eq!(PLAN.census().rows(), 206);
+        assert_eq!(PLAN.census().answered(), 78);
+        assert_eq!(PLAN.census().outstanding(), 128);
+        assert_eq!(PLAN.census().first_party_discharged(), 40);
+        assert_eq!(PLAN.census().first_party_required(), 43);
+        assert_eq!(PLAN.census().native_run_required(), 35);
+        assert_eq!(PLAN.census().report_layer_required(), 15);
+        assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 35);
+    }
+
+    #[test]
     fn the_positive_row_names_the_accepted_run_and_its_disclosed_environment() {
         let historical = crate::maturity_corpus::maturity_run_of_record().expect("historical run");
         let accepted =
