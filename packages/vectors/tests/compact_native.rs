@@ -97,6 +97,7 @@ fn mutate(
         ByteRecipe::MissingAuthorization => {
             *witnesses.last_mut().ok_or("sponsor witness absent")? = InputWitness::new(Vec::new());
         }
+        _ => return Err("recipe belongs to the second schedule".into()),
     }
     let changed = rebuild(&tx, inputs, outputs, witnesses)?;
     if changed == bytes {
@@ -105,8 +106,113 @@ fn mutate(
     Ok(changed)
 }
 
+fn mutate_additional(
+    bytes: &[u8],
+    recipe: ByteRecipe,
+    coin: &FundedOutput,
+    ash: u8,
+) -> Result<Vec<u8>, String> {
+    use transaction::{AssetField, AssetId};
+    let tx = TargetTransaction::decode(bytes).map_err(|e| format!("{e:?}"))?;
+    let mut inputs = tx.inputs().to_vec();
+    let mut outputs = tx.outputs().to_vec();
+    let mut witnesses = tx.witnesses().to_vec();
+    let mut asset = hex32(&coin.asset);
+    asset.reverse();
+    let foreign = AssetField::Explicit(AssetId::from_internal(asset));
+    let new_input = TargetInput::new(outpoint(coin), inputs[0].sequence());
+    match recipe {
+        ByteRecipe::AshInputAsset => {
+            inputs[1] = new_input;
+            outputs[0] = with_value(&outputs[0], amount(&outputs[0])? - coin.amount_satoshis);
+            outputs.push(TargetOutput::new(
+                foreign,
+                ValueField::Explicit(coin.amount_satoshis),
+                outputs[0].nonce(),
+                vec![0x51],
+            ));
+        }
+        ByteRecipe::AshInputObject => {
+            inputs[1] = new_input;
+            witnesses[1] = InputWitness::new(Vec::new());
+        }
+        ByteRecipe::SponsorInputAsset => {
+            let index = usize::from(ash);
+            inputs.push(inputs[index].clone());
+            witnesses.push(witnesses[index].clone());
+            inputs[index] = new_input;
+            outputs.push(TargetOutput::new(
+                foreign,
+                ValueField::Explicit(coin.amount_satoshis),
+                outputs[0].nonce(),
+                vec![0x51],
+            ));
+        }
+        ByteRecipe::SuccessorAsset | ByteRecipe::ChangeAsset => {
+            let index = usize::from(recipe == ByteRecipe::ChangeAsset);
+            let original = outputs[index].clone();
+            inputs.push(new_input);
+            witnesses.push(InputWitness::new(Vec::new()));
+            outputs[index] = TargetOutput::new(
+                foreign,
+                original.value(),
+                original.nonce(),
+                original.program().to_vec(),
+            );
+            outputs.push(TargetOutput::new(
+                original.asset(),
+                original.value(),
+                original.nonce(),
+                vec![0x51],
+            ));
+        }
+        ByteRecipe::TwoSponsors => {
+            inputs.push(new_input);
+            witnesses.push(InputWitness::new(vec![Vec::new(), Vec::new()]));
+            let fee = outputs.last_mut().ok_or("fee missing")?;
+            *fee = with_value(fee, amount(fee)? + coin.amount_satoshis);
+        }
+        _ => return Err("not an additional recipe".into()),
+    }
+    rebuild(&tx, inputs, outputs, witnesses)
+}
+
 fn required(name: &str) -> String {
     std::env::var(name).expect(name)
+}
+
+#[test]
+fn compact_schedule_summary() {
+    let Ok(path) = std::env::var("TRIPOD_COMPACT_SUMMARY") else {
+        return;
+    };
+    let bundle = fixture_bundle().expect("candidate");
+    let mode = required("TRIPOD_COMPACT_MODE");
+    let attempt = required("TRIPOD_COMPACT_ATTEMPT");
+    let second = required("TRIPOD_COMPACT_SCHEDULE") == "2";
+    let (rows, census, staged, address_input) = if second {
+        let rows = candidate::compact_campaign_second::roster(&bundle).expect("roster");
+        let census = candidate::compact_campaign_second::operation_census(&rows);
+        let staged = candidate::compact_campaign_second::staged(&rows).len();
+        let address = candidate::compact_campaign_second::address_input(&rows, &mode, &attempt);
+        (rows, census, staged, address)
+    } else {
+        let rows = roster(&bundle).expect("roster");
+        let census = candidate::compact_campaign::operation_census(&rows);
+        let staged = rows.values().filter(|row| row.recipe.is_ok()).count();
+        let address =
+            std::str::from_utf8(candidate::compact_corpus::first_specification().address_input)
+                .expect("address text")
+                .replace(
+                    "mode record\nattempt 2\n",
+                    &format!("mode {mode}\nattempt {attempt}\n"),
+                );
+        (rows, census, staged, address)
+    };
+    std::fs::write(format!("{path}.address"), address_input).expect("address inputs");
+    std::fs::write(path, format!("summary-schema compact-schedule-1\nroster {}\ncontrols {}\nstaged {staged}\nissuance {}\nconstructor {}\nsponsor-batches {}\nfunding-batches {}\nsignings {}\nsubmissions {}\noperations {}\n",
+        rows.len(), ControlFamily::ALL.len(), census.issuance, census.constructor_probes,
+        census.sponsor_batches, census.ash_batches, census.signings, census.submissions, census.total())).expect("summary");
 }
 
 fn refusal(step: &OperationStep, layer: ObservedOutcomeLayer) -> NativeOperationResponse {
@@ -230,6 +336,235 @@ fn submission_readback_must_match_the_submitted_bytes() {
     );
 }
 
+type Ledger = BTreeMap<Outpoint, (String, String)>;
+
+fn display(mut asset: [u8; 32]) -> String {
+    asset.reverse();
+    hex_bytes(&asset)
+}
+
+// An in-memory executor: controls are mined, mutants refused at the script path.
+fn simulated(
+    step: &OperationStep,
+    bundle: &FixtureBundle,
+    ledger: &mut Ledger,
+    serial: &mut u8,
+) -> NativeOperationResponse {
+    use target_elements_conformance::constructor::tagged::sha256;
+    *serial += 1;
+    let txid = Txid::from_internal([*serial; 32]).to_target_display();
+    let mut response = refusal(step, ObservedOutcomeLayer::Accepted);
+    let mut fund = |asset: &str, program: &[u8], count: u8, amount: u64| {
+        (0..count)
+            .map(|vout| {
+                let coin = FundedOutput {
+                    outpoint: WireOutpoint {
+                        txid: txid.clone(),
+                        vout: u32::from(vout),
+                    },
+                    asset: asset.to_owned(),
+                    amount_satoshis: amount,
+                    script: hex_bytes(program),
+                };
+                ledger.insert(outpoint(&coin), (coin.asset.clone(), coin.script.clone()));
+                coin
+            })
+            .collect()
+    };
+    match step.subject() {
+        OperationSubject::Funding(subject) => {
+            let asset = if subject.issue_asset {
+                let issued = if *serial == 1 {
+                    display(bundle.closed_asset())
+                } else {
+                    display([0x77; 32])
+                };
+                response.issued_asset = Some(issued.clone());
+                issued
+            } else {
+                subject.asset.clone().expect("funding asset")
+            };
+            response.funded_outputs = fund(
+                &asset,
+                &subject.output_program,
+                subject.outputs,
+                subject.amount_per_output,
+            );
+        }
+        OperationSubject::SponsorFunding(subject) => {
+            let mut program = vec![0, 20];
+            program.extend([0x24; 20]);
+            response.funded_outputs = fund(
+                &display(bundle.reserve_asset()),
+                &program,
+                subject.sponsor_outputs,
+                subject.amount_per_sponsor_output,
+            );
+        }
+        OperationSubject::SponsorSigning(subject) => {
+            response.signature_bound_to = Some(subject.finalized_transaction.clone());
+            response.sponsor_witness = vec![vec![0x30; 71], vec![0x02; 33]];
+        }
+        OperationSubject::Submission(subject) => {
+            if step.case().step.as_str().ends_with("/submit-mutant") {
+                response.observed_layer = ObservedOutcomeLayer::ScriptPathRejection;
+            } else {
+                let bytes = &subject.transaction_bytes;
+                let tx = TargetTransaction::decode(bytes).expect("control");
+                let identity = Txid::from_internal(sha256(&sha256(&tx.encode_without_witness())))
+                    .to_target_display();
+                response.accepted_txid = Some(identity.clone());
+                response.mined_readback = Some(
+                    target_elements_conformance::protocol::MinedFundingReadback {
+                        transaction_id: identity,
+                        witness_transaction_id: Txid::from_internal(sha256(&sha256(bytes)))
+                            .to_target_display(),
+                        block_hash: "00".repeat(32),
+                        block_height: u32::from(*serial),
+                        raw_transaction: bytes.clone(),
+                    },
+                );
+            }
+        }
+        _ => panic!("the compact schedule names no other subject"),
+    }
+    response
+}
+
+// The row's own coordinate differs between the mutant and its paired control.
+fn own_coordinate_changes(
+    recipe: ByteRecipe,
+    ash: u8,
+    mutant: &[u8],
+    control: &[u8],
+    ledger: &Ledger,
+) {
+    let mutant = TargetTransaction::decode(mutant).expect("mutant");
+    let control = TargetTransaction::decode(control).expect("control");
+    let held =
+        |tx: &TargetTransaction, index: usize| ledger[&tx.inputs()[index].outpoint()].clone();
+    let ash = usize::from(ash);
+    match recipe {
+        ByteRecipe::AshInputAsset => {
+            assert_ne!(held(&mutant, 1).0, held(&control, 1).0);
+            assert_eq!(held(&mutant, 1).1, held(&control, 1).1);
+        }
+        ByteRecipe::AshInputObject => {
+            assert_eq!(held(&mutant, 1).0, held(&control, 1).0);
+            assert_ne!(held(&mutant, 1).1, held(&control, 1).1);
+        }
+        ByteRecipe::SponsorInputAsset => {
+            assert_ne!(held(&mutant, ash).0, held(&control, ash).0);
+            assert_eq!(held(&mutant, ash).1, held(&control, ash).1);
+        }
+        ByteRecipe::SuccessorAsset | ByteRecipe::ChangeAsset => {
+            let index = usize::from(recipe == ByteRecipe::ChangeAsset);
+            assert_ne!(
+                mutant.outputs()[index].asset(),
+                control.outputs()[index].asset()
+            );
+            assert_eq!(
+                mutant.outputs()[index].value(),
+                control.outputs()[index].value()
+            );
+            assert_eq!(
+                mutant.outputs()[index].program(),
+                control.outputs()[index].program()
+            );
+        }
+        ByteRecipe::TwoSponsors => {
+            let sponsor = held(&control, ash);
+            let count = |tx: &TargetTransaction| {
+                (0..tx.inputs().len())
+                    .filter(|index| held(tx, *index) == sponsor)
+                    .count()
+            };
+            assert_eq!((count(&mutant), count(&control)), (2, 1));
+        }
+        _ => panic!("not a second-schedule recipe"),
+    }
+}
+
+#[test]
+fn second_schedule_settles_offline_to_its_derived_census() {
+    let bundle = fixture_bundle().expect("candidate");
+    let rows = candidate::compact_campaign_second::roster(&bundle).expect("roster");
+    let census = candidate::compact_campaign_second::operation_census(&rows);
+    let mut planner = Planner::second(Box::new(mutate_additional));
+    let (mut ledger, mut serial, mut counts) = (Ledger::new(), 0, [0; 6]);
+    let (mut previous, mut pending) = (None::<(OperationStep, NativeOperationResponse)>, None);
+    let mut recipes = BTreeSet::new();
+    while let Some(step) = planner
+        .next_step(
+            previous
+                .as_ref()
+                .map(|(step, response)| (step.case(), response)),
+        )
+        .unwrap_or_else(|_| panic!("{:?}", planner.failure))
+    {
+        counts[match step.subject() {
+            OperationSubject::Funding(subject) if subject.issue_asset => 0,
+            OperationSubject::Funding(_) if step.case().step == "constructor" => 1,
+            OperationSubject::SponsorFunding(_) => 2,
+            OperationSubject::Funding(_) => 3,
+            OperationSubject::SponsorSigning(_) => 4,
+            _ => 5,
+        }] += 1;
+        if let OperationSubject::Submission(subject) = step.subject() {
+            let job = &planner.jobs[planner.index];
+            if step.case().step.as_str().ends_with("/submit-mutant") {
+                let recipe = job.row.as_ref().expect("row").recipe.expect("recipe");
+                pending = Some((recipe, job.family.ash, subject.transaction_bytes.clone()));
+            } else if let Some((recipe, ash, mutant)) = pending.take() {
+                own_coordinate_changes(recipe, ash, &mutant, &subject.transaction_bytes, &ledger);
+                recipes.insert(format!("{recipe:?}/{}", job.family.name()));
+            }
+        }
+        let response = simulated(&step, &bundle, &mut ledger, &mut serial);
+        previous = Some((step, response));
+    }
+    assert!(planner.failure.is_none(), "{:?}", planner.failure);
+    assert_eq!(
+        counts,
+        [
+            census.issuance,
+            census.constructor_probes,
+            census.sponsor_batches,
+            census.ash_batches,
+            census.signings,
+            census.submissions
+        ]
+    );
+    assert_eq!(counts, [2, 1, 1, 30, 22, 31]);
+    assert_eq!(planner.accepted_families.len(), 9);
+    assert!(planner.suspended.is_empty());
+    assert_eq!(
+        recipes,
+        [
+            "AshInputAsset/A2",
+            "AshInputAsset/N2",
+            "AshInputObject/A2",
+            "AshInputObject/N2",
+            "ChangeAsset/C2",
+            "SponsorInputAsset/N2",
+            "SuccessorAsset/A2",
+            "SuccessorAsset/N2",
+            "TwoSponsors/N2"
+        ]
+        .map(String::from)
+        .into_iter()
+        .collect()
+    );
+    assert_eq!(
+        planner
+            .findings
+            .iter()
+            .filter(|finding| finding.starts_with("mutant ") && finding.ends_with(" true"))
+            .count(),
+        11
+    );
+}
+
 #[test]
 #[ignore = "requires the pinned target and disposable funding"]
 #[allow(
@@ -252,10 +587,15 @@ fn compact_campaign_runs_against_the_pinned_target() {
         ),
     )
     .expect("binding");
-    let mut planner = Planner::staged(
-        std::env::var("TRIPOD_COMPACT_MODE").is_ok_and(|mode| mode == "probe"),
-        Box::new(mutate),
-    );
+    let second = std::env::var("TRIPOD_COMPACT_SCHEDULE").is_ok_and(|version| version == "2");
+    let mut planner = if second {
+        Planner::second(Box::new(mutate_additional))
+    } else {
+        Planner::staged(
+            std::env::var("TRIPOD_COMPACT_MODE").is_ok_and(|mode| mode == "probe"),
+            Box::new(mutate),
+        )
+    };
     let staged_ms = started.elapsed().as_millis();
     let mut capture = NativeOperationCapture::default();
     let adapter = required("TRIPOD_LIVE_EXECUTOR");

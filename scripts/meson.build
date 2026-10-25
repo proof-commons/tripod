@@ -22,3 +22,11 @@ test(
   suite: 'lint',
   timeout: 120,
 )
+
+test(
+  'compact-native-funding-contract',
+  find_program('sh'),
+  args: [files('compact-native-funding-test.sh'), meson.project_source_root()],
+  suite: 'lint',
+  timeout: 120,
+)

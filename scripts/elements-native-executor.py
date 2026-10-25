@@ -3588,6 +3588,7 @@ class OperationExecutor:
         # funding steps have something of that asset to spend. Public
         # chain data; the key is the target's own spelling of the asset.
         self.reserves = {}
+        self.issued_once = False
         # What this adapter put in each sponsor coin it created, keyed by
         # the outpoint that holds it. A signing step needs the value the
         # coin carries -- the segwit-v0 signature hash commits to it --
@@ -3757,6 +3758,41 @@ class OperationExecutor:
 
     # -- funding ----------------------------------------------------------
 
+    def prepare_issuance_source(self) -> None:
+        """Restore the witness-bearing source needed by a later issuance."""
+        self.prepare()
+        if not self.issued_once:
+            return
+        executor = self.executor
+        source = executor.change
+        if source is None or source["amount"] <= ADAPTER_FEE_SATOSHIS:
+            raise AdapterError("no working amount for another issuance")
+        transaction = executor.messages.CTransaction()
+        transaction.version = 2
+        transaction.vin.append(executor.messages.CTxIn(
+            executor.messages.COutPoint(
+                txid_to_internal_int(source["txid"]), source["vout"]
+            ), nSequence=0xFFFFFFFE,
+        ))
+        amount = source["amount"] - ADAPTER_FEE_SATOSHIS
+        transaction.vout.append(executor.output(amount, executor.anyone_can_spend_witness))
+        transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+        txid = self.mine(transaction, "issuance source")
+        executor.change = {"txid": txid, "vout": 0, "amount": amount}
+
+    def register_funded(self, txid: str, count: int) -> list:
+        """Read funded coins and retain signing data only for the owned program."""
+        created = [self.created(txid, index) for index in range(count)]
+        owned = self.sponsor_program().hex()
+        for coin in created:
+            if coin["script"] == owned:
+                point = coin["outpoint"]
+                self.sponsor_coins["%s:%d" % (point["txid"], point["vout"])] = {
+                    "value_field": explicit_value_field(coin["amount_satoshis"]),
+                    "asset": coin["asset"],
+                }
+        return created
+
     def issue(self, subject: dict) -> dict:
         """Issues the disposable asset and creates the asked-for output.
 
@@ -3771,7 +3807,7 @@ class OperationExecutor:
         # Before the change output is read: preparing splits the free
         # coin and replaces it, so a source read first would name a coin
         # this transaction is no longer allowed to spend.
-        self.prepare()
+        self.prepare_issuance_source()
         source = executor.change
         if source is None:
             raise AdapterError("the adapter has no spendable change output")
@@ -3850,6 +3886,7 @@ class OperationExecutor:
         )
 
         txid = self.mine(issued, "issuance")
+        self.issued_once = True
         reserve_index = subject["outputs"]
         self.reserves[printed] = {
             "txid": txid,
@@ -3864,9 +3901,7 @@ class OperationExecutor:
         }
         return {
             "issued_asset": printed,
-            "funded_outputs": [
-                self.created(txid, index) for index in range(subject["outputs"])
-            ],
+            "funded_outputs": self.register_funded(txid, subject["outputs"]),
         }
 
     def pay(self, subject: dict) -> dict:
@@ -3944,9 +3979,7 @@ class OperationExecutor:
         }
         return {
             "issued_asset": None,
-            "funded_outputs": [
-                self.created(txid, index) for index in range(subject["outputs"])
-            ],
+            "funded_outputs": self.register_funded(txid, subject["outputs"]),
         }
 
     # -- confidential funding ---------------------------------------------

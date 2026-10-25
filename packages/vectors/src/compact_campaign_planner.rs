@@ -21,6 +21,8 @@ use transaction::{
 };
 pub(crate) type Realize =
     Box<dyn FnMut(&[u8], ByteRecipe, Option<Outpoint>, u8) -> Result<Vec<u8>, String>>;
+pub(crate) type AdditionalRealize =
+    Box<dyn FnMut(&[u8], ByteRecipe, &FundedOutput, u8) -> Result<Vec<u8>, String>>;
 pub(crate) fn hex_bytes(bytes: &[u8]) -> String {
     let mut text = String::new();
     for byte in bytes {
@@ -37,9 +39,11 @@ pub(crate) struct Job {
 #[derive(Clone, Copy)]
 pub(crate) enum Stage {
     Issue,
+    IssueSecond,
     Sponsor,
     Derive,
     Fund,
+    Extra,
     SignMutant,
     SubmitMutant,
     SignControl,
@@ -49,6 +53,11 @@ pub(crate) enum Stage {
 
 pub(crate) struct Planner {
     realize: Realize,
+    additional_realize: Option<AdditionalRealize>,
+    pub(crate) second: bool,
+    second_asset: Option<[u8; 32]>,
+    extra_signer: Option<SponsorCoin>,
+    signing_index: usize,
     pub(crate) rows: Vec<CampaignRow>,
     pub(crate) jobs: Vec<Job>,
     pub(crate) stage: Stage,
@@ -111,6 +120,11 @@ impl Planner {
             .collect();
         Self {
             realize,
+            additional_realize: None,
+            second: false,
+            second_asset: None,
+            extra_signer: None,
+            signing_index: 0,
             rows,
             jobs,
             stage: Stage::Issue,
@@ -130,6 +144,23 @@ impl Planner {
             findings: Vec::new(),
             failure: None,
         }
+    }
+
+    pub(crate) fn second(realize: AdditionalRealize) -> Self {
+        let mut planner = Self::new(Box::new(|_, _, _, _| Err("first schedule mutation".into())));
+        planner.second = true;
+        planner.additional_realize = Some(realize);
+        planner.rows = candidate::compact_campaign_second::roster(&fixture_bundle().expect("candidate"))
+            .expect("roster").into_values().collect();
+        planner.jobs = ControlFamily::ALL.into_iter().map(|family| Job { family, row: None })
+            .chain(planner.rows.iter().filter(|row| row.recipe.is_ok_and(candidate::compact_campaign_second::additional))
+                .map(|row| Job { family: row.control, row: Some(row.clone()) })).collect();
+        planner
+    }
+
+    fn sponsor_count(&self) -> usize {
+        self.jobs.iter().map(|job| usize::from(job.family.sponsored)
+            + usize::from(job.row.as_ref().is_some_and(|row| row.recipe == Ok(ByteRecipe::TwoSponsors)))).sum()
     }
 
     pub(crate) fn funding(
@@ -163,6 +194,8 @@ impl Planner {
         self.index += 1;
         self.stage = Stage::Fund;
         self.active_sponsor = None;
+        self.extra_signer = None;
+        self.signing_index = 0;
         self.control.clear();
         self.mutant.clear();
     }
@@ -259,6 +292,10 @@ impl Planner {
             materialize(bundle, &case, &funding).map_err(|e| format!("{e:?}"))?
         };
         self.control = vector.bytes().to_vec();
+        if self.second && job.row.is_some() {
+            self.stage = Stage::Extra;
+            return Ok(());
+        }
         if let Some(row) = &job.row {
             self.mutant = (self.realize)(
                 &self.control,
@@ -272,6 +309,48 @@ impl Planner {
         } else {
             Stage::SignControl
         };
+        Ok(())
+    }
+
+    fn extra_funding(&self, name: &str, recipe: ByteRecipe) -> Result<OperationStep, String> {
+        let tx = TargetTransaction::decode(&self.control).map_err(|e| format!("{e:?}"))?;
+        let mut asset = if recipe == ByteRecipe::AshInputObject {
+            self.asset.ok_or("asset missing")?
+        } else { self.second_asset.ok_or("second asset missing")? };
+        asset.reverse();
+        let amount = match recipe {
+            ByteRecipe::AshInputAsset | ByteRecipe::AshInputObject => 100,
+            ByteRecipe::SponsorInputAsset => self.active_sponsor.as_ref().ok_or("sponsor missing")?.amount(),
+            ByteRecipe::SuccessorAsset | ByteRecipe::ChangeAsset => {
+                let index = usize::from(recipe == ByteRecipe::ChangeAsset);
+                let transaction::ValueField::Explicit(value) = tx.outputs()[index].value() else { return Err("nonexplicit output".into()); };
+                value
+            }
+            _ => return Err("unexpected extra recipe".into()),
+        };
+        let program = match recipe {
+            ByteRecipe::AshInputAsset => self.program.clone(),
+            ByteRecipe::SponsorInputAsset => self.active_sponsor.as_ref().ok_or("sponsor missing")?.program().to_vec(),
+            _ => vec![0x51],
+        };
+        Ok(OperationStep::new(&format!("{name}/extra"), OperationSubject::Funding(Box::new(TargetFundingSubject {
+            issue_asset: false, asset: Some(hex_bytes(&asset)), output_program: program, outputs: 1, amount_per_output: amount,
+        }))))
+    }
+
+    fn realize_additional(&mut self, coin: &FundedOutput) -> Result<(), String> {
+        let job = &self.jobs[self.index];
+        let recipe = job.row.as_ref().ok_or("row missing")?.recipe.map_err(|e| format!("{e:?}"))?;
+        if matches!(recipe, ByteRecipe::SponsorInputAsset | ByteRecipe::TwoSponsors) {
+            let program = self.active_sponsor.as_ref().ok_or("sponsor missing")?.program().to_vec();
+            if coin.script != hex_bytes(&program) { return Err("signer program differs".into()); }
+            self.extra_signer = Some(SponsorCoin::new(outpoint(coin), coin.amount_satoshis, program));
+        }
+        self.mutant = self.additional_realize.as_mut().ok_or("additional realization missing")?(
+            &self.control, recipe, coin, job.family.ash,
+        )?;
+        self.signing_index = 0;
+        self.stage = Stage::SignMutant;
         Ok(())
     }
 
@@ -298,6 +377,14 @@ impl Planner {
                 );
                 asset.reverse();
                 self.asset = Some(asset);
+                self.stage = if self.second { Stage::IssueSecond } else { Stage::Sponsor };
+            }
+            Stage::IssueSecond => {
+                if !accepted { return Err("second issuance failed".into()); }
+                let mut asset = hex32(response.issued_asset.as_deref().ok_or("second asset absent")?);
+                asset.reverse();
+                if Some(asset) == self.asset { return Err("issued assets coincide".into()); }
+                self.second_asset = Some(asset);
                 self.stage = Stage::Sponsor;
             }
             Stage::Sponsor => {
@@ -306,7 +393,7 @@ impl Planner {
                 }
                 let reserve = response.funded_outputs.first().ok_or("reserve missing")?;
                 if response.funded_outputs.len()
-                    != self.jobs.iter().filter(|job| job.family.sponsored).count()
+                    != self.sponsor_count()
                     || response
                         .funded_outputs
                         .iter()
@@ -364,6 +451,17 @@ impl Planner {
                 }
                 self.construct(&response.funded_outputs)?;
             }
+            Stage::Extra => {
+                let OperationSubject::Funding(subject) = step.subject() else { return Err("extra funding subject".into()); };
+                let coin = response.funded_outputs.first().ok_or("extra coin absent")?;
+                if !accepted || response.funded_outputs.len() != 1
+                    || Some(&coin.asset) != subject.asset.as_ref()
+                    || coin.amount_satoshis != subject.amount_per_output
+                    || coin.script != hex_bytes(&subject.output_program) {
+                    return Err("extra funding fields disagree".into());
+                }
+                self.realize_additional(coin)?;
+            }
             Stage::SignMutant | Stage::SignControl => {
                 let OperationSubject::SponsorSigning(subject) = step.subject() else {
                     return Err("signing subject missing".into());
@@ -385,11 +483,12 @@ impl Planner {
                     subject.sponsor_input_index,
                     &response.sponsor_witness,
                 )?;
-                self.stage = if matches!(self.stage, Stage::SignMutant) {
-                    Stage::SubmitMutant
-                } else {
-                    Stage::SubmitControl
-                };
+                self.signing_index += 1;
+                if !self.second {
+                    self.stage = if matches!(self.stage, Stage::SignMutant) {
+                        Stage::SubmitMutant
+                    } else { Stage::SubmitControl };
+                }
             }
             Stage::SubmitMutant => {
                 let row = self.jobs[self.index].row.as_ref().ok_or("row missing")?;
@@ -404,6 +503,7 @@ impl Planner {
                     self.suspended.insert(row.control);
                     self.next_job();
                 } else {
+                    self.signing_index = 0;
                     self.stage = Stage::SignControl;
                 }
             }
@@ -428,16 +528,21 @@ impl Planner {
         Ok(())
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one exhaustive step table across both schedules"
+    )]
     pub(crate) fn step(&mut self) -> Result<Option<OperationStep>, String> {
         loop {
             let name = format!("job-{}", self.index);
             return Ok(Some(match self.stage {
                 Stage::Issue => self.funding("issue", true, 1, 1),
+                Stage::IssueSecond => self.funding("issue-second", true, 1, 1),
                 Stage::Sponsor => OperationStep::new(
                     "sponsor",
                     OperationSubject::SponsorFunding(Box::new(TargetSponsorFundingSubject {
                         sponsor_outputs: u8::try_from(
-                            self.jobs.iter().filter(|job| job.family.sponsored).count(),
+                            self.sponsor_count(),
                         )
                         .map_err(|e| e.to_string())?,
                         amount_per_sponsor_output: 100_000,
@@ -460,6 +565,22 @@ impl Planner {
                     );
                     self.funding(&format!("{name}/fund"), false, job.family.ash + extra, 100)
                 }
+                Stage::Extra => {
+                    let recipe = self.jobs[self.index].row.as_ref().ok_or("row missing")?.recipe.map_err(|e| format!("{e:?}"))?;
+                    if recipe == ByteRecipe::TwoSponsors {
+                        let coin = self.sponsors.get(self.sponsor_index).ok_or("second sponsor absent")?.clone();
+                        self.sponsor_index += 1;
+                        let mut asset = self.bundle.as_ref().ok_or("bundle absent")?.reserve_asset();
+                        asset.reverse();
+                        let funded = FundedOutput {
+                            outpoint: WireOutpoint { txid: coin.outpoint().txid().to_target_display(), vout: coin.outpoint().index() },
+                            asset: hex_bytes(&asset), amount_satoshis: coin.amount(), script: hex_bytes(coin.program()),
+                        };
+                        self.realize_additional(&funded)?;
+                        continue;
+                    }
+                    self.extra_funding(&name, recipe)?
+                }
                 Stage::SignMutant | Stage::SignControl => {
                     let mutant = matches!(self.stage, Stage::SignMutant);
                     let omit = mutant
@@ -467,7 +588,10 @@ impl Planner {
                             .row
                             .as_ref()
                             .is_some_and(|row| row.recipe == Ok(ByteRecipe::MissingAuthorization));
-                    let Some(coin) = self.active_sponsor.as_ref().filter(|_| !omit) else {
+                    let signer = if self.second && self.signing_index > 0 {
+                        if mutant && self.signing_index == 1 { self.extra_signer.as_ref() } else { None }
+                    } else { self.active_sponsor.as_ref() };
+                    let Some(coin) = signer.filter(|_| !omit) else {
                         self.stage = if mutant {
                             Stage::SubmitMutant
                         } else {
@@ -483,8 +607,11 @@ impl Planner {
                         .iter()
                         .position(|input| input.outpoint() == coin.outpoint())
                         .ok_or("sponsor input missing")?;
+                    let signing_name = if self.second {
+                        format!("{name}/sign-{}/{}", if mutant { "mutant" } else { "control" }, self.signing_index)
+                    } else { format!("{name}/sign-{}", if mutant { "mutant" } else { "control" }) };
                     OperationStep::new(
-                        &format!("{name}/sign-{}", if mutant { "mutant" } else { "control" }),
+                        &signing_name,
                         OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
                             finalized_transaction: bytes.clone(),
                             sponsor_input_index: u16::try_from(index).map_err(|e| e.to_string())?,

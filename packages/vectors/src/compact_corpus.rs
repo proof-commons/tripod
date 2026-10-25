@@ -12,10 +12,11 @@ use std::sync::OnceLock;
 use target_elements_conformance::constructor::tagged::sha256;
 use target_elements_conformance::executor::TargetOperationPlanner;
 use target_elements_conformance::protocol::{
-    NativeOperationResponse, ObservedOutcomeLayer, OperationSubject,
+    FundedOutput, NativeOperationResponse, ObservedOutcomeLayer, OperationSubject,
 };
 use transaction::{
-    InputWitness, Outpoint, TargetInput, TargetOutput, TargetTransaction, ValueField,
+    AssetField, AssetId, InputWitness, Outpoint, TargetInput, TargetOutput, TargetTransaction,
+    ValueField,
 };
 
 #[allow(
@@ -45,6 +46,24 @@ const TIMING: &str = include_str!(
 const MANIFEST: &str = include_str!("../fixtures/compact-run-of-record/MANIFEST.sha256");
 const REPORT: &str = include_str!("../fixtures/compact-run-of-record/RUN-REPORT");
 
+/// Content pin for the second archive's exact two-entry manifest.
+pub const COMPACT_SECOND_MANIFEST_SHA256: &str =
+    "930d01ec1a8535414ddaf9ca2c58d3f372c2dd6f27095bcae26c3fb7b4335966";
+/// Content pin for the second archive's eligible report.
+pub const COMPACT_SECOND_REPORT_SHA256: &str =
+    "7378b9a15965835be2ba5a9d53acd9464e28386d9b3716a37133796861647cb0";
+/// Address of the second schedule and its attempt.
+pub const COMPACT_SECOND_RUN_ADDRESS: &str =
+    "a67b11a122afb92e3afe4fb271819df7cd417774dd42373d345822a5c194ae14";
+const SECOND_CAPTURE: &str = include_str!(
+    "../fixtures/compact-run-of-record-2/a67b11a122afb92e3afe4fb271819df7cd417774dd42373d345822a5c194ae14.report.capture"
+);
+const SECOND_TIMING: &str = include_str!(
+    "../fixtures/compact-run-of-record-2/a67b11a122afb92e3afe4fb271819df7cd417774dd42373d345822a5c194ae14.report.capture.timing"
+);
+const SECOND_MANIFEST: &str = include_str!("../fixtures/compact-run-of-record-2/MANIFEST.sha256");
+const SECOND_REPORT: &str = include_str!("../fixtures/compact-run-of-record-2/RUN-REPORT");
+
 /// Admission stops at the first failed independent binding.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompactImportRefusal {
@@ -59,10 +78,32 @@ pub enum CompactImportRefusal {
 }
 type Result<T> = std::result::Result<T, CompactImportRefusal>;
 
+/// The shared schedule an archive was captured under.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CompactSchedule {
+    First,
+    Second,
+}
+
+/// Archive-specific premises; shared grammar never supplies missing pins.
+#[derive(Clone, Copy)]
+pub struct ArchiveSpecification<'a> {
+    pub address_input: &'a [u8],
+    pub address: &'a str,
+    pub manifest_digest: &'a str,
+    pub report_digest: &'a str,
+    pub attempt: &'a str,
+    pub operations: usize,
+    pub staged: usize,
+    pub schedule: CompactSchedule,
+}
+
 /// A formal argument is separate from every observed refusal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FormalClosure {
     NoSponsorAuthorizationCoordinate,
+    /// A tested candidate-specific argument from the carrier's read-set.
+    Carrier(crate::compact_campaign_second::Closure),
 }
 
 /// The current standing of one native requirement.
@@ -166,29 +207,86 @@ impl<'a> Cursor<'a> {
     }
 }
 
-fn admit_files(capture: &str, timing: &str, manifest: &str, report: &str) -> Result<CompactCorpus> {
+/// Immutable premises of the first admitted schedule.
+#[must_use]
+pub const fn first_specification() -> ArchiveSpecification<'static> {
     let address_input = b"tripod/compact-run/address/v1\0candidate rule:phase7:wave0-rulings 128\npins FIXTURE_MERKLE_ROOT FIXTURE_REFERENCE_OUTPUT_KEY PINNED_PROGRAM\nroster compact-native-requirements-v1 48\ncontrols A2 A3 A4 N2 N3 N4 C2 C3 C4\nstaged 16\nceremony report\nmode record\nattempt 2\n";
+    ArchiveSpecification {
+        address_input,
+        address: COMPACT_RUN_ADDRESS,
+        manifest_digest: COMPACT_MANIFEST_SHA256,
+        report_digest: COMPACT_REPORT_SHA256,
+        attempt: "2",
+        operations: 92,
+        staged: 16,
+        schedule: CompactSchedule::First,
+    }
+}
+
+/// Immutable premises of the second admitted schedule.
+#[must_use]
+pub const fn second_specification() -> ArchiveSpecification<'static> {
+    let address_input = b"tripod/compact-run/address/v2\0candidate rule:phase7:wave0-rulings 128\npins FIXTURE_MERKLE_ROOT FIXTURE_REFERENCE_OUTPUT_KEY PINNED_PROGRAM\nroster compact-native-requirements-v2 48\ncontrols A2 A3 A4 N2 N3 N4 C2 C3 C4\nstaged 11\nceremony report\nmode record\nattempt 1\n";
+    ArchiveSpecification {
+        address_input,
+        address: COMPACT_SECOND_RUN_ADDRESS,
+        manifest_digest: COMPACT_SECOND_MANIFEST_SHA256,
+        report_digest: COMPACT_SECOND_REPORT_SHA256,
+        attempt: "1",
+        operations: 87,
+        staged: 11,
+        schedule: CompactSchedule::Second,
+    }
+}
+
+fn admit_files(capture: &str, timing: &str, manifest: &str, report: &str) -> Result<CompactCorpus> {
+    admit(first_specification(), capture, timing, manifest, report)
+}
+
+fn admit(
+    specification: ArchiveSpecification<'_>,
+    capture: &str,
+    timing: &str,
+    manifest: &str,
+    report: &str,
+) -> Result<CompactCorpus> {
+    let (operations, payload, deployment, source) =
+        admit_grammar(specification, capture, timing, manifest, report)?;
+    replay(specification, &operations, &payload, deployment, source)
+}
+
+type ParsedArchive = (Vec<Recorded>, String, [String; 3], [String; 2]);
+
+fn admit_grammar(
+    specification: ArchiveSpecification<'_>,
+    capture: &str,
+    timing: &str,
+    manifest: &str,
+    report: &str,
+) -> Result<ParsedArchive> {
     require(
-        hash(address_input) == COMPACT_RUN_ADDRESS,
+        hash(specification.address_input) == specification.address,
         CompactImportRefusal::Identity,
     )?;
     require(
-        hash(manifest.as_bytes()) == COMPACT_MANIFEST_SHA256,
+        hash(manifest.as_bytes()) == specification.manifest_digest,
         CompactImportRefusal::Manifest,
     )?;
     let expected = format!(
-        "{}  {COMPACT_RUN_ADDRESS}.report.capture\n{}  {COMPACT_RUN_ADDRESS}.report.capture.timing\n",
+        "{}  {}.report.capture\n{}  {}.report.capture.timing\n",
         hash(capture.as_bytes()),
-        hash(timing.as_bytes())
+        specification.address,
+        hash(timing.as_bytes()),
+        specification.address,
     );
     require(manifest == expected, CompactImportRefusal::Manifest)?;
     require(
-        hash(report.as_bytes()) == COMPACT_REPORT_SHA256,
+        hash(report.as_bytes()) == specification.report_digest,
         CompactImportRefusal::Report,
     )?;
     let mut report = Cursor::new(report)?;
     report.exact("run-report-schema compact-native-run-report 1")?;
-    report.exact(&format!("run-address {COMPACT_RUN_ADDRESS}"))?;
+    report.exact(&format!("run-address {}", specification.address))?;
     let source = [
         report.value("suite-commit")?.to_owned(),
         report.value("suite-tree")?.to_owned(),
@@ -202,10 +300,10 @@ fn admit_files(capture: &str, timing: &str, manifest: &str, report: &str) -> Res
         }),
         CompactImportRefusal::Identity,
     )?;
+    report.exact("suite-clean yes")?;
+    report.exact("mode record")?;
+    report.exact(&format!("attempt {}", specification.attempt))?;
     for text in [
-        "suite-clean yes",
-        "mode record",
-        "attempt 2",
         "expected-test-count 1",
         "expected-ceremony-count 1",
         "expected-setup-count 0",
@@ -213,15 +311,24 @@ fn admit_files(capture: &str, timing: &str, manifest: &str, report: &str) -> Res
         "expected-timing-count 1",
         "expected-archive-file-count 4",
         "diagnostics-present yes",
-        "expected-operation-count 92",
-        "observed-operation-count 92",
     ] {
         report.exact(text)?;
     }
+    report.exact(&format!(
+        "expected-operation-count {}",
+        specification.operations
+    ))?;
+    report.exact(&format!(
+        "observed-operation-count {}",
+        specification.operations
+    ))?;
     let tip = report.value("elementsd-expected-tip")?.to_owned();
     report.exact("protocol-revision 8")?;
     report.exact("cargo-exit-code 0")?;
-    report.exact(&format!("manifest-sha256 {COMPACT_MANIFEST_SHA256}"))?;
+    report.exact(&format!(
+        "manifest-sha256 {}",
+        specification.manifest_digest
+    ))?;
     report.exact("eligible yes")?;
     report.done()?;
     let mut clock = Cursor::new(timing)?;
@@ -248,8 +355,9 @@ fn admit_files(capture: &str, timing: &str, manifest: &str, report: &str) -> Res
         CompactImportRefusal::Grammar,
     )?;
     clock.done()?;
-    let (operations, payload, deployment) = parse_capture(capture, &source, &tip)?;
-    replay(&operations, &payload, deployment, source)
+    let (operations, payload, deployment) =
+        parse_capture_for(specification, capture, &source, &tip)?;
+    Ok((operations, payload, deployment, source))
 }
 
 #[derive(Clone)]
@@ -258,8 +366,18 @@ struct Recorded {
     response: NativeOperationResponse,
 }
 
-#[allow(clippy::too_many_lines, reason = "closed ordered transcript grammar")]
+#[cfg(test)]
 fn parse_capture(
+    text: &str,
+    source: &[String; 2],
+    tip: &str,
+) -> Result<(Vec<Recorded>, String, [String; 3])> {
+    parse_capture_for(first_specification(), text, source, tip)
+}
+
+#[allow(clippy::too_many_lines, reason = "closed ordered transcript grammar")]
+fn parse_capture_for(
+    specification: ArchiveSpecification<'_>,
     text: &str,
     source: &[String; 2],
     tip: &str,
@@ -360,16 +478,13 @@ fn parse_capture(
     {
         cursor.exact(&format!("environment-capability {index} {capability}"))?;
     }
-    for line in [
-        "environment-funding-count 0",
-        "digest-count 0",
-        "operation-count 92",
-    ] {
+    for line in ["environment-funding-count 0", "digest-count 0"] {
         cursor.exact(line)?;
     }
+    cursor.exact(&format!("operation-count {}", specification.operations))?;
     let mut subjects = Vec::new();
     let mut projections = Vec::new();
-    for index in 0..92 {
+    for index in 0..specification.operations {
         cursor.exact(&format!("operation {index} begin"))?;
         require(
             cursor.text("operation-id")? == format!("operation-{index}")
@@ -427,7 +542,7 @@ fn parse_capture(
     cursor.done()?;
     let mut body = Cursor::new(&payload)?;
     body.exact("compact-campaign-schema 1")?;
-    body.exact(&format!("run-address {COMPACT_RUN_ADDRESS}"))?;
+    body.exact(&format!("run-address {}", specification.address))?;
     let mut operations = Vec::new();
     for (subject, (verdict, layer, identity, detail)) in subjects.into_iter().zip(projections) {
         let response: NativeOperationResponse =
@@ -554,6 +669,103 @@ fn verify_recipe(
             *witnesses.last_mut().ok_or(CompactImportRefusal::Recipe)? =
                 InputWitness::new(Vec::new());
         }
+        _ => return Err(CompactImportRefusal::Recipe),
+    }
+    require(
+        changed.encode() == bytes
+            && changed.version() == control.version()
+            && changed.lock_time() == control.lock_time()
+            && changed.inputs() == inputs
+            && changed.outputs() == outputs
+            && changed.witnesses() == witnesses
+            && changed != control,
+        CompactImportRefusal::Recipe,
+    )
+}
+
+// The second schedule's recipes, compared as decoded coordinates against the
+// control and the one funded coin the recipe replaces or adds.
+fn verify_additional(
+    control: &[u8],
+    bytes: &[u8],
+    recipe: ByteRecipe,
+    coin: &FundedOutput,
+    ash: u8,
+) -> Result<()> {
+    let control = TargetTransaction::decode(control).map_err(|_| CompactImportRefusal::Recipe)?;
+    let changed = TargetTransaction::decode(bytes).map_err(|_| CompactImportRefusal::Recipe)?;
+    let mut inputs = control.inputs().to_vec();
+    let mut outputs = control.outputs().to_vec();
+    let mut witnesses = control.witnesses().to_vec();
+    require(
+        coin.asset.len() == 64 && coin.asset.bytes().all(|b| b.is_ascii_hexdigit()),
+        CompactImportRefusal::Recipe,
+    )?;
+    let mut asset = schedule::hex32(&coin.asset);
+    asset.reverse();
+    let foreign = AssetField::Explicit(AssetId::from_internal(asset));
+    let added = TargetInput::new(schedule::outpoint(coin), inputs[0].sequence());
+    let nonce = outputs[0].nonce();
+    let outlet = |asset, n| TargetOutput::new(asset, ValueField::Explicit(n), nonce, vec![0x51]);
+    match recipe {
+        ByteRecipe::AshInputAsset => {
+            inputs[1] = added;
+            outputs[0] = value(
+                &outputs[0],
+                amount(&outputs[0])?
+                    .checked_sub(coin.amount_satoshis)
+                    .ok_or(CompactImportRefusal::Recipe)?,
+            );
+            outputs.push(outlet(foreign, coin.amount_satoshis));
+        }
+        ByteRecipe::AshInputObject => {
+            inputs[1] = added;
+            witnesses[1] = InputWitness::new(Vec::new());
+        }
+        ByteRecipe::SponsorInputAsset => {
+            let index = usize::from(ash);
+            let sponsor = inputs
+                .get(index)
+                .ok_or(CompactImportRefusal::Recipe)?
+                .clone();
+            inputs.push(sponsor);
+            witnesses.push(witnesses[index].clone());
+            inputs[index] = added;
+            outputs.push(outlet(foreign, coin.amount_satoshis));
+        }
+        ByteRecipe::SuccessorAsset | ByteRecipe::ChangeAsset => {
+            let index = usize::from(recipe == ByteRecipe::ChangeAsset);
+            let original = outputs
+                .get(index)
+                .ok_or(CompactImportRefusal::Recipe)?
+                .clone();
+            inputs.push(added);
+            witnesses.push(InputWitness::new(Vec::new()));
+            outputs[index] = TargetOutput::new(
+                foreign,
+                original.value(),
+                original.nonce(),
+                original.program().to_vec(),
+            );
+            outputs.push(TargetOutput::new(
+                original.asset(),
+                original.value(),
+                original.nonce(),
+                vec![0x51],
+            ));
+        }
+        ByteRecipe::TwoSponsors => {
+            inputs.push(added);
+            witnesses.push(InputWitness::new(vec![Vec::new(), Vec::new()]));
+            let fee = outputs.last_mut().ok_or(CompactImportRefusal::Recipe)?;
+            *fee = value(
+                fee,
+                amount(fee)?
+                    .checked_add(coin.amount_satoshis)
+                    .ok_or(CompactImportRefusal::Recipe)?,
+            );
+        }
+        _ => return Err(CompactImportRefusal::Recipe),
     }
     require(
         changed.encode() == bytes
@@ -572,15 +784,32 @@ fn verify_recipe(
     reason = "settlement and the recorded findings are checked together"
 )]
 fn replay(
+    specification: ArchiveSpecification<'_>,
     operations: &[Recorded],
     payload: &str,
     deployment: [String; 3],
     source: [String; 2],
 ) -> Result<CompactCorpus> {
-    require(operations.len() == 92, CompactImportRefusal::Census)?;
+    require(
+        operations.len() == specification.operations,
+        CompactImportRefusal::Census,
+    )?;
+    let second = specification.schedule == CompactSchedule::Second;
+    // The first authorization request carries the unsigned mutant bytes.
+    let sign = if second {
+        "sign-mutant/0"
+    } else {
+        "sign-mutant"
+    };
     let mut packets = VecDeque::new();
     for op in operations {
-        if op.response.case.step.as_str().ends_with("/sign-mutant") {
+        if op
+            .response
+            .case
+            .step
+            .as_str()
+            .ends_with(&format!("/{sign}"))
+        {
             let OperationSubject::SponsorSigning(s) = &op.subject else {
                 return Err(CompactImportRefusal::Recipe);
             };
@@ -591,27 +820,38 @@ fn replay(
             };
             let tx = TargetTransaction::decode(&s.transaction_bytes)
                 .map_err(|_| CompactImportRefusal::Recipe)?;
-            if tx.witnesses().last().is_some_and(|w| w.stack().is_empty())
-                || !operations.iter().any(|other| {
-                    other.response.case.step.as_str()
-                        == op
-                            .response
-                            .case
-                            .step
-                            .as_str()
-                            .replace("submit-mutant", "sign-mutant")
-                })
+            let unsigned = !operations.iter().any(|other| {
+                other.response.case.step.as_str()
+                    == op
+                        .response
+                        .case
+                        .step
+                        .as_str()
+                        .replace("submit-mutant", sign)
+            });
+            if unsigned || (!second && tx.witnesses().last().is_some_and(|w| w.stack().is_empty()))
             {
                 packets.push_back(s.transaction_bytes.clone());
             }
         }
     }
-    require(packets.len() == 16, CompactImportRefusal::Census)?;
-    let mut planner = schedule::Planner::new(Box::new(move |control, recipe, extra, ash| {
-        let bytes = packets.pop_front().ok_or("missing recipe packet")?;
-        verify_recipe(control, &bytes, recipe, extra, ash).map_err(|e| format!("{e:?}"))?;
-        Ok(bytes)
-    }));
+    require(
+        packets.len() == specification.staged,
+        CompactImportRefusal::Census,
+    )?;
+    let mut planner = if second {
+        schedule::Planner::second(Box::new(move |control, recipe, coin, ash| {
+            let bytes = packets.pop_front().ok_or("missing recipe packet")?;
+            verify_additional(control, &bytes, recipe, coin, ash).map_err(|e| format!("{e:?}"))?;
+            Ok(bytes)
+        }))
+    } else {
+        schedule::Planner::new(Box::new(move |control, recipe, extra, ash| {
+            let bytes = packets.pop_front().ok_or("missing recipe packet")?;
+            verify_recipe(control, &bytes, recipe, extra, ash).map_err(|e| format!("{e:?}"))?;
+            Ok(bytes)
+        }))
+    };
     let mut next = planner
         .next_step(None)
         .map_err(|_| CompactImportRefusal::Schedule)?;
@@ -654,10 +894,13 @@ fn replay(
         next.is_none()
             && planner.suspended.is_empty()
             && planner.accepted_families.len() == 9
-            && observations.len() == 16,
+            && observations.len() == specification.staged,
         CompactImportRefusal::Census,
     )?;
-    let mut expected = format!("compact-campaign-schema 1\nrun-address {COMPACT_RUN_ADDRESS}\n");
+    let mut expected = format!(
+        "compact-campaign-schema 1\nrun-address {}\n",
+        specification.address
+    );
     for operation in operations {
         let bytes =
             serde_json::to_vec(&operation.response).map_err(|_| CompactImportRefusal::Grammar)?;
@@ -690,7 +933,7 @@ fn replay(
     for row in &planner.rows {
         observations
             .entry(row.manifest.requirement.clone())
-            .or_insert_with(|| disposition_without_observation(row));
+            .or_insert_with(|| disposition_without_observation(row, specification.schedule));
     }
     let standing = CandidateStanding::CurrentCandidate(CurrentCandidate::selected(
         deployment,
@@ -704,13 +947,22 @@ fn replay(
     })
 }
 
-fn disposition_without_observation(row: &CampaignRow) -> NativeDisposition {
-    if requirement_name(&row.manifest.requirement)
-        == "Absent/SponsorIsolation/Sponsor/RuntimeCarrier/FocusedReject(MissingSponsorAuthorization)"
-    {
-        NativeDisposition::FormallyClosed(FormalClosure::NoSponsorAuthorizationCoordinate)
-    } else {
-        NativeDisposition::Unresolved(row.recipe.err().unwrap_or(UnresolvedRecipe::UnprobedRecipe))
+fn disposition_without_observation(
+    row: &CampaignRow,
+    schedule: CompactSchedule,
+) -> NativeDisposition {
+    let carrier = crate::compact_campaign_second::closure(row)
+        .filter(|_| schedule == CompactSchedule::Second);
+    match carrier {
+        Some(closure) => NativeDisposition::FormallyClosed(FormalClosure::Carrier(closure)),
+        None if requirement_name(&row.manifest.requirement)
+            == "Absent/SponsorIsolation/Sponsor/RuntimeCarrier/FocusedReject(MissingSponsorAuthorization)" =>
+        {
+            NativeDisposition::FormallyClosed(FormalClosure::NoSponsorAuthorizationCoordinate)
+        }
+        None => NativeDisposition::Unresolved(
+            row.recipe.err().unwrap_or(UnresolvedRecipe::UnprobedRecipe),
+        ),
     }
 }
 
@@ -726,10 +978,78 @@ pub fn run_of_record() -> Result<&'static CompactCorpus> {
         .map_err(Clone::clone)
 }
 
+/// Admit the second archive's four immutable files once through the same grammar.
+///
+/// # Errors
+/// Returns the first failed archive or replay binding.
+pub fn second_run_of_record() -> Result<&'static CompactCorpus> {
+    static CORPUS: OnceLock<Result<CompactCorpus>> = OnceLock::new();
+    CORPUS
+        .get_or_init(|| {
+            admit(
+                second_specification(),
+                SECOND_CAPTURE,
+                SECOND_TIMING,
+                SECOND_MANIFEST,
+                SECOND_REPORT,
+            )
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
+/// One standing per key across both archives: an observation in either counts
+/// once, a tested formal closure fills a key neither observes, and a suspension
+/// stays visible without overwriting an observation.
+fn join(first: &CompactCorpus, second: &CompactCorpus) -> Result<CompactCorpus> {
+    require(
+        first.rows.keys().eq(second.rows.keys()),
+        CompactImportRefusal::Census,
+    )?;
+    let (Some(one), Some(two)) = (
+        first.standing.current_candidate(),
+        second.standing.current_candidate(),
+    ) else {
+        return Err(CompactImportRefusal::Identity);
+    };
+    require(one.pins == two.pins, CompactImportRefusal::Identity)?;
+    let rows = first
+        .rows
+        .iter()
+        .zip(second.rows.values())
+        .map(|((key, one), two)| {
+            let observed = |d: &NativeDisposition| matches!(d, NativeDisposition::Observed { .. });
+            let closed = |d: &NativeDisposition| matches!(d, NativeDisposition::FormallyClosed(_));
+            let take_second = !observed(one)
+                && (observed(two)
+                    || (!closed(one)
+                        && (closed(two) || matches!(two, NativeDisposition::Suspended(_)))));
+            (key.clone(), if take_second { two } else { one }.clone())
+        })
+        .collect();
+    Ok(CompactCorpus {
+        standing: first.standing.clone(),
+        rows,
+        controls: first.controls.union(&second.controls).copied().collect(),
+    })
+}
+
+/// The current native campaign across both admitted archives.
+///
+/// # Errors
+/// Returns either archive's refusal or a key or pin mismatch between them.
+pub fn joined_campaign() -> Result<&'static CompactCorpus> {
+    static JOINED: OnceLock<Result<CompactCorpus>> = OnceLock::new();
+    JOINED
+        .get_or_init(|| join(run_of_record()?, second_run_of_record()?))
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use target_elements_conformance::protocol::{FundedOutput, WireOutpoint};
+    use target_elements_conformance::protocol::WireOutpoint;
     use transaction::Txid;
 
     #[test]
@@ -775,9 +1095,162 @@ mod tests {
         assert!(corpus.standing.historical_candidate().is_none());
         let fixture = crate::bundle::fixture_bundle().expect("fixture");
         let plan = crate::plan::derive_evidence_plan(&fixture).expect("plan");
+        // The plan joins both admitted archives; this archive's own census is above.
         assert_eq!(
             plan.current_campaign_census().expect("current census"),
-            [16, 1, 31, 0]
+            [27, 21, 0, 0]
+        );
+    }
+
+    fn census(corpus: &CompactCorpus) -> [usize; 4] {
+        let mut counts = [0; 4];
+        for disposition in corpus.rows.values() {
+            counts[match disposition {
+                NativeDisposition::Observed { .. } => 0,
+                NativeDisposition::FormallyClosed(_) => 1,
+                NativeDisposition::Unresolved(_) => 2,
+                NativeDisposition::Suspended(_) => 3,
+            }] += 1;
+        }
+        counts
+    }
+
+    #[test]
+    fn second_archive_replays_eleven_rows_after_their_paired_controls() {
+        let corpus = second_run_of_record().expect("admission");
+        assert!(std::ptr::eq(
+            corpus,
+            second_run_of_record().expect("cached")
+        ));
+        assert_eq!(corpus.controls.len(), 9);
+        assert_eq!(corpus.rows.len(), 48);
+        // Rows the first schedule observes are not staged again here.
+        assert_eq!(census(corpus), [11, 21, 16, 0]);
+        let bundle = crate::bundle::fixture_bundle().expect("fixture");
+        let rows = crate::compact_campaign_second::roster(&bundle).expect("roster");
+        for (key, disposition) in &corpus.rows {
+            let row = &rows[key];
+            match disposition {
+                NativeDisposition::Observed {
+                    expected, observed, ..
+                } => {
+                    assert!(
+                        row.recipe
+                            .is_ok_and(crate::compact_campaign_second::additional)
+                    );
+                    assert_eq!(*expected, EvidenceBoundary::ScriptPathRejection);
+                    assert_eq!(*observed, ObservedOutcomeLayer::ScriptPathRejection);
+                }
+                NativeDisposition::FormallyClosed(FormalClosure::Carrier(reason)) => {
+                    assert_eq!(crate::compact_campaign_second::closure(row), Some(*reason));
+                }
+                NativeDisposition::FormallyClosed(_) => {
+                    assert_eq!(
+                        row.recipe,
+                        Err(UnresolvedRecipe::AbsentSponsorAuthorization)
+                    );
+                }
+                NativeDisposition::Unresolved(reason) => {
+                    assert_eq!(*reason, UnresolvedRecipe::UnprobedRecipe);
+                    assert!(
+                        !row.recipe
+                            .is_ok_and(crate::compact_campaign_second::additional)
+                    );
+                }
+                NativeDisposition::Suspended(_) => {
+                    panic!("the eligible archive suspends no family")
+                }
+            }
+        }
+        let current = corpus.standing.current_candidate().expect("current");
+        let first = run_of_record()
+            .expect("first")
+            .standing
+            .current_candidate()
+            .expect("first current");
+        assert_eq!(current.pins, first.pins);
+        assert_eq!(current.programs, first.programs);
+        assert_eq!(
+            second_specification().address_input,
+            crate::compact_campaign_second::address_input(&rows, "record", "1").as_bytes()
+        );
+        let counts = crate::compact_campaign_second::operation_census(&rows);
+        assert_eq!(counts.total(), second_specification().operations);
+        assert_eq!(
+            crate::compact_campaign_second::staged(&rows).len(),
+            second_specification().staged
+        );
+        for index in 0..4 {
+            let mut files = [
+                SECOND_CAPTURE.to_owned(),
+                SECOND_TIMING.to_owned(),
+                SECOND_MANIFEST.to_owned(),
+                SECOND_REPORT.to_owned(),
+            ];
+            files[index].push('\n');
+            assert!(matches!(
+                admit(
+                    second_specification(),
+                    &files[0],
+                    &files[1],
+                    &files[2],
+                    &files[3]
+                ),
+                Err(CompactImportRefusal::Manifest | CompactImportRefusal::Report)
+            ));
+        }
+        assert!(
+            admit(
+                first_specification(),
+                SECOND_CAPTURE,
+                SECOND_TIMING,
+                SECOND_MANIFEST,
+                SECOND_REPORT
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn joined_campaign_counts_each_row_once_across_both_archives() {
+        let first = run_of_record().expect("first");
+        let second = second_run_of_record().expect("second");
+        let joined = joined_campaign().expect("joined");
+        assert_eq!(census(joined), [27, 21, 0, 0]);
+        for (key, disposition) in &joined.rows {
+            let (one, two) = (&first.rows[key], &second.rows[key]);
+            assert!(disposition == one || disposition == two);
+            assert!(
+                !(matches!(one, NativeDisposition::Observed { .. })
+                    && matches!(two, NativeDisposition::Observed { .. })),
+                "{key:?} observed twice"
+            );
+        }
+        assert_eq!(joined.standing, first.standing);
+        assert_eq!(joined.controls.len(), 9);
+        let mut swapped_pins = run_of_record().expect("first").standing.clone();
+        if let CandidateStanding::CurrentCandidate(current) = &mut swapped_pins {
+            current.pins[0][0] ^= 1;
+        }
+        let altered = CompactCorpus {
+            standing: swapped_pins,
+            rows: second.rows.clone(),
+            controls: second.controls.clone(),
+        };
+        assert_eq!(
+            join(first, &altered).err(),
+            Some(CompactImportRefusal::Identity)
+        );
+        let mut fewer = second.rows.clone();
+        fewer.pop_last().expect("a row to remove");
+        let truncated = CompactCorpus {
+            standing: second.standing.clone(),
+            rows: fewer,
+            controls: second.controls.clone(),
+        };
+        assert_eq!(
+            join(first, &truncated).err(),
+            Some(CompactImportRefusal::Census)
         );
     }
 
@@ -808,7 +1281,10 @@ mod tests {
             .split_once("**Record (Wave 0 compact negative manifest)**")
             .expect("following record")
             .0;
-        let corpus = run_of_record().expect("admission");
+        let corpus = joined_campaign().expect("admission");
+        let first = run_of_record().expect("first");
+        let bundle = crate::bundle::fixture_bundle().expect("fixture");
+        let second_rows = crate::compact_campaign_second::roster(&bundle).expect("roster");
         let table = record
             .lines()
             .filter(|line| line.starts_with("| `Absent/") || line.starts_with("| `Present/"))
@@ -825,9 +1301,28 @@ mod tests {
             match disposition {
                 NativeDisposition::Observed { family, .. } => {
                     assert!(row.contains(&format!("| {} | ScriptPathRejection | ScriptPathRejection | Observed; compact-run-of-record", family.name())));
-                    assert!(row.contains(
-                        "current_archive_replays_sixteen_rows_after_their_paired_controls"
-                    ));
+                    if matches!(first.rows[key], NativeDisposition::Observed { .. }) {
+                        assert!(!row.contains("compact-run-of-record-2"));
+                        assert!(row.contains(
+                            "current_archive_replays_sixteen_rows_after_their_paired_controls"
+                        ));
+                    } else {
+                        let recipe = second_rows[key].recipe.expect("second recipe");
+                        assert!(row.contains(&format!(
+                            "Observed; compact-run-of-record-2; collateral: {}",
+                            crate::compact_campaign_second::collateral(recipe)
+                        )));
+                        assert!(row.contains(
+                            "second_archive_replays_eleven_rows_after_their_paired_controls"
+                        ));
+                    }
+                }
+                NativeDisposition::FormallyClosed(FormalClosure::Carrier(reason)) => {
+                    assert!(row.contains(&format!(
+                        "Formally closed ({}): `{reason:?}`",
+                        reason.kind()
+                    )));
+                    assert!(row.contains(reason.test()));
                 }
                 NativeDisposition::FormallyClosed(reason) => {
                     assert!(row.contains(&format!("Formally closed: `{reason:?}`")));
@@ -963,7 +1458,14 @@ mod tests {
                 }
             }
             assert!(
-                replay(&changed, &payload, deployment.clone(), source.clone()).is_err(),
+                replay(
+                    first_specification(),
+                    &changed,
+                    &payload,
+                    deployment.clone(),
+                    source.clone()
+                )
+                .is_err(),
                 "change {choice}"
             );
         }
@@ -1036,7 +1538,7 @@ mod tests {
             .iter()
             .filter(|row| {
                 matches!(
-                    disposition_without_observation(row),
+                    disposition_without_observation(row, CompactSchedule::First),
                     NativeDisposition::FormallyClosed(
                         FormalClosure::NoSponsorAuthorizationCoordinate
                     )

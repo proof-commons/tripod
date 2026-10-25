@@ -43,13 +43,23 @@ probe_refused "$work/scratch" "$work/scratch/link/compact-probe-contract" 'probe
 cat > "$work/cargo-stub" <<'STUB'
 #!/bin/sh
 set -eu
+if [ -n "${TRIPOD_COMPACT_SUMMARY:-}" ]; then
+  operations=92
+  staged=16
+  [ "$TRIPOD_COMPACT_SCHEDULE" = 1 ] || { operations=87; staged=11; }
+  printf 'operations %s\ncontrols 9\nstaged %s\n' "$operations" "$staged" > "$TRIPOD_COMPACT_SUMMARY"
+  printf 'tripod/compact-run/address/v%s\000candidate rule:phase7:wave0-rulings 128\npins FIXTURE_MERKLE_ROOT FIXTURE_REFERENCE_OUTPUT_KEY PINNED_PROGRAM\nroster compact-native-requirements-v%s 48\ncontrols A2 A3 A4 N2 N3 N4 C2 C3 C4\nstaged %s\nceremony report\nmode %s\nattempt %s\n' "$TRIPOD_COMPACT_SCHEDULE" "$TRIPOD_COMPACT_SCHEDULE" "$staged" "$TRIPOD_COMPACT_MODE" "$TRIPOD_COMPACT_ATTEMPT" > "$TRIPOD_COMPACT_SUMMARY.address"
+  exit 0
+fi
 capture=$TRIPOD_LIVE_REPORT_DIR/$TRIPOD_COMPACT_RUN_ADDRESS.report.capture
 hex() { od -An -tx1 | tr -d ' \n'; }
 {
   printf 'native-capture-schema 2\nceremony-id report\n'
   printf 'suite-commit %s\nsuite-tree %s\n' "$TRIPOD_LIVE_SUITE_COMMIT" "$TRIPOD_LIVE_SUITE_TREE"
   printf 'handshake-protocol-schema 8\nenvironment-schema 8\nterminal-state complete\n'
-  printf 'operation-count %s\n' "${TEST_OPERATIONS:-92}"
+  expected=92
+  [ "$TRIPOD_COMPACT_SCHEDULE" = 1 ] || expected=87
+  printf 'operation-count %s\n' "${TEST_OPERATIONS:-$expected}"
   printf 'handshake-intended-executed-tip 40 %s\n' "$(printf '%s' "$ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP" | hex)"
   printf 'handshake-binary-reported-revision 40 %s\n' "$(printf '%s' "$ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP" | hex)"
 } > "$capture"
@@ -65,7 +75,7 @@ case "${TEST_DEFECT:-none}" in
   extra) touch "$TRIPOD_LIVE_REPORT_DIR/extra";;
   hidden) touch "$TRIPOD_LIVE_REPORT_DIR/.extra";;
 esac
-printf 'test result: ok. 1 passed; 0 failed; 0 ignored;\nCOMPACT operations 92 controls 9 suspended 0\n'
+printf 'test result: ok. 1 passed; 0 failed; 0 ignored;\nCOMPACT operations %s controls 9 suspended 0\n' "$expected"
 STUB
 chmod +x "$work/cargo-stub"
 export TRIPOD_CAPTURE_CARGO=$work/cargo-stub
@@ -81,6 +91,9 @@ export ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID=$TRIPOD_LIVE_NETWORK_ID
 sh "$root/scripts/compact-native-capture.sh" "$work/valid" > "$work/log" 2>&1
 grep -qx 'eligible yes' "$work/valid/RUN-REPORT"
 test "$(wc -l < "$work/valid/MANIFEST.sha256")" -eq 2
+TRIPOD_COMPACT_SCHEDULE=2 sh "$root/scripts/compact-native-capture.sh" "$work/second" > "$work/log" 2>&1
+grep -qx 'expected-operation-count 87' "$work/second/RUN-REPORT"
+grep -qx 'eligible yes' "$work/second/RUN-REPORT"
 TRIPOD_COMPACT_MODE=probe TRIPOD_COMPACT_PROBE_ROOT=$work/scratch sh "$root/scripts/compact-native-capture.sh" "$work/scratch/valid" > "$work/log" 2>&1
 grep -qx 'eligible no' "$work/scratch/valid/RUN-REPORT"
 for defect in digest timing extra hidden; do

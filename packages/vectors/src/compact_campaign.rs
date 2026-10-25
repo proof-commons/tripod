@@ -68,6 +68,12 @@ pub enum ByteRecipe {
     DivertUnit,
     SplitChange,
     MissingAuthorization,
+    AshInputAsset,
+    AshInputObject,
+    SponsorInputAsset,
+    SuccessorAsset,
+    ChangeAsset,
+    TwoSponsors,
 }
 
 /// A missing byte realization is retained, never funded or discharged.

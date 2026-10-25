@@ -633,8 +633,9 @@ pub struct CompactAshEvidencePlan {
 }
 
 impl CompactAshEvidencePlan {
-    /// Current native dispositions joined to this plan's exact manifest keys.
-    /// Historical observations remain in their original candidate scope.
+    /// Current native dispositions of both admitted compact archives, joined to
+    /// this plan's exact manifest keys. Historical observations remain in their
+    /// original candidate scope.
     ///
     /// # Errors
     /// Returns an archive refusal or a manifest-key mismatch.
@@ -644,7 +645,7 @@ impl CompactAshEvidencePlan {
         &'static crate::compact_corpus::CompactCorpus,
         crate::compact_corpus::CompactImportRefusal,
     > {
-        let corpus = crate::compact_corpus::run_of_record()?;
+        let corpus = crate::compact_corpus::joined_campaign()?;
         let native = self
             .negative_manifest
             .iter()

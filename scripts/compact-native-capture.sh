@@ -5,14 +5,6 @@ LC_ALL=C
 export LC_ALL
 started=$(date +%s%3N)
 EXPECTED_ELEMENTSD_TIP=b7fc5d080a7e9ccc0ef48c3ba11db243e794bdb0
-EXPECTED_OPERATIONS=92
-RUN_ADDRESS_SEPARATOR='tripod/compact-run/address/v1'
-RUN_INPUT_SET='candidate rule:phase7:wave0-rulings 128
-pins FIXTURE_MERKLE_ROOT FIXTURE_REFERENCE_OUTPUT_KEY PINNED_PROGRAM
-roster compact-native-requirements-v1 48
-controls A2 A3 A4 N2 N3 N4 C2 C3 C4
-staged 16
-ceremony report'
 die() { echo "compact capture refusal: $*" >&2; exit 1; }
 field() { awk -v key="$2" '$1 == key { n++; sub(/^[^ ]+ /, ""); value=$0 } END { if(n!=1) exit 1; print value }' "$1"; }
 hex() { od -An -tx1 | tr -d ' \n'; }
@@ -56,11 +48,20 @@ lowerhex "${TRIPOD_LIVE_GENESIS_ID:-}" 64 || die 'genesis identity'
 [ -d "${TMPDIR:-}" ] && [ -w "$TMPDIR" ] || die 'writable temporary root required'
 cargo=${TRIPOD_CAPTURE_CARGO:-cargo}
 cargo=$(command -v "$cargo") || die 'cargo missing'
-address=$( { printf '%s\000%s\n' "$RUN_ADDRESS_SEPARATOR" "$RUN_INPUT_SET"; printf 'mode %s\nattempt %s\n' "$mode" "$attempt"; } | sha256sum)
-address=${address%% *}
-mkdir "$destination"
 temporary=$(mktemp -d "$TMPDIR/compact-capture.XXXXXX")
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM
+TRIPOD_COMPACT_SCHEDULE=${TRIPOD_COMPACT_SCHEDULE:-1}
+case "$TRIPOD_COMPACT_SCHEDULE" in 1|2) ;; *) die 'unknown schedule';; esac
+export TRIPOD_COMPACT_SCHEDULE
+export TRIPOD_COMPACT_MODE=$mode TRIPOD_COMPACT_ATTEMPT=$attempt
+TRIPOD_COMPACT_SUMMARY="$temporary/summary" "$cargo" test -p tripod-vectors --test compact_native compact_schedule_summary -- --exact > "$temporary/summary.log" 2>&1 || { cat "$temporary/summary.log"; die 'schedule summary failed'; }
+EXPECTED_OPERATIONS=$(field "$temporary/summary" operations) || die 'operation summary missing'
+expected_controls=$(field "$temporary/summary" controls) || die 'control summary missing'
+expected_staged=$(field "$temporary/summary" staged) || die 'staged summary missing'
+case "$EXPECTED_OPERATIONS:$expected_controls:$expected_staged" in *[!0-9:]*|'') die 'invalid schedule summary';; esac
+address=$(sha256sum "$temporary/summary.address")
+address=${address%% *}
+mkdir "$destination"
 preflight_finished=$(date +%s%3N)
 set +e
 TRIPOD_LIVE_REPORT_DIR="$destination" TRIPOD_LIVE_SUITE_COMMIT="$suite_commit" TRIPOD_LIVE_SUITE_TREE="$suite_tree" TRIPOD_COMPACT_RUN_ADDRESS="$address" \
@@ -123,7 +124,7 @@ manifest_digest=$(sha256sum "$manifest"); manifest_digest=${manifest_digest%% *}
 operations=missing
 [ ! -f "$capture" ] || operations=$(field "$capture" operation-count)
 eligible=no
-if [ "$mode" = record ] && [ "$valid" = yes ] && [ "$operations" = "$EXPECTED_OPERATIONS" ] && grep -qx "COMPACT operations $EXPECTED_OPERATIONS controls 9 suspended 0" "$temporary/cargo.log"; then eligible=yes; fi
+if [ "$mode" = record ] && [ "$valid" = yes ] && [ "$operations" = "$EXPECTED_OPERATIONS" ] && grep -qx "COMPACT operations $EXPECTED_OPERATIONS controls $expected_controls suspended 0" "$temporary/cargo.log"; then eligible=yes; fi
 {
   printf 'run-report-schema compact-native-run-report 1\nrun-address %s\n' "$address"
   printf 'suite-commit %s\nsuite-tree %s\nsuite-clean yes\n' "$suite_commit" "$suite_tree"

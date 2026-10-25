@@ -1,0 +1,6 @@
+timing-schema compact-phases-1
+ceremony-id report
+status passed
+phase-staging-ms 1093
+phase-execution-ms 3935
+total-ms 5178

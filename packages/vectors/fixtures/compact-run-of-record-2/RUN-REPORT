@@ -1,0 +1,21 @@
+run-report-schema compact-native-run-report 1
+run-address a67b11a122afb92e3afe4fb271819df7cd417774dd42373d345822a5c194ae14
+suite-commit dd7a1515e9a1099694dbaf7b902e71bcf43583ec
+suite-tree 3c0cfa5ebbfd615a9b35cdab3d15c0e805bebb69
+suite-clean yes
+mode record
+attempt 1
+expected-test-count 1
+expected-ceremony-count 1
+expected-setup-count 0
+expected-capture-count 1
+expected-timing-count 1
+expected-archive-file-count 4
+diagnostics-present yes
+expected-operation-count 87
+observed-operation-count 87
+elementsd-expected-tip b7fc5d080a7e9ccc0ef48c3ba11db243e794bdb0
+protocol-revision 8
+cargo-exit-code 0
+manifest-sha256 930d01ec1a8535414ddaf9ca2c58d3f372c2dd6f27095bcae26c3fb7b4335966
+eligible yes
