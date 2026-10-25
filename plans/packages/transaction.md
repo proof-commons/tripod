@@ -279,7 +279,7 @@ bytes are identical.
 
 ## Assurance boundary · `sec:transaction:assurance`
 
-The package establishes ABI-consistent construction and witness materialization.
+The package establishes ABI-consistent construction and witness materialization; `abi::validate_compact_abi_fields` separately classifies compact input-count, version and sequence disagreements before submission, without admitting raw input to safe construction or asserting witness validity.
 
 It does not establish:
 

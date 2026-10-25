@@ -1229,7 +1229,7 @@ The Phase-7 task state opens with the Guide-15 document import; each wave lands 
 | `T12-001` | DONE | Bite 0.1 records verified pinned-target provenance and binding, the reproduced accepted sponsorless maturity control, all ten repository-entry fields, and the reproduced inherited censuses (`rec:backlog:wave0-entry`). It supplies the target prerequisite for `T11-064` and the native portions of `T12-005`; it closes neither row, the region-scoping refit, sponsored construction, positive-floor relayability, the outstanding Safety obligations, nor Wave-0 preflight. |
 | `T12-002` | DONE | The operation-region refit and exact relation-link recount are recorded at (`rec:backlog:wave0-region-refit`); this closes the structural portion of `T11-064` and supplies conjunct 14's structural evidence. Positive-floor and sponsored-form obligations remain with `T12-005`. |
 | `T12-003` | TODO | Bite 0.3 closes `T11-063` through the compact/live closure-exact audit. Gate: each retained check has its closure reason, each surplus check is removed, all censuses reconcile, and focused regressions pass. |
-| `T12-004` | TODO | Bite 0.4 closes `T4-009` by remedying all three Guide-13 feature requests and disposing the compact matrix's 71 remaining negative rows. Gate: all 72 rows carry exact evidence or typed formal closure, with observed answers counted separately. |
+| `T12-004` | TODO | The compact negative manifest covers 74 requirements with routes and owners or missing entries; two supplemental ABI rows and their staged subjects, constructor and dependency staging, and first-party dispositions 2 discharged / 0 out-of-scope / 16 retained are recorded at (`rec:backlog:wave0-compact-negative-manifest`). Scoped analysis and emitted-structure staging remain explicit residuals. The native half retains 47 inherited / 49 current outstanding rows pending compact candidate acceptance and bite 0.4b; `T4-009` remains open. |
 | `T12-005` | TODO | Bite 0.5 closes the remaining `T11-064` obligations, Wave 11's C1 and positive-floor conditions, and records all 206 Safety dispositions, the relation-link recount, and five §23 conjunct dispositions. Gate: observable work performed on the pinned target, no missing-node final reason, each conjunct MET or RETIRED with a stated non-claim. |
 | `T12-006` | TODO | Bite 0.6 closes `T11-110` through `plans/research/test-performance.md`. Gate: required measurements and evidence for adopted remedies retained, unavailable dimensions stated, and the row DONE or formally closed with a typed reason. |
 | `T12-007` | TODO | Bite 0.7 closes preflight and consolidates closure of `T11-064`, `T11-063`, `T4-009`, and `T11-110`. Gate: twelve questions dispositioned, 65 entry rows tracked, (`gate:guide15:preflight`) passed, and the full clean-tree repository gate and before/after figures recorded as the baseline (`gate:guide15-exec:wave0`). |
@@ -1288,6 +1288,77 @@ No leaf changes or native observations are supplied; relation links do not answe
 **Caveat (Remaining carrier scope)**
 
 The four other MODEL-SCOPE identities, plain-L-BTC cardinality and recognition on both sides, retain their missing-carrier standing from the retired partition fragment; the six identities of this refit supply only `T11-064`'s structural portion and conjunct 14's structural evidence.
+
+**Record (Wave 0 compact negative manifest)** · `rec:backlog:wave0-compact-negative-manifest`
+
+The manifest derives every negative key, relation, mutation and collateral obligation from the validated compact plan. Native owners retain the linked carrier sites and alternatives; missing first-party and report entries remain explicit obligations. No positive compact result is promoted.
+
+**Table (Negative classes)** · `tab:backlog:compact-negative-classes`
+
+| Class | Inherited count | Current count | Discharged | Staged-constructible | Outstanding | Pinning test |
+|---|---:|---:|---|---|---:|---|
+| target-executable | 48 | 50 | 1 historical, at its exact candidate scope; 0 new | 0 new native subjects; four existing linked attempts retained | 47 inherited / 49 current | `compact_negative_manifest_matches_every_published_negative`; `compact_negative_manifest_has_unique_routes_and_preserves_collateral` |
+| first-party | 18 | 18 | 2 at the dependency owner | 2 requirement identities share one retained public/private pair | 16 | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| unreachable | 6 | 6 | 0 | 0; report consumer absent | 6 | `compact_negative_manifest_pins_missing_owners` |
+
+`every_coverage_requirement_has_exactly_one_row` pins 213 = 139 positive + 74 negative beside inherited 211 = 139 + 72. `the_negative_half_splits_into_three_kinds_that_sum_to_it` pins current 50 / 18 / 6 beside inherited 48 / 18 / 6. The historical 71 of 72 outstanding statement remains a statement about its original evidence scope; derivation already discharges two first-party identities at the base.
+
+ABI boundary rows: 2, outside the compiler-derived denominator, with four identities: `wrong-sequence-sponsorless`, `wrong-sequence-sponsored`, `wrong-transaction-version-sponsorless`, and `wrong-transaction-version-sponsored`. `supplemental_abi_rows_have_four_staged_sponsor_case_identities` pins the two classes, four names and exact changed fields. Sponsor authorization-shaped test data establishes construction only.
+
+**Table (First-party rows)** · `tab:backlog:compact-first-party-rows`
+
+| Row | Disposition | Comparison subject or retained argument | Test |
+|---|---|---|---|
+| `permissionless-private-dependency-sponsorless` | discharged | Published public dependency versus ASH-owner-private availability; `compiler::validate_required_dependency` returns the exact class | `the_permissionless_private_dependency_row_is_discharged_end_to_end` |
+| `permissionless-private-dependency-sponsored` | discharged | Same retained pair, sponsored requirement identity | `the_permissionless_private_dependency_row_is_discharged_end_to_end` |
+| `constructibility-witness-unavailable-sponsorless` | retained | Published dependency under compact authorization; the existing entry returns the private-dependency class, not this class | `the_same_case_does_not_discharge_the_neighbouring_class` |
+| `constructibility-witness-unavailable-sponsored` | retained | Same class mismatch; no authorization from another operation substitutes | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `unsupported-representation-sponsorless` | retained | Retained analyzed plan; explicit versus private-committed selection needs scoped access to `compiler::operation_plan::validate_target_operation_plan` | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `unsupported-representation-sponsored` | retained | Same retained plan and private representation validator | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `missing-compact-exit-analysis-sponsorless` | retained | Retained analyzed lifecycle; removed compact path needs scoped access to `compiler::lifecycle::build_lifecycle_analysis` | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `missing-compact-exit-analysis-sponsored` | retained | Same compact path and private lifecycle validator | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `missing-clear-exit-analysis-sponsorless` | retained | Retained declared Clear path and outside-scope status; private lifecycle validator still owns the check | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `missing-clear-exit-analysis-sponsored` | retained | Same declared Clear obligation and private lifecycle validator | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `unexpected-protocol-secret-sponsorless` | retained | Retained emitted program versus added authorization instruction; typed emitted secret-free-path validation entry required | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `unexpected-protocol-secret-sponsored` | retained | Same protocol-program check, separate from sponsor authorization | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `unauthenticated-representation-sponsorless` | retained | Retained recognition program versus removed representation authentication; typed emitted-representation validation entry required | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `unauthenticated-representation-sponsored` | retained | Same recognition subject and missing emitted-representation entry | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `missing-compact-exit-emitted-sponsorless` | retained | Retained constructor and lifecycle obligations; typed emitted-lifecycle validation entry required | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `missing-compact-exit-emitted-sponsored` | retained | Same constructor subject and missing emitted-lifecycle entry | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `missing-clear-exit-emitted-sponsorless` | retained | Declared Clear obligation has no accepting emitted control; none is invented | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+| `missing-clear-exit-emitted-sponsored` | retained | Same absent accepting Clear control and retained obligation | `compact_first_party_dispositions_retain_all_eighteen_subjects` |
+
+**Result (Manifest complete)** · `result:backlog:compact-manifest`
+
+Request 1: `packages/vectors/src/compact_negative_manifest.rs`, checked by `compact_negative_manifest_matches_every_published_negative`, `compact_negative_manifest_has_unique_routes_and_preserves_collateral` and `compact_negative_manifest_pins_missing_owners`. Request 2: `packages/vectors/src/first_party.rs`, checked by `compact_first_party_dispositions_retain_all_eighteen_subjects`. Request 3: `packages/transaction/src/abi.rs`, consumed by `packages/vectors/src/abi_validation.rs` and checked by `supplemental_abi_rows_have_four_staged_sponsor_case_identities` and `abi_test_staging_refuses_other_faults_and_wrong_shape_counts`. Inventory completeness includes 22 missing entries, comprising sixteen first-party and six external-report identities; it does not assert executable-owner completeness.
+
+**Result (Boundaries staged)** · `result:backlog:compact-staging`
+
+`CompactConstructorTestStaging` retains a constructed input selection and offers empty and duplicate selections to `CompactAshRequest::new`; `compact_constructor_test_staging_observes_only_constructor_refusals` checks both typed refusals without native credit. `CompactDependencyTestStaging` retains the published public node and private-availability sibling for `compiler::validate_required_dependency`; the disposition test drives both sponsor identities. `CompactAbiTestStaging` retains each constructed transaction and changes only sequence or version; `validate_compact_abi_fields` accepts the control and names the exact malformed field. Constructor pinning remains checked. No production validator is weakened. The sixteen retained analysis/emitted rows still need their exact scoped entries after the closure-exact audit.
+
+**Caveat (Native evidence and candidate scope)**
+
+No native observation is supplied. The one historical sponsorless ASH-output-cardinality discharge keeps its original candidate scope. The native half remains 47 inherited / 49 current outstanding rows, including the two `SponsorMemberUnclaimed` additions, pending compact candidate acceptance and bite 0.4b. An existing conservation mutant answered before script execution supplies no runtime-carrier discharge.
+
+**Caveat (Retained observable obligations)**
+
+No first-party row is declared out of scope: inherited eighteen rows remain eighteen, with 2 discharged / 0 out-of-scope / 16 retained. The six external-report rows also remain; an absent report consumer does not remove an observable obligation. Scoped analysis and emitted-structure staging, native subject completion and the compiler-owned ABI boundary remain named residuals.
+
+Native arithmetic retains 47 inherited / 49 current outstanding identities; the two membership additions do not overwrite the inherited denominator or broaden historical evidence.
+
+ABI requirements belong to the vectors index outside the 213 compiler-derived requirements: ABI boundary rows: 2, with four sponsor-case identities. Compiler-owned ABI-boundary integration remains subsequent work.
+
+Sixteen first-party obligations retain their exact private or missing entries through `OwnerEntryMissing`; no compiler or backend entry is exposed or duplicated. Scoped entry exposure follows the closure-exact audit.
+
+Compact authorization selects `PermissionlessPrivateDependency`; the unavailable-witness requirement remains unanswered by that refusal.
+
+Both emitted Clear rows retain the declared obligation without an accepting emitted control; absence of that control cannot manufacture evidence.
+
+Completeness means exact key equality at 74, the preserved partition, unique concrete links and retained collateral. The missing-entry baseline is pinned at 22 = 16 + 6 and must move explicitly as entries become available.
+
+The landed scope is manifest completeness, the ABI entry and staged subjects, constructor and dependency staging, and first-party dispositions 2 / 0 / 16. Analysis/emitted staging and the native half remain outstanding; neither backlog task closes.
+
+The manifest is a registered vectors module derived from validated coverage, without a second key inventory. Constructor-pinning tests remain while ABI-refusal assertions now require a driven malformed subject. The implementation remains bounded to the three implementing units and their records.
 
 **Record (Wave 0 entry)** · `rec:backlog:wave0-entry`
 
@@ -1363,7 +1434,7 @@ The T3, T4, and T5 closed rows are archived verbatim in [backlog history](histor
 
 | ID | Status | Task |
 |---|---|---|
-| `T4-009` | TODO | Negative relation coverage (Waves 13–13e): the mutation machinery, the derived class-to-requirement link, per-mutation funding, three section-18 boundary respecs proven against live evidence, and one negative row discharged. Open honestly: 71 of 72 negative rows outstanding, each naming its reason in code; the remedy is the three guide gaps, filed as [the Guide-13 feature requests](guides/guide_thirteen_feature_requests.md), not more first-party tests. Full narrative archived in [backlog history](history/backlog-history.md) |
+| `T4-009` | TODO | Compact negative closure remains with `T12-004`: Request 1 is implemented by `packages/vectors/src/compact_negative_manifest.rs`, Request 2 by `packages/vectors/src/first_party.rs`, and Request 3 by `packages/transaction/src/abi.rs`, with exact residuals at (`rec:backlog:wave0-compact-negative-manifest`). The one historical native discharge retains its candidate scope; 47 inherited / 49 current native rows remain outstanding. The mutation and boundary history remains in [backlog history](history/backlog-history.md). |
 
 The Phase-6 task state opens with the Guide-14 document import; each wave
 lands with its own evidence:

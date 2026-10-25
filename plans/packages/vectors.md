@@ -187,8 +187,9 @@ coverage requirement scope
 Positive coverage requires active relation, reachable carrier, target
 acceptance, and matching projection.
 
-Negative coverage requires intended violation, target execution, and expected
-rejection.
+Target-negative coverage requires intended violation, target execution, and expected rejection; first-party refusal requires the exact owning validator to reject a retained malformed subject and accept its focused control, while missing entries remain explicit obligations in `packages/vectors/src/compact_negative_manifest.rs`.
+
+Supplemental ABI requirements are indexed separately from compiler-derived coverage and use explicitly named test staging against the transaction-owned field validator; constructor pinning alone is not a malformed-input refusal.
 
 Focused mutations list collateral relations honestly.
 

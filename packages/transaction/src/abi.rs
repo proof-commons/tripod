@@ -52,6 +52,80 @@ use crate::bytes::AssetId;
 use crate::error::TransactionRefusal;
 use crate::taproot::{CommittedTree, PinnedAshInstance, commit_tree};
 
+/// A refusal at the compact ABI field boundary, before target submission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompactAbiValidationRefusal {
+    UnknownShape(CompactAshShape),
+    WrongInputCount {
+        expected: usize,
+        observed: usize,
+    },
+    WrongTransactionVersion {
+        expected: u32,
+        observed: u32,
+    },
+    WrongInputSequence {
+        input: usize,
+        expected: u32,
+        observed: u32,
+    },
+}
+
+/// Only the shape's input count, version and sequences were checked.
+/// This value establishes neither witness validity nor target acceptance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ValidatedCompactAbiFields {
+    shape: CompactAshShape,
+}
+
+impl ValidatedCompactAbiFields {
+    /// The ABI shape against which the fields were checked.
+    #[must_use]
+    pub const fn shape(self) -> CompactAshShape {
+        self.shape
+    }
+}
+
+/// Validate the compact ABI's field conventions on an existing transaction.
+///
+/// # Errors
+/// Returns the exact shape, count, version or sequence disagreement. This
+/// boundary does not admit a transaction to the safe construction pipeline.
+pub fn validate_compact_abi_fields(
+    abi: &CandidateTransactionAbi,
+    shape: CompactAshShape,
+    transaction: &crate::TargetTransaction,
+) -> Result<ValidatedCompactAbiFields, CompactAbiValidationRefusal> {
+    let expected = abi
+        .shape(shape)
+        .ok_or(CompactAbiValidationRefusal::UnknownShape(shape))?;
+    let count = usize::from(expected.sponsor_range().1);
+    if transaction.inputs().len() != count {
+        return Err(CompactAbiValidationRefusal::WrongInputCount {
+            expected: count,
+            observed: transaction.inputs().len(),
+        });
+    }
+    let version = expected.version().version();
+    if transaction.version() != version {
+        return Err(CompactAbiValidationRefusal::WrongTransactionVersion {
+            expected: version,
+            observed: transaction.version(),
+        });
+    }
+    let sequence = abi.sequence().sequence();
+    for (input, actual) in transaction.inputs().iter().enumerate() {
+        if actual.sequence() != sequence {
+            return Err(CompactAbiValidationRefusal::WrongInputSequence {
+                input,
+                expected: sequence,
+                observed: actual.sequence(),
+            });
+        }
+    }
+    Ok(ValidatedCompactAbiFields { shape })
+}
+
 /// The status vocabulary a derived ABI is distinguished by (§15.10).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbiStatus {

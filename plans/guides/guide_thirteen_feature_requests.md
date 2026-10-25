@@ -57,6 +57,8 @@ numbered Guide 13 should carry all three per row from the start,
 including for the authorization seams
 (`rule:guide13:authorization-coverage`) its concept lists by name.
 
+Request 1 is implemented by `packages/vectors/src/compact_negative_manifest.rs`, with exact inventory and retained owner gaps at (`rec:backlog:wave0-compact-negative-manifest`).
+
 ## Request 2: a first-party discharge condition for the negative half
 
 Guide 12's section 19.1 (`rule:guide12-exec:positive-coverage`) lets
@@ -82,6 +84,8 @@ predicates with no error at all), so a stated condition would also
 demand new tests. The request is for the rule, without which no such
 test can count.
 
+Request 2 is implemented by `packages/vectors/src/first_party.rs`, with the eighteen retained subjects and their dispositions at (`rec:backlog:wave0-compact-negative-manifest`).
+
 ## Request 3: the ABI-validation entry point
 
 Guide 12's section 16.5 (`rule:guide12-exec:report-roles`) names an
@@ -103,6 +107,8 @@ is reported, and the indexing of pre-target negative requirements at
 that boundary. Section 16.5 already reserves the report role; the
 entry point it names should exist, and the rows that can only be
 answered there should be indexed there.
+
+Request 3 is implemented by `packages/transaction/src/abi.rs`, with supplemental ABI requirements and staged subjects at (`rec:backlog:wave0-compact-negative-manifest`).
 
 ## Request 4: absence-preserving executor resource figures
 

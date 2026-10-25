@@ -628,9 +628,27 @@ pub struct CompactAshEvidencePlan {
     census: PlanCensus,
     negative_link: BTreeMap<(NegativeMutation, SponsorCase), DeclarationLink>,
     abi_validation: BTreeMap<NegativeMutation, AbiValidationRow>,
+    negative_manifest:
+        BTreeMap<CoverageRequirementId, crate::compact_negative_manifest::CompactNegativeRow>,
 }
 
 impl CompactAshEvidencePlan {
+    /// Two supplemental ABI rows with four sponsor-case identities.
+    /// These do not change the compiler-derived coverage census.
+    #[must_use]
+    pub fn abi_boundary_requirements(&self) -> Vec<crate::abi_validation::AbiBoundaryRequirement> {
+        crate::abi_validation::abi_boundary_requirements()
+    }
+
+    /// Complete negative inventory, including explicitly missing validation entries.
+    #[must_use]
+    pub const fn negative_manifest(
+        &self,
+    ) -> &BTreeMap<CoverageRequirementId, crate::compact_negative_manifest::CompactNegativeRow>
+    {
+        &self.negative_manifest
+    }
+
     /// The admitted semantic cases.
     #[must_use]
     pub fn semantic_cases(&self) -> &[CanonicalSubject<CompactAshSemanticCase>] {
@@ -1322,6 +1340,8 @@ pub fn derive_evidence_plan(
         census,
         negative_link,
         abi_validation,
+        negative_manifest: crate::compact_negative_manifest::compact_negative_manifest(fixture)
+            .map_err(VectorError::CompactNegativeManifest)?,
     };
     discharge_canonical_first_party(plan, &mut evidence_plan)?;
     Ok(evidence_plan)

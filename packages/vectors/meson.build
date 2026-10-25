@@ -6,6 +6,7 @@ vectors_source_files = files(
   'src/abi_validation.rs',
   'src/bundle.rs',
   'src/comparison.rs',
+  'src/compact_negative_manifest.rs',
   'src/divergence.rs',
   'src/error.rs',
   'src/first_party.rs',

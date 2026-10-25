@@ -17,19 +17,17 @@
 //! one row per withheld class, carrying what the first-party boundary
 //! actually established about it.
 //!
-//! # Three outcomes, and only the first is evidence
-//!
-//! A class whose field the safe constructor pins is settled: there is no
-//! request that produces the class, so the ABI's convention is enforced
-//! where it is stated. A class with no such pin has only the bytes this
-//! crate cut by hand, which say what surgery can do and nothing about
-//! what the candidate admits. A class with neither has simply not been
-//! looked at. None of the three is a target verdict, and the run never
-//! asks for one.
+//! Constructor pinning and malformed-input refusal are separate checks.
+//! Only a control accepted by the transaction-owned field validator and
+//! a focused mutant refused by that same entry establish an ABI refusal.
+//! Two supplemental rows have four sponsor-case identities; none enters
+//! the compiler-derived coverage denominator.
 
 use std::collections::BTreeMap;
 
+use compiler::operation_plan::SponsorCase;
 use transaction::TargetTransaction;
+use transaction::abi::{CompactAbiValidationRefusal, validate_compact_abi_fields};
 
 use crate::bundle::FixtureBundle;
 use crate::error::VectorError;
@@ -37,6 +35,126 @@ use crate::materialize::MaterializedTargetVector;
 use crate::mutation::{NegativeMutation, apply};
 use crate::subject::CanonicalSubject;
 use crate::violation::TargetField;
+
+/// One supplemental ABI requirement; its relation is the named ABI convention.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AbiBoundaryRequirement {
+    pub mutation: NegativeMutation,
+    pub sponsor: SponsorCase,
+}
+
+impl AbiBoundaryRequirement {
+    /// Stable identity distinct from every compiler coverage identity.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match (self.mutation, self.sponsor) {
+            (NegativeMutation::ChangeInputSequence, SponsorCase::Absent) => {
+                "wrong-sequence-sponsorless"
+            }
+            (NegativeMutation::ChangeInputSequence, SponsorCase::Present) => {
+                "wrong-sequence-sponsored"
+            }
+            (NegativeMutation::ChangeTransactionVersion, SponsorCase::Absent) => {
+                "wrong-transaction-version-sponsorless"
+            }
+            (NegativeMutation::ChangeTransactionVersion, SponsorCase::Present) => {
+                "wrong-transaction-version-sponsored"
+            }
+            _ => "not-an-abi-boundary-requirement",
+        }
+    }
+}
+
+/// ABI boundary rows: 2, instantiated in both sponsor cases (four identities).
+#[must_use]
+pub fn abi_boundary_requirements() -> Vec<AbiBoundaryRequirement> {
+    [
+        NegativeMutation::ChangeInputSequence,
+        NegativeMutation::ChangeTransactionVersion,
+    ]
+    .into_iter()
+    .flat_map(|mutation| {
+        [SponsorCase::Absent, SponsorCase::Present]
+            .into_iter()
+            .map(move |sponsor| AbiBoundaryRequirement { mutation, sponsor })
+    })
+    .collect()
+}
+
+/// Explicit test staging at the ABI boundary, never a production construction.
+/// A constructed control is retained beside one of two named field faults.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompactAbiTestStaging {
+    control: TargetTransaction,
+    malformed: TargetTransaction,
+    refusal: CompactAbiValidationRefusal,
+}
+
+impl CompactAbiTestStaging {
+    /// Clone a constructed control and apply only a sequence or version fault.
+    ///
+    /// # Errors
+    /// Refuses non-ABI mutations, invalid controls, decode failures, and any
+    /// result other than the exact intended typed ABI refusal.
+    pub fn new(
+        bundle: &FixtureBundle,
+        vector: &MaterializedTargetVector,
+        mutation: NegativeMutation,
+    ) -> Result<Self, VectorError> {
+        let fail = || VectorError::MatrixCoverageMismatch {
+            class: "compact ABI test staging",
+        };
+        let control = crate::mutation::round_trips(vector)?;
+        validate_compact_abi_fields(bundle.abi(), vector.shape(), &control).map_err(|_| fail())?;
+        let expected = match mutation {
+            NegativeMutation::ChangeInputSequence => {
+                CompactAbiValidationRefusal::WrongInputSequence {
+                    input: 0,
+                    expected: bundle.abi().sequence().sequence(),
+                    observed: bundle.abi().sequence().sequence() ^ 1,
+                }
+            }
+            NegativeMutation::ChangeTransactionVersion => {
+                CompactAbiValidationRefusal::WrongTransactionVersion {
+                    expected: control.version(),
+                    observed: control.version() ^ 1,
+                }
+            }
+            _ => return Err(fail()),
+        };
+        let mutant = apply(vector, bundle.closed_asset(), mutation)?;
+        let malformed = TargetTransaction::decode(mutant.bytes()).map_err(|_| fail())?;
+        let refusal = validate_compact_abi_fields(bundle.abi(), vector.shape(), &malformed)
+            .err()
+            .ok_or_else(fail)?;
+        if refusal != expected {
+            return Err(fail());
+        }
+        Ok(Self {
+            control,
+            malformed,
+            refusal,
+        })
+    }
+
+    /// The unchanged constructed control.
+    #[must_use]
+    pub const fn control(&self) -> &TargetTransaction {
+        &self.control
+    }
+
+    /// The exact malformed subject offered to the ABI validator.
+    #[must_use]
+    pub const fn malformed(&self) -> &TargetTransaction {
+        &self.malformed
+    }
+
+    /// The refusal returned by the transaction-owned entry.
+    #[must_use]
+    pub const fn refusal(&self) -> &CompactAbiValidationRefusal {
+        &self.refusal
+    }
+}
 
 /// Whether one arm's class is settled before any target is asked.
 ///
@@ -53,24 +171,13 @@ pub fn precedes_the_target(mutation: NegativeMutation) -> Result<bool, VectorErr
 }
 
 /// What the ABI-validation boundary establishes about one class.
-///
-/// Exclusive by construction, in the order written: a class the safe
-/// constructor forecloses is settled there and the other two questions
-/// do not arise; a class it does not foreclose is only whatever raw
-/// surgery made of it; and a class surgery cannot make either has not
-/// been looked at at all.
+/// Constructor output pinning alone is not a malformed-input refusal.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum AbiValidationOutcome {
-    /// The safe constructor will not emit the class.
-    ///
-    /// Observed rather than asserted: every transaction the candidate
-    /// constructor produced for this plan carries the value the ABI
-    /// itself declares for the field this class changes, and the typed
-    /// request has no field with which to ask for another. A refusal by
-    /// unrepresentability, which is the only kind a constructor whose
-    /// safety is its refusal to emit invalid transactions can offer.
-    SafeConstructorRefused,
+    /// The transaction-owned ABI entry accepted the control and returned
+    /// the exact field refusal for the staged malformed subject.
+    AbiFieldRefused,
     /// Bytes of this class exist, and only because this crate cut them.
     ///
     /// The mutation module builds them by surgery on an accepted
@@ -144,8 +251,6 @@ pub fn index_abi_validation(
     bundle: &FixtureBundle,
     vectors: &[CanonicalSubject<MaterializedTargetVector>],
 ) -> Result<BTreeMap<NegativeMutation, AbiValidationRow>, VectorError> {
-    use compiler::operation_plan::SponsorCase;
-
     let mut rows = BTreeMap::new();
     for &class in NegativeMutation::ALL {
         if !precedes_the_target(class)? {
@@ -162,7 +267,10 @@ pub fn index_abi_validation(
 
         let observed = pinned_constructions(bundle, vectors, field)?;
         let outcome = if observed > 0 {
-            AbiValidationOutcome::SafeConstructorRefused
+            for vector in vectors.iter().map(CanonicalSubject::subject) {
+                CompactAbiTestStaging::new(bundle, vector, class)?;
+            }
+            AbiValidationOutcome::AbiFieldRefused
         } else if raw_bytes_exist(bundle, vectors, class) {
             AbiValidationOutcome::UnsafeRawMutationExists
         } else {
@@ -255,6 +363,133 @@ mod tests {
     use crate::subject::CanonicalSubject;
     use crate::violation::TargetField;
 
+    #[test]
+    fn supplemental_abi_rows_have_four_staged_sponsor_case_identities() {
+        use super::{CompactAbiTestStaging, abi_boundary_requirements};
+        use crate::materialize::{
+            AshFunding, SponsorCoin, materialize_sponsored, sponsor_signing_requests, vector_id,
+        };
+        use compiler::operation_plan::SponsorCase;
+        use transaction::{Outpoint, SponsorSignature, Txid};
+        let (bundle, vectors) = vectors();
+        let case = crate::fixture::positive_semantic_census()
+            .expect("cases")
+            .into_iter()
+            .find(|case| {
+                crate::materialize::needs_authorization(case)
+                    && crate::materialize::has_candidate_program(case)
+            })
+            .expect("sponsored shape");
+        let funding = AshFunding::unexecutable_placeholder(vector_id(&case));
+        let mut program = vec![0x00, 0x14];
+        program.extend([0x22; 20]);
+        let coins = vec![SponsorCoin::new(
+            Outpoint::new(Txid::from_internal([0xc0; 32]), 0).expect("outpoint"),
+            10_000,
+            program,
+        )];
+        let tasks = sponsor_signing_requests(&bundle, &case, &funding, &coins).expect("tasks");
+        // Test-only signature-shaped bytes establish construction, never authorization.
+        let signatures = tasks
+            .iter()
+            .map(|task| {
+                (
+                    task.coin().outpoint(),
+                    SponsorSignature::new(
+                        task.request().transaction().to_vec(),
+                        vec![vec![0x30; 71], vec![0x02; 33]],
+                    ),
+                )
+            })
+            .collect();
+        let sponsored = materialize_sponsored(&bundle, &case, &funding, &coins, &signatures)
+            .expect("constructed");
+        let sponsorless = vectors.first().expect("control").subject();
+        let requirements = abi_boundary_requirements();
+        assert_eq!(requirements.len(), 4);
+        assert_eq!(
+            requirements
+                .iter()
+                .map(|r| r.mutation)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            2
+        );
+        assert_eq!(
+            requirements
+                .iter()
+                .map(|r| r.name())
+                .collect::<std::collections::BTreeSet<_>>(),
+            std::collections::BTreeSet::from([
+                "wrong-sequence-sponsorless",
+                "wrong-sequence-sponsored",
+                "wrong-transaction-version-sponsorless",
+                "wrong-transaction-version-sponsored"
+            ])
+        );
+        for requirement in requirements {
+            let vector = match requirement.sponsor {
+                SponsorCase::Absent => sponsorless,
+                SponsorCase::Present => &sponsored,
+            };
+            let staged = CompactAbiTestStaging::new(&bundle, vector, requirement.mutation)
+                .expect("staged refusal");
+            let expected_field = if requirement.mutation == NegativeMutation::ChangeInputSequence {
+                TargetField::InputSequence
+            } else {
+                TargetField::Version
+            };
+            for &field in TargetField::ALL {
+                assert_eq!(
+                    field.moved(staged.control(), staged.malformed()),
+                    field == expected_field
+                );
+            }
+            assert_eq!(
+                super::validate_compact_abi_fields(
+                    bundle.abi(),
+                    vector.shape(),
+                    staged.malformed()
+                )
+                .as_ref()
+                .err(),
+                Some(staged.refusal())
+            );
+            assert!(
+                super::validate_compact_abi_fields(bundle.abi(), vector.shape(), staged.control())
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn abi_test_staging_refuses_other_faults_and_wrong_shape_counts() {
+        let (bundle, vectors) = vectors();
+        let vector = vectors.first().expect("control").subject();
+        assert!(
+            super::CompactAbiTestStaging::new(
+                &bundle,
+                vector,
+                NegativeMutation::SplitSuccessorInTwo
+            )
+            .is_err()
+        );
+        let decoded = crate::mutation::round_trips(vector).expect("decode");
+        let (&shape, expected) = bundle
+            .abi()
+            .shapes()
+            .iter()
+            .find(|(_, shape)| usize::from(shape.sponsor_range().1) != decoded.inputs().len())
+            .expect("other count");
+        assert_eq!(
+            super::validate_compact_abi_fields(bundle.abi(), shape, &decoded),
+            Err(super::CompactAbiValidationRefusal::WrongInputCount {
+                expected: usize::from(expected.sponsor_range().1),
+                observed: decoded.inputs().len(),
+            })
+        );
+    }
+
     /// Every vector the canonical plan materialized.
     fn vectors() -> (
         crate::bundle::FixtureBundle,
@@ -301,7 +536,8 @@ mod tests {
         ] {
             let row = rows[&class];
             assert_eq!(row.field(), field);
-            assert_eq!(row.outcome(), AbiValidationOutcome::SafeConstructorRefused);
+            // Constructor pinning is retained; refusal additionally drives the ABI entry.
+            assert_eq!(row.outcome(), AbiValidationOutcome::AbiFieldRefused);
             assert_eq!(
                 row.constructions_observed(),
                 vectors.len(),

@@ -855,6 +855,65 @@ pub fn is_materializable(case: &CompactAshSemanticCase) -> bool {
     has_candidate_program(case) && !needs_authorization(case)
 }
 
+/// Explicit test staging at the request constructor boundary.
+/// Retains the selected outpoints; neither malformed request becomes a safe value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompactConstructorTestStaging {
+    control: Vec<Outpoint>,
+}
+
+impl CompactConstructorTestStaging {
+    /// Retain the ASH inputs of an existing materialized control.
+    ///
+    /// # Errors
+    /// Returns the exact decoding refusal or rejects an empty control.
+    pub fn new(vector: &MaterializedTargetVector) -> Result<Self, VectorError> {
+        let decoded = crate::mutation::round_trips(vector)?;
+        let control = decoded
+            .inputs()
+            .iter()
+            .take(usize::from(vector.id().ash_inputs()))
+            .map(transaction::TargetInput::outpoint)
+            .collect::<Vec<_>>();
+        CompactAshRequest::new(control.clone(), false).map_err(|cause| {
+            VectorError::TargetMaterializationFailed {
+                vector: vector.id(),
+                cause,
+            }
+        })?;
+        Ok(Self { control })
+    }
+
+    /// Check the retained control with the actual request constructor.
+    ///
+    /// # Errors
+    /// Returns the constructor's refusal unchanged.
+    pub fn control(&self) -> Result<CompactAshRequest, transaction::TransactionRefusal> {
+        CompactAshRequest::new(self.control.clone(), false)
+    }
+
+    /// Remove all selected inputs at the constructor boundary.
+    ///
+    /// # Errors
+    /// Returns `EmptyAshSelection`; no production validator is bypassed.
+    pub fn empty_selection(&self) -> Result<CompactAshRequest, transaction::TransactionRefusal> {
+        CompactAshRequest::new([], false)
+    }
+
+    /// Repeat one selected input at the constructor boundary.
+    ///
+    /// # Errors
+    /// Returns the constructor's exact duplicate-outpoint refusal.
+    pub fn duplicate_selection(
+        &self,
+    ) -> Result<CompactAshRequest, transaction::TransactionRefusal> {
+        CompactAshRequest::new(
+            self.control.iter().chain(self.control.first()).copied(),
+            false,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{AshFunding, is_materializable, materialize, vector_id};
@@ -863,6 +922,25 @@ mod tests {
     use crate::matrix::EvidenceBoundary;
     use std::collections::{BTreeMap, BTreeSet};
     use transaction::{Outpoint, SyntheticDisclaimer, TargetTransaction, Txid, check_weight};
+
+    #[test]
+    fn compact_constructor_test_staging_observes_only_constructor_refusals() {
+        let bundle = fixture_bundle().expect("bundle");
+        let plan = crate::plan::derive_evidence_plan(&bundle).expect("plan");
+        let vector = plan.target_cases().first().expect("control").subject();
+        let staging = super::CompactConstructorTestStaging::new(vector).expect("staging");
+        assert!(staging.control().is_ok());
+        assert_eq!(
+            staging.empty_selection(),
+            Err(transaction::TransactionRefusal::EmptyAshSelection)
+        );
+        let first = *staging.control.first().expect("nonempty");
+        assert_eq!(
+            staging.duplicate_selection(),
+            Err(transaction::TransactionRefusal::DuplicateOutpoint(first))
+        );
+        assert_eq!(plan.discharged_negative_rows(), 2);
+    }
 
     /// The placeholder funding the canonical fixtures materialize under.
     fn placeholder(case: &CompactAshSemanticCase) -> AshFunding {

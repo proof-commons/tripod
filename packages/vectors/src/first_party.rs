@@ -159,6 +159,8 @@ pub enum FirstPartyEvidenceRefusal {
     /// A runtime or external row reaching here would be answered by a
     /// target or by a report, and a first-party refusal is not either.
     NotAFirstPartyRequirement,
+    /// A staged authorization case belongs to another operation.
+    CaseNamesAnotherOperation,
     /// The realization the malformed input is checked against could not
     /// be derived.
     RealizationUnavailable,
@@ -282,6 +284,10 @@ pub fn validate_first_party_negative(
         availability,
     } = case;
 
+    if *operation != requirement.relation.operation() {
+        return Err(FirstPartyEvidenceRefusal::CaseNamesAnotherOperation);
+    }
+
     // The control has to be a value the workspace really publishes, or
     // the pair is two inventions rather than a published value and one
     // focused change of it.
@@ -390,6 +396,170 @@ const fn refused_class(error: &CompileError) -> Option<RelationMutation> {
     }
 }
 
+/// Explicit test staging for the compact dependency-analysis boundary.
+/// Retains the published node and only replaces its availability field.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompactDependencyTestStaging {
+    case: FirstPartyNegativeCase,
+}
+
+impl CompactDependencyTestStaging {
+    /// Prepare the canonical public/private pair without changing compiler input validation.
+    ///
+    /// # Errors
+    /// Returns the canonical subject lookup failure.
+    pub fn new() -> Result<Self, FirstPartyEvidenceRefusal> {
+        Ok(Self {
+            case: compact_ash_permissionless_private_dependency_case()?,
+        })
+    }
+
+    /// Drive the exact dependency owner with both retained subjects.
+    ///
+    /// # Errors
+    /// Returns the same class, identity and control checks as the evidence validator.
+    pub fn validate(
+        &self,
+        plan: &ValidatedTargetOperationPlan,
+        id: &CoverageRequirementId,
+    ) -> Result<ValidatedFirstPartyNegativeEvidence, FirstPartyEvidenceRefusal> {
+        validate_first_party_negative(plan, id, &self.case)
+    }
+}
+
+/// Retained comparison subject at an unanswered first-party boundary.
+/// Retention does not assert that a malformed sibling can reach that boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompactFirstPartySubject {
+    Analysis(Box<ValidatedTargetOperationPlan>),
+    Emitted(Box<linker::CandidateLinkedBundle>),
+}
+
+/// An observed refusal or an explicit retained obligation; no retirement arm.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompactFirstPartyDisposition {
+    Discharged(Box<ValidatedFirstPartyNegativeEvidence>),
+    Retained {
+        owner: crate::compact_negative_manifest::OwnerEntryMissing,
+        subject: CompactFirstPartySubject,
+    },
+}
+
+/// Retain all eighteen keyed subjects and admit only matching dependency evidence.
+///
+/// # Errors
+/// Returns manifest or evidence failures instead of silently omitting a row.
+pub fn compact_first_party_dispositions(
+    bundle: &crate::bundle::FixtureBundle,
+) -> Result<
+    std::collections::BTreeMap<CoverageRequirementId, CompactFirstPartyDisposition>,
+    crate::VectorError,
+> {
+    use crate::compact_negative_manifest::{
+        NegativeClass, NegativeOwner, compact_negative_manifest,
+    };
+    let manifest =
+        compact_negative_manifest(bundle).map_err(crate::VectorError::CompactNegativeManifest)?;
+    let staging = CompactDependencyTestStaging::new()
+        .map_err(|cause| crate::VectorError::FirstPartyEvidenceRefused { cause })?;
+    let mut rows = std::collections::BTreeMap::new();
+    for (id, row) in manifest {
+        if row.class != NegativeClass::FirstParty {
+            continue;
+        }
+        let disposition = match row.owner {
+            NegativeOwner::CompilerRequiredDependency => {
+                CompactFirstPartyDisposition::Discharged(Box::new(
+                    staging
+                        .validate(bundle.plan(), &id)
+                        .map_err(|cause| crate::VectorError::FirstPartyEvidenceRefused { cause })?,
+                ))
+            }
+            NegativeOwner::OwnerEntryMissing(owner) => CompactFirstPartyDisposition::Retained {
+                owner,
+                subject: if row.boundary
+                    == crate::compact_negative_manifest::CompactNegativeBoundary::EmittedStructure
+                {
+                    CompactFirstPartySubject::Emitted(Box::new(bundle.linked().clone()))
+                } else {
+                    CompactFirstPartySubject::Analysis(Box::new(bundle.plan().clone()))
+                },
+            },
+            NegativeOwner::NativeCarrier { .. } => {
+                return Err(crate::VectorError::CompactNegativeManifest(
+                    crate::compact_negative_manifest::ManifestRefusal::UnknownFirstPartyClass,
+                ));
+            }
+        };
+        rows.insert(id, disposition);
+    }
+    Ok(rows)
+}
+
+/// Stable display name derived from the exact first-party requirement key.
+///
+/// # Errors
+/// Refuses a requirement outside the admitted nine first-party relation classes.
+pub fn compact_first_party_name(
+    id: &CoverageRequirementId,
+) -> Result<String, FirstPartyEvidenceRefusal> {
+    use compiler::operation_plan::{CoverageBoundary, CoveragePurpose, SponsorCase};
+    use realization::RelationSubject;
+    let (CoveragePurpose::FocusedReject(mutation) | CoveragePurpose::StructuralRejection(mutation)) =
+        id.purpose
+    else {
+        return Err(FirstPartyEvidenceRefusal::NotAFirstPartyRequirement);
+    };
+    let base = match mutation {
+        RelationMutation::PermissionlessPrivateDependency => "permissionless-private-dependency",
+        RelationMutation::ConstructibilityWitnessUnavailable => {
+            "constructibility-witness-unavailable"
+        }
+        RelationMutation::UnsupportedRepresentation => "unsupported-representation",
+        RelationMutation::UnexpectedProtocolSecret => "unexpected-protocol-secret",
+        RelationMutation::UnauthenticatedRepresentation => "unauthenticated-representation",
+        RelationMutation::RequiredLifecycleExitMissing => {
+            match (id.relation.subject(), id.boundary) {
+                (
+                    RelationSubject::LifecycleExit {
+                        exit: OperationId::CompactAsh,
+                        ..
+                    },
+                    CoverageBoundary::CompilerStatic,
+                ) => "missing-compact-exit-analysis",
+                (
+                    RelationSubject::LifecycleExit {
+                        exit: OperationId::Clear,
+                        ..
+                    },
+                    CoverageBoundary::CompilerStatic,
+                ) => "missing-clear-exit-analysis",
+                (
+                    RelationSubject::LifecycleExit {
+                        exit: OperationId::CompactAsh,
+                        ..
+                    },
+                    CoverageBoundary::BackendStructural,
+                ) => "missing-compact-exit-emitted",
+                (
+                    RelationSubject::LifecycleExit {
+                        exit: OperationId::Clear,
+                        ..
+                    },
+                    CoverageBoundary::BackendStructural,
+                ) => "missing-clear-exit-emitted",
+                _ => return Err(FirstPartyEvidenceRefusal::NotAFirstPartyRequirement),
+            }
+        }
+        _ => return Err(FirstPartyEvidenceRefusal::NotAFirstPartyRequirement),
+    };
+    let sponsor = match id.case.sponsor {
+        SponsorCase::Absent => "sponsorless",
+        SponsorCase::Present => "sponsored",
+    };
+    Ok(format!("{base}-{sponsor}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -403,6 +573,56 @@ mod tests {
         TargetCoverageObligation,
     };
     use realization::{AvailabilityClass, ConstructibilityNodeId};
+
+    #[test]
+    fn compact_first_party_dispositions_retain_all_eighteen_subjects() {
+        use super::{CompactFirstPartyDisposition as D, CompactFirstPartySubject as S};
+        let bundle = fixture_bundle().expect("bundle");
+        let rows = super::compact_first_party_dispositions(&bundle).expect("dispositions");
+        assert_eq!(rows.len(), 18);
+        assert_eq!(
+            rows.values()
+                .filter(|r| matches!(r, D::Discharged(_)))
+                .count(),
+            2
+        );
+        assert_eq!(
+            rows.values()
+                .filter(|r| matches!(r, D::Retained { .. }))
+                .count(),
+            16
+        );
+        let mut names = std::collections::BTreeSet::new();
+        for (id, disposition) in &rows {
+            assert!(names.insert(super::compact_first_party_name(id).expect("named")));
+            match disposition {
+                D::Discharged(evidence) => assert_eq!(evidence.requirement(), id),
+                D::Retained {
+                    subject: S::Analysis(plan),
+                    ..
+                } => assert_eq!(plan.as_ref(), bundle.plan()),
+                D::Retained {
+                    subject: S::Emitted(linked),
+                    ..
+                } => assert_eq!(linked.as_ref(), bundle.linked()),
+            }
+        }
+        for suffix in ["sponsorless", "sponsored"] {
+            for base in [
+                "permissionless-private-dependency",
+                "constructibility-witness-unavailable",
+                "unsupported-representation",
+                "unexpected-protocol-secret",
+                "unauthenticated-representation",
+                "missing-compact-exit-analysis",
+                "missing-clear-exit-analysis",
+                "missing-compact-exit-emitted",
+                "missing-clear-exit-emitted",
+            ] {
+                assert!(names.contains(&format!("{base}-{suffix}")));
+            }
+        }
+    }
 
     /// The first-party requirement of one class, in one sponsor case.
     fn requirement(
@@ -492,6 +712,30 @@ mod tests {
             Err(FirstPartyEvidenceRefusal::RefusalNamesAnotherClass(
                 RelationMutation::PermissionlessPrivateDependency
             )),
+        );
+    }
+
+    #[test]
+    fn another_operations_authorization_cannot_answer_compact_witness_coverage() {
+        let bundle = fixture_bundle().expect("bundle");
+        let id = requirement(
+            bundle.plan(),
+            RelationMutation::ConstructibilityWitnessUnavailable,
+            SponsorCase::Absent,
+        );
+        let FirstPartyNegativeCase::PrivateRequiredDependency {
+            published,
+            availability,
+            ..
+        } = private_dependency();
+        let case = FirstPartyNegativeCase::PrivateRequiredDependency {
+            operation: OperationId::TransferLive,
+            published,
+            availability,
+        };
+        assert_eq!(
+            validate_first_party_negative(bundle.plan(), &id, &case),
+            Err(FirstPartyEvidenceRefusal::CaseNamesAnotherOperation)
         );
     }
 

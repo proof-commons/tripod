@@ -57,6 +57,8 @@ pub enum FixtureBundleRefusal {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum VectorError {
+    /// The compact negative inventory could not preserve its exact joins.
+    CompactNegativeManifest(crate::compact_negative_manifest::ManifestRefusal),
     /// The fixture bundle could not be built at all.
     FixtureBundleUnavailable(FixtureBundleRefusal),
     /// The relation census derived from the plan is not the one stated.
