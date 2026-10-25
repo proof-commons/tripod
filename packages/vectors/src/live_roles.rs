@@ -412,6 +412,9 @@ mod tests {
     fn recorded_acceptance() -> crate::RecordedAcceptance {
         let corpus = crate::live_corpus_native_v2_r7::run_of_record()
             .expect("the native-v2/revision-7 corpus validates");
+        // Role attribution retains the accepted subject's historical scope.
+        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_) =
+            corpus.standing();
         let acceptance = corpus
             .acceptance_projections("private-restart-control")
             .and_then(|acceptances| acceptances.first())

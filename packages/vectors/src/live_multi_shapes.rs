@@ -1776,91 +1776,101 @@ fn hex(bytes: [u8; 32]) -> String {
     })
 }
 
-/// Active forward-v2 pins retained for derivation and corpus equality tests.
+/// Current forward-v2 pins retained for derivation tests.
 ///
 /// These are fixture identities, not substitutes for target acceptances. Every
-/// corpus-bearing pin is checked against the validated current projection.
+/// historical archive pin is checked separately against its producing candidate.
 #[cfg(test)]
 mod forward_fixture_digest_v2 {
     /// The private-split successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
     /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
-    /// unconditionally; the active derivation and validated corpus bind here.
+    /// unconditionally; current derivation binds here and archived acceptance stays historical.
+    // Before destination elision: 52f9d832e9ff93070ea9849cd8d5f817746fdb8bc544e6d94207810e594014ca.
     pub const SPLIT_SUCCESSOR_DIGEST: &str =
-        "52f9d832e9ff93070ea9849cd8d5f817746fdb8bc544e6d94207810e594014ca";
+        "0fb8dbd229896f582c1dbbba215bf3978d6a69157204fe7f8b51aff99088a60a";
 
     /// The many-to-many successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
     /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
-    /// unconditionally; the active derivation and validated corpus bind here.
+    /// unconditionally; current derivation binds here and archived acceptance stays historical.
+    // Before destination elision: 67ec9e516460e453fcc0bf6cfacfdc58141afefa0b4e4c2d3ff3c2d7a2495b98.
     pub const MANY_TO_MANY_SUCCESSOR_DIGEST: &str =
-        "67ec9e516460e453fcc0bf6cfacfdc58141afefa0b4e4c2d3ff3c2d7a2495b98";
+        "91d4ec53d89451f2c8abfda7ed7f3f718ab3d12326e969b1cb6f20cb08a28643";
 
     /// The several-distinct-owners successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
     /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
-    /// unconditionally; the active derivation and validated corpus bind here.
+    /// unconditionally; current derivation binds here and archived acceptance stays historical.
+    // Before destination elision: 6d86b884565d6d4bc1f81fb6915dc91987d97a62e5a3ca896403ef6d4963e30c.
     pub const SEVERAL_OWNERS_SUCCESSOR_DIGEST: &str =
-        "6d86b884565d6d4bc1f81fb6915dc91987d97a62e5a3ca896403ef6d4963e30c";
+        "f21f296cc9be62a9bb6d20de1b8ff7140f59e04c258ba3efae9f2dfc0f7ecd6b";
 
     /// The strict one-to-one successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
     /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
-    /// unconditionally; the active derivation and validated corpus bind here.
+    /// unconditionally; current derivation binds here and archived acceptance stays historical.
+    // Before destination elision: 7ec97a6e6cf6bf7e6c4308c007e55cf6ac799113abb3b93e3fb3d559c510ec14.
     pub const STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST: &str =
-        "7ec97a6e6cf6bf7e6c4308c007e55cf6ac799113abb3b93e3fb3d559c510ec14";
+        "6bf3e65ef2f3a29a70d35204837b04b609625a5ab5552265292f16f48c720a41";
 
     /// The fee-bearing successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
     /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
-    /// unconditionally; the active derivation and validated corpus bind here.
+    /// unconditionally; current derivation binds here and archived acceptance stays historical.
+    // Before destination elision: bba4ea6e919b8619d75d035b5f6ee9e8aac3a87c00336c8a86c5973a84936bad.
     pub const FEE_BEARING_SUCCESSOR_DIGEST: &str =
-        "bba4ea6e919b8619d75d035b5f6ee9e8aac3a87c00336c8a86c5973a84936bad";
+        "429d384a41d36801c383f9db5034b850dab434dc3a1a0cdb9519d86fd304007c";
 
     /// The private-merge successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
     /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
-    /// unconditionally; the active derivation and validated corpus bind here.
+    /// unconditionally; current derivation binds here and archived acceptance stays historical.
+    // Before destination elision: d4a4a2e4371a81d4d74ad2fbceef64303091496c374e11e2208c6d3bde1ea0d9.
     pub const MERGE_SUCCESSOR_DIGEST: &str =
-        "d4a4a2e4371a81d4d74ad2fbceef64303091496c374e11e2208c6d3bde1ea0d9";
+        "d0c12d0487cf33b6a65b12ec84607f0993aa0a95c82aafd71cfba846407e7c3e";
 
     /// The exit-crossing successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
     /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
-    /// unconditionally; the active derivation and validated corpus bind here.
+    /// unconditionally; current derivation binds here and archived acceptance stays historical.
+    // Before destination elision: 013df551e2862b4018f2e9b2c2cc83174571234f1ad200605de66232514ea001.
     pub const EXIT_CROSSING_SUCCESSOR_DIGEST: &str =
-        "013df551e2862b4018f2e9b2c2cc83174571234f1ad200605de66232514ea001";
+        "3cfa36a4bdc00b03581a109697a6286afb603e5777dfb7ce0630853d7f2510a3";
 
     /// The entry-crossing successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
     /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
-    /// unconditionally; the active derivation and validated corpus bind here.
+    /// unconditionally; current derivation binds here and archived acceptance stays historical.
+    // Before destination elision: 7c3bda6049cb80635b0580148002c185eeee8ea48e67bfd1fd698e28a65b17c0.
     pub const ENTRY_CROSSING_SUCCESSOR_DIGEST: &str =
-        "7c3bda6049cb80635b0580148002c185eeee8ea48e67bfd1fd698e28a65b17c0";
+        "56217c7e32a0cc75265641bc4bc4dde724f7d2383b4c26d5ba356bea2d1034ff";
 
     /// The pure-split successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's recorded v1 digest and accepted identity are immutable
     /// halves of one historical observation archived in git history. Algorithm v2 binds amounts
-    /// unconditionally; the active derivation and validated corpus bind here.
+    /// unconditionally; current derivation binds here and archived acceptance stays historical.
+    // Before destination elision: 2c8318413c8a726c6c65587d4c48d60af1ba82f1622152d216266c5858658671.
     pub const PURE_SPLIT_SUCCESSOR_DIGEST: &str =
-        "2c8318413c8a726c6c65587d4c48d60af1ba82f1622152d216266c5858658671";
+        "ab77045be619faa8be938b2e3c7808c8b9779d7b64c672e65105a8e3c7872396";
 
     /// The paired one-to-one successor fixture's forward digest under fixture-digest v2.
     ///
     /// This fixture's v1 run recorded an accepted identity but no fixture digest, so there is no
     /// historical v1 sibling to rewrite or revalidate. Algorithm v2 binds amounts unconditionally;
     /// forward runs bind here. No node acceptance under v2 is claimed.
+    // Before destination elision: e8a824533192cd400e97343d3e5ca69d71fe1138d740723b24b87cc7bf2fd796.
     pub const PAIRED_ONE_TO_ONE_SUCCESSOR_DIGEST: &str =
-        "e8a824533192cd400e97343d3e5ca69d71fe1138d740723b24b87cc7bf2fd796";
+        "3c8572db7c10afde0c862daad5038d23f6ee2df1bd55181cba35c4bfda7fd9f0";
 }
 
 #[cfg(test)]
@@ -1892,11 +1902,27 @@ mod byte_identity_tests {
     }
 
     fn current_corpus_successor(shape: PrivateShape) -> Option<&'static [u8; 32]> {
-        crate::live_corpus_native_v2_r7::run_of_record()
-            .expect("the reviewed corpus validates")
+        let corpus = crate::live_corpus_native_v2_r7::run_of_record()
+            .expect("the historical corpus validates");
+        assert_eq!(
+            corpus.standing().candidate().replay,
+            crate::historical_candidate::HistoricalReplay::NotReplayableForCurrentCandidate
+        );
+        let recorded = corpus
             .ceremony_projection(current_ceremony(shape))
-            .expect("the current shape ceremony is present")
-            .fixture_digest("successor")
+            .expect("the historical shape ceremony is present")
+            .fixture_digest("successor");
+        if let Some(recorded) = recorded {
+            let index = PrivateShape::ALL
+                .iter()
+                .position(|candidate| *candidate == shape)
+                .expect("registered shape");
+            assert_eq!(
+                hex(*recorded),
+                crate::historical_candidate::SHAPE_FIXTURES[index]
+            );
+        }
+        recorded
     }
 
     /// Every pre-wave shape registers its successor under the forward digest for the live v2
@@ -1919,10 +1945,9 @@ mod byte_identity_tests {
     /// lands on a chain; the algorithm move itself is represented by separate forward pins rather
     /// than by rewriting or live-revalidating the recorded v1 digests.
     ///
-    /// Historical-v1 comparisons are absent from this active test. The paired
-    /// arc has no corpus digest record, so its retained forward pin is checked
-    /// against derivation only; every other pin is also checked against the
-    /// validated corpus projection.
+    /// The paired arc has no corpus digest record, so its current pin is checked
+    /// against derivation only. Other archives retain their own historical pins;
+    /// changed current derivations must remain distinct from those observations.
     #[test]
     fn the_pre_wave_shapes_register_under_their_forward_v2_digests() {
         // The genesis identity is not a term of any fixture digest, and
@@ -1963,10 +1988,10 @@ mod byte_identity_tests {
                 shape.name(),
             );
             if let Some(corpus_pin) = current_corpus_successor(shape) {
-                assert_eq!(
+                assert_ne!(
                     expected_v2,
                     hex(*corpus_pin),
-                    "{}'s active pin differs from the corpus",
+                    "{}'s changed candidate must remain distinct from historical acceptance",
                     shape.name(),
                 );
             }
@@ -1998,10 +2023,10 @@ mod byte_identity_tests {
                 .map(hex)
                 .expect("the successor registered");
             if let Some(corpus_pin) = current_corpus_successor(shape) {
-                assert_eq!(
+                assert_ne!(
                     digest,
                     hex(*corpus_pin),
-                    "{}'s active derivation differs from the corpus",
+                    "{}'s changed candidate must remain distinct from historical acceptance",
                     shape.name(),
                 );
             }
@@ -2018,19 +2043,24 @@ mod byte_identity_tests {
             "two shapes registered the same successor fixture: {digests:?}",
         );
 
-        assert_eq!(digests[0], forward_v2::SPLIT_SUCCESSOR_DIGEST);
-        assert_eq!(digests[1], forward_v2::MANY_TO_MANY_SUCCESSOR_DIGEST);
-        assert_eq!(digests[2], forward_v2::SEVERAL_OWNERS_SUCCESSOR_DIGEST);
-        assert_eq!(digests[3], forward_v2::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST);
-        assert_eq!(digests[4], forward_v2::FEE_BEARING_SUCCESSOR_DIGEST);
-        assert_eq!(digests[5], forward_v2::MERGE_SUCCESSOR_DIGEST);
-        assert_eq!(digests[6], forward_v2::EXIT_CROSSING_SUCCESSOR_DIGEST);
-        assert_eq!(digests[7], forward_v2::ENTRY_CROSSING_SUCCESSOR_DIGEST);
-        assert_eq!(digests[8], forward_v2::PURE_SPLIT_SUCCESSOR_DIGEST);
-        assert_eq!(digests[9], forward_v2::PAIRED_ONE_TO_ONE_SUCCESSOR_DIGEST);
+        assert_eq!(
+            digests,
+            [
+                forward_v2::SPLIT_SUCCESSOR_DIGEST,
+                forward_v2::MANY_TO_MANY_SUCCESSOR_DIGEST,
+                forward_v2::SEVERAL_OWNERS_SUCCESSOR_DIGEST,
+                forward_v2::STRICT_ONE_TO_ONE_SUCCESSOR_DIGEST,
+                forward_v2::FEE_BEARING_SUCCESSOR_DIGEST,
+                forward_v2::MERGE_SUCCESSOR_DIGEST,
+                forward_v2::EXIT_CROSSING_SUCCESSOR_DIGEST,
+                forward_v2::ENTRY_CROSSING_SUCCESSOR_DIGEST,
+                forward_v2::PURE_SPLIT_SUCCESSOR_DIGEST,
+                forward_v2::PAIRED_ONE_TO_ONE_SUCCESSOR_DIGEST,
+            ]
+        );
     }
 
-    /// The fee-bearing current derivation remains pinned to the corpus.
+    /// The fee-bearing current derivation and historical archive have distinct pins.
     #[test]
     fn the_fee_bearing_current_digest_is_pinned() {
         let genesis: transaction::taproot::Digest32 = [0x11_u8; 32];
@@ -2050,7 +2080,7 @@ mod byte_identity_tests {
             forward_v2::FEE_BEARING_SUCCESSOR_DIGEST,
             "the fee-bearing fixture registers under its forward v2 digest",
         );
-        assert_eq!(
+        assert_ne!(
             digest_v2,
             current_corpus_successor(PrivateShape::OneToOneWithFee)
                 .map(|digest| hex(*digest))

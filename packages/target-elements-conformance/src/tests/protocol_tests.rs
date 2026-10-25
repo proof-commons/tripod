@@ -2081,7 +2081,13 @@ fn adapter_schema_and_committed_signer_scalars_match_rust() {
 
 #[test]
 fn the_historical_revision_seven_corpus_still_uses_its_own_parser() {
-    vectors::run_of_record().expect("the immutable revision-seven corpus still validates");
+    let corpus =
+        vectors::run_of_record().expect("the immutable revision-seven corpus still validates");
+    assert!(corpus.standing().candidate().source_revision.is_none());
+    assert_eq!(
+        corpus.standing().candidate().replay,
+        vectors::historical_candidate::HistoricalReplay::NotReplayableForCurrentCandidate
+    );
 }
 
 pub(super) fn script_path_binding_mutations()

@@ -1389,16 +1389,23 @@ fn one_owner_authorization_is_observed_on_the_explicit_lane() {
     assert!(rendered.contains("discharges_no_matrix_row true"));
 }
 
-fn current_native_v2_corpus()
+// These exact comparisons reproduce a historical candidate. A changed candidate
+// must obtain its own acceptance; unequal subjects remain a refusal here.
+fn historical_native_v2_corpus()
 -> &'static vectors::live_corpus_native_v2_r7::ValidatedNativeV2R7Corpus {
-    vectors::live_corpus_native_v2_r7::run_of_record()
-        .expect("the reviewed native-v2/revision-7 corpus validates")
+    let corpus = vectors::live_corpus_native_v2_r7::run_of_record()
+        .expect("the historical native-v2/revision-7 corpus validates");
+    assert_eq!(
+        corpus.standing().candidate().replay,
+        vectors::historical_candidate::HistoricalReplay::NotReplayableForCurrentCandidate
+    );
+    corpus
 }
 
 fn current_ceremony_projection(
     ceremony: &str,
 ) -> &'static vectors::live_corpus_native_v2_r7::NativeV2CeremonyProjection {
-    current_native_v2_corpus()
+    historical_native_v2_corpus()
         .ceremony_projection(ceremony)
         .unwrap_or_else(|| panic!("the current corpus projects {ceremony}"))
 }
@@ -1406,7 +1413,7 @@ fn current_ceremony_projection(
 fn current_outcome_projections(
     ceremony: &str,
 ) -> &'static [vectors::live_corpus_native_v2_r7::NativeV2OutcomeProjection] {
-    current_native_v2_corpus()
+    historical_native_v2_corpus()
         .outcome_projections(ceremony)
         .unwrap_or_else(|| panic!("the current corpus projects outcomes for {ceremony}"))
 }
@@ -1414,7 +1421,7 @@ fn current_outcome_projections(
 fn current_acceptance_projections(
     ceremony: &str,
 ) -> &'static [vectors::live_corpus_native_v2_r7::NativeV2AcceptanceProjection] {
-    current_native_v2_corpus()
+    historical_native_v2_corpus()
         .acceptance_projections(ceremony)
         .unwrap_or_else(|| panic!("the current corpus projects acceptances for {ceremony}"))
 }

@@ -222,8 +222,9 @@ fn every_symbol_the_bundle_declared_is_defined_exactly_once() {
     let bundle = linked();
     let relocatable = relocatable_bundle();
 
-    assert_eq!(relocatable.symbols().len(), 22);
-    assert_eq!(bundle.definitions().len(), 21);
+    // Before destination elision: 22 symbols and 21 definitions.
+    assert_eq!(relocatable.symbols().len(), 20);
+    assert_eq!(bundle.definitions().len(), 19);
     let defined: BTreeSet<BundleSymbol> =
         bundle.definitions().definitions().keys().copied().collect();
     let declared: BTreeSet<BundleSymbol> = relocatable.symbols().keys().copied().collect();
@@ -241,8 +242,6 @@ fn every_symbol_the_bundle_declared_is_defined_exactly_once() {
         BTreeSet::from([
             BundleSymbol::ClosedAsset,
             BundleSymbol::ReserveAsset,
-            BundleSymbol::SponsorChangeProgram,
-            BundleSymbol::SponsorChangeProgramVersion,
             BundleSymbol::TargetFeeRoleProgramDigest,
             BundleSymbol::UnspendableInternalKey,
         ])
@@ -326,12 +325,10 @@ fn the_linked_script_bytes_are_the_pre_link_ones_moved_by_the_resolved_widths() 
         )
         .expect("a small figure fits");
 
-        // One symbol's resolution changes width: the sponsor-change
-        // program goes from a twenty byte placeholder to a thirty-two
-        // byte resolution. Nothing else moves, and the ASH constructor
-        // program moves nothing at all because no leaf carries it.
+        // Construction defaults contribute no pushes or width changes.
         assert_eq!(pushes(*leaf, BundleSymbol::AshConstructorProgram), 0);
         let change = pushes(*leaf, BundleSymbol::SponsorChangeProgram);
+        assert_eq!(change, 0);
         assert_eq!(
             after - before,
             12 * change,
@@ -341,8 +338,9 @@ fn the_linked_script_bytes_are_the_pre_link_ones_moved_by_the_resolved_widths() 
 
     // And the totals, written out, so a leaf that changed without its
     // neighbours noticing fails here too.
-    assert_eq!(relocatable.total_script_bytes(), 3939);
-    assert_eq!(bundle.total_script_bytes(), 3975);
+    // Before destination elision: 3939 unresolved and 3975 linked bytes.
+    assert_eq!(relocatable.total_script_bytes(), 3861);
+    assert_eq!(bundle.total_script_bytes(), 3861);
 }
 
 #[test]
@@ -368,7 +366,8 @@ fn total_script_bytes_is_the_exact_sum_of_linked_leaf_charges() {
         .try_fold(0_u128, |total, bytes| total.checked_add(u128::from(bytes)))
         .expect("the fixture total fits the exact domain");
 
-    assert_eq!(exact, 3975);
+    // Before destination elision: 3975 linked bytes.
+    assert_eq!(exact, 3861);
     assert_eq!(
         bundle.total_script_bytes(),
         u64::try_from(exact).expect("the fixture total fits u64"),
@@ -422,9 +421,8 @@ fn the_resource_formulas_are_refitted_and_predict_every_linked_measurement() {
         );
     }
 
-    // The pre-link model described programs that no longer exist, so
-    // the two must differ. Equal coefficients would mean the refit did
-    // not happen.
+    // Before destination elision the change literal widened at linking.
+    // Its removal leaves equal coefficients; every measurement is still refitted.
     let pre = relocatable_bundle();
     let before = pre
         .formulas()
@@ -433,7 +431,7 @@ fn the_resource_formulas_are_refitted_and_predict_every_linked_measurement() {
         .get(&ResourceDimension::ScriptBytes)
         .expect("script bytes are modelled")
         .model();
-    assert_ne!(before, formulas.model());
+    assert_eq!(before, formulas.model());
     assert!(matches!(formulas.model(), ResourceModel::Affine { .. }));
 }
 

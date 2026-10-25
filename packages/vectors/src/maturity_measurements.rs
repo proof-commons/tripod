@@ -474,6 +474,8 @@ mod tests {
     #[test]
     fn both_sponsored_cases_are_refused_where_wave_eleven_pins_them() {
         let corpus = maturity_variable_run_of_record().expect("variable archive admitted");
+        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
+            corpus.historical_standing();
         let planner = replay_candidate(
             MaturitySubmission::AcceptedVariableMetadata,
             corpus,

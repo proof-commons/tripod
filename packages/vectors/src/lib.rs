@@ -12,6 +12,7 @@ pub mod divergence;
 pub mod error;
 pub mod first_party;
 pub mod fixture;
+pub mod historical_candidate;
 pub mod live_capability;
 pub mod live_comparison;
 pub mod live_conservation_negatives;

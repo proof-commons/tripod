@@ -58,6 +58,8 @@ fn published_subtree(
 
 fn accepted_handoff() -> PublicAnnouncementHandoff {
     let corpus = maturity_variable_run_of_record().expect("accepted archive");
+    let vectors::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
+        corpus.historical_standing();
     let MaturityAcceptanceObligation::Established { readback, .. } =
         corpus.evidence().acceptance_obligation()
     else {

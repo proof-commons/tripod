@@ -221,7 +221,7 @@ fn the_private_constructor_emits_a_bundle_of_its_own() {
 // --- Symbols and relocations ------------------------------------------
 
 #[test]
-fn each_live_demonstration_has_exactly_two_hundred_forty_seven_pushed_symbol_sites() {
+fn each_live_demonstration_has_exactly_two_hundred_twenty_nine_pushed_symbol_sites() {
     for representation in [
         LiveTransferRepresentationPlan::Explicit,
         LiveTransferRepresentationPlan::PrivateCommitted,
@@ -241,9 +241,11 @@ fn each_live_demonstration_has_exactly_two_hundred_forty_seven_pushed_symbol_sit
                 LiveRelocationSite::ConstructorBinding => 0,
             })
             .sum();
-        assert_eq!(sites, 247, "{representation:?}");
-        assert_eq!(bundle.symbols().len(), 42, "{representation:?}");
-        assert_eq!(bundle.relocations().len(), 218, "{representation:?}");
+        // Before destination elision: 247 pushed occurrences per representation.
+        assert_eq!(sites, 229, "{representation:?}");
+        // Before destination elision: 42 symbols and 218 relocation records.
+        assert_eq!(bundle.symbols().len(), 40, "{representation:?}");
+        assert_eq!(bundle.relocations().len(), 200, "{representation:?}");
     }
 }
 
@@ -362,8 +364,6 @@ fn the_link_time_symbols_are_the_ones_a_later_layer_settles() {
             LiveBundleSymbol::ProtocolAsset,
             LiveBundleSymbol::ReserveAsset,
             LiveBundleSymbol::DestinationProgramVersion,
-            LiveBundleSymbol::SponsorChangeProgram,
-            LiveBundleSymbol::SponsorChangeProgramVersion,
             LiveBundleSymbol::TargetFeeRoleProgramDigest,
             LiveBundleSymbol::UnspendableInternalKey,
         ]),

@@ -248,12 +248,8 @@ impl SponsorCapability for StagedEnvelope {
 
     /// No destination of its own.
     ///
-    /// Not an omission. The construction writes the change output from
-    /// the deployment's sponsor-change symbol and refuses any other
-    /// destination outright, so a capability naming one would be naming
-    /// the only value that is already going to be used, or being
-    /// refused. Declining to name it is the honest spelling of a choice
-    /// the deployment has already made.
+    /// Absence selects the construction default. The sponsor may choose an
+    /// ordinary destination and fixes it with an all-inputs-all-outputs signature.
     fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
         None
     }

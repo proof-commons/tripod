@@ -859,15 +859,15 @@ pub fn render_conservation_negatives(record: &ConservationNegativeRecord) -> Str
     out
 }
 
-/// Bind one completed conservation-negatives ceremony to the validated
-/// native-v2/revision-7 corpus.
+/// Bind one completed conservation-negatives ceremony to its historical
+/// native-v2/revision-7 candidate; changed subjects remain a refusal.
 ///
 /// Wall time is intentionally absent: it is machine telemetry rather than
 /// a reproducible result.
 ///
-/// Under Q19, the fresh ceremony's fixture digests are compared only with the
-/// corpus's `forward-v2` digest records. Historical-v1 divergence belongs to
-/// git history and is not an active execution oracle.
+/// Exact comparisons reproduce the archive's producing candidate. A changed
+/// current construction must obtain its own acceptance; digest inequality remains
+/// a refusal, and historical acceptance cannot answer for that construction.
 ///
 /// # Panics
 ///
@@ -877,6 +877,10 @@ pub fn render_conservation_negatives(record: &ConservationNegativeRecord) -> Str
 pub fn assert_conservation_matches_current_corpus(record: &ConservationNegativeRecord) {
     let corpus = crate::live_corpus_native_v2_r7::run_of_record()
         .expect("the reviewed native-v2/revision-7 corpus validates");
+    assert_eq!(
+        corpus.standing().candidate().replay,
+        crate::historical_candidate::HistoricalReplay::NotReplayableForCurrentCandidate
+    );
     let current = corpus
         .ceremony_projection("conservation-negatives")
         .expect("the current corpus carries conservation-negatives");
@@ -902,8 +906,8 @@ pub fn assert_conservation_matches_current_corpus(record: &ConservationNegativeR
 
 /// Compatibility spelling for the untouched native-guide caller.
 ///
-/// This now binds to the sole current native-v2/revision-7 corpus. It does
-/// not consult historical-v1 constants.
+/// This binds to the historical native-v2/revision-7 candidate and keeps every
+/// subject comparison intact.
 ///
 /// # Panics
 ///
@@ -995,7 +999,7 @@ mod tests {
     /// derivation this test's name once promised remains open.
     #[test]
     fn the_corpus_fixture_digests_agree_with_the_module_that_states_them() {
-        use crate::live_private_restart::forward_v2::forward_fixture_digest_v2;
+        use crate::historical_candidate::PRIVATE_RESTART_FIXTURES;
         use std::fmt::Write as _;
 
         let corpus = crate::live_corpus_native_v2_r7::run_of_record()
@@ -1005,8 +1009,8 @@ mod tests {
             .expect("the conservation ceremony is present");
 
         for (name, stated) in [
-            ("predecessor", forward_fixture_digest_v2::PREDECESSOR_DIGEST),
-            ("successor", forward_fixture_digest_v2::SUCCESSOR_DIGEST),
+            ("predecessor", PRIVATE_RESTART_FIXTURES[0]),
+            ("successor", PRIVATE_RESTART_FIXTURES[1]),
         ] {
             let recorded = current
                 .fixture_digest(name)

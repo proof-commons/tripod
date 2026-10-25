@@ -1887,6 +1887,9 @@ pub fn forward_v2_proof_bearing_run_of_record() -> &'static ForwardV2ProofBearin
     static RECORD: OnceLock<ForwardV2ProofBearingRunOfRecord> = OnceLock::new();
     RECORD.get_or_init(|| {
         let input = validated_corpus().ok().and_then(|corpus| {
+            // Both recorded members retain the producing candidate's historical scope.
+            let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_) =
+                corpus.standing();
             corpus
                 .mint_ceremony("proof-bearing-observation")
                 .map(ForwardProofBearingMintInput::from_corpus)

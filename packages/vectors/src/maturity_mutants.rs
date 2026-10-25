@@ -618,6 +618,8 @@ mod tests {
             let source = variable_archived();
             let input = source.input();
             let corpus = maturity_variable_run_of_record().expect("validated variable archive");
+            let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
+                corpus.historical_standing();
             let mut planner = MaturityAnnouncementPlanner::new(
                 input.identity.clone(),
                 input.branch,

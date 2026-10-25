@@ -72,7 +72,6 @@ use crate::live_pattern::{LiveFragmentId, LiveTransferSymbols};
 use crate::live_shape::{FeePresence, LiveTransferShape};
 use crate::pattern::{
     narrow_to_operand, number, op, require_amount_domain, require_asset, require_explicit,
-    require_program,
 };
 use crate::program::TapscriptProgram;
 use crate::shape::SponsorChangePresence;
@@ -752,13 +751,8 @@ pub fn live_sponsor_isolation_fragment(
             position,
             symbols.reserve_asset(),
         )?);
-        instructions.extend(require_program(
-            target,
-            OpcodeId::InspectOutputScriptPubKey,
-            position,
-            symbols.sponsor_change_version(),
-            symbols.sponsor_change_program(),
-        )?);
+        // The sponsor signs all inputs and outputs; flow_role_is_exact needs
+        // the reserve asset and role, not a destination equality `(´[ADR024-rem:closure:consequences]´)`.
         position += 1;
     }
 

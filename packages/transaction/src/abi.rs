@@ -350,9 +350,9 @@ pub enum WitnessItem {
     ControlBlock,
 }
 
-/// The public deployment constants the ABI reads from the link.
+/// Linked asset constants and the sponsor-change construction default.
 ///
-/// Read from the linked definition census rather than taken as
+/// Read from the linked bundle rather than taken as
 /// parameters. §1.10 refuses a speculative identity, and a transaction
 /// layer that accepted its own asset identifiers would be able to build
 /// a transaction against an asset the programs it embeds never
@@ -378,13 +378,13 @@ impl DeploymentSymbols {
         self.reserve_asset
     }
 
-    /// The sponsor-change role's witness program payload.
+    /// Construction default; the sponsor's signature, not the covenant, fixes the destination.
     #[must_use]
     pub fn sponsor_change_program(&self) -> &[u8] {
         &self.sponsor_change_program
     }
 
-    /// The version the sponsor-change witness program is read at.
+    /// Construction default; the sponsor's signature, not the covenant, fixes the destination.
     #[must_use]
     pub const fn sponsor_change_version(&self) -> u8 {
         self.sponsor_change_version
@@ -849,34 +849,12 @@ fn read_symbols(bundle: &CandidateLinkedBundle) -> Result<DeploymentSymbols, Tra
     let closed_asset = asset(bundle, BundleSymbol::ClosedAsset, "closed asset")?;
     let reserve_asset = asset(bundle, BundleSymbol::ReserveAsset, "reserve asset")?;
 
-    let sponsor_change_program = match value(
-        bundle,
-        BundleSymbol::SponsorChangeProgram,
-        "sponsor change program",
-    )? {
-        SymbolValue::WitnessProgram(item) => item.bytes().to_vec(),
-        _ => {
-            return Err(TransactionRefusal::MalformedDeploymentSymbol {
-                symbol: "sponsor change program",
-            });
-        }
-    };
-    let sponsor_change_version = match value(
-        bundle,
-        BundleSymbol::SponsorChangeProgramVersion,
-        "sponsor change version",
-    )? {
-        SymbolValue::ScriptNumber(number) => {
-            u8::try_from(*number).map_err(|_| TransactionRefusal::MalformedDeploymentSymbol {
-                symbol: "sponsor change version",
-            })?
-        }
-        _ => {
-            return Err(TransactionRefusal::MalformedDeploymentSymbol {
-                symbol: "sponsor change version",
-            });
-        }
-    };
+    let (version, program) = bundle.sponsor_change_default();
+    let sponsor_change_program = program.to_vec();
+    let sponsor_change_version =
+        u8::try_from(version).map_err(|_| TransactionRefusal::MalformedDeploymentSymbol {
+            symbol: "sponsor change version",
+        })?;
 
     Ok(DeploymentSymbols {
         closed_asset,

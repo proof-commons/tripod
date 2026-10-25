@@ -95,7 +95,7 @@ use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::live_constructor::{LiveProgramRole, OwnerKey, StaticLiveReceiptConstructor};
 use crate::live_plan::{
     destination_closure_fragment, emits_isolation_fragment, explicit_conservation_fragment,
-    has_sponsor_region, issuance_absence_fragment, live_sponsor_isolation_fragment,
+    issuance_absence_fragment, live_sponsor_isolation_fragment,
 };
 use crate::live_private::{
     crossing_destination_form_fragment, private_destination_form_fragment, require_value_form,
@@ -113,14 +113,12 @@ use crate::stack::{
 
 // --- Link-time symbols ------------------------------------------------
 
-/// The exact link-time literals a live-transfer fragment pushes.
+/// Live-transfer literals and sponsor-change construction defaults.
 ///
-/// Supplied, never minted, and every member has a consumer: §1.10 admits
-/// no reserved field, so a symbol is here exactly while some emitted
-/// fragment pushes it. The protocol asset reaches §10.1's recognition and
+/// Supplied, never minted. The protocol asset reaches §10.1's recognition and
 /// §10.4's destination closure; the destination program version reaches
-/// §10.4; and the reserve asset, the sponsor-change program and its
-/// version, and the fee role's digest reach §10.7's sponsor isolation.
+/// §10.4; the reserve asset and fee digest reach §10.7's sponsor isolation.
+/// Sponsor-change defaults remain available to construction but no leaf pushes them.
 ///
 /// The owner key is not among them. It arrives on the
 /// [`StaticLiveReceiptConstructor`] instead, where §7.2 already checked
@@ -207,13 +205,13 @@ impl LiveTransferSymbols {
         self.destination_program_version
     }
 
-    /// The sponsor-change role's witness program.
+    /// Construction default; the sponsor's signature, not the covenant, fixes the destination.
     #[must_use]
     pub const fn sponsor_change_program(&self) -> &StackItem {
         &self.sponsor_change_program
     }
 
-    /// The version the sponsor-change witness program is read at.
+    /// Construction default; the sponsor's signature, not the covenant, fixes the destination.
     #[must_use]
     pub const fn sponsor_change_version(&self) -> i64 {
         self.sponsor_change_version
@@ -2832,20 +2830,12 @@ pub fn live_transfer_patterns(
 
     if recipe_selects_pattern(&coordinator_recipe, Id::LiveSponsorIsolationV1) {
         let isolation = live_sponsor_isolation_fragment(target, symbols, shape)?;
-        // Every clause this fragment can emit reads the reserve asset,
-        // and the fee clause additionally reads the destination count to
-        // find the fee's position, so those three are disclosed by any
-        // shape that reaches the fragment at all. The change role is the
-        // one clause a sponsorless fee-bearing shape never emits, so it
-        // is disclosed on the sponsor question rather than on this one.
-        let mut isolation_disclosure = BTreeSet::from([
+        // The change destination is a construction default, not a leaf disclosure.
+        let isolation_disclosure = BTreeSet::from([
             Disclose::ReserveAsset,
             Disclose::TargetFeeRole,
             Disclose::ReceiptOutputCount,
         ]);
-        if has_sponsor_region(shape) {
-            isolation_disclosure.insert(Disclose::SponsorChangeRole);
-        }
         patterns.insert(
             Id::LiveSponsorIsolationV1,
             build_live_pattern(

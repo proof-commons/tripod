@@ -42,6 +42,401 @@ use compiler::operation_plan::{
 use compiler::{CompileError, validate_required_dependency};
 use realization::{AvailabilityClass, ConstructibilityNodeId, RealizationScope, derive};
 
+#[cfg(test)]
+mod closure_destinations {
+    use std::fmt::Write;
+    use tapscript::{TapscriptInstruction as I, TapscriptProgram};
+    use target_elements::OpcodeId as O;
+    use transaction::bytes::{
+        AssetField, AssetId, InputWitness, NonceField, Outpoint, TargetInput, TargetOutput,
+        TargetTransaction, Txid, ValueField,
+    };
+
+    // This evaluator checks the linked instruction stream against serialized output
+    // bytes. Authorization is a stated successful premise, never native evidence.
+    #[derive(Clone)]
+    struct Subject {
+        protocol: [u8; 32],
+        reserve: [u8; 32],
+        change: Vec<u8>,
+        private: bool,
+        live: bool,
+        protocol_inputs: u8,
+        protocol_program: Vec<u8>,
+    }
+
+    impl Subject {
+        fn outputs(&self) -> Vec<TargetOutput> {
+            let value = if self.private {
+                let mut commitment = [0x44; 33];
+                commitment[0] = 8;
+                ValueField::Commitment(commitment)
+            } else {
+                ValueField::Explicit(10 * u64::from(self.protocol_inputs))
+            };
+            [
+                (self.protocol, value, self.protocol_program.clone()),
+                (self.reserve, ValueField::Explicit(5), self.change.clone()),
+                (self.reserve, ValueField::Explicit(1), Vec::new()),
+            ]
+            .into_iter()
+            .map(|(asset, value, program)| {
+                TargetOutput::new(
+                    AssetField::Explicit(AssetId::from_internal(asset)),
+                    value,
+                    NonceField::Null,
+                    program,
+                )
+            })
+            .collect()
+        }
+
+        fn bytes(&self, outputs: Vec<TargetOutput>) -> Vec<u8> {
+            let count = usize::from(self.protocol_inputs) + 1;
+            let inputs = (0..=u32::from(self.protocol_inputs))
+                .map(|index| {
+                    TargetInput::new(
+                        Outpoint::new(Txid::from_internal([0x22; 32]), index).expect("index"),
+                        u32::MAX,
+                    )
+                })
+                .collect();
+            TargetTransaction::new(
+                2,
+                inputs,
+                outputs,
+                0,
+                vec![InputWitness::new(Vec::new()); count],
+            )
+            .expect("concrete transaction")
+            .encode()
+        }
+
+        #[allow(clippy::too_many_lines)]
+        fn accepts(&self, program: &TapscriptProgram, bytes: &[u8]) -> bool {
+            let tx = TargetTransaction::decode(bytes).expect("serialized subject");
+            let mut stack: Vec<Vec<u8>> = if self.live {
+                vec![vec![0x55; 64]]
+            } else {
+                Vec::new()
+            };
+            let pop = |stack: &mut Vec<Vec<u8>>| stack.pop().expect("linked stack discipline");
+            let number = |bytes: &[u8]| {
+                bytes
+                    .iter()
+                    .enumerate()
+                    .fold(0_usize, |n, (i, b)| n | (usize::from(*b) << (8 * i)))
+            };
+            for instruction in program.instructions() {
+                let opcode = match instruction {
+                    I::Push(item) => {
+                        stack.push(item.bytes().to_vec());
+                        continue;
+                    }
+                    I::Opcode(opcode) => *opcode,
+                };
+                match opcode {
+                    O::PushCurrentInputIndex => stack.push(Vec::new()),
+                    O::InspectNumInputs => {
+                        stack.push(vec![u8::try_from(tx.inputs().len()).expect("small census")]);
+                    }
+                    O::InspectNumOutputs => {
+                        stack.push(vec![
+                            u8::try_from(tx.outputs().len()).expect("small census"),
+                        ]);
+                    }
+                    O::InspectInputIssuance => {
+                        pop(&mut stack);
+                        stack.push(Vec::new());
+                    }
+                    O::InspectInputAsset | O::InspectOutputAsset => {
+                        let index = number(&pop(&mut stack));
+                        let asset = if opcode == O::InspectInputAsset {
+                            if index < usize::from(self.protocol_inputs) {
+                                self.protocol
+                            } else {
+                                self.reserve
+                            }
+                        } else {
+                            let Some(output) = tx.outputs().get(index) else {
+                                return false;
+                            };
+                            let AssetField::Explicit(asset) = output.asset() else {
+                                return false;
+                            };
+                            *asset.internal()
+                        };
+                        stack.push(asset.to_vec());
+                        stack.push(vec![1]);
+                    }
+                    O::InspectInputValue | O::InspectOutputValue => {
+                        let index = number(&pop(&mut stack));
+                        let value = if opcode == O::InspectInputValue {
+                            if self.private && index < usize::from(self.protocol_inputs) {
+                                self.outputs()[0].value()
+                            } else {
+                                ValueField::Explicit(10)
+                            }
+                        } else {
+                            let Some(output) = tx.outputs().get(index) else {
+                                return false;
+                            };
+                            output.value()
+                        };
+                        match value {
+                            ValueField::Explicit(value) => {
+                                stack.push(value.to_le_bytes().to_vec());
+                                stack.push(vec![1]);
+                            }
+                            ValueField::Commitment(value) => {
+                                stack.push(value[1..].to_vec());
+                                stack.push(vec![value[0]]);
+                            }
+                            _ => panic!("unsupported fixture value"),
+                        }
+                    }
+                    O::InspectInputScriptPubKey | O::InspectOutputScriptPubKey => {
+                        let index = number(&pop(&mut stack));
+                        let script = if opcode == O::InspectInputScriptPubKey {
+                            self.outputs()[0].program().to_vec()
+                        } else {
+                            let Some(output) = tx.outputs().get(index) else {
+                                return false;
+                            };
+                            output.program().to_vec()
+                        };
+                        if script.is_empty() {
+                            stack.push(crate::bundle::fee_program_digest().to_vec());
+                            stack.push(vec![0x81]);
+                        } else {
+                            assert_eq!(usize::from(script[1]), script.len() - 2);
+                            stack.push(script[2..].to_vec());
+                            stack.push(if script[0] == 0 {
+                                Vec::new()
+                            } else {
+                                vec![script[0] - 0x50]
+                            });
+                        }
+                    }
+                    O::EqualVerify => {
+                        let right = pop(&mut stack);
+                        if pop(&mut stack) != right {
+                            return false;
+                        }
+                    }
+                    O::Verify => {
+                        if pop(&mut stack).iter().all(|b| *b == 0) {
+                            return false;
+                        }
+                    }
+                    O::Drop => {
+                        pop(&mut stack);
+                    }
+                    O::Duplicate => {
+                        stack.push(stack.last().expect("operand").clone());
+                    }
+                    O::Rotate => {
+                        let value = stack.remove(stack.len() - 3);
+                        stack.push(value);
+                    }
+                    O::Substring => {
+                        let size = number(&pop(&mut stack));
+                        let start = number(&pop(&mut stack));
+                        let value = pop(&mut stack);
+                        stack.push(value[start..start + size].to_vec());
+                    }
+                    O::GreaterThan64 | O::LessThan64 => {
+                        let right =
+                            i64::from_le_bytes(pop(&mut stack).try_into().expect("wide operand"));
+                        let left =
+                            i64::from_le_bytes(pop(&mut stack).try_into().expect("wide operand"));
+                        stack.push(vec![u8::from(if opcode == O::GreaterThan64 {
+                            left > right
+                        } else {
+                            left < right
+                        })]);
+                    }
+                    O::Add64 => {
+                        let right = i64::from_le_bytes(pop(&mut stack).try_into().expect("wide"));
+                        let left = i64::from_le_bytes(pop(&mut stack).try_into().expect("wide"));
+                        stack.push(
+                            left.checked_add(right)
+                                .expect("small amounts")
+                                .to_le_bytes()
+                                .to_vec(),
+                        );
+                        stack.push(vec![1]);
+                    }
+                    O::BitwiseAnd => {
+                        let right = pop(&mut stack);
+                        let left = pop(&mut stack);
+                        stack.push(left.iter().zip(right).map(|(a, b)| a & b).collect());
+                    }
+                    O::CheckSigVerify => {
+                        assert_eq!(pop(&mut stack).len(), 32);
+                        assert_eq!(pop(&mut stack), vec![0x55; 64]);
+                    }
+                    other => panic!("unimplemented linked instruction {other:?}"),
+                }
+            }
+            stack == vec![vec![1]]
+        }
+    }
+
+    fn pair(program: &TapscriptProgram, subject: &Subject) {
+        let control = subject.outputs();
+        assert!(subject.accepts(program, &subject.bytes(control.clone())));
+        for change in [vec![0, 32], vec![0x51, 32]] {
+            let alternate = Subject {
+                change: [change, vec![0x66; 32]].concat(),
+                ..subject.clone()
+            };
+            // Before the removal, both an alternate payload and an ordinary taproot
+            // output class are refused by the linked destination equality.
+            assert!(alternate.accepts(program, &alternate.bytes(alternate.outputs())));
+        }
+        let mut wrong_asset = control.clone();
+        wrong_asset[1] = TargetOutput::new(
+            AssetField::Explicit(AssetId::from_internal(subject.protocol)),
+            ValueField::Explicit(5),
+            NonceField::Null,
+            subject.change.clone(),
+        );
+        assert!(!subject.accepts(program, &subject.bytes(wrong_asset)));
+        let mut missing = control.clone();
+        missing.remove(1);
+        assert!(!subject.accepts(program, &subject.bytes(missing)));
+        let mut extra = control.clone();
+        extra.push(control[1].clone());
+        assert!(!subject.accepts(program, &subject.bytes(extra)));
+    }
+
+    #[test]
+    fn compact_linked_change_destination_pair() {
+        let bundle = crate::bundle::fixture_bundle().expect("bundle");
+        let (leaf, program) = bundle.linked().programs().iter().find(|(leaf, _)| {
+            matches!(leaf, tapscript::LeafRole::Coordinator { shape } if shape.ash_inputs() == 2 && shape.sponsor_change() == tapscript::SponsorChangePresence::Present)
+        }).expect("fixed-batch change coordinator");
+        let _ = leaf;
+        let symbols = bundle.abi().symbols();
+        pair(
+            program.program(),
+            &Subject {
+                protocol: bundle.closed_asset(),
+                reserve: bundle.reserve_asset(),
+                private: false,
+                live: false,
+                protocol_inputs: 2,
+                protocol_program: bundle
+                    .pin()
+                    .output_script(bundle.target())
+                    .expect("constructor"),
+                change: transaction::taproot::witness_program_script(
+                    bundle.target(),
+                    symbols.sponsor_change_version(),
+                    symbols.sponsor_change_program(),
+                )
+                .expect("default"),
+            },
+        );
+    }
+
+    #[test]
+    fn live_linked_change_destination_pairs() {
+        use crate::live_plan::{PROTOCOL_ASSET, RESERVE_ASSET};
+        let target = target_elements::reviewed_elements_tapscript().expect("target");
+        let fee = crate::bundle::fee_program_digest();
+        let linked =
+            crate::live_plan::link_live_bundle_for_asset(PROTOCOL_ASSET, RESERVE_ASSET, fee)
+                .expect("bundle");
+        let abi = crate::live_plan::live_abi_for_asset(PROTOCOL_ASSET, RESERVE_ASSET, fee)
+            .expect("linked constructors");
+        for constructor in linked.constructors().values() {
+            let program = constructor
+                .programs()
+                .iter()
+                .find_map(|(leaf, program)| match leaf {
+                    tapscript::LiveTransferLeafRole::Coordinator { shape, .. }
+                        if shape.receipt_inputs() == 1
+                            && shape.receipt_outputs() == 1
+                            && shape.sponsor_change()
+                                == tapscript::SponsorChangePresence::Present =>
+                    {
+                        Some(program)
+                    }
+                    _ => None,
+                })
+                .expect("one-to-one change coordinator");
+            let deployment =
+                crate::live_plan::live_deployment_for_asset(PROTOCOL_ASSET, RESERVE_ASSET, fee)
+                    .expect("deployment");
+            let symbols = deployment.resolved();
+            pair(
+                program.program(),
+                &Subject {
+                    protocol: PROTOCOL_ASSET,
+                    reserve: RESERVE_ASSET,
+                    private: constructor.representation()
+                        == compiler::live_transfer_plan::LiveTransferRepresentationPlan::PrivateCommitted,
+                    live: true,
+                    protocol_inputs: 1,
+                    protocol_program: abi
+                        .destinations()
+                        .get(constructor.owner(), constructor.representation())
+                        .expect("destination")
+                        .instance()
+                        .program()
+                        .to_vec(),
+                    change: transaction::taproot::witness_program_script(
+                        &target,
+                        u8::try_from(symbols.sponsor_change_version()).expect("version"),
+                        symbols.sponsor_change_program().bytes(),
+                    )
+                    .expect("default"),
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn closure_leaf_bytes_and_roots_match_the_fixture() {
+        for bundle in crate::live_plan::relocatable_live_bundles().expect("bundles") {
+            // Before destination elision: 42 symbols and 218 relocation records.
+            assert_eq!(
+                (bundle.symbols().len(), bundle.relocations().len()),
+                (40, 200)
+            );
+        }
+        let hex = |bytes: &[u8]| {
+            let mut text = String::new();
+            for byte in bytes {
+                write!(text, "{byte:02x}").expect("string write");
+            }
+            text
+        };
+        let compact = crate::bundle::fixture_bundle().expect("compact");
+        let tree = compact.abi().tree();
+        let mut snapshot = format!("compact root {}\n", hex(&tree.merkle_root()));
+        for (leaf, bytes) in tree.leaf_programs() {
+            writeln!(snapshot, "compact {leaf:?} {}", hex(bytes)).expect("string write");
+        }
+        let live = crate::live_plan::demonstration_live_bundle().expect("live");
+        for (key, constructor) in live.constructors() {
+            let tree = transaction::live_taproot::commit_live_tree(compact.target(), constructor)
+                .expect("live tree");
+            writeln!(snapshot, "live {key:?} root {}", hex(&tree.merkle_root()))
+                .expect("string write");
+            for (leaf, bytes) in tree.leaf_programs() {
+                writeln!(snapshot, "live {key:?} {leaf:?} {}", hex(bytes)).expect("string write");
+            }
+        }
+        assert_eq!(
+            snapshot,
+            include_str!("../fixtures/closure-compact-live.golden")
+        );
+    }
+}
+
 /// Which first-party validator owns one negative requirement.
 ///
 /// A name for the exact entry point a discharge drove, carried into the

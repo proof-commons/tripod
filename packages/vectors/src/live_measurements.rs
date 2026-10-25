@@ -673,15 +673,9 @@ impl SponsorCapability for MeasuredSponsorEnvelope {
 
     /// No destination of its own, which is not the same as no change.
     ///
-    /// The residual is stated in the offer above; what this method
-    /// answers is *where* it pays, and the deployment already declares
-    /// one admitted sponsor-change program and refuses any other. So an
-    /// envelope naming a program of its own could only ever name the
-    /// deployment's — which the builder substitutes when this is absent —
-    /// or a program the construction refuses. Deferring is the honest
-    /// spelling of a sponsor that accepts the deployment's terms, and it
-    /// is what makes the measured change output the one a deployment
-    /// would actually create.
+    /// The offer states the residual; absence here selects the construction
+    /// default. The sponsor's all-inputs-all-outputs signature fixes the chosen
+    /// destination. The leaf requires the asset and role, without destination equality.
     fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
         None
     }
@@ -2001,7 +1995,8 @@ mod tests {
             "repeated-owner 0 weight=1519 vsize=380 depth=5 peak=7 budget=100",
             "sponsorless 0 weight=1911 vsize=478 depth=5 peak=7 budget=100",
             "sponsored 0 weight=2440 vsize=610 depth=5 peak=7 budget=100",
-            "sponsor-change-present-and-absent 0 weight=1904 vsize=476 depth=5 peak=7 budget=50",
+            // Before destination elision: weight=1904 vsize=476 depth=5 peak=7 budget=50.
+            "sponsor-change-present-and-absent 0 weight=1866 vsize=467 depth=5 peak=7 budget=50",
             "sponsor-change-present-and-absent 1 weight=1514 vsize=379 depth=5 peak=7 budget=50",
             "largest-proof-forms 0 weight=1949 vsize=488 depth=5 peak=7 budget=50",
             "deepest-control-path 0 weight=983 vsize=246 depth=5 peak=7 budget=50",

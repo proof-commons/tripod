@@ -112,12 +112,10 @@ impl OwnerParameter {
 ///
 /// §11.2's list, with the roles it leaves implicit made explicit. The
 /// guide says "expected typed roles include", so the census is a lower
-/// bound rather than a closed list, and the four members below that
-/// §11.2 does not name — the reserve asset, the destination program
-/// version, and the two sponsor-change roles — are here because the
-/// emitted programs push literals for them and a relocation naming a
-/// symbol the census does not describe would have nothing to resolve
-/// against.
+/// bound rather than a closed list. The reserve asset and destination
+/// program version have emitted literals and relocation definitions.
+/// Sponsor-change roles remain construction defaults for compatibility
+/// and are excluded from the emitted census.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LiveLinkSymbol {
     /// The explicit protocol asset every receipt carries.
@@ -334,7 +332,7 @@ impl LiveLinkRole {
         }
     }
 
-    /// Every role, in census order.
+    /// Every emitted link role, excluding construction defaults, in census order.
     ///
     /// Read by [`link_role_defects`] rather than restated there, so a
     /// role added to this list is uncovered until some symbol fills it.
@@ -357,8 +355,6 @@ impl LiveLinkRole {
         Self::OwnerPublicKey,
         Self::ReserveAsset,
         Self::DestinationProgramVersion,
-        Self::SponsorChangeProgram,
-        Self::SponsorChangeProgramVersion,
     ];
 
     /// The fifteen roles §11.2 lists by name, in the guide's own order.

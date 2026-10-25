@@ -148,6 +148,8 @@ Each reusable pattern states:
 
 Missing pattern support is an emission error.
 
+Compact and live sponsor-change closure retains the reserve-asset and declared-role checks; the sponsor's all-inputs-all-outputs signature fixes its chosen destination, so no covenant destination equality is needed (`[ADR024-rem:closure:consequences]`).
+
 ## Representation guards · `rule:tapscript:representation`
 
 The backend enforces:

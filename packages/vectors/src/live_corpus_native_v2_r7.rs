@@ -1050,6 +1050,7 @@ impl NativeV2MintCeremony {
 /// Fully admitted native-v2/revision-7 run of record.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedNativeV2R7Corpus {
+    standing: crate::historical_candidate::CandidateStanding,
     transcripts: Vec<NativeV2Transcript>,
     runs: Vec<LiveRunBinding>,
     observations: Vec<LiveReportObservation>,
@@ -1064,6 +1065,12 @@ pub struct ValidatedNativeV2R7Corpus {
 }
 
 impl ValidatedNativeV2R7Corpus {
+    /// Producing-candidate standing, with absent source provenance stated explicitly.
+    #[must_use]
+    pub const fn standing(&self) -> &crate::historical_candidate::CandidateStanding {
+        &self.standing
+    }
+
     /// All 39 transcripts in ceremony order.
     #[must_use]
     pub fn transcripts(&self) -> &[NativeV2Transcript] {
@@ -4500,7 +4507,41 @@ fn validate_inputs(
     let ceremony_projections = build_ceremony_projections(&parsed)?;
     let acceptance_projections = build_acceptance_projections(&parsed)?;
     let outcome_projections = build_outcome_projections(&parsed);
+    let mut programs = BTreeSet::new();
+    for projection in acceptance_projections.values().flatten() {
+        let transaction =
+            TargetTransaction::decode(projection.submitted_bytes()).map_err(|_| {
+                row_attribution_refusal("candidate", projection.ceremony(), "program-bytes")
+            })?;
+        programs.extend(
+            transaction
+                .outputs()
+                .iter()
+                .map(|output| tagged::sha256(output.program())),
+        );
+        for witness in transaction.witnesses() {
+            // Signatures in key-path or ordinary witnesses are not program identity.
+            if let [.., script, control] = witness.stack()
+                && control.len() >= 33
+                && (control.len() - 33).is_multiple_of(32)
+                && control
+                    .first()
+                    .is_some_and(|version| *version & 0xfe == 0xc4)
+            {
+                programs.insert(tagged::sha256(script));
+            }
+        }
+    }
+    let standing = crate::historical_candidate::CandidateStanding::HistoricalCandidate(
+        crate::historical_candidate::HistoricalCandidate {
+            source_revision: None,
+            deployment: [report.network_id, report.genesis_id, report.target_contract],
+            programs,
+            replay: crate::historical_candidate::HistoricalReplay::NotReplayableForCurrentCandidate,
+        },
+    );
     Ok(ValidatedNativeV2R7Corpus {
+        standing,
         transcripts: parsed
             .into_iter()
             .map(|transcript| transcript.summary)

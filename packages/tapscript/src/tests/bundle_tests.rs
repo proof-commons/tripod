@@ -340,8 +340,6 @@ fn the_symbol_table_is_exactly_the_guide_list_and_every_relocation_is_backed() {
         BundleSymbol::ClosedAsset,
         BundleSymbol::ReserveAsset,
         BundleSymbol::AshConstructorProgram,
-        BundleSymbol::SponsorChangeProgram,
-        BundleSymbol::SponsorChangeProgramVersion,
         BundleSymbol::TargetFeeRoleProgramDigest,
         BundleSymbol::UnspendableInternalKey,
         BundleSymbol::TargetLeafVersion,
@@ -357,7 +355,8 @@ fn the_symbol_table_is_exactly_the_guide_list_and_every_relocation_is_backed() {
 
     let carried: BTreeSet<BundleSymbol> = bundle.symbols().keys().copied().collect();
     assert_eq!(carried, expected);
-    assert_eq!(bundle.symbols().len(), 10 + 9 + 3);
+    // Before destination elision: 22 symbols.
+    assert_eq!(bundle.symbols().len(), 8 + 9 + 3);
 
     // Every symbol is placed somewhere, but not every symbol is
     // *relocated*: the ASH constructor's program is read from the
@@ -401,8 +400,6 @@ fn the_symbol_table_is_exactly_the_guide_list_and_every_relocation_is_backed() {
         BTreeSet::from([
             BundleSymbol::ClosedAsset,
             BundleSymbol::ReserveAsset,
-            BundleSymbol::SponsorChangeProgram,
-            BundleSymbol::SponsorChangeProgramVersion,
             BundleSymbol::TargetFeeRoleProgramDigest,
             BundleSymbol::UnspendableInternalKey,
         ]),
@@ -573,17 +570,9 @@ fn the_contract_fixed_widths_come_from_the_reviewed_contract() {
         SymbolWidth::Fixed { bytes: 1 },
     );
 
-    // A witness program's width is bounded by the class, not fixed by
-    // it, so a resolution may be a different width and no patch can be
-    // stated against it.
-    assert!(matches!(
-        table[&BundleSymbol::SponsorChangeProgram].width(),
-        SymbolWidth::ValueDetermined { .. },
-    ));
-    assert!(matches!(
-        table[&BundleSymbol::SponsorChangeProgramVersion].width(),
-        SymbolWidth::ValueDetermined { .. },
-    ));
+    // Construction defaults occupy no linked symbol slots.
+    assert!(!table.contains_key(&BundleSymbol::SponsorChangeProgram));
+    assert!(!table.contains_key(&BundleSymbol::SponsorChangeProgramVersion));
     // The ASH constructor's program occupies no field of this bundle at
     // all, which is a stronger statement than a width nobody fixed.
     assert_eq!(
@@ -833,7 +822,7 @@ fn the_relocation_multiplicities_add_up_to_the_program_sites() {
 }
 
 #[test]
-fn the_compact_demonstration_has_exactly_sixty_six_pushed_symbol_sites() {
+fn the_compact_demonstration_has_exactly_sixty_pushed_symbol_sites() {
     let sites: usize = bundle()
         .relocations()
         .iter()
@@ -842,7 +831,8 @@ fn the_compact_demonstration_has_exactly_sixty_six_pushed_symbol_sites() {
             RelocationSite::ConstructorBinding => 0,
         })
         .sum();
-    assert_eq!(sites, 66);
+    // Before destination elision: 66 pushed occurrences.
+    assert_eq!(sites, 60);
 }
 
 #[test]
@@ -907,20 +897,21 @@ fn the_measured_shape_of_the_candidate_is_exactly_this() {
         BTreeMap::from([
             ((2, 0, false), 241),
             ((2, 1, false), 355),
-            ((2, 1, true), 419),
+            // Before destination elision: 419 / 497 / 575 change-leaf bytes.
+            ((2, 1, true), 393),
             ((3, 0, false), 319),
             ((3, 1, false), 433),
-            ((3, 1, true), 497),
+            ((3, 1, true), 471),
             ((4, 0, false), 397),
             ((4, 1, false), 511),
-            ((4, 1, true), 575),
+            ((4, 1, true), 549),
         ]),
     );
 
     // The affine coefficients, written out. One further ASH source
     // costs a recognition fragment and an addition; the first sponsor
     // input costs an isolation test and the fee role it forces; the
-    // change role costs its own asset and program tests.
+    // change role costs its own asset test.
     //
     // The per-source figure is thirty-one bytes below what a literal
     // for the constructor's program would cost, and the base is lower
@@ -934,7 +925,8 @@ fn the_measured_shape_of_the_candidate_is_exactly_this() {
             base: 85,
             per_ash_input: 78,
             per_sponsor_input: 114,
-            per_sponsor_change: 64,
+            // Before destination elision: 64 bytes per change role.
+            per_sponsor_change: 38,
         },
     );
 
@@ -963,7 +955,8 @@ fn the_measured_shape_of_the_candidate_is_exactly_this() {
         );
     }
 
-    assert_eq!(bundle.total_script_bytes(), 3939);
-    assert_eq!(bundle.relocations().len(), 61);
+    // Before destination elision: 3939 bytes and 61 relocation records.
+    assert_eq!(bundle.total_script_bytes(), 3861);
+    assert_eq!(bundle.relocations().len(), 55);
     assert_eq!(bundle.introspections().len(), 9);
 }

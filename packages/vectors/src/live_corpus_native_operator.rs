@@ -232,6 +232,7 @@ impl NativeOperatorReportFacts {
 /// Complete immutable operator evidence derived from the admitted bytes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedNativeOperatorCorpus {
+    standing: crate::historical_candidate::CandidateStanding,
     evidence: OperatorEvidence,
     report: NativeOperatorReportFacts,
     capture_suite: [String; 2],
@@ -241,6 +242,12 @@ pub struct ValidatedNativeOperatorCorpus {
 }
 
 impl ValidatedNativeOperatorCorpus {
+    /// Candidate-bound historical standing; this archive supplies no current acceptance.
+    #[must_use]
+    pub const fn standing(&self) -> &crate::historical_candidate::CandidateStanding {
+        &self.standing
+    }
+
     /// The evidence produced by the planner's reviewed non-mock settlement.
     #[must_use]
     pub const fn evidence(&self) -> &OperatorEvidence {
@@ -1009,7 +1016,34 @@ fn admit_capture(
     let evidence = OperatorEvidence::replay_recorded(identity, &payload.exchanges)?;
     verify_transaction(&payload.exchanges)?;
     compare_rows(&evidence, &payload)?;
+    let mut programs = std::collections::BTreeSet::new();
+    for (subject, _) in &payload.exchanges {
+        if let OperationSubject::ScriptPathSigning(subject) = subject {
+            programs.insert(tagged::sha256(&subject.executing_leaf.script));
+            let transaction = TargetTransaction::decode(&subject.finalized_transaction)
+                .map_err(|_| Refusal::TransactionIdentity)?;
+            programs.extend(
+                transaction
+                    .outputs()
+                    .iter()
+                    .map(|output| tagged::sha256(output.program())),
+            );
+        }
+    }
+    let standing = crate::historical_candidate::CandidateStanding::HistoricalCandidate(
+        crate::historical_candidate::HistoricalCandidate {
+            source_revision: Some(capture_suite.clone()),
+            deployment: [
+                report.network_id.clone(),
+                report.genesis_id.clone(),
+                report.target_contract.clone(),
+            ],
+            programs,
+            replay: crate::historical_candidate::HistoricalReplay::ProducingCandidate,
+        },
+    );
     Ok(ValidatedNativeOperatorCorpus {
+        standing,
         evidence,
         report,
         capture_suite,

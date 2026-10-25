@@ -1500,6 +1500,7 @@ impl ValidatedCorpusAttribution {
 /// applied only after the complete attribution set validates.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedCorpusEvidence {
+    historical_standing: Option<crate::historical_candidate::CandidateStanding>,
     plan: LiveTransferEvidencePlan,
     runs: Vec<LiveRunBinding>,
     attributions: Vec<ValidatedCorpusAttribution>,
@@ -1510,7 +1511,10 @@ impl ValidatedCorpusEvidence {
         raw_plan: &LiveTransferEvidencePlan,
         corpus: &ValidatedNativeV2R7Corpus,
     ) -> Result<Self, CorpusEvidenceRefusal> {
-        Self::try_from_overlay_inputs(raw_plan, OverlayInputs::from_corpus(corpus))
+        let mut validated =
+            Self::try_from_overlay_inputs(raw_plan, OverlayInputs::from_corpus(corpus))?;
+        validated.historical_standing = Some(corpus.standing().clone());
+        Ok(validated)
     }
 
     fn try_from_overlay_inputs(
@@ -1519,6 +1523,7 @@ impl ValidatedCorpusEvidence {
     ) -> Result<Self, CorpusEvidenceRefusal> {
         if inputs.is_empty() {
             return Ok(Self {
+                historical_standing: None,
                 plan: raw_plan.clone(),
                 runs: Vec::new(),
                 attributions: Vec::new(),
@@ -1600,13 +1605,22 @@ impl ValidatedCorpusEvidence {
         }
         plan.census = census_from_rows(&plan.rows);
         Ok(Self {
+            historical_standing: None,
             plan,
             runs: inputs.runs,
             attributions: validated_attributions,
         })
     }
 
-    /// The overlaid evidence plan.
+    /// Historical standing of archive-derived rows; none for synthetic overlay inputs.
+    #[must_use]
+    pub const fn historical_standing(
+        &self,
+    ) -> Option<&crate::historical_candidate::CandidateStanding> {
+        self.historical_standing.as_ref()
+    }
+
+    /// The overlaid evidence plan, scoped by `historical_standing` rather than current acceptance.
     #[must_use]
     pub const fn plan(&self) -> &LiveTransferEvidencePlan {
         &self.plan

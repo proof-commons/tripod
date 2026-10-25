@@ -1838,9 +1838,18 @@ pub mod forward_v2 {
     pub struct ForwardPrivateRestartV2 {
         fixtures: ForwardPrivateRestartFixtureDigestsV2,
         acceptance: ForwardPrivateRestartAcceptance,
+        historical_standing: Option<crate::historical_candidate::CandidateStanding>,
     }
 
     impl ForwardPrivateRestartV2 {
+        /// Candidate scope of recorded acceptances; absent for pending current pins.
+        #[must_use]
+        pub const fn historical_standing(
+            &self,
+        ) -> Option<&crate::historical_candidate::CandidateStanding> {
+            self.historical_standing.as_ref()
+        }
+
         /// The V2 digest pins selected by a fresh native run.
         #[must_use]
         pub const fn fixtures(&self) -> &ForwardPrivateRestartFixtureDigestsV2 {
@@ -1871,24 +1880,27 @@ pub mod forward_v2 {
         /// This is the same fixture whose recorded v1 digest remains immutable run data. Algorithm
         /// v2 binds amounts unconditionally; forward runs bind here. No node acceptance under v2 is
         /// claimed.
+        // Before destination elision: 7fb3e6666f7574af9d9a295b6d9412f38817faf02c97b020752dc57709f0ae8b.
         pub const PREDECESSOR_DIGEST: &str =
-            "7fb3e6666f7574af9d9a295b6d9412f38817faf02c97b020752dc57709f0ae8b";
+            "f6ce619922a5396d0cffa53198b157b2ab358ba41aee9240649565d52cb0b2e8";
 
         /// The primary-receipt successor fixture's forward digest under fixture-digest v2.
         ///
         /// This is the same fixture whose recorded v1 digest and accepted identity are immutable
         /// halves of one historical observation in the parent module. Algorithm v2 binds amounts
         /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+        // Before destination elision: 414b7c3c514e5846398e5199e43789c07eda8865ef488e062b424d456997eeb1.
         pub const SUCCESSOR_DIGEST: &str =
-            "414b7c3c514e5846398e5199e43789c07eda8865ef488e062b424d456997eeb1";
+            "59abdf75c4d4586c725816c7c0f58136b517a0742686f516f23179cd22fc4096";
 
         /// The balancing-receipt successor fixture's forward digest under fixture-digest v2.
         ///
         /// This is the same fixture whose recorded v1 digest and accepted identity are immutable
         /// halves of one historical observation in the parent module. Algorithm v2 binds amounts
         /// unconditionally; forward runs bind here. No node acceptance under v2 is claimed.
+        // Before destination elision: f56b971cffea21a748b509a9b8aa7ccb0764ba6ce208438405a4025d35342c55.
         pub const PARITY_SUCCESSOR_DIGEST: &str =
-            "f56b971cffea21a748b509a9b8aa7ccb0764ba6ce208438405a4025d35342c55";
+            "e56122bc5f88b46c184458ed0728ce3ebaab73373da58c86432a50e63aa712c9";
     }
 
     #[derive(Clone, Debug)]
@@ -1979,6 +1991,7 @@ pub mod forward_v2 {
                 balancing_successor: forward_fixture_digest_v2::PARITY_SUCCESSOR_DIGEST.to_owned(),
             },
             acceptance: ForwardPrivateRestartAcceptance::Pending,
+            historical_standing: None,
         })
     }
 
@@ -2014,6 +2027,12 @@ pub mod forward_v2 {
         }
         Ok(ForwardPrivateRestartExpectation::V2(
             ForwardPrivateRestartV2 {
+                historical_standing: Some(
+                    validated_corpus()
+                        .map_err(|_| ForwardPrivateRestartMintRefusal::MissingCeremony)?
+                        .standing()
+                        .clone(),
+                ),
                 fixtures: ForwardPrivateRestartFixtureDigestsV2 {
                     predecessor: super::hex(primary.predecessor_digest),
                     primary_successor: super::hex(primary.successor_digest),
@@ -2041,12 +2060,13 @@ pub mod forward_v2 {
         project_forward_expectation(input).unwrap_or_else(|_| pending_forward_expectation())
     }
 
-    /// Mint the forward V2 acceptance pair from the validated corpus.
+    /// Mint the historical V2 acceptance pair from its validated candidate.
     ///
     /// The complete pair is cached only after both restart ceremonies agree
     /// on corpus identity, predecessor digest, distinct successor digests,
     /// accepted target identities, and the decoded `0x08`/`0x09` prefixes.
-    /// Any refusal returns the unchanged Pending expectation.
+    /// Any refusal returns the current Pending expectation. A recorded pair carries
+    /// historical standing and cannot establish acceptance of changed current pins.
     #[must_use]
     pub fn forward_private_restart_expectation() -> ForwardPrivateRestartExpectation {
         static EXPECTATION: OnceLock<ForwardPrivateRestartExpectation> = OnceLock::new();
@@ -2198,24 +2218,24 @@ mod tests {
     fn the_authorized_corpus_records_both_forward_members_and_v2_pins() {
         use super::ConsumedReceipt;
         use super::forward_v2::{
-            ForwardPrivateRestartExpectation, forward_fixture_digest_v2,
-            forward_private_restart_expectation,
+            ForwardPrivateRestartExpectation, forward_private_restart_expectation,
         };
 
         let ForwardPrivateRestartExpectation::V2(forward) = forward_private_restart_expectation();
         let fixtures = forward.fixtures();
+        assert!(forward.historical_standing().is_some());
 
         assert_eq!(
             fixtures.predecessor(),
-            forward_fixture_digest_v2::PREDECESSOR_DIGEST,
+            crate::historical_candidate::PRIVATE_RESTART_FIXTURES[0],
         );
         assert_eq!(
             fixtures.successor(ConsumedReceipt::Primary),
-            forward_fixture_digest_v2::SUCCESSOR_DIGEST,
+            crate::historical_candidate::PRIVATE_RESTART_FIXTURES[1],
         );
         assert_eq!(
             fixtures.successor(ConsumedReceipt::Balancing),
-            forward_fixture_digest_v2::PARITY_SUCCESSOR_DIGEST,
+            crate::historical_candidate::PRIVATE_RESTART_FIXTURES[2],
         );
         assert_eq!(forward.acceptance().name(), "recorded");
         let link = forward
@@ -2254,7 +2274,7 @@ mod byte_identity_tests {
     };
     use crate::confidential_predecessor::PredecessorShape;
 
-    /// Current fixtures register under the corpus's forward-v2 digests.
+    /// Current fixtures register under current pins; archived acceptances stay historical.
     ///
     /// # Why this test is worth its weight
     ///
@@ -2269,7 +2289,9 @@ mod byte_identity_tests {
     /// reassigned, a search whose counter moved — would land here, and it
     /// would land here before it landed on a chain.
     #[test]
-    fn current_fixtures_register_under_the_corpus_forward_v2_digests() {
+    fn current_fixtures_register_under_current_forward_v2_digests() {
+        use forward_v2::forward_fixture_digest_v2 as pins;
+
         let corpus = crate::live_corpus_native_v2_r7::run_of_record()
             .expect("the reviewed corpus validates");
         let current = corpus
@@ -2278,9 +2300,7 @@ mod byte_identity_tests {
         let issued_asset = current
             .issued_asset_display()
             .expect("the current control records its issued asset");
-        let forward_v2::ForwardPrivateRestartExpectation::V2(forward) =
-            forward_v2::forward_private_restart_expectation();
-
+        let mut actual = Vec::new();
         for consumed in ConsumedReceipt::ALL {
             let linked = link_and_register(
                 PredecessorShape::DualParity,
@@ -2291,23 +2311,23 @@ mod byte_identity_tests {
             )
             .expect("the current corpus fixtures register");
 
-            // The predecessor is the same manifest for both runs, so both must land on the one
-            // forward v2 digest.
-            assert_eq!(
+            actual.push((
                 hex(linked.predecessor_digest()),
-                forward.fixtures().predecessor(),
-                "the predecessor fixture drifted from its forward v2 pin",
-            );
-
-            // The successors differ. The primary receipt is the run whose consumed commitment
-            // carried the first admitted prefix.
-            let expected_v2 = forward.fixtures().successor(consumed);
-            assert_eq!(
                 hex(linked.successor_digest()),
-                expected_v2,
-                "the successor fixture for {} drifted from its forward v2 pin",
-                consumed.name(),
-            );
+            ));
         }
+        assert_eq!(
+            actual,
+            [
+                (
+                    pins::PREDECESSOR_DIGEST.to_owned(),
+                    pins::SUCCESSOR_DIGEST.to_owned(),
+                ),
+                (
+                    pins::PREDECESSOR_DIGEST.to_owned(),
+                    pins::PARITY_SUCCESSOR_DIGEST.to_owned(),
+                ),
+            ]
+        );
     }
 }

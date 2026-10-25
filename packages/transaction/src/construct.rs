@@ -610,13 +610,8 @@ fn assemble_outputs(
                 abi.symbols().sponsor_change_program().to_vec(),
             )
         });
-        if version != abi.symbols().sponsor_change_version()
-            || payload != abi.symbols().sponsor_change_program()
-        {
-            // The emitted coordinator compares the change output's
-            // program against a deployment constant, so a destination
-            // that differs is not a sponsor preference this builder can
-            // honour — it is a transaction the family would reject.
+        // Construction default; the sponsor's signature, not the covenant, fixes the destination.
+        if payload.is_empty() {
             return Err(TransactionRefusal::MalformedDeploymentSymbol {
                 symbol: "sponsor change program",
             });

@@ -39,10 +39,9 @@
 //!
 //! # No literal here is minted
 //!
-//! The closed asset, the ASH constructor's program, the reserve asset,
-//! the sponsor-change program, and the fee role's program digest are
+//! The closed asset, reserve asset, fee digest and construction defaults are
 //! supplied as [`CompactAshSymbols`], not written down. They are
-//! link-time facts — a later wave resolves them — and a byte constant
+//! supplied facts, and a byte constant
 //! invented here would be an identity this wave has no authority to
 //! mint (§1.10).
 
@@ -129,7 +128,7 @@ pub enum AbiAssumption {
     ExternalWholeTransactionConservation,
 }
 
-/// The exact link-time literals a compact-ASH fragment pushes.
+/// Compact-ASH literals and sponsor-change construction defaults.
 ///
 /// Supplied, never minted. Each item is checked against the width the
 /// reviewed contract fixes for the field it will be compared with, so a
@@ -199,13 +198,13 @@ impl CompactAshSymbols {
         &self.reserve_asset
     }
 
-    /// The sponsor-change role's witness program.
+    /// Construction default; the sponsor's signature, not the covenant, fixes the destination.
     #[must_use]
     pub const fn sponsor_change_program(&self) -> &StackItem {
         &self.sponsor_change_program
     }
 
-    /// The version the sponsor-change witness program is read at.
+    /// Construction default; the sponsor's signature, not the covenant, fixes the destination.
     #[must_use]
     pub const fn sponsor_change_version(&self) -> i64 {
         self.sponsor_change_version
@@ -708,30 +707,6 @@ pub(crate) fn require_asset(
     Ok(instructions)
 }
 
-/// Require the program at `index` on `side` to be exactly this witness
-/// program at this version.
-///
-/// For a program the deployment settles from outside the ASH family —
-/// the sponsor-change role's. The ASH constructor's own program is not
-/// settleable this way and uses
-/// `require_program_matches_this_input` instead.
-pub(crate) fn require_program(
-    target: &ReviewedElementsTapscriptDefinition,
-    inspect: OpcodeId,
-    index: i64,
-    version: i64,
-    program: &StackItem,
-) -> Result<Vec<TapscriptInstruction>, TapscriptError> {
-    Ok(vec![
-        number(target, index)?,
-        op(inspect),
-        number(target, version)?,
-        op(OpcodeId::EqualVerify),
-        TapscriptInstruction::Push(program.clone()),
-        op(OpcodeId::EqualVerify),
-    ])
-}
-
 /// Require the program at `index` on `side` to be the program of the
 /// input this leaf is spending, version and payload alike.
 ///
@@ -1038,13 +1013,8 @@ pub fn output_census_fragment(
             position,
             symbols.reserve_asset(),
         )?);
-        instructions.extend(require_program(
-            target,
-            OpcodeId::InspectOutputScriptPubKey,
-            position,
-            symbols.sponsor_change_version,
-            &symbols.sponsor_change_program,
-        )?);
+        // The sponsor signs all inputs and outputs; flow_role_is_exact needs
+        // the reserve asset and role, not a destination equality `(´[ADR024-rem:closure:consequences]´)`.
         position += 1;
     }
 

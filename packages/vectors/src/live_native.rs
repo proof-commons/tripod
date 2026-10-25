@@ -259,6 +259,7 @@ impl LiveNativeObservation {
 /// and one record cannot be checked against itself.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LiveNativeTranscript {
+    historical_standing: Option<crate::historical_candidate::CandidateStanding>,
     pub(crate) issued_asset: Option<String>,
     pub(crate) relinked: bool,
     pub(crate) not_submitted: BTreeSet<(LiveTransferRepresentationPlan, LiveFormNotSubmitted)>,
@@ -272,6 +273,14 @@ pub struct LiveNativeTranscript {
 }
 
 impl LiveNativeTranscript {
+    /// Historical scope when resource observations come from the retained archive.
+    #[must_use]
+    pub const fn historical_standing(
+        &self,
+    ) -> Option<&crate::historical_candidate::CandidateStanding> {
+        self.historical_standing.as_ref()
+    }
+
     /// The disposable asset the ceremony issued.
     #[must_use]
     pub fn issued_asset(&self) -> Option<&str> {
@@ -985,6 +994,7 @@ pub fn current_native_v2_transcript() -> Result<LiveNativeTranscript, NativeV2Im
     })
     .collect();
     Ok(LiveNativeTranscript {
+        historical_standing: Some(corpus.standing().clone()),
         issued_asset: None,
         relinked: true,
         not_submitted: BTreeSet::new(),
@@ -1025,6 +1035,9 @@ pub fn render_live_native_run(transcript: &LiveNativeTranscript) -> String {
 
     let mut text = String::new();
     let _ = writeln!(text, "role live-transfer-native-run");
+    if transcript.historical_standing().is_some() {
+        let _ = writeln!(text, "candidate_standing historical");
+    }
     let _ = writeln!(text, "discharges_no_matrix_row true");
     let _ = writeln!(
         text,

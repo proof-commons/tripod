@@ -153,13 +153,13 @@ impl LiveDeploymentSymbols {
         self.destination_program_version
     }
 
-    /// The sponsor-change role's admitted witness program.
+    /// Construction default; the sponsor's signature, not the covenant, fixes the destination.
     #[must_use]
     pub fn sponsor_change_program(&self) -> &[u8] {
         &self.sponsor_change_program
     }
 
-    /// The witness version the sponsor-change program is read at.
+    /// Construction default; the sponsor's signature, not the covenant, fixes the destination.
     #[must_use]
     pub const fn sponsor_change_version(&self) -> u8 {
         self.sponsor_change_version
@@ -953,14 +953,12 @@ fn read_symbols(
             LiveLinkSymbol::DestinationProgramVersion,
             "destination program version",
         )?,
-        sponsor_change_program: program(
-            LiveLinkSymbol::SponsorChangeProgram,
-            "sponsor change program",
-        )?,
-        sponsor_change_version: version(
-            LiveLinkSymbol::SponsorChangeProgramVersion,
-            "sponsor change program version",
-        )?,
+        sponsor_change_program: bundle.sponsor_change_default().1.to_vec(),
+        sponsor_change_version: u8::try_from(bundle.sponsor_change_default().0).map_err(|_| {
+            TransactionRefusal::MalformedLiveDeploymentSymbol {
+                symbol: "sponsor change program version",
+            }
+        })?,
         fee_program_digest: program(LiveLinkSymbol::TargetFeeRole, "target fee role")?,
     })
 }

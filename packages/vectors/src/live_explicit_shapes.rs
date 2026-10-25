@@ -1882,6 +1882,8 @@ pub fn render_explicit_shape(record: &ExplicitShapeRecord) -> String {
 fn current_acceptance_identity_at(ceremony: &str, index: usize, expected: usize) -> &'static str {
     let corpus = crate::live_corpus_native_v2_r7::run_of_record()
         .expect("the reviewed native-v2/revision-7 corpus validates");
+    // This identity is acceptance of the archive's producing candidate only.
+    let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_) = corpus.standing();
     let acceptances = corpus
         .acceptance_projections(ceremony)
         .unwrap_or_else(|| panic!("the current corpus omits {ceremony}"));

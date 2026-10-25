@@ -1143,9 +1143,8 @@ fn assemble_outputs(
                 abi.symbols().sponsor_change_program().to_vec(),
             )
         });
-        if version != abi.symbols().sponsor_change_version()
-            || payload != abi.symbols().sponsor_change_program()
-        {
+        // Construction default; the sponsor's signature, not the covenant, fixes the destination.
+        if payload.is_empty() {
             return Err(TransactionRefusal::MalformedLiveDeploymentSymbol {
                 symbol: "sponsor change program",
             });
@@ -1453,6 +1452,7 @@ fn private_destination_intents(
     request: &LiveTransferRequest,
     composition: LiveTransferComposition,
     openings: &PrivateLiveOpenings,
+    sponsor: Option<&dyn SponsorCapability>,
 ) -> Result<Vec<ConfidentialDestinationIntent>, TransactionRefusal> {
     let mut destinations = Vec::with_capacity(request.destinations().len());
     for (destination, opening) in request.destinations().iter().zip(openings.destinations()) {
@@ -1468,18 +1468,24 @@ fn private_destination_intents(
                 };
                 (asset, Vec::new())
             }
-            // The sponsor's change pays the deployment's sponsor-change
-            // program, exactly as the explicit lane's does and from the
-            // same symbol. Taking it from the destination's owner
-            // instead would return the sponsor's reserve to a live
-            // receipt constructor, which is a receipt nobody can spend
-            // and a sponsor who is not repaid.
+            // Construction default; the sponsor's signature, not the covenant, fixes the destination.
             ConfidentialOutputRole::SponsorChange => {
-                let version = abi.symbols().sponsor_change_version();
-                let payload = abi.symbols().sponsor_change_program();
+                let (version, payload) = sponsor
+                    .and_then(SponsorCapability::change_destination)
+                    .unwrap_or_else(|| {
+                        (
+                            abi.symbols().sponsor_change_version(),
+                            abi.symbols().sponsor_change_program().to_vec(),
+                        )
+                    });
+                if payload.is_empty() {
+                    return Err(TransactionRefusal::MalformedLiveDeploymentSymbol {
+                        symbol: "sponsor change program",
+                    });
+                }
                 (
                     abi.symbols().reserve_asset(),
-                    witness_program_script(target, version, payload)?,
+                    witness_program_script(target, version, &payload)?,
                 )
             }
             // Three roles, one answer, and the same one: every RECEIPT
@@ -2018,10 +2024,11 @@ pub fn finalize_private_live_transfer_composing(
     // resolving an owner whose program would then be discarded.
     //
     // The SPONSOR CHANGE is the second exception and has the same shape
-    // of reason: its program is the deployment's sponsor-change symbol
+    // of reason: its program is the sponsor's choice or construction default
     // rather than any owner's constructor, because the output repays the
     // sponsor and not a live receipt holder.
-    let destinations = private_destination_intents(target, abi, request, composition, openings)?;
+    let destinations =
+        private_destination_intents(target, abi, request, composition, openings, sponsor)?;
 
     let intent = ConfidentialConstructionIntent::new(
         inputs,

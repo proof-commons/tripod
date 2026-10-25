@@ -1867,8 +1867,6 @@ fn census(
 const PROGRAM_SYMBOLS: &[BundleSymbol] = &[
     BundleSymbol::ClosedAsset,
     BundleSymbol::ReserveAsset,
-    BundleSymbol::SponsorChangeProgram,
-    BundleSymbol::SponsorChangeProgramVersion,
     BundleSymbol::TargetFeeRoleProgramDigest,
 ];
 

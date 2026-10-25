@@ -750,6 +750,35 @@ impl MaturityReportFacts {
     }
 }
 
+fn maturity_historical_standing(
+    report: &MaturityReportFacts,
+    source: &[String; 2],
+    exchanges: &[(OperationStep, NativeOperationResponse)],
+) -> crate::historical_candidate::CandidateStanding {
+    let programs = exchanges
+        .iter()
+        .filter_map(|(step, _)| match step.subject() {
+            OperationSubject::Funding(subject) => Some(tagged::sha256(&subject.output_program)),
+            OperationSubject::ScriptPathSigning(subject) => {
+                Some(tagged::sha256(&subject.executing_leaf.script))
+            }
+            _ => None,
+        })
+        .collect();
+    crate::historical_candidate::CandidateStanding::HistoricalCandidate(
+        crate::historical_candidate::HistoricalCandidate {
+            source_revision: Some(source.clone()),
+            deployment: [
+                report.network_id.clone(),
+                report.genesis_id.clone(),
+                report.target_contract.clone(),
+            ],
+            programs,
+            replay: crate::historical_candidate::HistoricalReplay::ProducingCandidate,
+        },
+    )
+}
+
 /// Complete maturity evidence from admitted bytes with declared executor fee floors.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedMaturityCorpus {
@@ -763,6 +792,12 @@ pub struct ValidatedMaturityCorpus {
 }
 
 impl ValidatedMaturityCorpus {
+    /// Historical standing retained by every transitive maturity report reader.
+    #[must_use]
+    pub fn historical_standing(&self) -> crate::historical_candidate::CandidateStanding {
+        maturity_historical_standing(&self.report, &self.capture_suite, &self.exchanges)
+    }
+
     /// The composed schedule established by replay of the admitted exchanges.
     #[must_use]
     pub const fn schedule(&self) -> tapscript::StateWitnessSchedule {
@@ -837,6 +872,12 @@ pub struct ValidatedMaturityMutantCorpus {
 }
 
 impl ValidatedMaturityMutantCorpus {
+    /// Historical standing of the exact replayed mutant subjects.
+    #[must_use]
+    pub fn historical_standing(&self) -> crate::historical_candidate::CandidateStanding {
+        maturity_historical_standing(&self.report, &self.capture_suite, &self.exchanges)
+    }
+
     /// The evidence reconstructed from the exact recorded requests and responses.
     #[must_use]
     pub const fn evidence(&self) -> &MaturityMutantEvidence {
@@ -1919,6 +1960,9 @@ fn validate_common_bindings(
             field: "operator-deployment",
         }
     })?;
+    // Deployment agreement borrows historical facts and establishes no current acceptance.
+    let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_) =
+        operator.standing();
     binding(
         "development-network-id",
         report.network_id == operator.report().network_id(),
@@ -2321,6 +2365,9 @@ mod tests {
         let historical = maturity_run_of_record().expect("historical archive");
         let accepted = maturity_variable_run_of_record().expect("accepted archive");
         for corpus in [historical, accepted] {
+            let standing = corpus.historical_standing();
+            assert!(standing.candidate().source_revision.is_some());
+            assert!(!standing.candidate().programs.is_empty());
             assert_eq!(corpus.fee_floors(), MATURITY_DISCLOSED_FEE_FLOORS);
             assert_eq!(
                 corpus.fee_floors().provenance(),

@@ -274,9 +274,13 @@ Vector-set and report identities bind all applicable:
 
 They exclude timing, temporary paths, host identity, and secrets.
 
+Archive candidate identity binds deployment and executed program commitments separately from optional source revision; matching source provenance alone establishes no current acceptance.
+
 ## Assurance boundary · `sec:vectors:assurance`
 
 The package establishes finite bundle-specific translation evidence.
+
+An earlier candidate's capture has typed historical standing for that candidate; retained producing programs support exact replay, and unavailable current-candidate replay is explicit, without promoting archived acceptance to changed bytes.
 
 It does not prove universal compiler correctness, cryptographic hardness,
 target implementation correctness, or final deployment release.

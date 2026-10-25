@@ -176,6 +176,10 @@ pub fn maturity_nonce_corpus() -> Result<MaturityNonceCorpus, MaturityNonceCorpu
     let variable = maturity_variable_run_of_record().map_err(|refusal| {
         MaturityNonceCorpusRefusal::Measurement(MaturityMeasurementRefusal::Corpus(refusal))
     })?;
+    let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_whole) =
+        whole.historical_standing();
+    let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_variable) =
+        variable.historical_standing();
     let target = closure_target().map_err(|refusal| {
         MaturityNonceCorpusRefusal::Measurement(MaturityMeasurementRefusal::Target(refusal))
     })?;

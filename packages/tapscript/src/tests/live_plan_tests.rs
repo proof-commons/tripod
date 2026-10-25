@@ -675,11 +675,10 @@ fn every_sponsor_input_and_output_role_is_required_to_carry_the_reserve_asset() 
             .count(),
         3,
     );
-    // The change role's program and the fee role's digest are both
-    // compared, which is what makes the roles exact rather than merely
-    // reserve-asset-carrying.
+    // The change destination is a signed construction default; only the
+    // fee digest remains a leaf equality. Before elision both were pushed.
     assert!(
-        pushed(&fragment)
+        !pushed(&fragment)
             .iter()
             .any(|item| item == symbols.sponsor_change_program()),
     );

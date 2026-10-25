@@ -209,8 +209,6 @@ const PROGRAM_SYMBOLS: &[LiveBundleSymbol] = &[
     LiveBundleSymbol::ProtocolAsset,
     LiveBundleSymbol::ReserveAsset,
     LiveBundleSymbol::DestinationProgramVersion,
-    LiveBundleSymbol::SponsorChangeProgram,
-    LiveBundleSymbol::SponsorChangeProgramVersion,
     LiveBundleSymbol::TargetFeeRoleProgramDigest,
     LiveBundleSymbol::OwnerPublicKey,
 ];
@@ -1470,8 +1468,6 @@ fn symbol_table(
         LiveBundleSymbol::ProtocolAsset,
         LiveBundleSymbol::ReserveAsset,
         LiveBundleSymbol::DestinationProgramVersion,
-        LiveBundleSymbol::SponsorChangeProgram,
-        LiveBundleSymbol::SponsorChangeProgramVersion,
         LiveBundleSymbol::TargetFeeRoleProgramDigest,
         LiveBundleSymbol::UnspendableInternalKey,
     ] {

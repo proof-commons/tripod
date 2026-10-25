@@ -129,6 +129,7 @@ impl OperatorEvidence {
             return Err(Refusal::ReplaySettlement { step: "census" });
         }
         let mut planner = OperatorPlanner::new(identity);
+        planner.historical_candidate = true;
         let mut next = planner
             .next_step(None)
             .map_err(|_| Refusal::ReplaySettlement {
@@ -358,6 +359,7 @@ impl OperatorFixture {
 
 /// A single-run planner retaining the registry across the signing exchange.
 pub struct OperatorPlanner {
+    historical_candidate: bool,
     identity: CandidateDeploymentIdentity,
     position: usize,
     pending: Option<OperationStep>,
@@ -377,6 +379,7 @@ impl OperatorPlanner {
     #[must_use]
     pub fn new(identity: CandidateDeploymentIdentity) -> Self {
         Self {
+            historical_candidate: false,
             identity,
             position: 0,
             pending: None,
@@ -470,10 +473,11 @@ impl OperatorPlanner {
         if Some(&coin.asset) != self.asset.as_ref() || coin.amount_satoshis != PREDECESSOR_AMOUNT {
             return Err(VectorError::LiveSubstrateUnavailable);
         }
-        let fixture = OperatorFixture::new(
+        let fixture = OperatorFixture::for_candidate(
             self.identity.clone(),
             outpoint_of(&coin.outpoint).ok_or(VectorError::LiveSubstrateUnavailable)?,
             asset_of(&coin.asset).ok_or(VectorError::LiveSubstrateUnavailable)?,
+            self.historical_candidate,
         )?;
         if decode_hex(&coin.script).as_deref() != Some(fixture.spent[0].program()) {
             return Err(VectorError::LiveSubstrateUnavailable);
@@ -728,6 +732,15 @@ impl OperatorFixture {
         predecessor: Outpoint,
         asset: AssetId,
     ) -> Result<Self, VectorError> {
+        Self::for_candidate(identity, predecessor, asset, false)
+    }
+
+    fn for_candidate(
+        identity: CandidateDeploymentIdentity,
+        predecessor: Outpoint,
+        asset: AssetId,
+        historical: bool,
+    ) -> Result<Self, VectorError> {
         let target = reviewed_target()?;
         let closure = operator_key_encoding_closure(target.definition().authorization());
         let key = substrate(OperatorKey::new(
@@ -748,7 +761,29 @@ impl OperatorFixture {
             &target, key, profile, identity, &internal,
         ))?;
         let (program, input) = operator_leaf(binding.key())?;
-        let candidate = live_candidate(predecessor, asset)?;
+        let mut candidate = live_candidate(predecessor, asset)?;
+        if historical {
+            let program = crate::historical_candidate::operator_successor(asset.internal())?;
+            let outputs = candidate
+                .outputs()
+                .iter()
+                .map(|output| {
+                    transaction::bytes::TargetOutput::new(
+                        output.asset(),
+                        output.value(),
+                        output.nonce(),
+                        program.clone(),
+                    )
+                })
+                .collect();
+            candidate = substrate(TargetTransaction::new(
+                candidate.version(),
+                candidate.inputs().to_vec(),
+                outputs,
+                candidate.lock_time(),
+                candidate.witnesses().to_vec(),
+            ))?;
+        }
         let fixture = Self {
             binding,
             candidate,

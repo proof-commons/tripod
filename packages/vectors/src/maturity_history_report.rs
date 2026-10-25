@@ -691,6 +691,8 @@ mod tests {
     fn historical_handoff(accepted: &PublicAnnouncementHandoff) -> PublicAnnouncementHandoff {
         let historical = historical_continuity();
         let corpus = maturity_run_of_record().expect("historical corpus");
+        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
+            corpus.historical_standing();
         PublicAnnouncementHandoff::new(
             PublicAnnouncementLocator::new(
                 MaturityByteSource::ArchivedSubmission {

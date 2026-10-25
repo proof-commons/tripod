@@ -1064,6 +1064,8 @@ pub struct ShapeCensusEntry {
 fn current_acceptance_identity(ceremony: &str) -> &'static str {
     let corpus = crate::live_corpus_native_v2_r7::run_of_record()
         .expect("the reviewed native-v2/revision-7 corpus validates");
+    // This verdict belongs to the archived candidate and supplies no current acceptance.
+    let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_) = corpus.standing();
     let [acceptance] = corpus
         .acceptance_projections(ceremony)
         .unwrap_or_else(|| panic!("the current corpus omits {ceremony}"))
@@ -1076,6 +1078,8 @@ fn current_acceptance_identity(ceremony: &str) -> &'static str {
 fn current_refusal_detail(ceremony: &str) -> &'static str {
     let corpus = crate::live_corpus_native_v2_r7::run_of_record()
         .expect("the reviewed native-v2/revision-7 corpus validates");
+    // Refusal details have the same historical subject scope as accepted identities.
+    let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_) = corpus.standing();
     let outcomes = corpus
         .outcome_projections(ceremony)
         .unwrap_or_else(|| panic!("the current corpus omits {ceremony}"));

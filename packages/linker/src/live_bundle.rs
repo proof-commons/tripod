@@ -443,6 +443,7 @@ impl LiveAbiHandoff {
 /// The candidate linked live-transfer bundle (§11.6).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CandidateLinkedLiveTransferBundle {
+    sponsor_change_default: (i64, Vec<u8>),
     plan: ValidatedLiveTransferOperationPlan,
     contract: TargetContractVersion,
     shapes: LiveTransferShapeSet,
@@ -465,6 +466,15 @@ pub struct CandidateLinkedLiveTransferBundle {
 }
 
 impl CandidateLinkedLiveTransferBundle {
+    /// Construction default; the sponsor's signature, not the covenant, fixes the destination.
+    #[must_use]
+    pub fn sponsor_change_default(&self) -> (i64, &[u8]) {
+        (
+            self.sponsor_change_default.0,
+            &self.sponsor_change_default.1,
+        )
+    }
+
     /// The validated live-transfer plan the linked programs serve.
     ///
     /// §11.6's *exact live-transfer scope*: the operation, its class,
@@ -663,6 +673,7 @@ impl CandidateLinkedLiveTransferBundle {
 /// (owner, representation), [`LinkRefusal::LiveSymbolRoleUnfilled`] when
 /// the census leaves a §11.2 role unfilled, and every refusal the symbol,
 /// relocation, taptree, and carrier stages raise.
+#[allow(clippy::too_many_lines)]
 pub fn link_live_candidate(
     target: &ReviewedElementsTapscriptDefinition,
     bundles: &[CandidateRelocatableLiveTransferBundle],
@@ -759,6 +770,14 @@ pub fn link_live_candidate(
     let bounds = shapes.bounds();
 
     Ok(CandidateLinkedLiveTransferBundle {
+        sponsor_change_default: (
+            deployment.resolved().sponsor_change_version(),
+            deployment
+                .resolved()
+                .sponsor_change_program()
+                .bytes()
+                .to_vec(),
+        ),
         plan: first.plan().clone(),
         contract: first.contract(),
         shapes: shapes.clone(),

@@ -102,7 +102,8 @@ fn every_resolved_value_appears_at_exactly_the_recorded_sites() {
     // program is not among them and cannot be: the leaves read it from
     // the target, so it has an introspection reference instead.
     assert!(checked > 0);
-    assert_eq!(bundle.relocations().len(), 61);
+    // Before destination elision: 61 relocation records.
+    assert_eq!(bundle.relocations().len(), 55);
     assert_eq!(
         bundle
             .relocations_for(BundleSymbol::AshConstructorProgram)

@@ -245,6 +245,7 @@ impl ResourceStudyCensus {
 /// carrier here.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveTransferResourceReport {
+    historical_standing: Option<crate::historical_candidate::CandidateStanding>,
     schema: u32,
     role: LiveResourceReportRole,
     target: TargetProjection,
@@ -257,6 +258,14 @@ pub struct LiveTransferResourceReport {
 }
 
 impl LiveTransferResourceReport {
+    /// Candidate scope of the archived target measurements, separate from current sizing.
+    #[must_use]
+    pub const fn historical_standing(
+        &self,
+    ) -> Option<&crate::historical_candidate::CandidateStanding> {
+        self.historical_standing.as_ref()
+    }
+
     /// The schema revision.
     #[must_use]
     pub const fn schema(&self) -> u32 {
@@ -543,6 +552,7 @@ pub fn assemble_live_resource_report(
     let census = resource_census(&cases, &comparisons);
 
     Ok(LiveTransferResourceReport {
+        historical_standing: current.historical_standing().cloned(),
         schema: LIVE_RESOURCE_REPORT_SCHEMA,
         role: LiveResourceReportRole::LiveTransferResource,
         target,
@@ -594,7 +604,9 @@ pub fn validate_live_resource_report(
     let current =
         current_native_v2_transcript().map_err(LiveResourceReportRefusal::CorpusUnavailable)?;
     let comparisons = compare_run(&current);
-    if report.comparisons != comparisons {
+    if report.comparisons != comparisons
+        || report.historical_standing.as_ref() != current.historical_standing()
+    {
         return Err(LiveResourceReportRefusal::ComparisonsDiffer);
     }
 
@@ -659,6 +671,9 @@ pub fn render_live_resource_report(validated: &ValidatedLiveTransferResourceRepo
 
     let _ = writeln!(text, "schema {LIVE_RESOURCE_SCHEMA_ID}");
     let _ = writeln!(text, "role {}", report.role.name());
+    if report.historical_standing().is_some() {
+        let _ = writeln!(text, "target_measurement_candidate historical");
+    }
     let _ = writeln!(text, "result {}", report.result.name());
     let _ = writeln!(text, "statement {}", report.result.sentence());
     let _ = writeln!(text, "enumerated_assignments {}", census.enumerated);

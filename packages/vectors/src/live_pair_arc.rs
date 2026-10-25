@@ -221,6 +221,9 @@ impl PairArcEntryCondition {
     pub fn stands() -> Self {
         let corpus = crate::live_corpus_native_v2_r7::run_of_record()
             .expect("the reviewed native-v2/revision-7 corpus validates");
+        // The prerequisite cites the historical sponsor subject, not a fresh acceptance.
+        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_) =
+            corpus.standing();
         let [acceptance] = corpus
             .acceptance_projections("sponsored-change-absent")
             .expect("the current corpus carries the sponsor acceptance")

@@ -808,6 +808,8 @@ mod tests {
 
     fn readback() -> &'static MaturityAcceptedReadback {
         let corpus = maturity_variable_run_of_record().expect("accepted corpus");
+        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
+            corpus.historical_standing();
         let MaturityAcceptanceObligation::Established { readback, .. } =
             corpus.evidence().acceptance_obligation()
         else {

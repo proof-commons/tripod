@@ -54,11 +54,11 @@ fn the_declared_types_separate_the_thirty_two_byte_symbols() {
 
 #[test]
 fn the_census_splits_by_who_settles_each_symbol() {
-    // Six resolved at link and fifteen defined by the bundle, and the
+    // Four resolved at link and fifteen defined by the bundle, and the
     // split must agree with the bundle's own symbol table rather than
     // with a list kept here. A symbol the deployment settled while the
     // table said the bundle would is ambiguous, not a preference. The
-    // twenty-second symbol is settled by neither and appears in no
+    // twentieth symbol is settled by neither and appears in no
     // census at all, which is the ASH constructor's program.
     let bundle = relocatable_bundle();
     let target = reviewed_target();
@@ -75,10 +75,12 @@ fn the_census_splits_by_who_settles_each_symbol() {
         census
             .from_origin(DefinitionOrigin::DeploymentParameters)
             .count(),
-        6
+        // Before destination elision: 6 deployment definitions.
+        4
     );
     assert_eq!(census.from_origin(DefinitionOrigin::Bundle).count(), 15);
-    assert_eq!(census.len(), 21);
+    // Before destination elision: 21 definitions.
+    assert_eq!(census.len(), 19);
     assert!(!census.is_empty());
 }
 

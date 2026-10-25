@@ -1014,6 +1014,8 @@ mod tests {
 
     fn accepted() -> (PublicAnnouncementHandoff, MaturityPublicRecoveryReport) {
         let corpus = maturity_variable_run_of_record().expect("accepted archive");
+        let crate::historical_candidate::CandidateStanding::HistoricalCandidate(_historical) =
+            corpus.historical_standing();
         let handoff = accepted_public_handoff(corpus).expect("accepted public handoff");
         let report =
             assemble_maturity_public_recovery_report(handoff.clone()).expect("report assembles");

@@ -11,6 +11,7 @@ vectors_source_files = files(
   'src/error.rs',
   'src/first_party.rs',
   'src/fixture.rs',
+  'src/historical_candidate.rs',
   'src/confidential_materializer.rs',
   'src/confidential_predecessor.rs',
   'src/confidential_sponsor_reserve.rs',
@@ -98,6 +99,8 @@ vectors_doc_files = files('README.md')
 # `include_bytes!`; timing sidecars and the predecessor setup transcript
 # remain audit-only bytes.
 vectors_fixture_files = files(
+  'fixtures/closure-compact-live.golden',
+  'fixtures/historical-candidate-0.7.15-dev-operator-successor.leaves',
   'fixtures/maturity-run-of-record/3a690139.report.capture',
   'fixtures/maturity-run-of-record/3a690139.report.capture.timing',
   'fixtures/maturity-run-of-record/MANIFEST.sha256',

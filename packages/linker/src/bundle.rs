@@ -252,6 +252,7 @@ impl LinkedResourceFormula {
 /// The candidate linked bundle (§14.7).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CandidateLinkedBundle {
+    sponsor_change_default: (i64, Vec<u8>),
     plan: ValidatedTargetOperationPlan,
     projection: ExactTargetProjection,
     shapes: CandidateShapeSet,
@@ -273,6 +274,15 @@ pub struct CandidateLinkedBundle {
 }
 
 impl CandidateLinkedBundle {
+    /// Construction default; the sponsor's signature, not the covenant, fixes the destination.
+    #[must_use]
+    pub fn sponsor_change_default(&self) -> (i64, &[u8]) {
+        (
+            self.sponsor_change_default.0,
+            &self.sponsor_change_default.1,
+        )
+    }
+
     /// The validated operation plan the linked programs serve.
     #[must_use]
     pub const fn plan(&self) -> &ValidatedTargetOperationPlan {
@@ -486,6 +496,14 @@ pub fn link_candidate(
     let obligations = obligations(deployment.self_commitment());
 
     Ok(CandidateLinkedBundle {
+        sponsor_change_default: (
+            deployment.resolved().sponsor_change_version(),
+            deployment
+                .resolved()
+                .sponsor_change_program()
+                .bytes()
+                .to_vec(),
+        ),
         plan: bundle.plan().clone(),
         projection: bundle.target_projection().clone(),
         shapes: bundle.shapes().clone(),

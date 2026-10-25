@@ -1387,6 +1387,11 @@ fn composed_metadata_equals_the_exact_component_record_unions() {
             }
             let expected = component_metadata(&patterns, &coordinator_ids);
             let coordinator = &patterns[&LiveTransferPatternId::LiveCoordinatorProgramV1];
+            assert!(
+                !coordinator
+                    .disclosure()
+                    .contains(&LiveDisclosure::SponsorChangeRole)
+            );
 
             assert_eq!(
                 coordinator.sources(),

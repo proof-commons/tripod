@@ -181,9 +181,8 @@ impl SponsorCapability for StagedEnvelope {
 
     /// No change destination is named here.
     ///
-    /// Construction writes the sponsor's change to the deployment's own
-    /// sponsor-change program and refuses any other, so naming one would
-    /// either agree redundantly or disagree and be refused.
+    /// Absence selects the construction default. An explicit ordinary destination
+    /// is also permitted and is fixed by the sponsor's all-inputs-all-outputs signature.
     fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
         None
     }

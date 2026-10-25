@@ -117,6 +117,8 @@ Examples:
 
 Every mandatory reference has one compatible definition.
 
+Compact and live sponsor-change destinations are construction defaults carried separately from linked symbol definitions; they create neither a leaf relocation nor a linked equality obligation (`rule:tapscript:patterns`).
+
 ## Reference graph · `rule:linker:references`
 
 References are classified as:

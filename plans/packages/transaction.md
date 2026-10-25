@@ -353,7 +353,4 @@ belongs to the independent host oracle this package's output is compared
 against, and a builder that called that oracle would be counting one opinion
 twice.
 
-Sponsor change goes to a program the deployment fixes rather than to a
-destination a sponsor picks, because the emitted coordinator compares that
-output's program against a deployment constant. A destination that differs is
-refused rather than honoured.
+Sponsor change uses the construction default when no destination is supplied; an explicit ordinary destination is honored and fixed by the sponsor's all-inputs-all-outputs signature, while the leaf retains asset and exact-role checks without destination equality.
