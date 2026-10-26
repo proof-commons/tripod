@@ -73,7 +73,7 @@
 //!
 //! # The relay verdict is the target's, with its residual named
 //!
-//! The announcement form review takes the composed record's declared
+//! The sponsorless announcement form review takes the composed record's declared
 //! initial-item widths and the reviewed target's policy bound. Both
 //! schedules have consensus admission and no fee output. The historical
 //! eighty-six-byte metadata item exceeds the eighty-byte relay bound, so
@@ -84,7 +84,8 @@
 //! Its outstanding obligation names the absence of a measurement of
 //! initial argument widths over the linked instructions. Both schedules
 //! use the standard announcement transaction version; the verdict records
-//! the different relay routes.
+//! the different relay routes. The sponsored form's relay verdict remains
+//! the C2 observation obligation; this review does not assign it a verdict.
 //!
 //! # The partition refuses rather than lists
 //!
@@ -297,7 +298,9 @@ impl MaturityOutputLayout {
     }
 }
 
-/// The reviewed target's own verdict on the announcement form.
+/// The reviewed target's own verdict on the sponsorless announcement form.
+///
+/// The sponsored form's relay verdict remains the C2 observation obligation.
 ///
 /// A reading of the reviewed form census rather than four fields copied
 /// out of it. Copying would have given the figures a second definition,
@@ -313,7 +316,7 @@ impl MaturityRelayVerdict {
         Self { review }
     }
 
-    /// The announcement form's verdict, read from a reviewed census.
+    /// The sponsorless announcement form's verdict, read from a reviewed census.
     ///
     /// # Errors
     ///
@@ -337,13 +340,13 @@ impl MaturityRelayVerdict {
         })
     }
 
-    /// What consensus does with the announcement form.
+    /// What consensus does with the sponsorless announcement form.
     #[must_use]
     pub const fn consensus(&self) -> FormAdmission {
         self.review.consensus()
     }
 
-    /// What the default relay policy does with it.
+    /// What the default relay policy does with the sponsorless form.
     #[must_use]
     pub const fn relay(&self) -> FormAdmission {
         self.review.relay()
@@ -355,7 +358,7 @@ impl MaturityRelayVerdict {
         self.review.relay_conditions()
     }
 
-    /// Whether the form itself fixes a fee output.
+    /// Whether the sponsorless form itself fixes a fee output.
     #[must_use]
     pub const fn fee_output_present(&self) -> bool {
         self.review.fee_output_present()
@@ -701,7 +704,9 @@ impl CandidateMaturityAnnouncementAbi {
         self.version
     }
 
-    /// The reviewed target's verdict on the announcement form.
+    /// The reviewed target's verdict on the sponsorless announcement form.
+    ///
+    /// The sponsored form's relay verdict remains the C2 observation obligation.
     #[must_use]
     pub const fn relay_verdict(&self) -> &MaturityRelayVerdict {
         &self.relay

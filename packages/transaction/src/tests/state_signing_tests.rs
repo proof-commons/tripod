@@ -1056,3 +1056,323 @@ fn the_started_state_reads_its_request_and_its_finalized_candidate() {
         )
     );
 }
+
+fn assert_sponsored_protocol(construction: &crate::MaturityConstruction) {
+    let sponsorless = demonstration();
+    assert_eq!(
+        construction.successor_metadata(),
+        sponsorless.construction().successor_metadata()
+    );
+    assert_eq!(
+        construction.successor_constructor(),
+        sponsorless.construction().successor_constructor()
+    );
+    assert_eq!(
+        construction.transaction().inputs()[0],
+        sponsorless.protected().inputs()[0]
+    );
+    assert_eq!(
+        construction.transaction().outputs()[0],
+        sponsorless.protected().outputs()[0]
+    );
+}
+
+fn sponsored_ready_control(change: bool) {
+    use super::state_support::{construct_with_sponsor, maturity_sponsor, sponsor_answer};
+    let (sponsor, public) = maturity_sponsor(change);
+    let construction = construct_with_sponsor(change, &sponsor, &public).unwrap();
+    assert_sponsored_protocol(&construction);
+    assert!(sponsor.requests.borrow().is_empty());
+    let finalized = finalize_maturity_announcement(construction);
+    assert_eq!(finalized.outputs().successor_position(), 0);
+    assert_eq!(
+        finalized.outputs().sponsor_change_position(),
+        change.then_some(1)
+    );
+    assert_eq!(
+        finalized.outputs().fee_position(),
+        Some(if change { 2 } else { 1 })
+    );
+    assert_eq!(finalized.protected().inputs().len(), 3);
+    assert_eq!(
+        finalized.protected().outputs().len(),
+        if change { 3 } else { 2 }
+    );
+    let fee = finalized.protected().outputs().last().unwrap();
+    assert!(fee.is_fee());
+    assert_eq!(
+        fee.value(),
+        crate::ValueField::Explicit(if change { 90 } else { 130 })
+    );
+    assert_eq!(
+        fee.asset(),
+        crate::AssetField::Explicit(crate::AssetId::from_internal(
+            super::live_support::LIVE_RESERVE_ASSET
+        ))
+    );
+    if change {
+        let output = &finalized.protected().outputs()[1];
+        assert_eq!(output.value(), crate::ValueField::Explicit(40));
+        assert_eq!(output.asset(), fee.asset());
+        assert!(!output.is_fee());
+    }
+    let expected_spent: Vec<_> = std::iter::once(finalized.spent_output().census_entry())
+        .chain(public.outputs().values().map(|spent| {
+            crate::SpentOutputCensusEntry::new(
+                spent.asset(),
+                spent.value(),
+                spent.program().to_vec(),
+            )
+        }))
+        .collect();
+    assert_eq!(finalized.spent_outputs(), expected_spent);
+    let state = started(&finalized);
+    assert_eq!(state.request().census().spent_outputs(), expected_spent);
+    assert_eq!(state.protected_bytes(), finalized.protected_bytes());
+    assert_eq!(state.request().input_index(), 0);
+    let authorized = authorized_over(&finalized);
+    assert_eq!(authorized.protected_bytes(), finalized.protected_bytes());
+    let ready = authorized
+        .bind_for_submission_with_sponsor(&reviewed_target(), Some(&sponsor))
+        .unwrap();
+    assert_eq!(ready.authorization(), operator_signature(&finalized));
+    assert_eq!(ready.protected_bytes(), finalized.protected_bytes());
+    assert_eq!(
+        ready.candidate().encode_without_witness(),
+        finalized.protected_bytes()
+    );
+    assert_eq!(finalized.check_offered(ready.candidate()), Ok(()));
+    assert_eq!(
+        TargetTransaction::decode(ready.bytes()).as_ref(),
+        Ok(ready.candidate())
+    );
+    for (offset, spent) in public.outputs().values().enumerate() {
+        let position = u16::try_from(offset + 1).unwrap();
+        assert_eq!(
+            ready.candidate().inputs()[offset + 1].outpoint(),
+            spent.outpoint()
+        );
+        assert_eq!(
+            ready.candidate().witnesses()[offset + 1].stack(),
+            sponsor_answer(position)
+        );
+    }
+    assert_ne!(
+        ready.candidate().witnesses()[1],
+        ready.candidate().witnesses()[2]
+    );
+    let requests = sponsor.requests.borrow();
+    assert_eq!(requests.len(), 2);
+    for (offset, request) in requests.iter().enumerate() {
+        assert_eq!(usize::from(request.input()), offset + 1);
+        assert_eq!(request.transaction(), finalized.protected_bytes());
+        assert_eq!(request.protected(), finalized.protected().outputs());
+        assert_eq!(
+            request.profile(),
+            crate::SighashProfile::AllInputsAllOutputs
+        );
+        assert_eq!(request.role(), crate::SignerRole::SponsorSuffixMember);
+    }
+}
+
+#[test]
+fn sponsored_without_change_reaches_submit_ready() {
+    sponsored_ready_control(false);
+}
+
+#[test]
+fn sponsored_with_change_reaches_submit_ready() {
+    sponsored_ready_control(true);
+}
+
+#[test]
+fn each_sponsor_member_requires_its_own_response_and_exact_echo() {
+    use super::state_support::{SponsorAnswerFault, construct_with_sponsor, maturity_sponsor};
+    let (mut sponsor, public) = maturity_sponsor(true);
+    let finalized =
+        finalize_maturity_announcement(construct_with_sponsor(true, &sponsor, &public).unwrap());
+    assert!(
+        authorized_over(&finalized)
+            .bind_for_submission_with_sponsor(&reviewed_target(), Some(&sponsor))
+            .is_ok()
+    );
+    assert_eq!(
+        authorized_over(&finalized)
+            .bind_for_submission(&reviewed_target())
+            .unwrap_err(),
+        TransactionRefusal::SponsorRequestedWithoutCapability
+    );
+    for position in [1_u16, 2] {
+        let outpoint = finalized.protected().inputs()[usize::from(position)].outpoint();
+        for (fault, refusal) in [
+            (
+                SponsorAnswerFault::Missing(position),
+                TransactionRefusal::SponsorSignatureMissing(outpoint),
+            ),
+            (
+                SponsorAnswerFault::WrongBytes(position),
+                TransactionRefusal::SponsorSignatureBindingMismatch(outpoint),
+            ),
+            (
+                SponsorAnswerFault::Empty(position),
+                TransactionRefusal::MaturitySponsorAuthorizationEmpty(outpoint),
+            ),
+        ] {
+            sponsor.fault = fault;
+            assert_eq!(
+                authorized_over(&finalized)
+                    .bind_for_submission_with_sponsor(&reviewed_target(), Some(&sponsor))
+                    .unwrap_err(),
+                refusal
+            );
+        }
+    }
+    assert_eq!(
+        authorized_over(&demonstration())
+            .bind_for_submission_with_sponsor(&reviewed_target(), Some(&sponsor))
+            .unwrap_err(),
+        TransactionRefusal::SponsorCapabilityWithoutRequest
+    );
+}
+
+#[test]
+fn sponsor_position_never_aliases_an_input_after_overflow() {
+    use crate::state_signing::sponsor_position;
+    assert_eq!(sponsor_position(usize::from(u16::MAX)), Ok(u16::MAX));
+    assert_eq!(
+        sponsor_position(usize::from(u16::MAX) + 1),
+        Err(TransactionRefusal::MaturitySponsorInputPositionOutOfRange)
+    );
+}
+
+#[test]
+fn sponsored_output_witness_mutation_refuses_at_both_boundaries() {
+    let finalized =
+        finalize_maturity_announcement(super::state_support::sponsored_construction(true));
+    let authorized = authorized_over(&finalized);
+    let protected = finalized.protected();
+    let metadata = finalized.construction().successor_metadata();
+    assert_eq!(finalized.check_offered(protected), Ok(()));
+    assert_eq!(authorized.check_offered(protected, metadata), Ok(()));
+    for position in [
+        finalized.outputs().sponsor_change_position().unwrap(),
+        finalized.outputs().fee_position().unwrap(),
+    ] {
+        let mut witnesses = protected.output_witnesses().to_vec();
+        witnesses[usize::from(position)] = OutputWitness::new(vec![1], Vec::new());
+        let subject = TargetTransaction::with_output_witnesses(
+            protected.version(),
+            protected.inputs().to_vec(),
+            protected.outputs().to_vec(),
+            protected.lock_time(),
+            protected.witnesses().to_vec(),
+            witnesses,
+        )
+        .unwrap();
+        assert_eq!(
+            finalized.check_offered(&subject),
+            Err(TransactionRefusal::MaturityOutputWitnessChangedAfterFinalization)
+        );
+        assert_eq!(
+            authorized.check_offered(&subject, metadata),
+            Err(TransactionRefusal::MaturityOutputWitnessChangedAfterFinalization)
+        );
+    }
+}
+
+#[test]
+fn sponsored_protected_regions_remain_frozen() {
+    use super::state_support::sponsored_construction;
+    let finalized = finalize_maturity_announcement(sponsored_construction(true));
+    let state = started(&finalized);
+    let input = &finalized.protected().inputs()[1];
+    let output = &finalized.protected().outputs()[1];
+    let named = [
+        region_of(state.add_input(input)),
+        region_of(state.restate_spent_output(&finalized.spent_outputs()[1])),
+        region_of(state.add_output(output)),
+        region_of(state.set_successor_metadata(finalized.construction().successor_metadata())),
+        region_of(state.set_successor_nonce(StateRepresentationNonce::new(1))),
+        region_of(state.set_successor_program(output.program())),
+        region_of(state.set_output_witness(&OutputWitness::empty())),
+        region_of(state.set_version(3)),
+        region_of(state.set_lock_time(1)),
+        region_of(state.add_sponsor_input(input)),
+        region_of(state.set_fee_role(output)),
+        region_of(state.substitute_executing_leaf(&finalized.executing_leaf(&reviewed_target()))),
+    ];
+    assert_eq!(named, MaturityProtectedRegion::ALL);
+    assert_eq!(finalized.check_offered(finalized.protected()), Ok(()));
+}
+
+#[test]
+fn sponsored_input_extension_after_signing_is_named() {
+    let finalized =
+        finalize_maturity_announcement(super::state_support::sponsored_construction(true));
+    let authorized = authorized_over(&finalized);
+    let metadata = finalized.construction().successor_metadata();
+    assert_eq!(
+        authorized.check_offered(finalized.protected(), metadata),
+        Ok(())
+    );
+    let mut inputs = finalized.protected().inputs().to_vec();
+    inputs.push(TargetInput::new(super::outpoint(0xee, 3), u32::MAX));
+    let moved = TargetTransaction::new(
+        2,
+        inputs,
+        finalized.protected().outputs().to_vec(),
+        0,
+        vec![InputWitness::default(); 4],
+    )
+    .unwrap();
+    assert_eq!(
+        authorized.check_offered(&moved, metadata),
+        Err(TransactionRefusal::MaturitySponsorInputAddedAfterSigning {
+            finalized: 3,
+            offered: 4
+        })
+    );
+    assert_eq!(
+        finalized.check_offered(&moved),
+        Err(TransactionRefusal::InputExtendedAfterSigning {
+            finalized: 3,
+            offered: 4
+        })
+    );
+}
+
+#[test]
+fn sponsored_fee_mutation_after_signing_is_named() {
+    let finalized =
+        finalize_maturity_announcement(super::state_support::sponsored_construction(true));
+    let authorized = authorized_over(&finalized);
+    let metadata = finalized.construction().successor_metadata();
+    assert_eq!(
+        authorized.check_offered(finalized.protected(), metadata),
+        Ok(())
+    );
+    let mut outputs = finalized.protected().outputs().to_vec();
+    let fee = &outputs[2];
+    outputs[2] = TargetOutput::new(
+        fee.asset(),
+        crate::ValueField::Explicit(91),
+        fee.nonce(),
+        fee.program().to_vec(),
+    );
+    let moved = TargetTransaction::new(
+        2,
+        finalized.protected().inputs().to_vec(),
+        outputs,
+        0,
+        vec![InputWitness::default(); 3],
+    )
+    .unwrap();
+    assert_eq!(
+        authorized.check_offered(&moved, metadata),
+        Err(TransactionRefusal::MaturityFeeRoleChangedAfterSigning { position: 2 })
+    );
+    assert_eq!(
+        finalized.check_offered(&moved),
+        Err(TransactionRefusal::OutputMutatedAfterSigning { position: 2 })
+    );
+}

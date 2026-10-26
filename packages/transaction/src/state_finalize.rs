@@ -29,8 +29,8 @@
 //! - candidate structure: the protected transaction, handed to the
 //!   freeze whole rather than rebuilt from parts;
 //! - protected bytes: this value's own, computed once at finalization;
-//! - spent-output census: the one spent-output record's three fields,
-//!   turned into the census entry §13.1 binds;
+//! - spent-output census: the STATE record and every retained sponsor
+//!   output, each contributing the three fields §13.1 binds;
 //! - input index: that record's position;
 //! - leaf hash, leaf version and control block: the predecessor
 //!   constructor's control recipe for the announcement role, which is
@@ -75,12 +75,12 @@
 //! changing size.
 //!
 //! The comparison is over the witnessless encoding rather than the full
-//! one. For this candidate the two are the same byte string — its one
-//! input witness is null and its one output witness empty, so the
+//! one. For this explicit candidate the two are the same byte string — every
+//! input witness is null and every output witness empty, so the
 //! encoder writes no witness section at all, which is why the finalized
 //! bytes are simultaneously what a signer echoes and what the strict
 //! decoder round-trips. They stop being the same string as soon as the
-//! next state inserts the operator witness, and a check that refused
+//! next state inserts the authorization witnesses, and a check that refused
 //! the candidate it had just authorized would be refusing the one thing
 //! §12.7 admits moving.
 
@@ -99,16 +99,14 @@ use crate::taproot::Digest32;
 
 /// Where the predecessor STATE output is spent.
 ///
-/// The ABI puts the coordinator at input zero, and the sponsorless form
-/// has exactly one input, so there is no other position for it to
-/// occupy. Named rather than written twice, because the spent-output
+/// The ABI puts the coordinator at input zero. Named rather than written
+/// twice, because the spent-output
 /// census and the signing request have to agree about it.
 const STATE_INPUT_POSITION: u16 = 0;
 
 /// Where the successor STATE output is created.
 ///
-/// Output zero, for the input position's reason: the ABI pins it and
-/// the form has one output.
+/// Output zero, fixed by the ABI independently of sponsorship.
 const SUCCESSOR_OUTPUT_POSITION: u16 = 0;
 
 /// One region §12.7 protects, as this finalization settles it.
@@ -119,7 +117,7 @@ const SUCCESSOR_OUTPUT_POSITION: u16 = 0;
 ///
 /// Eleven members for twelve regions. The twelfth is the executing leaf
 /// data, and nothing in the transaction bytes settles it: the candidate
-/// carries one null input witness, and the leaf a spend executes, its
+/// carries null input witnesses, and the leaf a spend executes, its
 /// version, its hash and its control block are facts about the
 /// predecessor's committed tree rather than fields of this transaction.
 /// They are fixed by the signing request, which derives them from that
@@ -150,10 +148,10 @@ pub enum MaturityFinalizedFact {
     Version,
     /// The lock time is fixed.
     LockTime,
-    /// The sponsor region is fixed as absent.
-    SponsorRegionAbsent,
-    /// The fee role is fixed as absent.
-    FeeRoleAbsent,
+    /// The sponsor region is fixed, including its absence when sponsorless.
+    SponsorRegion,
+    /// The fee role is fixed, including its absence when sponsorless.
+    FeeRole,
 }
 
 impl MaturityFinalizedFact {
@@ -168,8 +166,8 @@ impl MaturityFinalizedFact {
         Self::OutputWitnesses,
         Self::Version,
         Self::LockTime,
-        Self::SponsorRegionAbsent,
-        Self::FeeRoleAbsent,
+        Self::SponsorRegion,
+        Self::FeeRole,
     ];
 }
 
@@ -202,12 +200,7 @@ impl MaturityFinalizedOutputCensus {
 
     /// Where the sponsor-change role sits, when the form has one.
     ///
-    /// Always absent for the form this module finalizes, and absent
-    /// because the form has no sponsor region at all rather than
-    /// because a caller declined one: the reduced announcement leaf
-    /// carries no sponsor check, and the realization's sponsor
-    /// relations hold no region of the transaction until a later refit
-    /// gives them one.
+    /// Absent when change was not requested or the explicit residual was zero.
     #[must_use]
     pub const fn sponsor_change_position(&self) -> Option<u16> {
         self.sponsor_change_position
@@ -215,10 +208,7 @@ impl MaturityFinalizedOutputCensus {
 
     /// Where the target fee role sits, when the form has one.
     ///
-    /// Always absent here, and consensus-valid without one: the spent
-    /// output and the successor carry the same asset and the same
-    /// amount, so the per-asset balance has no difference for a fee to
-    /// make up.
+    /// Present after the successor and optional change in a sponsored form.
     #[must_use]
     pub const fn fee_position(&self) -> Option<u16> {
         self.fee_position
@@ -400,7 +390,7 @@ impl FinalizedMaturityAnnouncement {
     ///
     /// Taken once, here, and compared rather than recomputed wherever
     /// it is read back. For this candidate it is also the full
-    /// encoding: the one input witness is null and the one output
+    /// encoding: every input witness is null and every output
     /// witness empty, so the encoder writes no witness section, which
     /// is why these same bytes are what the strict decoder round-trips.
     #[must_use]
@@ -418,6 +408,16 @@ impl FinalizedMaturityAnnouncement {
     #[must_use]
     pub const fn spent_output(&self) -> &MaturitySpentOutputRecord {
         &self.spent
+    }
+
+    /// Every spent output, STATE first and sponsors in suffix order.
+    #[must_use]
+    pub fn spent_outputs(&self) -> Vec<SpentOutputCensusEntry> {
+        std::iter::once(self.spent.census_entry())
+            .chain(self.construction.sponsor_spent().iter().map(|spent| {
+                SpentOutputCensusEntry::new(spent.asset(), spent.value(), spent.program().to_vec())
+            }))
+            .collect()
     }
 
     /// Which of §12.7's regions this form settled.
@@ -528,7 +528,7 @@ impl FinalizedMaturityAnnouncement {
             target,
             binding,
             self.protected().clone(),
-            vec![self.spent.census_entry()],
+            self.spent_outputs(),
             LiveDeployment::new(genesis),
             OperatorSigningInput::new(
                 u32::from(self.spent.position()),
@@ -555,6 +555,8 @@ impl FinalizedMaturityAnnouncement {
     ///
     /// # Errors
     ///
+    /// [`TransactionRefusal::MaturityOutputWitnessChangedAfterFinalization`]
+    /// for an offering whose output witnesses differ from the settled region;
     /// [`TransactionRefusal::InputExtendedAfterSigning`] for an
     /// offering whose input census differs in size or in any outpoint;
     /// [`TransactionRefusal::OutputOmittedAfterSigning`] for an
@@ -573,13 +575,8 @@ impl FinalizedMaturityAnnouncement {
     /// comparisons above do not reach, which in this form is the
     /// input's sequence field.
     ///
-    /// The omission arm is unreachable for the form this module
-    /// finalizes and is kept anyway: the candidate has one output and
-    /// the target admits no transaction with none, so an offering
-    /// missing that output cannot be built at all. The check states a
-    /// law about the census rather than about its size, and an arm
-    /// dropped because today's census has one member would have to be
-    /// rediscovered by whoever gives the form a second.
+    /// Output omission is reachable for sponsored forms; the sponsorless
+    /// form's sole output cannot be omitted from a valid transaction encoding.
     pub fn check_offered(&self, offered: &TargetTransaction) -> Result<(), TransactionRefusal> {
         let protected = self.protected();
         let finalized_inputs = protected.inputs();
@@ -632,6 +629,9 @@ impl FinalizedMaturityAnnouncement {
             );
         }
 
+        if offered.output_witnesses() != protected.output_witnesses() {
+            return Err(TransactionRefusal::MaturityOutputWitnessChangedAfterFinalization);
+        }
         let encoding = offered.encode_without_witness();
         if encoding == self.protected_bytes {
             Ok(())
@@ -674,12 +674,12 @@ impl FinalizedMaturityAnnouncement {
 pub fn finalize_maturity_announcement(
     construction: MaturityConstruction,
 ) -> FinalizedMaturityAnnouncement {
-    let protected_bytes = construction.transaction().encode();
+    let protected_bytes = construction.transaction().encode_without_witness();
     let outputs = MaturityFinalizedOutputCensus {
         outputs: construction.transaction().outputs().to_vec(),
         successor_position: SUCCESSOR_OUTPUT_POSITION,
-        sponsor_change_position: None,
-        fee_position: None,
+        sponsor_change_position: construction.sponsor_change_position(),
+        fee_position: construction.fee_position(),
     };
 
     let view = construction.validated_view().view();

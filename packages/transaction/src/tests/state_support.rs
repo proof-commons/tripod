@@ -613,3 +613,116 @@ impl ScriptPathSignatureVerifier for FixtureScriptPathVerifier {
         FIXTURE_VERIFIER
     }
 }
+
+/// Public sponsor material with separate deterministic answers for each input.
+pub(super) struct MaturitySponsor {
+    pub inputs: Vec<crate::bytes::Outpoint>,
+    pub fee: u64,
+    pub change: Option<ValueField>,
+    pub destination: Option<(u8, Vec<u8>)>,
+    pub fault: SponsorAnswerFault,
+    pub requests: std::cell::RefCell<Vec<crate::sponsor::SponsorSigningRequest>>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum SponsorAnswerFault {
+    None,
+    Missing(u16),
+    WrongBytes(u16),
+    Empty(u16),
+}
+
+impl crate::sponsor::SponsorCapability for MaturitySponsor {
+    fn offer(&self) -> crate::sponsor::SponsorOffer {
+        crate::sponsor::SponsorOffer::new(self.inputs.iter().copied(), self.fee, self.change)
+            .expect("public sponsor outpoints are distinct")
+    }
+
+    fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
+        self.destination.clone()
+    }
+
+    fn sign(
+        &self,
+        request: &crate::sponsor::SponsorSigningRequest,
+    ) -> Option<crate::sponsor::SponsorSignature> {
+        self.requests.borrow_mut().push(request.clone());
+        let mut bytes = request.transaction().to_vec();
+        let mut stack = sponsor_answer(request.input());
+        match self.fault {
+            SponsorAnswerFault::Missing(position) if position == request.input() => return None,
+            SponsorAnswerFault::WrongBytes(position) if position == request.input() => {
+                bytes.push(0);
+            }
+            SponsorAnswerFault::Empty(position) if position == request.input() => stack.clear(),
+            _ => {}
+        }
+        Some(crate::sponsor::SponsorSignature::new(bytes, stack))
+    }
+}
+
+pub(super) fn sponsor_answer(position: u16) -> Vec<Vec<u8>> {
+    vec![vec![0x30, 0x44, 0x01], position.to_be_bytes().to_vec()]
+}
+
+pub(super) fn maturity_sponsor(
+    change: bool,
+) -> (MaturitySponsor, crate::view::PublicConstructionView) {
+    use super::live_support::{LIVE_SPONSOR_CHANGE_PROGRAM, sponsor_view};
+    let first = outpoint(0xdc, 1);
+    let second = outpoint(0xdd, 2);
+    (
+        MaturitySponsor {
+            inputs: vec![second, first],
+            fee: if change { 90 } else { 130 },
+            change: change.then_some(ValueField::Explicit(40)),
+            destination: Some((0, LIVE_SPONSOR_CHANGE_PROGRAM.to_vec())),
+            fault: SponsorAnswerFault::None,
+            requests: std::cell::RefCell::new(Vec::new()),
+        },
+        crate::view::PublicConstructionView::new([
+            sponsor_view(first, 75),
+            sponsor_view(second, 55),
+        ])
+        .expect("two distinct public sponsor outputs"),
+    )
+}
+
+pub(super) fn construct_with_sponsor(
+    change: bool,
+    sponsor: &MaturitySponsor,
+    public: &crate::view::PublicConstructionView,
+) -> Result<crate::state_construct::MaturityConstruction, crate::TransactionRefusal> {
+    let target = reviewed_target();
+    let validated = validated_view();
+    let abi = crate::state_abi::derive_maturity_announcement_abi(&target, &validated)
+        .expect("the STATE ABI derives");
+    let request = crate::state_request::MaturityAnnouncementRequest::new(
+        Cycle::new(8),
+        crate::RequestedForm::Sponsored,
+        if change {
+            crate::SponsorChangeRequest::Requested
+        } else {
+            crate::SponsorChangeRequest::NotRequested
+        },
+    )
+    .expect("both sponsored requests are admitted");
+    let context = crate::state_construct::MaturitySponsorContext {
+        reserve_asset: AssetId::from_internal(super::live_support::LIVE_RESERVE_ASSET),
+        view: public,
+        capability: sponsor,
+    };
+    crate::state_construct::construct_maturity_announcement_with_sponsor(
+        &target,
+        &abi,
+        &validated,
+        &request,
+        &FixtureStateCurve,
+        Some(&context),
+    )
+}
+
+pub(super) fn sponsored_construction(change: bool) -> crate::state_construct::MaturityConstruction {
+    let (sponsor, public) = maturity_sponsor(change);
+    construct_with_sponsor(change, &sponsor, &public).expect("the sponsored form constructs")
+}

@@ -173,7 +173,11 @@ fn every_transaction_refusal_is_censused(refusal: &Refusal) {
         | Refusal::MaturityViewCommitmentRefused { .. }
         | Refusal::MaturityViewProgramNotReconstructed { .. }
         | Refusal::MissingReviewedTransactionForm { .. }
-        | Refusal::SponsoredMaturityFormHasNoCarrier
+        | Refusal::MaturitySponsorValueRequiresProofFinalization
+        | Refusal::MaturitySponsorReserveAliasesStateAsset
+        | Refusal::MaturityOutputWitnessChangedAfterFinalization
+        | Refusal::MaturitySponsorInputPositionOutOfRange
+        | Refusal::MaturitySponsorAuthorizationEmpty(..)
         | Refusal::MaturitySuccessorTransitionRefused { .. }
         | Refusal::MaturitySuccessorSearchRefused { .. }
         | Refusal::MaturitySuccessorContinuityRefused { .. }

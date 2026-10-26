@@ -472,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn both_sponsored_cases_are_refused_where_wave_eleven_pins_them() {
+    fn both_sponsored_change_choices_without_a_context_refuse_missing_capability() {
         let corpus = maturity_variable_run_of_record().expect("variable archive admitted");
         let _historical = corpus
             .historical_standing()
@@ -507,7 +507,7 @@ mod tests {
                     &request,
                     &OracleStateCurve
                 ),
-                Err(TransactionRefusal::SponsoredMaturityFormHasNoCarrier)
+                Err(TransactionRefusal::SponsorRequestedWithoutCapability)
             );
         }
     }

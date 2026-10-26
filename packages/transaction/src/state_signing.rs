@@ -18,10 +18,9 @@
 //! Each arrow is a type transition and not a flag, so a candidate cannot
 //! be in two states and no field can disagree with one. The chain is
 //! STATE-specific and shaped on the live generation's rather than an
-//! extension of it: the live types carry owner plurality and
-//! confidential-proof operations that have no STATE subject here — one
-//! signer, one input, no proofs, no owner census — and an extension
-//! would have had to represent the absence of all of them.
+//! extension of it: the operator remains a single authorization, while
+//! sponsor input authorization stays behind the sponsor capability. The
+//! explicit construction route carries no confidential proofs.
 //!
 //! # Every state borrows one finalized candidate
 //!
@@ -140,7 +139,7 @@
 //! [`SubmitReadyMaturityAnnouncement`] carries a single-variant status
 //! that is read and never written, no digest and no field one could be
 //! put in, and no method that submits, encodes for a wire or produces a
-//! record. Its bytes are the finalized bytes with the one witness
+//! record. Its bytes are the finalized bytes with the input witnesses
 //! inserted, which is the only thing §12.7 admits moving after
 //! finalization, and its protected bytes are read off the finalized
 //! value rather than recomputed. Nothing here is final: the candidate
@@ -167,6 +166,7 @@ use crate::operator_signing::{
     ScriptPathSignatureVerifier, authorize_operator_under_right,
 };
 use crate::script_path_signing::SpentOutputCensusEntry;
+use crate::sponsor::{SighashProfile, SignerRole, SponsorCapability, SponsorSigningRequest};
 use crate::state_abi::MaturityWitnessRole;
 use crate::state_finalize::{FinalizedMaturityAnnouncement, MaturityExecutingLeaf};
 
@@ -358,7 +358,7 @@ impl<'finalized> OperatorSigningStarted<'finalized> {
     ///
     /// Panics only if the frozen request has no predecessor at the input
     /// it selected, which this chain cannot arrange: the announcement
-    /// form has exactly one input, the request is frozen over input
+    /// form always carries its STATE input, the request is frozen over input
     /// zero, and a request that froze at all carries that input.
     #[must_use]
     pub fn construction_right_scope(&self) -> RightScope {
@@ -519,10 +519,7 @@ impl<'finalized> OperatorSigningStarted<'finalized> {
     /// # Errors
     ///
     /// Always [`TransactionRefusal::MaturityMutationAfterSigningStarted`]
-    /// naming the sponsor region. The finalized form fixed it as absent,
-    /// and absent is a settled state rather than a vacancy: a region
-    /// opened after the asking started is the sponsor-input fault §13.4
-    /// names, seen one state earlier.
+    /// naming the sponsor region, whose membership is already fixed.
     pub const fn add_sponsor_input(
         &self,
         offered: &TargetInput,
@@ -538,10 +535,7 @@ impl<'finalized> OperatorSigningStarted<'finalized> {
     /// # Errors
     ///
     /// Always [`TransactionRefusal::MaturityMutationAfterSigningStarted`]
-    /// naming the fee region, fixed as absent for the sponsor region's
-    /// reason: the spent output and the successor carry the same asset
-    /// and amount, so the balance has no difference for a fee to make
-    /// up.
+    /// naming the fee region, whose position and fields are already fixed.
     pub const fn set_fee_role(&self, offered: &TargetOutput) -> Result<Self, TransactionRefusal> {
         let _ = (self, offered);
         Err(TransactionRefusal::MaturityMutationAfterSigningStarted {
@@ -719,6 +713,8 @@ impl<'finalized> OperatorAuthorizedMaturityAnnouncement<'finalized> {
     /// symptom; a sponsor input and a fee role are each caught before
     /// the finalized form's own comparison, which would otherwise report
     /// them as an extended input census and a mutated output.
+    /// The STATE witness and each sponsor input's witness may be populated;
+    /// the settled output witnesses remain protected by the finalized comparison.
     ///
     /// # Errors
     ///
@@ -763,6 +759,13 @@ impl<'finalized> OperatorAuthorizedMaturityAnnouncement<'finalized> {
             });
         }
 
+        if let Some(position) = census.fee_position()
+            && offered.outputs().get(usize::from(position))
+                != census.outputs().get(usize::from(position))
+        {
+            return Err(TransactionRefusal::MaturityFeeRoleChangedAfterSigning { position });
+        }
+
         self.finalized.check_offered(offered)
     }
 
@@ -773,17 +776,15 @@ impl<'finalized> OperatorAuthorizedMaturityAnnouncement<'finalized> {
     /// its order is the record's deepest-first schedule rather than a
     /// second list that could come to disagree with it, and the
     /// executing leaf's script and control block follow the seven. The
-    /// result is the finalized transaction with that one witness at the
-    /// input the finalized form spends, which is the only change §12.7
-    /// admits after finalization.
+    /// result carries the STATE witness and each sponsor input's witness
+    /// at its own position, the only regions §12.7 admits populating
+    /// after finalization.
     ///
     /// # Errors
     ///
     /// Whatever [`TargetTransaction::new`] refuses about the assembled
-    /// roles. For this form that is unreachable — the announcement has
-    /// one input, one output and therefore one witness — and the arm is
-    /// kept because the law it states is about the census rather than
-    /// about its present size.
+    /// roles, and a missing sponsor capability for a sponsored form. Use
+    /// [`Self::bind_for_submission_with_sponsor`] to complete that form.
     ///
     /// # Panics
     ///
@@ -794,6 +795,26 @@ impl<'finalized> OperatorAuthorizedMaturityAnnouncement<'finalized> {
     pub fn bind_for_submission(
         self,
         target: &ReviewedElementsTapscriptDefinition,
+    ) -> Result<SubmitReadyMaturityAnnouncement<'finalized>, TransactionRefusal> {
+        self.bind_for_submission_with_sponsor(target, None)
+    }
+
+    /// Collect every sponsor input's answer before producing submit-ready bytes.
+    ///
+    /// One capability can route several inputs; each request still names its own
+    /// position and binds the same finalized transaction and protected outputs.
+    ///
+    /// # Errors
+    /// Refuses absent capabilities, missing answers, different byte echoes,
+    /// empty witness stacks, and invalid witness or transaction censuses.
+    ///
+    /// # Panics
+    /// Panics only if the accepted operator witness has no signature, which
+    /// operator authorization cannot arrange.
+    pub fn bind_for_submission_with_sponsor(
+        self,
+        target: &ReviewedElementsTapscriptDefinition,
+        sponsor: Option<&dyn SponsorCapability>,
     ) -> Result<SubmitReadyMaturityAnnouncement<'finalized>, TransactionRefusal> {
         let finalized = self.finalized;
         let leaf = finalized.executing_leaf(target);
@@ -819,12 +840,48 @@ impl<'finalized> OperatorAuthorizedMaturityAnnouncement<'finalized> {
         let witness = InputWitness::new(stack);
 
         let protected = finalized.protected();
+        let mut witnesses = vec![witness.clone()];
+        if finalized.construction().sponsor_spent().is_empty() && sponsor.is_some() {
+            return Err(TransactionRefusal::SponsorCapabilityWithoutRequest);
+        }
+        let first = finalized
+            .construction()
+            .abi()
+            .inputs()
+            .sponsor_suffix()
+            .first();
+        for (offset, spent) in finalized.construction().sponsor_spent().iter().enumerate() {
+            let capability =
+                sponsor.ok_or(TransactionRefusal::SponsorRequestedWithoutCapability)?;
+            let position = sponsor_position(offset + usize::from(first))?;
+            let request = SponsorSigningRequest::new(
+                finalized.protected_bytes().to_vec(),
+                position,
+                SignerRole::SponsorSuffixMember,
+                SighashProfile::AllInputsAllOutputs,
+                protected.outputs().to_vec(),
+            );
+            let signature = capability
+                .sign(&request)
+                .ok_or_else(|| TransactionRefusal::SponsorSignatureMissing(spent.outpoint()))?;
+            if signature.bound_to() != finalized.protected_bytes() {
+                return Err(TransactionRefusal::SponsorSignatureBindingMismatch(
+                    spent.outpoint(),
+                ));
+            }
+            if signature.stack().is_empty() || signature.stack().iter().all(Vec::is_empty) {
+                return Err(TransactionRefusal::MaturitySponsorAuthorizationEmpty(
+                    spent.outpoint(),
+                ));
+            }
+            witnesses.push(InputWitness::new(signature.stack().to_vec()));
+        }
         let candidate = TargetTransaction::new(
             protected.version(),
             protected.inputs().to_vec(),
             protected.outputs().to_vec(),
             protected.lock_time(),
-            vec![witness.clone()],
+            witnesses,
         )?;
         let bytes = candidate.encode();
 
@@ -884,8 +941,8 @@ impl<'finalized> SubmitReadyMaturityAnnouncement<'finalized> {
         &self.candidate
     }
 
-    /// The exact candidate bytes: the finalized bytes with the one
-    /// witness inserted.
+    /// The exact candidate bytes: the finalized bytes with the STATE witness
+    /// and each sponsor input's witness inserted at its own position.
     #[must_use]
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
@@ -1049,4 +1106,8 @@ fn retained_predecessor(finalized: &FinalizedMaturityAnnouncement) -> &Candidate
 /// exact.
 fn position_of(index: usize) -> u16 {
     u16::try_from(index).unwrap_or(u16::MAX)
+}
+
+pub(crate) fn sponsor_position(index: usize) -> Result<u16, TransactionRefusal> {
+    u16::try_from(index).map_err(|_| TransactionRefusal::MaturitySponsorInputPositionOutOfRange)
 }

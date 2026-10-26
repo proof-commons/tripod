@@ -4,7 +4,7 @@
 //! # A construction is built, and it is not finalized
 //!
 //! [`MaturityConstruction`] is a candidate transaction that exists:
-//! version, one input, one output, a lock time, and a null witness per
+//! version, inputs, outputs, a lock time, and a null witness per
 //! input. Nothing in it is frozen, no protected-region census has been
 //! taken over it, and no witness role is populated — the announcement's
 //! seven roles are declared by the ABI together with the stage that owes
@@ -26,7 +26,7 @@
 //! 5. the result compared with the linked constructor policy — which is
 //!    one call to the linked bundle, for the reason given at that stage;
 //! 6. output zero is fixed here;
-//! 7. optional sponsorship is fixed here, by there being none.
+//! 7. optional sponsorship is fixed from the construction context.
 //!
 //! Steps 8 and 9 — freezing the protected bytes and creating the
 //! operator signing request — belong to the next state,
@@ -47,17 +47,11 @@
 //! constructor here rather than as two values that could be combined
 //! from different derivations.
 //!
-//! # The sponsored arm, and the condition under which it is refused
+//! # The sponsored arm
 //!
-//! Only the sponsorless candidate is built. A sponsored request is
-//! representable and is refused by name, because the form has no
-//! carrier: the reduced announcement leaf carries no sponsor check at
-//! all, and the realization's sponsor relations have no region until a
-//! later refit gives them one, so bytes emitted for the sponsored form
-//! this generation would be constrained by no leaf and by no model. The
-//! refusal names the absent carrier rather than pretending the request
-//! was malformed; the request is well formed, and what it asks for does
-//! not exist yet.
+//! The offer fixes the suffix, fee and optional change. Sponsor spent
+//! outputs remain available to the complete signing census. Region membership
+//! belongs to the realization; the STATE leaf gains no sponsor checks.
 
 use linker::{LinkedArtifactStatus, StateLinkSymbol, StateSymbolValue};
 use realization::{StateMetadata, announce_maturity};
@@ -65,13 +59,26 @@ use tapscript::{CandidateStateConstructor, StateCurveCapability};
 use target_elements::ReviewedElementsTapscriptDefinition;
 
 use crate::bytes::{
-    AssetField, AssetId, InputWitness, NonceField, TargetInput, TargetOutput, TargetTransaction,
-    ValueField,
+    AssetField, AssetId, InputWitness, NonceField, Outpoint, TargetInput, TargetOutput,
+    TargetTransaction, ValueField,
 };
 use crate::error::TransactionRefusal;
+use crate::sponsor::{SponsorCapability, SponsorOffer};
 use crate::state_abi::CandidateMaturityAnnouncementAbi;
 use crate::state_request::MaturityAnnouncementRequest;
 use crate::state_view::ValidatedMaturityStateView;
+use crate::taproot::witness_program_script;
+use crate::view::{PublicConstructionView, PublicOutputView};
+
+/// Construction facts for the sponsor suffix, separate from the semantic request.
+pub struct MaturitySponsorContext<'a> {
+    /// The declared reserve asset, independent of the offered coins.
+    pub reserve_asset: AssetId,
+    /// Public spent-output fields for the offered coins.
+    pub view: &'a PublicConstructionView,
+    /// The capability supplies funding, change destination and per-input answers.
+    pub capability: &'a dyn SponsorCapability,
+}
 
 /// The lock time every maturity announcement is built at.
 ///
@@ -110,9 +117,29 @@ pub struct MaturityConstruction {
     request: MaturityAnnouncementRequest,
     validated: ValidatedMaturityStateView,
     abi: CandidateMaturityAnnouncementAbi,
+    sponsor_spent: Vec<PublicOutputView>,
+    sponsor_change_position: Option<u16>,
+    fee_position: Option<u16>,
 }
 
 impl MaturityConstruction {
+    /// Sponsor spent outputs in canonical suffix order.
+    #[must_use]
+    pub fn sponsor_spent(&self) -> &[PublicOutputView] {
+        &self.sponsor_spent
+    }
+
+    /// The actual sponsor-change position after zero change is omitted.
+    #[must_use]
+    pub const fn sponsor_change_position(&self) -> Option<u16> {
+        self.sponsor_change_position
+    }
+
+    /// The actual fee position.
+    #[must_use]
+    pub const fn fee_position(&self) -> Option<u16> {
+        self.fee_position
+    }
     /// The typed candidate transaction.
     #[must_use]
     pub const fn transaction(&self) -> &TargetTransaction {
@@ -171,8 +198,8 @@ impl MaturityConstruction {
 ///
 /// # Errors
 ///
-/// [`TransactionRefusal::SponsoredMaturityFormHasNoCarrier`] for a
-/// request asking for the sponsored form,
+/// [`TransactionRefusal::SponsorRequestedWithoutCapability`] for a
+/// sponsored request without its construction context,
 /// [`TransactionRefusal::BundleIsNotACandidate`] for a bundle claiming
 /// more than a prototype link,
 /// [`TransactionRefusal::ContractRevisionMismatch`] when the ABI and the
@@ -205,14 +232,40 @@ pub fn construct_maturity_announcement(
     request: &MaturityAnnouncementRequest,
     curve: &impl StateCurveCapability,
 ) -> Result<MaturityConstruction, TransactionRefusal> {
-    // Step 1: validate the semantic request. The sponsorless form with a
-    // sponsor-change output is already refused by the request's own
-    // constructor, so what is left here is the pair of facts a request
-    // cannot settle alone — whether the form has a carrier at all, and
-    // whether the artifacts handed in describe one deployment.
-    if request.requested_form().sponsored() {
-        return Err(TransactionRefusal::SponsoredMaturityFormHasNoCarrier);
-    }
+    construct_maturity_announcement_with_sponsor(target, abi, validated, request, curve, None)
+}
+
+/// Construct the selected form using explicit sponsor construction facts.
+///
+/// # Errors
+/// Returns the successor-construction refusals, or
+/// [`TransactionRefusal::SponsorRequestedWithoutCapability`],
+/// [`TransactionRefusal::SponsorCapabilityWithoutRequest`],
+/// [`TransactionRefusal::EmptySponsorOffer`],
+/// [`TransactionRefusal::SponsorChangeRequestedWithoutDestination`],
+/// [`TransactionRefusal::SponsorChangeOfferedWithoutRequest`],
+/// [`TransactionRefusal::OverlappingOutpoint`],
+/// [`TransactionRefusal::MissingPublicSponsorView`],
+/// [`TransactionRefusal::SponsorInputCarriesForeignAsset`],
+/// [`TransactionRefusal::MaturitySponsorValueRequiresProofFinalization`],
+/// [`TransactionRefusal::MaturitySponsorReserveAliasesStateAsset`] or
+/// [`TransactionRefusal::MaturitySponsorInputPositionOutOfRange`]
+/// before a signing request exists. The change destination can also return
+/// [`TransactionRefusal::MalformedPinnedProgram`] or
+/// [`TransactionRefusal::MalformedDeploymentSymbol`].
+///
+/// # Panics
+/// Panics only if a linked bundle lost its retained constructor, which a link cannot arrange.
+pub fn construct_maturity_announcement_with_sponsor(
+    target: &ReviewedElementsTapscriptDefinition,
+    abi: &CandidateMaturityAnnouncementAbi,
+    validated: &ValidatedMaturityStateView,
+    request: &MaturityAnnouncementRequest,
+    curve: &impl StateCurveCapability,
+    sponsor: Option<&MaturitySponsorContext<'_>>,
+) -> Result<MaturityConstruction, TransactionRefusal> {
+    // Step 1: hold the form and offer together before constructing outputs.
+    let offer = sponsor_offer(request, sponsor)?;
     let bundle = validated.view().accepted_linked_bundle();
     if bundle.status() != LinkedArtifactStatus::Prototype {
         return Err(TransactionRefusal::BundleIsNotACandidate);
@@ -273,9 +326,8 @@ pub fn construct_maturity_announcement(
     // field is the null one an unblinded explicit output carries. The
     // input's outpoint is the view's and its sequence is the ABI's; the
     // version is the ABI's too. The ABI puts the coordinator at input
-    // zero and the successor at output zero, and with one input and one
-    // output there is no other position for either to occupy, so the
-    // layout is read rather than restated as a second constraint.
+    // zero and the successor at output zero; sponsor roles are appended
+    // afterwards without moving either protected protocol position.
     let input = TargetInput::new(
         validated.view().current_state_outpoint(),
         abi.sequence().sequence(),
@@ -287,25 +339,46 @@ pub fn construct_maturity_announcement(
         successor_constructor.output_program(),
     );
 
-    // Step 7: fix optional sponsorship, of which there is none. The
-    // sponsorless form has no sponsor region, and the reviewed verdict
-    // the ABI publishes fixes no fee output for the announcement form,
-    // so the candidate is exactly one input and one output. That is
-    // consensus-valid on the target without a fee output because the
-    // singleton amount is conserved: the spent output and the successor
-    // carry the same asset and the same amount, so the per-asset balance
-    // has no difference for a fee to make up. It is not relayable under
-    // default policy, and for a reason no construction choice here could
-    // answer: the announcement's metadata witness item is wider than the
-    // stack-item limit the relay path applies, which is the refusal the
-    // ABI publishes together with direct submission to a producer as the
-    // route.
+    // Step 7: append the canonical sponsor suffix and its offered output roles.
+    // Conservation and target authorization remain independent obligations.
+    let mut inputs = vec![input];
+    let mut outputs = vec![output];
+    let mut sponsor_spent = Vec::new();
+    let mut sponsor_change_position = None;
+    let mut fee_position = None;
+    if let (Some(context), Some(offer)) = (sponsor, offer) {
+        sponsor_spent = sponsor_spent_outputs(
+            context,
+            &offer,
+            validated.view().current_state_outpoint(),
+            abi.inputs().sponsor_suffix().first(),
+            asset,
+        )?;
+        inputs.extend(
+            sponsor_spent
+                .iter()
+                .map(|spent| TargetInput::new(spent.outpoint(), abi.sequence().sequence())),
+        );
+        let next_output = abi.outputs().successor_position() + 1;
+        if let Some(change) = sponsor_change_output(target, context, &offer)? {
+            sponsor_change_position = Some(next_output);
+            outputs.push(change);
+        }
+        fee_position = Some(next_output + u16::from(sponsor_change_position.is_some()));
+        outputs.push(TargetOutput::new(
+            AssetField::Explicit(context.reserve_asset),
+            ValueField::Explicit(offer.fee()),
+            NonceField::Null,
+            Vec::new(),
+        ));
+    }
+    let witnesses = vec![InputWitness::default(); inputs.len()];
     let transaction = TargetTransaction::new(
         abi.version().version(),
-        vec![input],
-        vec![output],
+        inputs,
+        outputs,
         MATURITY_ANNOUNCEMENT_LOCK_TIME,
-        vec![InputWitness::default()],
+        witnesses,
     )?;
 
     Ok(MaturityConstruction {
@@ -315,7 +388,96 @@ pub fn construct_maturity_announcement(
         request: *request,
         validated: validated.clone(),
         abi: abi.clone(),
+        sponsor_spent,
+        sponsor_change_position,
+        fee_position,
     })
+}
+
+fn sponsor_spent_outputs(
+    context: &MaturitySponsorContext<'_>,
+    offer: &SponsorOffer,
+    coordinator: Outpoint,
+    first: u16,
+    state_asset: AssetField,
+) -> Result<Vec<PublicOutputView>, TransactionRefusal> {
+    if AssetField::Explicit(context.reserve_asset) == state_asset {
+        return Err(TransactionRefusal::MaturitySponsorReserveAliasesStateAsset);
+    }
+    if offer.inputs().len() > usize::from(u16::MAX) - usize::from(first) + 1 {
+        return Err(TransactionRefusal::MaturitySponsorInputPositionOutOfRange);
+    }
+    offer
+        .inputs()
+        .iter()
+        .map(|outpoint| {
+            if *outpoint == coordinator {
+                return Err(TransactionRefusal::OverlappingOutpoint(*outpoint));
+            }
+            let spent = context
+                .view
+                .get(*outpoint)
+                .ok_or(TransactionRefusal::MissingPublicSponsorView(*outpoint))?;
+            if spent.asset() != AssetField::Explicit(context.reserve_asset) {
+                return Err(TransactionRefusal::SponsorInputCarriesForeignAsset(
+                    *outpoint,
+                ));
+            }
+            if !matches!(spent.value(), ValueField::Explicit(_)) {
+                return Err(TransactionRefusal::MaturitySponsorValueRequiresProofFinalization);
+            }
+            Ok(spent.clone())
+        })
+        .collect()
+}
+
+fn sponsor_change_output(
+    target: &ReviewedElementsTapscriptDefinition,
+    context: &MaturitySponsorContext<'_>,
+    offer: &SponsorOffer,
+) -> Result<Option<TargetOutput>, TransactionRefusal> {
+    let Some(value) = offer.change() else {
+        return Ok(None);
+    };
+    let ValueField::Explicit(amount) = value else {
+        return Err(TransactionRefusal::MaturitySponsorValueRequiresProofFinalization);
+    };
+    if amount == 0 {
+        return Ok(None);
+    }
+    let (version, payload) = context
+        .capability
+        .change_destination()
+        .ok_or(TransactionRefusal::SponsorChangeRequestedWithoutDestination)?;
+    let program = witness_program_script(target, version, &payload)?;
+    Ok(Some(TargetOutput::new(
+        AssetField::Explicit(context.reserve_asset),
+        value,
+        NonceField::Null,
+        program,
+    )))
+}
+
+fn sponsor_offer(
+    request: &MaturityAnnouncementRequest,
+    sponsor: Option<&MaturitySponsorContext<'_>>,
+) -> Result<Option<SponsorOffer>, TransactionRefusal> {
+    match (request.requested_form().sponsored(), sponsor) {
+        (true, None) => Err(TransactionRefusal::SponsorRequestedWithoutCapability),
+        (false, Some(_)) => Err(TransactionRefusal::SponsorCapabilityWithoutRequest),
+        (false, None) => Ok(None),
+        (true, Some(context)) => {
+            let offer = context.capability.offer();
+            if offer.inputs().is_empty() {
+                return Err(TransactionRefusal::EmptySponsorOffer);
+            }
+            match (request.sponsor_change().requested(), offer.change()) {
+                (true, None) => Err(TransactionRefusal::SponsorChangeRequestedWithoutDestination),
+                (false, Some(_)) => Err(TransactionRefusal::SponsorChangeOfferedWithoutRequest),
+                _ => Ok(Some(offer)),
+            }
+        }
+    }
 }
 
 /// The asset and amount output zero carries.

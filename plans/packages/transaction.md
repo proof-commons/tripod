@@ -296,7 +296,7 @@ It does not establish:
 |---|---|
 | compact ASH | Public view only; one derived ASH output; no protocol signature |
 | live transfer | Multi-owner signing; explicit/confidential value plans; explicit `U` |
-| maturity announcement | STATE constructor, operator signing |
+| maturity announcement | STATE constructor, operator signing, explicit sponsored construction with complete spent-output census and per-input sponsor completion; confidential sponsor values require a balanced proof-finalization route |
 | later operations | Roadmap and research order |
 
 ## Exit gate · `gate:transaction:compact-ash`

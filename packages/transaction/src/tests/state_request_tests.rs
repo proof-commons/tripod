@@ -62,9 +62,7 @@ fn the_unselectable_census_is_the_fifteen_choices_the_two_lists_refuse() {
 
 #[test]
 fn the_sponsored_form_is_representable_and_reads_back_as_sponsored() {
-    // A request that could not ask for the sponsored form could not be
-    // refused for asking, which is why the arm is representable before
-    // anything emits it.
+    // The semantic request remains separate from its funding context.
     let request = MaturityAnnouncementRequest::new(
         Cycle::new(7),
         RequestedForm::Sponsored,

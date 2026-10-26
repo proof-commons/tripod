@@ -64,6 +64,524 @@ const ANNOUNCED: Cycle = Cycle::new(8);
 /// that the test stopped exercising exhaustion.
 const EXHAUSTING_QUANTITY: u64 = 15;
 
+fn change_public_sponsor(
+    public: &crate::view::PublicConstructionView,
+    asset: Option<AssetField>,
+    value: Option<ValueField>,
+) -> crate::view::PublicConstructionView {
+    let first = public.outputs().keys().next().copied().unwrap();
+    crate::view::PublicConstructionView::new(public.outputs().values().map(|spent| {
+        if spent.outpoint() == first {
+            crate::view::PublicOutputView::new(
+                first,
+                asset.unwrap_or_else(|| spent.asset()),
+                value.unwrap_or_else(|| spent.value()),
+                spent.program().to_vec(),
+            )
+        } else {
+            spent.clone()
+        }
+    }))
+    .unwrap()
+}
+
+#[test]
+fn malformed_and_empty_offers_refuse_against_a_nonempty_control() {
+    use super::state_support::{construct_with_sponsor, maturity_sponsor};
+    let (mut sponsor, public) = maturity_sponsor(true);
+    assert!(construct_with_sponsor(true, &sponsor, &public).is_ok());
+    let inputs = sponsor.inputs.clone();
+    sponsor.inputs.clear();
+    assert_eq!(
+        construct_with_sponsor(true, &sponsor, &public).unwrap_err(),
+        TransactionRefusal::EmptySponsorOffer
+    );
+    sponsor.inputs = inputs;
+    sponsor.change = None;
+    assert_eq!(
+        construct_with_sponsor(true, &sponsor, &public).unwrap_err(),
+        TransactionRefusal::SponsorChangeRequestedWithoutDestination
+    );
+    sponsor.change = Some(ValueField::Explicit(40));
+    assert_eq!(
+        construct_with_sponsor(false, &sponsor, &public).unwrap_err(),
+        TransactionRefusal::SponsorChangeOfferedWithoutRequest
+    );
+    sponsor.destination = None;
+    assert_eq!(
+        construct_with_sponsor(true, &sponsor, &public).unwrap_err(),
+        TransactionRefusal::SponsorChangeRequestedWithoutDestination
+    );
+    sponsor.destination = Some((0, Vec::new()));
+    assert_eq!(
+        construct_with_sponsor(true, &sponsor, &public).unwrap_err(),
+        TransactionRefusal::MalformedPinnedProgram { offered: 0 }
+    );
+    let coin = sponsor.inputs[0];
+    assert!(crate::SponsorOffer::new([coin], 1, None).is_ok());
+    assert_eq!(
+        crate::SponsorOffer::new([coin, coin], 1, None),
+        Err(TransactionRefusal::DuplicateSponsorOutpoint(coin))
+    );
+}
+
+#[test]
+fn declared_reserve_cannot_alias_the_state_asset() {
+    use super::state_support::{construct_with_sponsor, maturity_sponsor};
+    let (sponsor, public) = maturity_sponsor(false);
+    let control = construct_with_sponsor(false, &sponsor, &public).unwrap();
+    let AssetField::Explicit(state_asset) = control.transaction().outputs()[0].asset() else {
+        panic!("the control carries an explicit STATE asset");
+    };
+    let validated = validated_view();
+    let abi = abi_over(&validated);
+    let context = crate::MaturitySponsorContext {
+        reserve_asset: state_asset,
+        view: &public,
+        capability: &sponsor,
+    };
+    assert_eq!(
+        crate::construct_maturity_announcement_with_sponsor(
+            &reviewed_target(),
+            &abi,
+            &validated,
+            &control.request(),
+            &FixtureStateCurve,
+            Some(&context)
+        )
+        .unwrap_err(),
+        TransactionRefusal::MaturitySponsorReserveAliasesStateAsset
+    );
+    assert!(sponsor.requests.borrow().is_empty());
+}
+
+#[test]
+fn sponsor_suffix_position_overflow_refuses_before_signing() {
+    use super::state_support::{construct_with_sponsor, maturity_sponsor};
+    let (mut sponsor, public) = maturity_sponsor(false);
+    assert!(construct_with_sponsor(false, &sponsor, &public).is_ok());
+    sponsor.inputs = (0..=u16::MAX)
+        .map(|index| super::outpoint(0xdc, u32::from(index)))
+        .collect();
+    assert_eq!(
+        construct_with_sponsor(false, &sponsor, &public).unwrap_err(),
+        TransactionRefusal::MaturitySponsorInputPositionOutOfRange
+    );
+    assert!(sponsor.requests.borrow().is_empty());
+}
+
+#[test]
+fn state_input_cannot_join_sponsor_offer() {
+    use super::state_support::{construct_with_sponsor, maturity_sponsor};
+    let (mut sponsor, public) = maturity_sponsor(false);
+    assert!(construct_with_sponsor(false, &sponsor, &public).is_ok());
+    let state = validated_view().view().current_state_outpoint();
+    sponsor.inputs.push(state);
+    assert_eq!(
+        construct_with_sponsor(false, &sponsor, &public).unwrap_err(),
+        TransactionRefusal::OverlappingOutpoint(state)
+    );
+}
+
+#[test]
+fn sponsor_views_are_required_and_foreign_assets_refuse() {
+    use super::state_support::{construct_with_sponsor, maturity_sponsor};
+    let (sponsor, public) = maturity_sponsor(false);
+    assert!(construct_with_sponsor(false, &sponsor, &public).is_ok());
+    let first = *public.outputs().keys().next().unwrap();
+    assert_eq!(
+        construct_with_sponsor(
+            false,
+            &sponsor,
+            &crate::view::PublicConstructionView::default()
+        )
+        .unwrap_err(),
+        TransactionRefusal::MissingPublicSponsorView(first)
+    );
+    let foreign = change_public_sponsor(
+        &public,
+        Some(AssetField::Explicit(AssetId::from_internal([0x77; 32]))),
+        None,
+    );
+    assert_eq!(
+        construct_with_sponsor(false, &sponsor, &foreign).unwrap_err(),
+        TransactionRefusal::SponsorInputCarriesForeignAsset(first)
+    );
+}
+
+#[test]
+fn confidential_sponsor_value_requires_balanced_proof_route() {
+    use super::state_support::{construct_with_sponsor, maturity_sponsor};
+    let (mut sponsor, public) = maturity_sponsor(true);
+    assert!(construct_with_sponsor(true, &sponsor, &public).is_ok());
+    let committed = change_public_sponsor(&public, None, Some(ValueField::Commitment([8; 33])));
+    assert_eq!(
+        construct_with_sponsor(true, &sponsor, &committed).unwrap_err(),
+        TransactionRefusal::MaturitySponsorValueRequiresProofFinalization
+    );
+    sponsor.change = Some(ValueField::Commitment([8; 33]));
+    assert_eq!(
+        construct_with_sponsor(true, &sponsor, &public).unwrap_err(),
+        TransactionRefusal::MaturitySponsorValueRequiresProofFinalization
+    );
+}
+
+#[test]
+fn explicit_zero_change_is_omitted_without_changing_the_requested_form() {
+    use super::state_support::{construct_with_sponsor, maturity_sponsor};
+    let (mut sponsor, public) = maturity_sponsor(true);
+    let positive = construct_with_sponsor(true, &sponsor, &public).unwrap();
+    assert_eq!(positive.sponsor_change_position(), Some(1));
+    sponsor.change = Some(ValueField::Explicit(0));
+    sponsor.fee = 130;
+    let zero = construct_with_sponsor(true, &sponsor, &public).unwrap();
+    assert_eq!(zero.request(), positive.request());
+    assert_eq!(zero.sponsor_change_position(), None);
+    assert_eq!(zero.fee_position(), Some(1));
+    assert_eq!(zero.transaction().outputs().len(), 2);
+}
+
+#[test]
+fn sponsorless_request_refuses_an_extraneous_context() {
+    use super::state_support::maturity_sponsor;
+    let (sponsor, public) = maturity_sponsor(false);
+    let validated = validated_view();
+    let abi = abi_over(&validated);
+    let request = sponsorless(ANNOUNCED);
+    assert!(construct_over(&abi, &validated, &request).is_ok());
+    let context = crate::MaturitySponsorContext {
+        reserve_asset: AssetId::from_internal(super::live_support::LIVE_RESERVE_ASSET),
+        view: &public,
+        capability: &sponsor,
+    };
+    assert_eq!(
+        crate::construct_maturity_announcement_with_sponsor(
+            &reviewed_target(),
+            &abi,
+            &validated,
+            &request,
+            &FixtureStateCurve,
+            Some(&context)
+        )
+        .unwrap_err(),
+        TransactionRefusal::SponsorCapabilityWithoutRequest
+    );
+}
+
+fn sponsor_observation(construction: &MaturityConstruction) -> realization::OperationObservation {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use architecture::{BoundId, ObjectId, OpenFlowKind, OperationId, ProjectionId, RootId};
+    use realization::{
+        ObservedAsset, ObservedObject, ObservedObjectKind, ObservedObjectRef,
+        ObservedOperationRegion, ObservedRootEffect, ObservedRootEffectKind, ObservedSide,
+        ObservedValue, OwnerId, RepresentationMode,
+    };
+    let state = |side| ObservedObject {
+        reference: ObservedObjectRef { side, ordinal: 0 },
+        kind: ObservedObjectKind::Declared(ObjectId::State),
+        asset: ObservedAsset::Declared(architecture::AssetId::Pid),
+        value: ObservedValue::Protocol(ProtocolAmount::ONE),
+        owner: None,
+        representation: RepresentationMode::Explicit,
+    };
+    let mut objects = vec![state(ObservedSide::Input), state(ObservedSide::Output)];
+    let mut sources = Vec::new();
+    let mut signers = BTreeSet::new();
+    for (offset, spent) in construction.sponsor_spent().iter().enumerate() {
+        let ordinal = u32::try_from(offset + 1).unwrap();
+        assert_eq!(
+            construction.transaction().inputs()[offset + 1].outpoint(),
+            spent.outpoint()
+        );
+        assert_eq!(
+            spent.asset(),
+            AssetField::Explicit(AssetId::from_internal(
+                super::live_support::LIVE_RESERVE_ASSET
+            ))
+        );
+        let owner = OwnerId([u8::try_from(ordinal).unwrap(); 32]);
+        let reference = ObservedObjectRef {
+            side: ObservedSide::Input,
+            ordinal,
+        };
+        objects.push(ObservedObject {
+            reference,
+            kind: ObservedObjectKind::Declared(ObjectId::PlainLbtc),
+            asset: ObservedAsset::Declared(architecture::AssetId::Lbtc),
+            value: ObservedValue::SponsorOpaque,
+            owner: Some(owner),
+            representation: RepresentationMode::Explicit,
+        });
+        sources.push(reference);
+        signers.insert(owner);
+    }
+    let mut destinations = Vec::new();
+    if let Some(position) = construction.sponsor_change_position() {
+        assert!(!construction.transaction().outputs()[usize::from(position)].is_fee());
+        let reference = ObservedObjectRef {
+            side: ObservedSide::Output,
+            ordinal: u32::from(position),
+        };
+        objects.push(ObservedObject {
+            reference,
+            kind: ObservedObjectKind::Declared(ObjectId::PlainLbtc),
+            asset: ObservedAsset::Declared(architecture::AssetId::Lbtc),
+            value: ObservedValue::SponsorOpaque,
+            owner: Some(OwnerId([0x44; 32])),
+            representation: RepresentationMode::Explicit,
+        });
+        destinations.push(reference);
+    }
+    realization::OperationObservation {
+        operation: OperationId::AnnounceMaturity,
+        region: ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: realization::ObservedCanonicalPartition::default(),
+            open_flows: vec![realization::ObservedOpenFlow {
+                kind: OpenFlowKind::FeeSponsor,
+                sources,
+                destinations,
+                fee: ProtocolAmount::ZERO,
+            }],
+        },
+        objects,
+        protocol_signers: BTreeSet::new(),
+        sponsor_signers: signers,
+        other_regions: Vec::new(),
+        root_effects: vec![ObservedRootEffect {
+            root: RootId::State,
+            effect: ObservedRootEffectKind::Succession,
+        }],
+        projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
+        bounds: BTreeMap::from([(BoundId::FeeSponsorInputMax, realization::Count::new(16))]),
+    }
+}
+
+fn sponsor_status(
+    observed: &realization::OperationObservation,
+    kind: realization::RelationKind,
+    subject: realization::RelationSubject,
+) -> realization::RelationStatus {
+    let scope = realization::RealizationScope::from_operations([
+        architecture::OperationId::AnnounceMaturity,
+    ])
+    .unwrap();
+    let realization = realization::derive(&architecture::ARCHITECTURE, scope).unwrap();
+    let normalized = observed.clone().validate_and_normalize().unwrap();
+    realization
+        .evaluate_operation(&normalized)
+        .unwrap()
+        .verdict(&realization::RelationId::new(
+            architecture::OperationId::AnnounceMaturity,
+            kind,
+            subject,
+        ))
+        .unwrap()
+        .status
+        .clone()
+}
+
+fn isolation(observed: &realization::OperationObservation) -> realization::RelationStatus {
+    sponsor_status(
+        observed,
+        realization::RelationKind::SponsorIsolation,
+        realization::RelationSubject::Sponsor,
+    )
+}
+
+fn sponsored_observation_control() -> realization::OperationObservation {
+    let control = sponsor_observation(&super::state_support::sponsored_construction(true));
+    assert_eq!(isolation(&control), realization::RelationStatus::Passed);
+    control
+}
+
+#[test]
+fn missing_sponsor_membership_fails_isolation() {
+    let control = sponsored_observation_control();
+    for source in [true, false] {
+        let mut subject = control.clone();
+        if source {
+            subject.region.open_flows[0].sources.pop();
+        } else {
+            subject.region.open_flows[0].destinations.pop();
+        }
+        assert_eq!(
+            isolation(&subject),
+            realization::RelationStatus::Failed {
+                reason: realization::RelationFailure::SponsorIsolation
+            }
+        );
+    }
+}
+
+#[test]
+fn surplus_sponsor_membership_refuses_at_observation_boundary() {
+    let control = sponsored_observation_control();
+    let member = control.region.open_flows[0].sources[0];
+    let mut repeated = control.clone();
+    repeated.region.open_flows[0].sources.push(member);
+    assert_eq!(
+        repeated.validate_and_normalize(),
+        Err(realization::RealizationError::DuplicateObservedReference)
+    );
+    let mut crossed = control.clone();
+    crossed.region.members.remove(&member);
+    crossed
+        .other_regions
+        .push(realization::ObservedOperationRegion {
+            members: std::collections::BTreeSet::from([member]),
+            ..Default::default()
+        });
+    assert_eq!(
+        crossed.validate_and_normalize(),
+        Err(realization::RealizationError::UnknownObservedObject(member))
+    );
+    assert!(control.validate_and_normalize().is_ok());
+}
+
+#[test]
+fn state_input_and_successor_cannot_join_sponsor_flow() {
+    let control = sponsored_observation_control();
+    for side in [
+        realization::ObservedSide::Input,
+        realization::ObservedSide::Output,
+    ] {
+        let mut subject = control.clone();
+        let state = realization::ObservedObjectRef { side, ordinal: 0 };
+        match side {
+            realization::ObservedSide::Input => subject.region.open_flows[0].sources.push(state),
+            realization::ObservedSide::Output => {
+                subject.region.open_flows[0].destinations.push(state);
+            }
+        }
+        assert_eq!(
+            isolation(&subject),
+            realization::RelationStatus::Failed {
+                reason: realization::RelationFailure::SponsorIsolation
+            }
+        );
+    }
+}
+
+#[test]
+fn each_sponsor_member_requires_its_own_model_authorization() {
+    let control = sponsored_observation_control();
+    for owner in &control.sponsor_signers {
+        let mut subject = control.clone();
+        subject.sponsor_signers.remove(owner);
+        assert_eq!(
+            isolation(&subject),
+            realization::RelationStatus::Failed {
+                reason: realization::RelationFailure::SponsorIsolation
+            }
+        );
+    }
+}
+
+#[test]
+fn second_sponsor_envelope_fails_region_multiplicity() {
+    use realization::{RelationKind, RelationSubject};
+    let mut subject = sponsored_observation_control();
+    assert_eq!(
+        sponsor_status(
+            &subject,
+            RelationKind::SponsorEnvelopeMultiplicity,
+            RelationSubject::Sponsor
+        ),
+        realization::RelationStatus::Passed
+    );
+    let second = subject.region.open_flows[0].sources.pop().unwrap();
+    subject
+        .region
+        .open_flows
+        .push(realization::ObservedOpenFlow {
+            kind: architecture::OpenFlowKind::FeeSponsor,
+            sources: vec![second],
+            destinations: Vec::new(),
+            fee: ProtocolAmount::ZERO,
+        });
+    assert!(subject.clone().validate_and_normalize().is_ok());
+    assert_eq!(
+        sponsor_status(
+            &subject,
+            RelationKind::SponsorEnvelopeMultiplicity,
+            RelationSubject::Sponsor
+        ),
+        realization::RelationStatus::Failed {
+            reason: realization::RelationFailure::SponsorEnvelopeMultiplicity
+        }
+    );
+}
+
+#[test]
+fn foreign_sponsor_asset_fails_model_recognition() {
+    use realization::{RelationKind, RelationSubject, TransactionSide};
+    let mut subject = sponsored_observation_control();
+    let family = RelationSubject::ObjectFamily {
+        side: TransactionSide::Input,
+        object: architecture::ObjectId::PlainLbtc,
+    };
+    assert_eq!(
+        sponsor_status(&subject, RelationKind::Recognition, family.clone()),
+        realization::RelationStatus::Passed
+    );
+    let member = subject.region.open_flows[0].sources[0];
+    subject
+        .objects
+        .iter_mut()
+        .find(|object| object.reference == member)
+        .unwrap()
+        .asset = realization::ObservedAsset::Foreign(1);
+    assert_eq!(
+        sponsor_status(&subject, RelationKind::Recognition, family),
+        realization::RelationStatus::Failed {
+            reason: realization::RelationFailure::ObjectRecognition
+        }
+    );
+}
+
+#[test]
+fn zero_sponsor_value_does_not_erase_membership() {
+    use super::state_support::{construct_with_sponsor, maturity_sponsor};
+    let (sponsor, public) = maturity_sponsor(true);
+    let control = sponsor_observation(&construct_with_sponsor(true, &sponsor, &public).unwrap());
+    let zero = change_public_sponsor(&public, None, Some(ValueField::Explicit(0)));
+    let subject = sponsor_observation(&construct_with_sponsor(true, &sponsor, &zero).unwrap());
+    assert_eq!(control, subject);
+    assert_eq!(isolation(&subject), realization::RelationStatus::Passed);
+}
+
+#[test]
+fn state_amount_corruption_fails_model_recognition_with_sponsorship() {
+    use realization::{
+        ObservedSide, ObservedValue, RelationKind, RelationSubject, TransactionSide,
+    };
+    let mut subject = sponsored_observation_control();
+    let family = RelationSubject::ObjectFamily {
+        side: TransactionSide::Output,
+        object: architecture::ObjectId::State,
+    };
+    assert_eq!(
+        sponsor_status(&subject, RelationKind::Recognition, family.clone()),
+        realization::RelationStatus::Passed
+    );
+    let state = subject
+        .objects
+        .iter_mut()
+        .find(|object| {
+            object.reference.side == ObservedSide::Output && object.reference.ordinal == 0
+        })
+        .unwrap();
+    state.value = ObservedValue::Protocol(ProtocolAmount::new(2).unwrap());
+    assert_eq!(
+        sponsor_status(&subject, RelationKind::Recognition, family),
+        realization::RelationStatus::Failed {
+            reason: realization::RelationFailure::ObjectRecognition
+        }
+    );
+}
+
 /// The deployment's lead window, read through the bundle that carries
 /// it.
 fn window() -> AnnouncementLeadBounds {
@@ -301,7 +819,7 @@ fn the_evidence_carries_every_rejected_lower_candidate_and_states_its_residual()
 }
 
 #[test]
-fn a_sponsored_request_is_refused_for_the_carrier_it_would_need() {
+fn a_sponsored_request_without_its_capability_is_refused() {
     let validated = validated_view();
     let abi = abi_over(&validated);
     let sponsored = MaturityAnnouncementRequest::new(
@@ -313,16 +831,14 @@ fn a_sponsored_request_is_refused_for_the_carrier_it_would_need() {
 
     assert_eq!(
         construct_over(&abi, &validated, &sponsored)
-            .expect_err("no leaf and no model constrains sponsored bytes yet"),
-        TransactionRefusal::SponsoredMaturityFormHasNoCarrier,
+            .expect_err("the wrapper supplies no sponsor capability"),
+        TransactionRefusal::SponsorRequestedWithoutCapability,
     );
 }
 
 // The four request forms have named dispositions: sponsorless without change
 // constructs, sponsorless with change is refused by the request, and both
-// sponsored forms have explicit unsupported status naming the absent carrier.
-// No sponsored byte exists; the refusal is the host's, nothing reaches a
-// node, and no row of the §16 matrix is answered.
+// sponsored forms construct through the funding context.
 #[test]
 fn each_request_form_is_built_or_refused_by_name() {
     use std::collections::BTreeSet;
@@ -375,11 +891,14 @@ fn each_request_form_is_built_or_refused_by_name() {
     for (form, change) in [forms[2], forms[3]] {
         let request = MaturityAnnouncementRequest::new(ANNOUNCED, form, change)
             .expect("both sponsored forms are well-formed requests");
+        let built = super::state_support::sponsored_construction(change.requested());
+        assert_eq!(built.request(), request);
+        assert_eq!(built.transaction().inputs().len(), 3);
         assert_eq!(
-            construct_over(&abi, &validated, &request)
-                .expect_err("neither sponsored form has a carrier"),
-            TransactionRefusal::SponsoredMaturityFormHasNoCarrier,
+            built.transaction().outputs().len(),
+            if change.requested() { 3 } else { 2 }
         );
+        assert_eq!(built.transaction().outputs()[0], transaction.outputs()[0]);
     }
 }
 
@@ -548,15 +1067,37 @@ fn a_constructor_over_another_static_subtree_fails_the_continuity_equality() {
 fn every_refusal_variant_this_module_raises_is_reached_by_a_test_in_this_file() {
     // One arm per variant this module raises, naming the test that
     // reaches it. Whole-vocabulary exhaustiveness is the census file's
-    // job and is not duplicated here — matching a hundred and
-    // twenty-eight variants twice would be one copy too many — so the
+    // job and is not duplicated here, so the
     // catch-all stands for everything raised elsewhere in the crate.
     // A match arm is not a test either: what this records is which
     // test is answerable for each refusal construction can produce.
     let named = |refusal: &TransactionRefusal| -> &'static str {
         match refusal {
-            TransactionRefusal::SponsoredMaturityFormHasNoCarrier => {
-                "a_sponsored_request_is_refused_for_the_carrier_it_would_need"
+            TransactionRefusal::SponsorRequestedWithoutCapability => {
+                "a_sponsored_request_without_its_capability_is_refused"
+            }
+            TransactionRefusal::SponsorCapabilityWithoutRequest => {
+                "sponsorless_request_refuses_an_extraneous_context"
+            }
+            TransactionRefusal::EmptySponsorOffer
+            | TransactionRefusal::SponsorChangeRequestedWithoutDestination
+            | TransactionRefusal::SponsorChangeOfferedWithoutRequest
+            | TransactionRefusal::MalformedPinnedProgram { .. } => {
+                "malformed_and_empty_offers_refuse_against_a_nonempty_control"
+            }
+            TransactionRefusal::OverlappingOutpoint(_) => "state_input_cannot_join_sponsor_offer",
+            TransactionRefusal::MissingPublicSponsorView(_)
+            | TransactionRefusal::SponsorInputCarriesForeignAsset(_) => {
+                "sponsor_views_are_required_and_foreign_assets_refuse"
+            }
+            TransactionRefusal::MaturitySponsorValueRequiresProofFinalization => {
+                "confidential_sponsor_value_requires_balanced_proof_route"
+            }
+            TransactionRefusal::MaturitySponsorReserveAliasesStateAsset => {
+                "declared_reserve_cannot_alias_the_state_asset"
+            }
+            TransactionRefusal::MaturitySponsorInputPositionOutOfRange => {
+                "sponsor_suffix_position_overflow_refuses_before_signing"
             }
             TransactionRefusal::MaturitySuccessorTransitionRefused { .. } => {
                 "a_cycle_outside_the_window_carries_the_transitions_own_refusal"
@@ -576,7 +1117,7 @@ fn every_refusal_variant_this_module_raises_is_reached_by_a_test_in_this_file() 
     };
 
     assert_eq!(
-        named(&TransactionRefusal::SponsoredMaturityFormHasNoCarrier),
-        "a_sponsored_request_is_refused_for_the_carrier_it_would_need",
+        named(&TransactionRefusal::SponsorRequestedWithoutCapability),
+        "a_sponsored_request_without_its_capability_is_refused",
     );
 }

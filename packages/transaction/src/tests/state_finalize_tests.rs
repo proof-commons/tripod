@@ -563,3 +563,74 @@ fn a_curve_refusing_the_committed_operator_key_refuses_the_signing_request() {
         )
     );
 }
+
+#[test]
+fn sponsor_change_cannot_replace_successor_zero() {
+    let finalized =
+        finalize_maturity_announcement(super::state_support::sponsored_construction(true));
+    assert_eq!(finalized.check_offered(finalized.protected()), Ok(()));
+    let (inputs, mut outputs) = roles(&finalized);
+    outputs.swap(0, 1);
+    let subject = offered(&finalized, inputs, outputs, 2, 0);
+    assert_eq!(
+        finalized.check_offered(&subject),
+        Err(TransactionRefusal::OutputMutatedAfterSigning { position: 0 })
+    );
+}
+
+#[test]
+fn fee_change_reallocation_differs_from_frozen_offer() {
+    let finalized =
+        finalize_maturity_announcement(super::state_support::sponsored_construction(true));
+    assert_eq!(finalized.check_offered(finalized.protected()), Ok(()));
+    let (inputs, mut outputs) = roles(&finalized);
+    for (position, value) in [(1, 39), (2, 91)] {
+        let fixed = &outputs[position];
+        outputs[position] = TargetOutput::new(
+            fixed.asset(),
+            ValueField::Explicit(value),
+            fixed.nonce(),
+            fixed.program().to_vec(),
+        );
+    }
+    let subject = offered(&finalized, inputs, outputs, 2, 0);
+    assert_eq!(
+        finalized.check_offered(&subject),
+        Err(TransactionRefusal::OutputMutatedAfterSigning { position: 1 })
+    );
+}
+
+#[test]
+fn sponsor_change_does_not_compensate_state_asset_corruption() {
+    let finalized =
+        finalize_maturity_announcement(super::state_support::sponsored_construction(true));
+    assert_eq!(finalized.check_offered(finalized.protected()), Ok(()));
+    let (inputs, mut outputs) = roles(&finalized);
+    assert_ne!(outputs[0].asset(), outputs[1].asset());
+    assert_eq!(finalized.spent_output().value(), ValueField::Explicit(1));
+    for (position, value) in [(0, 2), (1, 39)] {
+        let fixed = &outputs[position];
+        outputs[position] = TargetOutput::new(
+            fixed.asset(),
+            ValueField::Explicit(value),
+            fixed.nonce(),
+            fixed.program().to_vec(),
+        );
+    }
+    // Equal aggregate value does not conserve either distinct asset.
+    let total = |outputs: &[TargetOutput]| {
+        outputs
+            .iter()
+            .map(|output| match output.value() {
+                ValueField::Explicit(amount) => amount,
+                ValueField::Commitment(_) => panic!("the explicit control carries no commitment"),
+            })
+            .sum::<u64>()
+    };
+    assert_eq!(total(&outputs), total(finalized.protected().outputs()));
+    let subject = offered(&finalized, inputs, outputs, 2, 0);
+    assert_eq!(
+        finalized.check_offered(&subject),
+        Err(TransactionRefusal::OutputMutatedAfterSigning { position: 0 })
+    );
+}

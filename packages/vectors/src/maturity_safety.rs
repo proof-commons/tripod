@@ -232,17 +232,19 @@ pub enum MaturityRowBoundary {
     /// route: no deployed argument list relaxes standardness, and an
     /// acceptance under a policy nobody runs would carry that caveat wherever it went.
     AcceptanceAwaitsRelayAdmissibility,
-    /// A sponsored announcement row has no constructed control.
+    /// Inherited standing pending admission of the sponsored row's evidence.
     ///
-    /// Construction refuses both sponsored request forms by
-    /// `SponsoredMaturityFormHasNoCarrier`, as ruling 58 in
+    /// Former reason: construction refused both sponsored request forms for
+    /// lack of a carrier, as ruling 58 in
     /// `plans/phases/06-state-and-maturity.md` records under
     /// `rule:phase6:wave7-rulings`. The
     /// `each_request_form_is_built_or_refused_by_name` test in
     /// `packages/transaction/src/tests/state_construct_tests.rs` pins
-    /// both refusals. No control exists for the row's mutation or
-    /// acceptance, so a verdict from any layer would concern a
-    /// different transaction.
+    /// the request cross-product. Construction supplies both explicit sponsored
+    /// controls under ruling 130; the row's declared evidence remains owed and
+    /// this inherited bound awaits its evidence-backed disposition.
+    /// The compatibility entry without a sponsor context returns
+    /// `SponsorRequestedWithoutCapability` for both sponsored change choices.
     SponsoredControlRefusedAtConstruction,
     /// Inherited waiting boundary for the three sponsor-region rows.
     ///
@@ -1406,8 +1408,8 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     // case under the variable schedule. Its declaration here remains
     // the relay-policy layer of the whole schedule; the schedule-indexed
     // boundary rule maps the case for both schedules. The two sponsored
-    // rows stand on construction's named refusal of their controls,
-    // so neither has a candidate whose acceptance a layer can judge.
+    // rows retain the former construction-refusal bound pending admitted
+    // evidence; both explicit sponsored controls construct.
     positive(
         "minimum-valid-lead",
         Bound::AcceptanceAwaitsRelayAdmissibility,
@@ -2656,9 +2658,9 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     ),
     // §16.10 — the fourteen sponsor faults.
     //
-    // Nine rows stand on the construction refusal of their sponsored
-    // controls: no sponsored candidate exists for their mutation to
-    // reach a declared boundary. Three ask about sponsor-region
+    // Nine rows retain the former construction-refusal standing pending
+    // admission of evidence at their declared boundaries. Explicit sponsored
+    // controls construct. Three ask about sponsor-region
     // membership or envelope multiplicity, whose region dispositions are
     // stated below without supplying their admission evidence. The other
     // two ask what the canonical report published, which is a
@@ -3825,7 +3827,7 @@ mod tests {
         };
         // Nine positive rows ask for an acceptance no admitted run supplies,
         // including §16.1's last, four-term row. Eleven rows stand on
-        // their sponsored controls' construction refusal; three sponsor
+        // the former construction refusal pending admitted evidence; three sponsor
         // faults stand on region membership or envelope multiplicity.
         assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 9);
         assert_eq!(standing(Bound::SponsoredControlRefusedAtConstruction), 11);

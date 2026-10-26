@@ -813,18 +813,17 @@ pub enum TransactionRefusal {
     },
 
     // --- Maturity-announcement construction (§12.5, §12.7) -------------
-    /// The request asks for the sponsored form, which has no carrier.
-    ///
-    /// Not a malformed request: a request that could not ask for a
-    /// sponsor region could not be refused for asking, and the refusal
-    /// worth having is the one that names what the form would need. The
-    /// reduced announcement leaf carries no sponsor check at all, and
-    /// the realization's sponsor relations hold no region of the
-    /// transaction until a later refit gives them one — so a builder
-    /// emitting sponsored bytes now would emit a form that no leaf and
-    /// no model constrains, which is a stronger objection than any
-    /// shape check could state.
-    SponsoredMaturityFormHasNoCarrier,
+    /// A committed sponsor value needs a balanced proof-finalization route.
+    /// The explicit construction route supplies no such proofs.
+    MaturitySponsorValueRequiresProofFinalization,
+    /// The declared reserve must differ from the deployment's STATE asset.
+    MaturitySponsorReserveAliasesStateAsset,
+    /// Offered output witnesses differ from the settled output-witness region.
+    MaturityOutputWitnessChangedAfterFinalization,
+    /// The sponsor suffix cannot be indexed by the signing request's position type.
+    MaturitySponsorInputPositionOutOfRange,
+    /// A sponsor answer contains no authorization material.
+    MaturitySponsorAuthorizationEmpty(Outpoint),
     /// The realization refused the semantic maturity transition.
     ///
     /// The refusal travels whole because the transition owns the

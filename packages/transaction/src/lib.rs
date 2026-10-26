@@ -127,7 +127,8 @@ pub use state_abi::{
     OutstandingMaturityAbiObligations, WitnessClassification, derive_maturity_announcement_abi,
 };
 pub use state_construct::{
-    MATURITY_ANNOUNCEMENT_LOCK_TIME, MaturityConstruction, construct_maturity_announcement,
+    MATURITY_ANNOUNCEMENT_LOCK_TIME, MaturityConstruction, MaturitySponsorContext,
+    construct_maturity_announcement, construct_maturity_announcement_with_sponsor,
 };
 pub use state_finalize::{
     FinalizedMaturityAnnouncement, MaturityExecutingLeaf, MaturityFinalizedFact,

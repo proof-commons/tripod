@@ -30,14 +30,10 @@
 //! a later change to one of the two paths would silently not be a change
 //! to the other.
 //!
-//! # Both forms are representable, and only one of them is buildable
+//! # Both forms are representable and constructible
 //!
-//! A request can ask for the sponsored form even where nothing emits it
-//! yet, because a request that could not say it wanted a sponsor region
-//! could not be refused for wanting one. The refusal worth having names
-//! the carrier the form would need and says the carrier is absent; a
-//! request shape that made the question unaskable would replace that
-//! refusal with silence.
+//! Sponsored construction requires the public funding view and sponsor
+//! capability separately from these semantic choices.
 //!
 //! What the request does settle by itself is the one pair that
 //! contradicts itself: the sponsorless form has no sponsor region, so
@@ -233,9 +229,8 @@ impl MaturityAnnouncementRequest {
     /// carrier. Both belong to construction, and answering either here
     /// would mean a request validated against a deployment it never named.
     ///
-    /// The sponsored form is admitted with and without change, so that a
-    /// sponsored request reaches construction intact and is refused there
-    /// by a refusal that can name what it lacks.
+    /// The sponsored form is admitted with and without change. Construction
+    /// checks the supplied funding context against that choice.
     ///
     /// # Errors
     ///
