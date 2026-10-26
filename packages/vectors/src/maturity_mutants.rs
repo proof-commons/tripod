@@ -20,7 +20,9 @@ use transaction::operator_right::BranchContext;
 use transaction::operator_signing::{
     OperatorSigningInput, OperatorSigningRefusal, OperatorSigningRequest,
 };
-use transaction::script_path_signing::{LiveDeployment, SpentOutputCensusEntry};
+use transaction::script_path_signing::{
+    LiveDeployment, SpentOutputCensusEntry, WitnessVectorTreatment, key_path_message,
+};
 use transaction::state_finalize::FinalizedMaturityAnnouncement;
 
 use crate::live_capability::OracleLiveCurve;
@@ -37,6 +39,8 @@ use crate::maturity_operator::OPERATOR_HANDLE;
 use crate::maturity_safety::{
     MaturityMutationLocator, MaturitySafetyRow, MaturitySafetySection, rows,
 };
+
+pub mod native_staging;
 
 /// The seven offerable constructor-fault rows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -392,28 +396,32 @@ fn rebuild_transaction(
     .map_err(|refusal| MaturityMutantStageRefusal::Transaction(Box::new(refusal)))
 }
 
-fn sign_mutant(
-    context: &MaturityMutantContext<'_>,
+/// Freeze one candidate for the operator's signature over a given
+/// spent-output census and input index, returning the frozen request.
+///
+/// The one place the operator freeze is written. [`operator_message`],
+/// [`operator_and_key_path_messages`] and the native staging module all
+/// reach the script-path census through it, so no caller respells the
+/// freeze.
+fn freeze_operator<'a>(
+    context: &'a MaturityMutantContext<'_>,
     candidate: TargetTransaction,
-    funded: &MaturityFundedPredecessor,
+    census: Vec<SpentOutputCensusEntry>,
+    input_index: u32,
     control_block: Vec<u8>,
-) -> Result<Vec<u8>, MaturityMutantStageRefusal> {
+) -> Result<OperatorSigningRequest<'a>, MaturityMutantStageRefusal> {
     let binding = context.bundle.deployment().operator();
     let mut genesis = *binding.deployment().genesis_id();
     genesis.reverse();
     let leaf = context.finalized.executing_leaf(context.target);
-    let request = OperatorSigningRequest::freeze(
+    OperatorSigningRequest::freeze(
         context.target,
         binding,
         candidate,
-        vec![SpentOutputCensusEntry::new(
-            AssetField::Explicit(funded.asset),
-            ValueField::Explicit(funded.amount),
-            funded.program.clone(),
-        )],
+        census,
         LiveDeployment::new(genesis),
         OperatorSigningInput::new(
-            0,
+            input_index,
             *leaf.tapleaf_hash(),
             leaf.leaf_version(),
             leaf.leaf_script().to_vec(),
@@ -421,11 +429,63 @@ fn sign_mutant(
         ),
         &OracleLiveCurve::new(context.target.clone()),
     )
-    .map_err(|refusal| MaturityMutantStageRefusal::OperatorSigning(Box::new(refusal)))?;
+    .map_err(|refusal| MaturityMutantStageRefusal::OperatorSigning(Box::new(refusal)))
+}
+
+/// The operator's script-path message for the frozen candidate and input.
+pub(crate) fn operator_message(
+    context: &MaturityMutantContext<'_>,
+    candidate: TargetTransaction,
+    census: Vec<SpentOutputCensusEntry>,
+    input_index: u32,
+    control_block: Vec<u8>,
+) -> Result<[u8; 32], MaturityMutantStageRefusal> {
+    let request = freeze_operator(context, candidate, census, input_index, control_block)?;
+    Ok(*request.message().with_vector_grown())
+}
+
+/// The operator's script-path message for input zero and the key-path
+/// message for a second input, from one freeze.
+///
+/// The native staging's extra-state-like-output subject spends a key-path
+/// coin at a second input: input zero stays the operator's script-path
+/// spend, and the second input offers a key-path witness whose message is
+/// read from the same frozen census. The key-path message is the probe
+/// construction `candidate_key_path_message` names, candidate-scoped and
+/// unreviewed, which is exactly what a staged offer wants.
+pub(crate) fn operator_and_key_path_messages(
+    context: &MaturityMutantContext<'_>,
+    candidate: TargetTransaction,
+    census: Vec<SpentOutputCensusEntry>,
+    control_block: Vec<u8>,
+    key_path_index: u32,
+) -> Result<([u8; 32], [u8; 32]), MaturityMutantStageRefusal> {
+    let request = freeze_operator(context, candidate, census, 0, control_block)?;
+    let operator = *request.message().with_vector_grown();
+    let key_path = key_path_message(
+        request.census(),
+        key_path_index,
+        WitnessVectorTreatment::BothGrown,
+    );
+    Ok((operator, key_path))
+}
+
+fn sign_mutant(
+    context: &MaturityMutantContext<'_>,
+    candidate: TargetTransaction,
+    funded: &MaturityFundedPredecessor,
+    control_block: Vec<u8>,
+) -> Result<Vec<u8>, MaturityMutantStageRefusal> {
+    let census = vec![SpentOutputCensusEntry::new(
+        AssetField::Explicit(funded.asset),
+        ValueField::Explicit(funded.amount),
+        funded.program.clone(),
+    )];
+    let message = operator_message(context, candidate, census, 0, control_block)?;
     let signature = OPERATOR_HANDLE
         .material()
         .map_err(MaturityMutantStageRefusal::Signing)?
-        .sign(request.message().with_vector_grown(), &[0; 32])
+        .sign(&message, &[0; 32])
         .map_err(MaturityMutantStageRefusal::Signing)?;
     Ok(signature.to_vec())
 }
