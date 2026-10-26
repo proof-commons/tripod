@@ -933,6 +933,7 @@ live_native_capture_test = find_program('scripts/test-live-native-v2-r7-capture.
 test(
   'live-native-v2-r7-capture-contract',
   live_native_capture_test,
+  priority: 1,
   args: [meson.project_source_root()],
   suite: 'integration',
   timeout: 180,
@@ -946,6 +947,7 @@ live_native_r8_capture_test = find_program('scripts/test-live-native-v2-r8-captu
 test(
   'live-native-v2-r8-capture-contract',
   live_native_r8_capture_test,
+  priority: 1,
   args: [meson.project_source_root()],
   suite: 'integration',
   timeout: 180,
@@ -1051,6 +1053,7 @@ test(
 test(
   'executor-boundaries',
   python3,
+  priority: 1,
   args: [meson.project_source_root() / 'scripts' / 'test-executor-boundaries.py'],
   suite: 'lint',
   timeout: 180,
